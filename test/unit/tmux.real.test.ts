@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { waitStable, waitUntil } from "../helpers/settle.js";
 import { execFileSync, execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -85,15 +86,21 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
 
     // -e env propagation + cwd
     await tmux.sendKeys("tachyon-itest-shell", 'echo "var=$TACHYON_TEST_VAR pwd=$(pwd)"', true);
-    await sleep(300);
-    const output = await tmux.capturePane("tachyon-itest-shell");
+    const output = await waitUntil(
+      () => tmux.capturePane("tachyon-itest-shell"),
+      (text) => text.includes("var=from-tachyon") && text.includes("pwd=/tmp"),
+      { label: "env + cwd echo" },
+    );
     expect(output).toContain("var=from-tachyon");
     expect(output).toContain("pwd=/tmp");
 
     // literal (-l) text must not be interpreted as keys/flags
     await tmux.sendKeys("tachyon-itest-shell", "echo -n 'C-m -l --'", true);
-    await sleep(300);
-    expect(await tmux.capturePane("tachyon-itest-shell")).toContain("C-m -l --");
+    expect(await waitUntil(
+      () => tmux.capturePane("tachyon-itest-shell"),
+      (text) => text.includes("C-m -l --"),
+      { label: "literal -l text" },
+    )).toContain("C-m -l --");
 
     await tmux.killSession("tachyon-itest-shell");
     expect(await tmux.hasSession("tachyon-itest-shell")).toBe(false);
@@ -102,9 +109,12 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
   it("session survives with no client attached (the VSCode-restart persistence primitive)", async () => {
     await tmux.newSession({ name: "tachyon-itest-survivor", cmd: "sh" });
     await tmux.sendKeys("tachyon-itest-survivor", "MARKER=alive; echo started-$MARKER", true);
-    await sleep(300);
     // No attach ever happened — the session runs headless and retains state.
-    expect(await tmux.capturePane("tachyon-itest-survivor")).toContain("started-alive");
+    expect(await waitUntil(
+      () => tmux.capturePane("tachyon-itest-survivor"),
+      (text) => text.includes("started-alive"),
+      { label: "detached session output" },
+    )).toContain("started-alive");
     await tmux.killSession("tachyon-itest-survivor");
   });
 
@@ -139,8 +149,12 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
   it("capture with scrollback reach (-S) returns history beyond the visible pane", async () => {
     await tmux.newSession({ name: "tachyon-itest-scroll", cmd: "sh" });
     await tmux.sendKeys("tachyon-itest-scroll", "i=1; while [ $i -le 100 ]; do echo line-$i; i=$((i+1)); done", true);
-    await sleep(1000);
-    const deep = await tmux.capturePane("tachyon-itest-scroll", 500);
+    // 100 lines through a shell loop: the 1000ms this replaced was the largest guess in the file.
+    const deep = await waitUntil(
+      () => tmux.capturePane("tachyon-itest-scroll", 500),
+      (text) => text.includes("line-1\n") && text.includes("line-100"),
+      { label: "scrollback reach" },
+    );
     expect(deep).toContain("line-1\n");
     expect(deep).toContain("line-100");
     await tmux.killSession("tachyon-itest-scroll");
@@ -149,8 +163,13 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
   it("serverSnapshot reports live and dead panes with pid + exit code (inspector data layer)", async () => {
     await tmux.newSession({ name: "tachyon-itest-snap-live", cmd: "sh" });
     await tmux.newSession({ name: "tachyon-itest-snap-dead", cmd: "sh -c 'exit 5'" });
-    await sleep(300);
-    const snap = await tmux.serverSnapshot("tachyon-itest-snap-");
+    // The dead session has to have EXITED before the snapshot means anything.
+    const snap = await waitUntil(
+      () => tmux.serverSnapshot("tachyon-itest-snap-"),
+      (rows) => rows.some((r) => r.session === "tachyon-itest-snap-dead" && r.dead)
+        && rows.some((r) => r.session === "tachyon-itest-snap-live"),
+      { label: "server snapshot with one live and one dead" },
+    );
     const live = snap.find((r) => r.session === "tachyon-itest-snap-live");
     const dead = snap.find((r) => r.session === "tachyon-itest-snap-dead");
     expect(live?.dead).toBe(false);
@@ -165,25 +184,32 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pipepane-"));
     const file = path.join(dir, "transcript.log");
     try {
+      const contents = () => { try { return fs.readFileSync(file, "utf8"); } catch { return ""; } };
+      const size = () => { try { return fs.statSync(file).size; } catch { return 0; } };
+
       await tmux.newSession({ name: "tachyon-itest-pipepane", cmd: "sh" });
       await tmux.pipePane({ target: "tachyon-itest-pipepane", file });
       await tmux.sendKeys("tachyon-itest-pipepane", "echo PIPE-PANE-MARKER-1", true);
-      await sleep(400);
-      expect(fs.readFileSync(file, "utf8")).toContain("PIPE-PANE-MARKER-1");
+      // t-eee876 — `sleep(400); expect(...)` asserted that the pipe delivers within 400ms, which
+      // nobody chose and the machine's load decides. The property is that it ARRIVES.
+      await waitUntil(contents, (text) => text.includes("PIPE-PANE-MARKER-1"), { label: "marker 1" });
 
       // re-attach must stay idempotent (bare pipe-pane replaces without a gap, not -o's
       // toggle-off) — a second command still lands in the SAME file with no data lost.
       await tmux.pipePane({ target: "tachyon-itest-pipepane", file });
       await tmux.sendKeys("tachyon-itest-pipepane", "echo PIPE-PANE-MARKER-2", true);
-      await sleep(400);
-      expect(fs.readFileSync(file, "utf8")).toContain("PIPE-PANE-MARKER-2");
+      await waitUntil(contents, (text) => text.includes("PIPE-PANE-MARKER-2"), { label: "marker 2" });
 
       await tmux.unpipePane("tachyon-itest-pipepane");
-      const sizeAfterDetach = fs.statSync(file).size;
       await tmux.sendKeys("tachyon-itest-pipepane", "echo PIPE-PANE-MARKER-3-SHOULD-NOT-APPEAR", true);
-      await sleep(400);
-      expect(fs.statSync(file).size).toBe(sizeAfterDetach); // detached — no further growth
-      expect(fs.readFileSync(file, "utf8")).not.toContain("MARKER-3");
+      // t-eee876 — this is the assertion that failed under load ("expected 96 to be 94"), and the
+      // number was not wrong: two bytes were still in flight when the single post-sleep read ran.
+      // Reading once after a fixed wait cannot tell "the writer detached" from "the writer has not
+      // finished yet". Observing the size STOP CHANGING can, and then the real property — the marker
+      // written after the detach never lands — is asserted on a file that is done moving.
+      const settled = await waitStable(size, { label: "transcript size after unpipePane" });
+      expect(contents(), "output written AFTER unpipePane reached the transcript").not.toContain("MARKER-3");
+      expect(size(), "the transcript grew after it had settled").toBe(settled);
 
       await tmux.killSession("tachyon-itest-pipepane");
     } finally {
@@ -260,14 +286,20 @@ describe.skipIf(!tmuxAvailable())("ControlModeClient against real tmux (F20 engi
     expect(await tmux.hasSession("cm-shell")).toBe(true);
 
     await tmux.sendKeys("cm-shell", 'echo "got $CM_VAR in $(pwd)"', true);
-    await sleep(300);
-    const captured = await tmux.capturePane("cm-shell");
+    const captured = await waitUntil(
+      () => tmux.capturePane("cm-shell"),
+      (text) => text.includes("got rode-the-pipe in /tmp"),
+      { label: "control-mode echo" },
+    );
     expect(captured).toContain("got rode-the-pipe in /tmp");
 
     // nasty quoting end-to-end: literal text with quotes/$/; survives exactly
     await tmux.sendKeys("cm-shell", `echo 'single' "double" $HOME ; true`, true);
-    await sleep(300);
-    expect(await tmux.capturePane("cm-shell")).toContain("echo 'single'");
+    expect(await waitUntil(
+      () => tmux.capturePane("cm-shell"),
+      (text) => text.includes("echo 'single'"),
+      { label: "control-mode literal" },
+    )).toContain("echo 'single'");
 
     // semantic errors reject like the subprocess path
     await expect(tmux.capturePane("cm-ghost")).rejects.toThrow(/can't find/);

@@ -65,6 +65,24 @@ afterEach(async () => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
+
+/**
+ * t-eee876 — assert an envelope's SUCCESS in a way that survives being wrong.
+ *
+ * `toEqual({schemaVersion, method, status: "ok"})` on a real operation reads well and reports badly:
+ * the error envelope carries `code` and `message` too, so a genuine failure surfaced as
+ * "expected { schemaVersion: 1, …(4) } to deeply equal { schemaVersion: 1, …(2) }" — a key COUNT,
+ * with the two fields that explain what happened discarded by the matcher. That cost a real
+ * `agent.start` failure under load being read as a shape problem.
+ *
+ * Assert the status first, carrying the message, then the shape.
+ */
+function expectOk(envelope: unknown, method: string, extra: Record<string, unknown> = {}): void {
+  const e = envelope as { status?: string; code?: string; message?: string };
+  expect(e?.status, `${method} failed: ${e?.code ?? "?"} — ${e?.message ?? "no message"}`).toBe("ok");
+  expect(envelope).toEqual({ schemaVersion: 1, method, status: "ok", ...extra });
+}
+
 describe("daemon engine service", () => {
   it("owns a real Workspace and direct Bridge across shell replacement and no-shell time", async () => {
     const root = makeSocketTemp("tachyon-engine-service-");
@@ -525,7 +543,7 @@ describe("daemon engine service", () => {
       },
     };
     const approved = await first.invoke("operation-prototype-review-0001", approvePrototype);
-    expect(approved).toEqual({ schemaVersion: 1, method: "task.prototype.review", status: "ok" });
+    expectOk(approved, "task.prototype.review");
     expect(await first.invoke("operation-prototype-review-0001", approvePrototype)).toEqual(approved);
     expect(seedTaskStore.get(seedTask.id).awaitingHuman).toBeUndefined();
     expect(new TaskPrototypeStore(workspaceRoot, seedTask.id).read().approved).toMatchObject({
@@ -559,7 +577,7 @@ describe("daemon engine service", () => {
       input: { id: seedTask.id, patch: { status: "triaged" as const, expect: { status: "inbox" as const, updatedAt: seedTask.updatedAt } } },
     };
     const updatedTask = await first.invoke("operation-task-update-0001", updateTask);
-    expect(updatedTask).toEqual({ schemaVersion: 1, method: "task.update", status: "ok" });
+    expectOk(updatedTask, "task.update");
     expect(await first.invoke("operation-task-update-0001", updateTask)).toEqual(updatedTask);
     const updatedBoard = await first.query({ schemaVersion: 1, method: "task.board", input: { liveTemporaryAgents: [] } });
     if (updatedBoard.status !== "ok" || updatedBoard.method !== "task.board") throw new Error("unexpected board result");
@@ -596,7 +614,7 @@ describe("daemon engine service", () => {
       input: { state: { ...blankCommandFields(), name: "lint", cmd: "npm run lint" } },
     };
     const createdStudio = await first.invoke("operation-studio-create-0001", createStudioCommand);
-    expect(createdStudio).toEqual({ schemaVersion: 1, method: "studio.submit", status: "ok", errors: [], truncated: false });
+    expectOk(createdStudio, "studio.submit", { errors: [], truncated: false });
     expect(await first.invoke("operation-studio-create-0001", createStudioCommand)).toEqual(createdStudio);
     expect(fs.readFileSync(configPath, "utf8")).toContain("lint:");
     await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "commands");
@@ -673,7 +691,7 @@ describe("daemon engine service", () => {
 
     const startCommand = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
     const started = await first.invoke("operation-engine-start-0001", startCommand);
-    expect(started).toEqual({ schemaVersion: 1, method: "agent.start", status: "ok" });
+    expectOk(started, "agent.start");
     expect(await first.invoke("operation-engine-start-0001", startCommand)).toEqual(started);
     await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
     expect(await first.snapshot()).toMatchObject({
@@ -702,7 +720,7 @@ describe("daemon engine service", () => {
       input: { agent: "worker", text: "printf 'once\\n' >> .tachyon-agent-input-proof", submit: true },
     };
     const inputSent = await first.invoke("operation-agent-input-0001", agentInput);
-    expect(inputSent).toEqual({ schemaVersion: 1, method: "agent.input", status: "ok" });
+    expectOk(inputSent, "agent.input");
     expect(await first.invoke("operation-agent-input-0001", agentInput)).toEqual(inputSent);
     expect(await first.invoke("operation-engine-restart-0001", {
       schemaVersion: 1,
