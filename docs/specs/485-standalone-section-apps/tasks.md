@@ -172,10 +172,15 @@ work in parallel only if the second re-applies onto the first before delivery, n
       this could not be answered by preference. Counted: after Fleet leaves, Control has **0**
       `ck-card-list`, **2** `ck-empty`, **0** `ci-*`. The link STAYS, anchored by `ck-empty` alone.
 
-      Worth carrying into D8–D10: the anchor is now one class. When whichever section still uses
-      `ck-empty` migrates, the count goes to zero and Control must STOP linking
-      `engine-workspace.css` — a fifth shape, and the mirror rule will say so rather than leaving it to
-      whoever notices.
+      Worth carrying into D8–D10: the anchor is now one class. **Corrected after measuring** — an earlier
+      revision of this paragraph said the count goes to zero when "whichever section still uses `ck-empty`
+      migrates". It does not. The two uses are not both a section's: `cockpit/App.tsx:1283` is inside
+      **Overview**, but `:1092` is Control's OWN no-model fallback — its shell chrome, belonging to no
+      section at all. So when Overview leaves, the count goes to **1**, not 0, and Control keeps linking
+      `engine-workspace.css` for one class of its own until Phase E retires the shell itself.
+
+      The fifth shape — Control stops linking — therefore belongs to Phase E, not to a section migration.
+      Do not go looking for it in D8–D10.
 
       **The instruction that failed twice, and what replaced it.** This panel arrived with an 884-char
       strings table on one line — from a brief that said not to, and named D5's minified `EnginePanel`
