@@ -2,14 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   admitAgentRuntimeCommand,
   AgentRuntimeAdmissionError,
+  AUTHORING_CATALOG_WITHOUT_ADAPTERS,
   isSupportedAgentRuntime,
   SUPPORTED_AGENT_RUNTIMES,
   SUPPORTED_AGENT_RUNTIME_NAMES,
   TERMINAL_OPERATION,
 } from "../../src/agents/agentRuntimeAdmission.js";
 import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
-import { RESUME_RUNTIMES } from "../../src/resume/adapters.js";
+import { RESUME_RUNTIMES, runtimeOf } from "../../src/resume/adapters.js";
 import { instructionsDeliverable, KNOWN_AI_CLIS } from "../../src/config/loadConfig.js";
+import { runtimePromptAdapter } from "../../src/agents/runtimePromptAdapters.js";
 
 /**
  * SDD 478 M9 (`t-8f3f7d`) — Agent Instance admission stops inferring what it creates.
@@ -109,6 +111,97 @@ describe("t-8f3f7d — what the runtime door refuses, and what the refusal says"
   });
 });
 
+/**
+ * t-5d8e96 — a refusal that claims "no measured resume, brief or Bridge" for every non-admitted
+ * binary is factually false: Antigravity and Continue have measured partial machinery, and the
+ * parity matrix classifies them as Terminal by admission decision, not by total absence. The
+ * phrase must diagnose what THAT binary lacks (or that the Agent door does not operate it), and
+ * still name spawn_terminal. Verdict is the phrase, not admission.
+ */
+describe("t-5d8e96 — refusal diagnosis is true per runtime", () => {
+  function refuse(cmd: string): string {
+    const admission = admitAgentRuntimeCommand(cmd);
+    expect(admission.ok).toBe(false);
+    if (admission.ok) throw new Error("expected refusal");
+    expect(admission.reason).toContain(TERMINAL_OPERATION);
+    return admission.reason;
+  }
+
+  it("Antigravity (agy): names measured resume+brief and the missing Bridge / non-admission, not total absence", () => {
+    // Matrix §3.3 / §3.6.1: resume ✓, brief ✓ (--prompt-interactive), Bridge —, Agent door ✗ Terminal.
+    const reason = refuse("agy");
+    expect(reason).toMatch(/resume/i);
+    expect(reason).toMatch(/brief/i);
+    expect(reason).toMatch(/Bridge/i);
+    // Must not recycle the composite lie that none of the three exist.
+    expect(reason).not.toMatch(/no measured\s+resume,\s*brief or Bridge/i);
+    // Honest about presence, not inventing Bridge.
+    expect(reason).toMatch(/measures?\s+resume and brief/i);
+    expect(reason).toMatch(/no Bridge/i);
+    expect(reason).toMatch(/not an admitted Agent runtime|Agent door does not operate/i);
+  });
+
+  it("Continue: names measured resume and the missing brief+Bridge, not total absence", () => {
+    // Matrix §3.3 / §3.6.1: resume ✓, brief —, Bridge —, Agent door ✗ Terminal.
+    const reason = refuse("continue");
+    expect(reason).toMatch(/resume/i);
+    expect(reason).toMatch(/brief/i);
+    expect(reason).toMatch(/Bridge/i);
+    expect(reason).not.toMatch(/no measured\s+resume,\s*brief or Bridge/i);
+    expect(reason).toMatch(/measures?\s+resume/i);
+    expect(reason).toMatch(/no brief/i);
+    expect(reason).toMatch(/no Bridge|Bridge path/i);
+    expect(reason).toMatch(/not an admitted Agent runtime|Agent door does not operate/i);
+  });
+
+  it("authoring-only CLI (aider): names catalog chip with no adapters of any kind", () => {
+    const reason = refuse("aider");
+    expect(reason).toMatch(/authoring-catalog|quick-add chip/i);
+    expect(reason).toMatch(/no measured resume, brief or Bridge/i);
+    expect(reason).not.toMatch(/measures?\s+resume/i);
+  });
+
+  it("generic command (sh): names non-runtime process without claiming a secondary-runtime partial path", () => {
+    const reason = refuse("sh");
+    expect(reason).toMatch(/not a supported LLM runtime/i);
+    expect(reason).toMatch(/no measured resume, brief or Bridge/i);
+    expect(reason).not.toMatch(/authoring-catalog|quick-add chip/i);
+    expect(reason).not.toMatch(/measures?\s+resume/i);
+  });
+
+  it("cn (Continue alias) gets the same honest Continue diagnosis as the canonical binary", () => {
+    const viaCn = refuse("cn");
+    const viaContinue = refuse("continue");
+    // Alias must not fall into the generic "no measured resume…" bucket.
+    expect(viaCn).toMatch(/measures?\s+resume/i);
+    expect(viaCn).not.toMatch(/no measured\s+resume,\s*brief or Bridge/i);
+    // Same shape of diagnosis (both name the missing seams).
+    expect(viaCn).toMatch(/brief/i);
+    expect(viaContinue).toMatch(/brief/i);
+  });
+
+  it("still refuses every non-admitted binary — phrase change is not admission change", () => {
+    for (const cmd of ["agy", "continue", "cn", "aider", "goose", "sh", "npm run dev", "echo hi"]) {
+      expect(admitAgentRuntimeCommand(cmd).ok).toBe(false);
+    }
+    for (const runtime of SUPPORTED_AGENT_RUNTIME_NAMES) {
+      expect(admitAgentRuntimeCommand(runtime).ok).toBe(true);
+    }
+  });
+
+  it("AUTHORING_CATALOG_WITHOUT_ADAPTERS tracks catalog chips that have no resume or brief channel", () => {
+    // Closed set in the admission module (avoids importing loadConfig into browser bundles). Must equal
+    // every KNOWN_AI_CLIS name that is neither supported nor partially measured.
+    const fromCatalog = KNOWN_AI_CLIS.filter((cli) => {
+      if (isSupportedAgentRuntime(cli)) return false;
+      if (runtimeOf(cli) !== null) return false;
+      if (runtimePromptAdapter(cli)?.compose !== undefined) return false;
+      return true;
+    }).sort();
+    expect([...AUTHORING_CATALOG_WITHOUT_ADAPTERS].sort()).toEqual(fromCatalog);
+  });
+});
+
 describe("t-8f3f7d — the declaration is evidence, and cannot drift from it", () => {
   it("every supported runtime has the resume adapter the declaration claims", () => {
     // Resume is the deliberate, measured support that makes a Temporary child survive as the same entity
@@ -150,12 +243,15 @@ describe("t-8f3f7d — the declaration is evidence, and cannot drift from it", (
   });
 
   it("declares nothing it cannot resume — antigravity and continue are absent on purpose", () => {
-    // They have resume adapters but are not AI CLIs to any authoring surface either, so the ad-hoc door
-    // never produced an agent for them: excluding them removes no capability.
-    for (const runtime of ["antigravity", "continue"]) {
+    // Resume adapters exist; the Agent door still refuses them (Terminal by admission). The runtime
+    // names are not catalog chips (`agy` is the Antigravity binary and is catalogued; `continue`/`cn`
+    // are not). t-5d8e96 covers the honest refusal text separately.
+    for (const runtime of ["antigravity", "continue"] as const) {
       expect(RESUME_RUNTIMES).toContain(runtime);
       expect(KNOWN_AI_CLIS).not.toContain(runtime);
       expect(isSupportedAgentRuntime(runtime)).toBe(false);
     }
+    expect(KNOWN_AI_CLIS).toContain("agy");
+    expect(isSupportedAgentRuntime("agy")).toBe(false);
   });
 });
