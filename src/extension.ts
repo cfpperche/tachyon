@@ -20,6 +20,7 @@ import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesP
 import { FLEET_VIEW_TYPE, FleetPanelManager } from "./webview/FleetPanel.js";
 import { EXECUTION_GRAPH_VIEW_TYPE, ExecutionGraphPanelManager } from "./webview/ExecutionGraphPanel.js";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
+import { OVERVIEW_VIEW_TYPE, OverviewPanelManager } from "./webview/OverviewPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import {
   openCockpit,
@@ -1991,6 +1992,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openHumanInbox: (wsHash) => { openHumanInboxTab(wsHash); },
     openHumanInboxItem: (wsHash, itemKind, itemId) => { humanInboxPanels.openItem(wsHash, itemKind, itemId); },
     openSettings: () => { openSettingsTab(); },
+    openOverview: (hash?: string) => { openOverviewTab(hash); },
     openDoctor: () => {
       void vscode.commands.executeCommand("tachyon.doctor");
     },
@@ -2424,6 +2426,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return true;
   };
 
+  const overviewPanels = new OverviewPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    openDoctor: engineHost.openDoctor,
+    openSection: (section, project) => {
+      if (section === "handoff") void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.projectHandoff(project) });
+      else void vscode.commands.executeCommand("tachyon.openControl", section);
+    },
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => overviewPanels.dispose() });
+  const openOverviewTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    overviewPanels.open(ws.wsHash); return true;
+  };
+
   // SDD 485 D7 — Fleet is one dashboard per immutable project. Its source is the same scoped
   // buildCockpitModel slice Control used; every action receives the panel project, never a row fallback.
   const fleetPanels = new FleetPanelManager(context.extensionUri, {
@@ -2468,6 +2485,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, EXECUTION_GRAPH_VIEW_TYPE, (panel, state) => executionGraphPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, OVERVIEW_VIEW_TYPE, (panel, state) => overviewPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, FLEET_VIEW_TYPE, (panel, state) => fleetPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
@@ -2959,6 +2977,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "settings") {
           openSettingsTab();
+          return Promise.resolve();
+        }
+        if (resolved === "overview") {
+          openOverviewTab();
           return Promise.resolve();
         }
         return openCockpit(makeCockpitDeps(), { section: resolved });

@@ -44,6 +44,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     openHumanInbox: () => {},
     openHumanInboxItem: () => {},
     openSettings: () => {},
+    openOverview: () => {},
     openDoctor: () => {},
     revealPath: () => {},
     openConfigFile: async () => {},

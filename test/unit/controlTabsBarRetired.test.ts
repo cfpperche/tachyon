@@ -71,9 +71,7 @@ const SECTION_HEADING: Record<CockpitSectionId, string> = {
  * these two paint their H1 is the headless Visual QA pass over the preview harness, which renders them
  * in a real browser; Overview is Control's landing screen, so it is the first thing that pass sees.
  */
-const RADIX_BOUND: ReadonlyArray<{ id: CockpitSectionId; chrome: RegExp }> = [
-  { id: "overview", chrome: /<PageChrome\s+title=\{s\.overviewTitle\}/ },
-];
+const RADIX_BOUND: ReadonlyArray<{ id: CockpitSectionId; chrome: RegExp }> = [];
 const RENDERABLE = COCKPIT_SECTION_ORDER.filter(
   (id) => id !== "runtime-config" && !RADIX_BOUND.some((r) => r.id === id),
 );

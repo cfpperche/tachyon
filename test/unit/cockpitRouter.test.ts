@@ -146,7 +146,7 @@ describe("navigation epoch — discards stale responses from a superseded route"
     __createdPanels[0].webview.__receive({ type: "setSection", section: "overview" });
     await flush();
     expect(modelsPosted()).toHaveLength(1);
-    expect(modelsPosted()[0].model?.section).toBe("overview");
+    expect(modelsPosted()[0].model?.section).toBe("approvals");
 
     releaseWedged();
     await flush();
@@ -154,7 +154,7 @@ describe("navigation epoch — discards stale responses from a superseded route"
     // the wedged call finally resolves, but the epoch it captured is stale — it adds nothing, and in
     // particular does not repaint Control as "fleet" underneath the route the human is now on.
     expect(modelsPosted()).toHaveLength(1);
-    expect(modelsPosted()[0].model?.section).toBe("overview");
+    expect(modelsPosted()[0].model?.section).toBe("approvals");
   });
 
   it("the global scope survives navigation between screens (t-46eb4f)", async () => {
@@ -251,7 +251,7 @@ describe("persisted state — always writes schemaVersion 2", () => {
     expect(__createdPanels[0].webview.html).toContain('"schemaVersion":2');
     expect(__createdPanels[0].webview.html).toContain('"kind":"section"');
     // SDD 485 D10 — Settings is redirected to its own app before Control commits state.
-    expect(__createdPanels[0].webview.html).toContain('"section":"overview"');
+    expect(__createdPanels[0].webview.html).toContain('"section":"approvals"');
   });
 });
 
