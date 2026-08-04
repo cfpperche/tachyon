@@ -357,6 +357,19 @@ export interface BridgeDeps {
    * discover them. Absent/false → tools omitted (no list pollution).
    */
   companionTabToolsEnabled?: () => boolean;
+  /**
+   * Prototype (thimo-style): VS Code Integrated Browser bridge is live for this workspace.
+   * When true, register ide_browser_* tools that HTTP to the shell CDP bridge.
+   */
+  ideBrowserToolsEnabled?: () => boolean;
+  /**
+   * Call the shell IDE browser bridge: route like "/navigate", optional JSON body.
+   * Returns { ok, data | error } envelope.
+   */
+  ideBrowserRequest?: (
+    route: string,
+    body?: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; data?: unknown; error?: string; code?: string }>;
   /** SDD 420 optional host allowlist. */
   companionAllowedHosts?: () => string[] | undefined;
   /**
@@ -3593,6 +3606,156 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             timeoutMs: timeoutSec !== undefined ? timeoutSec * 1000 : undefined,
           });
           return ok(JSON.stringify(envelopeFromTabResult({ tool: "user_browser_dialog", tabId, raw: result }), null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+  }
+
+  // Prototype: VS Code Integrated Browser via shell HTTP+CDP bridge (thimo-style).
+  // Enabled when the extension host has written a live instance file for this workspace.
+  if (deps.ideBrowserToolsEnabled?.()) {
+    const ideReq = async (route: string, body?: Record<string, unknown>) => {
+      if (!deps.ideBrowserRequest) {
+        return { ok: false as const, error: "ideBrowserRequest not wired on this engine" };
+      }
+      return deps.ideBrowserRequest(route, body);
+    };
+
+    mcp.registerTool(
+      "ide_browser_status",
+      {
+        description:
+          "Status of the Tachyon IDE Integrated Browser bridge (VS Code editor-browser + CDP). " +
+          "Use before other ide_browser_* tools. Offline means the VS Code shell is not running the bridge.",
+        inputSchema: {},
+      },
+      async () => {
+        try {
+          const result = await ideReq("/status");
+          if (!result.ok) return fail(new Error(result.error || "ide_browser_status failed"));
+          return ok(JSON.stringify(result.data, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "ide_browser_navigate",
+      {
+        description:
+          "Navigate the VS Code Integrated Browser (real Chromium tab in the editor) to a URL. " +
+          "Lazily launches editor-browser on first use. Prefer this for UI preview inside VS Code.",
+        inputSchema: {
+          url: z.string().min(1).max(4000).describe("Absolute http(s) URL or host to open"),
+        },
+      },
+      async ({ url }) => {
+        try {
+          const result = await ideReq("/navigate", { url });
+          if (!result.ok) return fail(new Error(result.error || "ide_browser_navigate failed"));
+          return ok(JSON.stringify(result.data, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "ide_browser_screenshot",
+      {
+        description:
+          "Capture a PNG screenshot of the VS Code Integrated Browser viewport (base64). " +
+          "High-fidelity native frame — not a synthetic stream panel.",
+        inputSchema: {},
+      },
+      async () => {
+        try {
+          const result = await ideReq("/screenshot");
+          if (!result.ok) return fail(new Error(result.error || "ide_browser_screenshot failed"));
+          return ok(JSON.stringify(result.data, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "ide_browser_snapshot",
+      {
+        description:
+          "Accessibility / text snapshot of the current Integrated Browser page for agent reasoning.",
+        inputSchema: {},
+      },
+      async () => {
+        try {
+          const result = await ideReq("/snapshot");
+          if (!result.ok) return fail(new Error(result.error || "ide_browser_snapshot failed"));
+          return ok(JSON.stringify(result.data, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "ide_browser_eval",
+      {
+        description:
+          "Evaluate JavaScript in the Integrated Browser *page* (DevTools-equivalent). " +
+          "Use to change styles, text, attributes, or call page APIs. " +
+          "Examples: document.querySelector('h1').style.color='red'  |  document.body.style.background='#111'.",
+        inputSchema: {
+          expression: z.string().min(1).max(50_000).describe(
+            "JS expression/statement to evaluate in the page context",
+          ),
+        },
+      },
+      async ({ expression }) => {
+        try {
+          const result = await ideReq("/eval", { expression });
+          if (!result.ok) return fail(new Error(result.error || "ide_browser_eval failed"));
+          return ok(JSON.stringify(result.data, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "ide_browser_click",
+      {
+        description:
+          "Click an element in the Integrated Browser by CSS selector " +
+          "(e.g. 'a[href]', '#cta', 'button.primary'). Prefer selector hints from Design Mode picks.",
+        inputSchema: {
+          selector: z.string().min(1).max(1000).describe("CSS selector"),
+        },
+      },
+      async ({ selector }) => {
+        try {
+          const result = await ideReq("/click", { selector });
+          if (!result.ok) return fail(new Error(result.error || "ide_browser_click failed"));
+          return ok(JSON.stringify(result.data, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "ide_browser_url",
+      {
+        description: "Return the current URL of the Integrated Browser page.",
+        inputSchema: {},
+      },
+      async () => {
+        try {
+          const result = await ideReq("/url");
+          if (!result.ok) return fail(new Error(result.error || "ide_browser_url failed"));
+          return ok(JSON.stringify(result.data, null, 2));
         } catch (err) {
           return fail(err);
         }

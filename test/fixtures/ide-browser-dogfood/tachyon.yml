@@ -1,0 +1,13 @@
+# IDE Browser Dev Host fixture.
+# - No autostart (browser, agents, terminals, commands).
+# - homeUrl: workspace default when the human clicks the globe status bar.
+# - Single intended agent: grok — create/start from Tachyon Agent Studio when needed.
+settings:
+  maxAgents: 4
+  auth: true
+  ideBrowser:
+    # Change this to your app under development (http(s) URL or host).
+    homeUrl: about:blank
+
+# Empty map so Agent Studio / saved-agent-create can insert agents.grok.
+agents: {}

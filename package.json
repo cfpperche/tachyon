@@ -378,6 +378,11 @@
         "icon": "$(dashboard)"
       },
       {
+        "command": "tachyon.ideBrowserProto.open",
+        "title": "Tachyon: IDE Browser (prototype \u2014 Dev Host)",
+        "icon": "$(browser)"
+      },
+      {
         "command": "tachyon.inspectEngine",
         "title": "%command.inspectEngine%",
         "icon": "$(debug-console)"
@@ -471,6 +476,37 @@
         "command": "tachyon.resumeAgentItem",
         "title": "%command.resumeAgentItem%",
         "icon": "$(history)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.start",
+        "title": "Tachyon: IDE Browser Bridge Start (advanced)",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.stop",
+        "title": "Tachyon: IDE Browser Bridge Stop (advanced)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.status",
+        "title": "Tachyon: IDE Browser Bridge Status (advanced)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.open",
+        "title": "Tachyon: Open IDE Browser",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.designMode",
+        "title": "Tachyon: Toggle Design Mode",
+        "icon": "$(inspect)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.designModeOn",
+        "title": "Tachyon: Design Mode On"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.designModeOff",
+        "title": "Tachyon: Design Mode Off"
       }
     ],
     "viewsContainers": {
@@ -500,6 +536,10 @@
     },
     "menus": {
       "commandPalette": [
+        {
+          "command": "tachyon.ideBrowserProto.open",
+          "when": "tachyon.ideBrowserProto.enabled"
+        },
         {
           "command": "tachyon.openProbes",
           "when": "false"
@@ -719,6 +759,26 @@
         {
           "command": "tachyon.forkAgentItem",
           "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.start",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.stop",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.status",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.designModeOn",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.designModeOff",
+          "when": "false"
         }
       ]
     },
@@ -751,7 +811,7 @@
           {
             "id": "init",
             "title": "Initialize your project",
-            "description": "Generate a starter **tachyon.yml** — it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
+            "description": "Generate a starter **tachyon.yml** \u2014 it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
             "media": {
               "image": "media/walkthrough/hero.png",
               "altText": "Tachyon running agents as native editor terminals"
@@ -763,7 +823,7 @@
           {
             "id": "fleet",
             "title": "Meet your fleet",
-            "description": "Open the **⚡ Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n💡 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
+            "description": "Open the **\u26a1 Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n\ud83d\udca1 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
             "media": {
               "image": "media/walkthrough/subagents.png",
               "altText": "Sidebar showing agents and nested sub-agents"
@@ -775,7 +835,7 @@
           {
             "id": "bridge",
             "title": "The Bridge is automatic",
-            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it through each supported runtime's native MCP mechanism and rebuilds the wiring across lifecycle operations — no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
+            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it through each supported runtime's native MCP mechanism and rebuilds the wiring across lifecycle operations \u2014 no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
             "media": {
               "image": "media/walkthrough/studio.png",
               "altText": "Agent Studio tabs"
@@ -797,6 +857,87 @@
             ]
           }
         ]
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "tachyon.chat",
+        "name": "tachyon",
+        "fullName": "Tachyon",
+        "description": "Send prompts to Tachyon workspace agents (fleet bridge)",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "list",
+            "description": "List agents in the active Tachyon workspace"
+          },
+          {
+            "name": "send",
+            "description": "Send a prompt: /send <agent> <message>"
+          },
+          {
+            "name": "help",
+            "description": "How to use @tachyon"
+          }
+        ]
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "tachyon_list_agents",
+        "tags": [
+          "tachyon",
+          "agents"
+        ],
+        "toolReferenceName": "tachyon_list_agents",
+        "displayName": "Tachyon: List Agents",
+        "userDescription": "List Tachyon agents in the active workspace",
+        "modelDescription": "List agents managed by Tachyon in the current workspace (name, kind, lifetime, running). Use before sending a prompt when the agent name is unknown. Does not start agents.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(organization)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "tachyon_send_prompt",
+        "tags": [
+          "tachyon",
+          "agents"
+        ],
+        "toolReferenceName": "tachyon_send_prompt",
+        "displayName": "Tachyon: Send Prompt",
+        "userDescription": "Send a prompt to a named Tachyon agent",
+        "modelDescription": "Deliver text to a named Tachyon workspace agent (CLI running in a worktree via the Tachyon engine). Use when the user wants a Tachyon agent (e.g. grok, claude, codex) to act. Requires agent name and message text. Prefer list agents first if the name is unclear. This does not control the VS Code Integrated Browser; it only types into the agent session.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(rocket)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "type": "string",
+              "description": "Exact Tachyon agent name (from tachyon_list_agents)."
+            },
+            "text": {
+              "type": "string",
+              "description": "Prompt text to deliver to the agent."
+            },
+            "submit": {
+              "type": "boolean",
+              "description": "If true (default), submit as Enter after pasting. If false, only paste into the composer.",
+              "default": true
+            },
+            "workspaceHash": {
+              "type": "string",
+              "description": "Optional Tachyon workspace hash when multiple workspaces are open."
+            }
+          },
+          "required": [
+            "agent",
+            "text"
+          ]
+        }
       }
     ]
   },

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { isTemporaryInstance, mayRestartInstance } from "../agents/agentInstancePolicy.js";
+import { ideBrowserRequest, isIdeBrowserBridgeAvailable } from "../ide-browser/client.js";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
@@ -1782,6 +1783,9 @@ export class Workspace {
         // SDD 414 / t-2a7010 + t-fbe280 — agent tab tools via Companion extension.
         // Listed when settings.companion.tabTools is true; execution still requires a paired device.
         companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
+        // Prototype: Integrated Browser bridge (shell HTTP+CDP). Tools appear when instance file is live.
+        ideBrowserToolsEnabled: () => isIdeBrowserBridgeAvailable(this.workspaceRoot),
+        ideBrowserRequest: (route, body) => ideBrowserRequest(this.workspaceRoot, route, body),
         // Tab tools require a browser companion session (not mobile-only pair).
         companionBrowserPaired: () => this.companion.hasPairedKind("browser"),
         companionRefHints: (tabId, ref) => this.companionTabRefs.hintsFor(tabId, ref),

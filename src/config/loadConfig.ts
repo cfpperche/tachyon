@@ -560,6 +560,10 @@ export interface TachyonConfig {
      */
     companion?: { tabTools?: boolean; allowedHosts?: string[]; lanAccess?: boolean };
     /**
+     * Integrated Browser (Design Mode / ide_browser_*). Workspace home URL for the globe control.
+     */
+    ideBrowser?: { homeUrl?: string };
+    /**
      * SDD 479 — the sidebar agent card's layout, owned by the project (it travels with the repo).
      *
      * A malformed template is refused WHOLE and recorded in `cardTemplateRefusal` rather than pushed
@@ -1719,6 +1723,27 @@ export function parseConfig(yamlText: string): ParseResult {
           if (Object.keys(out).length > 0) settings.companion = out;
         }
       }
+      if (raw.settings.ideBrowser !== undefined) {
+        if (!isPlainObject(raw.settings.ideBrowser)) {
+          errors.push("settings.ideBrowser: must be a mapping with optional 'homeUrl'");
+        } else {
+          const ib = raw.settings.ideBrowser;
+          const out: { homeUrl?: string } = {};
+          if (ib.homeUrl !== undefined) {
+            if (typeof ib.homeUrl !== "string" || !ib.homeUrl.trim()) {
+              errors.push("settings.ideBrowser.homeUrl: must be a non-empty string (http(s) URL or host)");
+            } else {
+              out.homeUrl = ib.homeUrl.trim();
+            }
+          }
+          for (const key of Object.keys(ib)) {
+            if (key !== "homeUrl") {
+              errors.push(`settings.ideBrowser: unknown key '${key}'`);
+            }
+          }
+          if (Object.keys(out).length > 0) settings.ideBrowser = out;
+        }
+      }
       // SDD 479 phase 2 — the project's agent-card layout. Same SHAPE of validation as `companion`
       // above (unknown key refused by name, block dropped whole, errors accumulated); a DIFFERENT
       // severity, for the reason recorded on `settings.sidebar` in the type above.
@@ -2040,7 +2065,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
       }
     }
   }
