@@ -286,6 +286,29 @@ describe("persisted state — always writes schemaVersion 2", () => {
     expect(overviewOpens).toBe(0);
   });
 
+  it("redirects studio-new task and pin routes into their document create modes", async () => {
+    const ws = fakeWorkspace();
+    const creates: string[] = [];
+    const deps = depsFor([target(ws)], {
+      taskDetail: {
+        getWorkspaces: () => [],
+        openDocument: () => {},
+        openCreateDocument: (wsHash) => { creates.push(`task:${wsHash}`); },
+      },
+      pinDetail: {
+        openDocument: () => {},
+        openCreateDocument: (wsHash) => { creates.push(`pin:${wsHash}`); },
+        openEditDocument: () => {},
+      },
+    });
+
+    await openCockpit(deps, { route: { kind: "studio-new", studio: "task", wsHash: ws.wsHash, returnRoute: null } });
+    await openCockpit(deps, { route: { kind: "studio-new", studio: "pin", wsHash: ws.wsHash, returnRoute: null } });
+
+    expect(creates).toEqual([`task:${ws.wsHash}`, `pin:${ws.wsHash}`]);
+    expect(__createdPanels[0].webview.html).not.toContain('"kind":"studio-new"');
+  });
+
   it("a freshly created panel persists {schemaVersion:2, route} not the old bare section", async () => {
     const ws = fakeWorkspace();
     const deps = depsFor([target(ws)]);

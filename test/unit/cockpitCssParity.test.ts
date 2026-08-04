@@ -85,12 +85,6 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     expect(app).not.toContain("studio-agent-tailwind");
   });
 
-  // t-610705 (Phase D, D3) — same ordering hazard as Task Studio above, minus the Tailwind sheet
-  // (Pin has no Tailwind-family controls): rich-doc THEN the shared studio-frame sheet THEN its own
-  // sheet — matching Cockpit.ts's eager `styles: [...]` order exactly. Own co-load key
-  // ("studio-pin-richdoc") even though it resolves to the same rich-doc.css href as Task's
-  // "studio-task-richdoc" — a shared key called from two lazy blocks would fail the co-load-id
-  // parity check below (a plain array compare, not set-based).
   // t-32c872 — the SAME parity, one app over: the harness's Board route must link exactly what
   // `BoardPanel.ts` links, in the same order. This is not symmetry for its own sake — the Board's visual
   // evidence (per-column scrolling, no page scroll) is taken in this harness, and a harness that links a
@@ -163,11 +157,4 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     expect(readFileSync(COCKPIT_HOST, "utf8")).not.toContain("runtime: uri(");
   });
 
-  it("Pin Studio's lazy block requests rich-doc, then the shared studio-frame sheet, in that order", () => {
-    const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
-    const block = /PinStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);
-    expect(block, "cockpit/App.tsx: PinStudioApp lazy block not found — did it move or get renamed?").not.toBeNull();
-    const calls = [...block![1].matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]);
-    expect(calls).toEqual(["studio-pin-richdoc", "studio-frame-pin", "studio-pin"]);
-  });
 });

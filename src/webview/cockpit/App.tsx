@@ -5,10 +5,8 @@ import {
   type CockpitModel,
   type CockpitSectionId,
 } from "../../cockpit/model";
-import { parentRoute, isStudioRoute, routeKey } from "../../cockpit/route";
+import { parentRoute, routeKey } from "../../cockpit/route";
 import {
-  navigateReturnAction,
-  navigateStudioParentAction,
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
@@ -80,24 +78,6 @@ const HandoffApp = lazy(() =>
   import("../handoff/App").then((m) => {
     loadSectionStylesheet("handoff-mermaid");
     loadSectionStylesheet("handoff");
-    return { default: m.App };
-  }),
-);
-
-// D13 — command, terminal, runbook, schedule and agent render only in their document apps.
-// t-610705 (Phase D, D3) — Pin Studio needs the SAME entity-neutral rich-doc.css HREF as Task Studio
-// BEFORE studio-frame.css, matching the retired standalone panel's own styleFiles order (`rich-doc.css,
-// studio-frame.css, pin-studio.css`) — no Tailwind sheet of its own (unlike Task/Agent Studio: Pin's UI
-// has no KitFieldRow/KitSelect-family controls). Own co-load KEY ("studio-pin-richdoc", not a reused
-// "studio-task-richdoc") even though both resolve to the same file — same "one distinct key per client
-// call site" convention studio-frame's per-studio keys already use (cockpitCssParity.test.ts's client/
-// host co-load-id parity check is a plain array compare, not set-based — a shared key called from two
-// lazy blocks would appear twice on the client side but only once in the host's bootstrap map).
-const PinStudioApp = lazy(() =>
-  import("../pin-studio/App").then((m) => {
-    loadSectionStylesheet("studio-pin-richdoc");
-    loadSectionStylesheet("studio-frame-pin");
-    loadSectionStylesheet("studio-pin");
     return { default: m.App };
   }),
 );
@@ -219,26 +199,25 @@ export function App(p: CockpitAppProps) {
   // as an embedded section, even though their nav section ("fleet") isn't one itself (Fleet's own
   // plain list IS a native page and keeps its checkedAt footer — only its subroutes opt out).
   const isFleetSubroute = activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
-  const isStudioSubroute = !!activeRoute && isStudioRoute(activeRoute);
   // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
   // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
   const isProjectHandoff = activeRoute?.kind === "project-handoff";
   // SDD 485 D4 — no `inbox-item` term: Control never commits that route any more (Cockpit.ts's
   // `navigate` redirects it into the Human Inbox app, which renders the item as its own subroute), so a
   // branch for it here would be a path nothing reaches — the same shape C4 left for `task-detail`.
-  const isEmbed = isFleetSubroute || isStudioSubroute || isProjectHandoff;
+  const isEmbed = isFleetSubroute || isProjectHandoff;
   // t-aa2780 — `isNavlessStudio` is gone with the tab strip: it existed ONLY to stop the Overview tab
-  // rendering as active while a nav-less route (Pin Studio, Project Handoff) was open. There is no tab
+  // rendering as active while a nav-less route (Project Handoff) was open. There is no tab
   // to light now, and `model.section` was deliberately never coerced (t-610705 Phase D, D3), so the
   // distinction it protected is no longer observable anywhere.
-  // t-fullpage-proto — every subroute (the 3 Fleet subroutes, all 7 studios) gets the
+  // t-fullpage-proto — every surviving subroute (the 3 Fleet subroutes and Handoff) gets the
   // SAME fullpage chrome: the section tab strip is replaced by a single minimal "← Back" row at the
   // very top, and the content area gets the vertical space the tab strip would have used. Each
   // branch below sets `breadcrumb` to the exact same back-link it already computed for its own
   // inline placement — this only changes WHERE it renders, not the navigation logic itself.
   // SDD 485 C4 — no `task-detail` term: Control never commits that route any more (Cockpit.ts's
   // `navigate` redirects it to the document app), so a branch for it here would be a path nothing reaches.
-  const isSubroute = isFleetSubroute || isStudioSubroute || isProjectHandoff;
+  const isSubroute = isFleetSubroute || isProjectHandoff;
   let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
@@ -292,70 +271,6 @@ export function App(p: CockpitAppProps) {
       <div class="ck-embed-host" data-testid="control-handoff">
         <Suspense fallback={<SectionFallback />}>
           <HandoffApp vm={p.handoffVm} dispatch={p.handoffDispatch} />
-        </Suspense>
-      </div>
-    );
-  } else if (activeRoute && isStudioRoute(activeRoute)) {
-    // t-610705 (Phase D, D0/D1a) — a studio route is its own full-bleed body (StudioFrame is its own
-    // chrome: title, dirty dot, Cancel/Save) — same "checked before the section branch" pattern as
-    // the Fleet subroutes above. D1b/D2/D3 add their own branch the same way (no generic
-    // dispatch-by-registry on the client — Preact's `lazy()` calls must stay static top-level calls
-    // for esbuild's code-split analysis). Every branch shares `key`/`routeKey`/`mountNonce`/
-    // `incoming`/`dispatch` wiring — only the component and its own studio-scoped stylesheet differ.
-    const parent = parentRoute(activeRoute);
-    // t-610705 (Phase D, D3) — pin is nav-less: its breadcrumb ALWAYS posts the parameterless
-    // "navigateReturn" action (the host is the sole authority on the destination — its own
-    // already-sanitized `currentRoute.returnRoute`, see Cockpit.ts's "navigateReturn" case; the
-    // client never sends a route object). `parent` (computed client-side via the SAME pure
-    // parentRoute() the host uses) only decides the button's LABEL here — a specific nav-tab name
-    // when returnRoute is a flat section, else the generic "Back" (returnRoute can also be
-    // task-detail/agent-activity/agent-probes/workspace-probes, none of which have their own fixed
-    // breadcrumb dispatch the way Task's task-detail parent does below).
-    // t-fullpage-proto — was a compact "← Parent" line under StudioFrame's OWN title (backLink
-    // prop); now lives in the top chrome instead, same as every other subroute's breadcrumb.
-    breadcrumb = activeRoute.studio === "pin" ? (
-      <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-studio-breadcrumb" onClick={() => p.onPost(navigateReturnAction(routeKey(activeRoute)))}>
-        {parent && parent.kind === "section" ? s[TAB_META[parent.section].navKey] : s.back}
-      </Button>
-      // t-610705 (Phase D, D2) — Task Studio's edit route is the one OTHER studio whose parent is
-      // NOT a flat section (route.ts's parentRoute special-cases studio-edit + studio:"task" to the
-      // task's own task-detail route).
-      // SDD 485 C4 — that parent is no longer a Control route that renders: it is the task's own editor
-      // tab. So the button posts `navigateStudioParent` and the HOST derives the destination from
-      // parentRoute — the same no-client-destination rule pin's `navigateReturn` follows, and the same
-      // reason: a queued click from a route the human already left must be dropped, not fired.
-    ) : parent && parent.kind === "section" ? (
-      <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-studio-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
-        {s[TAB_META[parent.section].navKey]}
-      </Button>
-    ) : parent && parent.kind === "task-detail" ? (
-      <Button
-        variant="default"
-        icon="arrow-left"
-        class="ck-top-breadcrumb-btn"
-        data-testid="control-studio-breadcrumb"
-        // t-c3c819 — task-detail is the correct parent for a REAL edit, but Task Studio's
-        // staged-create pattern opens a brand-new task straight into studio-edit with a
-        // pre-minted, still-unsaved id (mintTaskId()); m.studioPersisted === false means this
-        // is that case — task-detail(id) would 404 ("never found on disk"), so land on the
-        // Board itself instead, same as every other studio's flat-section parent.
-        onClick={() => (m.studioPersisted === false ? p.onSetSection("mission") : p.onPost(navigateStudioParentAction(routeKey(activeRoute))))}
-      >
-        {s.navMission}
-      </Button>
-    ) : null;
-    // t-610705 (Phase D, D0, round-3 major) — an explicit `key` forces Preact to fully UNMOUNT +
-    // remount on identity change instead of reusing the component instance with stale state visible
-    // under the new props for one render (the internal reset-effect alone left exactly that window —
-    // code review round 3 caught it).
-    const studioKey = `${routeKey(activeRoute)}:${m.studioMountNonce ?? ""}`;
-    const studioMountProps = { routeKey: routeKey(activeRoute), mountNonce: m.studioMountNonce ?? "", incoming: p.studioIncoming, dispatch: p.studioDispatch };
-    body = (
-      <div class="ck-embed-host" data-testid="control-studio">
-        <Suspense fallback={<SectionFallback />}>
-          {activeRoute.studio === "pin" ? (
-            <PinStudioApp key={studioKey} {...studioMountProps} />
-          ) : null}
         </Suspense>
       </div>
     );

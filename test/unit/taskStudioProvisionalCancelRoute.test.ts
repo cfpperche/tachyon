@@ -64,17 +64,10 @@ describe("Task Studio provisional-new Cancel/Back stays on Board (t-c3c819)", ()
     expect(src.slice(hookAt, hookAt + 300)).toContain("navigate(studioExitTarget(currentRoute, persisted));");
   });
 
-  it("cockpit/App.tsx: the task-detail breadcrumb falls back to setSection(\"mission\") when studioPersisted is false", () => {
+  it("cockpit/App.tsx: no retired Task Studio breadcrumb can reintroduce the dead detail route", () => {
     const src = readFileSync("src/webview/cockpit/App.tsx", "utf8");
-    const breadcrumbAt = src.indexOf('parent && parent.kind === "task-detail"');
-    expect(breadcrumbAt).toBeGreaterThan(-1);
-    const breadcrumbRegion = src.slice(breadcrumbAt, breadcrumbAt + 1400);
-    expect(breadcrumbRegion).toMatch(/m\.studioPersisted === false/);
-    expect(breadcrumbRegion).toContain('p.onSetSection("mission")');
-    // SDD 485 C4 — the persisted branch no longer navigates Control: the task detail is its own tab, so
-    // the button asks the HOST for this studio route's parent (`navigateStudioParent`) and the host's
-    // `navigate` turns that task-detail parent into "open the task's tab, land Control on the Board".
-    // The `studioPersisted === false` fallback above is untouched, which is what this test is for.
-    expect(breadcrumbRegion).toContain("navigateStudioParentAction(routeKey(activeRoute))");
+    expect(src).not.toContain('parent && parent.kind === "task-detail"');
+    expect(src).not.toContain("navigateStudioParentAction");
+    expect(src).not.toContain("control-studio-breadcrumb");
   });
 });

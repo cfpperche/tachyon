@@ -53,9 +53,6 @@ describe("preview route table", () => {
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
-      "/dist/webview/rich-doc.css",
-      "/dist/webview/studio-frame.css",
-      "/dist/webview/pin-studio.css",
       // t-967b5b — `control-typography.css` dropped out of Control's list when the Settings migration
       // took its last `ck-mono` consumer. Three files spell this list out: the host, the preview route
       // table, and this expectation. `cockpitCssParity` ties the first two together, so a change caught
@@ -96,8 +93,6 @@ describe("preview route table", () => {
       "studio-agent-forget-plan-blocked",
       "studio-command",
       "studio-command-edit",
-      "studio-pin-edit",
-      "studio-pin-new",
       "studio-runbook",
       "studio-runbook-edit",
       "studio-schedule",
@@ -155,17 +150,6 @@ describe("preview route table", () => {
     const taskMsgs = r.makeMessage(r.fixtures["studio-task-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
     expect(taskMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
     expect(taskMsgs[2]?.studioProtocolVersion).toBe(1);
-    // t-610705 (Phase D, D3) — pin's fixtures module reuses "dense-edit"/"new" via the SAME byStudio
-    // lookup. Nav section is null (nav-less — route.ts), so the fixture's own `section` is "overview"
-    // (the same fallback Cockpit.ts's real host uses) — "overview" rides no embed push of its own, so
-    // only "load" rides alongside init+model, same shape as the Fleet-parented studios (command et
-    // al.). Since SDD 485 C5 no section rides a second push at all, so every studio is this shape.
-    const pinMsgs = r.makeMessage(r.fixtures["studio-pin-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
-    expect(pinMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
-    expect(pinMsgs[2]?.studioProtocolVersion).toBe(1);
-    const pinNewMsgs = r.makeMessage(r.fixtures["studio-pin-new"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
-    expect(pinNewMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
-    expect(pinNewMsgs[2]?.studioProtocolVersion).toBe(1);
   });
 
   it("a route that links the page-frame sheet renders a REAL page frame (t-32c872)", () => {

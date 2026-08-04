@@ -146,9 +146,6 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
-      "/dist/webview/rich-doc.css",
-      "/dist/webview/studio-frame.css",
-      "/dist/webview/pin-studio.css",
       // t-967b5b — `control-typography.css` left this list with the same edit that removed it from
       // `Cockpit.ts`: Control's last `ck-mono` use went out with the Settings migration (D10), and a
       // host linking a sheet it does not render is bytes for nobody. `cockpitCssParity` is what made
@@ -252,10 +249,6 @@ export const ROUTES: Record<string, Route> = {
           // "task-studio" preview route below — reused as-is here rather than renamed, same "dense-edit"
           // key every other studio's fixtures module provides.
           task: { fixtures: taskStudioFixtures as Record<string, Fixture>, makeMessage: (vm) => taskStudioMakeMessage(vm as never) },
-          // t-610705 (Phase D, D3) — same "-shell" naming exception as task above (pin-studio/, not
-          // pin-studio-shell/) — reused as-is from the now-retired standalone "pin-studio" preview
-          // route below.
-          pin: { fixtures: pinStudioFixtures as Record<string, Fixture>, makeMessage: (vm) => pinStudioMakeMessage(vm as never) },
         };
         const entry = byStudio[(activeRoute as { studio: string }).studio];
         const studio = entry?.fixtures[key]?.vm;
@@ -317,10 +310,6 @@ export const ROUTES: Record<string, Route> = {
   // Detail panel; Task Detail is a cockpit-only subroute now — use
   // ?view=cockpit&fixture=task-detail (same App.tsx, same fixture VM, via the cockpit route's
   // activeRoute injection above).
-  // t-610705 (SDD 410 Phase D, D3) — the standalone "pin-studio" route previewed the retired
-  // PinStudioPanel.ts webview; Pin Studio is a cockpit-only studio route now — use
-  // ?view=cockpit&fixture=studio-pin-edit (same App.tsx, same fixture VMs, via the cockpit route's
-  // byStudio fixture injection above).
   // spec 350 T4 — Pipeline Studio (Fake 1): the studio-shell's Phase 1 proof surface. Dev-flag-hidden (no
   // command contribution) — reachable only through this route and its own host-side tests.
   "pipeline-studio": {
