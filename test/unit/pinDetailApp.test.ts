@@ -74,3 +74,49 @@ describe("SDD 485 D14 — one Pins document app", () => {
     expect(__createdPanels).toHaveLength(2);
   });
 });
+
+describe("Add pin lands in edit mode without racing the client (t-883386)", () => {
+  /**
+   * The defect: `openCreate` posted the edit-mode message on the line after `manager.open()`, so it
+   * fired before the webview bundle had mounted and reached no listener. The client stayed in read
+   * mode over a pin with nothing on disk — the tab rendered blank. The maintainer found it by
+   * clicking Add pin in 0.56.169.
+   *
+   * The mode is derived from `provisional` now and announced on the client's own READY, so these
+   * assert the ORDER as much as the value: nothing that matters may be posted before READY arrives.
+   */
+  const modesPostedTo = (panel: typeof __createdPanels[number]) =>
+    panel.webview.posted.filter((m) => (m as { type?: string }).type === "pinDocumentMode");
+
+  it("posts no mode before the client says READY — the post that used to be lost", () => {
+    const manager = make();
+    manager.openCreate("ws-a", "p-race01");
+
+    expect(
+      modesPostedTo(__createdPanels[0]),
+      "a mode posted before READY reaches no listener; that is the whole defect",
+    ).toEqual([]);
+  });
+
+  it("announces EDIT once the client is listening, so a brand-new pin shows its form", async () => {
+    const manager = make();
+    manager.openCreate("ws-a", "p-race02");
+    const panel = __createdPanels[0];
+
+    panel.webview.__receive({ type: "ready" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(modesPostedTo(panel).at(-1)).toMatchObject({ mode: "edit" });
+  });
+
+  it("announces READ for a pin that exists — the mode follows the entity, not the door", async () => {
+    const manager = make();
+    manager.open("ws-a", "p-existing");
+    const panel = __createdPanels[0];
+
+    panel.webview.__receive({ type: "ready" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(modesPostedTo(panel).at(-1)).toMatchObject({ mode: "read" });
+  });
+});

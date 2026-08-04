@@ -34,11 +34,22 @@ export class PinDetailPanelManager {
   ) { this.manager = new SectionPanelManager(extensionUri, this.configFor(app), scope); }
 
   open(project: string, pinId: string): void { this.manager.open({ project, identity: pinId }); }
+  /**
+   * t-883386 — a brand-new pin opens straight into edit mode, and the mode is derived rather than
+   * posted.
+   *
+   * The version this replaces called `manager.post(…, "edit")` on the line after `manager.open()`.
+   * That is a race the create case always LOST: `open` creates the panel, and the post fires before
+   * the webview bundle has loaded and mounted, so the message reached no listener. The client then
+   * sat in its default read mode over a pin with nothing on disk to read — a blank tab.
+   *
+   * `provisional` is the same fact expressed where it cannot be lost: `bind` reads it to choose the
+   * policy's opening mode, and `replay` announces that mode when the client's READY actually arrives.
+   */
   openCreate(project: string, pinId: string): void {
     const target = { project, identity: pinId };
     this.provisional.add(this.manager.keyFor(target));
     this.manager.open(target);
-    this.manager.post(target, pinDocumentModeMessage("edit"));
   }
   openEdit(project: string, pinId: string): void {
     const target = { project, identity: pinId };
@@ -70,7 +81,9 @@ export class PinDetailPanelManager {
         let persisted = !this.provisional.has(session.key);
         const target = studioTarget(session.target);
         const studio = target ? new PinStudioAdapter(target) : undefined;
-        const policy = new PinDocumentEditPolicy<PinPatch>("read", this.drafts.get(session.key));
+        // t-883386 — a provisional pin has no read model, so read mode would render nothing. The
+        // opening mode is therefore the same fact as `persisted`, not a message that races the mount.
+        const policy = new PinDocumentEditPolicy<PinPatch>(persisted ? "read" : "edit", this.drafts.get(session.key));
         const postError = (error: unknown) => {
           const mapped = mapUnknownError("transport", error);
           session.post(envelope({ type: "error", code: mapped.code, message: mapped.message, source: mapped.source, blocking: mapped.blocking }));
@@ -156,8 +169,12 @@ export class PinDetailPanelManager {
           handlePinStudioDomainMessage(target, { entityId: pinId, post: (value) => session.post(value) }, msg);
         };
         return {
-          replay: () => { void sendRead(); if (policy.mode === "edit" || policy.draft.dirty) void sendEdit(); },
-          resync: () => { void sendRead(); if (policy.mode === "edit" || policy.draft.dirty) void sendEdit(); },
+          // t-883386 — the mode is ANNOUNCED here, which is the one moment the client is provably
+          // listening: `refreshKindFor` maps the client's own READY to this replay. A create opens
+          // with `policy.mode === "edit"` and the client learns it from the same message that a
+          // reveal-after-hide uses, so there is no separate path for the case that used to be blank.
+          replay: () => { session.post(pinDocumentModeMessage(policy.mode)); void sendRead(); if (policy.mode === "edit" || policy.draft.dirty) void sendEdit(); },
+          resync: () => { session.post(pinDocumentModeMessage(policy.mode)); void sendRead(); if (policy.mode === "edit" || policy.draft.dirty) void sendEdit(); },
           onMessage: (message) => { void onMessage(message); },
           dispose: () => {
             const draft = policy.close();

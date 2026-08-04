@@ -386,7 +386,10 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         notify(vscode.l10n.t("Pin ID copied: {0}", id));
         return;
       }
-      case "pin:edit": return exec("tachyon.editPinItem", { kind: "pin", pinId: id });
+      // t-456ce0 — `pin:edit` is gone with the sidebar row's Edit entry: the pin document owns
+      // editing now, so the webview no longer sends this action and the arm had no remaining caller.
+      // `tachyon.editPinItem` itself is untouched — it is a CONTRIBUTED command (package.json) with
+      // its own menu entry, so removing this arm retires one door, not the capability.
       case "pin:delete": return this.mutateSidebar(ws, { action: "pin.delete", id });
       case "schedule:pause": return this.mutateSidebar(ws, { action: "schedule.toggle-pause", id });
       case "schedule:edit": return exec("tachyon.editScheduleStudioItem", { kind: "schedule", scheduleName: id });

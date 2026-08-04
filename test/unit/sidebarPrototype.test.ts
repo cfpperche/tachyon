@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -610,5 +610,31 @@ describe("SidebarPrototypeProvider", () => {
         { type: "bulletList", content: [{ type: "listItem", content: [{ type: "paragraph", content: [{ type: "text", text: "Item" }] }] }] },
       ],
     })).toBe("Title\n\nBody\n\n- Item");
+  });
+});
+
+describe("the pin row keeps one control, and Edit is not among its items (t-456ce0)", () => {
+  const app = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+  const row = app.slice(app.indexOf('{p.id && <div class="actions">'), app.indexOf('{p.id && <div class="actions">') + 900);
+
+  it("offers Preview, Copy and Delete from the overflow menu", () => {
+    for (const label of ["Preview", "Copy", "Delete"]) {
+      expect(row, `${label} left the pin row entirely`).toContain(`label: "${label}"`);
+    }
+  });
+
+  it("puts nothing beside the menu — no inline action survives", () => {
+    // With Edit gone, two icons plus a menu holding one item would read as three levels of
+    // importance where there is one. The assertion is the SHAPE, not a count of buttons.
+    expect(row, "an inline <Act> is back on the pin row").not.toContain("<Act ");
+  });
+
+  it("removes Edit from the row and from the bridge, without touching the command", () => {
+    expect(row).not.toContain('label: "Edit"');
+    const bridge = readFileSync("src/webview/SidebarPrototype.ts", "utf8");
+    expect(bridge, "the bridge still routes a pin:edit nobody sends").not.toContain('case "pin:edit"');
+    // The capability survives as a contributed command with its own menu entry — retiring a door is
+    // not retiring the ability, and conflating the two is how a "cleanup" removes a feature.
+    expect(readFileSync("package.json", "utf8")).toContain("tachyon.editPinItem");
   });
 });
