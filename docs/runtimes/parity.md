@@ -654,7 +654,15 @@ no path that answers on its own.
    on more evidence — see research §M4. The same co-bind already ships for CANONICAL Grok, where it
    has the same cost unmitigated (filed separately).
 
-Remedies for parented Grok ad-hoc today: `worktree: true`, gated delegation into a registered Tachyon worktree, or harness / non-parented top-level spawn. Code changes that reclassify isolation or bind `HOME` for ad-hoc belong in follow-up tasks — not silent gate weakening.
+Remedies for parented Grok ad-hoc today: `worktree: true`, `cwd` set to a registered Tachyon worktree, or harness / non-parented top-level spawn. Code changes that reclassify isolation or bind `HOME` for ad-hoc belong in follow-up tasks — not silent gate weakening.
+
+<!-- t-a9559d — this line used to offer "gated delegation into a registered Tachyon worktree" as the
+     second remedy. That operation was retired (`loadConfig.ts` says so when it ignores
+     `settings.verify.behavior`), so the matrix was pointing a reader at a door that no longer exists —
+     in the very document that is supposed to be the honest channel about what each runtime can do. The
+     surviving remedy is `cwd` at a registered worktree, which is what the refusal in
+     `runtimeProfile.ts` now says too. -->
+
 
 #### 3.6.1 Which runtimes the ad-hoc door admits, and on what evidence
 
