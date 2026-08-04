@@ -136,7 +136,7 @@ function envValue(argv: string[], varName: string): string | undefined {
 
 skipTestsWithoutOptionalRuntimeAuth({
   claude: [
-    "restart (a session-recreation event, same env-injection path as resume) mints a FRESH token — the old one is revoked, the new one is in the recreated session's argv",
+    "restart (a session-recreation event, same env-injection path as resume) mints a FRESH token — prior token stays valid during supersede grace",
     "stale-pane case: a tmux session surviving an extension-host reload keeps its PRE-reload token valid (does not silently strand)",
   ],
 });
