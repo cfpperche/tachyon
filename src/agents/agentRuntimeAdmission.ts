@@ -1,5 +1,22 @@
 import type { ResumeRuntime } from "../resume/adapters.js";
+import { runtimeOf } from "../resume/adapters.js";
 import { parseLaunchCommand } from "../runtime/launchPreflight.js";
+import { runtimePromptAdapter } from "./runtimePromptAdapters.js";
+
+/**
+ * Authoring-catalog basenames with no resume/brief/Bridge machinery. Kept as a closed set so this
+ * module does not import `loadConfig` (node:fs) — that import dragged Node into browser bundles.
+ * `test/unit/agentRuntimeAdmission.test.ts` pins this set against `KNOWN_AI_CLIS` minus supported
+ * and minus anything with a resume or brief channel, so a catalog change cannot drift unnoticed.
+ */
+export const AUTHORING_CATALOG_WITHOUT_ADAPTERS: ReadonlySet<string> = new Set([
+  "aider",
+  "goose",
+  "amp",
+  "cursor-agent",
+  "copilot",
+  "verboo",
+]);
 
 /**
  * t-7ff13d (Agent Instance cut, etapa 4) — ONE admission path for Agent Instance, keyed on runtime
@@ -33,7 +50,9 @@ import { parseLaunchCommand } from "../runtime/launchPreflight.js";
  *
  * Every entry has a resume adapter in `src/resume/adapters.ts` — measured support that lets an
  * instance survive restart/resume as the same entity. `antigravity` and `continue` have resume
- * adapters but stay absent: they are not AI CLIs on any authoring surface.
+ * adapters (and Antigravity also a brief channel) but stay absent by admission decision: the Agent
+ * door does not operate them; they run as Terminals via `spawn_terminal`. A refusal for those
+ * binaries must diagnose the measured gaps, not claim all three mechanisms are absent (`t-5d8e96`).
  *
  * `test/unit/agentRuntimeAdmission.test.ts` re-derives resume-adapter and brief-channel claims from
  * the same sources this file cites, so the declaration cannot drift from the code it describes.
@@ -155,6 +174,78 @@ function supportedList(): string {
   return SUPPORTED_AGENT_RUNTIME_NAMES.join(", ");
 }
 
+/** Shared exit every refusal ends on — forbidding without a door is the expensive form of this family. */
+function useTerminalExit(): string {
+  return (
+    `Supported: ${supportedList()}. Use ${TERMINAL_OPERATION} for a generic process — a shell, a`
+    + ` server, a build — which carries no agent fields.`
+  );
+}
+
+/**
+ * t-5d8e96 — diagnose the measured seams for a binary the Agent door refuses.
+ *
+ * Derived from the same sources the parity matrix cites (`runtimeOf` / resume adapters, prompt
+ * adapters for brief). Never claim absence of a seam that exists. Bridge is absent for every
+ * non-admitted binary today (only the supported full set wires it); that is stated only when it is
+ * the honest shortfall, not as a universal composite.
+ *
+ * Buckets:
+ * 1. Secondary with partial machinery (resume and/or brief) — Terminal by admission, not total void
+ * 2. Authoring-catalog chip with no adapters — quick-add is not operation evidence
+ * 3. Generic process — not an LLM runtime Tachyon operates
+ */
+function refuseUnsupportedBinary(binary: string): string {
+  const hasResume = runtimeOf(binary) !== null;
+  // Brief = a compose channel the opening-prompt seam can actually deliver (matches instructionsDeliverable).
+  const hasBrief = runtimePromptAdapter(binary)?.compose !== undefined;
+  // Non-admitted binaries never reach withRuntimeBridge family branches; Bridge is absent for all of them.
+  const hasBridge = false;
+
+  if (hasResume || hasBrief) {
+    const measured: string[] = [];
+    if (hasResume) measured.push("resume");
+    if (hasBrief) measured.push("brief");
+    const measuredText =
+      measured.length === 1
+        ? measured[0]
+        : `${measured[0]} and ${measured[1]}`;
+
+    // Resume is never the sole missing piece here: if we lack resume and brief we fall through to
+    // other buckets. Partial secondaries always lack Bridge today; brief may or may not be present.
+    const missingParts: string[] = [];
+    if (!hasBrief) missingParts.push("no brief channel");
+    if (!hasBridge) missingParts.push("no Bridge path");
+    const missingText = missingParts.join(" and ");
+
+    // Consequence is specific: no Bridge ⇒ cannot answer; no brief + no Bridge ⇒ neither direction.
+    const consequence =
+      !hasBrief && !hasBridge
+        ? "so a delegated child would receive neither a full opening contract nor a way to report on it"
+        : "so a delegated child could not call notify_agent or the task tools";
+
+    return (
+      `'${binary}' is not an admitted Agent runtime — Tachyon measures ${measuredText} for it, but has`
+      + ` ${missingText}, ${consequence}. The Agent door does not operate it.`
+      + ` ${useTerminalExit()}`
+    );
+  }
+
+  if (AUTHORING_CATALOG_WITHOUT_ADAPTERS.has(binary)) {
+    return (
+      `'${binary}' is an authoring-catalog CLI with no measured resume, brief or Bridge path — a`
+      + ` quick-add chip is not evidence Tachyon can operate it as an agent.`
+      + ` ${useTerminalExit()}`
+    );
+  }
+
+  return (
+    `'${binary}' is not a supported LLM runtime — Tachyon has no measured resume, brief or Bridge path`
+    + ` for it, and an agent it cannot operate is a process with a task it can never report on.`
+    + ` ${useTerminalExit()}`
+  );
+}
+
 /**
  * Decide whether a command may become an Agent Instance.
  *
@@ -187,12 +278,5 @@ export function admitAgentRuntimeCommand(cmd: string): AgentRuntimeAdmission {
   const binary = parsed.binary.split(/[\\/]/).pop() ?? parsed.binary;
   if (isSupportedAgentRuntime(binary)) return { ok: true, runtime: binary };
 
-  return {
-    ok: false,
-    reason:
-      `'${binary}' is not a supported LLM runtime, so it cannot be spawned as an agent — Tachyon has no measured`
-      + ` resume, brief or Bridge path for it, and an agent it cannot operate is a process with a task it can never`
-      + ` report on. Supported: ${supportedList()}. Use ${TERMINAL_OPERATION} for a generic process — a shell, a`
-      + ` server, a build — which carries no agent fields.`,
-  };
+  return { ok: false, reason: refuseUnsupportedBinary(binary) };
 }

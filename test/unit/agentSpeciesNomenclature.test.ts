@@ -201,7 +201,6 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
       files: [
         "scripts/dogfood/adhoc-agent-boundary.ts",
         "scripts/dogfood/run.mjs",
-        "test/unit/agentRuntimeAdmission.test.ts",
         "test/unit/gatedCompletionMonitor.test.ts",
         "test/unit/loadPipeline.test.ts",
         "test/unit/runbooks.test.ts",
