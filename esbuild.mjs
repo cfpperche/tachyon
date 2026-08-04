@@ -305,7 +305,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["cockpit", "section-app-fixture", "task-detail", "mission-control", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "engine", "worktrees", "fleet", "execution-graph", "settings", "overview"];
+const WEBVIEW_APP_VIEWS = ["cockpit", "section-app-fixture", "task-detail", "pin-preview", "mission-control", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "engine", "worktrees", "fleet", "execution-graph", "settings", "overview"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `src/webview/${view}/main.tsx`])),
@@ -317,13 +317,6 @@ const webviewApps = {
   plugins: [...(sidebar.plugins ?? []), webviewChunkHygienePlugin],
 };
 delete webviewApps.outfile;
-
-// spec 279 — the Preact Pin Preview view bundle (converted from inline HTML; read-only, never imports vscode).
-const pinPreview = {
-  ...sidebar,
-  entryPoints: ["src/webview/pin-preview/main.tsx"],
-  outfile: "dist/webview/pin-preview.js",
-};
 
 // t-610355 — layer-2 first-party agent pane (xterm.js viewport; never imports vscode)
 const agentPane = {
@@ -551,7 +544,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, webviewApps, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

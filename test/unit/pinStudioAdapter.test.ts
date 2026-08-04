@@ -91,7 +91,11 @@ describe("PinStudioAdapter — save", () => {
     const ws = fakeWorkspace();
     const pin = ws.pinStore.create("old", "human", { tags: ["bug"] });
     const adapter = new PinStudioAdapter(legacyPinStudioTarget(ws));
-    const result = await adapter.save(pin.id, baseFields({ title: "old", tags: ["done"] }));
+    const result = await adapter.save(pin.id, baseFields({
+      title: "old",
+      tags: ["done"],
+      expectUpdatedAt: pin.updatedAt ?? pin.createdAt,
+    }));
     expect(result.status).toBe("ok");
     expect(ws.pinStore.list()[0]).toMatchObject({ text: "old", tags: ["done"] });
   });
@@ -106,10 +110,10 @@ describe("PinStudioAdapter — validate/concurrency/dirty hooks", () => {
     expect(adapter.validate(baseFields({ title: "ok" })).blocking).toHaveLength(0);
   });
 
-  it("declares none concurrency (unlike Task Studio's cas) and allows patch restore", () => {
+  it("inherits Task Studio's CAS concurrency and allows patch restore", () => {
     const ws = fakeWorkspace();
     const adapter = new PinStudioAdapter(legacyPinStudioTarget(ws));
-    expect(adapter.concurrency).toEqual({ kind: "none" });
+    expect(adapter.concurrency).toEqual({ kind: "cas" });
     expect(adapter.allowPatchRestore).toBe(true);
   });
 

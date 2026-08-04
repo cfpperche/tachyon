@@ -11,6 +11,7 @@ import { isEmptyPinDoc } from "./pinStudioModel.js";
 
 export type PinStudioSaveServiceResult =
   | { status: "ok"; pinId: string }
+  | { status: "conflict"; code: "CONFLICT"; message: string }
   | { status: "error"; code: "SAVE_FAILED"; message: string };
 
 export interface PinStudioAttachmentServiceResult {
@@ -26,6 +27,13 @@ export function savePinStudio(
   try {
     const title = patch.title.trim();
     const rich = !isEmptyPinDoc(patch.doc) || patch.attachments.length > 0;
+    if (pinId) {
+      const current = pinStore.readDetail(pinId).summary;
+      const revision = current.updatedAt ?? current.createdAt;
+      if (patch.expectUpdatedAt !== revision) {
+        return { status: "conflict", code: "CONFLICT", message: "Pin changed since this draft was opened. Reload before saving." };
+      }
+    }
     const pin = pinId
       ? rich
         ? pinStore.saveDetail(pinId, { text: title, tags: patch.tags, doc: patch.doc, attachments: patch.attachments })

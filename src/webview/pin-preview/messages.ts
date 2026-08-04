@@ -11,6 +11,11 @@ import type { PinPreviewVM } from "../../sidebar/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
+export type PinDocumentMode = "read" | "edit";
+export const PIN_DOCUMENT_MODE = "pinDocumentMode" as const;
+export const pinDocumentModeMessage = (mode: PinDocumentMode) => ({ type: PIN_DOCUMENT_MODE, mode });
+export const setPinDocumentModeAction = (mode: PinDocumentMode) => ({ type: "setPinDocumentMode" as const, mode });
+
 export const PIN_PREVIEW = "pinPreview" as const;
 export interface PinPreviewMessage {
   type: typeof PIN_PREVIEW;
