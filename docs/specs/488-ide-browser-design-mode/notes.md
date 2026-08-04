@@ -47,7 +47,25 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - Branch `tachyon/grok` prepared for main merge **review** (no auto-merge).
 - Maintainer commissioned **architecture adversarial review** (not security): brief
   `adversarial-review-architecture-brief.md` → dispatch to **claude** + **codex**.
-- Deliverables expected: `review-architecture-claude.md`, `review-architecture-codex.md`.
+- Deliverables: `review-architecture-claude.md`, `review-architecture-codex.md`.
+
+## Board tasks (inbox, 2026-08-04)
+
+Registered after architecture reviews (author: human; deps → umbrella):
+
+| id | title |
+|---|---|
+| `t-d49ef0` | **Umbrella** — SDD 488 Design Mode merge review follow-ups (architecture) |
+| `t-4d2892` | honest architecture memo — three paths + Companion claim |
+| `t-348c9a` | inject size budget + Design Mode draft-clobber check |
+| `t-7aef5a` | disambiguate `ide_browser_*` vs `user_browser_*` tool descriptions |
+| `t-83723d` | move dogfoodBootstrap out of production shell path |
+| `t-08f08e` | retire or isolate ide-browser-proto stream prototype |
+| `t-64edaf` | hybrid D step 1 — chat/card to Preact webview |
+| `t-47503a` | split IdeBrowserBridgeManager + type engine↔host protocol |
+| `t-3ef9ea` | thin shell — engine DesignModeService for turns/chat |
+
+Triage intentionally left to human (inbox, no priority/assignee).
 
 ## Prototype inventory (as of 2026-08-04, branch `tachyon/grok`)
 
