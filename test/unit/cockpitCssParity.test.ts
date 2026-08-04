@@ -77,12 +77,10 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
   // deep-link, whose initial <link> tags come from Cockpit.ts's own array and are unaffected). Only
   // Agent Studio has this shape today (the only studio needing a Tailwind co-load); this guards that
   // specific ordering rather than a generic property, since it's the concrete bug that shipped once.
-  it("Agent Studio's lazy block requests its Tailwind sheet before the shared studio-frame sheet", () => {
+  it("Control has no Agent Studio renderer or stylesheet co-load after D13", () => {
     const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
-    const block = /AgentStudioApp = lazy\(([\s\S]*?)return \{ default: m\.App \};/.exec(app);
-    expect(block, "cockpit/App.tsx: AgentStudioApp lazy block not found — did it move or get renamed?").not.toBeNull();
-    const calls = [...block![1].matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]);
-    expect(calls).toEqual(["studio-agent-tailwind", "studio-frame-agent", "studio-agent"]);
+    expect(app).not.toContain("AgentStudioApp");
+    expect(app).not.toContain("studio-agent-tailwind");
   });
 
   // t-610705 (Phase D, D3) — same ordering hazard as Task Studio above, minus the Tailwind sheet

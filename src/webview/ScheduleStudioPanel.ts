@@ -1,15 +1,38 @@
+import type * as vscode from "vscode";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import type { StudioPanelState } from "./shared/studio/StudioPanelManagerBase.js";
 import type { ScheduleStudioPatch } from "./schedule-studio-shell/domain.js";
-
+import { SingleModeStudioPanelManager } from "./shared/studio/SingleModeStudioPanelManager.js";
+import { STUDIO_REGISTRY } from "../cockpit/studioRegistry.js";
+import { webviewApp } from "./webviewApps.js";
 export const SCHEDULE_STUDIO_SHELL_VIEW_TYPE = "tachyonScheduleStudioShell";
-
-/**
- * t-610705 (SDD 410 Phase D, D1a) — the standalone Schedule Studio panel was retired: it's a Control
- * route now (studio-new/studio-edit, studio:"schedule" — studios-routes-design.md). src/webview/
- * schedule-studio-shell/App.tsx stays, lazy-imported by cockpit/App.tsx. The trusted serializer for
- * the legacy "tachyonScheduleStudioShell" viewType stays registered in extension.ts: a revived
- * pre-410 panel disposes itself and redirects into Control → the mapped studio route. The old
- * `refreshReferenceData()` fan-out (external tachyon.yml command/agent changes) is now
- * `refreshCockpitStudioReferenceData()` (Cockpit.ts) → `refreshStudioReferenceData` (studioHost.ts).
- */
 export type ScheduleStudioPanelState = StudioPanelState<ScheduleStudioPatch>;
+export class ScheduleStudioPanelManager extends SingleModeStudioPanelManager {
+  constructor(
+    uri: vscode.Uri,
+    workspaces: () => WorkspaceStudioTarget[],
+    onChanged: () => void,
+    scope?: ControlWorkspaceScope,
+  ) {
+    const row = STUDIO_REGISTRY.schedule;
+    super(
+      uri,
+      {
+        app: webviewApp("schedule-studio-shell"),
+        styleFiles: [
+          "codicon.css",
+          "design-system.css",
+          "vscode-theme.css",
+          "studio-frame.css",
+          "schedule-studio-shell.css",
+        ],
+        iconName: "checklist",
+        getWorkspaces: workspaces,
+        makeAdapter: row.makeAdapter,
+        onChanged,
+      },
+      scope,
+    );
+  }
+}

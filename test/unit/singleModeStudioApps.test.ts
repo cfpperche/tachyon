@@ -1,0 +1,72 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { sectionPanelKey } from "../../src/webview/shared/SectionPanelManager.js";
+import { webviewApp } from "../../src/webview/webviewApps.js";
+
+const studios = [
+  "command",
+  "terminal",
+  "runbook",
+  "schedule",
+  "agent",
+] as const;
+
+describe("SDD 485 D13 — editing-only studio document apps", () => {
+  it("declares all five as documents and keys reopening by entity identity", () => {
+    for (const studio of studios) {
+      const app = webviewApp(`${studio}-studio-shell`);
+      expect(app.host).toBe("section");
+      if (app.host !== "section") throw new Error(`${studio} is not a section app`);
+      expect(app.cardinality).toBe("document");
+      const target = { project: "ws-a", identity: "entity-a" };
+      expect(sectionPanelKey(app.viewId, app.cardinality, target)).toBe(
+        sectionPanelKey(app.viewId, app.cardinality, target),
+      );
+      expect(sectionPanelKey(app.viewId, app.cardinality, target)).not.toBe(
+        sectionPanelKey(app.viewId, app.cardinality, {
+          project: "ws-a",
+          identity: "entity-b",
+        }),
+      );
+    }
+  });
+
+  it("has one standalone entry per studio and no renderer residue in Control", () => {
+    const cockpit = readFileSync("src/webview/cockpit/App.tsx", "utf8");
+    for (const studio of studios) {
+      expect(
+        readFileSync(`src/webview/${studio}-studio-shell/main.tsx`, "utf8"),
+      ).toContain("mountSingleModeStudio(App)");
+      expect(cockpit).not.toContain(
+        `${studio[0].toUpperCase()}${studio.slice(1)}StudioApp`,
+      );
+      expect(cockpit).not.toContain(`../${studio}-studio-shell/App`);
+    }
+  });
+
+  it("reuses D12's pending-edit close policy and never introduces a reading mode", () => {
+    const policy = readFileSync(
+      "src/webview/shared/studio/singleModeEditPolicy.ts",
+      "utf8",
+    );
+    const host = readFileSync(
+      "src/webview/shared/studio/SingleModeStudioPanelManager.ts",
+      "utf8",
+    );
+    expect(policy).toContain(
+      "TaskDocumentEditPolicy as SingleModeStudioEditPolicy",
+    );
+    expect(host).toMatch(/new SingleModeStudioEditPolicy<unknown>\(\s*"edit"/);
+    expect(host).not.toContain('switchMode("read")');
+  });
+
+  it("keeps every studio panel source line at or below 200 characters", () => {
+    for (const studio of studios) {
+      const name = `${studio[0].toUpperCase()}${studio.slice(1)}StudioPanel.ts`;
+      const long = readFileSync(`src/webview/${name}`, "utf8")
+        .split("\n")
+        .filter((line) => line.length > 200);
+      expect(long, name).toEqual([]);
+    }
+  });
+});

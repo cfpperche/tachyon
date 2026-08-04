@@ -1509,3 +1509,9 @@ green after the lazy renderer and its CSS bootstrap keys were removed. Visual ev
 `task-detail.js` at browser viewport plus matching `?width=`: read/edit at 880 and 360 all reported matching
 `window.innerWidth` and `documentElement.scrollWidth` (880/880 and 360/360). Evidence lives under
 `.vqa/visual-qa/task-detail-{read,edit}-{880,360}.png` and is attached to the worktree evidence channel.
+## D13 visual QA — 2026-08-04
+
+Evidence: `.vqa/visual-qa/{command,terminal,runbook,schedule,agent}-studio-{880,360}.png`.
+Verdict: pass — the five existing editing forms keep their visual hierarchy without Control chrome;
+at 360px fields stack without horizontal overflow. Browser viewport and `?width=` were both set,
+and the harness reported `window.innerWidth = 880` / `360` for every surface.

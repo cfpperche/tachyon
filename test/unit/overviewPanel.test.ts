@@ -22,7 +22,7 @@ describe("SDD 485 D11 — standalone Overview dashboard", () => {
     const host = readFileSync("src/webview/Cockpit.ts", "utf8");
     expect(app).not.toContain('section === "overview"');
     expect(app).not.toContain("ck-overview-actions");
-    expect(host.match(/routes\.section\("overview"\)/g)).toHaveLength(22);
+    expect(host.match(/routes\.section\("overview"\)/g)).toHaveLength(23);
     expect(host).toMatch(/section === "overview"[\s\S]*openOverviewApp\?\.\(\);[\s\S]*routes\.section\("approvals"\)/);
   });
 

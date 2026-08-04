@@ -147,14 +147,8 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
-      "/dist/webview/agent-studio-shell.tailwind.css",
       "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
-      "/dist/webview/command-studio-shell.css",
-      "/dist/webview/terminal-studio-shell.css",
-      "/dist/webview/runbook-studio-shell.css",
-      "/dist/webview/schedule-studio-shell.css",
-      "/dist/webview/agent-studio-shell.css",
       "/dist/webview/pin-studio.css",
       // t-967b5b — `control-typography.css` left this list with the same edit that removed it from
       // `Cockpit.ts`: Control's last `ck-mono` use went out with the Settings migration (D10), and a
@@ -345,6 +339,48 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 720, h: 980 },
     fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
+  },
+  // SDD 485 D13 — the five real studio documents are standalone routes again. The component and
+  // fixture payload are unchanged; only the host moved out of Control.
+  "agent-studio-shell": {
+    bundle: "/dist/webview/agent-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/agent-studio-shell.tailwind.css", "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-shell.css"],
+    frame: { w: 900, h: 900 },
+    fixtures: agentStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => agentStudioShellMakeMessage(vm as never),
+  },
+  "terminal-studio-shell": {
+    bundle: "/dist/webview/terminal-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/terminal-studio-shell.css"],
+    frame: { w: 900, h: 760 },
+    fixtures: terminalStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never),
+  },
+  "command-studio-shell": {
+    bundle: "/dist/webview/command-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/command-studio-shell.css"],
+    frame: { w: 760, h: 640 },
+    fixtures: commandStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => commandStudioShellMakeMessage(vm as never),
+  },
+  "runbook-studio-shell": {
+    bundle: "/dist/webview/runbook-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/runbook-studio-shell.css"],
+    frame: { w: 760, h: 760 },
+    fixtures: runbookStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never),
+  },
+  "schedule-studio-shell": {
+    bundle: "/dist/webview/schedule-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/schedule-studio-shell.css"],
+    frame: { w: 760, h: 760 },
+    fixtures: scheduleStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never),
   },
   // SDD 485 C4 — Task Detail is a standalone app again, so it gets its own route back: this renders the
   // REAL shipped `task-detail.js` bundle with the exact stylesheet list `TaskDetailPanel.ts` links, rather

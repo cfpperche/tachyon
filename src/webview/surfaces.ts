@@ -157,6 +157,11 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // 880px column. Own page chrome → `extend`. (The body block largely restates what design-system.css already
   // sets; collapsing it is a real cleanup, but it is a VISUAL change and this phase moves nothing.)
   { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/PinDetailPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "extend", extensionPoints: ["page-chrome"] },
+  { viewId: "tachyonCommandStudioShell", view: "command-studio-shell", hostFile: "src/webview/CommandStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonTerminalStudioShell", view: "terminal-studio-shell", hostFile: "src/webview/TerminalStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonRunbookStudioShell", view: "runbook-studio-shell", hostFile: "src/webview/RunbookStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonScheduleStudioShell", view: "schedule-studio-shell", hostFile: "src/webview/ScheduleStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // t-610355 — layer-2 first-party agent pane (runtime TUI in Tachyon webview + xterm; additive to integrated terminal)
   // spec 485 A1 — the ONLY live standalone editor panel today, and the sharpest departure in the manifest: it
   // links NO design-system.css (AgentPanePanel.ts: "Tachyon Mono @font-face breaks xterm cell metrics") and
