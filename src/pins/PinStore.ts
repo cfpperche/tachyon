@@ -59,6 +59,11 @@ export interface UpdatePinInput {
   now?: string;
 }
 
+/** Reserve a Pin document identity before its staged create is persisted. */
+export function mintPinId(): string {
+  return `p-${crypto.randomBytes(3).toString("hex")}`;
+}
+
 export class PinStore {
   private static readonly lockTimeoutMs = 5_000;
 
@@ -100,18 +105,21 @@ export class PinStore {
     return pins.map(normalizePinRecord);
   }
 
-  create(text: string, by: string, opts: { tags?: string[]; now?: string } = {}): Pin {
+  create(text: string, by: string, opts: { tags?: string[]; now?: string; id?: string } = {}): Pin {
     const t = text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
     const pin: Pin = {
-      id: `p-${crypto.randomBytes(3).toString("hex")}`,
+      id: opts.id ?? mintPinId(),
       text: t,
       by,
       createdAt: opts.now ?? new Date().toISOString(),
       done: false,
     };
     applyTags(pin, opts.tags);
-    this.mutatePins((pins) => [...pins, pin]);
+    this.mutatePins((pins) => {
+      if (pins.some((candidate) => candidate.id === pin.id)) throw new Error(`pin '${pin.id}' already exists`);
+      return [...pins, pin];
+    });
     return pin;
   }
 
@@ -160,12 +168,12 @@ export class PinStore {
     try { fs.rmSync(this.detailPath(id), { force: true }); } catch { /* best-effort local detail cleanup */ }
   }
 
-  createRich(text: string, by: string, detail: Omit<SavePinDetailInput, "text">): Pin {
+  createRich(text: string, by: string, detail: Omit<SavePinDetailInput, "text"> & { id?: string }): Pin {
     const t = text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
     const now = detail.now ?? new Date().toISOString();
     const pin: Pin = {
-      id: `p-${crypto.randomBytes(3).toString("hex")}`,
+      id: detail.id ?? mintPinId(),
       text: t,
       by,
       createdAt: now,
@@ -175,8 +183,11 @@ export class PinStore {
       attachmentCount: directVisualAttachmentCount(detail.doc, detail.attachments ?? []),
     };
     applyTags(pin, detail.tags);
-    this.writeDetailFile({ schemaVersion: 2, pinId: pin.id, doc: detail.doc, attachments: detail.attachments ?? [] });
-    this.mutatePins((pins) => [...pins, pin]);
+    this.mutatePins((pins) => {
+      if (pins.some((candidate) => candidate.id === pin.id)) throw new Error(`pin '${pin.id}' already exists`);
+      this.writeDetailFile({ schemaVersion: 2, pinId: pin.id, doc: detail.doc, attachments: detail.attachments ?? [] });
+      return [...pins, pin];
+    });
     return pin;
   }
 

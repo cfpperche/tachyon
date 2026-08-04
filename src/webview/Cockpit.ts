@@ -533,7 +533,7 @@ export function cockpitStrings(): CockpitStrings {
 }
 
 let panel: vscode.WebviewPanel | undefined;
-let currentRoute: CockpitRoute = routes.section("overview");
+let currentRoute: CockpitRoute = routes.section("validations");
 /**
  * t-610705 (Phase D, D3) — the last COMMITTED route that was NOT itself a studio route, tracked
  * separately from `currentRoute` (design-dueto probe-43bca1cc blockers): a pin's `returnRoute` must
@@ -543,7 +543,7 @@ let currentRoute: CockpitRoute = routes.section("overview");
  * whenever a panel is disposed (see the `onDidDispose` handler below) so a later fresh panel never
  * inherits a disposed panel's provenance.
  */
-let lastCommittedNonStudioRoute: CockpitNonStudioRoute = routes.section("overview");
+let lastCommittedNonStudioRoute: CockpitNonStudioRoute = routes.section("validations");
 /**
  * t-610705 (Phase C.0) — bumped on every route change AND every workspace-scope change (both are
  * "the world changed" events). Async send*() functions capture this at the start and re-check it
@@ -616,6 +616,7 @@ let openInboxItemApp: ((wsHash: string, itemKind: HumanInboxKind, itemId: string
 let openFleetApp: (() => void) | undefined;
 
 function navigate(route: CockpitRoute): void {
+  const deliberateOverview = route.kind === "section" && route.section === "overview";
   if ((route.kind === "studio-new" || route.kind === "studio-edit") && route.studio !== "task" && route.studio !== "pin") {
     if (route.kind === "studio-new") openStudioDocument?.openNew(route.studio, route.wsHash);
     else openStudioDocument?.openExisting(route.studio, route.wsHash, route.entityId);
@@ -727,8 +728,8 @@ function navigate(route: CockpitRoute): void {
   // SDD 485 D11 — every legacy landing route, including malformed-section recovery, funnels here.
   // Overview opens in its project dashboard; Control commits a renderer it still owns.
   if (route.kind === "section" && route.section === "overview") {
-    openOverviewApp?.();
-    route = routes.section("approvals");
+    if (deliberateOverview) openOverviewApp?.();
+    route = routes.section("validations");
   }
   reconcileActivityTeardown(route);
   reconcileStudioTeardown(route);
@@ -1155,8 +1156,8 @@ export async function openCockpit(
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
         // provenance (design-dueto probe-43bca1cc: module-scoped router state outlives any one panel).
-        currentRoute = routes.section("overview");
-        lastCommittedNonStudioRoute = routes.section("overview");
+        currentRoute = routes.section("validations");
+        lastCommittedNonStudioRoute = routes.section("validations");
         stopActivityBinding();
         stopStudioBinding();
       }
@@ -1209,7 +1210,7 @@ export async function openCockpit(
     if (revealingExisting) await requestNavigate(target, live);
     else navigate(target);
   } else if (!revealingExisting) {
-    navigate(routes.section("overview"));
+    navigate(routes.section("validations"));
   }
 
   /**

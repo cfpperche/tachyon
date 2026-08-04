@@ -22,8 +22,8 @@ describe("SDD 485 D11 — standalone Overview dashboard", () => {
     const host = readFileSync("src/webview/Cockpit.ts", "utf8");
     expect(app).not.toContain('section === "overview"');
     expect(app).not.toContain("ck-overview-actions");
-    expect(host.match(/routes\.section\("overview"\)/g)).toHaveLength(23);
-    expect(host).toMatch(/section === "overview"[\s\S]*openOverviewApp\?\.\(\);[\s\S]*routes\.section\("approvals"\)/);
+    expect(host).toContain('const deliberateOverview = route.kind === "section" && route.section === "overview"');
+    expect(host).toMatch(/section === "overview"[\s\S]*if \(deliberateOverview\) openOverviewApp\?\.\(\);[\s\S]*routes\.section\("validations"\)/);
   });
 
   it("ships the stylesheet the standalone panel links", () => {
