@@ -1,7 +1,9 @@
 /**
- * D12's explicit unsaved-edit policy. A draft belongs to the task document, not to its visible mode:
- * switching to read keeps it, closing keeps it in the manager for this extension-host lifetime, and a
- * newer host snapshot becomes the read model while the draft remains based on its original revision.
+ * D12's explicit unsaved-edit policy. A draft belongs to the task document. The document hosts no longer
+ * expose a mode switch that silently preserves a draft: Cancel now asks the human to save, discard, or
+ * continue editing. Closing the tab is intentionally different: `close()` still returns a dirty draft for
+ * the manager to retain during this extension-host lifetime. A newer host snapshot becomes the read model
+ * while the retained draft remains based on its original revision.
  * Save therefore still uses CAS and must surface a conflict instead of overwriting the newer snapshot.
  *
  * This is deliberately smaller than StudioPanelManagerBase: mode, dirty and patch are carried in; generic
