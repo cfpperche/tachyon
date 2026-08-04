@@ -14,7 +14,7 @@
  * NO DESTRUCTIVE ACTIONS. There are no buttons here that kill, retry or mutate anything — selection
  * is the only interaction, and the view-model behind it cannot describe a mutation.
  */
-import type { CockpitStrings } from "./messages";
+import type { ExecutionGraphStrings } from "../execution-graph/messages";
 import type {
   ExecutionGraphVm,
   ExecutionGraphDetailVm,
@@ -30,7 +30,7 @@ function formatDuration(ms?: number): string {
   return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
 }
 
-function attributionLabel(s: CockpitStrings, attribution: ExecutionGraphRowVm["attribution"]): string {
+function attributionLabel(s: ExecutionGraphStrings, attribution: ExecutionGraphRowVm["attribution"]): string {
   return attribution === "proven" ? s.egAttrProven : attribution === "shared" ? s.egAttrShared : s.egAttrUnproven;
 }
 
@@ -44,7 +44,7 @@ function stateTone(state: string): string {
 }
 
 function Diagram({ s, vm, selected, onSelect }: {
-  s: CockpitStrings;
+  s: ExecutionGraphStrings;
   vm: ExecutionGraphVm;
   selected?: string;
   onSelect: (id: string) => void;
@@ -98,7 +98,7 @@ function Diagram({ s, vm, selected, onSelect }: {
 }
 
 function Table({ s, vm, selected, onSelect }: {
-  s: CockpitStrings;
+  s: ExecutionGraphStrings;
   vm: ExecutionGraphVm;
   selected?: string;
   onSelect: (id: string) => void;
@@ -145,7 +145,7 @@ function Table({ s, vm, selected, onSelect }: {
   );
 }
 
-function Detail({ s, detail }: { s: CockpitStrings; detail?: ExecutionGraphDetailVm }) {
+function Detail({ s, detail }: { s: ExecutionGraphStrings; detail?: ExecutionGraphDetailVm }) {
   if (!detail) return <p class="ck-eg-detail-empty">{s.egDetailNone}</p>;
   // Every row is rendered only when the ledger actually recorded it. An unknown cwd is absent, never
   // an empty string, because a blank value beside a label reads as a fact rather than as a gap.
@@ -179,7 +179,7 @@ function Detail({ s, detail }: { s: CockpitStrings; detail?: ExecutionGraphDetai
 }
 
 export function ExecutionGraphSection({ s, vm, detail, selected, filters, onSelect, onFilter }: {
-  s: CockpitStrings;
+  s: ExecutionGraphStrings;
   vm: ExecutionGraphVm;
   detail?: ExecutionGraphDetailVm;
   selected?: string;
@@ -231,7 +231,9 @@ export function ExecutionGraphSection({ s, vm, detail, selected, filters, onSele
       <div class="ck-eg-body">
         <div class="ck-eg-main">
           <Diagram s={s} vm={vm} selected={selected} onSelect={onSelect} />
-          <Table s={s} vm={vm} selected={selected} onSelect={onSelect} />
+          <div class="ck-eg-table-wrap">
+            <Table s={s} vm={vm} selected={selected} onSelect={onSelect} />
+          </div>
         </div>
         <aside class="ck-eg-side" aria-label={s.egDetailTitle}>
           <h3>{s.egDetailTitle}</h3>

@@ -101,6 +101,7 @@ describe("webview convention (spec 279)", () => {
       tachyonEngine: "ENGINE_VIEW_TYPE",
       tachyonWorktrees: "WORKTREES_VIEW_TYPE",
       tachyonFleet: "FLEET_VIEW_TYPE",
+      tachyonExecutionGraph: "EXECUTION_GRAPH_VIEW_TYPE",
       tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",

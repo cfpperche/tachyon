@@ -97,10 +97,6 @@ import {
   type StudioRoute,
 } from "../cockpit/studioHost.js";
 import { makeStudioAdapterFactory, makeStudioDomainDispatch, type CockpitStudios } from "../cockpit/studioRegistry.js";
-import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
-import { indexExecutionDetail, projectExecutions } from "../executionGraph/executionProjection.js";
-import { engineCurrencyNote, type EngineCurrency } from "../engine-service/engineCurrency.js";
-import { buildExecutionGraphVm, type ExecutionGraphVm } from "../cockpit/executionGraphVm.js";
 export type { CockpitStudios };
 
 export const COCKPIT_VIEW_TYPE = "tachyonCockpit";
@@ -183,76 +179,10 @@ export interface CockpitProbes {
  * NOT embedded: Task Detail/Studio, Pins, form studios (Agent/Terminal/Command/Runbook/Schedule).
  * Schedules stay in the sidebar (not a Control tab).
  */
-/**
- * SDD 480 Phase 4 — fold the ledger into the section's view-model.
- *
- * The three non-ready outcomes are kept apart on purpose, because they are different facts and a
- * shared blank surface would erase the distinction that matters most:
- *  - no reader wired, or the workspace records nothing → `no-telemetry`;
- *  - the ledger was read but could not be folded → `error`, with the reason;
- *  - it folded to nothing → the builder's own `empty`.
- */
-// Exported so the wiring itself is testable. The defect this closes was invisible to every test of
-// the two halves — the builder took a `detailFor` and the ledger carried the keys, and both passed
-// while the host handed over `undefined`. A test of a hand-assembled call would have passed too.
-export function buildExecutionGraphSectionVm(
-  deps: CockpitDeps,
-  wsHash: string | undefined,
-): ExecutionGraphVm | undefined {
-  if (!deps.executionGraph) return undefined; // client renders `no-telemetry`
-  try {
-    const { events, available, currency } = deps.executionGraph(wsHash);
-    if (!available) {
-      // t-f54b62 — `no-telemetry` means two different things: this workspace records nothing, or the
-      // daemon serving it predates the build that would record. Say which, when the host knows —
-      // `engineCurrencyNote` yields undefined unless it actually compared and found a stale engine.
-      const statusNote = currency ? engineCurrencyNote(currency) : undefined;
-      return buildExecutionGraphVm({
-        projection: { executions: [], edges: [], agentIds: [] },
-        status: "no-telemetry",
-        ...(statusNote ? { statusNote } : {}),
-      });
-    }
-    // t-441b0f — the ledger already carries `cwd`/`worktree`/`tool`; the panel just had no way to
-    // reach them, so all three rendered as absent. Index them from the SAME events the projection
-    // folds, so the detail panel and the graph can never describe different runs.
-    const detail = indexExecutionDetail(events);
-    return buildExecutionGraphVm({
-      projection: projectExecutions(events),
-      detailFor: (executionId) => detail.get(executionId),
-    });
-  } catch (err) {
-    // The message is the only detail shown, and it is a local read failure — not user content — so
-    // there is nothing here to redact that the ledger's own write boundary has not already handled.
-    return buildExecutionGraphVm({
-      projection: { executions: [], edges: [], agentIds: [] },
-      status: "error",
-      errorDetail: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
 export interface CockpitDeps {
   extensionUri: vscode.Uri;
   /** t-af3eef — `needs` says which expensive slices this view consumes; omitted means everything. */
   collect: (needs?: CockpitCollectNeeds) => Promise<CockpitWorkspaceBundle[]>;
-  /**
-   * SDD 480 Phase 4 — read the execution ledger for the active workspace.
-   *
-   * Optional: a host without it leaves the section in `no-telemetry`, which is the honest answer
-   * rather than an empty diagram. Read-only by contract — the ledger is single-writer (t-d5066b) and
-   * this side must never open a journal that could compact.
-   */
-  executionGraph?: (wsHash: string | undefined) => {
-    events: SealedExecutionEvent[];
-    available: boolean;
-    /**
-     * t-f54b62 — is the daemon serving this workspace the installed build? Only the host can answer,
-     * and it may not be able to: omitted rather than guessed. An empty section explained by a wrong
-     * verdict sends a reader to restart production for no reason.
-     */
-    currency?: EngineCurrency;
-  };
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
   activity: CockpitActivity;
@@ -282,6 +212,8 @@ export interface CockpitDeps {
   openRuntimeOps: () => void;
   /** SDD 485 D8 — open Runtime Config as a project dashboard. */
   openRuntimeConfig: (wsHash?: string) => void;
+  /** SDD 485 D9 — open Execution as a project dashboard. */
+  openExecutionGraph: (wsHash?: string) => void;
   /**
    * SDD 485 D4 — open (or reveal) the Human Inbox APP for one project. Control no longer renders the
    * Inbox, so the doors it still owns for that screen — Overview's "Waiting on you" metric, its Jump
@@ -391,42 +323,6 @@ function strings(): CockpitStrings {
     validationsTitle: t("Validations"),
     validationsHint: t("Validation queue — close dogfoods and checks (not on the Board)."),
     navExecutionGraph: t("Execution"),
-    executionGraphTitle: t("Execution graph"),
-    executionGraphHint: t("What Tachyon started, and how it knows. Read-only."),
-    egCanvasLabel: t("Execution graph diagram"),
-    egTableLabel: t("Execution graph, as a table"),
-    egLoading: t("Loading the execution ledger…"),
-    egEmpty: t("No executions match these filters."),
-    // Distinct from the empty state on purpose: "nothing matched" and "nothing is recorded here"
-    // mean opposite things, and a blank list cannot tell them apart.
-    egNoTelemetry: t("This workspace is not recording execution telemetry yet."),
-    egError: t("The execution ledger could not be read."),
-    egGroupedNote: t("Some lanes are grouped to stay readable; totals below are complete."),
-    egFilterTurn: t("Turn"),
-    egFilterState: t("State"),
-    egFilterKind: t("Type"),
-    egFilterAgent: t("Agent"),
-    egFilterAll: t("All"),
-    egColKind: t("Type"),
-    egColState: t("State"),
-    egColAgents: t("Agents"),
-    egColAttribution: t("Attribution"),
-    egColStarted: t("Started"),
-    egColDuration: t("Duration"),
-    egColExit: t("Exit"),
-    egDetailTitle: t("Execution detail"),
-    egDetailNone: t("Select an execution to see its detail."),
-    egDetailDuration: t("Duration"),
-    egDetailExit: t("Exit code"),
-    egDetailCwd: t("Working directory"),
-    egDetailWorktree: t("Worktree"),
-    egDetailTool: t("Started by tool"),
-    egDetailIdentity: t("Identity proof"),
-    egDetailTurn: t("Turn"),
-    egDetailToolCall: t("Tool call"),
-    egAttrProven: t("proven"),
-    egAttrShared: t("shared"),
-    egAttrUnproven: t("unproven"),
     settingsTitle: t("Settings"),
     settingsHint: t("Personal machine preferences and shared project policy — two files, two authorities."),
     workspaces: t("Workspaces"),
@@ -691,6 +587,7 @@ let openPluginsApp: (() => void) | undefined;
  */
 let openRuntimeOpsApp: (() => void) | undefined;
 let openRuntimeConfigApp: (() => void) | undefined;
+let openExecutionGraphApp: (() => void) | undefined;
 
 /**
  * SDD 485 D4 — and the same seam for the Human Inbox. Sixth and seventh of these, and the first PAIR:
@@ -764,6 +661,10 @@ function navigate(route: CockpitRoute): void {
   if (route.kind === "section" && route.section === "runtime-config") {
     // SDD 485 D8 — launcher, Overview jump, persisted state and deep links converge at this shim.
     openRuntimeConfigApp?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "execution-graph") {
+    openExecutionGraphApp?.();
     route = routes.section("overview");
   }
   if (route.kind === "inbox-item") {
@@ -1200,6 +1101,7 @@ export async function openCockpit(
         openPluginsApp = undefined;
         openRuntimeOpsApp = undefined;
         openRuntimeConfigApp = undefined;
+        openExecutionGraphApp = undefined;
         openInboxApp = undefined;
         openInboxItemApp = undefined;
         openFleetApp = undefined;
@@ -1246,6 +1148,7 @@ export async function openCockpit(
   openInboxItemApp = (wsHash, itemKind, itemId) => deps.openHumanInboxItem(wsHash, itemKind, itemId);
   openFleetApp = () => deps.openFleet(controlWorkspaceScope.current);
   openRuntimeConfigApp = () => deps.openRuntimeConfig(controlWorkspaceScope.current);
+  openExecutionGraphApp = () => deps.openExecutionGraph(controlWorkspaceScope.current);
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -1309,11 +1212,6 @@ export async function openCockpit(
         personalCardTemplate: personalCardTemplateState(),
         globalSettings: globalSettingsState(),
       });
-      // SDD 480 Phase 4 — built only for the section that renders it. Folding the ledger on every
-      // model tick would spend the projection on ~13 sections that never look at it.
-      if (section === "execution-graph") {
-        model.executionGraph = buildExecutionGraphSectionVm(deps, controlWorkspaceScope.current);
-      }
     } catch (err) {
       model = buildCockpitModel(
         [

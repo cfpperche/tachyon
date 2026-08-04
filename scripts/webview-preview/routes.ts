@@ -29,6 +29,7 @@ import { engineModelMessage } from "../../src/webview/engine/messages";
 import { worktreesModelMessage } from "../../src/webview/worktrees/messages";
 import { fleetModelMessage } from "../../src/webview/fleet/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
+import { executionGraphModelMessage } from "../../src/webview/execution-graph/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { approvalFixtures } from "./fixtures/approval";
@@ -40,6 +41,7 @@ import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspe
 import { initMessage as inspectorInitMessage, modelMessage as inspectorModelMessage } from "../../src/webview/inspector/messages";
 import {
   cockpitFixtures,
+  executionGraphFixtures,
   NAV_PENDING_TASK_ID,
   runtimeConfigFixtureSnapshot,
   runtimeConfigPreviewStrings,
@@ -270,6 +272,15 @@ export const ROUTES: Record<string, Route> = {
       }
       return msgs;
     },
+  },
+  "execution-graph": {
+    bundle: "/dist/webview/execution-graph.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/execution-graph.css"],
+    frame: { w: 880, h: 720 },
+    fixtures: executionGraphFixtures,
+    module: true,
+    globals: { __TACHYON_STRINGS__: cockpitStrings },
+    makeMessage: (vm) => executionGraphModelMessage(vm as never),
   },
   "pin-preview": {
     bundle: "/dist/webview/pin-preview.js",
