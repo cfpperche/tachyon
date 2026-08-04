@@ -200,18 +200,10 @@ describe("t-aa2780 — every section says which section it is", () => {
     for (const id of COCKPIT_SECTION_ORDER) expect(SECTION_HEADING[id]?.length ?? 0).toBeGreaterThan(0);
   });
 
-  it("a lazy section names itself WHILE loading, which is when it used to be anonymous", () => {
-    // Rendered at the Suspense fallback (see staticPreact's suspense note): heading present, chunk not.
-    //
-    // SDD 485 D4 — driven through Validations now. This case has been repointed THREE times by the same
-    // force: Plugins was its vehicle until D2, Runtime Ops until D3, the Inbox until D4, and each time the
-    // section it drove became a standalone app. The property under test belongs to the SHELL, not to any
-    // one section, so what the repoints record is which lazy sections Control still owns — TWO after this
-    // one (`approvals`, `validations`), and both are compatibility routes rather than Phase D targets, so
-    // the next migration to take a lazy section will have to bring its own vehicle or retire this case.
+  it("renders no lazy section fallback after the last two renderers leave Control", () => {
     const html = renderStatic(Shell({ strings: cockpitStrings, model: sectionModel("validations"), inspector: {} }));
-    expect(headings(html)).toContain("Validations");
-    expect(html).toContain("ds-empty-state--loading");
+    expect(headings(html)).not.toContain("Validations");
+    expect(html).not.toContain("ds-empty-state--loading");
   });
 
 });

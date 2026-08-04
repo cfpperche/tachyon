@@ -132,11 +132,11 @@ export interface RunningDaemonEngineService {
  * guard: the defect this replaced was a kind that existed in the Inbox and rang nothing, and no test
  * would have caught it because nothing claimed to enumerate the kinds.
  *
- * Approval keeps its own destination deliberately: it predates the unified Inbox and opens the
- * Approvals section. That is a real difference in where a person should land, not a duplicated path.
+ * Every kind lands on its exact Inbox item. Approval is the most important case: it blocks an agent,
+ * so landing on the queue rather than the request would make the human hunt while work is stopped.
  */
 const INBOX_REVIEW_TARGET: Record<HumanInboxKind, (workspaceHash: string, id: string) => [string, ...unknown[]]> = {
-  approval: (workspaceHash) => ["tachyon.openApprovals", workspaceHash],
+  approval: (workspaceHash, id) => ["tachyon.openHumanInbox", workspaceHash, { kind: "approval", id }],
   validation: (workspaceHash, id) => ["tachyon.openHumanInbox", workspaceHash, { kind: "validation", id }],
   "saved-agent-proposal": (workspaceHash, id) =>
     ["tachyon.openHumanInbox", workspaceHash, { kind: "saved-agent-proposal", id }],

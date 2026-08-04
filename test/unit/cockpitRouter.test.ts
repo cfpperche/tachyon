@@ -129,6 +129,18 @@ const modelsPosted = () => snapshotsOf("model") as Array<{ model?: { section?: s
 const snapshotsOf = (type: string) =>
   __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === type);
 
+describe("t-b30efd — legacy approval/validation Control routes redirect to Human Inbox", () => {
+  it.each(["approvals", "validations"] as const)("redirects a restored %s section without rendering it", async (section) => {
+    const ws = fakeWorkspace();
+    const opened: Array<string | undefined> = [];
+    const deps = depsFor([target(ws)], { openHumanInbox: (wsHash) => opened.push(wsHash) });
+
+    await openCockpit(deps, { section, wsHash: ws.wsHash });
+
+    expect(opened).toEqual([ws.wsHash]);
+  });
+});
+
 describe("navigation epoch — discards stale responses from a superseded route", () => {
   it("a slow section response that resolves AFTER navigating away is never posted", async () => {
     const ws = fakeWorkspace();

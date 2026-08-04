@@ -66,13 +66,13 @@ describe("t-8e9b5e — a proposal rings the same doorbell an approval does", () 
     ]);
   });
 
-  it("keeps approval on the Approvals section, which is a real difference and not a leftover", () => {
+  it("takes approval Review to that exact item in the Human Inbox", () => {
     const { host, notices, commands } = recordingHost();
 
     routeHumanApprovalRequest(host, "b349073a", { id: "a-3c5de6", requester: "codex" });
     void notices[0].actions[0].run();
 
-    expect(commands[0]).toEqual(["tachyon.openApprovals", "b349073a"]);
+    expect(commands[0]).toEqual(["tachyon.openHumanInbox", "b349073a", { kind: "approval", id: "a-3c5de6" }]);
   });
 
   it("keeps validation pointed at its own Inbox item", () => {

@@ -213,16 +213,13 @@ describe("t-d16698 — Review crosses into Control and the ITEM is what opens", 
     expect(posted("humanInbox"), "Review fell back to the queue").toHaveLength(0);
   });
 
-  it("every kind whose Review targets the Inbox lands on its own item", async () => {
-    // Derived from the inventory, not from a list written here: a fourth kind is covered the day it
-    // is declared. `approval` deliberately opens the Approvals section instead (t-8e9b5e), so the
-    // filter is on the COMMAND the emitter chose, never on a kind name spelled out in this test.
-    const inboxKinds = HUMAN_INBOX_KINDS.filter((kind) => emittedReviewCall(kind)[0] === "tachyon.openHumanInbox");
-    expect(inboxKinds.length, "no kind routes Review to the Inbox — the emitter changed shape").toBeGreaterThan(0);
-
-    for (const kind of inboxKinds) {
+  it("every kind's Review lands on its own Inbox item", async () => {
+    // Derived from the inventory, not from a list written here: approval is the load-bearing bell
+    // because it blocks an agent, and a fourth kind is covered the day it is declared.
+    for (const kind of HUMAN_INBOX_KINDS) {
       const { manager } = liveWorkspace();
-      const [, ...args] = emittedReviewCall(kind);
+      const [command, ...args] = emittedReviewCall(kind);
+      expect(command, `${kind}: Review bypassed the Inbox`).toBe("tachyon.openHumanInbox");
       await openWhatReviewAsksFor(manager, args);
       const item = posted("humanInboxItem").at(-1) as { vm?: { item?: { id?: string; kind?: string } } } | undefined;
       expect(item?.vm?.item?.kind, `${kind}: Review did not open the item`).toBe(kind);
@@ -317,5 +314,14 @@ describe("t-d16698 — the command the doorbell names is the command the shell r
     for (const kind of HUMAN_INBOX_KINDS) {
       expect(DURABLE_NOTICE_COMMANDS, `${kind}'s Review dies on reload`).toContain(emittedReviewCall(kind)[0]);
     }
+  });
+
+  it("keeps openApprovals as a compatibility command that opens the Inbox list", () => {
+    const start = registrationOf("tachyon.openApprovals");
+    expect(start, "tachyon.openApprovals registration missing").toBeGreaterThanOrEqual(0);
+    const next = source.indexOf("vscode.commands.registerCommand", start + 1);
+    const approvalBody = source.slice(start, next === -1 ? undefined : next);
+    expect(approvalBody).toContain("openHumanInboxTab");
+    expect(approvalBody).not.toContain("openCockpit");
   });
 });

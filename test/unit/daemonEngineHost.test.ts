@@ -114,8 +114,8 @@ describe("DaemonEngineHost", () => {
 
     await f.host.invokeNoticeAction(row.id, row.actions[0]!.id);
     expect(requests.filter((request) => request.kind === "execute-command")).toMatchObject([{
-      command: "tachyon.openApprovals",
-      args: ["workspace-b-hash"],
+      command: "tachyon.openHumanInbox",
+      args: ["workspace-b-hash", { kind: "approval", id: "a-abc123" }],
     }]);
 
     await expect(f.host.invokeNoticeAction(row.id, row.actions[0]!.id)).rejects.toThrow(/consumed/);

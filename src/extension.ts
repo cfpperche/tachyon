@@ -2898,12 +2898,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
     vscode.commands.registerCommand("tachyon.openApprovals", async (hash?: string) => {
-      // spec 410 — Approvals live in Control (cockpit section); do not open a second peer panel.
+      // t-b30efd — compatibility command retained for palette, notice-inbox and legacy panel callers.
+      // The command carries no item id, so its honest destination is the unified Inbox queue.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      await openCockpit(makeCockpitDeps(), {
-        section: "approvals",
-        ...(ws ? { approvalWsHash: ws.wsHash } : {}),
-      });
+      openHumanInboxTab(ws?.wsHash);
     }),
     // t-e76acc — one destination for "what is waiting on me", and the target of the Review action on
     // both the approval and the human-validation notices.

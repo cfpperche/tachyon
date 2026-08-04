@@ -274,6 +274,17 @@ describe("the Human Inbox owns its own page pad, and always did (SDD 485 D4)", (
   });
 });
 
+describe("approvals and validations have no Control renderer (t-b30efd)", () => {
+  it("leaves neither section branch nor lazy renderer in Control", () => {
+    const app = read(COCKPIT_APP);
+    for (const section of ["approvals", "validations"]) {
+      expect(app).not.toContain(`section === "${section}"`);
+    }
+    expect(app).not.toContain("ApprovalsApp");
+    expect(app).not.toContain("ValidationsApp");
+  });
+});
+
 describe("Validations pending list flows vertically (t-dc9f64)", () => {
   const css = read(VALIDATIONS_CSS);
 
