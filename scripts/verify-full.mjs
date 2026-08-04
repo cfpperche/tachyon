@@ -1,4 +1,4 @@
-import { chmodSync, closeSync, createReadStream, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync, unlinkSync, constants as fsConstants } from "node:fs";
+import { chmodSync, closeSync, createReadStream, mkdtempSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, unlinkSync, constants as fsConstants } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { cpus, tmpdir } from "node:os";
 import path from "node:path";
@@ -49,8 +49,54 @@ function gitOutput(args, cwd = process.cwd()) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 }
 
-/** t-6e929b — browser layout coverage follows changes to the shipped webview sources. */
+/** The suite's own definition — true whatever it happens to import. */
+const BROWSER_SUITE_OWN = Object.freeze(["test/browser/", "vitest.browser.config.ts"]);
+
+/**
+ * t-e2c8a2 — the trigger set is DERIVED from what the browser suite actually reads, never written
+ * out here.
+ *
+ * The gate this replaces triggered on `src/webview/` alone, which was the ONE input someone
+ * remembered when t-6e929b wrote it. Measured against the suite: it also imports `src/sidebar`
+ * (six files), `src/agents`, `src/cockpit` and `scripts/webview-preview` — and, worst of all, it
+ * did not trigger on `test/browser/` itself, so the person writing a browser test was the one
+ * person guaranteed not to run it. A hand-written list is what this repo has watched drift before
+ * (SDD 485 D15: nine entries copied against a launcher that had grown to twelve), so this walks
+ * the suite and resolves every import that escapes it.
+ *
+ * Granularity is two path segments (`src/sidebar`, not `src/sidebar/cardTemplate.ts`): a browser
+ * test importing one file from a directory is evidence that the directory is rendered, not that
+ * the single file is. Resolution is per-file because the suite is two levels deep in places.
+ */
+export function browserSuiteRoots({ cwd = process.cwd() } = {}) {
+  const roots = new Set(BROWSER_SUITE_OWN);
+  const suiteDir = path.join(cwd, "test", "browser");
+  const walk = (dir) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.(?:m?ts|tsx|m?js)$/.test(entry.name)) continue;
+      let source;
+      try { source = readFileSync(full, "utf8"); } catch { continue; }
+      for (const [, spec] of source.matchAll(/\bfrom\s+"(\.\.?\/[^"]+)"/g)) {
+        const resolved = path.relative(cwd, path.resolve(path.dirname(full), spec));
+        if (resolved.startsWith("..") || path.isAbsolute(resolved)) continue;
+        const segments = resolved.split(path.sep);
+        if (segments.length < 2) continue;
+        const root = `${segments.slice(0, 2).join("/")}/`;
+        if (!root.startsWith("test/browser/")) roots.add(root);
+      }
+    }
+  };
+  walk(suiteDir);
+  return [...roots].sort();
+}
+
+/** t-6e929b — browser layout coverage follows changes to what the browser suite reads. */
 export function browserGateDecision({ cwd = process.cwd() } = {}) {
+  const roots = browserSuiteRoots({ cwd });
   try {
     const head = gitOutput(["rev-parse", "HEAD"], cwd);
     const branch = gitOutput(["branch", "--show-current"], cwd);
@@ -65,15 +111,17 @@ export function browserGateDecision({ cwd = process.cwd() } = {}) {
       gitOutput(["diff", "--name-only", "--"], cwd),
       gitOutput(["diff", "--cached", "--name-only", "HEAD", "--"], cwd),
     ].flatMap((output) => output.split("\n").filter(Boolean));
-    const untracked = gitOutput(["ls-files", "--others", "--exclude-standard", "--", "src/webview"], cwd)
+    // Untracked scanned over the SAME roots as tracked: a brand-new browser test is untracked by
+    // definition, and scanning only one root was how the previous shape missed it twice over.
+    const untracked = gitOutput(["ls-files", "--others", "--exclude-standard", "--", ...roots], cwd)
       .split("\n").filter(Boolean);
     const changedPaths = [...new Set([...tracked, ...untracked])];
-    const webviewPaths = changedPaths.filter((file) => file.startsWith("src/webview/"));
-    return { run: webviewPaths.length > 0, changedPaths, webviewPaths, base, head };
+    const webviewPaths = changedPaths.filter((file) => roots.some((root) => file.startsWith(root) || file === root));
+    return { run: webviewPaths.length > 0, changedPaths, webviewPaths, roots, base, head };
   } catch {
     // verify:full also has unit-test fixtures outside Git. They have no product diff, so say exactly
     // why browser coverage is absent instead of pretending the decision was evaluated.
-    return { run: false, changedPaths: [], webviewPaths: [], reason: "no Git diff available" };
+    return { run: false, changedPaths: [], webviewPaths: [], roots, reason: "no Git diff available" };
   }
 }
 
@@ -352,11 +400,14 @@ export async function main() {
         process.stderr.write(`${formatFailure({ phase: "browser tests", report: browserReport, fallback: await readTail(browserLog), logDir: root })}\n`);
         return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : browserTests.code || 1;
       }
-      browserSummary = `${browserCount.total} browser tests (${browserDecision.webviewPaths.length} src/webview change${browserDecision.webviewPaths.length === 1 ? "" : "s"})`;
+      browserSummary = `${browserCount.total} browser tests (${browserDecision.webviewPaths.length} change${browserDecision.webviewPaths.length === 1 ? "" : "s"} under ${browserDecision.roots.length} browser-suite root${browserDecision.roots.length === 1 ? "" : "s"})`;
     } else {
+      // t-e2c8a2 — the skip names the derived roots, not "src/webview": a reader who edited
+      // `src/sidebar` and saw "no src/webview change" had no way to tell whether the gate had
+      // considered their diff and declined, or never looked at it. It never looked.
       browserSummary = browserDecision.reason
         ? `0 browser tests (${browserDecision.reason})`
-        : "0 browser tests (no src/webview change)";
+        : `0 browser tests (no change under ${browserDecision.roots.join(", ")})`;
     }
     process.stdout.write(`${formatSuccess(report)}\n${browserSummary}\n`);
     // t-47cc91 — file the green under the TREE it covered, so "the tree you land is the tree you

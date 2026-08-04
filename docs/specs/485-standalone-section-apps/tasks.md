@@ -433,16 +433,51 @@ work in parallel only if the second re-applies onto the first before delivery, n
 ### Phase E — remove Control
 
 **Measured after D16, and it corrects this phase's premise.** "Control renders zero sections" became true
-when Approvals and Validations died — but *section* was the wrong unit. Control still renders four things,
-none of which is a section: the two Fleet SUBROUTES (activity, probes), the project-handoff document, and
-`studio-new`+`pin`. They escaped Phase D for the same reason Approvals and Validations did — no launcher
-tile points at them, so no migration was ever handed one. D17–D20 exist because of this, and the lesson is
-the series' own recurring one in a new costume: **an inventory built from what a surface DECLARES (a
-launcher tile) cannot see what it RENDERS.** E1 was written believing the section list was the renderer
-list, and it is not.
+when Approvals and Validations died — `COCKPIT_SECTION_ORDER` is now literally the empty array. But
+*section* was the wrong unit. Control still mounts four product surfaces, none of which is a section: the
+two Fleet SUBROUTES (activity, probes), the project-handoff document, and `studio-new`+`pin`. They escaped
+Phase D for the same reason Approvals and Validations did — no launcher tile points at them, so no
+migration was ever handed one. D17–D20 exist because of this, and the lesson is the series' own recurring
+one in a third costume: **an inventory built from what a surface DECLARES cannot see what it RENDERS.**
+E1 was written believing the section list was the renderer list, and it is not.
+
+**The inventory is now taken from the one thing that cannot lie about it, and it is a test.** Preact
+requires `lazy()` to be a static top-level call, so a renderer cannot hide behind a dynamic import:
+`test/unit/controlRendererRatchet.test.ts` reads the `lazy()` calls out of `cockpit/App.tsx` and holds
+the list against the task that removes each one. It is a RATCHET, not an equality check — shrinking
+never fails (D17–D20 each strike a line), and *adding* fails, because a surface put back into Control
+reverses the whole spec and should have to argue for itself in a diff. **When that list is empty, E1 can
+delete the host**; that is the finish line in machine-readable form.
+
+**The other half of the finish line: fourteen doors, and after D17–D20 every one of them is a redirect.**
+Measured across `openCockpit(` call sites — six render something today (activity ×2, probes ×2, handoff
+×2: a command and a serializer each), and the other eight already open Control only to have `navigate()`
+send them elsewhere. E1 is therefore not only a deletion: each surviving redirect becomes a direct call
+to the app, and `tachyon.openControl` / `tachyon.openCockpit` / Control's own `revivedPanel` serializer
+each need a destination named rather than inherited.
+
+**Three tombstones are waiting to be un-retired, and they carry the identities.** SDD 410 retired the
+standalone Activity, Probes and Handoff panels into Control and left behind exactly the viewType plus the
+persisted state shape: `ActivityPanelState {wsHash, agent}`, `ProbesPanelState {wsHash, caller?}`,
+`HandoffPanelState {wsHash}`. Each is precisely the identity its Phase D app needs, which means D1's trick
+is available three more times — reuse the retired viewType and a pre-410 panel REVIVES into the new app
+instead of being disposed and redirected, with no migration shim at all. `ProbesPanelState`'s optional
+`caller` is also the strongest evidence available for D18's open question: the persisted shape already
+models probes as one surface with an optional agent, not as two.
+
+`ApprovalPanel.ts` is the fourth tombstone and has no successor — approvals died in D16 rather than
+migrating, so its stub and `approvalPanels.refreshAll()` are dead weight for E1 to remove.
 
 - [ ] E1. Remove the internal router, `navEpoch`, the singleton claim (`cockpitSingleton.ts`), the
-      subroute breadcrumb chrome, `Cockpit.ts` and the cockpit entry.
+      subroute breadcrumb chrome, `Cockpit.ts` and the cockpit entry. Gated on
+      `controlRendererRatchet.test.ts` reading an empty list. Also in scope, because they only become
+      dead once the last renderer leaves: the approval/validation view-model plumbing still on the host
+      (`buildApprovalViewModel`, `buildValidationsViewModel`, `pushApprovals`/`pushValidations`, the
+      action handlers and the `approvals`/`validations` deps of `makeCockpitDeps`), `ApprovalPanel.ts`,
+      and `src/webview/cockpit/SectionShell.tsx`, which has no importer left.
+      The **sidebar** Control tab is NOT in scope and must survive: it is the launcher and the project
+      selector (C6), a different surface (`tachyonSidebar`) from this panel (`tachyonCockpit`), and it
+      is the door to every app the D series created.
 - [ ] E2. Record the supersession in `docs/specs/410-cockpit-single-app/spec.md` so a reader finds
       the reversal from either direction, and set this spec's `**Closure:**` line.
 
