@@ -13,6 +13,7 @@ import type { PinPatch } from "./pin-studio/domain.js";
 import type { WorkspaceSidebarTarget } from "../shell/SidebarTarget.js";
 import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
+import { confirmDocumentStudioCancel } from "./shared/studio/documentStudioCancel.js";
 
 export const PIN_DETAIL_VIEW_TYPE = "tachyonPinPreview";
 type RefreshKind = "pin";
@@ -124,9 +125,22 @@ export class PinDetailPanelManager {
           if (msg.type === "patch" && msg.patch) { policy.receivePatch(msg.patch); return; }
           if (msg.type === "dirty") { policy.receiveDirty(msg.dirty ?? false); return; }
           if (msg.type === "cancel") {
-            policy.clearDraft();
-            if (!persisted) { this.provisional.delete(session.key); session.close(); return; }
-            policy.switchMode("read"); session.post(pinDocumentModeMessage("read")); return;
+            const leaveEditMode = () => {
+              policy.clearDraft();
+              if (!persisted) { this.provisional.delete(session.key); session.close(); return; }
+              policy.switchMode("read"); session.post(pinDocumentModeMessage("read"));
+            };
+            await confirmDocumentStudioCancel(policy.draft.dirty, async () => {
+              if (!policy.draft.patch) return false;
+              const result = await studio.save(pinId, policy.draft.patch);
+              if (result.status !== "ok") { postError(new Error(result.error.message)); return false; }
+              persisted = true;
+              this.provisional.delete(session.key);
+              policy.clearDraft(); policy.switchMode("read"); this.onPinsChanged(); session.post(pinDocumentModeMessage("read"));
+              await sendRead();
+              return true;
+            }, leaveEditMode);
+            return;
           }
           if (msg.type === "save" && policy.draft.patch) {
             const result = await studio.save(pinId, policy.draft.patch);

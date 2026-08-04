@@ -5,7 +5,6 @@ import { PIN_DOCUMENT_MODE, PIN_PREVIEW, readyMessage, setPinDocumentModeAction,
 import type { PinPreviewVM } from "../../sidebar/types";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App as PinStudioApp } from "../pin-studio/App";
-import { Button } from "../shared/ui";
 
 // spec 279 — the Pin Preview webview entry (converted from inline HTML). `preact-static`: receives the VM once
 // after the ready handshake, renders, no inbound actions. Never imports vscode (engine boundary).
@@ -48,7 +47,6 @@ function Root() {
       routeKey={`pin-detail:${vm?.id ?? ""}`}
       mountNonce="pin-document"
       incoming={incoming}
-      backLink={<Button icon="arrow-left" onClick={() => post(setPinDocumentModeAction("read"))}>Read pin</Button>}
     /></div>;
   }
   return <App vm={vm} onEdit={() => post(setPinDocumentModeAction("edit"))} />;
