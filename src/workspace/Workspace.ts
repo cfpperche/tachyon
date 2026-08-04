@@ -210,6 +210,7 @@ import { renderPrimer, wrapWithPrimer } from "../bridge/primer.js";
 import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "../agents/briefFile.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
+import { healUnknownBearerFromProc } from "../bridge/agentTokenHeal.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import {
   agentProfileAuthoritiesSecretKey,
@@ -1783,7 +1784,8 @@ export class Workspace {
         // SDD 414 / t-2a7010 + t-fbe280 — agent tab tools via Companion extension.
         // Listed when settings.companion.tabTools is true; execution still requires a paired device.
         companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
-        // Prototype: Integrated Browser bridge (shell HTTP+CDP). Tools appear when instance file is live.
+        // Prototype: Integrated Browser (shell HTTP+CDP). Always wire request so tools stay listed;
+        // offline/instance-missing fails at call time. ideBrowserToolsEnabled kept for status probes.
         ideBrowserToolsEnabled: () => isIdeBrowserBridgeAvailable(this.workspaceRoot),
         ideBrowserRequest: (route, body) => ideBrowserRequest(this.workspaceRoot, route, body),
         // Tab tools require a browser companion session (not mobile-only pair).
@@ -2113,6 +2115,20 @@ export class Workspace {
         scope: this.callerScope(),
         legacyCompatEnabled: this.legacyBridgeAuthEnabled,
         onLegacyCall: (info) => this.logLegacyBridgeCall(info),
+        // Dogfood: agent process still holds a token the digest registry forgot → adopt on first MCP hit.
+        healUnknownBearer: (bearer) => {
+          const reg = this.callerRegistry;
+          if (!reg) return undefined;
+          const healed = healUnknownBearerFromProc(reg, bearer, this.callerScope());
+          if (!healed.ok) return undefined;
+          if (healed.adopted) {
+            this.persistCallerRegistry();
+            console.warn(
+              `[tachyon] healed Bridge agent token for '${healed.name}' from live process env (was token_unknown)`,
+            );
+          }
+          return { kind: "agent" as const, name: healed.name };
+        },
         onRequestComplete: (info) => {
           const toast = this.bridgeSlowRequestToasts.decide(info);
           if (toast) this.host.notify(this.t(toast.message), "warn");

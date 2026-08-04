@@ -43,20 +43,21 @@ export class IdeBrowserCdpSession {
   private debugSession: vscode.DebugSession | null = null;
   private WebSocket: WsCtor | null = null;
   private designModeOn = false;
-  /** Whether the in-page side panel was open (survive URL changes). */
-  private designPanelOpen = false;
-  /** Side panel width px (resizable sash; survive URL changes). */
-  private designPanelWidth = 340;
-  /** Picker armed (true) vs browse/links (false). */
+  /** Picker armed (true) vs browse (false). Survives in-page re-inject. */
   private designPickMode = true;
   private designModeLog: ((m: string) => void) | null = null;
   private onDesignPick: ((rawJson: string) => void) | null = null;
-  /** Address-bar / main-frame navigation while Design Mode was on → host paints status bar OFF. */
-  private onDesignModeForcedOff: (() => void) | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   /** While Design Mode is on, poll that the inject chrome still exists (URL-bar nav is flaky on CDP). */
   private presenceWatchTimer: ReturnType<typeof setInterval> | null = null;
   private presenceChecking = false;
+  /**
+   * Set when the page signals an in-document navigation (link/form) via binding.
+   * Those keep Design Mode on and re-inject after load; address-bar nav does not set this.
+   */
+  private pendingInternalNav = false;
+  private reinjectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reinjectInFlight = false;
 
   get connectionState(): "disconnected" | "connecting" | "connected" {
     return this.state;
@@ -115,30 +116,11 @@ export class IdeBrowserCdpSession {
   }
 
   /**
-   * Called when Design Mode is forced OFF by main-frame (address bar) navigation.
-   * In-iframe navigations do not fire this — Design Mode stays on.
+   * Page clicked a same-tab link / submitted a form while Design Mode is on.
+   * Next main-frame load re-injects chrome.
    */
-  setDesignModeForcedOffHandler(handler: (() => void) | null): void {
-    this.onDesignModeForcedOff = handler;
-  }
-
-  /** Track side-panel open state from page `__layout` events (survives URL change). */
-  setDesignPanelOpen(open: boolean): void {
-    this.designPanelOpen = open;
-  }
-
-  get isDesignPanelOpen(): boolean {
-    return this.designPanelOpen;
-  }
-
-  setDesignPanelWidth(width: number): void {
-    if (Number.isFinite(width) && width >= 240) {
-      this.designPanelWidth = Math.round(width);
-    }
-  }
-
-  get panelWidthPx(): number {
-    return this.designPanelWidth;
+  markInternalNavigation(): void {
+    if (this.designModeOn) this.pendingInternalNav = true;
   }
 
   setDesignPickMode(on: boolean): void {
@@ -147,6 +129,53 @@ export class IdeBrowserCdpSession {
 
   get isPickModeOn(): boolean {
     return this.designPickMode;
+  }
+
+  /** Responsive toolbar presets → CDP Emulation device metrics. */
+  async setResponsivePreset(
+    preset: "phone" | "tablet" | "desktop" | "reset",
+    log?: (m: string) => void,
+  ): Promise<void> {
+    const L = log ?? this.designModeLog ?? (() => undefined);
+    if (!this.isLive) throw new Error("CDP not connected");
+    if (preset === "reset") {
+      try {
+        await this.send("Emulation.clearDeviceMetricsOverride", {});
+      } catch (err) {
+        L(`clearDeviceMetricsOverride: ${err}`);
+      }
+      try {
+        await this.send("Emulation.setTouchEmulationEnabled", { enabled: false });
+      } catch {
+        /* optional */
+      }
+      L("viewport reset (native)");
+      return;
+    }
+    const table: Record<
+      "phone" | "tablet" | "desktop",
+      { width: number; height: number; deviceScaleFactor: number; mobile: boolean }
+    > = {
+      phone: { width: 375, height: 812, deviceScaleFactor: 2, mobile: true },
+      tablet: { width: 768, height: 1024, deviceScaleFactor: 2, mobile: true },
+      desktop: { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false },
+    };
+    const metrics = table[preset];
+    await this.send("Emulation.setDeviceMetricsOverride", {
+      width: metrics.width,
+      height: metrics.height,
+      deviceScaleFactor: metrics.deviceScaleFactor,
+      mobile: metrics.mobile,
+    });
+    try {
+      await this.send("Emulation.setTouchEmulationEnabled", {
+        enabled: metrics.mobile,
+        maxTouchPoints: metrics.mobile ? 5 : 0,
+      });
+    } catch {
+      /* optional on some proxies */
+    }
+    L(`viewport ${preset} ${metrics.width}×${metrics.height} mobile=${metrics.mobile}`);
   }
 
   async connectToDebugSession(session: vscode.DebugSession, log: (m: string) => void): Promise<void> {
@@ -234,32 +263,47 @@ export class IdeBrowserCdpSession {
             else p.resolve(msg.result);
             return;
           }
-          // Main-frame navigation → Design Mode OFF (best-effort; presence watch is the reliable path).
-          // In-site navigations happen inside #tachyon-dm-viewport iframe (frame has parentId).
+          // Main-frame navigation: internal (link/form) → re-inject; address bar → OFF.
           if (msg.method === "Page.frameNavigated") {
             const frame = (msg.params as { frame?: { url?: string; parentId?: string } } | undefined)?.frame;
             const isMain = !!frame?.url && !frame.parentId;
             if (isMain) {
               this.lastUrl = frame!.url!;
               if (this.designModeOn) {
-                this.forceDesignModeOff(log, "address-bar / main-frame navigation");
+                this.onMainFrameNavigation(log, "frameNavigated");
               }
             }
           }
-          // js-debug sometimes surfaces address-bar loads as targetInfoChanged instead of frameNavigated.
+          if (
+            (msg.method === "Page.loadEventFired" || msg.method === "Page.domContentEventFired")
+            && this.designModeOn
+            && this.pendingInternalNav
+          ) {
+            this.scheduleInternalReinject(log, msg.method);
+          }
           if (msg.method === "Target.targetInfoChanged" && this.designModeOn) {
             const info = (msg.params as { targetInfo?: { type?: string; url?: string } } | undefined)?.targetInfo;
             if (info?.type === "page" && info.url && info.url !== "about:blank") {
               const prev = this.lastUrl;
               if (prev && info.url !== prev && !info.url.startsWith("about:")) {
                 this.lastUrl = info.url;
-                this.forceDesignModeOff(log, `targetInfoChanged ${prev} → ${info.url}`);
+                this.onMainFrameNavigation(log, "targetInfoChanged");
               }
             }
           }
           if (msg.method === "Runtime.bindingCalled") {
             const p = msg.params as { name?: string; payload?: string } | undefined;
             if (p?.name === DESIGN_MODE_BINDING && typeof p.payload === "string") {
+              // Fast path before page unloads (poll would miss it).
+              try {
+                const parsed = JSON.parse(p.payload) as { __layout?: string };
+                if (parsed?.__layout === "internalNav") {
+                  this.markInternalNavigation();
+                  return;
+                }
+              } catch {
+                /* pick payload */
+              }
               this.onDesignPick?.(p.payload);
             }
           }
@@ -379,13 +423,8 @@ export class IdeBrowserCdpSession {
   }
 
   async navigate(url: string): Promise<void> {
-    // Full main-frame navigation (agent or host) ends Design Mode — same as address bar.
-    if (this.designModeOn) {
-      this.forceDesignModeOff(
-        this.designModeLog ?? (() => undefined),
-        "ide_browser_navigate / host navigate",
-      );
-    }
+    const keepDesignMode = this.designModeOn;
+    if (keepDesignMode) this.pendingInternalNav = true;
     await this.send("Page.navigate", { url });
     this.lastUrl = url;
     await new Promise((r) => setTimeout(r, 400));
@@ -397,6 +436,12 @@ export class IdeBrowserCdpSession {
       if (typeof evalResult?.result?.value === "string") this.lastUrl = evalResult.result.value;
     } catch {
       /* ignore */
+    }
+    if (keepDesignMode && this.designModeOn) {
+      this.scheduleInternalReinject(
+        this.designModeLog ?? (() => undefined),
+        "ide_browser_navigate",
+      );
     }
   }
 
@@ -419,6 +464,28 @@ export class IdeBrowserCdpSession {
    */
   async evaluateInPage(expression: string): Promise<unknown> {
     return this.evaluate(expression);
+  }
+
+  /** Push a Design Mode chat payload into the page (virtual list / working / agents). */
+  async pushDesignModeChat(payload: Record<string, unknown>): Promise<void> {
+    if (!this.isLive) return;
+    const json = JSON.stringify(payload);
+    // Retry briefly — re-inject may not have installed __tachyonDmChatPush yet.
+    for (let i = 0; i < 5; i++) {
+      const ok = await this.evaluateInPage(
+        `(() => {
+          try {
+            if (typeof window.__tachyonDmChatPush === 'function') {
+              window.__tachyonDmChatPush(${json});
+              return true;
+            }
+          } catch (e) {}
+          return false;
+        })()`,
+      );
+      if (ok === true) return;
+      await new Promise((r) => setTimeout(r, 80));
+    }
   }
 
   async screenshotPngBase64(clip?: {
@@ -449,7 +516,7 @@ export class IdeBrowserCdpSession {
    * Enable or disable Design Mode from the VS Code status bar.
    * ON → inject chrome and open the two framed panels immediately.
    * OFF → remove widget entirely.
-   * Address-bar (main-frame) navigation forces OFF; in-site iframe nav keeps ON.
+   * In-page link/form nav → re-inject after load; address bar → OFF.
    */
   async setDesignMode(on: boolean, log?: (m: string) => void): Promise<void> {
     this.designModeLog = log ?? this.designModeLog;
@@ -473,39 +540,143 @@ export class IdeBrowserCdpSession {
       } catch (err) {
         L(`Runtime.addBinding: ${err}`);
       }
-      this.designModeOn = true;
-      this.designPanelOpen = true;
       this.designPickMode = true;
+      this.pendingInternalNav = false;
       try {
         const href = (await this.evaluate("location.href")) as string;
         if (typeof href === "string") this.lastUrl = href;
       } catch {
         /* ignore */
       }
-      // Open both framed panels immediately (no FAB-only first step).
-      await this.injectDesignModeScript({
-        restorePanelOpen: true,
-        restorePickMode: true,
-        panelWidth: this.designPanelWidth,
-      });
+      // Mark ON only after inject succeeds — Trusted Types pages used to throw mid-way
+      // and leave designModeOn=true with no chrome (status bar looked stuck).
+      try {
+        await this.injectDesignModeScript({ restorePickMode: true });
+      } catch (err) {
+        this.designModeOn = false;
+        const msg = err instanceof Error ? err.message : String(err);
+        L(`Design Mode inject failed: ${msg}`);
+        throw new Error(
+          msg.includes("TrustedHTML") || msg.includes("Trusted Types")
+            ? "Design Mode inject blocked by page Trusted Types (CSP). Retry after reload — Tachyon now installs chrome without bare innerHTML."
+            : `Design Mode inject failed: ${msg}`,
+        );
+      }
+      this.designModeOn = true;
       this.startPickPoll(L);
       this.startPresenceWatch(L);
-      L("Design Mode ON — two panels open (status bar toggles off; address bar ends session)");
+      L("Design Mode ON — overlay Picker; navigations re-inject overlays (status bar turns off)");
     } else {
+      this.clearReinjectTimer();
       this.stopPresenceWatch();
       this.stopPickPoll();
+      this.pendingInternalNav = false;
       await this.removeDesignModeScript();
+      try {
+        await this.setResponsivePreset("reset", L);
+      } catch {
+        /* best-effort clear emulation */
+      }
       this.designModeOn = false;
-      this.designPanelOpen = false;
       this.designPickMode = true;
-      L("Design Mode OFF — widget removed");
+      L("Design Mode OFF — overlays removed");
     }
   }
 
   /**
-   * Reliable detection when address bar replaces the main document:
-   * Design Mode inject chrome disappears. CDP frameNavigated is often missing on
-   * Integrated Browser URL-bar navigations, so we poll presence while ON.
+   * Any main-frame navigation while Design Mode is ON → re-inject overlays.
+   * (Link, SPA, or address bar — only the status bar turns Design Mode off.)
+   */
+  private onMainFrameNavigation(log: (m: string) => void, reason: string): void {
+    if (!this.designModeOn) return;
+    this.pendingInternalNav = true;
+    this.scheduleInternalReinject(log, reason);
+  }
+
+  private clearReinjectTimer(): void {
+    if (this.reinjectTimer) {
+      clearTimeout(this.reinjectTimer);
+      this.reinjectTimer = null;
+    }
+  }
+
+  private scheduleInternalReinject(log: (m: string) => void, reason: string): void {
+    this.clearReinjectTimer();
+    // Wait for document after main-frame link/form navigation.
+    this.reinjectTimer = setTimeout(() => {
+      this.reinjectTimer = null;
+      void this.reinstallAfterInternalNav(log, reason);
+    }, 450);
+  }
+
+  /**
+   * After in-page navigation: re-open two panels with prior picker/width state.
+   */
+  private async reinstallAfterInternalNav(log: (m: string) => void, reason: string): Promise<void> {
+    if (!this.designModeOn || !this.isLive) return;
+    if (this.reinjectInFlight) {
+      this.scheduleInternalReinject(log, "queued");
+      return;
+    }
+    this.reinjectInFlight = true;
+    this.pendingInternalNav = false;
+    try {
+      log(`Design Mode re-inject after in-page nav (${reason})`);
+      await this.reattachPageTarget(log);
+      for (let i = 0; i < 16; i++) {
+        try {
+          const ready = (await this.evaluate(
+            `document.readyState + '|' + (document.body ? 'body' : 'nobody')`,
+          )) as string;
+          if (typeof ready === "string" && ready.includes("body") && !ready.startsWith("loading")) {
+            break;
+          }
+        } catch {
+          if (i === 4 || i === 10) await this.reattachPageTarget(log);
+        }
+        await new Promise((r) => setTimeout(r, 120));
+      }
+      try {
+        await this.send("Runtime.addBinding", { name: DESIGN_MODE_BINDING });
+      } catch (err) {
+        log(`addBinding after in-page nav: ${err}`);
+      }
+      let ok = false;
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        try {
+          await this.injectDesignModeScript({
+            restorePickMode: this.designPickMode,
+          });
+          await new Promise((r) => setTimeout(r, 40));
+          const present = (await this.evaluate(
+            `!!document.getElementById('tachyon-dm-root') && !!document.getElementById('tachyon-dm-picker')`,
+          )) as boolean;
+          if (present) {
+            ok = true;
+            try {
+              const href = (await this.evaluate("location.href")) as string;
+              if (typeof href === "string") this.lastUrl = href;
+            } catch {
+              /* ignore */
+            }
+            log(`Design Mode re-injected after in-page nav (attempt ${attempt})`);
+            break;
+          }
+        } catch (err) {
+          log(`re-inject attempt ${attempt}: ${err}`);
+          if (attempt === 2) await this.reattachPageTarget(log);
+        }
+        await new Promise((r) => setTimeout(r, 180 * attempt));
+      }
+      if (!ok) log("Design Mode re-inject failed — presence watch will retry or user can toggle");
+    } finally {
+      this.reinjectInFlight = false;
+    }
+  }
+
+  /**
+   * While Design Mode is ON: if overlays vanished after a navigation, re-inject.
+   * Never auto-disables Design Mode — only the status bar does that.
    */
   private startPresenceWatch(log: (m: string) => void): void {
     this.stopPresenceWatch();
@@ -523,26 +694,24 @@ export class IdeBrowserCdpSession {
   }
 
   private async presenceWatchTick(log: (m: string) => void): Promise<void> {
-    if (!this.designModeOn || !this.isLive || this.presenceChecking) return;
+    if (!this.designModeOn || !this.isLive || this.presenceChecking || this.reinjectInFlight) return;
     this.presenceChecking = true;
     try {
-      // Prefer reattach when session looks dead — then probe chrome markers.
       let snap: { hasChrome?: boolean; href?: string } | null = null;
       try {
         snap = (await this.evaluate(`(() => ({
-          hasChrome: !!(document.getElementById('tachyon-dm-root') || document.getElementById('tachyon-dm-shell')),
+          hasChrome: !!(document.getElementById('tachyon-dm-root') && document.getElementById('tachyon-dm-picker')),
           href: location.href
         }))()`)) as { hasChrome?: boolean; href?: string };
       } catch {
-        // Page session often dies on address-bar nav before frameNavigated is delivered.
         await this.reattachPageTarget(log);
         try {
           snap = (await this.evaluate(`(() => ({
-            hasChrome: !!(document.getElementById('tachyon-dm-root') || document.getElementById('tachyon-dm-shell')),
+            hasChrome: !!(document.getElementById('tachyon-dm-root') && document.getElementById('tachyon-dm-picker')),
             href: location.href
           }))()`)) as { hasChrome?: boolean; href?: string };
         } catch {
-          this.forceDesignModeOff(log, "page unreachable after address-bar navigation");
+          this.scheduleInternalReinject(log, "presence-unreachable");
           return;
         }
       }
@@ -550,40 +719,11 @@ export class IdeBrowserCdpSession {
         this.lastUrl = snap.href;
       }
       if (!snap?.hasChrome) {
-        this.forceDesignModeOff(log, "widget gone (address-bar navigation)");
+        this.scheduleInternalReinject(log, "presence-missing");
       }
     } finally {
       this.presenceChecking = false;
     }
-  }
-
-  /**
-   * Main-frame / address-bar navigation: drop host Design Mode state and refresh URL for status bar.
-   * Page document is already going away — do not require evaluate cleanup of the inject.
-   */
-  private forceDesignModeOff(log: (m: string) => void, reason: string): void {
-    if (!this.designModeOn) return;
-    this.stopPresenceWatch();
-    this.stopPickPoll();
-    this.designModeOn = false;
-    this.designPanelOpen = false;
-    this.designPickMode = true;
-    log(`Design Mode OFF — ${reason}`);
-    // Refresh lastUrl so globe status bar shows the post-nav page, then paint host UI.
-    void (async () => {
-      try {
-        await this.reattachPageTarget(log);
-        const href = (await this.evaluate("location.href")) as string;
-        if (typeof href === "string" && href) this.lastUrl = href;
-      } catch {
-        /* ignore */
-      }
-      try {
-        this.onDesignModeForcedOff?.();
-      } catch {
-        /* ignore host paint errors */
-      }
-    })();
   }
 
   private startPickPoll(log: (m: string) => void): void {
@@ -625,18 +765,11 @@ export class IdeBrowserCdpSession {
     }
   }
 
-  private async injectDesignModeScript(opts?: {
-    restorePanelOpen?: boolean;
-    restorePickMode?: boolean;
-    panelWidth?: number;
-  }): Promise<void> {
-    // Companion-style: launcher only / restore panel; site in iframe + side panel cards.
-    // Theme tokens from background-warmed cache (never open a probe panel here).
+  private async injectDesignModeScript(opts?: { restorePickMode?: boolean }): Promise<void> {
+    // Overlay chrome only (footer Picker + glass card). Theme tokens from host cache.
     const expression = buildDesignModeInjectExpression({
       bindingName: DESIGN_MODE_BINDING,
       themeVars: getCachedDmThemeTokens(),
-      panelWidth: opts?.panelWidth ?? this.designPanelWidth,
-      restorePanelOpen: opts?.restorePanelOpen === true,
       restorePickMode: opts?.restorePickMode ?? this.designPickMode,
     });
     await this.evaluate(expression);
@@ -678,14 +811,13 @@ export class IdeBrowserCdpSession {
   }
 
   dispose(): void {
+    this.clearReinjectTimer();
     this.stopPresenceWatch();
     this.stopPickPoll();
     this.designModeOn = false;
-    this.designPanelOpen = false;
     this.designPickMode = true;
-    this.designPanelWidth = 340;
+    this.pendingInternalNav = false;
     this.onDesignPick = null;
-    this.onDesignModeForcedOff = null;
     for (const [, p] of this.pending) p.reject(new Error("CDP disposed"));
     this.pending.clear();
     try {

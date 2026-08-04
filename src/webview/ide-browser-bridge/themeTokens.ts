@@ -104,6 +104,31 @@ export function mapVscodeVarsToDs(v: Record<string, string>): DmThemeCssVars {
   const fontSize = pick(v, ["--vscode-font-size"], "13px");
   const fontFamily = pick(v, ["--vscode-font-family"], "system-ui, sans-serif");
 
+  // Nested chrome surfaces (code blocks, chips) should match panel chrome — not raw page/UA white.
+  // Prefer widget/sidebar over pure input (input is often #fff even when the shell is dark-tinted glass).
+  const surface = card || sideBg || editorBg;
+  const surfaceRaised = inputBg && inputBg !== "#ffffff" && inputBg !== "#fff" ? inputBg : sideBg || card || editorBg;
+
+  // Rough luminance for form-control color-scheme (prevents UA white <pre>/<textarea> on dark shells).
+  const scheme = (() => {
+    const m = editorBg.replace(/#/, "").trim();
+    if (/^[0-9a-fA-F]{6}$/.test(m)) {
+      const r = parseInt(m.slice(0, 2), 16);
+      const g = parseInt(m.slice(2, 4), 16);
+      const b = parseInt(m.slice(4, 6), 16);
+      const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      return L > 0.55 ? "light" : "dark";
+    }
+    if (/rgb\s*\(/i.test(editorBg)) {
+      const nums = editorBg.match(/\d+/g)?.map(Number) ?? [];
+      if (nums.length >= 3) {
+        const L = (0.2126 * nums[0]! + 0.7152 * nums[1]! + 0.0722 * nums[2]!) / 255;
+        return L > 0.55 ? "light" : "dark";
+      }
+    }
+    return "dark";
+  })();
+
   return {
     "--ds-fg": fg,
     "--ds-muted": muted,
@@ -119,6 +144,9 @@ export function mapVscodeVarsToDs(v: Record<string, string>): DmThemeCssVars {
     "--ds-card": card,
     "--ds-input-bg": inputBg,
     "--ds-input-fg": inputFg,
+    "--ds-surface": surface,
+    "--ds-surface-raised": surfaceRaised,
+    "--ds-color-scheme": scheme,
     "--ds-btn-bg": btnBg,
     "--ds-btn-fg": btnFg,
     "--ds-btn-hover": btnHover,

@@ -50,3 +50,7 @@ test/fixtures/**/.tachyon/*
 !test/fixtures/**/.tachyon/plugins/
 !test/fixtures/**/.tachyon/plugins.lock.json
 !test/fixtures/**/.tachyon/vscode-settings-import.json
+# Canonical agent profiles shipped with dogfood fixtures (SDD 478 pointers under agents:).
+!test/fixtures/**/.tachyon/agents/
+!test/fixtures/**/.tachyon/agents/**
+

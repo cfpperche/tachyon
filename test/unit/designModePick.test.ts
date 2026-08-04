@@ -126,5 +126,7 @@ describe("Design Mode shell entry points (shipped source)", () => {
     expect(body).toContain("Example Domain");
     expect(body).toContain("fontSize");
     expect(body).toMatch(/ide_browser_snapshot/);
+    expect(body).toMatch(/token_unknown/);
+    expect(body).toMatch(/ide_browser_status/);
   });
 });

@@ -1,9 +1,12 @@
 /**
- * IDE Integrated Browser bridge — simple UX for Dev Host dogfood.
+ * IDE Integrated Browser bridge — status-bar action cluster.
  *
- * - Status bar globe: open browser when the user wants (no auto-open)
- * - Status bar inspect: toggle Design Mode (click element → send to agent)
- * - Theme tokens seeded/warmed in background (no editor flash on Design Mode)
+ * Two icon-only StatusBarItems that must stay **adjacent** (nothing between them):
+ * shared `name` (overflow / hide-show group) + exclusive fractional priorities.
+ * Each item keeps its own command (click = open browser / toggle Design Mode).
+ *
+ * VS Code always draws a slim gap between entries; we cannot merge into one pill
+ * without losing dual-command. The exclusive priority band is what keeps them together.
  */
 
 import * as vscode from "vscode";
@@ -19,9 +22,27 @@ import {
 const OPEN_CMD = "tachyon.ideBrowserBridge.open";
 const DESIGN_CMD = "tachyon.ideBrowserBridge.designMode";
 
+/** Stable ids — required so VS Code can manage hide/show + overflow grouping. */
+const BROWSER_BAR_ID = "tachyon.ideBrowser.open";
+const DESIGN_BAR_ID = "tachyon.ideBrowser.designMode";
+/**
+ * Shared name → VS Code lists them as one manage/overflow group ("Tachyon IDE").
+ * Must be identical on every item in the cluster.
+ */
+const BAR_GROUP_NAME = "Tachyon IDE";
+
+/**
+ * Exclusive priority band on the left. Floats avoid other extensions inserting
+ * between integer slots (50/49 were easy to split). Higher = further left.
+ * Order: globe (open) then inspect (design).
+ */
+const BROWSER_BAR_PRIORITY = 90_210.2;
+const DESIGN_BAR_PRIORITY = 90_210.1;
+
 let manager: IdeBrowserBridgeManager | null = null;
 let log: vscode.OutputChannel | null = null;
-let statusBar: vscode.StatusBarItem | null = null;
+/** Adjacent cluster: globe + inspect (same name, exclusive priority band). */
+let browserBar: vscode.StatusBarItem | null = null;
 let designBar: vscode.StatusBarItem | null = null;
 let registerOptions: IdeBrowserBridgeRegisterOptions = {};
 
@@ -35,6 +56,28 @@ function workspaceRoot(): string {
     ?? process.cwd();
 }
 
+function createClusterItem(
+  id: string,
+  priority: number,
+  command: string,
+  icon: string,
+  tooltip: string,
+  a11y: string,
+): vscode.StatusBarItem {
+  const item = vscode.window.createStatusBarItem(
+    id,
+    vscode.StatusBarAlignment.Left,
+    priority,
+  );
+  item.name = BAR_GROUP_NAME;
+  item.command = command;
+  item.text = icon;
+  item.tooltip = tooltip;
+  item.accessibilityInformation = { label: a11y };
+  item.show();
+  return item;
+}
+
 export function registerIdeBrowserBridge(
   context: vscode.ExtensionContext,
   options: IdeBrowserBridgeRegisterOptions = {},
@@ -43,21 +86,25 @@ export function registerIdeBrowserBridge(
   log = vscode.window.createOutputChannel("Tachyon IDE Browser");
   context.subscriptions.push(log);
 
-  statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
-  statusBar.command = OPEN_CMD;
-  statusBar.text = "$(globe) IDE Browser";
-  statusBar.tooltip =
-    "Open Tachyon Integrated Browser (home URL from settings.ideBrowser.homeUrl in tachyon.yml)";
-  statusBar.show();
-  context.subscriptions.push(statusBar);
-
-  designBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 49);
-  designBar.command = DESIGN_CMD;
-  designBar.text = "$(inspect) Design Mode";
-  designBar.tooltip =
-    "Toggle Design Mode: ON opens site + panel side-by-side; OFF removes the widget. Address-bar navigation turns it off.";
-  designBar.show();
-  context.subscriptions.push(designBar);
+  // Create as a tight pair so workbench layout places them next to each other.
+  browserBar = createClusterItem(
+    BROWSER_BAR_ID,
+    BROWSER_BAR_PRIORITY,
+    OPEN_CMD,
+    "$(globe)",
+    "Open Integrated Browser",
+    "Open Integrated Browser",
+  );
+  designBar = createClusterItem(
+    DESIGN_BAR_ID,
+    DESIGN_BAR_PRIORITY,
+    DESIGN_CMD,
+    "$(inspect)",
+    "Toggle Design Mode",
+    "Toggle Design Mode",
+  );
+  context.subscriptions.push(browserBar, designBar);
+  paintBars();
 
   context.subscriptions.push(
     vscode.commands.registerCommand(OPEN_CMD, async (url?: string) => {
@@ -75,9 +122,9 @@ export function registerIdeBrowserBridge(
     vscode.commands.registerCommand("tachyon.ideBrowserBridge.start", async () => {
       try {
         const st = await ensureStarted();
-        paintStatusBar(st.endpoint, st.cdp, st.url);
+        paintBars();
         void vscode.window.showInformationMessage(
-          `IDE Browser bridge ready (${st.endpoint}). Use Design Mode on the status bar to pick elements.`,
+          `IDE Browser bridge ready (${st.endpoint}).`,
         );
       } catch (err) {
         fail("start", err);
@@ -87,26 +134,14 @@ export function registerIdeBrowserBridge(
       try {
         await manager?.stop();
         manager = null;
-        paintStatusBar(undefined, "disconnected", "");
-        paintDesignBar(false);
+        paintBars();
         void vscode.window.showInformationMessage("IDE Browser bridge stopped.");
       } catch (err) {
         fail("stop", err);
       }
     }),
     vscode.commands.registerCommand("tachyon.ideBrowserBridge.status", async () => {
-      const st = manager?.status;
-      if (!st?.running) {
-        void vscode.window.showInformationMessage(
-          "IDE Browser bridge is off. Click the globe status bar item or run “Tachyon: Open IDE Browser”.",
-        );
-        return;
-      }
-      const dm = manager?.designMode;
-      void vscode.window.showInformationMessage(
-        `IDE Browser: ${st.endpoint} · CDP ${st.cdp} · ${st.url || "(no page yet)"}`
-          + (dm?.on ? ` · Design Mode → ${dm.agent}` : ""),
-      );
+      await showStatus();
     }),
   );
 
@@ -117,8 +152,6 @@ export function registerIdeBrowserBridge(
     },
   });
 
-  // Theme tokens: seed immediately (no UI), warm from live VS Code colors in background.
-  // Design Mode inject never opens a probe panel — only reads the cache.
   seedDmThemeTokensFromKind();
   warmDmThemeTokensInBackground((m) => log?.appendLine(m));
   context.subscriptions.push(
@@ -129,19 +162,14 @@ export function registerIdeBrowserBridge(
     }),
   );
 
-  // Dev Host: do not auto-open browser, agents, or editor tabs.
-  // User opens via status bar globe when ready.
   if (context.extensionMode === vscode.ExtensionMode.Development) {
-    log?.appendLine("[ide-browser] ready — click status bar globe to open (no auto-boot)");
-    paintStatusBar(undefined, "disconnected", "");
-    if (statusBar) {
-      statusBar.tooltip =
-        "Click to open Integrated Browser (Dev Host — manual open, no auto-boot)";
-    }
+    log?.appendLine(
+      `[ide-browser] ready — status cluster "${BAR_GROUP_NAME}" (globe@${BROWSER_BAR_PRIORITY} + inspect@${DESIGN_BAR_PRIORITY}, no auto-boot)`,
+    );
   }
 }
 
-/** Workspace home URL for the globe / first Design Mode open (tachyon.yml settings.ideBrowser.homeUrl). */
+/** Workspace home URL (tachyon.yml settings.ideBrowser.homeUrl). */
 function homeUrl(): string {
   const ws = registerOptions.getWorkspace?.();
   const configHome = ws?.config?.settings?.ideBrowser?.homeUrl;
@@ -151,18 +179,34 @@ function homeUrl(): string {
   });
 }
 
+async function showStatus(): Promise<void> {
+  const st = manager?.status;
+  if (!st?.running) {
+    void vscode.window.showInformationMessage(
+      "IDE Browser bridge is off. Click the globe icon on the status bar to open.",
+    );
+    return;
+  }
+  const dm = manager?.designMode;
+  void vscode.window.showInformationMessage(
+    `IDE Browser: ${st.endpoint} · CDP ${st.cdp} · ${st.url || "(no page yet)"}`
+      + (dm?.on ? ` · Design Mode → ${dm.agent}` : ""),
+  );
+}
+
 async function openIdeBrowser(url?: string): Promise<void> {
   try {
     let target = typeof url === "string" && url.trim() ? url.trim() : "";
     if (!target) target = homeUrl();
-    const st = await ensureStarted();
-    paintStatusBar(st.endpoint, "connecting", target);
+    await ensureStarted();
+    paintBars();
     const finalUrl = await openAndNavigate(target);
-    paintStatusBar(st.endpoint, "connected", finalUrl);
+    paintBars();
+    log?.appendLine(`[ide-browser] opened ${finalUrl}`);
   } catch (err) {
     fail("open", err);
-    if (statusBar) {
-      statusBar.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+    if (browserBar) {
+      browserBar.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
     }
   }
 }
@@ -172,13 +216,11 @@ async function toggleDesignMode(): Promise<void> {
     const m = await ensureManager();
     if (!m.running) await m.start();
     if (m.status.cdp !== "connected") {
-      // Ensure a page is open so CDP attaches (workspace home, not a hardcoded site).
       await m.navigate(homeUrl());
     }
     if (registerOptions.getWorkspace) {
       m.setWorkspaceResolver(registerOptions.getWorkspace);
     }
-    // Prefer dogfood agent name when marker present
     const ws = registerOptions.getWorkspace?.();
     if (ws) {
       try {
@@ -195,14 +237,11 @@ async function toggleDesignMode(): Promise<void> {
       }
     }
     const state = await m.toggleDesignMode();
-    paintDesignBar(state.on, state.agent);
-    paintStatusBar(m.status.endpoint, m.status.cdp, m.status.url);
-    // Do NOT showInformationMessage here — VS Code freezes the Integrated Browser
-    // with "Paused due to Notification" and Design Mode clicks stop working.
+    paintBars();
     log?.appendLine(
       state.on
-        ? `[design-mode] ON → agent ${state.agent} (two panels; Picker toggle for links; status bar off / address bar ends)`
-        : "[design-mode] OFF (widget removed)",
+        ? `[design-mode] ON → agent ${state.agent} (footer toolbar; nav re-injects)`
+        : "[design-mode] OFF (overlays removed)",
     );
   } catch (err) {
     fail("design mode", err);
@@ -215,8 +254,8 @@ async function setDesignMode(on: boolean): Promise<void> {
     if (!m.running) await m.start();
     if (m.status.cdp !== "connected") await m.navigate(homeUrl());
     if (registerOptions.getWorkspace) m.setWorkspaceResolver(registerOptions.getWorkspace);
-    const state = await m.setDesignMode(on);
-    paintDesignBar(state.on, state.agent);
+    await m.setDesignMode(on);
+    paintBars();
   } catch (err) {
     fail("design mode", err);
   }
@@ -245,56 +284,77 @@ async function ensureManager(): Promise<IdeBrowserBridgeManager> {
     if (registerOptions.getWorkspace) {
       manager.setWorkspaceResolver(registerOptions.getWorkspace);
     }
-    manager.setDesignModeChangedHandler((state) => {
-      paintDesignBar(state.on, state.agent);
-      // Session end / recovery turns Design Mode off — keep status bar honest.
-      const st = manager?.status;
-      if (st?.running) {
-        paintStatusBar(st.endpoint, st.cdp, st.url);
-      } else {
-        paintStatusBar(undefined, "disconnected", "");
-      }
+    manager.setDesignModeChangedHandler(() => {
+      paintBars();
     });
   }
   return manager;
 }
 
-function paintStatusBar(
-  endpoint: string | undefined,
-  cdp: string,
-  url: string,
-): void {
-  if (!statusBar) return;
-  statusBar.backgroundColor = undefined;
-  if (!endpoint) {
-    statusBar.text = "$(globe) IDE Browser";
-    statusBar.tooltip = "Click to start bridge and open Integrated Browser";
-    return;
-  }
-  const short = url && url !== "about:blank" ? truncate(url, 40) : "ready";
-  statusBar.text = `$(globe) IDE Browser · ${short}`;
-  statusBar.tooltip = [
-    "Click to (re)open Integrated Browser",
-    `Bridge: ${endpoint}`,
-    `CDP: ${cdp}`,
-    url ? `URL: ${url}` : "",
-  ].filter(Boolean).join("\n");
-}
+/**
+ * Paint the cluster: icon-only, shared group name, state in tooltip + background.
+ * Never put long labels in `text` — that is what makes the pair look like two separate bars.
+ */
+function paintBars(): void {
+  const st = manager?.status;
+  const dm = manager?.designMode;
+  const endpoint = st?.running ? st.endpoint : undefined;
+  const cdp = st?.cdp ?? "disconnected";
+  const url = st?.url ?? "";
+  const dmOn = !!dm?.on;
 
-function paintDesignBar(on: boolean, agent?: string): void {
-  if (!designBar) return;
-  if (on) {
-    designBar.text = `$(inspect) Design Mode ON${agent ? ` → ${agent}` : ""}`;
-    designBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
-    designBar.tooltip =
-      "Design Mode ON — site + panel framed side-by-side. "
-      + "In-page navigation keeps it on; address-bar navigation turns it off. "
-      + "Click here to turn off and remove the widget.";
-  } else {
-    designBar.text = "$(inspect) Design Mode";
-    designBar.backgroundColor = undefined;
-    designBar.tooltip =
-      "Toggle Design Mode: opens two framed panels (site + Design Mode). Address bar ends the session.";
+  if (browserBar) {
+    browserBar.name = BAR_GROUP_NAME;
+    browserBar.command = OPEN_CMD;
+    browserBar.text = "$(globe)";
+    browserBar.backgroundColor = undefined;
+    if (!endpoint) {
+      browserBar.tooltip = "Tachyon IDE — Open Integrated Browser (settings.ideBrowser.homeUrl)";
+      browserBar.accessibilityInformation = { label: "Tachyon IDE: Open Integrated Browser" };
+    } else {
+      browserBar.tooltip = [
+        "Tachyon IDE — Integrated Browser",
+        `Bridge: ${endpoint}`,
+        `CDP: ${cdp}`,
+        url && url !== "about:blank" ? `URL: ${url}` : "URL: (ready)",
+        "",
+        "Click to reopen at homeUrl",
+      ].join("\n");
+      browserBar.accessibilityInformation = {
+        label: url && url !== "about:blank"
+          ? `Tachyon IDE: Integrated Browser — ${url}`
+          : "Tachyon IDE: Integrated Browser — ready",
+      };
+    }
+  }
+
+  if (designBar) {
+    designBar.name = BAR_GROUP_NAME;
+    designBar.command = DESIGN_CMD;
+    designBar.text = "$(inspect)";
+    if (dmOn) {
+      designBar.backgroundColor = new vscode.ThemeColor("statusBarItem.warningBackground");
+      designBar.tooltip = [
+        "Tachyon IDE — Design Mode ON",
+        dm?.agent ? `Agent: ${dm.agent}` : "",
+        "Footer toolbar: picker + responsive presets",
+        "Navigations re-inject while ON",
+        "",
+        "Click to turn off",
+      ].filter(Boolean).join("\n");
+      designBar.accessibilityInformation = {
+        label: `Tachyon IDE: Design Mode ON${dm?.agent ? ` — ${dm.agent}` : ""}`,
+      };
+    } else {
+      designBar.backgroundColor = undefined;
+      designBar.tooltip = [
+        "Tachyon IDE — Design Mode OFF",
+        "Overlay Picker + responsive presets on the page",
+        "",
+        "Click to turn on",
+      ].join("\n");
+      designBar.accessibilityInformation = { label: "Tachyon IDE: Design Mode OFF — click to enable" };
+    }
   }
 }
 
@@ -304,8 +364,4 @@ function fail(op: string, err: unknown): void {
   void vscode.window.showErrorMessage(`IDE Browser ${op} failed: ${msg}`, "Show log").then((c) => {
     if (c === "Show log") log?.show(true);
   });
-}
-
-function truncate(s: string, n: number): string {
-  return s.length <= n ? s : `${s.slice(0, n - 1)}…`;
 }

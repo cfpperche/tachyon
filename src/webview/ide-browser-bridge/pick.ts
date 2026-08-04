@@ -170,6 +170,7 @@ export function formatDesignModePickForAgent(
   if (pick.screenshotPath) {
     lines.push("", `### Screenshot`, `File: \`${pick.screenshotPath}\``);
   }
+  const sel = pick.selectorHint || pick.tag.toLowerCase();
   lines.push(
     "",
     "### outerHTML (truncated)",
@@ -177,13 +178,20 @@ export function formatDesignModePickForAgent(
     pick.html || "<!-- empty -->",
     "```",
     "",
-    "### How to act on this pick (Bridge tools on the Integrated Browser)",
-    "1. Prefer selector: `" + (pick.selectorHint || pick.tag.toLowerCase()) + "`",
-    "2. Click: `ide_browser_click` with that selector",
+    "### How to act on this pick (Bridge MCP → Integrated Browser)",
+    "Official path (prefer this — do **not** dig for `~/.tachyon/ide-browser-instances/`):",
+    "1. `ide_browser_status` — confirm bridge online + CDP connected",
+    "2. Prefer selector: `" + sel + "`",
     "3. Change styles/DOM: `ide_browser_eval` e.g.",
-    "   `document.querySelector(" + JSON.stringify(pick.selectorHint || pick.tag.toLowerCase()) + ").style.color = 'red'`",
-    "4. Re-check: `ide_browser_snapshot` / `ide_browser_screenshot`",
-    "5. If tools missing: Integrated Browser bridge offline — open the globe status bar in VS Code.",
+    "   `document.querySelector(" + JSON.stringify(sel) + ").style.setProperty('background','red','important')`",
+    "4. Click: `ide_browser_click` with that selector when needed",
+    "5. Re-check: `ide_browser_snapshot` / `ide_browser_screenshot`",
+    "",
+    "### If MCP fails",
+    "- **401 / `token_unknown`**: Bridge auth rejected your agent token — not “tools missing” and not “bridge offline”.",
+    "  Retry once; Tachyon heals live process tokens into the registry. If it still fails, restart this agent (remints `TACHYON_AGENT_BRIDGE_TOKEN`).",
+    "- **Tools missing / bridge_offline**: open the globe icon on the VS Code status bar (IDE Browser bridge).",
+    "- Master token in env is **not** a substitute for MCP when the client only sends the agent token.",
   );
   return lines.join("\n");
 }

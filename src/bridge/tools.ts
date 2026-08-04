@@ -358,13 +358,15 @@ export interface BridgeDeps {
    */
   companionTabToolsEnabled?: () => boolean;
   /**
-   * Prototype (thimo-style): VS Code Integrated Browser bridge is live for this workspace.
-   * When true, register ide_browser_* tools that HTTP to the shell CDP bridge.
+   * @deprecated Prefer always-register when `ideBrowserRequest` is wired.
+   * Kept for tests that gate registration without a request fn. Live engines
+   * register ide_browser_* / design_mode_chat_reply whenever `ideBrowserRequest`
+   * is present; offline calls fail with bridge_offline (companion-style).
    */
   ideBrowserToolsEnabled?: () => boolean;
   /**
    * Call the shell IDE browser bridge: route like "/navigate", optional JSON body.
-   * Returns { ok, data | error } envelope.
+   * Returns { ok, data | error } envelope. Presence of this dep registers the tools.
    */
   ideBrowserRequest?: (
     route: string,
@@ -3614,8 +3616,11 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   }
 
   // Prototype: VS Code Integrated Browser via shell HTTP+CDP bridge (thimo-style).
-  // Enabled when the extension host has written a live instance file for this workspace.
-  if (deps.ideBrowserToolsEnabled?.()) {
+  // Always register when the engine wires `ideBrowserRequest` (or tests enable the gate).
+  // Do NOT gate on "instance file is live right now" — MCP sessions freeze the tool catalog
+  // at connect, and agents spawned before Design Mode would never see design_mode_chat_reply.
+  // Offline calls fail closed via bridge_offline from the client (companion-style).
+  if (deps.ideBrowserRequest || deps.ideBrowserToolsEnabled?.()) {
     const ideReq = async (route: string, body?: Record<string, unknown>) => {
       if (!deps.ideBrowserRequest) {
         return { ok: false as const, error: "ideBrowserRequest not wired on this engine" };
@@ -3755,6 +3760,41 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         try {
           const result = await ideReq("/url");
           if (!result.ok) return fail(new Error(result.error || "ide_browser_url failed"));
+          return ok(JSON.stringify(result.data, null, 2));
+        } catch (err) {
+          return fail(err);
+        }
+      },
+    );
+
+    mcp.registerTool(
+      "design_mode_chat_reply",
+      {
+        description:
+          "Post a plain-language reply into the Design Mode chat panel (Integrated Browser). " +
+          "Required when the human messaged you from Design Mode — the panel only updates via this tool. " +
+          "Plain answer only: no tool narration, no JSON dumps, no terminal-only reply.",
+        inputSchema: {
+          text: z.string().min(1).max(12_000).describe("Plain answer for the human chat panel"),
+          agent: z
+            .string()
+            .min(1)
+            .max(120)
+            .optional()
+            .describe("Ignored if it does not match the Design Mode active agent; speaker defaults to that agent"),
+        },
+      },
+      async ({ text, agent }) => {
+        try {
+          // Prefer authenticated caller name when available (ignore spoofed speaker).
+          const callerName =
+            deps.caller?.kind === "agent" && deps.caller.name ? deps.caller.name : undefined;
+          const speaker = callerName ?? agent;
+          const result = await ideReq("/design-mode/chat-reply", {
+            text,
+            ...(speaker ? { agent: speaker } : {}),
+          });
+          if (!result.ok) return fail(new Error(result.error || "design_mode_chat_reply failed"));
           return ok(JSON.stringify(result.data, null, 2));
         } catch (err) {
           return fail(err);

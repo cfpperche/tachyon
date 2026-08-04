@@ -63,13 +63,21 @@ export interface ResolveOptions extends CallerScope {
 }
 
 const DEFAULT_TTL_MS = 1000 * 60 * 60 * 12;
+/**
+ * After a remint, the prior live token stays accepted for this long so a surviving pane
+ * (failed restart, same-name second session, rebind lag) does not get `token_revoked` /
+ * later `token_unknown` while the new process is still rolling out.
+ */
+export const SUPERSEDE_GRACE_MS = 1000 * 60 * 60;
+
+type EntryState = "live" | "superseded" | "revoked";
 
 interface RegistryEntry {
   digest: Buffer;
   name: string;
   workspaceId: string;
   instanceId: string;
-  state: "live" | "revoked";
+  state: EntryState;
   mintedAt: number;
   lastSeenAt: number;
   expiresAt: number;
@@ -81,7 +89,7 @@ export interface PersistableEntry {
   name: string;
   workspaceId: string;
   instanceId: string;
-  state: "live" | "revoked";
+  state: EntryState;
   mintedAt: number;
   lastSeenAt: number;
   expiresAt: number;
@@ -124,11 +132,15 @@ export class CallerIdentityRegistry {
     return crypto.createHmac("sha256", this.hmacKey).update(token).digest();
   }
 
-  /** Mints a fresh per-agent token, revoking any prior LIVE entry for the same name+scope first (restart =
-   *  revoke-old-then-mint-new, dueto F4 ordering). Returns the plaintext token ONCE — never stored. */
+  /**
+   * Mints a fresh per-agent token. Prior LIVE entries for the same name+scope become
+   * `superseded` (still accepted for {@link SUPERSEDE_GRACE_MS}) rather than hard-revoked, so a
+   * surviving pane that still holds the previous env token keeps working through remint/restart
+   * races. Explicit {@link revoke} (kill/dismiss) still hard-revokes. Returns plaintext ONCE.
+   */
   mint(name: string, opts: MintOptions): string {
     const now = opts.now ?? Date.now();
-    this.revoke(name, opts, now);
+    this.supersedeLive(name, opts, now);
     const token = crypto.randomBytes(32).toString("hex");
     this.entries.push({
       digest: this.digestOf(token),
@@ -143,10 +155,55 @@ export class CallerIdentityRegistry {
     return token;
   }
 
-  /** Revokes the current LIVE entry for name+scope, if any (kill/dismiss/restart). No-op if not live. */
-  revoke(name: string, scope: CallerScope, now = Date.now()): void {
+  /**
+   * Re-bind an existing plaintext token as LIVE for name+scope (digest-only store).
+   * Used to heal survivors whose process still holds a token the registry lost (HMAC reload edge,
+   * sweep of never-used tokens, remint without process update past grace, etc.).
+   * No-op if the token already resolves as this agent. Does not revoke other live entries for the
+   * name (multiple survivors may coexist until kill).
+   */
+  adopt(name: string, token: string, opts: MintOptions): "adopted" | "already_ok" | "invalid" {
+    const trimmed = token.trim();
+    if (!trimmed || !/^[0-9a-f]{64}$/i.test(trimmed)) return "invalid";
+    const existing = this.resolve(trimmed, opts);
+    if (existing.ok && existing.snapshot.name === name) return "already_ok";
+    const now = opts.now ?? Date.now();
+    // Drop any prior digest match for this exact token (revoked/expired/wrong-name) so we can re-live it.
+    const digest = this.digestOf(trimmed);
+    this.entries = this.entries.filter((e) => !timingSafeEqualBuf(digest, e.digest));
+    this.entries.push({
+      digest,
+      name,
+      workspaceId: opts.workspaceId,
+      instanceId: opts.instanceId,
+      state: "live",
+      mintedAt: now,
+      lastSeenAt: now,
+      expiresAt: now + (opts.ttlMs ?? DEFAULT_TTL_MS),
+    });
+    return "adopted";
+  }
+
+  /** Soft-retire prior LIVE credentials for name+scope (remint path). */
+  private supersedeLive(name: string, scope: CallerScope, now: number): void {
     for (const e of this.entries) {
       if (e.state === "live" && e.name === name && e.workspaceId === scope.workspaceId && e.instanceId === scope.instanceId) {
+        e.state = "superseded";
+        e.lastSeenAt = now;
+        e.expiresAt = now + SUPERSEDE_GRACE_MS;
+      }
+    }
+  }
+
+  /** Hard-revokes LIVE and superseded entries for name+scope (kill/dismiss). */
+  revoke(name: string, scope: CallerScope, now = Date.now()): void {
+    for (const e of this.entries) {
+      if (
+        (e.state === "live" || e.state === "superseded")
+        && e.name === name
+        && e.workspaceId === scope.workspaceId
+        && e.instanceId === scope.instanceId
+      ) {
         e.state = "revoked";
         e.lastSeenAt = now;
       }
@@ -165,7 +222,8 @@ export class CallerIdentityRegistry {
    * Hash the presented bearer once, then constant-time-compare against every entry's digest (dueto F2 —
    * indistinguishable timing/messages for an unknown token). Security-ordered like completeNode's
    * validator: existence (any scope) → scope match → revoked → expired, so a caller never learns more
-   * than the one reason that actually applies. A successful resolve slides the idle TTL forward.
+   * than the one reason that actually applies. A successful resolve slides the idle TTL forward
+   * (live entries only — superseded keeps its shorter grace deadline).
    */
   resolve(bearer: string, opts: ResolveOptions): ResolveResult {
     const digest = this.digestOf(bearer);
@@ -182,7 +240,10 @@ export class CallerIdentityRegistry {
     if (inScope.state === "revoked") return { ok: false, reason: "token_revoked" };
     if (inScope.expiresAt <= now) return { ok: false, reason: "token_expired" };
     inScope.lastSeenAt = now;
-    inScope.expiresAt = now + DEFAULT_TTL_MS;
+    if (inScope.state === "live") {
+      inScope.expiresAt = now + DEFAULT_TTL_MS;
+    }
+    // superseded: accepted until its grace expiresAt (not slid — remint already set the window)
     return { ok: true, snapshot: { kind: "agent", name: inScope.name } };
   }
 

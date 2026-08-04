@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
 import crypto from "node:crypto";
-import { CallerIdentityRegistry, resolveCaller, resolveActor, loadOrCreateHmacKey, type CallerScope, type SecretPort } from "../../src/bridge/callerIdentity.js";
+import {
+  CallerIdentityRegistry,
+  resolveCaller,
+  resolveActor,
+  loadOrCreateHmacKey,
+  SUPERSEDE_GRACE_MS,
+  type CallerScope,
+  type SecretPort,
+} from "../../src/bridge/callerIdentity.js";
 
 /**
  * spec 351 (layer B, T1) — the digest-only registry + resolution + actor helper, in isolation from
@@ -44,12 +52,44 @@ describe("CallerIdentityRegistry — mint/resolve lifecycle", () => {
     expect(reg.resolve(token, SCOPE_A)).toEqual({ ok: false, reason: "token_revoked" });
   });
 
-  it("restart = revoke-old-then-mint-new: the old token is revoked, the new one resolves", () => {
+  it("restart remint: prior token stays accepted during supersede grace; new token is live", () => {
+    const reg = new CallerIdentityRegistry(KEY);
+    const now = 1_000_000;
+    const oldToken = reg.mint("claude", { ...SCOPE_A, now });
+    const newToken = reg.mint("claude", { ...SCOPE_A, now: now + 1 });
+    // Surviving pane still holding oldToken must not 401 during grace (dogfood remint race).
+    expect(reg.resolve(oldToken, { ...SCOPE_A, now: now + 1 })).toEqual({
+      ok: true,
+      snapshot: { kind: "agent", name: "claude" },
+    });
+    expect(reg.resolve(newToken, { ...SCOPE_A, now: now + 1 })).toEqual({
+      ok: true,
+      snapshot: { kind: "agent", name: "claude" },
+    });
+    // After grace window, superseded token expires.
+    expect(reg.resolve(oldToken, { ...SCOPE_A, now: now + SUPERSEDE_GRACE_MS + 2 })).toEqual({
+      ok: false,
+      reason: "token_expired",
+    });
+    expect(reg.resolve(newToken, { ...SCOPE_A, now: now + SUPERSEDE_GRACE_MS + 2 }).ok).toBe(true);
+  });
+
+  it("explicit revoke hard-kills live and superseded tokens", () => {
     const reg = new CallerIdentityRegistry(KEY);
     const oldToken = reg.mint("claude", SCOPE_A);
-    const newToken = reg.mint("claude", SCOPE_A); // mint() itself revokes the prior live entry first
+    const newToken = reg.mint("claude", SCOPE_A);
+    reg.revoke("claude", SCOPE_A);
     expect(reg.resolve(oldToken, SCOPE_A)).toEqual({ ok: false, reason: "token_revoked" });
-    expect(reg.resolve(newToken, SCOPE_A)).toEqual({ ok: true, snapshot: { kind: "agent", name: "claude" } });
+    expect(reg.resolve(newToken, SCOPE_A)).toEqual({ ok: false, reason: "token_revoked" });
+  });
+
+  it("adopt re-binds a process-held token the registry forgot (token_unknown heal)", () => {
+    const reg = new CallerIdentityRegistry(KEY);
+    const token = "ab".repeat(32);
+    expect(reg.resolve(token, SCOPE_A)).toEqual({ ok: false, reason: "token_unknown" });
+    expect(reg.adopt("grok", token, SCOPE_A)).toBe("adopted");
+    expect(reg.resolve(token, SCOPE_A)).toEqual({ ok: true, snapshot: { kind: "agent", name: "grok" } });
+    expect(reg.adopt("grok", token, SCOPE_A)).toBe("already_ok");
   });
 
   it("in-flight semantics: a token resolved once stays valid for that call even if revoked immediately after — the registry itself doesn't retroactively invalidate a snapshot already taken", () => {

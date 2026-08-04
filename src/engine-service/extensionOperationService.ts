@@ -578,6 +578,11 @@ export async function executeExtensionCommand(
     case "bridge.stop":
       await workspace.stopBridge();
       return json({ stopped: true });
+    case "bridge.refresh-tools":
+      // IDE browser start/stop (and similar): close live MCP sessions so registerTools re-runs
+      // and runtimes re-discover ide_browser_* / design_mode_chat_reply.
+      workspace.bridge.forceToolListRefresh();
+      return json({ refreshed: true });
     case "tmux.kill": {
       assertTachyonSession(command.expected.session);
       const rows = (await workspace.tmux.serverSnapshot(SESSION_PREFIX))

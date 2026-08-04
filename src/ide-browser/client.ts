@@ -10,16 +10,67 @@ import path from "node:path";
 import type { IdeBrowserEnvelope, IdeBrowserInstanceFile } from "./protocol.js";
 import { IDE_BROWSER_INSTANCES_DIR_NAME } from "./protocol.js";
 
+/** Operator home even when a private runtime rewrites `$HOME` (Grok/Hermes GROK_HOME etc.). */
+function operatorHomedir(): string {
+  try {
+    const u = os.userInfo().homedir;
+    if (u) return u;
+  } catch {
+    /* fall through */
+  }
+  return os.homedir();
+}
+
 function instancesDir(): string {
-  return path.join(os.homedir(), ".tachyon", IDE_BROWSER_INSTANCES_DIR_NAME);
+  return path.join(operatorHomedir(), ".tachyon", IDE_BROWSER_INSTANCES_DIR_NAME);
 }
 
 function normalizeRoot(root: string): string {
   return path.resolve(root);
 }
 
+function isPidAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove instance files whose owning shell pid is dead (or file is corrupt).
+ * Returns how many files were deleted. Safe to call often — discovery and shell start both use it.
+ */
+export function sweepDeadIdeBrowserInstances(): number {
+  const dir = instancesDir();
+  if (!fs.existsSync(dir)) return 0;
+  let removed = 0;
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    const full = path.join(dir, name);
+    try {
+      const raw = JSON.parse(fs.readFileSync(full, "utf8")) as IdeBrowserInstanceFile;
+      if (raw.kind !== "tachyon-ide-browser" || raw.schemaVersion !== 1 || !isPidAlive(raw.pid)) {
+        fs.unlinkSync(full);
+        removed++;
+      }
+    } catch {
+      try {
+        fs.unlinkSync(full);
+        removed++;
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return removed;
+}
+
 /** Find a live instance file whose workspaceRoot matches (or is a parent of) the given root. */
 export function findIdeBrowserInstance(workspaceRoot: string): IdeBrowserInstanceFile | null {
+  sweepDeadIdeBrowserInstances();
   const dir = instancesDir();
   if (!fs.existsSync(dir)) return null;
   const want = normalizeRoot(workspaceRoot);
@@ -30,12 +81,7 @@ export function findIdeBrowserInstance(workspaceRoot: string): IdeBrowserInstanc
     try {
       const raw = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")) as IdeBrowserInstanceFile;
       if (raw.kind !== "tachyon-ide-browser" || raw.schemaVersion !== 1) continue;
-      // Process still alive?
-      try {
-        process.kill(raw.pid, 0);
-      } catch {
-        continue;
-      }
+      if (!isPidAlive(raw.pid)) continue;
       const root = normalizeRoot(raw.workspaceRoot);
       if (want === root || want.startsWith(root + path.sep) || root.startsWith(want + path.sep)) {
         if (root.length > bestLen) {

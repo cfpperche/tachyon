@@ -153,7 +153,7 @@ describe("resume env integration proof (spec 351 T6)", () => {
     return d;
   }
 
-  it("restart (a session-recreation event, same env-injection path as resume) mints a FRESH token — the old one is revoked, the new one is in the recreated session's argv", async () => {
+  it("restart (a session-recreation event, same env-injection path as resume) mints a FRESH token — prior token stays valid during supersede grace", async () => {
     const root = mkdir();
     // SDD 478 M7 — the token under proof is an AGENT's, so the agent is declared as one: a
     // canonical profile plus the host-custodied authority that attests it.
@@ -176,13 +176,13 @@ describe("resume env integration proof (spec 351 T6)", () => {
       expect(secondToken).toBeTruthy();
       expect(secondToken).not.toBe(firstToken);
 
-      // Resolve both against the SAME registry state persisted by this workspace (mirrors what Bridge.ts
-      // would do): the pre-restart token is now token_revoked; the post-restart one resolves as "claude".
+      // Remint supersedes (not hard-revokes) so a surviving pane holding firstToken does not 401.
+      // Kill/dismiss still hard-revokes. New token is the live credential.
       const key = await secretHmacKey(secretsMap);
       const persisted = stateMap.get(`tachyon.callerIdentity.registry.${ws.wsHash}`) as never;
       const registry = new CallerIdentityRegistry(key, persisted);
       const scope = { workspaceId: ws.wsHash, instanceId: ws.bridgeInstanceId };
-      expect(registry.resolve(firstToken!, scope)).toEqual({ ok: false, reason: "token_revoked" });
+      expect(registry.resolve(firstToken!, scope)).toEqual({ ok: true, snapshot: { kind: "agent", name: "claude" } });
       expect(registry.resolve(secondToken!, scope)).toEqual({ ok: true, snapshot: { kind: "agent", name: "claude" } });
     } finally {
       ws.dispose();

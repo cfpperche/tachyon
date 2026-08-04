@@ -1,10 +1,10 @@
 /**
- * Auto dogfood for IDE browser bridge (Dev Host only).
+ * Optional dogfood probe for IDE browser bridge (Dev Host only).
  *
- * When the open workspace has `.tachyon/ide-browser-dogfood.json`:
- * 1. Ensure Saved Agent `grok` exists (create if missing)
- * 2. Start it if not running
- * 3. Send the dogfood prompt once per workspace generation
+ * Prefer the fixture roster (claude / codex / grok as real profile agents — never shell
+ * terminals). When `.tachyon/ide-browser-dogfood.json` is present this helper can still
+ * start the named agent and inject a one-shot prompt; it is not registered on activate
+ * (manual UX: no auto-boot).
  */
 
 import * as fs from "node:fs";

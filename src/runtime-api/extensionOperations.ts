@@ -51,7 +51,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "agent.fork", "agent.continue-task", "worktree.remove", "worktree.delete-branch", "worktree.forget-record", "worktree.remove-managed", "agent.verify", "agent.reanchor",
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
-  "bridge.restart", "bridge.stop", "config.health",
+  "bridge.restart", "bridge.stop", "bridge.refresh-tools", "config.health",
   "companion.unpair",
   "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
   "runtime-config.mark-pending",
@@ -249,6 +249,7 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.delete"), name }).strict(),
   z.object({ action: z.literal("bridge.restart") }).strict(),
   z.object({ action: z.literal("bridge.stop") }).strict(),
+  z.object({ action: z.literal("bridge.refresh-tools") }).strict(),
   z.object({ action: z.literal("tmux.kill"), expected: tmuxPaneIdentitySchema }).strict(),
   z.object({ action: z.literal("tmux.recover") }).strict(),
   z.object({
