@@ -73,6 +73,15 @@ export interface TaskDetailPanelState {
 export class TaskDetailPanelManager {
   private readonly manager: SectionPanelManager<TaskDetailRefreshKind>;
   private readonly drafts = new Map<string, TaskDocumentDraft<TaskPatch>>();
+  /**
+   * t-3c8f2a — the keys whose task has never been saved.
+   *
+   * "New Task" opens a document against a PRE-MINTED id, so the panel exists before the entity does.
+   * Without this set the document could not tell that apart from a task that is merely closed, and
+   * Cancel dropped the human on a read view of something that was never on disk ("Task t-… never
+   * found on disk"). The Pins document already had this distinction; the task document did not.
+   */
+  private readonly provisional = new Set<string>();
 
   constructor(
     extensionUri: vscode.Uri,
@@ -100,6 +109,20 @@ export class TaskDetailPanelManager {
     const target = { project: wsHash, identity: taskId };
     this.manager.open(target);
     this.manager.post(target, taskDocumentModeMessage("edit"));
+  }
+
+  /**
+   * t-3c8f2a — "New Task": a document opened against an id nothing has written yet.
+   *
+   * Separate from `openEdit` for two reasons the Board's + Task button paid for. The mode is DERIVED
+   * from `provisional` rather than posted after `open()` — the post raced the webview mount and won
+   * only by luck here, and lost every time in the Pins equivalent (t-883386). And Cancel has to close
+   * the tab rather than fall back to read mode, because there is no entity to read.
+   */
+  openCreate(wsHash: string, taskId: string): void {
+    const target = { project: wsHash, identity: taskId };
+    this.provisional.add(this.manager.keyFor(target));
+    this.manager.open(target);
   }
 
   openInCurrentScope(taskId: string): boolean {
@@ -185,7 +208,10 @@ export class TaskDetailPanelManager {
         let lastKnown: TaskDetailProjectionV1 | undefined;
         const studioTarget = this.getStudioWorkspaces().find((w) => w.wsHash === project);
         const studio = studioTarget ? new TaskStudioAdapter(studioTarget) : undefined;
-        const policy = new TaskDocumentEditPolicy<TaskPatch>("read", this.drafts.get(session.key));
+        // t-3c8f2a — a task that was never saved has no read model, so read mode would render
+        // "never found on disk". The opening mode is the same fact as `persisted`.
+        let persisted = !this.provisional.has(session.key);
+        const policy = new TaskDocumentEditPolicy<TaskPatch>(persisted ? "read" : "edit", this.drafts.get(session.key));
 
         const postStudioError = (err: unknown): void => {
           const e = mapUnknownError("transport", err);
@@ -303,6 +329,11 @@ export class TaskDetailPanelManager {
             if (msg.type === "cancel") {
               const leaveEditMode = () => {
                 policy.clearDraft();
+                // t-3c8f2a — a task that was never saved has nowhere to go back TO. Falling through
+                // to read mode is what put "Task t-… never found on disk" on screen after Cancel on
+                // a brand-new task. Closing returns the human to the Board they came from, which is
+                // already open behind this tab.
+                if (!persisted) { this.provisional.delete(session.key); session.close(); return; }
                 policy.switchMode("read");
                 session.post(taskDocumentModeMessage("read"));
               };
@@ -313,6 +344,11 @@ export class TaskDetailPanelManager {
                   postStudioError(new Error(result.error.message));
                   return false;
                 }
+                // t-3c8f2a — the save is what makes the task exist, so it must land BEFORE
+                // `leaveEditMode`, which would otherwise read the stale flag and close the tab of a
+                // task that was just created.
+                persisted = true;
+                this.provisional.delete(session.key);
                 leaveEditMode();
                 this.hooks.onTasksChanged();
                 return true;
@@ -322,6 +358,10 @@ export class TaskDetailPanelManager {
             if (msg.type === "save" && policy.draft.patch) {
               const result = await studio.save(taskId, policy.draft.patch);
               if (result.status === "ok") {
+                // t-3c8f2a — same reason as the Save-inside-Cancel branch: once written, this key is
+                // no longer provisional, or a later Cancel would close a tab whose task exists.
+                persisted = true;
+                this.provisional.delete(session.key);
                 policy.clearDraft();
                 policy.switchMode("read");
                 this.hooks.onTasksChanged();
@@ -339,13 +379,20 @@ export class TaskDetailPanelManager {
         };
 
         return {
-          replay: () => { void sendTask(); if (policy.mode === "edit" || policy.draft.dirty) void sendStudioLoad(); },
-          resync: () => { void sendTask(); if (policy.mode === "edit" || policy.draft.dirty) void sendStudioLoad(); },
+          // t-3c8f2a — the mode is announced at the one moment the client is provably listening
+          // (its own READY drives this replay), instead of being posted right after `open()` where it
+          // races the webview mount. A "New Task" therefore shows its form by derivation, not by luck.
+          replay: () => { session.post(taskDocumentModeMessage(policy.mode)); void sendTask(); if (policy.mode === "edit" || policy.draft.dirty) void sendStudioLoad(); },
+          resync: () => { session.post(taskDocumentModeMessage(policy.mode)); void sendTask(); if (policy.mode === "edit" || policy.draft.dirty) void sendStudioLoad(); },
           onMessage: (message) => { void onMessage(message); },
           dispose: () => {
             const draft = policy.close();
-            if (draft) this.drafts.set(session.key, draft);
+            // t-3c8f2a — a draft is retained only for a task that EXISTS. Keeping one for a
+            // never-saved id would hand it to whatever later opens that id, and clearing the
+            // provisional mark here stops a reopened key from starting in edit mode on a stale fact.
+            if (persisted && draft) this.drafts.set(session.key, draft);
             else this.drafts.delete(session.key);
+            this.provisional.delete(session.key);
           },
         };
       },

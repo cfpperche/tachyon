@@ -15,9 +15,13 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
     expect(block).not.toContain("openCockpit(");
   });
 
-  it("the Board's create/edit door opens the task document", () => {
-    const block = blockFrom("const boardPanels", 900);
-    expect(block).toMatch(/openTaskStudio: \(ws, id\)[\s\S]*taskDetailPanels\.openEdit\(ws\.wsHash, id \?\? mintTaskId\(\)\)/);
+  it("the Board's create/edit door opens the task document, and CREATE is not the same call as edit", () => {
+    // t-3c8f2a — this used to accept one call for both (`openEdit(ws.wsHash, id ?? mintTaskId())`).
+    // That conflation is the defect: with no id the task does not exist yet, so Cancel had nothing to
+    // fall back to and left a tab reading "never found on disk". The guard now requires the split.
+    const block = blockFrom("const boardPanels", 1200);
+    expect(block).toMatch(/if \(id\) taskDetailPanels\.openEdit\(ws\.wsHash, id\)/);
+    expect(block).toMatch(/else taskDetailPanels\.openCreate\(ws\.wsHash, mintTaskId\(\)\)/);
     expect(block).not.toContain("openCockpit(");
   });
 
@@ -26,9 +30,9 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
     expect(block).toContain("pinDetailPanels.openEdit(ws.wsHash, item.pinId)");
   });
 
-  it("the new-task command opens a pre-minted task document", () => {
+  it("the new-task command opens a pre-minted task document through the CREATE door", () => {
     const block = blockFrom('registerCommand("tachyon.taskStudio.new"', 400);
-    expect(block).toContain("taskDetailPanels.openEdit(ws.wsHash, mintTaskId())");
+    expect(block).toContain("taskDetailPanels.openCreate(ws.wsHash, mintTaskId())");
   });
 
   it("a persisted Control panel is discarded and replaced by Overview", () => {

@@ -1232,7 +1232,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
     openTask: (ws, taskId) => taskDetailPanels.open(ws.wsHash, taskId),
     openTaskStudio: (ws, id) => {
-      taskDetailPanels.openEdit(ws.wsHash, id ?? mintTaskId());
+      // t-3c8f2a — the Board's "+ Task" (no id) is a CREATE: the document opens against a pre-minted
+      // id nothing has written, so Cancel must close the tab rather than fall back to reading a task
+      // that never existed. An id means an existing task, and that stays an edit.
+      if (id) taskDetailPanels.openEdit(ws.wsHash, id);
+      else taskDetailPanels.openCreate(ws.wsHash, mintTaskId());
     },
     // Deliberately a call THROUGH the shared fan-out rather than a direct self-refresh: a board edit must
     // reach every open Task Detail and the sidebar too, which is the whole reason that function exists.
@@ -3260,7 +3264,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // webview's openTaskStudio action instead of a command).
     vscode.commands.registerCommand("tachyon.taskStudio.new", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) taskDetailPanels.openEdit(ws.wsHash, mintTaskId());
+      if (ws) taskDetailPanels.openCreate(ws.wsHash, mintTaskId());
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for

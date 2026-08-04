@@ -585,3 +585,78 @@ describe("SDD 485 C4 — the pre-existing Task Detail contract still holds", () 
     expect(ws.taskStore.get(task.id).awaitingHuman?.subject?.prototypeId).toBe(first.prototypes[0]!.id);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// New Task: a document opened against an id nothing has written yet.
+// ---------------------------------------------------------------------------------------------
+
+describe("New Task cancels back to the Board, not onto a task that never existed (t-3c8f2a)", () => {
+  /**
+   * The defect the maintainer found by clicking "+ Task" on the Board and then Cancel: the tab stayed
+   * open showing "Task t-788aa7 · never found on disk". `openCreate` did not exist — the create door
+   * reused `openEdit`, so nothing distinguished "never saved" from "saved and closed", and Cancel's
+   * fallback to read mode had nothing to read.
+   */
+  const modesPostedTo = (panel = lastPanel()) =>
+    panel.webview.posted.filter((m) => (m as { type?: string }).type === "taskDocumentMode");
+
+  /** The default harness has no studio target, so a `cancel` never reaches the studio arm at all. */
+  function studioHarness(ws: Workspace): TaskDetailPanelManager {
+    const detail = legacyTaskDetailTarget(ws);
+    const studio = {
+      workspaceRoot: ws.workspaceRoot, wsHash: ws.wsHash, folderName: "root",
+      declaredAgentNames: () => [],
+      loadTaskStudio: async (taskId?: string) => ({
+        workspaceHash: ws.wsHash, folder: "root", taskId: taskId ?? "", title: "", kind: "", priority: null,
+        assignee: "", deps: [], artifacts: [], body: null, attachments: [], prototypes: [], expectUpdatedAt: "rev-1",
+      }),
+      saveTaskStudio: async () => ({ status: "ok" as const }),
+      cancelTaskStudio: async () => {},
+    } as unknown as import("../../src/shell/TaskStudioTarget.js").WorkspaceTaskStudioTarget;
+    return new TaskDetailPanelManager(extensionUri, () => [detail], {
+      onTasksChanged: () => {}, openTaskStudio: () => {},
+    }, undefined, undefined, () => [studio]);
+  }
+
+  it("opens the form by DERIVING edit mode, with nothing posted before the client is listening", async () => {
+    const ws = fakeWorkspace();
+    const h = harness(ws);
+
+    h.manager.openCreate(ws.wsHash, "t-brandnew");
+    expect(modesPostedTo(), "a mode posted before READY reaches no listener").toEqual([]);
+
+    lastPanel().webview.__receive(readyMessage());
+    await flush();
+    expect(modesPostedTo().at(-1)).toMatchObject({ mode: "edit" });
+  });
+
+  it("CLOSES the tab when a never-saved task is cancelled", async () => {
+    const ws = fakeWorkspace();
+    const manager = studioHarness(ws);
+    manager.openCreate(ws.wsHash, "t-cancelme");
+    const panel = lastPanel();
+    panel.webview.__receive(readyMessage());
+    await flush();
+
+    panel.webview.__receive({ studioProtocolVersion: 1, type: "cancel" });
+    await flush();
+
+    expect(panel.disposed, "the tab stayed open on a task with nothing to read").toBe(true);
+  });
+
+  it("keeps the tab open when an EXISTING task is cancelled — read mode is a real destination there", async () => {
+    const ws = fakeWorkspace();
+    const task = await ws.taskStore.create({ title: "already saved", author: "human" });
+    const manager = studioHarness(ws);
+    manager.openEdit(ws.wsHash, task.id);
+    const panel = lastPanel();
+    panel.webview.__receive(readyMessage());
+    await flush();
+
+    panel.webview.__receive({ studioProtocolVersion: 1, type: "cancel" });
+    await flush();
+
+    expect(panel.disposed, "cancelling an existing task must not close its document").toBe(false);
+    expect(modesPostedTo(panel).at(-1)).toMatchObject({ mode: "read" });
+  });
+});
