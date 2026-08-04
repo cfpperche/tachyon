@@ -181,3 +181,30 @@
   color: var(--ds-muted);
   font-style: italic;
 }
+
+/* t-967b5b — `.ck-panel` moved here from cockpit.css during the D10 review, not by preference: the
+   Settings app rendered it on its OUTERMOST container while linking sheets that did not define it, so
+   the panel shipped unstyled. Two consumers today — Control's Overview (2) and Settings (1) — which is
+   the LINK branch of the counting rule, and both already link this sheet.
+
+   It sits beside `ck-card-list` and `ck-empty` because those are the same kind of thing: generic
+   container primitives that were trapped in Control's sheet. That makes this file's NAME increasingly
+   wrong — it is no longer only the Engine workspace contract. Renaming touches four link sites and
+   belongs to its own change, not to a regression fix; recorded so the next reader knows the name is
+   stale rather than descriptive. */
+.ck-panel {
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  padding: var(--ds-3);
+  margin-bottom: var(--ds-3);
+  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
+}
+
+.ck-panel h2 {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ds-muted);
+}

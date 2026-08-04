@@ -157,7 +157,11 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/agent-studio-shell.css",
       "/dist/webview/task-studio.css",
       "/dist/webview/pin-studio.css",
-      "/dist/webview/control-typography.css",
+      // t-967b5b — `control-typography.css` left this list with the same edit that removed it from
+      // `Cockpit.ts`: Control's last `ck-mono` use went out with the Settings migration (D10), and a
+      // host linking a sheet it does not render is bytes for nobody. `cockpitCssParity` is what made
+      // the omission impossible to forget — it compares this list against the shipped host, in order,
+      // and went red the moment the two disagreed.
       "/dist/webview/engine-workspace.css",
       "/dist/webview/cockpit.css",
     ],

@@ -343,23 +343,6 @@ main.ck-main.ck-main--embed,
   color: var(--ds-ok);
 }
 
-.ck-panel {
-  border: var(--ds-border-width) solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  padding: var(--ds-3);
-  margin-bottom: var(--ds-3);
-  background: color-mix(in srgb, var(--vscode-foreground) 3%, transparent);
-}
-
-.ck-panel h2 {
-  margin: 0 0 6px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ds-muted);
-}
-
 .ck-panel p {
   margin: 0 0 6px;
   font-size: 11px;

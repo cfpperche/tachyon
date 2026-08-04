@@ -2230,11 +2230,20 @@ export async function openCockpit(
         agentStudioIsActive ? uri("agent-studio-shell.css") : undefined,
         taskStudioIsActive ? uri("task-studio.css") : undefined,
         pinStudioIsActive ? uri("pin-studio.css") : undefined,
-        // SDD 485 D6 — ck-mono has two consumers now: Control and standalone Worktrees. Its shared
-        // typography sheet is linked here rather than leaving the definition trapped in cockpit.css.
-        uri("control-typography.css"),
-        // SDD 485 D7 — Control has 0 ck-card-list and 0 ci-* consumers after Fleet leaves, but
-        // Overview still has 2 ck-empty consumers. The mirror contract therefore requires this link.
+        // SDD 485 D6 linked `control-typography.css` here because Control used `ck-mono` six times.
+        // D10 took the last five with Settings, and the count is now ZERO — measured across
+        // `cockpit/` and `shared/`, not assumed. A host that links a sheet it does not consume ships
+        // bytes for nothing and, worse, hides when the last consumer left. Removed here; the three
+        // apps that DO consume it (Fleet, Worktrees, Settings) keep linking it themselves.
+        //
+        // D7 predicted this shape would arrive at Phase E, when Control's shell retires. It arrived at
+        // D10 instead, and nothing caught it: the Phase A "mirror" rule is about the PAGE-FRAME
+        // dependency (a `#root` percentage height must link the sheet that provides the frame), not a
+        // general "every linked sheet is consumed". `webviewLinkedSheetUse.test.ts` now asks that
+        // second question.
+        //
+        // SDD 485 D7 — Control has 0 ck-card-list and 0 ci-* consumers after Fleet leaves, but its own
+        // no-model fallback still uses `ck-empty`, so THIS sheet stays anchored by exactly one class.
         uri("engine-workspace.css"),
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),

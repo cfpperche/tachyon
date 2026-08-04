@@ -496,23 +496,66 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
   it("every section app links definitions for the ck/ci classes its JSX consumes", () => {
     const sources = stylesheetSourcesByName();
     const violations: string[] = [];
+    const skipped: string[] = [];
     for (const app of WEBVIEW_APPS.filter((entry) => entry.host === "section")) {
-      const jsxPath = `src/webview/${app.view}/App.tsx`;
-      if (!existsSync(jsxPath)) continue;
+      // t-967b5b — this used to read ONLY `<view>/App.tsx` and `continue` when it was absent, which
+      // skipped the app in silence and reported green for a surface it never opened. Four directories
+      // were invisible that way, two of them the section apps D9 and D10 had just delivered; the
+      // Settings app shipped `ck-panel` on its outermost container with no linked sheet defining it,
+      // and this guard said nothing. A guard whose miss looks identical to a pass is worse than no
+      // guard, because it is BELIEVED. Read whatever the app actually ships.
+      const jsxSources = appSourceFiles(app.view);
       const surface = WEBVIEW_SURFACES.find((entry) => entry.view === app.view);
       if (!surface) continue;
+      if (jsxSources.length === 0) { skipped.push(app.view); continue; }
       const linkedCss = linkedStylesheets(surface)
         .flatMap((name) => sources.get(name) ?? [])
         .map((file) => readFileSync(file, "utf8"))
         .join("\n");
-      const used = new Set([...readFileSync(jsxPath, "utf8").matchAll(/\b(?:ck|ci)-[a-z0-9-]+/g)]
-        .map((match) => match[0].replace(/-$/, "")));
+      const jsx = jsxSources.map((file) => readFileSync(file, "utf8")).join("\n");
+      // Only CLASS positions. Matching the bare token anywhere caught `id="ck-settings-scope-global-title"`
+      // and its `aria-labelledby` partner — accessibility ids that follow the same naming convention and
+      // are styled by nothing on purpose. The narrow read (App.tsx only) never saw them, so widening the
+      // guard without narrowing WHERE it looks would have traded a silent miss for a false red, and a
+      // guard that cries wolf gets edited until it stops crying.
+      const used = new Set(classAttributeValues(jsx)
+        .flatMap((value) => [...value.matchAll(/\b(?:ck|ci)-[a-z0-9-]+/g)].map((m) => m[0]))
+        .map((name) => name.replace(/-$/, "")));
       for (const className of used) {
         if (!new RegExp(`\\.${className}(?![a-z0-9-])`).test(linkedCss)) {
           violations.push(`${app.view}: uses .${className}, but none of its linked stylesheets defines it`);
         }
       }
     }
+    // A section app with no source at all is not a pass — it is the condition that hid the misses above.
+    expect(skipped, `section apps with no readable JSX source — this guard cannot see them: ${skipped.join(", ")}`).toEqual([]);
     expect(violations, violations.join("\n")).toEqual([]);
   });
 });
+
+/**
+ * The text of every `class` attribute in a JSX source — both `class="a b"` and `class={…}` forms, the
+ * second taken whole so template literals and conditionals inside it still yield their class names.
+ */
+function classAttributeValues(jsx: string): string[] {
+  return [
+    ...[...jsx.matchAll(/\bclass="([^"]*)"/g)].map((m) => m[1]),
+    ...[...jsx.matchAll(/\bclass=\{([^}]*)\}/g)].map((m) => m[1]),
+  ];
+}
+
+/** Every component source that ships inside one app's bundle — its whole directory, not one hoped-for name. */
+function appSourceFiles(view: string): string[] {
+  const dir = `src/webview/${view}`;
+  if (!existsSync(dir)) return [];
+  const out: string[] = [];
+  const walk = (d: string): void => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const path = `${d}/${entry.name}`;
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith(".tsx")) out.push(path);
+    }
+  };
+  walk(dir);
+  return out;
+}

@@ -66,7 +66,11 @@ describe("preview route table", () => {
       "/dist/webview/agent-studio-shell.css",
       "/dist/webview/task-studio.css",
       "/dist/webview/pin-studio.css",
-      "/dist/webview/control-typography.css",
+      // t-967b5b — `control-typography.css` dropped out of Control's list when the Settings migration
+      // took its last `ck-mono` consumer. Three files spell this list out: the host, the preview route
+      // table, and this expectation. `cockpitCssParity` ties the first two together, so a change caught
+      // there still lands here by hand — which is how one edit needed three, and why the third only
+      // surfaced on the second gate run.
       "/dist/webview/engine-workspace.css",
       "/dist/webview/cockpit.css",
     ]);

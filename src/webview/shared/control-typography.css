@@ -1,6 +1,11 @@
-/* SDD 485 D6 — shared typography used by Control and extracted section apps. This is separate from
-   engine-workspace.css because ck-mono describes no workspace or Engine contract; its two consumers are
-   Control (six uses) and Worktrees (three uses). */
+/* SDD 485 D6 — shared typography for the extracted section apps. Separate from engine-workspace.css
+   because `ck-mono` describes no workspace or Engine contract; it is a type utility that happened to be
+   trapped in cockpit.css.
+
+   Consumers change as Phase D proceeds, so this comment names the RULE rather than a list that rots:
+   whoever renders `ck-mono` links this sheet. At D6 that was Control (6 uses) and Worktrees (3). At D10
+   it is Fleet, Worktrees and Settings — Control's last use left with the Settings migration, and its
+   link was removed in the same review. `webviewLinkedSheetUse.test.ts` keeps that honest. */
 .ck-mono {
   font-variant-numeric: tabular-nums;
   font-size: 10px;
