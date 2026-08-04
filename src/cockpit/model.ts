@@ -85,6 +85,7 @@ export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   ...COCKPIT_SECTION_ORDER,
   "approvals",
   "engine",
+  "execution-graph",
   "fleet",
   "inbox",
   "mission",
