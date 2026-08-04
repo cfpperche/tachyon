@@ -341,7 +341,7 @@ work in parallel only if the second re-applies onto the first before delivery, n
       (spec.md § "A document is one ENTITY"). Same panel, same key (`taskId`), mode as state. Declare
       and test the unsaved-edit policy on mode switch — that policy is the cost this decision accepts,
       and leaving it implicit is how it turns into data loss.
-- [ ] D13. The remaining studios (command, terminal, runbook, schedule, agent) become document apps
+- [x] D13. **The remaining studios (command, terminal, runbook, schedule, agent) become document apps**
       with ONE mode. Their parent is a flat section (`route.ts:187`), not an entity route, so do not
       invent a reading view none of them has.
 - [x] D14. **One Pins document app carrying detail and edit**, keyed by pin id — same shape as D12.
