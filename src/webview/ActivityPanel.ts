@@ -75,10 +75,30 @@ export class ActivityPanelManager {
     return this.manager.openKeys;
   }
 
+  /**
+   * The palette's "Open Raw Transcript", which must name ONE agent out of however many Activity tabs
+   * are open.
+   *
+   * This picks by FOCUS, not by visibility, and the difference is the whole point: two Activity panels
+   * in two editor groups are both `visible` at once, so the `visible` filter this replaced returned
+   * whichever was opened FIRST and would have opened the wrong agent's transcript. What it superseded
+   * (`openCockpitAgentTranscript`) never had to choose — Control was a singleton — and it deliberately
+   * refused to guess when the current route was not an activity route. Becoming multi-instance is what
+   * introduced the ambiguity, so the refusal has to be re-earned rather than inherited.
+   *
+   * Falling back to a lone visible panel is not a guess: with exactly one open there is only one answer,
+   * and focus commonly sits in the palette's caller rather than on the panel. With several and none
+   * focused, it says so instead of picking.
+   */
   openTranscript(): void {
-    const binding = [...this.bindings.values()].find((candidate) => candidate.session.visible);
+    const open = [...this.bindings.values()];
+    const visible = open.filter((candidate) => candidate.session.visible);
+    const binding = open.find((candidate) => candidate.session.focused)
+      ?? (visible.length === 1 ? visible[0] : undefined);
     if (!binding) {
-      notify("Open an agent's Activity view first, then run “Open Raw Transcript”.");
+      notify(visible.length > 1
+        ? "Several Activity views are open — click the one you want, then run “Open Raw Transcript”."
+        : "Open an agent's Activity view first, then run “Open Raw Transcript”.");
       return;
     }
     if (binding.transcriptPath && fs.existsSync(binding.transcriptPath)) {

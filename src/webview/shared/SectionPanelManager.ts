@@ -93,6 +93,19 @@ export interface SectionPanelSession<K extends string = string> {
   readonly key: string;
   /** is a human looking at this panel right now (`visible`, not `active` — see panelWorkGate.ts). */
   readonly visible: boolean;
+  /**
+   * Is this the panel the human is TYPING at — `vscode.WebviewPanel.active`.
+   *
+   * For DISAMBIGUATION only, never for work gating: two panels in two editor groups are both
+   * `visible` at once, so a command that has to pick one ("open the raw transcript") cannot use
+   * `visible` and stay honest — it picks by Map insertion order and silently acts on the wrong
+   * entity. Exactly one panel is `active`, or none is (focus is in the editor or a terminal), which
+   * is why a caller must still handle the zero case rather than fall back to guessing.
+   *
+   * Work gating stays on `visible` for the reason panelWorkGate.ts gives: a panel a human can SEE
+   * must be current, whether or not it holds focus.
+   */
+  readonly focused: boolean;
   /** Do `work` now if visible; otherwise journal `kind` and run NOTHING. Returns whether it ran. */
   run(kind: K, work: () => void): boolean;
   /**
@@ -422,6 +435,7 @@ export class SectionPanelManager<K extends string = string> {
       target,
       key,
       get visible() { return entry.gate.visible; },
+      get focused() { return panel.active; },
       run: (kind, work) => entry.gate.run(kind, work),
       post: (message) => this.postEntry(entry, message),
       asWebviewUri: (fsPath) => panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),

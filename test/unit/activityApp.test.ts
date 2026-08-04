@@ -7,6 +7,7 @@ import {
   __createdPanels,
   __registeredWebviewPanelSerializers,
   __resetVscodeMock,
+  __getShownDocuments,
 } from "../mocks/vscode.js";
 import {
   ACTIVITY_VIEW_TYPE,
@@ -91,3 +92,72 @@ function makeRestoredPanel(): typeof __createdPanels[number] {
   panel.disposed = false;
   return panel;
 }
+
+describe("Open Raw Transcript names ONE agent among several open tabs (t-ede83c review)", () => {
+  /**
+   * The regression this guards: `openTranscript` filtered on `session.visible`, and two panels in two
+   * editor groups are both visible at once — so it took whichever was opened FIRST and offered the
+   * wrong agent's transcript. What it superseded never had to choose (Control was a singleton) and
+   * deliberately refused to guess off an activity route; becoming multi-instance had to re-earn that
+   * refusal rather than inherit it.
+   *
+   * The observable is the DOCUMENT that opens, not a message: which file lands in the editor is the
+   * thing a human would get wrong.
+   */
+  function transcript(name: string): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "activity-transcript-"));
+    roots.push(dir);
+    const file = path.join(dir, `${name}.jsonl`);
+    fs.writeFileSync(file, "{}\n");
+    return file;
+  }
+
+  function twoOpenPanels() {
+    const manager = harness();
+    manager.open("ws-a", "first");
+    manager.open("ws-a", "second");
+    const bindings = [...(manager as unknown as {
+      bindings: Map<string, { agent: string; transcriptPath?: string }>;
+    }).bindings.values()];
+    for (const binding of bindings) binding.transcriptPath = transcript(binding.agent);
+    return { manager, first: __createdPanels[0], second: __createdPanels[1], bindings };
+  }
+
+  it("opens the FOCUSED panel's transcript, not the first one opened", () => {
+    const { manager, first, second, bindings } = twoOpenPanels();
+    first.visible = true; first.active = false;    // both on screen, focus on the second
+    second.visible = true; second.active = true;
+
+    manager.openTranscript();
+
+    const opened = __getShownDocuments().at(-1);
+    expect(opened?.uri.fsPath, "it opened the first-created panel's transcript")
+      .toBe(bindings.find((b) => b.agent === "second")?.transcriptPath);
+  });
+
+  it("opens nothing when several are visible and none is focused", () => {
+    const { manager, first, second } = twoOpenPanels();
+    first.visible = true; first.active = false;
+    second.visible = true; second.active = false;
+
+    manager.openTranscript();
+
+    expect(__getShownDocuments(), "it guessed an agent instead of asking").toHaveLength(0);
+  });
+
+  it("still answers when only one panel is open and focus sits elsewhere", () => {
+    const manager = harness();
+    manager.open("ws-a", "only");
+    const binding = [...(manager as unknown as {
+      bindings: Map<string, { agent: string; transcriptPath?: string }>;
+    }).bindings.values()][0];
+    binding.transcriptPath = transcript("only");
+    const panel = __createdPanels[0];
+    panel.visible = true; panel.active = false;   // focus is in the palette's caller, not the panel
+
+    manager.openTranscript();
+
+    // One open panel is not ambiguous: refusing here would make the command unusable in its common case.
+    expect(__getShownDocuments().at(-1)?.uri.fsPath).toBe(binding.transcriptPath);
+  });
+});
