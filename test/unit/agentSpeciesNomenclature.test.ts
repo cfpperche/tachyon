@@ -214,7 +214,6 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
         "test/unit/agentModel.test.ts",
         "test/unit/attention.test.ts",
         "test/unit/bridge.test.ts",
-        "test/unit/cockpitFleetActions.test.ts",
         "test/unit/pipelineDurability.test.ts",
       ],
     },
