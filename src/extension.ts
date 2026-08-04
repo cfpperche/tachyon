@@ -68,6 +68,7 @@ import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelStat
 import { PinDetailPanelManager, PIN_DETAIL_VIEW_TYPE, type LegacyPinDetailState } from "./webview/PinDetailPanel.js";
 import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { mintTaskId } from "./tasks/TaskStore.js";
+import { mintPinId } from "./pins/PinStore.js";
 import { AGENT_STUDIO_SHELL_VIEW_TYPE, AgentStudioPanelManager, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, TerminalStudioPanelManager, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
 import { COMMAND_STUDIO_SHELL_VIEW_TYPE, CommandStudioPanelManager, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
@@ -3227,7 +3228,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = (node?.workspaceHash ? byHash(node.workspaceHash) : node?.ws ? wsOf({ ws: node.ws }) : undefined) ?? (await pickWorkspace());
       if (!ws) return;
       if (text === undefined) {
-        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("pin", ws.wsHash) });
+        pinDetailPanels.openCreate(ws.wsHash, mintPinId());
         return;
       }
       if (text.trim().length === 0) return;

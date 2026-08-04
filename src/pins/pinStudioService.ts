@@ -27,20 +27,21 @@ export function savePinStudio(
   try {
     const title = patch.title.trim();
     const rich = !isEmptyPinDoc(patch.doc) || patch.attachments.length > 0;
-    if (pinId) {
+    const staged = patch.expectUpdatedAt === undefined;
+    if (pinId && !staged) {
       const current = pinStore.readDetail(pinId).summary;
       const revision = current.updatedAt ?? current.createdAt;
       if (patch.expectUpdatedAt !== revision) {
         return { status: "conflict", code: "CONFLICT", message: "Pin changed since this draft was opened. Reload before saving." };
       }
     }
-    const pin = pinId
+    const pin = pinId && !staged
       ? rich
         ? pinStore.saveDetail(pinId, { text: title, tags: patch.tags, doc: patch.doc, attachments: patch.attachments })
         : pinStore.clearDetail(pinId, title, new Date().toISOString(), patch.tags)
       : rich
-        ? pinStore.createRich(title, "human", { tags: patch.tags, doc: patch.doc, attachments: patch.attachments })
-        : pinStore.create(title, "human", { tags: patch.tags });
+        ? pinStore.createRich(title, "human", { id: pinId, tags: patch.tags, doc: patch.doc, attachments: patch.attachments })
+        : pinStore.create(title, "human", { id: pinId, tags: patch.tags });
     return { status: "ok", pinId: pin.id };
   } catch (error) {
     return { status: "error", code: "SAVE_FAILED", message: errorMessage(error) };
