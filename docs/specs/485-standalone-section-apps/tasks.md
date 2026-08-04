@@ -423,10 +423,25 @@ work in parallel only if the second re-applies onto the first before delivery, n
       `workspaceProbes(wsHash)`. Doors: `tachyon.openProbes` (:3398) and the serializer (:2562).
 - [ ] D19. **Project Handoff** — `dashboard`, keyed by project alone. Doors:
       `tachyon.openProjectHandoff` (:3363) and the serializer (:2547).
-- [ ] D20. **The last Pin Studio door.** `studio-new` + `pin` is the ONE route the redirect block at
+- [x] D20. **The last Pin Studio door.** `studio-new` + `pin` was the ONE route the redirect block at
       `Cockpit.ts:620` deliberately does not catch (it excludes `task` and `pin`), so Control still
-      mounts `PinStudioApp` for it. Only the legacy panel serializer can produce it now — the live "add
-      pin" door was repaired separately — but a renderer reachable by one door is still a renderer.
+      mounted `PinStudioApp` for it. Only the legacy panel serializer produced it — the live "add pin"
+      door was repaired separately — but a renderer reachable by one door was still a renderer.
+
+      The Pins document already had the creation contract this cutover needed: `openCreate` assigns a
+      provisional identity while the entity is still absent, Cancel closes without saving, and the first
+      Save keeps that panel identity. The legacy `tachyonPinStudio` serializer now opens that document
+      directly in create or edit mode, so a persisted pre-cutover panel still lands somewhere useful and
+      no longer races Control's singleton. The adjacent `studio-new` + `task` edge was measured too:
+      decoding rejects it, but a typed/internal route reached Control and rendered `null`; it now uses the
+      task document's existing pre-minted create flow instead of remaining a no-op.
+
+      Cost and lesson: removing one renderer also removed one refresh fan-out, three Control-only CSS
+      links/bootstrap keys, and the last caller of the generic legacy-studio redirect helper. The CSS
+      answer came from counting: Control had one consumer (`PinStudioApp`), while the Pins document
+      already linked all three sheets. A serializer is part of the renderer inventory even when no live
+      command produces its route, and creation can be id-less at the domain boundary while still using a
+      provisional document identity at the panel boundary.
 - [ ] D21. Exercise restore with all apps open across editor groups, then reload. Spec 361's
       machinery has never been tested at this count.
 

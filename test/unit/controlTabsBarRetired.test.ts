@@ -138,12 +138,9 @@ describe("t-aa2780 — the subroute breadcrumb, and TAB_META under it, survived"
     Shell = (await loadWebviewModule(SHELL_TSX, { packageResolution: true })).App as (props: unknown) => unknown;
   });
 
-  // One per breadcrumb wiring: the two that read TAB_META for their label (handoff, studio-command),
-  // and the one with a fixed label (inbox-item). All three must still paint the row.
-  // SDD 485 C4 — `task-detail` was the fourth and left with its subroute; its fixture is gone too.
+  // D13/D20 removed every studio renderer; Handoff is the surviving TAB_META-labelled breadcrumb.
   const SUBROUTES = [
     { fixture: "handoff", testid: "control-handoff-breadcrumb", label: "Overview" },
-    { fixture: "studio-command", testid: "control-studio-breadcrumb", label: "Fleet" },
   ] as const;
   // SDD 485 D4 — `inbox-item` was the third and left with the Human Inbox app; its fixture is gone too,
   // the same way C4's `task-detail` went. The affordance did NOT disappear with it: the app renders its
@@ -163,7 +160,7 @@ describe("t-aa2780 — the subroute breadcrumb, and TAB_META under it, survived"
   it("TAB_META is still the breadcrumb's label source (removing it breaks ← Back, not just the tabs)", () => {
     const src = read("src/webview/cockpit/App.tsx");
     expect(src).toContain("const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }>");
-    expect((src.match(/s\[TAB_META\[parent\.section\]\.navKey\]/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    expect((src.match(/s\[TAB_META\[parent\.section\]\.navKey\]/g) ?? []).length).toBe(1);
   });
 });
 

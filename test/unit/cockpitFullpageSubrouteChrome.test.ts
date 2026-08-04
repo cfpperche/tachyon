@@ -18,7 +18,8 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     // SDD 485 D4 — and `inbox-item` left the same way, one migration shape later. It had been the one
     // subroute WITH a nav tab lit under it; that whole arrangement moved INSIDE the Human Inbox app,
     // where the item is a subroute of the app rather than of Control.
-    expect(src).toContain("const isSubroute = isFleetSubroute || isStudioSubroute || isProjectHandoff;");
+    expect(src).toContain("const isSubroute = isFleetSubroute || isProjectHandoff;");
+    expect(src).not.toContain("isStudioSubroute");
     expect(src).not.toContain("activeRoute?.kind === \"task-detail\"");
     expect(src).not.toContain("activeRoute?.kind === \"inbox-item\"");
     expect(src).toContain("let breadcrumb: ComponentChildren = null;");
@@ -38,9 +39,9 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     expect(src).not.toMatch(/<ProbesApp[^>]*backLink=/);
     expect(src).toMatch(/breadcrumb = \(\s*<Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-fleet-subroute-breadcrumb"/);
 
-    // studios: backLink no longer threaded into studioMountProps.
-    expect(src).not.toMatch(/studioMountProps = \{[^}]*backLink/);
-    expect(src).toContain('breadcrumb = activeRoute.studio === "pin" ? (');
+    // D13/D20 — studios have no Control renderer or breadcrumb branch at all.
+    expect(src).not.toContain("studioMountProps");
+    expect(src).not.toContain("control-studio-breadcrumb");
 
     // t-ace77f — Project Handoff renders the same hoisted breadcrumb, back to Overview.
     expect(src).toMatch(/breadcrumb = \(\s*<Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-handoff-breadcrumb"/);

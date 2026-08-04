@@ -27,7 +27,6 @@ import {
   refreshCockpitApprovals,
   refreshCockpitValidations,
   refreshCockpitTaskStudioEntity,
-  refreshCockpitPinStudioEntity,
   refreshCockpitProbes,
   refreshCockpitHandoff,
   refreshCockpitStudioReferenceData,
@@ -40,8 +39,6 @@ import {
 import { isCockpitSingletonClaimed } from "./webview/cockpitSingleton.js";
 import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { routes as cockpitRoutes } from "./cockpit/route.js";
-import type { StudioId } from "./cockpit/studioIds.js";
-import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { resolveCockpitSection } from "./cockpit/resolveSection.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
@@ -1190,7 +1187,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pluginSurfaces.refreshAll();
     refreshCockpitStudioReferenceData(); // t-610705 (Phase D, D1a) — was runbook/scheduleStudioPanels.refreshReferenceData()
     for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
-    refreshCockpitPinStudioEntity(); // t-610705 (Phase D, D3) — was pinStudioPanels.refreshAll() (retired panel)
     approvalPanels.refreshAll();
   };
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
@@ -1220,7 +1216,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.extensionUri,
     () => workspaces().map((ws) => ws.sidebar),
     () => workspaces().map((ws) => ws.pinStudio),
-    () => { pinDetailPanels.refresh(); refreshCockpitPinStudioEntity(); sidebarProto.refresh(); },
+    () => { pinDetailPanels.refresh(); sidebarProto.refresh(); },
     undefined,
     controlWorkspaceScope,
   );
@@ -1954,10 +1950,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // SDD 485 C4 — the Board card, the studio breadcrumb and a revived/deep-linked task-detail route all
       // arrive here. `wsHash` is the document's IDENTITY from this call onwards.
       openDocument: (wsHash, taskId) => taskDetailPanels.open(wsHash, taskId),
+      openCreateDocument: (wsHash) => taskDetailPanels.openEdit(wsHash, mintTaskId()),
       openEditDocument: (wsHash, taskId) => taskDetailPanels.openEdit(wsHash, taskId),
     },
     pinDetail: {
       openDocument: (wsHash, pinId) => pinDetailPanels.open(wsHash, pinId),
+      openCreateDocument: (wsHash) => pinDetailPanels.openCreate(wsHash, mintPinId()),
       openEditDocument: (wsHash, pinId) => pinDetailPanels.openEdit(wsHash, pinId),
     },
     // t-610705 (Phase C.2) — Activity/Probes are Control subroutes now (WorkspaceActivityTarget /
@@ -2567,35 +2565,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
   registerTrustedPanelSerializer<LegacyPinDetailState>(context, PIN_DETAIL_VIEW_TYPE, (panel, state) => pinDetailPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentPanePanelState>(context, AGENT_PANE_VIEW_TYPE, (panel, state) => agentPanes.deserialize(panel, state));
-  // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — a revived pre-410 standalone studio panel disposes itself
-  // and redirects into Control → the mapped studio route, same claimed-singleton guard as every
-  // other retired-panel serializer above. KNOWN GAP (documented, not silently dropped): unlike the
-  // full studios-routes-design.md's exactly-once ack-based legacy handoff (round-1 F7 / round-2 F6 —
-  // custody transfers only after Control durably accepts the seed), THIS redirect does not attempt
-  // to carry `state.snapshot.patch` forward — a dirty pre-410 draft open across a reload is simply
-  // not restored. Scopes down to the in-SESSION draft cache only (studioHost.ts's cacheDraft/
-  // takeDraftFor); the reload-survival mechanism is deferred to when a studio genuinely needs it
-  // (flagged for the D0 code review probe). One shared helper (D1a) — command/terminal/runbook/
-  // schedule all redirect identically, only the viewType/StudioId differ.
-  const registerLegacyStudioRedirect = <TState extends StudioPanelState<unknown>>(viewType: string, studio: StudioId) => {
-    registerTrustedPanelSerializer<TState>(context, viewType, (panel, state) => {
-      panel.dispose();
-      if (isCockpitSingletonClaimed()) return;
-      if (!state?.wsKey) return;
-      const route = state.snapshot.mode === "edit" && state.snapshot.entityId
-        ? cockpitRoutes.studioEdit(studio, state.wsKey, state.snapshot.entityId)
-        : cockpitRoutes.studioNew(studio, state.wsKey);
-      void openCockpit(makeCockpitDeps(), { route });
-    });
-  };
   registerTrustedPanelSerializer<CommandStudioPanelState | SectionPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.command.deserialize(panel, state));
   registerTrustedPanelSerializer<TerminalStudioPanelState | SectionPanelState>(context, TERMINAL_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.terminal.deserialize(panel, state));
   registerTrustedPanelSerializer<RunbookStudioPanelState | SectionPanelState>(context, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.runbook.deserialize(panel, state));
   registerTrustedPanelSerializer<ScheduleStudioPanelState | SectionPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.schedule.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentStudioPanelState | SectionPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.agent.deserialize(panel, state));
-  // t-610705 (Phase D, D3) — unlike Task, Pin's studioNew never throws (pin IS reachable id-less —
-  // a brand-new pin has no id until its first save) — the shared helper works as-is.
-  registerLegacyStudioRedirect<PinStudioPanelState>(PIN_STUDIO_VIEW_TYPE, "pin");
+  // SDD 485 D20 — a pre-410 Pin Studio panel is still a live restore door. Reopen it in the Pins
+  // document app instead of routing through Control: edit keeps its identity; new gets a provisional
+  // identity and the document's existing staged-create policy (cancel closes without saving).
+  registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (!state?.wsKey) return;
+    if (state.snapshot.mode === "edit" && state.snapshot.entityId) {
+      pinDetailPanels.openEdit(state.wsKey, state.snapshot.entityId);
+      return;
+    }
+    pinDetailPanels.openCreate(state.wsKey, mintPinId());
+  });
   // t-610705 (Phase D, D2) — Task Studio's redirect can't reuse registerLegacyStudioRedirect's shared
   // helper as-is: its non-edit fallback calls cockpitRoutes.studioNew(studio, wsKey), which THROWS for
   // "task" (route.ts's defensive assertion — task is never id-less in practice). A persisted "new"

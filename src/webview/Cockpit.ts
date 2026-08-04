@@ -159,10 +159,12 @@ export interface CockpitHandoff {
 export interface CockpitTaskDetail {
   getWorkspaces: () => WorkspaceTaskDetailTarget[];
   openDocument: (wsHash: string, taskId: string) => void;
+  openCreateDocument?: (wsHash: string) => void;
   openEditDocument?: (wsHash: string, taskId: string) => void;
 }
 export interface CockpitPinDetail {
   openDocument: (wsHash: string, pinId: string) => void;
+  openCreateDocument?: (wsHash: string) => void;
   openEditDocument: (wsHash: string, pinId: string) => void;
 }
 
@@ -572,7 +574,9 @@ function captureReturnRoute(route: CockpitRoute): CockpitRoute {
  * created, because `navigate()` is module-scoped and has no `deps` in reach; cleared with the panel.
  */
 let openTaskDocument: ((wsHash: string, taskId: string) => void) | undefined;
+let openTaskCreateDocument: ((wsHash: string) => void) | undefined;
 let openTaskEditDocument: ((wsHash: string, taskId: string) => void) | undefined;
+let openPinCreateDocument: ((wsHash: string) => void) | undefined;
 let openPinEditDocument: ((wsHash: string, pinId: string) => void) | undefined;
 let openStudioDocument: CockpitDeps["studioDocuments"];
 
@@ -623,6 +627,14 @@ function navigate(route: CockpitRoute): void {
   if ((route.kind === "studio-new" || route.kind === "studio-edit") && route.studio !== "task" && route.studio !== "pin") {
     if (route.kind === "studio-new") openStudioDocument?.openNew(route.studio, route.wsHash);
     else openStudioDocument?.openExisting(route.studio, route.wsHash, route.entityId);
+    route = routes.section("overview");
+  }
+  if (route.kind === "studio-new" && route.studio === "task") {
+    openTaskCreateDocument?.(route.wsHash);
+    route = routes.section("overview");
+  }
+  if (route.kind === "studio-new" && route.studio === "pin") {
+    openPinCreateDocument?.(route.wsHash);
     route = routes.section("overview");
   }
   if (route.kind === "studio-edit" && route.studio === "task") {
@@ -806,7 +818,6 @@ let pushHandoff: (() => void) | undefined;
 let pushProbes: (() => void) | undefined;
 let pushStudioReferenceData: (() => void) | undefined;
 let pushTaskStudioEntity: (() => void) | undefined;
-let pushPinStudioEntity: (() => void) | undefined;
 let doOpenActivityTranscript: (() => void) | undefined;
 let wiredPanel: vscode.WebviewPanel | undefined;
 
@@ -819,7 +830,7 @@ let wiredPanel: vscode.WebviewPanel | undefined;
 type ControlRefreshKind =
   | "shell-poll"
   | "probes" | "handoff" | "approvals" | "validations"
-  | "studio-reference" | "task-studio" | "pin-studio";
+  | "studio-reference" | "task-studio";
 
 function pushControlRefresh(kind: ControlRefreshKind): void {
   switch (kind) {
@@ -830,7 +841,6 @@ function pushControlRefresh(kind: ControlRefreshKind): void {
     case "validations": pushValidations?.(); return;
     case "studio-reference": pushStudioReferenceData?.(); return;
     case "task-studio": pushTaskStudioEntity?.(); return;
-    case "pin-studio": pushPinStudioEntity?.(); return;
   }
 }
 
@@ -891,22 +901,12 @@ export function refreshCockpitStudioReferenceData(): void {
 /** t-610705 (Phase D, D2) — re-send a fresh `load` for an open Task Studio binding after ANY task
  *  mutation, from ANY source (board drag/edit, detail edit, MCP tool call) — the same fan-out the
  *  retired standalone TaskStudioPanelManager wired via `base.refreshAll()` into `onTasksChanged`.
- *  Task and Pin (D3, see refreshCockpitPinStudioEntity below) are the two migrated studios whose
- *  underlying entity can change out from under an open binding through paths OTHER than Save — the
- *  other 4 studios' entities have no such external-mutation path, so they have no equivalent push.
+ *  Task's underlying entity can change out from under an open binding through paths OTHER than Save;
+ *  the remaining Control studios have no such external-mutation path, so they have no equivalent push.
  *  A no-op off a task studio-edit route, and best-effort (sendStudioLoad already tolerates a load
  *  failure) otherwise. */
 export function refreshCockpitTaskStudioEntity(): void {
   refreshControl("task-studio");
-}
-
-/** t-610705 (Phase D, D3) — Pin's equivalent of refreshCockpitTaskStudioEntity above: the retired
- *  standalone PinStudioPanelManager wired `base.refreshAll()` into the SAME broad `refreshAll()`
- *  fan-out extension.ts already calls after worktree/plugin/reference-data changes (pins can be
- *  created/deleted from the sidebar tree while a DIFFERENT pin's studio tab is open) — ported as-is,
- *  same call site, rather than narrowed to a pin-specific event that didn't exist before this port. */
-export function refreshCockpitPinStudioEntity(): void {
-  refreshControl("pin-studio");
 }
 
 /** t-610705 (Phase C.2) — the palette "Open Raw Transcript" escape hatch, wired to the CURRENT
@@ -1148,10 +1148,11 @@ export async function openCockpit(
         pushProbes = undefined;
         pushStudioReferenceData = undefined;
         pushTaskStudioEntity = undefined;
-        pushPinStudioEntity = undefined;
         doOpenActivityTranscript = undefined;
         openTaskDocument = undefined;
+        openTaskCreateDocument = undefined;
         openTaskEditDocument = undefined;
+        openPinCreateDocument = undefined;
         openPinEditDocument = undefined;
         openStudioDocument = undefined;
         openBoardDocument = undefined;
@@ -1181,7 +1182,9 @@ export async function openCockpit(
   // SDD 485 C4 — bound BEFORE the initial navigate below, because that navigate is exactly the call a
   // revived/deep-linked task-detail route arrives through, and a redirect wired later would miss it.
   openTaskDocument = (wsHash, taskId) => deps.taskDetail.openDocument(wsHash, taskId);
+  openTaskCreateDocument = (wsHash) => deps.taskDetail.openCreateDocument?.(wsHash);
   openTaskEditDocument = (wsHash, taskId) => deps.taskDetail.openEditDocument?.(wsHash, taskId);
+  openPinCreateDocument = (wsHash) => deps.pinDetail?.openCreateDocument?.(wsHash);
   openPinEditDocument = (wsHash, pinId) => deps.pinDetail?.openEditDocument(wsHash, pinId);
   openStudioDocument = deps.studioDocuments;
   // SDD 485 C5 — same seam, same reason, and the scope handed over is the one Control itself would have
@@ -1799,7 +1802,6 @@ export async function openCockpit(
   // no-op with no binding — the isStudioRoute guard here just avoids the pointless call off-route.
   pushStudioReferenceData = () => { if (isStudioRoute(currentRoute)) void refreshStudioReferenceData(studioIo); };
   pushTaskStudioEntity = () => { if (isStudioRoute(currentRoute) && currentRoute.studio === "task") void sendStudioLoad(studioIo); };
-  pushPinStudioEntity = () => { if (isStudioRoute(currentRoute) && currentRoute.studio === "pin") void sendStudioLoad(studioIo); };
   doOpenActivityTranscript = () => {
     if (currentRoute.kind !== "agent-activity") {
       notify("Open an agent's Activity view first, then run “Open Raw Transcript”.");
@@ -2183,8 +2185,6 @@ export async function openCockpit(
     // per StudioId — no shared/combined conditional the way mermaid-block.css above is, since each
     // studio's own sheet is genuinely distinct content, not the same href under a different
     // bootstrap-global key).
-    const studioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "pin";
-    const pinStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "pin";
     // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
     // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
     // never previously wired into Cockpit.ts's shell (Task Detail's C.1 migration also uses
@@ -2263,13 +2263,6 @@ export async function openCockpit(
         // `styleFiles` order exactly (codicon, design-system, vscode-theme, task-studio.tailwind,
         // rich-doc, studio-frame, task-studio), so studio-frame.css's shell-chrome rules still win the
         // cascade over rich-doc.css at equal specificity, same as they always have for this surface.
-        // t-610705 (Phase D, D3) — Pin Studio shares Task Studio's rich-doc.css (same entity-neutral
-        // editor sheet, no Tailwind sheet of its own) — one shared conditional, same reasoning as the
-        // "*-mermaid" shared conditionals above (a second, separately-gated call for the identical
-        // file would duplicate the <link> and fail cockpitCssParity's no-duplicate-link check).
-        pinStudioIsActive ? uri("rich-doc.css") : undefined,
-        studioIsActive ? uri("studio-frame.css") : undefined,
-        pinStudioIsActive ? uri("pin-studio.css") : undefined,
         // SDD 485 D6 linked `control-typography.css` here because Control used `ck-mono` six times.
         // D10 took the last five with Settings, and the count is now ZERO — measured across
         // `cockpit/` and `shared/`, not assumed. A host that links a sheet it does not consume ships
@@ -2316,12 +2309,6 @@ export async function openCockpit(
           // cockpit/App.tsx's doc comment on the lazy studio blocks for why: same convention as the
           // 3 "*-mermaid" keys above, one distinct key per client call site even though every key
           // resolves to the same studio-frame.css href.
-          // t-610705 (Phase D, D3) — own key even though it resolves to the SAME rich-doc.css href as
-          // "studio-task-richdoc" — matches the per-studio-key convention "studio-frame-<id>" already
-          // uses (one distinct key per client call site, not a shared key across two lazy blocks).
-          "studio-frame-pin": uri("studio-frame.css"),
-          "studio-pin-richdoc": uri("rich-doc.css"),
-          "studio-pin": uri("pin-studio.css"),
         },
         __mermaidSrc: uri("mermaid.js"),
         __katexSrc: uri("katex.js"),
