@@ -3,6 +3,7 @@ import { useEffect, useState } from "preact/hooks";
 import type { ExecutionGraphVm } from "../../cockpit/executionGraphVm";
 import { ExecutionGraphSection } from "../cockpit/ExecutionGraphSection";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
+import { PageChrome } from "../shared/ui";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { MODEL, pollExecutionGraphAction, readyMessage, type ExecutionGraphAction, type ExecutionGraphStrings } from "./messages";
 
@@ -30,7 +31,12 @@ export function ExecutionGraphRoot({ initialVm }: { initialVm?: ExecutionGraphVm
 
   const shown = vm ?? { status: "no-telemetry", nodes: [], edges: [], rows: [], width: 0, height: 0,
     available: { turnIds: [], states: [], kinds: [], agentIds: [] }, matched: 0, grouped: false, details: {} };
-  return <ExecutionGraphSection s={strings} vm={shown} detail={detail} selected={selected} filters={filters} onSelect={setSelected} onFilter={setFilters} />;
+  return (
+    <main>
+      <PageChrome title={strings.executionGraphTitle} hint={strings.executionGraphHint} />
+      <ExecutionGraphSection s={strings} vm={shown} detail={detail} selected={selected} filters={filters} onSelect={setSelected} onFilter={setFilters} />
+    </main>
+  );
 }
 
 const root = document.getElementById("root");

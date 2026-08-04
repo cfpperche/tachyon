@@ -26,6 +26,7 @@ export const strings: CockpitStrings & WorktreesStrings & ExecutionGraphStrings 
   navOverview: "Overview",
   navExecutionGraph: "Execution",
   executionGraphTitle: "Execution graph",
+  executionGraphHint: "What Tachyon started, and how it knows. Read-only.",
   egCanvasLabel: "Execution graph diagram",
   egTableLabel: "Execution graph, as a table",
   egLoading: "Loading the execution ledger…",

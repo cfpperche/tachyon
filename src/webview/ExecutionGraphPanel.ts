@@ -72,7 +72,8 @@ export function executionGraphRefreshKind(message: unknown): RefreshKind | undef
 function executionGraphStrings(): ExecutionGraphStrings {
   const t = vscode.l10n.t;
   return {
-    executionGraphTitle: t("Execution graph"), egCanvasLabel: t("Execution graph diagram"),
+    executionGraphTitle: t("Execution graph"), executionGraphHint: t("What Tachyon started, and how it knows. Read-only."),
+    egCanvasLabel: t("Execution graph diagram"),
     egTableLabel: t("Execution graph, as a table"), egLoading: t("Loading the execution ledger…"),
     egEmpty: t("No executions match these filters."), egNoTelemetry: t("This workspace is not recording execution telemetry yet."),
     egError: t("The execution ledger could not be read."), egGroupedNote: t("Some lanes are grouped to stay readable; totals below are complete."),

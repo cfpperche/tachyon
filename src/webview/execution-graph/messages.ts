@@ -6,6 +6,7 @@ export const POLL = "pollExecutionGraph" as const;
 export const MODEL = "executionGraphModel" as const;
 export interface ExecutionGraphStrings {
   executionGraphTitle: string;
+  executionGraphHint: string;
   egCanvasLabel: string; egTableLabel: string; egLoading: string; egEmpty: string;
   egNoTelemetry: string; egError: string; egGroupedNote: string; egFilterTurn: string;
   egFilterState: string; egFilterKind: string; egFilterAgent: string; egFilterAll: string;
