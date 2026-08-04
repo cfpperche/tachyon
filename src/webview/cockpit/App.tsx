@@ -176,9 +176,11 @@ export function App(p: CockpitAppProps) {
   // t-610705 (Phase C.2) — Fleet subroutes want the SAME full-bleed/no-checkedAt-footer treatment
   // as an embedded section, even though their nav section ("fleet") isn't one itself (Fleet's own
   // plain list IS a native page and keeps its checkedAt footer — only its subroutes opt out).
-  // D17 took `agent-activity` out of this list; D20 took `isStudioSubroute` out entirely. Both
-  // removals belong here — this is the merge the Phase D header warns about, where two migrations
-  // touch one line and keeping either side alone silently restores a renderer the other retired.
+  // D17 took `agent-activity` out of this list; D20 took the studio-subroute term out entirely (its
+  // name is not spelled here on purpose — cockpitFullpageSubrouteChrome.test.ts scans this file's
+  // TEXT for it, so even a comment would keep the guard red). Both removals belong here: this is the
+  // merge the Phase D header warns about, where two migrations touch one line and keeping either
+  // side alone silently restores a renderer the other retired.
   const isFleetSubroute = activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
   // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
   // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
