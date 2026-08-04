@@ -18,7 +18,7 @@ import {
   initMessage as cockpitInitMessage,
   modelMessage as cockpitModelMessage,
 } from "../../src/webview/cockpit/messages";
-import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
+import { pinDocumentModeMessage, pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { approvalsMessage } from "../../src/webview/approval/messages";
 import { validationsMessage } from "../../src/webview/validations/messages";
@@ -290,10 +290,21 @@ export const ROUTES: Record<string, Route> = {
   },
   "pin-preview": {
     bundle: "/dist/webview/pin-preview.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/pin-preview.css"],
+    cssLinks: [
+      CODICON,
+      DESIGN_SYSTEM,
+      "/dist/webview/vscode-theme.css",
+      "/dist/webview/rich-doc.css",
+      "/dist/webview/studio-frame.css",
+      "/dist/webview/pin-studio.css",
+      "/dist/webview/pin-preview.css",
+    ],
     frame: { w: 880, h: 700 },
-    fixtures: pinPreviewFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => pinPreviewMessage(vm as never),
+    fixtures: { ...pinPreviewFixtures, edit: pinStudioFixtures.default } as Record<string, Fixture>,
+    module: true,
+    makeMessage: (vm) => "entity" in (vm as object)
+      ? [pinDocumentModeMessage("edit"), ...pinStudioMakeMessage(vm as never)]
+      : pinPreviewMessage(vm as never),
   },
   // t-610705 (SDD 410 Phase C.3) — the standalone "handoff" route previewed the retired Project
   // Handoff panel; Handoff is a cockpit-only section now — use ?view=cockpit&fixture=handoff (same

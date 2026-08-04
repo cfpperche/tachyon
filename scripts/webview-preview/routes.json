@@ -1028,6 +1028,23 @@
     ]
   },
   {
+    "view": "pin-preview",
+    "fixture": "edit",
+    "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=edit",
+    "frame": {
+      "w": 880,
+      "h": 700
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pin Preview",
+    "aliases": [
+      "pin preview",
+      "pin readonly"
+    ]
+  },
+  {
     "view": "pipeline-studio",
     "fixture": "clean",
     "url": "/scripts/webview-preview/index.html?view=pipeline-studio&fixture=clean",

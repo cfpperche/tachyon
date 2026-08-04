@@ -30,15 +30,6 @@ const FIXTURE_VM: PinPreviewVM = {
   ],
 };
 
-function hostPage(cspSource: string): string {
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<link rel="stylesheet" href="${cspSource}/dist/webview/codicon.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/design-system.css">
-<link rel="stylesheet" href="${cspSource}/dist/webview/pin-preview.css">
-<title>pin-preview image render</title></head>
-<body><div id="root"></div><script src="${cspSource}/dist/webview/pin-preview.js"></script></body></html>`;
-}
-
 async function loadPinPreview(page: Page, origin: string, vm: PinPreviewVM): Promise<void> {
   // pin-preview/main.tsx signals ready from a `useEffect`, which preact/hooks flushes via
   // requestAnimationFrame — a BACKGROUND (non-active) tab gets that throttled by Chrome, which can stall the
@@ -47,13 +38,13 @@ async function loadPinPreview(page: Page, origin: string, vm: PinPreviewVM): Pro
   // t-1c745f: under full `test:browser` load, ready can fire before the test installs its listener (lost
   // handshake). Re-post the pinPreview VM until `.body` mounts — late inject is accepted once Root listens.
   await page.bringToFront();
-  await page.setContent(hostPage(origin), { waitUntil: "domcontentloaded" });
+  await page.goto(`${origin}/scripts/webview-preview/index.html?view=pin-preview&fixture=with-image`, {
+    waitUntil: "domcontentloaded",
+  });
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     await page.bringToFront();
-    await page.evaluate((v) => {
-      window.postMessage({ type: "pinPreview", vm: v }, "*");
-    }, vm);
+    await page.evaluate((v) => window.postMessage({ type: "pinPreview", vm: v }, "*"), vm);
     try {
       await page.waitForSelector(".body", { visible: true, timeout: 250 });
       return;

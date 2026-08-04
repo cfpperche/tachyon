@@ -14,6 +14,7 @@ const projection = z.object({
   tags: z.array(z.string().min(1)),
   doc: z.union([z.custom<TiptapJSON>(isTiptapDoc, "invalid bounded Tiptap document"), z.null()]),
   attachments: z.array(persistedRichDocAttachmentV1Schema).max(500),
+  expectUpdatedAt: z.string().min(1).optional(),
 }).strict().superRefine((value, context) => {
   if (new Set(value.tags).size !== value.tags.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate pin tags" });
@@ -52,6 +53,7 @@ export function projectPinStudio(store: PinStore, id: string): PinStudioProjecti
     tags: detail.summary.tags ?? [],
     doc: detail.doc,
     attachments: detail.attachments.map(storedAttachment),
+    expectUpdatedAt: detail.summary.updatedAt ?? detail.summary.createdAt,
   });
 }
 

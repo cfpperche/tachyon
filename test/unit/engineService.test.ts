@@ -373,7 +373,16 @@ describe("daemon engine service", () => {
     expect(await first.query({ schemaVersion: 1, method: "pin.studio", input: { id: seedPin.id } })).toMatchObject({
       method: "pin.studio",
       status: "ok",
-      view: { studio: { pinId: seedPin.id, title: "remote Pin Studio", tags: ["ui"], doc: null, attachments: [] } },
+      view: {
+        studio: {
+          pinId: seedPin.id,
+          title: "remote Pin Studio",
+          tags: ["ui"],
+          doc: null,
+          attachments: [],
+          expectUpdatedAt: seedPin.updatedAt ?? seedPin.createdAt,
+        },
+      },
     });
     const stagedPinSave = stagedPayloads.stage(encodePinStudioStagedPayloadV1({
       schemaVersion: 1,
@@ -383,6 +392,7 @@ describe("daemon engine service", () => {
         doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "engine pin body" }] }] },
         attachments: [],
         docDirty: false,
+        expectUpdatedAt: seedPin.updatedAt ?? seedPin.createdAt,
       },
     }));
     const savePinCommand = {

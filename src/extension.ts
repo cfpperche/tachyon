@@ -43,7 +43,7 @@ import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBund
 import { routes as cockpitRoutes } from "./cockpit/route.js";
 import type { StudioId } from "./cockpit/studioIds.js";
 import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
-import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
+import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { resolveCockpitSection } from "./cockpit/resolveSection.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
@@ -65,6 +65,7 @@ import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
 import { controlWorkspaceScope } from "./webview/shared/ControlWorkspaceScope.js";
 import type { SectionPanelState } from "./webview/shared/SectionPanelManager.js";
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
+import { PinDetailPanelManager, PIN_DETAIL_VIEW_TYPE, type LegacyPinDetailState } from "./webview/PinDetailPanel.js";
 import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { mintTaskId } from "./tasks/TaskStore.js";
 import { AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
@@ -1092,11 +1093,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
+  let openPinDocumentFromSidebar: ((wsHash: string, pinId: string) => void) | undefined;
   const sidebarProto = new SidebarPrototypeProvider(
     context.extensionUri,
     () => workspaces().map((ws) => ws.sidebar),
     context.globalState,
     (context.extension.packageJSON as { version?: string }).version,
+    (wsHash, pinId) => openPinDocumentFromSidebar?.(wsHash, pinId),
   );
   context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
@@ -1209,6 +1212,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     () => workspaces().map((ws) => ws.taskStudio),
   );
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
+  const pinDetailPanels = new PinDetailPanelManager(
+    context.extensionUri,
+    () => workspaces().map((ws) => ws.sidebar),
+    () => workspaces().map((ws) => ws.pinStudio),
+    () => { pinDetailPanels.refresh(); refreshCockpitPinStudioEntity(); sidebarProto.refresh(); },
+    undefined,
+    controlWorkspaceScope,
+  );
+  openPinDocumentFromSidebar = (wsHash, pinId) => pinDetailPanels.open(wsHash, pinId);
+  context.subscriptions.push({ dispose: () => pinDetailPanels.dispose() });
   // SDD 485 C5 — the Board is a standalone `dashboard` app: ONE editor tab per project, revealed rather
   // than duplicated, so it can be read beside an agent terminal. `openTask` hands the card's own workspace
   // to the task-detail app above — the Board never learns where a task detail lives, which is what let C4
@@ -1931,6 +1944,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       openDocument: (wsHash, taskId) => taskDetailPanels.open(wsHash, taskId),
       openEditDocument: (wsHash, taskId) => taskDetailPanels.openEdit(wsHash, taskId),
     },
+    pinDetail: {
+      openDocument: (wsHash, pinId) => pinDetailPanels.open(wsHash, pinId),
+      openEditDocument: (wsHash, pinId) => pinDetailPanels.openEdit(wsHash, pinId),
+    },
     // t-610705 (Phase C.2) — Activity/Probes are Control subroutes now (WorkspaceActivityTarget /
     // WorkspaceProbePresentationTarget already carry everything the host needs — no separate
     // wrapper interface, same reasoning as taskDetail above).
@@ -2528,7 +2545,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const route = state.caller ? cockpitRoutes.agentProbes(state.wsHash, state.caller) : cockpitRoutes.workspaceProbes(state.wsHash);
     void openCockpit(makeCockpitDeps(), { route });
   });
-  registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
+  registerTrustedPanelSerializer<LegacyPinDetailState>(context, PIN_DETAIL_VIEW_TYPE, (panel, state) => pinDetailPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentPanePanelState>(context, AGENT_PANE_VIEW_TYPE, (panel, state) => agentPanes.deserialize(panel, state));
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — a revived pre-410 standalone studio panel disposes itself
   // and redirects into Control → the mapped studio route, same claimed-singleton guard as every

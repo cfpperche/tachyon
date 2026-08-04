@@ -29,6 +29,7 @@ export interface PinStudioPatchV1 {
   doc: TiptapJSON;
   attachments: PinAttachment[];
   docDirty: boolean;
+  expectUpdatedAt?: string;
 }
 
 export type PinStudioImagePayloadV1 = RichDocImagePayloadV1;
@@ -45,6 +46,7 @@ const patch = z.object({
   doc: z.custom<TiptapJSON>(isTiptapDoc, "invalid bounded Tiptap document"),
   attachments: z.array(richDocAttachmentV1Schema).max(500),
   docDirty: z.boolean(),
+  expectUpdatedAt: z.string().min(1).optional(),
 }).strict().superRefine((value, context) => {
   if (new Set(value.attachments.map((row) => row.id)).size !== value.attachments.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "duplicate pin attachments" });

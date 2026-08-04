@@ -167,6 +167,7 @@ function hydrateProjection(
     tags: projection.tags,
     doc: projection.doc,
     attachments: projection.attachments.map((attachment) => hydrateAttachment(identity.workspaceRoot, attachment)),
+    expectUpdatedAt: projection.expectUpdatedAt,
   };
 }
 
@@ -240,6 +241,9 @@ function validatePayload(action: PinStudioApplyActionV1, value: unknown): PinStu
 
 function serviceSaveResult(result: ReturnType<typeof savePinStudio>): StudioSaveResult {
   if (result.status === "ok") return { status: "ok" };
+  if (result.status === "conflict") {
+    return { status: "conflict", error: { code: "pin/conflict", message: result.message } };
+  }
   return { status: "error", error: { code: "pin/save-failed", message: result.message, source: "persistence" } };
 }
 

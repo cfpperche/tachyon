@@ -161,6 +161,10 @@ export interface CockpitTaskDetail {
   openDocument: (wsHash: string, taskId: string) => void;
   openEditDocument?: (wsHash: string, taskId: string) => void;
 }
+export interface CockpitPinDetail {
+  openDocument: (wsHash: string, pinId: string) => void;
+  openEditDocument: (wsHash: string, pinId: string) => void;
+}
 
 /** t-610705 (Phase C.2) — one agent's normalized activity feed, a subroute of Fleet. */
 export interface CockpitActivity {
@@ -186,6 +190,7 @@ export interface CockpitDeps {
   collect: (needs?: CockpitCollectNeeds) => Promise<CockpitWorkspaceBundle[]>;
   missionBoard: CockpitMissionBoard;
   taskDetail: CockpitTaskDetail;
+  pinDetail?: CockpitPinDetail;
   activity: CockpitActivity;
   probes: CockpitProbes;
   handoff: CockpitHandoff;
@@ -562,6 +567,7 @@ function captureReturnRoute(route: CockpitRoute): CockpitRoute {
  */
 let openTaskDocument: ((wsHash: string, taskId: string) => void) | undefined;
 let openTaskEditDocument: ((wsHash: string, taskId: string) => void) | undefined;
+let openPinEditDocument: ((wsHash: string, pinId: string) => void) | undefined;
 
 /**
  * SDD 485 C5 — the same seam for the Board: `navigate()` is module-scoped and has no `deps` in reach, so the
@@ -607,6 +613,10 @@ let openFleetApp: (() => void) | undefined;
 function navigate(route: CockpitRoute): void {
   if (route.kind === "studio-edit" && route.studio === "task") {
     openTaskEditDocument?.(route.wsHash, route.entityId);
+    route = routes.section("overview");
+  }
+  if (route.kind === "studio-edit" && route.studio === "pin") {
+    openPinEditDocument?.(route.wsHash, route.entityId);
     route = routes.section("overview");
   }
   if (route.kind === "task-detail") {
@@ -1118,6 +1128,7 @@ export async function openCockpit(
         doOpenActivityTranscript = undefined;
         openTaskDocument = undefined;
         openTaskEditDocument = undefined;
+        openPinEditDocument = undefined;
         openBoardDocument = undefined;
         openTmuxApp = undefined;
         openPluginsApp = undefined;
@@ -1145,6 +1156,7 @@ export async function openCockpit(
   // revived/deep-linked task-detail route arrives through, and a redirect wired later would miss it.
   openTaskDocument = (wsHash, taskId) => deps.taskDetail.openDocument(wsHash, taskId);
   openTaskEditDocument = (wsHash, taskId) => deps.taskDetail.openEditDocument?.(wsHash, taskId);
+  openPinEditDocument = (wsHash, pinId) => deps.pinDetail?.openEditDocument(wsHash, pinId);
   // SDD 485 C5 — same seam, same reason, and the scope handed over is the one Control itself would have
   // rendered (`resolveMissionWs`, which already prefers the shell scope `opts.wsHash` set a few lines
   // above). A launcher click, a Jump card and a Fleet action therefore land on the SAME project's panel —

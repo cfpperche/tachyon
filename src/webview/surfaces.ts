@@ -156,7 +156,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // (margin/pad/background/colour/font) rather than inheriting the design system's, and centres a fixed
   // 880px column. Own page chrome → `extend`. (The body block largely restates what design-system.css already
   // sets; collapsing it is a real cleanup, but it is a VISUAL change and this phase moves nothing.)
-  { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/SidebarPrototype.ts", mode: "static", converted: true, editorHome: "sidebar", posture: "extend", extensionPoints: ["page-chrome"] },
+  { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/PinDetailPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "extend", extensionPoints: ["page-chrome"] },
   // t-610355 — layer-2 first-party agent pane (runtime TUI in Tachyon webview + xterm; additive to integrated terminal)
   // spec 485 A1 — the ONLY live standalone editor panel today, and the sharpest departure in the manifest: it
   // links NO design-system.css (AgentPanePanel.ts: "Tachyon Mono @font-face breaks xterm cell metrics") and

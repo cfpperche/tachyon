@@ -16,7 +16,8 @@ import {
 export class PinStudioAdapter implements StudioHostAdapter<PinDetailEntity, PinFields, PinPatch> {
   readonly entityType = "pin";
   readonly domainMessageNames = PIN_STUDIO_DOMAIN_MESSAGE_NAMES;
-  readonly concurrency = { kind: "none" } as const;
+  readonly concurrency = { kind: "cas" } as const;
+  readonly revisionOf = (entity: PinDetailEntity): string => entity.expectUpdatedAt ?? "";
   readonly allowPatchRestore = true;
 
   readonly dirty = {

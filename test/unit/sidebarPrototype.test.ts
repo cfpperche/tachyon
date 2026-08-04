@@ -526,7 +526,7 @@ describe("SidebarPrototypeProvider", () => {
     expect(__getExecutedCommands().map((c) => c.command)).toEqual([]);
   });
 
-  it("opens a readonly editor webview preview from the targeted workspace", async () => {
+  it("keeps the sidebar list opening the unified Pin document app for the targeted workspace", async () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), "tachyon-sidebar-preview-"));
     temporaryRoots.push(fixtureRoot);
     const wrongRoot = join(fixtureRoot, "Wrong");
@@ -538,6 +538,7 @@ describe("SidebarPrototypeProvider", () => {
     writeFileSync(join(blobRoot, "b".repeat(64)), JSON.stringify({ type: "excalidraw", elements: [], appState: {}, files: {} }));
     writeFileSync(join(blobRoot, "c".repeat(64)), "preview");
     const targetPin = { id: "p-123abc", text: "Preview me", done: false, by: "human", tags: ["ui"], createdAt: "2026-06-24T00:00:00.000Z", detail: true, attachmentCount: 1 };
+    const opened: Array<[string, string]> = [];
     const provider = new SidebarPrototypeProvider(vscode.Uri.file("/extension"), () => [
       fakeWorkspace([{ id: "p-000001", text: "Wrong", done: false, by: "human", createdAt: "2026-06-24T00:00:00.000Z" }], { hash: "wronghash", name: "Wrong", root: wrongRoot }),
       fakeWorkspace([targetPin], {
@@ -591,40 +592,13 @@ describe("SidebarPrototypeProvider", () => {
           ],
         }),
       }),
-    ]);
+    ], undefined, undefined, (wsHash, pinId) => { opened.push([wsHash, pinId]); });
     const { view, receive } = fakeView();
 
     provider.resolveWebviewView(view);
     receive({ type: "section", op: "pin:preview", id: "p-123abc", hash: "righthash" });
-    await flushPromises();
-
-    const panel = __createdPanels[0];
-    expect(panel?.title).toBe("Pin Preview — p-123abc");
-    // spec 279 — converted to a preact bundle: scripts ON (renders user text safely via preact escaping), and
-    // the pin content travels as a posted VM on the webview's ready handshake, not baked into the shell HTML.
-    expect(panel?.webview.options).toMatchObject({ enableScripts: true });
-    const webview = panel!.webview as unknown as { __receive: (m: unknown) => void; posted: unknown[] };
-    webview.__receive({ type: "ready" });
-    const msg = webview.posted.find((m) => (m as { type?: string }).type === "pinPreview") as {
-      vm: { body: string; doc: unknown; attachments: Array<{ name: string; uri?: string; previewUri?: string }> };
-    } | undefined;
-    expect(msg?.vm.body).toContain("Readonly body");
-    // t-321e9d — the raw doc travels too, so pin-preview's App can render the image inline instead of the
-    // flattened "[Image]" text placeholder.
-    expect(msg?.vm.doc).toMatchObject({ content: [{ type: "paragraph" }, { type: "image" }] });
-    // t-610705 (Phase D, D3) — attachment bytes travel as `data:` URIs now (PinStudioTarget.ts's
-    // hydrateAttachment, ported from TaskStudioTarget.ts's D2 fix) — no webview-resource path to
-    // assert on. Decoding the payload is a STRONGER check than the old path-substring assertion: it
-    // proves the bytes came from `rightRoot`'s blob store specifically (wrongRoot has no blobs dir at
-    // all — a cross-workspace read would throw, not merely produce a differently-pathed URI).
-    const img = msg?.vm.attachments.find((a) => a.name === "screen.png");
-    expect(img?.uri).toMatch(/^data:image\/png;base64,/);
-    expect(Buffer.from(img!.uri!.slice(img!.uri!.indexOf(",") + 1), "base64").toString("utf8")).toBe("image");
-    // the excalidraw thumbnail resolves under its own `previewUri` field (not `uri`, which is image-only).
-    const sketch = msg?.vm.attachments.find((a) => a.name === "sketch.excalidraw");
-    expect(sketch?.previewUri).toMatch(/^data:image\/png;base64,/);
-    expect(Buffer.from(sketch!.previewUri!.slice(sketch!.previewUri!.indexOf(",") + 1), "base64").toString("utf8")).toBe("preview");
-    expect(sketch?.uri).toBeUndefined();
+    expect(opened).toEqual([["righthash", "p-123abc"]]);
+    expect(__createdPanels).toHaveLength(0);
   });
 
   it("extracts a readable preview from rich pin documents", () => {

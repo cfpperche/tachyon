@@ -101,7 +101,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
   const currentStoredDoc = () => toStoredDoc((editorRef.current?.getJSON() ?? { type: "doc", content: [] }) as never);
   const currentFields = (): PinFields => {
     const doc = currentStoredDoc();
-    return { title, tags, doc, attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM), docDirty };
+    return {
+      title,
+      tags,
+      doc,
+      attachments: attachmentsForSave(doc, attachmentsRef.current).map(attachmentFromVM),
+      docDirty,
+      ...(entityRef.current?.expectUpdatedAt ? { expectUpdatedAt: entityRef.current.expectUpdatedAt } : {}),
+    };
   };
 
   const dirtyComputed = computePinDirty(entity, currentFields());
