@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { buildCockpitModel, collectNeedsFor, formatCockpitDiagnostics, type CockpitWorkspaceBundle } from "../cockpit/model.js";
-import { cockpitStrings } from "./Cockpit.js";
+import { cockpitStrings } from "./controlStrings.js";
 import { POLL, READY, overviewModelMessage } from "./overview/messages.js";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";

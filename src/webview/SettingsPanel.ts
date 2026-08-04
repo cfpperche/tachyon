@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { buildCockpitModel, collectNeedsFor, type CockpitModel, type CockpitWorkspaceBundle } from "../cockpit/model.js";
 import { parseCardTemplate } from "../sidebar/cardTemplate.js";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
-import { cockpitStrings } from "./Cockpit.js";
+import { cockpitStrings } from "./controlStrings.js";
 import { POLL, READY, settingsModelMessage } from "./settings/messages.js";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
@@ -42,7 +42,10 @@ export class SettingsPanelManager {
       app,
       styleFiles: ["codicon.css", "design-system.css", "control-typography.css", "engine-workspace.css", "settings.css"],
       title: () => vscode.l10n.t("Settings"),
-      bootstrapGlobals: () => ({ __TACHYON_STRINGS__: cockpitStrings() }),
+      bootstrapGlobals: (_target, uri) => ({
+        __TACHYON_STRINGS__: cockpitStrings(),
+        __tachyonCardPreviewCss: uri("sidebar.css"),
+      }),
       refreshKindFor: settingsRefreshKind,
       bind: (session) => {
         const send = () => void this.send(session);

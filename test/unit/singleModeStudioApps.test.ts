@@ -32,15 +32,11 @@ describe("SDD 485 D13 — editing-only studio document apps", () => {
   });
 
   it("has one standalone entry per studio and no renderer residue in Control", () => {
-    const cockpit = readFileSync("src/webview/cockpit/App.tsx", "utf8");
+    expect(() => readFileSync("src/webview/cockpit/App.tsx", "utf8")).toThrow();
     for (const studio of studios) {
       expect(
         readFileSync(`src/webview/${studio}-studio-shell/main.tsx`, "utf8"),
       ).toContain("mountSingleModeStudio(App)");
-      expect(cockpit).not.toContain(
-        `${studio[0].toUpperCase()}${studio.slice(1)}StudioApp`,
-      );
-      expect(cockpit).not.toContain(`../${studio}-studio-shell/App`);
     }
   });
 

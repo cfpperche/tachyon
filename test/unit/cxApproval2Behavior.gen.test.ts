@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import type * as vscode from "vscode";
-import { Uri, __createdPanels, __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
+import { __resetVscodeMock } from "../mocks/vscode.js";
 import {
   approvalRequestPath,
   buildApprovalRequest,
@@ -12,8 +11,6 @@ import {
 } from "../../src/bridge/approvalRequest.js";
 import { buildApprovalViewModel } from "../../src/webview/approval/viewModel.js";
 import { renderPrimer } from "../../src/bridge/primer.js";
-import { ApprovalPanelManager } from "../../src/webview/ApprovalPanel.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
@@ -118,33 +115,6 @@ describe("container-generated delegation behavior", () => {
     expect(staleInjected).toBe(false);
 
     expect(renderPrimer({ agentName: "child", parent: "parent" }).primer).toContain("confirm via get_approval_status(id) before acting");
-  });
-
-  it("redirects legacy approval panel opens and revives into cockpit Approvals", () => {
-    const wsRoot = makeTempDir("tachyon-cx-approval-panel-");
-    const ws = {
-      wsHash: "panel-truth",
-      workspaceRoot: wsRoot,
-      folderName: "repo",
-    } as Workspace;
-    const manager = new ApprovalPanelManager(Uri.file("/extension") as unknown as vscode.Uri, () => [ws]);
-    manager.open(ws);
-
-    expect(__createdPanels).toHaveLength(0);
-    let disposed = false;
-    manager.deserialize({
-      dispose: () => { disposed = true; },
-    } as unknown as vscode.WebviewPanel, {
-      schemaVersion: 1,
-      view: "tachyonApprovals",
-      wsHash: "serialized-truth",
-    });
-
-    expect(disposed).toBe(true);
-    expect(__getExecutedCommands()).toEqual([
-      { command: "tachyon.openApprovals", args: ["panel-truth"] },
-      { command: "tachyon.openApprovals", args: ["serialized-truth"] },
-    ]);
   });
 
   it("contributes a localized open-approvals fallback without exposing the resolver", () => {

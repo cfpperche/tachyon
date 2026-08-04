@@ -522,7 +522,7 @@ models probes as one surface with an optional agent, not as two.
 `ApprovalPanel.ts` is the fourth tombstone and has no successor — approvals died in D16 rather than
 migrating, so its stub and `approvalPanels.refreshAll()` are dead weight for E1 to remove.
 
-- [ ] E1. Remove the internal router, `navEpoch`, the singleton claim (`cockpitSingleton.ts`), the
+- [x] E1. Remove the internal router, `navEpoch`, the singleton claim (`cockpitSingleton.ts`), the
       subroute breadcrumb chrome, `Cockpit.ts` and the cockpit entry. Gated on
       `controlRendererRatchet.test.ts` reading an empty list. Also in scope, because they only become
       dead once the last renderer leaves: the approval/validation view-model plumbing still on the host
@@ -532,6 +532,24 @@ migrating, so its stub and `approvalPanels.refreshAll()` are dead weight for E1 
       The **sidebar** Control tab is NOT in scope and must survive: it is the launcher and the project
       selector (C6), a different surface (`tachyonSidebar`) from this panel (`tachyonCockpit`), and it
       is the door to every app the D series created.
+
+      **Cost and lesson (2026-08-04): deletion was an ownership migration, not a file removal.** Four
+      files under `webview/cockpit/` still belonged to live apps: the Settings card editor, Engine log,
+      Execution Graph renderer and the 501-line protocol/string contract. Moving them together into
+      `shared/control/` exposed one hidden dependency the renderer ratchet could not see: the card preview
+      still needed `sidebar.css` as a shadow-root bootstrap global, so `SettingsPanel` now owns that URI
+      directly. A component surviving its host needs its non-module resources moved with it, not only its
+      import path.
+
+      The eight redirect doors now call app managers directly: the two task edit callers, pin edit,
+      new-task command, `tachyon.openControl(section)`, its no-section default, the legacy
+      `tachyon.openCockpit` alias, and persisted `tachyonCockpit` restore (dispose + Overview). Approvals
+      and Validations remain accepted compatibility section ids and both land in Human Inbox. The former
+      renderer ratchet is now the inverse guard — host/client/singleton/surface/build entry must stay
+      absent while the sidebar launcher and command ids stay present — and was proved red by temporarily
+      restoring `"cockpit"` to `WEBVIEW_APP_VIEWS`. Finally, removing an entry is insufficient in a reused
+      build directory: esbuild now explicitly deletes stale `cockpit.js`, its sourcemap and `cockpit.css`
+      before packaging, or deleted source can still ship as residue.
 - [ ] E2. Record the supersession in `docs/specs/410-cockpit-single-app/spec.md` so a reader finds
       the reversal from either direction, and set this spec's `**Closure:**` line.
 

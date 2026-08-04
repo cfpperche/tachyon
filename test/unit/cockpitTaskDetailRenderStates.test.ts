@@ -22,7 +22,6 @@ import type { TaskDetailVM } from "../../src/webview/task-detail/messages.js";
  * exact markup, so this must not break when the detail's layout is legitimately restyled.
  */
 const APP_TSX = path.join(__dirname, "../../src/webview/task-detail/App.tsx");
-const SHELL_TSX = path.join(__dirname, "../../src/webview/cockpit/App.tsx");
 
 const DISPATCH = {
   updateTask: () => {},
@@ -110,25 +109,5 @@ describe("t-2f6cdd — every task-detail render state paints something visible",
       const text = visibleText(render(vm));
       expect(text, `${name} rendered no visible text`).not.toBe("");
     }
-  });
-});
-
-/**
- * t-2f6cdd — the blank surface itself, pinned as a measured fact rather than a description.
- *
- * The headless Dev Host repro read `<div class="ds-empty"></div>` — an EMPTY element, no children —
- * out of the live Control webview's `#root`. This renders the real shell with `strings` absent and
- * shows that is exactly what the source produces, which is what makes "Control opened blank" and
- * "the client never received `init`" the same statement. The shell has no other way to paint
- * nothing, so this is also the regression guard: if a future change gives the strings-less shell
- * something visible, this test says so instead of a human rediscovering it through a blank tab.
- */
-describe("t-2f6cdd — the Control shell with no strings is what a blank tab actually is", () => {
-  it("renders an empty ds-empty element and nothing else", async () => {
-    const mod = await loadWebviewModule(SHELL_TSX, { packageResolution: true });
-    const Shell = mod.App as (props: unknown) => unknown;
-    const html = renderStatic(Shell({ strings: undefined, model: undefined }));
-    expect(html).toBe('<div class="ds-empty"></div>');
-    expect(visibleText(html)).toBe("");
   });
 });

@@ -30,10 +30,8 @@ const messages = (index = 0) => __createdPanels[index].webview.posted.filter((me
 describe("Project Handoff standalone dashboard (SDD 485 D19)", () => {
   it("has no Handoff renderer or stylesheet path left in Control", () => {
     const root = process.cwd();
-    const client = fs.readFileSync(path.join(root, "src/webview/cockpit/App.tsx"), "utf8");
-    const host = fs.readFileSync(path.join(root, "src/webview/Cockpit.ts"), "utf8");
-    expect(client).not.toMatch(/HandoffApp|control-handoff|handoffVm|handoffDispatch/);
-    expect(host).not.toMatch(/const sendHandoff|const handleHandoffAction|import .*handoffMessage|uri\("handoff\.css"\)/);
+    expect(fs.existsSync(path.join(root, "src/webview/cockpit/App.tsx"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "src/webview/Cockpit.ts"))).toBe(false);
   });
 
   it("keeps command, legacy restore and fan-out wired to HandoffPanelManager", () => {

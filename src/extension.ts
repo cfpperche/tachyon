@@ -22,20 +22,7 @@ import { EXECUTION_GRAPH_VIEW_TYPE, ExecutionGraphPanelManager } from "./webview
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { OVERVIEW_VIEW_TYPE, OverviewPanelManager } from "./webview/OverviewPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
-import {
-  openCockpit,
-  refreshCockpitApprovals,
-  refreshCockpitValidations,
-  refreshCockpitTaskStudioEntity,
-  refreshCockpitStudioReferenceData,
-  markControlSourceResync,
-  decodeCockpitPanelState,
-  COCKPIT_VIEW_TYPE,
-  type CockpitPanelState,
-  type CockpitDeps,
-} from "./webview/Cockpit.js";
 import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
-import { routes as cockpitRoutes } from "./cockpit/route.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { resolveCockpitSection } from "./cockpit/resolveSection.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
@@ -43,7 +30,6 @@ import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
 import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
-import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { validationAwaitsHuman } from "./humanInbox/model.js";
 import { decodeHumanInboxDeepLink } from "./humanInbox/deepLink.js";
@@ -1163,7 +1149,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onTasksChanged = () => {
     boardPanels.refresh(); // SDD 485 C5 — every open Board panel, gated: hidden ones journal and do nothing
     taskDetailPanels.refresh(); // SDD 485 C4 — EVERY open task-detail document, each re-reading its own task
-    refreshCockpitTaskStudioEntity(); // Control → task studio-edit route (t-610705 Phase D, D2, same reasoning)
     sidebarProto.refresh();
   };
   let lastBridgeLagNoticeAt = 0;
@@ -1184,13 +1169,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (view === "handoff") handoffPanels.refresh();
     if (view === "probes") probesPanels.refresh();
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
-    if (view === "pins") approvalPanels.refreshAll();
     // t-610705 (Phase D, D1a) — Runbook/Schedule's refreshReferenceData() retired with their panel
     // managers; the Control-route equivalent doesn't need a per-studio "which kind changed" gate
     // (refreshStudioReferenceData is a no-op off a studio route, and best-effort otherwise — see its
     // own doc comment in studioHost.ts).
     if (view === "commands" || view === "agents") {
-      refreshCockpitStudioReferenceData();
       for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
     }
     if (view === "agents") void applyWorktreeFolderReveal(); // spec 210/263 — onSpawned/onStopping/onKilled fire this
@@ -1200,14 +1183,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void applyWorktreeFolderReveal(); // spec 210/263 — the worktree-remove commands only re-render through here
     sidebarProto.refresh();
     pluginSurfaces.refreshAll();
-    refreshCockpitStudioReferenceData(); // t-610705 (Phase D, D1a) — was runbook/scheduleStudioPanels.refreshReferenceData()
     for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
-    approvalPanels.refreshAll();
   };
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
-  const approvalPanels = new ApprovalPanelManager(context.extensionUri, workspaces);
-  context.subscriptions.push({ dispose: () => approvalPanels.dispose() });
   // SDD 485 C4 — Task Detail is a standalone `document` app again: one editor tab per (project, task),
   // so two task details stand side by side and neither is retargeted by a later scope change. Control
   // asks it to open a tab (`deps.taskDetail.openDocument`) and never renders one itself.
@@ -1583,13 +1562,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           await extensionInvoke(ws, { action: "approval.resolve", id, decision });
           notify(`approval request ${id} ${decision}`);
           refreshAll();
-          refreshCockpitApprovals();
           humanInboxPanels.refresh();
         },
       },
       validations: { getWorkspaces: () => workspaces().map((ws) => ws.missionControl) },
       onValidationsChanged: () => {
-        refreshCockpitValidations();
         boardPanels.refresh();
         humanInboxPanels.refresh();
       },
@@ -1750,8 +1727,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
   };
 
-  const makeCockpitDeps = (): CockpitDeps => ({
-    extensionUri: context.extensionUri,
+  const makeControlModelHost = () => ({
     // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
     // not needed is not queried and its field is ABSENT, so a caller can tell "not collected" from
     // "none exist". Navigation used to pay for every slice regardless of the route.
@@ -1942,112 +1918,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return bundles;
     },
-    missionBoard: {
-      getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
-      // t-610705 (Phase D, D2) — Task Studio is a Control studio-edit route now, not a standalone
-      // panel: navigate the (already-open, since this fires from inside a live Cockpit message
-      // handler) singleton in place, same idiom every other "open a studio route" command/action
-      // uses elsewhere in this file. "new" mints an id up front (route.ts's decodeRoute rejects
-      // studio-new + "task" outright — same pre-minting TaskStudioAdapter.save() already does for a
-      // caller that skips this path entirely) rather than reaching for a "studio-new" route that
-      // doesn't exist for "task".
-      openTaskStudio: (target, id) => {
-        const ws = wsOf({ ws: target });
-        if (!ws) return;
-        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, id ?? mintTaskId()) });
-      },
-      onTasksChanged,
-    },
-    // t-610705 (Phase C.1) — Task Detail is a Control subroute now (WorkspaceTaskDetailTarget
-    // already carries loadTaskDetail/updateTask/reviewPrototype/attachment resolution).
-    taskDetail: {
-      getWorkspaces: () => workspaces().map((ws) => ws.taskDetail),
-      // SDD 485 C4 — the Board card, the studio breadcrumb and a revived/deep-linked task-detail route all
-      // arrive here. `wsHash` is the document's IDENTITY from this call onwards.
-      openDocument: (wsHash, taskId) => taskDetailPanels.open(wsHash, taskId),
-      openCreateDocument: (wsHash) => taskDetailPanels.openEdit(wsHash, mintTaskId()),
-      openEditDocument: (wsHash, taskId) => taskDetailPanels.openEdit(wsHash, taskId),
-    },
-    pinDetail: {
-      openDocument: (wsHash, pinId) => pinDetailPanels.open(wsHash, pinId),
-      openCreateDocument: (wsHash) => pinDetailPanels.openCreate(wsHash, mintPinId()),
-      openEditDocument: (wsHash, pinId) => pinDetailPanels.openEdit(wsHash, pinId),
-    },
-    // t-610705 (Phase C.2) — Activity/Probes are Control subroutes now (WorkspaceActivityTarget /
-    // WorkspaceProbePresentationTarget already carry everything the host needs — no separate
-    // wrapper interface, same reasoning as taskDetail above).
-    activity: {
-      getWorkspaces: () => workspaces().map((ws) => ws.activity),
-    },
-    openActivity: (wsHash, agent) => activityPanels.open(wsHash, agent),
-    openProbes: (wsHash, caller) => probesPanels.open(wsHash, caller),
-    probes: {
-      getWorkspaces: () => workspaces().map((ws) => ws.probe),
-    },
-    // t-610705 (Phase C.3) — Handoff folds into a Control section (WorkspaceHandoffTarget already
-    // carries everything the host needs).
-    openHandoff: (wsHash) => openHandoffTab(wsHash),
-    // t-610705 (Phase D, D0) — StudioPanelManagerBase-based studios migrated onto a Control route
-    // (studios-routes-design.md). WorkspaceShellHandle already implements WorkspaceStudioTarget
-    // directly (no per-studio accessor needed, unlike taskDetail/activity/handoff above) — command/
-    // terminal/runbook/schedule/agent studios all read the SAME shape; onChanged mirrors every
-    // retired studio panel manager's refreshAll fan-out.
-    studios: {
-      getWorkspaces: () => workspaces(),
-      onChanged: refreshAll,
-    },
-    studioDocuments: {
-      openNew: (studio, wsHash) => studioPanels[studio].openNew(wsHash),
-      openExisting: (studio, wsHash, entityId) => studioPanels[studio].openExisting(wsHash, entityId),
-    },
-    approvals: {
-      getWorkspaces: () =>
-        workspaces().map((ws) => ({
-          workspaceRoot: ws.workspaceRoot,
-          wsHash: ws.wsHash,
-          folderName: ws.folderName,
-        })),
-      resolve: async (wsHash, id, decision) => {
-        const ws = byHash(wsHash);
-        if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
-        await extensionInvoke(ws, { action: "approval.resolve", id, decision });
-        notify(`approval request ${id} ${decision}`);
-        refreshAll();
-        refreshCockpitApprovals();
-      },
-    },
-    validations: {
-      getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
-      onValidationsChanged: () => {
-        refreshCockpitValidations();
-        // SDD 485 C5 — the board carries validation counts, so a close still re-posts it; the target is the
-        // app's own fan-out door now, and it is gated per panel like every other push into it.
-        boardPanels.refresh();
-      },
-    },
-    openBoard,
-    openFleet: (hash?: string) => openFleetTab(hash),
-    openRuntimeConfig: (hash?: string) => openRuntimeConfigTab(hash),
-    openExecutionGraph: (hash?: string) => openExecutionGraphTab(hash),
-    // SDD 485 D2 — and Plugins, the second dashboard: Control opens the app for a project rather than
-    // rendering the section. `openPluginsTab` resolves the ambient scope once, at open.
-    openPlugins: (hash?: string) => openPluginsTab(hash),
-    // SDD 485 D1 — and the tmux app, which takes no argument at all: `window` cardinality means there is
-    // one panel for the window and nothing to key it on.
-    openTmux: () => tmuxPanels.open(),
-    // SDD 485 D3 — and Runtime Ops, the second `window` app and so the second opener with no argument.
-    openRuntimeOps: () => runtimeOpsPanels.open(),
-    openHumanInbox: (wsHash) => { openHumanInboxTab(wsHash); },
-    openHumanInboxItem: (wsHash, itemKind, itemId) => { humanInboxPanels.openItem(wsHash, itemKind, itemId); },
-    openSettings: () => { openSettingsTab(); },
-    openOverview: (hash?: string) => { openOverviewTab(hash); },
     openDoctor: () => {
       void vscode.commands.executeCommand("tachyon.doctor");
     },
-    revealPath: (fsPath) => {
+    revealPath: (fsPath: string) => {
       void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(fsPath));
     },
-    openConfigFile: async (wsHash) => {
+    openConfigFile: async (wsHash?: string) => {
       const ws = wsHash ? byHash(wsHash) : workspaces()[0];
       if (!ws) throw new Error("no Tachyon workspace attached");
       const cfg = CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
@@ -2057,7 +1934,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     // t-585d5c — Control -> Settings writes the idle-notification window through the same governed
     // operation an API client would use, so there is one validated entrance and not a UI-only path.
-    setIdleAfterMinutes: async (wsHash, minutes) => {
+    setIdleAfterMinutes: async (wsHash: string, minutes?: number | "never") => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, {
@@ -2065,17 +1942,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ...(minutes === undefined ? {} : { minutes }),
       });
     },
-    setCompanionTabTools: async (wsHash, enabled) => {
+    setCompanionTabTools: async (wsHash: string, enabled: boolean) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "config.companion.tabTools", enabled });
     },
-    setCompanionAllowedHosts: async (wsHash, hosts) => {
+    setCompanionAllowedHosts: async (wsHash: string, hosts: string[]) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "config.companion.allowedHosts", hosts });
     },
-    unpairCompanionDevice: async (wsHash, deviceId) => {
+    unpairCompanionDevice: async (wsHash: string, deviceId?: string) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, {
@@ -2083,7 +1960,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ...(deviceId ? { deviceId } : {}),
       });
     },
-    issueCompanionPairCode: async (wsHash) => {
+    issueCompanionPairCode: async (wsHash: string) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       const result = jsonObject(await extensionQuery(ws, { action: "companion.pair-code" }), "companion.pair-code");
@@ -2289,7 +2166,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // SDD 485 B2 — the event cursor expired (or the engine changed incarnation), so "what
         // changed" is unknowable from any journal downstream of here. A hidden Control must rebuild
         // on reveal rather than replay the handful of kinds `refreshAll` happens to touch.
-        markControlSourceResync();
         taskDetailPanels.markSourceResync(); // SDD 485 C4 — same bargain for every open task document
         boardPanels.markSourceResync(); // SDD 485 C5 — and for every open Board panel
         refreshAll();
@@ -2386,7 +2262,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   context.subscriptions.push({ dispose: () => probesPanels.dispose() });
 
-  const engineHost = makeCockpitDeps();
+  const engineHost = makeControlModelHost();
   const enginePanels = new EnginePanelManager(context.extensionUri, {
     collect: engineHost.collect,
     openDoctor: engineHost.openDoctor,
@@ -2562,7 +2438,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState | HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => {
     handoffPanels.deserialize(panel, state);
   }, { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // SDD 485 D2 — the Plugins app's own restore, and the second REUSED viewType (after C4's and D1's):
   // the panel VS Code hands back is kept, keyed on the project it persisted, so a reload puts Plugins back
   // in its tab instead of opening a second one. A pre-410 record carrying `wsHash` instead of `project` is
@@ -2633,12 +2508,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // persisted `project` names a workspace, and without it a panel restored before its workspace attaches
   // paints "that workspace is no longer attached" for a moment.
   registerTrustedPanelSerializer<SectionPanelState>(context, HUMAN_INBOX_VIEW_TYPE, (panel, state) => humanInboxPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
-  // t-610705 (Phase C.0) — decodePanelState is the ONE place a v1 disk record (bare section) or a
-  // v2 record (a real CockpitRoute) gets trusted; a malformed/unrecognized route falls back to
-  // overview rather than reviving into whatever the raw payload happened to contain.
-  registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) => {
-    const { route, wsHash } = decodeCockpitPanelState(state);
-    return openCockpit(makeCockpitDeps(), { revivedPanel: panel, route, wsHash });
+  // SDD 485 E1 — a persisted pre-cutover Control panel has no host to revive into. Dispose the stale
+  // panel VS Code handed us and open Overview, the sensible default for an unscoped legacy shell.
+  registerTrustedPanelSerializer<{ schemaVersion: 1 | 2; view: string; wsHash?: unknown }>(context, "tachyonCockpit", (panel, state) => {
+    panel.dispose();
+    openOverviewTab(typeof state?.wsHash === "string" ? state.wsHash : undefined);
   });
   // SDD 485 C1 — `tachyonSectionAppFixture` is dispose-only for the same reason `tachyonAgentFixtureStudio`
   // is: it is a dev-only proof surface that nothing here instantiates, so there is no manager to revive a
@@ -2936,12 +2810,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await extensionInvoke(ws, { action: "approval.resolve", id: arg.id, decision: arg.decision });
         notify(`approval request ${arg.id} ${arg.decision}`);
         refreshAll();
-        refreshCockpitApprovals();
         humanInboxPanels.refresh();
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "error");
-        approvalPanels.refreshAll();
-        refreshCockpitApprovals();
         humanInboxPanels.refresh();
       }
     }),
@@ -2988,6 +2859,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openHumanInboxTab();
           return Promise.resolve();
         }
+        if (resolved === "approvals" || resolved === "validations") {
+          openHumanInboxTab();
+          return Promise.resolve();
+        }
         if (resolved === "engine") {
           openEngineTab();
           return Promise.resolve();
@@ -3016,12 +2891,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openOverviewTab();
           return Promise.resolve();
         }
-        return openCockpit(makeCockpitDeps(), { section: resolved });
+        openOverviewTab();
+        return Promise.resolve();
       }
-      return openCockpit(makeCockpitDeps());
+      openOverviewTab();
+      return Promise.resolve();
     }),
     // legacy aliases (palette hidden for openCockpit)
-    vscode.commands.registerCommand("tachyon.openCockpit", () => openCockpit(makeCockpitDeps())),
+    vscode.commands.registerCommand("tachyon.openCockpit", () => { openOverviewTab(); }),
     vscode.commands.registerCommand("tachyon.inspectEngine", () => { openEngineTab(); }),
     // SDD 485 C5 — the Board opens as its own editor tab (same as tachyon.missionControl without the pick).
     vscode.commands.registerCommand("tachyon.openControlMission", () => { openBoard(); }),
@@ -3249,7 +3126,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("pin", ws.wsHash, item.pinId) });
+      pinDetailPanels.openEdit(ws.wsHash, item.pinId);
     }),
     // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {
@@ -3383,7 +3260,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // webview's openTaskStudio action instead of a command).
     vscode.commands.registerCommand("tachyon.taskStudio.new", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) await openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, mintTaskId()) });
+      if (ws) taskDetailPanels.openEdit(ws.wsHash, mintTaskId());
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for

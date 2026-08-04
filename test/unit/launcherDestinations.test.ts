@@ -34,6 +34,10 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
   const SECTION_TO_APP_VIEW: Record<string, string> = Object.fromEntries(
     WEBVIEW_APPS.filter((a) => a.section !== undefined).map((a) => [a.section!, a.view]),
   );
+  const COMPATIBILITY_VIEW: Record<string, string> = {
+    approvals: "human-inbox",
+    validations: "human-inbox",
+  };
 
   it("each tile is rendered by Control or backed by a standalone app — never neither", () => {
     const rendered = new Set<string>(COCKPIT_SECTION_ORDER);
@@ -69,7 +73,7 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     const routed = [...open.matchAll(/resolved === "([a-z-]+)"/g)].map((m) => m[1]);
     expect(routed.length, "no section is routed to an app — either the branch shape changed or C5's wiring is gone").toBeGreaterThan(0);
 
-    const unbacked = routed.filter((id) => !appSections.has(SECTION_TO_APP_VIEW[id] ?? id));
+    const unbacked = routed.filter((id) => !appSections.has(COMPATIBILITY_VIEW[id] ?? SECTION_TO_APP_VIEW[id] ?? id));
     expect(unbacked, `tachyon.openControl routes these ids to an app, but WEBVIEW_APPS declares no such app: ${unbacked.join(", ")}`).toEqual([]);
 
     // and the other direction: an id moved to an app but never routed still opens Control, silently.

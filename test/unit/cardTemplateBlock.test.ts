@@ -16,7 +16,7 @@ import { CARD_PREVIEW_ROWS } from "../../src/sidebar/cardPreviewRows.js";
  */
 const BLOCK = path.join(__dirname, "../../src/webview/shared/control/CardTemplateBlock.tsx");
 const blockSource = readFileSync(BLOCK, "utf8");
-const cockpitHost = readFileSync(path.join(__dirname, "../../src/webview/Cockpit.ts"), "utf8");
+const settingsHost = readFileSync(path.join(__dirname, "../../src/webview/SettingsPanel.ts"), "utf8");
 
 const STRINGS = {
   cardTemplateTitle: "Agent card layout",
@@ -83,17 +83,14 @@ describe("SDD 479 phase 4 — the card template Settings block", () => {
     expect(blockSource).toMatch(/export function CardTemplateBlock\(\{\s*\n\s*s,\s*\n\s*onOpenConfig,\s*\n\s*onOpenSettings,\s*\n\s*inEffect,/);
   });
 
-  it("keeps sidebar.css off the Cockpit page — it is shipped for the shadow root only", () => {
+  it("keeps sidebar.css off the Settings page — it is shipped for the shadow root only", () => {
     // The URI ships on its OWN bootstrap global, never as a `__tachyonSectionStyles` key: everything
     // in that map is injected into <head> by loadSectionStylesheet (and cockpitCssParity.test.ts
     // enforces the pairing), which is precisely the leak this design avoids.
-    expect(cockpitHost).toContain("__tachyonCardPreviewCss: uri(\"sidebar.css\")");
-    const styleLinks = cockpitHost.slice(cockpitHost.indexOf("uri(\"codicon.css\")"), cockpitHost.indexOf("bootstrapGlobals"));
-    expect(styleLinks).not.toContain("sidebar.css");
-    const sectionStyles = /__tachyonSectionStyles:\s*\{([\s\S]*?)\n\s*\},/.exec(cockpitHost);
-    expect(sectionStyles?.[1] ?? "").not.toContain("sidebar.css");
-    const clientSources = [blockSource, readFileSync(path.join(__dirname, "../../src/webview/cockpit/App.tsx"), "utf8")].join("\n");
-    expect(clientSources).not.toContain("loadSectionStylesheet(\"card-preview\")");
+    expect(settingsHost).toContain('__tachyonCardPreviewCss: uri("sidebar.css")');
+    const styleFiles = /styleFiles:\s*\[([^\]]*)\]/.exec(settingsHost)?.[1] ?? "";
+    expect(styleFiles).not.toContain("sidebar.css");
+    expect(blockSource).not.toContain("loadSectionStylesheet(\"card-preview\")");
   });
 
   it("previews the states the spec asks for", () => {

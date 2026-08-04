@@ -6,9 +6,6 @@ import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
 import { StudioPanelManagerBase, type StudioSurfaceConfig } from "../../src/webview/shared/studio/StudioPanelManagerBase.js";
 import type { StudioHostAdapter, StudioLoadResult } from "../../src/webview/shared/studio/adapter.js";
-import {
-  __controlGateProbe,
-} from "../../src/webview/Cockpit.js";
 import { DaemonEngineHost, type DaemonHostEvent } from "../../src/workspace/DaemonEngineHost.js";
 
 /**
@@ -30,8 +27,8 @@ import { DaemonEngineHost, type DaemonHostEvent } from "../../src/workspace/Daem
  * them, so the exemplar door here is Handoff: still reached from `onViewsChanged("handoff")`, still exactly
  * ONE refresh kind (Validations pushes two — validations AND inbox — which doubles every suppressed count).
  * Nothing about the mechanism changed; what the migrated surfaces' own gating proves now lives in
- * `boardPanel.test.ts` and `taskDetailApp.test.ts`, driven through those apps' doors. That is the cutover
- * working, not a gap it left.
+ * `boardPanel.test.ts` and `taskDetailApp.test.ts`, driven through those apps' doors. Control itself was
+ * removed in E1, while this manager-level guard remains the contract for every surviving app.
  */
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));

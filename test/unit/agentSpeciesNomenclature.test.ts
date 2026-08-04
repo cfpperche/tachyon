@@ -47,7 +47,6 @@ const BOUNDARY = {
   "src/handoff/distill.ts": "HandoffDistillMode, the discriminant's type",
   "src/webview/handoff/messages.ts": "webview action carrying the discriminant",
   "src/webview/handoff/App.tsx": "<option value> IS the discriminant; its label already reads Temporary",
-  "src/webview/Cockpit.ts": "routes the discriminant + the note recording this boundary",
   // the sidebar row's `adhoc` capability flag, produced and consumed across the engine/shell wire
   "src/runtime-api/sidebarProjection.ts": "strict() wire schema field",
   "src/sidebar/types.ts": "the row VM that schema validates",

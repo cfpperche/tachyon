@@ -22,9 +22,9 @@ describe("SDD 485 D18 — Probes cutover doors and renderer inventory", () => {
   });
 
   it("Control has no Probes renderer, lazy import, client state, or host sender", () => {
-    expect(read("src/webview/cockpit/App.tsx")).not.toMatch(/ProbesApp|\.\.\/probes\/App/);
-    expect(read("src/webview/cockpit/main.tsx")).not.toMatch(/probesVm|setProbesVm|type === PROBES/);
-    expect(read("src/webview/Cockpit.ts")).not.toMatch(/const sendProbes|function refreshCockpitProbes|probesMessage\(/);
+    expect(fs.existsSync("src/webview/cockpit/App.tsx")).toBe(false);
+    expect(fs.existsSync("src/webview/cockpit/main.tsx")).toBe(false);
+    expect(fs.existsSync("src/webview/Cockpit.ts")).toBe(false);
   });
 
   it("the standalone root consumes shared page chrome", () => {

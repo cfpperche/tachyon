@@ -56,11 +56,12 @@ describe("the global workspace scope has exactly one control (SDD 485 C6)", () =
   });
 
   it("the host authority is the window store, not Cockpit module state", () => {
-    const host = readFileSync(path.join(WEBVIEW, "Cockpit.ts"), "utf8");
     const sidebarHost = readFileSync(path.join(WEBVIEW, "SidebarPrototype.ts"), "utf8");
+    const extension = readFileSync(path.resolve(WEBVIEW, "..", "extension.ts"), "utf8");
     expect(sidebarHost).toMatch(/m\?\.type === "switchControlWorkspace"[\s\S]*?controlWorkspaceScope\.set\(hash\)/);
-    expect(host).not.toContain("let controlWsHash");
-    expect(host).toContain("controlWorkspaceScope.current");
+    expect(extension).toContain("controlWorkspaceScope.current");
+    expect(webviewSources().some((file) => readFileSync(file, "utf8").includes("let controlWsHash"))).toBe(false);
+    expect(() => readFileSync(path.join(WEBVIEW, "Cockpit.ts"), "utf8")).toThrow();
   });
 });
 

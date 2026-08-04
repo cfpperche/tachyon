@@ -134,10 +134,6 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // own `--ds-page-pad-*` rule, which used to come from cockpit.css: page pad is not page chrome (the
   // scan reads `html`/`body` selectors), so this stays a conforming surface that now owns its own pad.
   { viewId: "tachyonPlugins", view: "plugins", hostFile: "src/webview/PluginsPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  // spec 485 A1 — Control is a full-bleed multi-section app: cockpit.css hard-resets `html, body, #root` with
-  // `!important` so the embedded sections' standalone CSS cannot re-impose a page pad (that reset is the
-  // reason cockpitCssParity.test.ts pins cockpit.css LAST). Own page chrome, shared kit → `extend`.
-  { viewId: "tachyonCockpit", view: "cockpit", hostFile: "src/webview/Cockpit.ts", mode: "live", converted: true, editorHome: "cockpit", posture: "extend", extensionPoints: ["page-chrome"] },
   // The Engine/Bridge Control Inspector POC was removed as dead code (t-b5dcae, 2026-07-20):
   // ControlInspector.ts and src/webview/control-inspector/* had zero real importers — Cockpit's
   // Engine tab was already built on its own JSX + EngineLogPanel.tsx, using src/control-inspector/

@@ -102,7 +102,6 @@ describe("webview convention (spec 279)", () => {
       tachyonWorktrees: "WORKTREES_VIEW_TYPE",
       tachyonFleet: "FLEET_VIEW_TYPE",
       tachyonExecutionGraph: "EXECUTION_GRAPH_VIEW_TYPE",
-      tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_DETAIL_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
       // SDD 485 C5 — the Board's own viewType, and the first app on `SectionPanelManager` that genuinely
@@ -110,7 +109,6 @@ describe("webview convention (spec 279)", () => {
       tachyonBoard: "BOARD_VIEW_TYPE",
       tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
       tachyonTaskStudio: "TASK_STUDIO_VIEW_TYPE",
-      tachyonApprovals: "APPROVAL_VIEW_TYPE",
       tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",
       tachyonAgentStudioShell: "AGENT_STUDIO_SHELL_VIEW_TYPE",
       tachyonTerminalStudioShell: "TERMINAL_STUDIO_SHELL_VIEW_TYPE",

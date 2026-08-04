@@ -230,31 +230,7 @@ describe("PanelWorkGate — the reveal is the safety property", () => {
 // for the design system: the mechanism is a test, not a habit.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 describe("SDD 485 B1 — no push door bypasses the gate (static, so a NEW door cannot sneak in)", () => {
-  const cockpit = readFileSync("src/webview/Cockpit.ts", "utf8");
-
-  it("routes every Control push through pushControlRefresh or the gate's own resync branch", () => {
-    // The two sanctioned homes for a `pushX?.()` call: inside the `pushControlRefresh` switch (the
-    // gated path), and the gate's `resync:` option (the reveal's rebuild, which runs BECAUSE the
-    // panel just became visible). Anywhere else is an ungated door.
-    //
-    // Sanctioned sites are matched by OFFSET, never by line text. The first cut of this test compared
-    // `switchBody.includes(line.trim())` and was blind: an injected `pushMissionBoard?.();` anywhere in
-    // the file is a substring of the switch's own `case "mission": pushMissionBoard?.(); return;`, so
-    // every bypass "passed". A guard that cannot fail is worse than no guard — this one is proven to
-    // go red by the fail-before recorded in notes.md.
-    const found = /function pushControlRefresh\([\s\S]*?\n}/.exec(cockpit);
-    expect(found, "pushControlRefresh not found — did it move or get renamed?").not.toBeNull();
-    const sanctioned: Array<[number, number]> = [[found!.index, found!.index + found![0].length]];
-    for (const m of cockpit.matchAll(/\bresync:\s*\(\)\s*=>.*$/gm)) sanctioned.push([m.index!, m.index! + m[0].length]);
-
-    const lineAt = (offset: number): number => cockpit.slice(0, offset).split("\n").length;
-    const ungated: string[] = [];
-    for (const m of cockpit.matchAll(/\b(push[A-Z][A-Za-z]*)\?\.\(/g)) {
-      if (sanctioned.some(([from, to]) => m.index! >= from && m.index! < to)) continue;
-      ungated.push(`Cockpit.ts:${lineAt(m.index!)}: ${m[1]}?.() is called outside pushControlRefresh — a hidden panel would still do this work. Add a ControlRefreshKind and go through refreshControl().`);
-    }
-    expect(ungated, ungated.join("\n")).toEqual([]);
-  });
+  // SDD 485 E1 removed Control and its push doors. The generic manager below is now the only app host.
 
   // SDD 485 C1 — the same guard, pointed at the class every future app's doors will be built on. Control is
   // one surface with a known set of pushes; `SectionPanelManager` is the shape ten more will arrive in, so a
@@ -300,13 +276,4 @@ describe("SDD 485 B1 — no push door bypasses the gate (static, so a NEW door c
     expect(before, "a dropped post must arm a rebuild on reveal, or the panel comes back with a hole in it").toContain("markSourceResync()");
   });
 
-  it("keeps every ControlRefreshKind reachable — a kind with no case is a silently dead door", () => {
-    const union = /type ControlRefreshKind =([\s\S]*?);/.exec(cockpit)?.[1] ?? "";
-    expect(union, "ControlRefreshKind not found").not.toBe("");
-    const kinds = [...union.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
-    expect(kinds.length).toBeGreaterThan(0);
-    const switchBody = /function pushControlRefresh\([\s\S]*?\n}/.exec(cockpit)?.[0] ?? "";
-    const missing = kinds.filter((k) => !switchBody.includes(`case "${k}":`));
-    expect(missing, `ControlRefreshKind values with no case in pushControlRefresh: ${missing.join(", ")}`).toEqual([]);
-  });
 });
