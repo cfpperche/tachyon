@@ -148,7 +148,6 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
       "/dist/webview/agent-studio-shell.tailwind.css",
-      "/dist/webview/task-studio.tailwind.css",
       "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
@@ -156,7 +155,6 @@ export const ROUTES: Record<string, Route> = {
       "/dist/webview/runbook-studio-shell.css",
       "/dist/webview/schedule-studio-shell.css",
       "/dist/webview/agent-studio-shell.css",
-      "/dist/webview/task-studio.css",
       "/dist/webview/pin-studio.css",
       // t-967b5b — `control-typography.css` left this list with the same edit that removed it from
       // `Cockpit.ts`: Control's last `ck-mono` use went out with the Settings migration (D10), and a
@@ -343,12 +341,40 @@ export const ROUTES: Record<string, Route> = {
   // used to preview). 880 is this repo's wide measurement width and the reading column's own max-width.
   "task-detail": {
     bundle: "/dist/webview/task-detail.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"],
+    cssLinks: [
+      CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/task-studio.tailwind.css",
+      "/dist/webview/rich-doc.css", "/dist/webview/studio-frame.css", "/dist/webview/task-studio.css",
+      "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css",
+    ],
     frame: { w: 880, h: 900 },
     fixtures: taskDetailFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
     module: true,
-    makeMessage: (vm) => taskMessage(vm as never),
+    globals: {
+      EXCALIDRAW_SCRIPT_URI: "/dist/webview/excalidraw.js",
+      EXCALIDRAW_CSS_URI: "/dist/webview/excalidraw.css",
+      EXCALIDRAW_ASSET_PATH: "/dist/webview/",
+    },
+    makeMessage: (vm) => {
+      const detail = vm as { previewMode?: string; task?: { id: string; title: string; body?: string; kind?: string; priority?: number; assignee?: string; artifact_refs?: unknown[]; updatedAt: string }; wsHash: string; deps?: Array<{ id: string; title?: string; missing: boolean }> };
+      if (detail.previewMode !== "edit" || !detail.task) return taskMessage(vm as never);
+      return [
+        taskMessage(vm as never),
+        { type: "taskDocumentMode", mode: "edit" },
+        {
+          type: "load", studioProtocolVersion: 1,
+          entity: {
+            taskId: detail.task.id, workspaceHash: detail.wsHash, folder: "Taskedit", title: detail.task.title,
+            kind: detail.task.kind, priority: detail.task.priority, assignee: detail.task.assignee,
+            deps: detail.deps ?? [], artifact_refs: detail.task.artifact_refs ?? [],
+            doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: detail.task.body ?? "" }] }] },
+            attachments: [], bodyBaseline: detail.task.body ?? "", anchor: "load",
+            expectUpdatedAt: detail.task.updatedAt, knownAgents: ["claude", "codex"],
+          },
+          concurrency: { kind: "cas", expected: detail.task.updatedAt },
+        },
+      ];
+    },
   },
   // SDD 485 C5 — the Board, standalone again, so it gets its own route back for the same reason the task
   // detail did one commit earlier: this renders the REAL shipped `mission-control.js` with the exact

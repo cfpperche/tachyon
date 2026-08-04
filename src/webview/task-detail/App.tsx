@@ -116,7 +116,7 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
           // with a long wrapped title is what made the header read as rubble. Identity sits under the
           // title, actions stay right-aligned and stop wrapping into the text.
           <div class="ds-actions td-head-actions">
-            <Button icon="edit" onClick={() => dispatch.openStudio()}>Open in Studio</Button>
+            <Button icon="edit" onClick={() => dispatch.openStudio()}>Edit task</Button>
             <Button icon="refresh" onClick={() => dispatch.refresh()}>Refresh</Button>
           </div>
         }

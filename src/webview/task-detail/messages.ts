@@ -74,7 +74,13 @@ export type TaskDetailAction =
   | { type: "rejectPrototype"; prototypeId: string; expectUpdatedAt: string; review?: string }
   | { type: "notePrototype"; prototypeId: string; expectUpdatedAt: string; review: string }
   /** spec 339 — opens Task Studio for THIS panel's own task (the detail tab's "Open in Studio" button). */
-  | { type: "openTaskStudio" };
+  | { type: "openTaskStudio" }
+  | { type: "setTaskDocumentMode"; mode: TaskDocumentMode };
+
+export type TaskDocumentMode = "read" | "edit";
+export const TASK_DOCUMENT_MODE = "taskDocumentMode" as const;
+export const taskDocumentModeMessage = (mode: TaskDocumentMode) => ({ type: TASK_DOCUMENT_MODE, mode });
+export const setTaskDocumentModeAction = (mode: TaskDocumentMode): TaskDetailAction => ({ type: "setTaskDocumentMode", mode });
 
 export const requestSnapshotAction = (): TaskDetailAction => ({ type: "requestSnapshot" });
 export const updateTaskAction = (patch: TaskUpdateInput): TaskDetailAction => ({ type: "updateTask", patch });

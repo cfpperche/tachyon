@@ -337,7 +337,7 @@ work in parallel only if the second re-applies onto the first before delivery, n
           (`SidebarPrototype.ts:286`). Overview's select is a second writer, not the owner.
         - **Settings has no `section === "settings"` branch.** It is the `else` fallback at the end of the
           chain. Whoever migrates it finds that out before starting, not during.
-- [ ] D12. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
+- [x] D12. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
       (spec.md § "A document is one ENTITY"). Same panel, same key (`taskId`), mode as state. Declare
       and test the unsaved-edit policy on mode switch — that policy is the cost this decision accepts,
       and leaving it implicit is how it turns into data loss.

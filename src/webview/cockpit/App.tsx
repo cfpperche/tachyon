@@ -160,21 +160,6 @@ const AgentStudioApp = lazy(() =>
     return { default: m.App };
   }),
 );
-// t-610705 (Phase D, D2) — Task Studio needs its own compiled Tailwind utilities (KitFieldRow/
-// KitLabeledInput/KitSelect) PLUS the entity-neutral rich-doc editor sheet (shared with the retired
-// standalone panel and Pin Studio's future D3 migration) BEFORE studio-frame.css — same cascade-order
-// requirement Agent Studio's own comment above explains (actual <link> DOM insertion order, not call
-// intent), matching Cockpit.ts's eager `styles: [...]` order exactly: tailwind, rich-doc,
-// studio-frame, THEN Task Studio's own sheet.
-const TaskStudioApp = lazy(() =>
-  import("../task-studio/App").then((m) => {
-    loadSectionStylesheet("studio-task-tailwind");
-    loadSectionStylesheet("studio-task-richdoc");
-    loadSectionStylesheet("studio-frame-task");
-    loadSectionStylesheet("studio-task");
-    return { default: m.App };
-  }),
-);
 // t-610705 (Phase D, D3) — Pin Studio needs the SAME entity-neutral rich-doc.css HREF as Task Studio
 // BEFORE studio-frame.css, matching the retired standalone panel's own styleFiles order (`rich-doc.css,
 // studio-frame.css, pin-studio.css`) — no Tailwind sheet of its own (unlike Task/Agent Studio: Pin's UI
@@ -463,8 +448,6 @@ export function App(p: CockpitAppProps) {
             <ScheduleStudioApp key={studioKey} {...studioMountProps} />
           ) : activeRoute.studio === "agent" ? (
             <AgentStudioApp key={studioKey} {...studioMountProps} />
-          ) : activeRoute.studio === "task" ? (
-            <TaskStudioApp key={studioKey} {...studioMountProps} />
           ) : activeRoute.studio === "pin" ? (
             <PinStudioApp key={studioKey} {...studioMountProps} />
           ) : null}

@@ -1210,6 +1210,25 @@
   },
   {
     "view": "task-detail",
+    "fixture": "edit",
+    "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=edit",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Task Detail",
+    "aliases": [
+      "task detail",
+      "task",
+      "task document",
+      "detail tab"
+    ]
+  },
+  {
+    "view": "task-detail",
     "fixture": "heavy",
     "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=heavy",
     "frame": {

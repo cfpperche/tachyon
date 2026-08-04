@@ -1,11 +1,13 @@
 import { render } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { Button } from "../shared/ui";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App, type TaskDetailDispatch } from "./App";
 import {
   TASK,
   TASK_DETAIL_ERROR,
+  TASK_DOCUMENT_MODE,
   approvePrototypeAction,
   notePrototypeAction,
   openTaskAction,
@@ -14,9 +16,11 @@ import {
   readyMessage,
   requestSnapshotAction,
   updateTaskAction,
+  setTaskDocumentModeAction,
   type TaskDetailAction,
   type TaskDetailVM,
 } from "./messages";
+import { App as TaskStudioApp } from "../task-studio/App";
 
 /**
  * SDD 485 C4 — the task detail's OWN bootstrap, error boundary and CSS: the half of the reversal a single
@@ -54,16 +58,28 @@ function Root() {
   const [errorSeq, setErrorSeq] = useState(-1);
   const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
   const errorCounter = useRef(0);
+  const initialMode = (window.__tachyonPersistedState as { mode?: "read" | "edit" } | undefined)?.mode;
+  const [mode, setMode] = useState<"read" | "edit">(initialMode === "edit" ? "edit" : "read");
+  const [studioIncoming, setStudioIncoming] = useState<{ seq: number; message: unknown }>();
+  const studioSeq = useRef(0);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const raw = event.data as { type?: unknown; vm?: unknown; message?: unknown } | undefined;
       if (!raw || typeof raw !== "object") return;
       if (raw.type === TASK && raw.vm) setVm(raw.vm as TaskDetailVM);
+      else if (raw.type === TASK_DOCUMENT_MODE && (raw as { mode?: unknown }).mode) {
+        const next = (raw as { mode: "read" | "edit" }).mode;
+        setMode(next);
+        vscode?.setState?.({ ...(window.__tachyonPersistedState as object), mode: next });
+      }
       else if (raw.type === TASK_DETAIL_ERROR && typeof raw.message === "string") {
         errorCounter.current += 1;
         setErrorSeq(errorCounter.current);
         setErrorMessage(raw.message);
+      } else if (typeof raw.type === "string") {
+        studioSeq.current += 1;
+        setStudioIncoming({ seq: studioSeq.current, message: raw });
       }
     };
     window.addEventListener("message", onMessage);
@@ -85,6 +101,17 @@ function Root() {
     notePrototype: (prototypeId, expectUpdatedAt, review) => post(notePrototypeAction(prototypeId, expectUpdatedAt, review)),
   }), []);
 
+  if (mode === "edit") {
+    return <div class="td-edit-mode">
+      <TaskStudioApp
+        dispatch={{ post }}
+        routeKey={`task-detail:${vm?.wsHash ?? ""}:${vm?.id ?? ""}`}
+        mountNonce="task-document"
+        incoming={studioIncoming}
+        backLink={<Button icon="arrow-left" onClick={() => post(setTaskDocumentModeAction("read"))}>Read task</Button>}
+      />
+    </div>;
+  }
   return <App vm={vm} errorSeq={errorSeq} errorMessage={errorMessage} dispatch={dispatch} />;
 }
 
