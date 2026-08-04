@@ -8,7 +8,6 @@ export const OVERVIEW_MODEL = "overviewModel" as const;
 export type OverviewAction = ReadyMessage
   | { type: typeof POLL }
   | { type: "openSection"; section: string }
-  | { type: "openDoctor" }
   | { type: "copyDiagnostics" };
 
 export const pollOverviewAction = (): OverviewAction => ({ type: POLL });

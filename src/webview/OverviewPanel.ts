@@ -10,8 +10,8 @@ export const OVERVIEW_VIEW_TYPE = "tachyonOverview";
 type RefreshKind = "overview";
 export interface OverviewDeps {
   collect: (needs?: ReturnType<typeof collectNeedsFor>) => Promise<CockpitWorkspaceBundle[]>;
+  /** Inbox metric shortcut — openSection stays because that tile still posts it. */
   openSection(section: string, project: string): void;
-  openDoctor(): void;
 }
 
 export class OverviewPanelManager {
@@ -37,7 +37,6 @@ export class OverviewPanelManager {
     const message = raw as Record<string, unknown>; const project = session.target.project;
     if (!project) throw new Error("Overview dashboard has no project");
     if (message.type === "openSection" && typeof message.section === "string") this.deps.openSection(message.section, project);
-    else if (message.type === "openDoctor") this.deps.openDoctor();
     else if (message.type === "copyDiagnostics") {
       const bundles = await this.deps.collect();
       await vscode.env.clipboard.writeText(formatCockpitDiagnostics(buildCockpitModel(bundles, { section: "overview", wsHash: project })));
