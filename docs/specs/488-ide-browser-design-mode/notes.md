@@ -58,11 +58,12 @@ Triaged 2026-08-04 (priority 0 = highest).
 |---|---|---|
 | `t-d49ef0` | **Umbrella** — SDD 488 Design Mode merge review follow-ups | triaged P1 |
 | `t-4d2892` | honest architecture memo — three paths + Companion claim | **done** (architecture-fit.md rewritten) |
-| `t-348c9a` | inject size budget + Design Mode draft-clobber check | **done** — budget test; `agent.input` fresh `probeComposerOccupied` refuse; residual no-CAS race documented (parity) |
+| `t-348c9a` | Design Mode draft-clobber refuse | **done** — `agent.input` + `probeComposerOccupied`; no source-size budget test (reminder = migration task) |
 | `t-7aef5a` | disambiguate `ide_browser_*` vs `user_browser_*` tool descriptions | **done** — IDE_BROWSER_SCOPE / USER_BROWSER_SCOPE prefixes |
+| `t-2b948e` | **migrate Design Mode chrome off string inject → Preact app** | **triaged P1** — product reminder (not a CI size guard) |
 | `t-83723d` | move dogfoodBootstrap out of production shell path | triaged P2 |
 | `t-08f08e` | retire or isolate ide-browser-proto stream prototype | triaged P2 |
-| `t-64edaf` | hybrid D step 1 — chat/card to Preact webview | triaged P1 |
+| `t-64edaf` | hybrid D step 1 — chat/card to Preact webview | triaged P1 — fold into / pair with `t-2b948e` |
 | `t-47503a` | split IdeBrowserBridgeManager + type engine↔host protocol | triaged P2 |
 | `t-3ef9ea` | thin shell — engine DesignModeService for turns/chat | triaged P3 |
 

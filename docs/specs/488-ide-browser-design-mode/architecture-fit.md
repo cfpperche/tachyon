@@ -120,11 +120,12 @@ Umbrella **`t-d49ef0`**. Independently shippable children:
 | id | Topic |
 |---|---|
 | `t-4d2892` | This memo honesty (three paths + Companion claim) |
-| `t-348c9a` | Inject size budget + draft-clobber check |
-| `t-7aef5a` | Disambiguate `ide_browser_*` vs `user_browser_*` descriptions |
+| `t-348c9a` | Draft-clobber refuse on Design Mode send (**done**) |
+| `t-7aef5a` | Disambiguate `ide_browser_*` vs `user_browser_*` descriptions (**done**) |
+| `t-2b948e` | **Migrate chrome off string inject → Preact app** (hybrid D; no size-budget test) |
 | `t-83723d` | Move dogfoodBootstrap out of production path |
 | `t-08f08e` | Retire/isolate ide-browser-proto |
-| `t-64edaf` | Hybrid D step 1 — chat/card → Preact webview |
+| `t-64edaf` | Hybrid D step 1 — fold into `t-2b948e` if duplicate |
 | `t-47503a` | Split manager + typed engine↔host protocol |
 | `t-3ef9ea` | Engine DesignModeService (thin shell) |
 
