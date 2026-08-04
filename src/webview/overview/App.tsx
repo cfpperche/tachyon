@@ -12,8 +12,8 @@ export function App({ model: m, strings: s, auto, setAuto, post }: {
   post: (action: OverviewAction) => void;
 }) {
   const o = m?.overview;
-  if (!o) return <main><PageChrome title={s.overviewTitle} hint={s.overviewHint} /></main>;
-  return <main data-testid="control-overview">
+  if (!o) return <main class="ds-page"><PageChrome title={s.overviewTitle} hint={s.overviewHint} /></main>;
+  return <main class="ds-page" data-testid="control-overview">
     <PageChrome title={s.overviewTitle} hint={s.overviewHint} actions={<div class="ck-overview-actions">
       <label class="ck-auto" title={s.auto}><input type="checkbox" checked={auto}
         onChange={(e) => setAuto((e.target as HTMLInputElement).checked)} />{s.auto}</label>

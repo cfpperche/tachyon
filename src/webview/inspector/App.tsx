@@ -91,7 +91,7 @@ export function App(p: InspectorAppProps) {
     });
 
   return (
-    <div class="insp-root">
+    <div class="insp-root ds-page">
       <PageChrome
         title={s.title}
         hint={s.subtitle}

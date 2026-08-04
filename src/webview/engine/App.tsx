@@ -156,7 +156,7 @@ export function App({
   post: (a: EngineAction) => void;
 }) {
   return (
-    <main>
+    <main class="ds-page">
       <PageChrome
         title={s.engineTitle}
         hint="Control plane per attached workspace."

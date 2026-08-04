@@ -109,14 +109,14 @@ function InboxRow({ item, dispatch }: { item: HumanInboxItem; dispatch: HumanInb
 export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?: HumanInboxErrorReceipt; dispatch: HumanInboxDispatch }) {
   if (!vm) {
     return (
-      <div class="hi-root">
+      <div class="hi-root ds-page">
         <EmptyState kind="loading" message="Loading inbox…" />
       </div>
     );
   }
   const { counts } = vm;
   return (
-    <div class="hi-root" data-testid="control-human-inbox">
+    <div class="hi-root ds-page" data-testid="control-human-inbox">
       <PageChrome
         title="Human Inbox"
         hint={vm.folder}
@@ -578,7 +578,7 @@ export function ItemApp({
   );
   if (missing) {
     return (
-      <div class="hi-root">
+      <div class="hi-root ds-page">
         {backLink}
         <EmptyState kind="empty" message={`${missing.kind} ${missing.id} is no longer waiting — it was resolved or closed elsewhere.`} />
       </div>
@@ -586,7 +586,7 @@ export function ItemApp({
   }
   if (!vm) {
     return (
-      <div class="hi-root">
+      <div class="hi-root ds-page">
         {backLink}
         <EmptyState kind="loading" message="Loading item…" />
       </div>
@@ -597,7 +597,7 @@ export function ItemApp({
   const item = vm.item;
   const waited = age(item.createdAt);
   return (
-    <div class="hi-root hi-detail" data-testid="control-human-inbox-item">
+    <div class="hi-root hi-detail ds-page" data-testid="control-human-inbox-item">
       <PageChrome title={item.title} hint={`${item.id} · ${vm.folder}`} backLink={backLink} />
       <div class="hi-detail-meta">
         <KindBadge kind={item.kind} />

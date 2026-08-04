@@ -333,6 +333,31 @@ function linkedPageFrameProviders(s: WebviewSurface, sources: Map<string, string
 }
 
 describe("webview design-system conformance contract (spec 485 Phase A)", () => {
+  it("every launcher-backed section app consumes the shared page chrome or declares a measured exception (t-a07b1e)", () => {
+    const exceptions: Record<string, string> = {
+      "mission-control": "fixed-height board splits the standard pad between its header and independently scrolling columns",
+    };
+    const violations: string[] = [];
+    for (const app of WEBVIEW_APPS.filter((entry) => entry.host === "section" && entry.section !== undefined)) {
+      const sourceDir = `src/webview/${app.view}`;
+      const source = readdirSync(sourceDir)
+        .filter((name) => name.endsWith(".tsx"))
+        .map((name) => readFileSync(join(sourceDir, name), "utf8"))
+        .join("\n");
+      const surface = WEBVIEW_SURFACES.find((entry) => entry.view === app.view);
+      const linkedCss = surface ? linkedStylesheets(surface)
+        .flatMap((name) => stylesheetSourcesByName().get(name) ?? [])
+        .map((file) => readFileSync(file, "utf8"))
+        .join("\n") : "";
+      const mountsPage = /<(?:main|div)\b[^>]*\bclass="[^"]*\bds-page\b/.test(source);
+      if (mountsPage && cssDefinesUnconditionalClass(linkedCss, "ds-page")) continue;
+      const reason = exceptions[app.view];
+      if (!reason?.trim()) violations.push(`${app.viewId}: section app does not mount the shared .ds-page chrome and has no measured exception`);
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+    expect(Object.entries(exceptions).filter(([, reason]) => reason.trim().length < 20)).toEqual([]);
+  });
+
   it("every surface declares a posture, and the declaration is well-formed", () => {
     // A1 — 410's standing exceptions (sidebar, pin-preview, the dev-only spec-350 fakes, the plugin surfaces)
     // carry forward as EXPLICIT entries. `posture` is required by the type, so "no posture" cannot compile;

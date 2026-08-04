@@ -13,7 +13,6 @@
  * conformance to the Fleet baseline rather than page chrome of its own. */
 .ck-plugins-root {
   box-sizing: border-box;
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   width: 100%;
   min-height: 0;
   max-width: none;

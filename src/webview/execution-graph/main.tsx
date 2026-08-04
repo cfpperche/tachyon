@@ -32,7 +32,7 @@ export function ExecutionGraphRoot({ initialVm }: { initialVm?: ExecutionGraphVm
   const shown = vm ?? { status: "no-telemetry", nodes: [], edges: [], rows: [], width: 0, height: 0,
     available: { turnIds: [], states: [], kinds: [], agentIds: [] }, matched: 0, grouped: false, details: {} };
   return (
-    <main>
+    <main class="ds-page">
       <PageChrome title={strings.executionGraphTitle} hint={strings.executionGraphHint} />
       <ExecutionGraphSection s={strings} vm={shown} detail={detail} selected={selected} filters={filters} onSelect={setSelected} onFilter={setFilters} />
     </main>

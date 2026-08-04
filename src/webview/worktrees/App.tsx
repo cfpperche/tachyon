@@ -341,5 +341,5 @@ export const defaultStrings: Strings = {
   wtShowAll: "Show all",
 };
 export function App({ model, strings: s, post }: { model?: CockpitModel; strings: Strings; post: (action: WorktreesAction) => void }) {
-  return <main><PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />{model ? <WorktreesHygiene s={s} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={post} /> : null}</main>;
+  return <main class="ds-page"><PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />{model ? <WorktreesHygiene s={s} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={post} /> : null}</main>;
 }

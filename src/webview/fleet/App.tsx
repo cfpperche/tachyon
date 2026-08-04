@@ -28,7 +28,7 @@ export function App({ model, strings: s, post }: { model?: CockpitModel; strings
   const [continuePick, setContinuePick] = useState<{ fromName: string; wsHash?: string } | null>(null);
   const rows = model?.fleet ?? [];
   return (
-    <main>
+    <main class="ds-page">
       <PageChrome title={s.fleetTitle} hint={s.fleetHint} actions={<Button variant="primary" onClick={() => post({ type: "openBoard" })}>{s.openMissionControl}</Button>} />
       {rows.length === 0 ? <EmptyState kind="empty" message={s.noneListed} /> : (
         <div class="ck-card-list" data-testid="control-fleet">
