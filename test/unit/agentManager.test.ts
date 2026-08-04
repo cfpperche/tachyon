@@ -2223,6 +2223,20 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
   });
 
+  it("t-110aaa guard: canonical forget still refuses a running agent", async () => {
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    await h.manager.spawn("reviewer");
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).rejects.toMatchObject({
+      code: "agent-profile/forget-agent-running",
+    });
+  });
+
   /**
    * t-4736b4 — the measured reproduction. Five Saved Agents were stopped through the Bridge,
    * `list_agents` reported them `running:false`, their tmux sessions were gone, and canonical forget
@@ -4136,6 +4150,19 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
     await expect(manager.spawn("reviewer", { cmd: "gemini", parent: "boss" })).rejects.toThrow(/runtime transcript isolation is not verified/);
     expect(newSessionArgs).toEqual([]);
+  });
+
+  it("t-110aaa: parented Grok delegates without a worktree and visibly reports project-scoped state", async () => {
+    const warnings: string[] = [];
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+      notify: (message) => warnings.push(message),
+    });
+    await manager.spawn("grok-child", { cmd: "grok", parent: "boss" });
+    expect(newSessionArgs).toHaveLength(1);
+    expect(warnings).toEqual([
+      expect.stringContaining("project-scoped transcript and runtime state"),
+    ]);
+    expect(warnings[0]).toContain("same-user processes may read it");
   });
 
   it("spec t-e2ebe3: private-home opencode delegation passes UNGATED (no isolated worktree required)", async () => {

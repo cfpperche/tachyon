@@ -31,7 +31,7 @@ import {
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
-import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, projectScopedTranscriptWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
 import { removeDerivedAgentFiles } from "./derivedFile.js";
@@ -2762,6 +2762,15 @@ export class AgentManager {
     if (!temporary) {
       const footgun = opencodeIsolationFootgunWarning(def.cmd, { name, harness: !!asAgent(def)?.harness, isolatedWorktree });
       if (footgun) this.opts.notify?.(footgun, "warn");
+    }
+    if (temporaryAgent) {
+      const projectScoped = projectScopedTranscriptWarning(temporaryAgent.cmd, {
+        name,
+        parented: !!parent,
+        harness: !!temporaryAgent.harness,
+        isolatedWorktree,
+      });
+      if (projectScoped) this.opts.notify?.(projectScoped, "warn");
     }
     if (parent && temporaryAgent && !temporaryAgent.harness) {
       assertVerifiedTranscriptIsolation(temporaryAgent.cmd, { name, isolatedWorktree, parented: true });
