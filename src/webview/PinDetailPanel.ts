@@ -21,6 +21,7 @@ export interface LegacyPinDetailState { schemaVersion: 1; view: typeof PIN_DETAI
 export class PinDetailPanelManager {
   private readonly manager: SectionPanelManager<RefreshKind>;
   private readonly drafts = new Map<string, PinDocumentDraft<PinPatch>>();
+  private readonly provisional = new Set<string>();
 
   constructor(
     extensionUri: vscode.Uri,
@@ -32,6 +33,12 @@ export class PinDetailPanelManager {
   ) { this.manager = new SectionPanelManager(extensionUri, this.configFor(app), scope); }
 
   open(project: string, pinId: string): void { this.manager.open({ project, identity: pinId }); }
+  openCreate(project: string, pinId: string): void {
+    const target = { project, identity: pinId };
+    this.provisional.add(this.manager.keyFor(target));
+    this.manager.open(target);
+    this.manager.post(target, pinDocumentModeMessage("edit"));
+  }
   openEdit(project: string, pinId: string): void {
     const target = { project, identity: pinId };
     this.manager.open(target);
@@ -59,6 +66,7 @@ export class PinDetailPanelManager {
       refreshKindFor: (message) => (message as { type?: unknown } | undefined)?.type === READY ? "pin" : undefined,
       bind: (session) => {
         const pinId = session.target.identity ?? "";
+        let persisted = !this.provisional.has(session.key);
         const target = studioTarget(session.target);
         const studio = target ? new PinStudioAdapter(target) : undefined;
         const policy = new PinDocumentEditPolicy<PinPatch>("read", this.drafts.get(session.key));
@@ -67,6 +75,7 @@ export class PinDetailPanelManager {
           session.post(envelope({ type: "error", code: mapped.code, message: mapped.message, source: mapped.source, blocking: mapped.blocking }));
         };
         const sendRead = async () => {
+          if (!persisted) return;
           const ws = reader(session.target);
           if (!ws) return;
           const detail = await ws.loadPinPreview(pinId, { asWebviewUri: (path) => session.asWebviewUri(path) });
@@ -93,7 +102,7 @@ export class PinDetailPanelManager {
         };
         const sendEdit = async () => {
           if (!studio) return;
-          const loaded = await studio.load(pinId);
+          const loaded = await studio.load(persisted ? pinId : undefined);
           if (loaded.status !== "ok") { postError(new Error(loaded.error)); return; }
           session.post(envelope({ type: "load", entity: loaded.entity, concurrency: { kind: "cas", expected: studio.revisionOf(loaded.entity) } }));
           if (policy.draft.dirty && policy.draft.patch) {
@@ -114,10 +123,19 @@ export class PinDetailPanelManager {
           if (msg.type === "ready") { await sendEdit(); return; }
           if (msg.type === "patch" && msg.patch) { policy.receivePatch(msg.patch); return; }
           if (msg.type === "dirty") { policy.receiveDirty(msg.dirty ?? false); return; }
-          if (msg.type === "cancel") { policy.clearDraft(); policy.switchMode("read"); session.post(pinDocumentModeMessage("read")); return; }
+          if (msg.type === "cancel") {
+            policy.clearDraft();
+            if (!persisted) { this.provisional.delete(session.key); session.close(); return; }
+            policy.switchMode("read"); session.post(pinDocumentModeMessage("read")); return;
+          }
           if (msg.type === "save" && policy.draft.patch) {
             const result = await studio.save(pinId, policy.draft.patch);
-            if (result.status === "ok") { policy.clearDraft(); policy.switchMode("read"); this.onPinsChanged(); session.post(pinDocumentModeMessage("read")); }
+            if (result.status === "ok") {
+              persisted = true;
+              this.provisional.delete(session.key);
+              policy.clearDraft(); policy.switchMode("read"); this.onPinsChanged(); session.post(pinDocumentModeMessage("read"));
+              await sendRead();
+            }
             else postError(new Error(result.error.message));
             return;
           }
@@ -127,7 +145,11 @@ export class PinDetailPanelManager {
           replay: () => { void sendRead(); if (policy.mode === "edit" || policy.draft.dirty) void sendEdit(); },
           resync: () => { void sendRead(); if (policy.mode === "edit" || policy.draft.dirty) void sendEdit(); },
           onMessage: (message) => { void onMessage(message); },
-          dispose: () => { const draft = policy.close(); if (draft) this.drafts.set(session.key, draft); else this.drafts.delete(session.key); },
+          dispose: () => {
+            const draft = policy.close();
+            if (persisted && draft) this.drafts.set(session.key, draft); else this.drafts.delete(session.key);
+            this.provisional.delete(session.key);
+          },
         };
       },
     };
