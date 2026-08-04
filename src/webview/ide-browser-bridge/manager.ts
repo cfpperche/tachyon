@@ -456,36 +456,10 @@ export class IdeBrowserBridgeManager {
     }
     if (!agents.includes(this.designAgent)) this.designAgent = agents[0]!;
 
-    // t-348c9a — refuse send when the agent pane has a human draft (sendAgentInput would clobber it).
-    try {
-      const attMap = await ws.extension.query({ action: "attention.list" }) as
-        | Record<string, { composerOccupied?: boolean }>
-        | null;
-      if (attMap?.[this.designAgent]?.composerOccupied) {
-        await this.cdp.pushDesignModeChat({
-          type: "error",
-          text:
-            `${this.designAgent} has a draft in the terminal — clear or submit it before sending from Design Mode.`,
-        });
-        return;
-      }
-    } catch {
-      /* best-effort; offline attention does not block send */
-    }
-
     const pick = this.lastPick;
     const displayText = pick
       ? `[selection: <${pick.tag.toLowerCase()}> ${pick.selectorHint}]\n${text}`
       : text;
-
-    const userEv = appendDmChatEvent(this.workspaceRoot, {
-      kind: "message",
-      role: "user",
-      text: displayText,
-      activeAgent: this.designAgent,
-    });
-    await this.cdp.pushDesignModeChat({ type: "message", event: userEv });
-    await this.pushTyping(true, this.designAgent, "sent");
 
     const pickContext = pick
       ? formatDesignModePickForAgent(pick, { agent: this.designAgent })
@@ -500,7 +474,16 @@ export class IdeBrowserBridgeManager {
       pickContext,
     });
     try {
+      // Submit first — engine agent.input probes composer (t-348c9a). Only then record chat UI.
       await ws.activity.sendAgentInput(this.designAgent, prompt, true);
+      const userEv = appendDmChatEvent(this.workspaceRoot, {
+        kind: "message",
+        role: "user",
+        text: displayText,
+        activeAgent: this.designAgent,
+      });
+      await this.cdp.pushDesignModeChat({ type: "message", event: userEv });
+      await this.pushTyping(true, this.designAgent, "sent");
       this.log.appendLine(
         `[design-mode] chat → ${this.designAgent}${pick ? " +selection" : ""}: ${text.slice(0, 80)}`,
       );
@@ -514,7 +497,13 @@ export class IdeBrowserBridgeManager {
       this.clearChatReplyWait();
       const msg = err instanceof Error ? err.message : String(err);
       await this.pushTyping(false, this.designAgent);
-      await this.cdp.pushDesignModeChat({ type: "error", text: `Send failed: ${msg}` });
+      const draftish = /refused-composer|composer draft/i.test(msg);
+      await this.cdp.pushDesignModeChat({
+        type: "error",
+        text: draftish
+          ? `${this.designAgent} has a draft in the terminal — clear or submit it, then retry Design Mode chat.`
+          : `Send failed: ${msg}`,
+      });
     }
   }
 
