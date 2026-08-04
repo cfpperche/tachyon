@@ -359,10 +359,53 @@ work in parallel only if the second re-applies onto the first before delivery, n
       not launcher tiles, so had they lacked their own doors the verdict would have been "mirror the
       launcher" instead of "goes". The `openSection` message SURVIVES — the Overview inbox metric is a
       second consumer, found by checking rather than assumed absent.
-- [ ] D16. Exercise restore with all apps open across editor groups, then reload. Spec 361's
+- [x] D16. **Approvals and Validations DIE rather than migrate** — the only entry in the D series whose
+      answer was "this surface should not exist", ratified by the maintainer on 2026-08-04. They were the
+      last two sections Control rendered, and they survived twelve migrations by being deep-link-only:
+      never on the launcher, so no tile ever pointed at them and no migration ever picked them up.
+
+      The reason they die is that the **Human Inbox already is them**. `human-inbox/App.tsx` treats
+      `approval`, `validation`, `saved-agent-proposal` and `saved-agent-removal` as kinds of ONE queue,
+      and `route.ts:106` already keys `inbox-item` by kind AND id. The Control sections were the pre-Inbox
+      version of the same problem, kept alive by nothing but their own doors.
+
+      **The door that mattered was the approval doorbell**, `engineService.ts:139` — the path that carries
+      a human to a request that is BLOCKING an agent. It used to open the Approvals section; it now opens
+      that exact item in the Inbox, which is strictly better: it lands on the request rather than on the
+      queue. `tachyon.openApprovals` survives as a compatibility command (palette, notice inbox) and opens
+      the queue, because it carries no id and the queue is its honest destination. Validations had no
+      command of its own — confirmed by grep, not assumed.
+
+      Both facts are held by tests that FAIL if the doorbell regresses: `humanInboxDoorbell.test.ts`
+      asserts the exact emitted payload, and `humanInboxDeepLinkCrossing.test.ts` stopped filtering
+      `approval` out of its per-kind sweep — it now invokes what Review asks for and asserts the ITEM
+      that opens, for every kind in the inventory.
+
+- [ ] D17. **Agent Activity** — `document`, keyed by `(wsHash, agent)`. Reached by
+      `tachyon.openAgentActivity` (extension.ts:3354), the legacy serializer (:2540) and the Fleet app's
+      own activity action (:2488, which goes through the command). Carries the most state of any
+      remaining surface: a scroll container, prepended history, an image map and the share-agent targets.
+- [ ] D18. **Probes** — one renderer, two identities: `agentProbes(wsHash, caller)` and
+      `workspaceProbes(wsHash)`. Doors: `tachyon.openProbes` (:3398) and the serializer (:2562).
+- [ ] D19. **Project Handoff** — `dashboard`, keyed by project alone. Doors:
+      `tachyon.openProjectHandoff` (:3363) and the serializer (:2547).
+- [ ] D20. **The last Pin Studio door.** `studio-new` + `pin` is the ONE route the redirect block at
+      `Cockpit.ts:620` deliberately does not catch (it excludes `task` and `pin`), so Control still
+      mounts `PinStudioApp` for it. Only the legacy panel serializer can produce it now — the live "add
+      pin" door was repaired separately — but a renderer reachable by one door is still a renderer.
+- [ ] D21. Exercise restore with all apps open across editor groups, then reload. Spec 361's
       machinery has never been tested at this count.
 
 ### Phase E — remove Control
+
+**Measured after D16, and it corrects this phase's premise.** "Control renders zero sections" became true
+when Approvals and Validations died — but *section* was the wrong unit. Control still renders four things,
+none of which is a section: the two Fleet SUBROUTES (activity, probes), the project-handoff document, and
+`studio-new`+`pin`. They escaped Phase D for the same reason Approvals and Validations did — no launcher
+tile points at them, so no migration was ever handed one. D17–D20 exist because of this, and the lesson is
+the series' own recurring one in a new costume: **an inventory built from what a surface DECLARES (a
+launcher tile) cannot see what it RENDERS.** E1 was written believing the section list was the renderer
+list, and it is not.
 
 - [ ] E1. Remove the internal router, `navEpoch`, the singleton claim (`cockpitSingleton.ts`), the
       subroute breadcrumb chrome, `Cockpit.ts` and the cockpit entry.
