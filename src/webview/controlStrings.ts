@@ -227,10 +227,10 @@ export function cockpitStrings(): CockpitStrings {
     // user-visible surface for the distinction.
     //
     // t-4cc561 updated the claim that used to sit here. It said every OTHER occurrence of "declared"
-    // or "ad-hoc" was a frozen field/config/wire value, so the rename was two lines and not a sweep.
+    // or the retired species name was a frozen field/config/wire value, so the rename was two lines and not a sweep.
     // That stopped being true: the species names are now gone from identifiers, comments and copy
     // across the shell and engine. What IS still frozen, deliberately, is the narrow set that crosses
-    // a boundary — the sidebar wire's `adhoc` flag, the `mode: "adhoc"` handoff discriminant, and the
+    // a boundary — the sidebar's legacy species flag, the handoff mode discriminant, and the
     // ledger's persisted shape. Those are renamed only with a protocol bump, never as nomenclature.
     saved: t("Saved"),
     temporary: t("Temporary"),
@@ -238,4 +238,3 @@ export function cockpitStrings(): CockpitStrings {
     change: t("change"),
   };
 }
-
