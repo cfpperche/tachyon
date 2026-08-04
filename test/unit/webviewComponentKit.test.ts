@@ -18,7 +18,10 @@ const MIGRATED_VIEWS = [
   "probes",
   "pin-preview",
   "sidebar",
-  "cockpit",
+  // SDD 485 E1 — `cockpit` was here and is gone with the panel. The hand-written list is worth
+  // keeping rather than deriving from the manifest: "migrated to the kit" is a subset of "is an app",
+  // so a derived list would assert the migration is finished when it is not. And the list defends
+  // itself in the direction that matters — the `existsSync` assert below is what caught this removal.
   "approval",
   "validations",
   "runtime-ops",
