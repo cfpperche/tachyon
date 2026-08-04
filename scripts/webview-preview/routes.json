@@ -366,6 +366,57 @@
     ]
   },
   {
+    "view": "probes",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
+    ]
+  },
+  {
+    "view": "probes",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=empty",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
+    ]
+  },
+  {
+    "view": "probes",
+    "fixture": "error",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=error",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
+    ]
+  },
+  {
     "view": "cockpit",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=default",
