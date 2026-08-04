@@ -3895,6 +3895,9 @@ export class AgentManager {
       expected.activity,
       path.join(this.opts.workspaceRoot, ".tachyon", "retired-agent-profiles", agentId, txid, "runtime-projections"),
     );
+    // t-14cf7c: Saved Agent Forget reaches the same credential-retirement tail as Temporary
+    // dismiss. The complete cache is retained; only authority-bearing files are removed.
+    this.opts.removeHarnessHome?.(name);
     removeDerivedAgentFiles(this.opts.workspaceRoot, name);
     removePaneTranscript(this.opts.workspaceRoot, name);
     // `removeExactDigest` above took the ledger row, which is the definition — nothing else to drop.

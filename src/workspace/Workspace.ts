@@ -1331,7 +1331,7 @@ export class Workspace {
         await this.worktrees.rollbackPreparation(rec, beforeHead, afterHead);
       },
       completePreparedWorktree: (rec) => this.worktrees.completePreparation(rec),
-      removeHarnessHome: (name) => this.harness.remove(name),
+      removeHarnessHome: (name) => this.harness.retireCredentials(name),
       removePiSessionDir: (name) => removePiSessionDir(this.workspaceRoot, name),
     });
 
@@ -3923,7 +3923,7 @@ export class Workspace {
     forgetAgentFootprint(name, {
       workspaceRoot: this.workspaceRoot,
       ledger: this.ledger,
-      removeHarnessHome: (agent) => this.harness.remove(agent),
+      removeHarnessHome: (agent) => this.harness.retireCredentials(agent),
       removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
     });
     this.removeContinuity(name);
@@ -4864,7 +4864,7 @@ export class Workspace {
           forgetAgentFootprint(name, {
             workspaceRoot: this.workspaceRoot,
             ledger: this.ledger,
-            removeHarnessHome: (agent) => this.harness.remove(agent),
+            removeHarnessHome: (agent) => this.harness.retireCredentials(agent),
             removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
           });
         } catch (error) {

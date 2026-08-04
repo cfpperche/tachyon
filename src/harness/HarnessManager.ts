@@ -2912,6 +2912,54 @@ export class HarnessManager {
   }
 
   /**
+   * End-of-life security cleanup. Runtime caches are deliberately retained: unlike the ownerless
+   * GC above, a forget has no reliable way to prove that every cache writer has quiesced. Removing
+   * the credential leaves reinstall cache intact while ensuring a dead agent keeps no authority.
+   */
+  retireCredentials(agent: string, test?: { procRoot?: string; beforeDelete?: (credential: string) => void }): void {
+    const roots = [
+      this.home(agent),
+      path.join(bridgeMcpRoot(this.workspaceRoot), `${agent}.grok`),
+      path.join(bridgeMcpRoot(this.workspaceRoot), `${agent}.hermes`),
+    ];
+    const procRoot = test?.procRoot ?? "/proc";
+    try {
+      for (const entry of fs.readdirSync(procRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !/^\d+$/.test(entry.name) || Number(entry.name) === process.pid) continue;
+        let cwd: string;
+        try { cwd = fs.realpathSync(path.join(procRoot, entry.name, "cwd")); } catch { continue; }
+        if (roots.some((root) => cwd === root || cwd.startsWith(`${root}${path.sep}`))) {
+          throw new Error(`credential cleanup refused occupied runtime home: ${cwd}`);
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    for (const root of roots) {
+      for (const relative of ["auth.json", path.join("data", "opencode", "auth.json")]) {
+        const credential = path.join(root, relative);
+        let before: fs.Stats;
+        try { before = fs.lstatSync(credential); }
+        catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+          throw error;
+        }
+        // Never follow a surprising directory/special file. Symlinks are safe to unlink: only the
+        // private pointer is removed, not the user's canonical credential it may target.
+        if (!before.isFile() && !before.isSymbolicLink()) {
+          throw new Error(`credential cleanup refused dirty path: ${credential}`);
+        }
+        test?.beforeDelete?.(credential);
+        const after = fs.lstatSync(credential);
+        if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size || before.mtimeMs !== after.mtimeMs) {
+          throw new Error(`credential cleanup refused dirty path: ${credential}`);
+        }
+        fs.unlinkSync(credential);
+      }
+    }
+  }
+
+  /**
    * spec 236 — write the per-agent Bridge-only `--mcp-config` file for a NON-harness claude agent and
    * return its path. The Bearer token stays a literal `${TACHYON_BRIDGE_TOKEN}` ref (claude expands it
    * from the spawned process env), so no secret lands on disk or argv. Rewritten on every (re)spawn.
