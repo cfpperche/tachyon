@@ -33,7 +33,16 @@ const COCKPIT_APP = "src/webview/cockpit/App.tsx";
  * Names are the lazy binding, matched against `const <name> = lazy(`.
  */
 const REMAINING = {
-  HandoffApp: "D19 — Project Handoff becomes a dashboard app keyed by project",
+  // EMPTY, as of D18 (2026-08-04) — and that is the finish line this file was written to detect.
+  // Twenty migrations emptied it: D1 tmux, D2 Plugins, D3 Runtime Ops, D4 Human Inbox, D5 Engine,
+  // D6 Worktrees, D7 Fleet, D8 Runtime Config, D9 Execution, D10 Settings, D11 Overview, D12-D14 the
+  // studios and pins, D16 approvals/validations (which DIED rather than migrated), and the four this
+  // file exists because of — D17 Activity, D18 Probes, D19 Handoff, D20 the last pin-studio door.
+  //
+  // The ratchet does not retire with the list. It now guards the opposite direction: Control is being
+  // DELETED (E1), and until that lands, a renderer put back would silently give the host a reason to
+  // survive. After E1 deletes `cockpit/App.tsx` this file's first two cases become vacuous and it
+  // should be replaced by whatever guards "the host is gone" — decided in E1, not assumed here.
 } as const;
 
 function lazyRenderers(source: string): string[] {
