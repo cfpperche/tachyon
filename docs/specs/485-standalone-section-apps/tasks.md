@@ -193,8 +193,25 @@ work in parallel only if the second re-applies onto the first before delivery, n
       written as one line has nowhere to put the why, and the reasoning ends up in a journal the next
       reader will not know to open.
 
-- [ ] D8–D10. One PR per remaining dashboard (Overview, Execution,
-      Runtime Config, Settings). Each PR: app lands,
+- [x] D8. **Runtime Config** — the eighth migration, closing the pair D3 opened, and the cheapest of the
+      series for a reason worth copying: **its cardinality was already measured by its sibling.** When
+      Runtime OPS migrated, that PR recorded not only its own `window` verdict but the neighbour's — that
+      `buildSnapshot(wsHash)` accepts a workspace while `buildSnapshot()` does not. D8 confirmed the
+      signature in ten seconds instead of rediscovering it. A migration that writes down what it learned
+      about the section NEXT to it pays for the one after.
+
+      This section WRITES (`onSaveRuntimeConfigChanges` edits runtime configuration), which puts it with
+      D4 (resolves approvals) and D6 (removes checkouts) rather than with the read-only screens. So the
+      containment is tested through the real door: the test opens a panel for `project-a`, posts a save
+      message CLAIMING `project-b`, and asserts the write landed on `project-a`. Proving the message
+      cannot cross is a different claim from proving the function was called with the right argument, and
+      only the first is the property.
+
+      First migration under the panel line budget (`panelSourceForm.test.ts`, added at D7): 179 lines,
+      longest 151. It held with no correction needed.
+
+- [ ] D9–D10. One PR per remaining dashboard (Overview, Execution,
+      Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
 
