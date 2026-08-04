@@ -550,25 +550,25 @@ migrating, so its stub and `approvalPanels.refreshAll()` are dead weight for E1 
       restoring `"cockpit"` to `WEBVIEW_APP_VIEWS`. Finally, removing an entry is insufficient in a reused
       build directory: esbuild now explicitly deletes stale `cockpit.js`, its sourcemap and `cockpit.css`
       before packaging, or deleted source can still ship as residue.
-- [ ] E2. Record the supersession in `docs/specs/410-cockpit-single-app/spec.md` so a reader finds
+- [x] E2. Record the supersession in `docs/specs/410-cockpit-single-app/spec.md` so a reader finds
       the reversal from either direction, and set this spec's `**Closure:**` line.
 
 ## Verification
 
 _Each maps to a checkbox in `spec.md` § Acceptance criteria._
 
-- [ ] An undeclared departure from shell or design system fails the build and names the surface (A4).
-- [ ] `extend` passes with no exception entry; `replace` passes only with a non-empty reason (A1, A4).
-- [ ] At least one real surface uses `extend` (A3).
+- [x] An undeclared departure from shell or design system fails the build and names the surface (A4).
+- [x] `extend` passes with no exception entry; `replace` passes only with a non-empty reason (A1, A4).
+- [x] At least one real surface uses `extend` (A3).
 - [x] Hidden apps do no refresh work; revealed apps are current, never stale (B1–B3).
-- [ ] Board and a terminal, and two task details, are visible and live simultaneously (C4, C5).
-- [ ] Switching the project selector does not rewrite an open document (C7).
-- [ ] The selector exists exactly once, in the sidebar Control tab header (C6).
-- [ ] Reload restores every open app to its tab and state (D12).
-- [ ] Every `tachyon.*` command and deep link lands on an app, with no dead redirect (C8, D1–D10).
-- [ ] One app failing to render leaves the others working (C2 — per-app error boundary).
-- [ ] Control's single-app machinery is gone (E1).
-- [ ] 410 records that its app-count decision was superseded (E2).
+- [x] Board and a terminal, and two task details, are visible and live simultaneously (C4, C5).
+- [x] Switching the project selector does not rewrite an open document (C7).
+- [x] The selector exists exactly once, in the sidebar Control tab header (C6).
+- [ ] Reload restores every open app to its tab and state (D12). — needs a human (D21 / t-5fc17d).
+- [x] Every `tachyon.*` command and deep link lands on an app, with no dead redirect (C8, D1–D10).
+- [ ] One app failing to render leaves the others working (C2 — per-app error boundary). — MEASURED FALSE: 12 of 29 mounts have no boundary (t-cd01bb).
+- [x] Control's single-app machinery is gone (E1).
+- [x] 410 records that its app-count decision was superseded (E2).
 
 **Headless check:** `npm run verify:full:quiet`
 
