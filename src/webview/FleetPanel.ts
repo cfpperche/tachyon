@@ -78,5 +78,28 @@ export function fleetRefreshKind(message: unknown): FleetRefreshKind | undefined
 
 function fleetStrings(): Record<string, string> {
   const t = vscode.l10n.t;
-  return { fleetTitle: t("Fleet"), fleetHint: t("Agents (runtime) — start, stop, terminal, activity. Work items are on the Board."), openMissionControl: t("Open Board"), noneListed: t("Nothing listed yet."), running: t("Running"), stopped: t("Stopped"), temporary: t("Temporary"), saved: t("Saved"), stop: t("Stop"), start: t("Start"), openTerminal: t("Open terminal"), openActivity: t("Activity"), openProbes: t("Probes"), continueTask: t("Continue task in…"), editAgent: t("Edit"), continueTaskPickTitle: t("Continue {0} task in…"), continueTaskPickSubtitle: t("Choose a stopped Saved Agent."), continueTaskPickPlaceholder: t("Select an agent"), continueTaskPickEmpty: t("No eligible destination agents."), continueTaskDestStopped: t("Stopped — available"), continueTaskDestRunning: t("Running — stop it first"), continueTaskDestDetail: t("Continue the unfinished task from {0}") };
+  return {
+    fleetTitle: t("Fleet"),
+    fleetHint: t("Agents (runtime) — start, stop, terminal, activity. Work items are on the Board."),
+    openMissionControl: t("Open Board"),
+    noneListed: t("Nothing listed yet."),
+    running: t("Running"),
+    stopped: t("Stopped"),
+    temporary: t("Temporary"),
+    saved: t("Saved"),
+    stop: t("Stop"),
+    start: t("Start"),
+    openTerminal: t("Open terminal"),
+    openActivity: t("Activity"),
+    openProbes: t("Probes"),
+    continueTask: t("Continue task in…"),
+    editAgent: t("Edit"),
+    continueTaskPickTitle: t("Continue {0} task in…"),
+    continueTaskPickSubtitle: t("Choose a stopped Saved Agent."),
+    continueTaskPickPlaceholder: t("Select an agent"),
+    continueTaskPickEmpty: t("No eligible destination agents."),
+    continueTaskDestStopped: t("Stopped — available"),
+    continueTaskDestRunning: t("Running — stop it first"),
+    continueTaskDestDetail: t("Continue the unfinished task from {0}"),
+  };
 }
