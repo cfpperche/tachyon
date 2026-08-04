@@ -52,24 +52,6 @@ import {
 } from "../handoff/messages";
 // SDD 485 C5 — the Board's envelope and its actions left with its renderer: they belong to
 // src/webview/mission-control/main.tsx, the board app's own client, and nothing here speaks them.
-import type { ApprovalDispatch } from "../approval/App";
-import type { ApprovalViewModel } from "../approval/viewModel";
-import {
-  APPROVALS,
-  APPROVAL_ERROR,
-  refreshApprovalsAction,
-  resolveApprovalAction,
-} from "../approval/messages";
-import type { ApprovalDecision } from "../../bridge/approvalRequest";
-import type { ValidationsDispatch } from "../validations/App";
-import type { ValidationsViewModel } from "../validations/viewModel";
-import {
-  VALIDATIONS,
-  VALIDATION_ERROR,
-  refreshValidationsAction,
-  closeValidationItemAction,
-  assignValidationAction,
-} from "../validations/messages";
 import type { StudioDispatch } from "../shared/studio/protocol";
 import { dispatchStudioFreezeMessage, isStudioFreezeBusMessage } from "../shared/studio/studioFreezeBus";
 
@@ -118,10 +100,6 @@ function CockpitRoot() {
   const [pendingShareAgentTargets, setPendingShareAgentTargets] = useState<PendingShareAgentTargets | null>(null);
   const [probesVm, setProbesVm] = useState<ProbesVM | undefined>(undefined);
   const [handoffVm, setHandoffVm] = useState<HandoffViewModel | undefined>(undefined);
-  const [approvalVm, setApprovalVm] = useState<ApprovalViewModel | undefined>(undefined);
-  const [approvalError, setApprovalError] = useState<string | undefined>(undefined);
-  const [validationsVm, setValidationsVm] = useState<ValidationsViewModel | undefined>(undefined);
-  const [validationsError, setValidationsError] = useState<string | undefined>(undefined);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
    *  decode/reshape here — command-studio-shell/App.tsx's own decodeStudioMessage handles it, same
    *  as it did as a standalone panel); `seq` guarantees change detection even across two arrivals
@@ -273,16 +251,6 @@ function CockpitRoot() {
         setProbesVm(raw.vm as ProbesVM);
       } else if (type === HANDOFF && raw.vm) {
         setHandoffVm(raw.vm as HandoffViewModel);
-      } else if (type === APPROVALS && raw.vm) {
-        setApprovalVm(raw.vm as ApprovalViewModel);
-        setApprovalError(undefined);
-      } else if (type === APPROVAL_ERROR && typeof raw.message === "string") {
-        setApprovalError(raw.message);
-      } else if (type === VALIDATIONS && raw.vm) {
-        setValidationsVm(raw.vm as ValidationsViewModel);
-        setValidationsError(undefined);
-      } else if (type === VALIDATION_ERROR && typeof raw.message === "string") {
-        setValidationsError(raw.message);
       // SDD 485 D4 — the four Human Inbox arms left with the renderer: the Inbox is a standalone
       // `dashboard` app, and its client half is `human-inbox/main.tsx`, which owns its state slots, its
       // own 3s poll, and the list/item subroute the HOST decides. The identity checks these two arms
@@ -392,23 +360,6 @@ function CockpitRoot() {
   // only one studio binding is ever active at a time.
   const studioDispatch: StudioDispatch = useMemo(() => ({ post }), []);
 
-  const approvalDispatch: ApprovalDispatch = useMemo(
-    () => ({
-      refresh: () => post(refreshApprovalsAction()),
-      resolve: (id: string, decision: ApprovalDecision) => post(resolveApprovalAction(id, decision)),
-    }),
-    [],
-  );
-
-  const validationsDispatch: ValidationsDispatch = useMemo(
-    () => ({
-      refresh: () => post(refreshValidationsAction()),
-      close: (id, outcome, note) => post(closeValidationItemAction(id, outcome, note)),
-      assign: (id, assignee, expect) => post(assignValidationAction(id, assignee, expect)),
-    }),
-    [],
-  );
-
   // SDD 485 D2 — `pluginsDispatch` left with the renderer: Plugins is a standalone app, and its client
   // half is `plugins/main.tsx`, which owns this dispatch, its own ToastProvider and its own 3s poll.
 
@@ -452,12 +403,6 @@ function CockpitRoot() {
       handoffDispatch={handoffDispatch}
       studioIncoming={studioIncoming}
       studioDispatch={studioDispatch}
-      approvalVm={approvalVm}
-      approvalError={approvalError}
-      approvalDispatch={approvalDispatch}
-      validationsVm={validationsVm}
-      validationsError={validationsError}
-      validationsDispatch={validationsDispatch}
       onSetSection={(section: CockpitSectionId) => {
         // SDD 485 C5/D1 — "go to the Board" and "go to tmux" are no longer navigations inside Control: the
         // host answers each by opening that APP and landing Control on Overview. Posted WITHOUT the
@@ -496,8 +441,6 @@ function CockpitRoot() {
         setActivityVm(undefined);
         setActivityImages({});
         post(setSectionAction(section));
-        if (section === "approvals") post(refreshApprovalsAction());
-        if (section === "validations") post(refreshValidationsAction());
       }}
       onSwitchWorkspace={(wsHash: string) => {
         // t-d16a39 — optimistic model update (selector reflects the choice instantly); the host

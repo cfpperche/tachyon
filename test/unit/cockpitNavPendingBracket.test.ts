@@ -58,7 +58,10 @@ function fakeWorkspace(opts: { hash?: string; name?: string } = {}) {
   } as unknown as Workspace;
 }
 
-function depsFor(all: Workspace[], overrides: { collect?: () => Promise<CockpitWorkspaceBundle[]> } = {}) {
+function depsFor(all: Workspace[], overrides: {
+  collect?: () => Promise<CockpitWorkspaceBundle[]>;
+  openHumanInbox?: (wsHash?: string) => void;
+} = {}) {
   const missionBoard: CockpitMissionBoard = {
     getWorkspaces: () => all.map((w) => legacyMissionControlTarget(w)),
     openTaskStudio: () => {},
@@ -97,6 +100,7 @@ function depsFor(all: Workspace[], overrides: { collect?: () => Promise<CockpitW
     taskDetail,
     handoff,
     ...(overrides.collect ? { collect: overrides.collect } : {}),
+    ...(overrides.openHumanInbox ? { openHumanInbox: overrides.openHumanInbox } : {}),
   });
 }
 
@@ -203,10 +207,11 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     expect(after.some((m) => m.type === "routeReady" && m.routeKey === `project-handoff:${ws.wsHash}`)).toBe(true);
   });
 
-  it("emits the pending bracket for a section switch too, so the shell is never silently busy", async () => {
+  it("does not pretend a compatibility redirect is a Control section load", async () => {
     const ws = fakeWorkspace();
+    const opened: Array<string | undefined> = [];
 
-    await openCockpit(depsFor([ws]), { section: "overview" });
+    await openCockpit(depsFor([ws], { openHumanInbox: (wsHash) => opened.push(wsHash) }), { section: "overview", wsHash: ws.wsHash });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const before = posted().length;
@@ -215,8 +220,8 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     await flush();
 
     const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
-    expect(after.some((m) => m.type === "routePending" && m.routeKey === "section:approvals")).toBe(true);
-    expect(after.some((m) => m.type === "routeReady" && m.routeKey === "section:approvals")).toBe(true);
+    expect(opened.at(-1)).toBe(ws.wsHash);
+    expect(after.some((m) => m.routeKey === "section:approvals")).toBe(false);
   });
 
   it("suppresses a superseded route's routeReady so it cannot clear a newer navigation's pending state", async () => {

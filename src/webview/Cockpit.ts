@@ -725,6 +725,12 @@ function navigate(route: CockpitRoute): void {
     openInboxApp?.();
     route = routes.section("overview");
   }
+  if (route.kind === "section" && (route.section === "approvals" || route.section === "validations")) {
+    // t-b30efd — these are compatibility routes only. They can still arrive from pre-cutover panel
+    // state and direct Control links, so keep the doors alive while leaving no Control renderer.
+    openInboxApp?.();
+    route = routes.section("overview");
+  }
   // SDD 485 D11 — every legacy landing route, including malformed-section recovery, funnels here.
   // Overview opens in its project dashboard; Control commits a renderer it still owns.
   if (route.kind === "section" && route.section === "overview") {
@@ -2160,8 +2166,6 @@ export async function openCockpit(
     // bootstrap global and the client injects it when the lazy section body loads
     // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
-    const approvalsIsActive = isSection(currentRoute, "approvals");
-    const validationsIsActive = isSection(currentRoute, "validations");
     const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
     const handoffIsActive = currentRoute.kind === "project-handoff";
@@ -2233,8 +2237,6 @@ export async function openCockpit(
         uri("codicon.css"),
         uri("design-system.css"),
         uri("vscode-theme.css"),
-        approvalsIsActive ? uri("approval.css") : undefined,
-        validationsIsActive ? uri("validations.css") : undefined,
         // one shared conditional for the mermaid stylesheet — task-detail and activity both render
         // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
         // would duplicate the link and fail cockpitCssParity's no-duplicate-link check (its source
@@ -2300,8 +2302,6 @@ export async function openCockpit(
          */
         __tachyonCardPreviewCss: uri("sidebar.css"),
         __tachyonSectionStyles: {
-          approvals: uri("approval.css"),
-          validations: uri("validations.css"),
           "activity-mermaid": uri("mermaid-block.css"),
           activity: uri("activity.css"),
           probes: uri("probes.css"),

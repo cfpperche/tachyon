@@ -137,10 +137,9 @@ export const ROUTES: Record<string, Route> = {
       // SDD 485 C5 — no mission-control sheets: the Board is a standalone app with its own route below,
       // and Control stopped linking them in the same change (cockpitCssParity asserts the two agree).
       // SDD 485 D2 — and no plugins sheets, for the same reason and in the same change.
-      "/dist/webview/approval.css",
       // SDD 485 D4 — and no human-inbox sheet: the Inbox has its own route in this table now, and Control
       // stopped linking it in the same change (cockpitCssParity asserts the two agree).
-      "/dist/webview/validations.css",
+      // t-b30efd — approvals and validations now share that Inbox app; Control owns neither stylesheet.
       // SDD 485 D3 — and no runtime-ops sheet: Runtime Ops has its own route in this table now, and
       // Control stopped linking it in the same change (cockpitCssParity asserts the two agree).
       "/dist/webview/mermaid-block.css",

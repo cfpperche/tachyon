@@ -48,9 +48,11 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
     expect(harnessCssOrder().at(-1)).toBe("cockpit.css");
   });
 
-  it("links validations.css — the embedded Validations tab's own stylesheet (the t-6bbdf6 regression)", () => {
-    expect(hostCssOrder()).toContain("validations.css");
-    expect(harnessCssOrder()).toContain("validations.css");
+  it("does not link approval/validation sheets after their renderers leave Control", () => {
+    expect(hostCssOrder()).not.toContain("approval.css");
+    expect(hostCssOrder()).not.toContain("validations.css");
+    expect(harnessCssOrder()).not.toContain("approval.css");
+    expect(harnessCssOrder()).not.toContain("validations.css");
   });
 
   // t-610705 Phase B — CSS co-load key parity: every loadSectionStylesheet("<id>") the client calls

@@ -20,11 +20,6 @@ import type { ActivityViewModel } from "../../activity/activityView";
 import type { ProbesVM } from "../probes/messages";
 import type { HandoffDispatch } from "../handoff/App";
 import type { HandoffViewModel } from "../handoff/handoffViewModel";
-import type { ValidationsDispatch } from "../validations/App";
-import type { ValidationsViewModel } from "../validations/viewModel";
-import type { ApprovalDispatch } from "../approval/App";
-import type { ApprovalViewModel } from "../approval/viewModel";
-
 import type { StudioDispatch } from "../shared/studio/protocol";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
@@ -40,21 +35,8 @@ import type { StudioDispatch } from "../shared/studio/protocol";
 // `document` app (src/webview/task-detail/main.tsx) with its own bundle, error boundary and stylesheet
 // list, so Control neither imports its renderer nor co-loads its CSS. Two live renderers of one screen is
 // what the atomic cutover exists to prevent.
-// t-610705 — CSS co-load, third surface (see the Approvals comment below for the mechanism).
-const ValidationsApp = lazy(() =>
-  import("../validations/App").then((m) => {
-    loadSectionStylesheet("validations");
-    return { default: m.App };
-  }),
-);
-// t-610705 — pilot for CSS co-load: approval.css loads with this chunk, not unconditionally in
-// the cockpit shell (the shell still loads it eagerly ONLY when Approvals is the opening section).
-const ApprovalsApp = lazy(() =>
-  import("../approval/App").then((m) => {
-    loadSectionStylesheet("approvals");
-    return { default: m.App };
-  }),
-);
+// t-b30efd — Approval and Validation renderers are gone from Control. Their shared owner is the
+// Human Inbox app; compatibility section routes redirect there in Cockpit.ts without mounting UI.
 // SDD 485 D4 — the two Human Inbox lazy imports are GONE with the section: it is a standalone
 // `dashboard` app now (src/webview/HumanInboxPanel.ts + human-inbox/main.tsx), one tab per project, and
 // two live renderers of one screen is the thing spec.md forbids. `src/webview/human-inbox/App.tsx` keeps
@@ -192,13 +174,6 @@ export interface CockpitAppProps {
   /** t-610705 (Phase C.3) — the Handoff section. */
   handoffVm?: HandoffViewModel;
   handoffDispatch: HandoffDispatch;
-  /** Embedded product surfaces (not Task/Pin/form studios). */
-  approvalVm?: ApprovalViewModel;
-  approvalError?: string;
-  approvalDispatch: ApprovalDispatch;
-  validationsVm?: ValidationsViewModel;
-  validationsError?: string;
-  validationsDispatch: ValidationsDispatch;
   /** t-610705 (Phase D, D0/D1a) — the studio-new/studio-edit subroute (fleet/... — command, terminal,
    *  runbook, schedule). The studio App receives raw protocol/nav-transaction messages, not a
    *  decoded VM — see command-studio-shell/App.tsx's own doc comment for why. `studioDispatch` is
@@ -209,9 +184,6 @@ export interface CockpitAppProps {
   studioIncoming?: { seq: number; message: unknown };
   studioDispatch: StudioDispatch;
 }
-
-/** Tabs that host a full product surface (no ModuleChrome table / deep-link stub). */
-const EMBED_SECTIONS = new Set<CockpitSectionId>(["validations", "approvals"]);
 
 const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
   overview: { icon: "dashboard", navKey: "navOverview" },
@@ -254,7 +226,7 @@ export function App(p: CockpitAppProps) {
   // SDD 485 D4 — no `inbox-item` term: Control never commits that route any more (Cockpit.ts's
   // `navigate` redirects it into the Human Inbox app, which renders the item as its own subroute), so a
   // branch for it here would be a path nothing reaches — the same shape C4 left for `task-detail`.
-  const isEmbed = EMBED_SECTIONS.has(section) || isFleetSubroute || isStudioSubroute || isProjectHandoff;
+  const isEmbed = isFleetSubroute || isStudioSubroute || isProjectHandoff;
   // t-aa2780 — `isNavlessStudio` is gone with the tab strip: it existed ONLY to stop the Overview tab
   // rendering as active while a nav-less route (Pin Studio, Project Handoff) was open. There is no tab
   // to light now, and `model.section` was deliberately never coerced (t-610705 Phase D, D3), so the
@@ -384,22 +356,6 @@ export function App(p: CockpitAppProps) {
           {activeRoute.studio === "pin" ? (
             <PinStudioApp key={studioKey} {...studioMountProps} />
           ) : null}
-        </Suspense>
-      </div>
-    );
-  } else if (section === "approvals") {
-    body = (
-      <div class="ck-embed-host" data-testid="control-approvals">
-        <Suspense fallback={<SectionFallback title={s[TAB_META["approvals"].navKey]} />}>
-          <ApprovalsApp vm={p.approvalVm} error={p.approvalError} dispatch={p.approvalDispatch} />
-        </Suspense>
-      </div>
-    );
-  } else if (section === "validations") {
-    body = (
-      <div class="ck-embed-host" data-testid="control-validations-host">
-        <Suspense fallback={<SectionFallback title={s[TAB_META["validations"].navKey]} />}>
-          <ValidationsApp vm={p.validationsVm} error={p.validationsError} dispatch={p.validationsDispatch} />
         </Suspense>
       </div>
     );

@@ -47,8 +47,6 @@ describe("preview route table", () => {
       "/dist/webview/vscode-theme.css",
       // SDD 485 C5 — the two mission-control sheets left with the Board (its own route now), exactly as
       // C4's task-detail.css did one commit earlier.
-      "/dist/webview/approval.css",
-      "/dist/webview/validations.css",
       // SDD 485 D3 — runtime-ops.css left with its surface, exactly as the plugins sheets did one commit
       // earlier: Runtime Ops is a standalone app with its own route below.
       "/dist/webview/mermaid-block.css",
