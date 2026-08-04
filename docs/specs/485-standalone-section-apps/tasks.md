@@ -421,8 +421,25 @@ work in parallel only if the second re-applies onto the first before delivery, n
       inside the viewport (`ev-2026-08-04T17:06:42.962Z-3`).
 - [ ] D18. **Probes** — one renderer, two identities: `agentProbes(wsHash, caller)` and
       `workspaceProbes(wsHash)`. Doors: `tachyon.openProbes` (:3398) and the serializer (:2562).
-- [ ] D19. **Project Handoff** — `dashboard`, keyed by project alone. Doors:
+- [x] D19. **Project Handoff** — `dashboard`, keyed by project alone. Doors:
       `tachyon.openProjectHandoff` (:3363) and the serializer (:2547).
+      The cardinality was the cheapest check in the tail of Phase D: `WorkspaceHandoffTarget` carries one
+      `wsHash`, and every read and action goes through the exact target selected by that hash. The reused
+      `tachyonHandoff` id still names the same app, and its legacy `{wsHash}` record maps losslessly to the
+      generic manager's `{project}` key, so restore keeps the original panel rather than disposing it into a
+      redirect. The contributed command's explicit-hash and picker legs both open/reveal that project tab.
+
+      This migration's non-obvious cost was the fan-out. `onViewsChanged("handoff")` used to call
+      `refreshCockpitHandoff`; it now calls `HandoffPanelManager.refresh()`, so every visible project tab
+      reloads its own handoff while hidden tabs journal one invalidation and catch up on reveal. A manager
+      test drives that production-shaped door, beside command and serializer source guards, and the Control
+      scan was proved red with an injected `HandoffApp` token before it passed. Control no longer imports the
+      renderer, receives its messages, or links its stylesheet.
+
+      CSS produced the series' **nothing to move** answer: `cockpit.css` has zero Handoff-root consumers and
+      `handoff.css` already owns the whole surface. The standalone root now declares shared `.ds-page` chrome;
+      its existing content-width and padding rules remain surface-owned. The preview route now renders the
+      real `handoff.js` bundle directly rather than injecting a Handoff VM into Control.
 - [x] D20. **The last Pin Studio door.** `studio-new` + `pin` was the ONE route the redirect block at
       `Cockpit.ts:620` deliberately does not catch (it excludes `task` and `pin`), so Control still
       mounted `PinStudioApp` for it. Only the legacy panel serializer produced it — the live "add pin"
@@ -692,6 +709,16 @@ launcher grid read as a grafted widget (t-6e2952), and an Overview action row th
       `provider-exhausted` took its slot. One thing named so it is not read as a migration defect: every
       timestamp reads 7/9/26 because the fixtures pin a fixed epoch — the same fixture artifact D1 recorded.
 
+
+- [x] **Evidence + verdict (D19, 2026-08-04):** the real `dist/webview/handoff.js` app on the default
+      fixture at browser + harness widths 880×900 and 360×900, captured under
+      `.vqa/visual-qa/handoff-default-*.png` and attached to `handoffapp`
+      (`ev-2026-08-04T17:11:20.565Z-4`). Anchor written before capture: *Project Handoff must render in
+      its own editor tab with the same content hierarchy and calm reading rhythm it had in Control, one
+      shared page chrome, no Control breadcrumb, and usable wrapping at both widths.* Verdict: pass. At
+      880 the title, freshness badge and actions share one row; at 360 the actions wrap below the title,
+      metadata and prose wrap without clipping, and note evidence stays subordinate. No doubled page pad,
+      horizontal overflow or Control breadcrumb is visible.
 
 ## Cookbook
 

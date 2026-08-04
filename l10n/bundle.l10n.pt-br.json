@@ -685,5 +685,13 @@
   "Hash": "Hash",
   "Fleet": "Frota",
   "Settings": "Configurações",
-  "Overview": "Visão geral"
+  "Overview": "Visão geral",
+  "No Tachyon workspace is attached in this window, so there is no project handoff to open.": "Nenhum workspace Tachyon está anexado nesta janela, então não há handoff de projeto para abrir.",
+  "Project Handoff": "Handoff do projeto",
+  "Could not refresh Project Handoff: {0}": "Não foi possível atualizar o Handoff do projeto: {0}",
+  "Could not open Project Handoff: {0}": "Não foi possível abrir o Handoff do projeto: {0}",
+  "Invalid handoff distillation request.": "Solicitação de destilação do handoff inválida.",
+  "Handoff distillation task sent to '{0}'.": "Tarefa de destilação do handoff enviada para '{0}'.",
+  "Handoff distillation agent '{0}' started.": "Agente de destilação do handoff '{0}' iniciado.",
+  "Could not start handoff distillation: {0}": "Não foi possível iniciar a destilação do handoff: {0}"
 }

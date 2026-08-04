@@ -59,11 +59,6 @@ import {
 import { withActivityShareKeys, resolveActivityShare, internalSharePrompt } from "../activity/activityShare.js";
 import type { ActivityViewModel } from "../activity/activityView.js";
 import { probesMessage } from "./probes/messages.js";
-import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
-import type { HandoffViewModel, HandoffNoteVM, HandoffDistillTargetVM } from "./handoff/handoffViewModel.js";
-import { HANDOFF_DISTILL_PROFILES, normalizeAdditionalInstruction, normalizeHandoffDistillArgs } from "../handoff/distill.js";
-import { parseHandoffDistillInputV1, type HandoffDistillInputV1 } from "../runtime-api/handoffCommands.js";
-import type { WorkspaceHandoffTarget } from "../shell/HandoffTarget.js";
 import {
   approvalsMessage,
   approvalErrorMessage,
@@ -142,10 +137,6 @@ export interface CockpitValidations {
  *  distinction from Fleet's subroutes: Handoff is workspace-scoped like Approvals/Validations, not
  *  an entity with its own immutable locator). WorkspaceHandoffTarget already carries everything the
  *  host needs — same minimal-wrapper shape as CockpitTaskDetail/CockpitActivity/CockpitProbes. */
-export interface CockpitHandoff {
-  getWorkspaces: () => WorkspaceHandoffTarget[];
-}
-
 /**
  * SDD 485 C4 — what Control still needs from the task detail, now that it does not render one.
  *
@@ -197,7 +188,7 @@ export interface CockpitDeps {
   /** D17 compatibility routes leave Control and open the immutable Activity document. */
   openActivity: (wsHash: string, agent: string) => void;
   probes: CockpitProbes;
-  handoff: CockpitHandoff;
+  openHandoff: (wsHash?: string) => void;
   /** t-610705 (Phase D) — StudioPanelManagerBase-based editors migrated onto a Control route
    *  (studios-routes-design.md). D0 only wires `studio:"command"`; D1-D3 add the rest onto the SAME
    *  getWorkspaces() list (WorkspaceStudioTarget already covers command/terminal/runbook/schedule/
@@ -621,6 +612,7 @@ let openInboxApp: (() => void) | undefined;
 let openInboxItemApp: ((wsHash: string, itemKind: HumanInboxKind, itemId: string) => void) | undefined;
 let openFleetApp: (() => void) | undefined;
 let openActivityApp: ((wsHash: string, agent: string) => void) | undefined;
+let openHandoffApp: ((wsHash: string) => void) | undefined;
 
 function navigate(route: CockpitRoute): void {
   const deliberateOverview = route.kind === "section" && route.section === "overview";
@@ -660,6 +652,10 @@ function navigate(route: CockpitRoute): void {
     // so Control lands on Overview and does NOT also open a Board tab: the human asked for a task, and the
     // task's tab is what just opened. Opening a second panel they did not ask for is not a redirect.
     openTaskDocument?.(route.wsHash, route.taskId);
+    route = routes.section("overview");
+  }
+  if (route.kind === "project-handoff") {
+    openHandoffApp?.(route.wsHash);
     route = routes.section("overview");
   }
   if (route.kind === "section" && route.section === "mission") {
@@ -814,7 +810,6 @@ async function requestNavigate(route: CockpitRoute, live: vscode.WebviewPanel, a
  *  former pair of per-section scope aliases and Plugins' derived fallback. */
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
-let pushHandoff: (() => void) | undefined;
 let pushProbes: (() => void) | undefined;
 let pushStudioReferenceData: (() => void) | undefined;
 let pushTaskStudioEntity: (() => void) | undefined;
@@ -829,14 +824,13 @@ let wiredPanel: vscode.WebviewPanel | undefined;
  */
 type ControlRefreshKind =
   | "shell-poll"
-  | "probes" | "handoff" | "approvals" | "validations"
+  | "probes" | "approvals" | "validations"
   | "studio-reference" | "task-studio";
 
 function pushControlRefresh(kind: ControlRefreshKind): void {
   switch (kind) {
     case "shell-poll": pushControlPoll?.(); return;
     case "probes": pushProbes?.(); return;
-    case "handoff": pushHandoff?.(); return;
     case "approvals": pushApprovals?.(); return;
     case "validations": pushValidations?.(); return;
     case "studio-reference": pushStudioReferenceData?.(); return;
@@ -933,11 +927,6 @@ export function refreshCockpitValidations(): void {
   // rather than watched, and each recorded that its `refresh()` had no caller yet. This one has two.
 }
 
-/** t-610705 (Phase C.3) — re-post the Handoff snapshot (wired into onViewsChanged("handoff"),
- *  replacing the retired HandoffPanelManager.refreshAll()). A no-op off the handoff section. */
-export function refreshCockpitHandoff(): void {
-  refreshControl("handoff");
-}
 
 // SDD 485 C5 — the bounded/coalesced agent-liveness pass went WITH the board: it stays in
 // src/cockpit/missionVm.ts (a pure function of a workspace target, with no Control in it) and
@@ -964,20 +953,6 @@ function resolveMissionWs(board: CockpitMissionBoard, prefer?: string): Workspac
 
 function resolveApprovalWs(appr: CockpitApprovals, prefer?: string): WorkspacePresentationTarget | undefined {
   const all = appr.getWorkspaces();
-  if (all.length === 0) return undefined;
-  if (prefer) {
-    const hit = all.find((w) => w.wsHash === prefer);
-    if (hit) return hit;
-  }
-  if (controlWorkspaceScope.current) {
-    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
-    if (hit) return hit;
-  }
-  return all[0];
-}
-
-function resolveHandoffWs(handoff: CockpitHandoff, prefer?: string): WorkspaceHandoffTarget | undefined {
-  const all = handoff.getWorkspaces();
   if (all.length === 0) return undefined;
   if (prefer) {
     const hit = all.find((w) => w.wsHash === prefer);
@@ -1021,20 +996,6 @@ function reconcileActivityTeardown(route: CockpitRoute): void {
     return; // same feed re-entered — sendSectionModule's ensureActivityBinding will replay it, not restart it
   }
   stopActivityBinding();
-}
-
-/** Ported verbatim from the retired HandoffPanelManager. */
-function parseHandoffDistillAction(m: Partial<HandoffAction>): HandoffDistillInputV1 | null {
-  if (m.type !== "distill") return null;
-  const instructions = normalizeAdditionalInstruction(m.instructions);
-  const args = normalizeHandoffDistillArgs(m.mode === "adhoc" ? m.args : undefined);
-  const candidate = m.mode === "existing" && typeof m.agent === "string"
-    ? { mode: "existing", agent: m.agent.trim(), ...(instructions ? { instructions } : {}) }
-    : m.mode === "adhoc" && typeof m.profileId === "string"
-      ? { mode: "adhoc", profileId: m.profileId, ...(args ? { args } : {}), ...(instructions ? { instructions } : {}) }
-      : undefined;
-  if (!candidate) return null;
-  try { return parseHandoffDistillInputV1(candidate); } catch { return null; }
 }
 
 function sectionTitle(s: CockpitStrings, section: CockpitSectionId): string {
@@ -1144,7 +1105,6 @@ export async function openCockpit(
         clearCockpitSingletonClaim();
         pushApprovals = undefined;
         pushValidations = undefined;
-        pushHandoff = undefined;
         pushProbes = undefined;
         pushStudioReferenceData = undefined;
         pushTaskStudioEntity = undefined;
@@ -1167,6 +1127,7 @@ export async function openCockpit(
         openInboxItemApp = undefined;
         openFleetApp = undefined;
         openActivityApp = undefined;
+        openHandoffApp = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
@@ -1215,6 +1176,7 @@ export async function openCockpit(
   openInboxItemApp = (wsHash, itemKind, itemId) => deps.openHumanInboxItem(wsHash, itemKind, itemId);
   openFleetApp = () => deps.openFleet(controlWorkspaceScope.current);
   openActivityApp = (wsHash, agent) => deps.openActivity(wsHash, agent);
+  openHandoffApp = (wsHash) => deps.openHandoff(wsHash);
   openRuntimeConfigApp = () => deps.openRuntimeConfig(controlWorkspaceScope.current);
   openExecutionGraphApp = () => deps.openExecutionGraph(controlWorkspaceScope.current);
   openSettingsApp = () => deps.openSettings();
@@ -1368,86 +1330,6 @@ export async function openCockpit(
    * subroute slot, and where `resolveApprovalWs`'s fallback chain becomes a STRICT lookup because the
    * project is half the panel's key.
    */
-
-  // t-610705 (Phase C.3) — ported verbatim from the retired HandoffPanelManager's post(): a load
-  // failure notifies (a toast), it does NOT post a distinct error VM — the client keeps whatever it
-  // last had (or the loading state if nothing yet). Handoff's own VM already models "no file yet"
-  // via `exists: false`, which isn't a failure case at all.
-  const sendHandoff = async () => {
-    // t-ace77f — a detail route now, so the workspace comes from the ROUTE's own immutable locator
-    // (the router's rule for every entity route): switching Control's workspace scope while a
-    // handoff document is open must not swap the document under the reader.
-    if (panel !== live || currentRoute.kind !== "project-handoff") return;
-    const epoch = navEpoch;
-    const ws = resolveHandoffWs(deps.handoff, currentRoute.wsHash);
-    if (!ws) return;
-    try {
-      const snap = await ws.loadHandoff();
-      if (panel !== live || navEpoch !== epoch) return;
-      const notes: HandoffNoteVM[] = snap.notes.map((note) => ({ ...note, evidence: [...note.evidence] }));
-      const distillTargets: HandoffDistillTargetVM[] = snap.distillTargets.map((target) => ({ ...target }));
-      const vm: HandoffViewModel = {
-        folder: ws.folderName,
-        exists: snap.exists,
-        body: snap.body,
-        staleness: snap.staleness,
-        pendingCount: snap.pendingCount,
-        updatedAt: snap.updatedAt,
-        updatedBy: snap.updatedBy,
-        revision: snap.revision,
-        notes,
-        distillTargets,
-        distillProfiles: HANDOFF_DISTILL_PROFILES,
-      };
-      live.webview.postMessage(handoffMessage(vm));
-    } catch (err) {
-      if (panel !== live || navEpoch !== epoch) return;
-      notify(`Could not refresh Project Handoff: ${err instanceof Error ? err.message : String(err)}`, "warn");
-    }
-  };
-
-  const handleHandoffAction = async (m: Partial<HandoffAction>): Promise<boolean> => {
-    // "refresh" is NOT handled here — it is the same wire string as the shell's own poll
-    // (`case "refresh"` in the main switch below), which already calls sendSectionModule() →
-    // sendHandoff() for the active section. Only Handoff's OWN action types need a dedicated
-    // handler. ("ready" used to need the same warning; t-6ced6f answers it above this chain, so it
-    // can no longer arrive here at all.)
-    if (!m?.type || currentRoute.kind !== "project-handoff") return false;
-    const routeWsHash = currentRoute.wsHash;
-    if (m.type === "openFile") {
-      const ws = resolveHandoffWs(deps.handoff, routeWsHash);
-      if (ws) {
-        try {
-          const filePath = await ws.ensureHandoffFile();
-          await vscode.window.showTextDocument(vscode.Uri.file(filePath), { preview: false, viewColumn: vscode.ViewColumn.Beside });
-          await sendHandoff();
-        } catch (err) {
-          notify(`Could not open Project Handoff: ${err instanceof Error ? err.message : String(err)}`, "error");
-        }
-      }
-      return true;
-    }
-    if (m.type === "distill") {
-      const ws = resolveHandoffWs(deps.handoff, routeWsHash);
-      const action = parseHandoffDistillAction(m);
-      if (!action) {
-        notify("Invalid handoff distillation request.", "warn");
-        return true;
-      }
-      if (ws) {
-        try {
-          const result = await ws.startHandoffDistill(action);
-          notify(result.mode === "existing"
-            ? `Handoff distillation task sent to '${result.agent}'.`
-            : `Handoff distillation agent '${result.agent}' started.`);
-        } catch (err) {
-          notify(`Could not start handoff distillation: ${err instanceof Error ? err.message : String(err)}`, "error");
-        }
-      }
-      return true;
-    }
-    return false;
-  };
 
   // t-527767 — shared by onCancelled (every studio) and onSaved (Pin/Task only — see onSaved's own
   // scoping comment below) since the "where does this studio route's exit land" computation is
@@ -1762,7 +1644,6 @@ export async function openCockpit(
     const readyEpoch = navEpoch;
     const readyKey = routeKey(currentRoute);
     if (isSection(currentRoute, "validations")) await sendValidations();
-    else if (currentRoute.kind === "project-handoff") await sendHandoff();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
     else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
     else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
@@ -1795,7 +1676,6 @@ export async function openCockpit(
   pushControlPoll = () => { void shellPoll(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
-  pushHandoff = () => { void sendHandoff(); };
   pushProbes = () => { void sendProbes(); };
   // t-610705 (Phase D, D1a) — no "sendX" wrapper needed: refreshStudioReferenceData already takes
   // the io capability directly (same studioIo the studio-envelope dispatch above uses), and is a
@@ -1934,8 +1814,6 @@ export async function openCockpit(
       // loadOlder/shareExternal/copyShareText/shareToAgent are unique to Activity); route-gated
       // (route.kind !== "agent-activity" → false) same as every other handler in this chain.
       if (await handleActivityAction(msg as Partial<ActivityWebviewMessage>)) return;
-      // t-610705 (Phase C.3) — "openFile"/"distill" are unique to Handoff; route-gated the same way.
-      if (await handleHandoffAction(msg as Partial<HandoffAction>)) return;
       // t-610705 (Phase D, D0) — studio-envelope messages carry `studioProtocolVersion`, a field no
       // other action in this chain has; `handleStudioMessage` returns false (falls through) when
       // there's no current binding or the message doesn't decode, so this is safe unconditionally.
@@ -1972,16 +1850,7 @@ export async function openCockpit(
           });
           return;
         case "openProjectHandoff": {
-          // t-ace77f — same resolve-then-navigate shape as fleetActivity: pick the workspace ONCE
-          // at dispatch time (Control's current scope, falling back like every other action), then
-          // bake that hash into the route as the document's immutable locator.
-          const ws = resolveHandoffWs(deps.handoff);
-          if (ws) {
-            await requestNavigate(routes.projectHandoff(ws.wsHash), live, async () => {
-              await sendModel();
-              await sendSectionModule();
-            });
-          }
+          deps.openHandoff(controlWorkspaceScope.current);
           return;
         }
         case "navigateReturn":
@@ -2178,7 +2047,6 @@ export async function openCockpit(
     // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
-    const handoffIsActive = currentRoute.kind === "project-handoff";
     // t-610705 (Phase D, D0/D1a) — studio-frame.css is shared by every StudioPanelManagerBase-based
     // studio (StudioFrame.tsx); each studio's OWN sheet is a separate conditional (D1b/D2/D3 add
     // theirs alongside command/terminal/runbook/schedule here, one `studioX ? uri(...) : undefined`
@@ -2249,9 +2117,7 @@ export async function openCockpit(
         // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
         // would duplicate the link and fail cockpitCssParity's no-duplicate-link check (its source
         // scan can't tell a real call from one merely mentioned in a comment, so don't write it here).
-        handoffIsActive ? uri("mermaid-block.css") : undefined,
         probesIsActive ? uri("probes.css") : undefined,
-        handoffIsActive ? uri("handoff.css") : undefined,
         // t-610705 (Phase D, D1b) — Agent Studio's Tailwind utilities sheet loads BEFORE studio-frame.css
         // (not alongside its own surface sheet below) — matches the retired standalone panel's
         // styleFiles order exactly (vscode-theme.css → agent-studio-shell.tailwind.css → studio-frame.css
@@ -2303,8 +2169,6 @@ export async function openCockpit(
         __tachyonCardPreviewCss: uri("sidebar.css"),
         __tachyonSectionStyles: {
           probes: uri("probes.css"),
-          "handoff-mermaid": uri("mermaid-block.css"),
-          handoff: uri("handoff.css"),
           // per-studio "studio-frame-<id>" keys (not one shared "studio-frame") — see
           // cockpit/App.tsx's doc comment on the lazy studio blocks for why: same convention as the
           // 3 "*-mermaid" keys above, one distinct key per client call site even though every key

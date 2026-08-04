@@ -49,9 +49,7 @@ describe("preview route table", () => {
       // C4's task-detail.css did one commit earlier.
       // SDD 485 D3 — runtime-ops.css left with its surface, exactly as the plugins sheets did one commit
       // earlier: Runtime Ops is a standalone app with its own route below.
-      "/dist/webview/mermaid-block.css",
       "/dist/webview/probes.css",
-      "/dist/webview/handoff.css",
       // t-967b5b — `control-typography.css` dropped out of Control's list when the Settings migration
       // took its last `ck-mono` consumer. Three files spell this list out: the host, the preview route
       // table, and this expectation. `cockpitCssParity` ties the first two together, so a change caught
@@ -65,7 +63,6 @@ describe("preview route table", () => {
       "approvals",
       "default",
       "empty",
-      "handoff",
       // t-d16698 — the Human Inbox list and ONE opened item: the two surfaces every "Review"
       // doorbell can land on, and the deep-link destination this task is about.
       // SDD 485 C5 — no "mission" fixture: the Board is a standalone app with its own route now, so
@@ -122,10 +119,6 @@ describe("preview route table", () => {
     expect(validationsMsgs.map((m) => m.type)).toEqual(["init", "model", "validations"]);
     const approvalMsgs = r.makeMessage(r.fixtures.approvals.vm) as Array<{ type: string }>;
     expect(approvalMsgs.map((m) => m.type)).toEqual(["init", "model", "approvals"]);
-    // t-610705 (Phase C.3) — Handoff folds into a section (unlike Fleet's subroutes): nav section is
-    // "handoff" itself, so its own content message rides alongside init+model directly.
-    const handoffMsgs = r.makeMessage(r.fixtures.handoff.vm) as Array<{ type: string }>;
-    expect(handoffMsgs.map((m) => m.type)).toEqual(["init", "model", "handoff"]);
     // t-610705 (Phase D, D0) — the pilot studio route: same "rides alongside its parent section's
     // push" pattern as the Fleet subroutes above (nav section is "fleet"), envelope-carrying so no
     // bare `type` field — asserted via studioProtocolVersion presence instead.

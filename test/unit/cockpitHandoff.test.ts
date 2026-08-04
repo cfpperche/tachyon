@@ -1,169 +1,101 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { __createdPanels, __resetVscodeMock, __getShownDocuments } from "../mocks/vscode.js";
-import { openCockpit, type CockpitMissionBoard, type CockpitHandoff } from "../../src/webview/Cockpit.js";
+import { Uri } from "vscode";
+import fs from "node:fs";
+import path from "node:path";
+import { __createdPanels, __resetVscodeMock, __getShownDocuments, __setPanelVisible } from "../mocks/vscode.js";
+import { HandoffPanelManager } from "../../src/webview/HandoffPanel.js";
 import type { WorkspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
 import type { HandoffProjectionV1 } from "../../src/runtime-api/handoffProjection.js";
-import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
-import { routes as cockpitRoutes } from "../../src/cockpit/route.js";
-
-/**
- * t-610705 (SDD 410 Phase C.3) — Handoff ROUTING coverage for Control → Handoff section. Unlike
- * Fleet's subroutes (C.2), Handoff folds directly into a section (workspace-scoped like Approvals/
- * Validations, resolveHandoffWs's fallback chain), so there's no binding-generation lifecycle to
- * cover here — just the section-gated push + the openFile/distill actions ported from the retired
- * HandoffPanelManager.
- */
 
 beforeEach(() => __resetVscodeMock());
-afterEach(() => {
-  for (const p of __createdPanels) if (!p.disposed) p.dispose();
-});
+afterEach(() => { for (const panel of __createdPanels) if (!panel.disposed) panel.dispose(); });
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
-const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-
-function fakeSnapshot(overrides: Partial<HandoffProjectionV1> = {}): HandoffProjectionV1 {
-  return {
-    canonicalRelativePath: ".tachyon/HANDOFF.md",
-    exists: true,
-    body: "## Current State\n",
-    staleness: "fresh",
-    pendingCount: 0,
-    updatedAt: "2026-07-21T00:00:00.000Z",
-    updatedBy: "human",
-    revision: "0123456789abcdef",
-    notes: [],
-    distillTargets: [{ name: "codex", description: "running · declared", state: "running", lifetime: "saved", resumePolicy: "restartable" }],
-    ...overrides,
-  };
+function snapshot(overrides: Partial<HandoffProjectionV1> = {}): HandoffProjectionV1 {
+  return { canonicalRelativePath: ".tachyon/HANDOFF.md", exists: true, body: "## Current State\n",
+    staleness: "fresh", pendingCount: 0, updatedAt: "2026-07-21T00:00:00.000Z", updatedBy: "human",
+    revision: "0123456789abcdef", notes: [], distillTargets: [], ...overrides };
 }
-
-function handoffTarget(overrides: Partial<WorkspaceHandoffTarget> = {}): WorkspaceHandoffTarget {
-  return {
-    workspaceRoot: "/repo",
-    wsHash: "ws-1",
-    folderName: "repo",
-    loadHandoff: async () => fakeSnapshot(),
-    ensureHandoffFile: async () => "/repo/.tachyon/HANDOFF.md",
-    startHandoffDistill: async (input) => ({
-      mode: input.mode,
-      agent: input.mode === "existing" ? input.agent : "handoff-codex-test",
-    }),
-    ...overrides,
-  } as WorkspaceHandoffTarget;
+function target(wsHash: string, overrides: Partial<WorkspaceHandoffTarget> = {}): WorkspaceHandoffTarget {
+  return { workspaceRoot: `/repo/${wsHash}`, wsHash, folderName: wsHash, loadHandoff: async () => snapshot(),
+    ensureHandoffFile: async () => `/repo/${wsHash}/.tachyon/HANDOFF.md`,
+    startHandoffDistill: async (input) => ({ mode: input.mode, agent: input.mode === "existing" ? input.agent : "temporary" }),
+    ...overrides } as WorkspaceHandoffTarget;
 }
-
-function depsFor(handoff: CockpitHandoff, hooks: Partial<CockpitMissionBoard> = {}) {
-  const missionBoard: CockpitMissionBoard = { getWorkspaces: () => [], openTaskStudio: () => {}, onTasksChanged: () => {}, ...hooks };
-  return makeFakeCockpitDeps(missionBoard, { handoff });
+function manager(workspaces: WorkspaceHandoffTarget[]) {
+  return new HandoffPanelManager(Uri.file("/ext"), { getWorkspaces: () => workspaces });
 }
+const messages = (index = 0) => __createdPanels[index].webview.posted.filter((message) => (message as { type?: string }).type === "handoff");
 
-const handoffMessages = () => __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "handoff") as Array<{ vm: { folder: string; exists: boolean; body: string } }>;
-
-async function openHandoff(deps: ReturnType<typeof depsFor>): Promise<void> {
-  // t-ace77f — the sidebar's entry point opens the document as a detail route, not a tab.
-  await openCockpit(deps, { route: cockpitRoutes.projectHandoff("ws-1") });
-  __createdPanels[0].webview.__receive({ type: "ready" });
-  await flush();
-}
-
-describe("Control → Project Handoff route (t-ace77f)", () => {
-  it("opening the handoff section posts the loaded snapshot", async () => {
-    const ws = handoffTarget({ loadHandoff: async () => fakeSnapshot({ body: "## Hello\n", pendingCount: 2 }) });
-    const deps = depsFor({ getWorkspaces: () => [ws] });
-    await openHandoff(deps);
-
-    const msg = handoffMessages().at(-1);
-    expect(msg?.vm.folder).toBe("repo");
-    expect(msg?.vm.exists).toBe(true);
-    expect(msg?.vm.body).toBe("## Hello\n");
+describe("Project Handoff standalone dashboard (SDD 485 D19)", () => {
+  it("has no Handoff renderer or stylesheet path left in Control", () => {
+    const root = process.cwd();
+    const client = fs.readFileSync(path.join(root, "src/webview/cockpit/App.tsx"), "utf8");
+    const host = fs.readFileSync(path.join(root, "src/webview/Cockpit.ts"), "utf8");
+    expect(client).not.toMatch(/HandoffApp|control-handoff|handoffVm|handoffDispatch/);
+    expect(host).not.toMatch(/const sendHandoff|const handleHandoffAction|import .*handoffMessage|uri\("handoff\.css"\)/);
   });
 
-  it("no attached workspace leaves the section open but empty (no throw, no post)", async () => {
-    const deps = depsFor({ getWorkspaces: () => [] });
-    await expect(openCockpit(deps, { route: cockpitRoutes.projectHandoff("ws-1") })).resolves.not.toThrow();
+  it("keeps command, legacy restore and fan-out wired to HandoffPanelManager", () => {
+    const extension = fs.readFileSync(path.resolve(process.cwd(), "src/extension.ts"), "utf8");
+    expect(extension).toMatch(/registerCommand\("tachyon\.openProjectHandoff"[\s\S]*?hash \? byHash\(hash\) : await pickWorkspace\(\)[\s\S]*?openHandoffTab\(ws\.wsHash\)/);
+    expect(extension).toMatch(/registerTrustedPanelSerializer<SectionPanelState \| HandoffPanelState>[\s\S]*?handoffPanels\.deserialize\(panel, state\)/);
+    expect(extension).toMatch(/view === "handoff"\) handoffPanels\.refresh\(\)/);
+  });
+
+  it("opens one panel per project and reveals rather than duplicates", () => {
+    const panels = manager([target("a"), target("b")]);
+    panels.open("a"); panels.open("b"); panels.open("a");
+    expect(__createdPanels).toHaveLength(2);
+    expect(panels.openKeys).toHaveLength(2);
+  });
+
+  it("loads each panel from the project in its key", async () => {
+    const panels = manager([
+      target("a", { loadHandoff: async () => snapshot({ body: "# A" }) }),
+      target("b", { loadHandoff: async () => snapshot({ body: "# B" }) }),
+    ]);
+    panels.open("a"); panels.open("b");
     __createdPanels[0].webview.__receive({ type: "ready" });
+    __createdPanels[1].webview.__receive({ type: "ready" });
     await flush();
-    expect(handoffMessages()).toHaveLength(0);
+    expect((messages(0).at(-1) as { vm: { body: string } }).vm.body).toBe("# A");
+    expect((messages(1).at(-1) as { vm: { body: string } }).vm.body).toBe("# B");
   });
 
-  it("a load failure notifies instead of posting an error VM", async () => {
-    const ws = handoffTarget({ loadHandoff: async () => { throw new Error("disk gone"); } });
-    const deps = depsFor({ getWorkspaces: () => [ws] });
-    await openHandoff(deps);
-    expect(handoffMessages()).toHaveLength(0);
+  it("keeps open and distill actions scoped to the panel project", async () => {
+    let distilled: unknown;
+    const panels = manager([target("a"), target("b", { startHandoffDistill: async (input) => {
+      distilled = input; return { mode: input.mode, agent: input.mode === "existing" ? input.agent : "temporary" };
+    } })]);
+    panels.open("b");
+    __createdPanels[0].webview.__receive({ type: "ready" }); await flush();
+    __createdPanels[0].webview.__receive({ type: "openFile" }); await flush();
+    expect(__getShownDocuments()[0]?.uri.fsPath).toContain("/b/");
+    __createdPanels[0].webview.__receive({ type: "distill", mode: "existing", agent: " codex ", instructions: " concise " });
+    await flush();
+    expect(distilled).toEqual({ mode: "existing", agent: "codex", instructions: "concise" });
   });
 
-  it("openFile ensures the file exists, opens it beside, and re-posts the snapshot", async () => {
-    const ws = handoffTarget();
-    const deps = depsFor({ getWorkspaces: () => [ws] });
-    await openHandoff(deps);
-    const before = handoffMessages().length;
-
-    __createdPanels[0].webview.__receive({ type: "openFile" });
-    await flush();
-
-    expect(__getShownDocuments()).toHaveLength(1);
-    expect(__getShownDocuments()[0]?.uri.fsPath ?? __getShownDocuments()[0]?.uri).toContain("HANDOFF.md");
-    expect(handoffMessages().length).toBe(before + 1);
+  it("revives the legacy wsHash state into the same dashboard key", () => {
+    const panels = manager([target("a")]);
+    const restored = __createdPanels[0] ?? ({} as never);
+    // The mock panel shape is easiest obtained through one open; dispose it, then hand its panel back as legacy state.
+    panels.open("a");
+    const panel = __createdPanels[0]; panel.dispose();
+    panels.deserialize(panel as never, { schemaVersion: 1, view: "tachyonHandoff", wsHash: "a" });
+    expect(panels.openKeys).toEqual(["tachyonHandoff|a"]);
+    void restored;
   });
 
-  it("distill dispatches to startHandoffDistill with a normalized existing-agent request", async () => {
-    let captured: unknown;
-    const ws = handoffTarget({
-      startHandoffDistill: async (input) => {
-        captured = input;
-        return { mode: input.mode, agent: input.mode === "existing" ? input.agent : "x" };
-      },
-    });
-    const deps = depsFor({ getWorkspaces: () => [ws] });
-    await openHandoff(deps);
-
-    __createdPanels[0].webview.__receive({ type: "distill", mode: "existing", agent: " codex ", instructions: "  concise  " });
-    await flush();
-
-    expect(captured).toEqual({ mode: "existing", agent: "codex", instructions: "concise" });
-  });
-
-  it("Overview's Handoff entry navigates to the document route (t-ace77f)", async () => {
-    const ws = handoffTarget({ loadHandoff: async () => fakeSnapshot({ body: "# doc\n" }) });
-    const deps = depsFor({ getWorkspaces: () => [ws] });
-    // Control opens on a plain section — no Handoff tab exists to click any more.
-    await openCockpit(deps, { section: "overview" });
-    __createdPanels[0].webview.__receive({ type: "ready" });
-    await flush();
-    expect(handoffMessages()).toHaveLength(0);
-
-    __createdPanels[0].webview.__receive({ type: "openProjectHandoff" });
-    await flush();
-
-    expect(handoffMessages().at(-1)?.vm.body).toBe("# doc\n");
-  });
-
-  it("keeps the document on the workspace its route names, not Control's current scope (t-ace77f)", async () => {
-    const scoped = handoffTarget({ wsHash: "ws-1", folderName: "scoped" });
-    const routed = handoffTarget({ wsHash: "ws-2", folderName: "routed" });
-    const deps = depsFor({ getWorkspaces: () => [scoped, routed] });
-
-    await openCockpit(deps, { route: cockpitRoutes.projectHandoff("ws-2") });
-    __createdPanels[0].webview.__receive({ type: "ready" });
-    await flush();
-
-    // `scoped` is what a bare fallback resolve would pick (first attached); the route's own locator wins.
-    expect(handoffMessages().at(-1)?.vm.folder).toBe("routed");
-  });
-
-  it("leaving the section — a refresh no longer posts", async () => {
-    const ws = handoffTarget();
-    const deps = depsFor({ getWorkspaces: () => [ws] });
-    await openHandoff(deps);
-
-    await openCockpit(deps, { section: "mission" });
-    await flush();
-    const before = handoffMessages().length;
-
-    __createdPanels[0].webview.__receive({ type: "refresh" });
-    await flush();
-
-    expect(handoffMessages().length).toBe(before);
+  it("fans out only to visible panels", async () => {
+    let loads = 0;
+    const panels = manager([target("a", { loadHandoff: async () => { loads += 1; return snapshot(); } })]);
+    panels.open("a"); const panel = __createdPanels[0];
+    __setPanelVisible(panel, false);
+    expect(panels.refresh()).toBe(0);
+    expect(loads).toBe(0);
+    __setPanelVisible(panel, true); await flush();
+    expect(loads).toBe(1);
   });
 });

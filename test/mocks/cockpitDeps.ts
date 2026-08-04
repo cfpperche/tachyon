@@ -20,7 +20,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     activity: { getWorkspaces: () => [] },
     openActivity: () => {},
     probes: { getWorkspaces: () => [] },
-    handoff: { getWorkspaces: () => [] },
+    openHandoff: () => {},
     studios: { getWorkspaces: () => [], onChanged: () => {} },
     approvals: { getWorkspaces: () => [], resolve: async () => {} },
     validations: { getWorkspaces: () => [], onValidationsChanged: () => {} },

@@ -162,9 +162,7 @@ export const ROUTES: Record<string, Route> = {
       // t-b30efd — approvals and validations now share that Inbox app; Control owns neither stylesheet.
       // SDD 485 D3 — and no runtime-ops sheet: Runtime Ops has its own route in this table now, and
       // Control stopped linking it in the same change (cockpitCssParity asserts the two agree).
-      "/dist/webview/mermaid-block.css",
       "/dist/webview/probes.css",
-      "/dist/webview/handoff.css",
       // t-967b5b — `control-typography.css` left this list with the same edit that removed it from
       // `Cockpit.ts`: Control's last `ck-mono` use went out with the Settings migration (D10), and a
       // host linking a sheet it does not render is bytes for nobody. `cockpitCssParity` is what made
@@ -182,6 +180,7 @@ export const ROUTES: Record<string, Route> = {
       && name !== "runtime-config"
       && name !== "settings"
       && name !== "fleet"
+      && name !== "handoff"
       && name !== "agent-activity")) as Record<string, Fixture>,
     // SDD 410 Phase A — cockpit.js is now ESM with esbuild code-split chunks; the harness must load it as
     // a module (classic <script> injection dies with "Cannot use import statement outside a module").
@@ -224,14 +223,9 @@ export const ROUTES: Record<string, Route> = {
       // that fixture depicts CONTROL waiting on a navigation, and the routeKey is the wire string it
       // waits on, not a screen this route renders.
       const activeRoute = (model as { activeRoute?: { kind?: string; wsHash?: string; agent?: string } }).activeRoute;
-      if (activeRoute?.kind === "project-handoff") {
-        // t-ace77f — Handoff moved from a section push to a detail route: same fixture VM, same
-        // envelope, now keyed off the route instead of the tab.
-        const handoff = handoffFixtures.default?.vm;
-        if (handoff) msgs.push(handoffMessage(handoff));
       // SDD 485 D4 — no `inbox-item` arm either: the item is a subroute INSIDE the Human Inbox app now,
       // reachable as `?view=human-inbox&fixture=item`, and Control commits neither route.
-      } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
+      if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
         const probes = probesFixtures.default?.vm;
         if (probes) msgs.push(probesMessage(probes));
       } else if ((activeRoute?.kind === "studio-new" || activeRoute?.kind === "studio-edit") && (activeRoute as { studio?: string }).studio) {
@@ -309,9 +303,6 @@ export const ROUTES: Record<string, Route> = {
       ? [pinDocumentModeMessage("edit"), ...pinStudioMakeMessage(vm as never)]
       : pinPreviewMessage(vm as never),
   },
-  // t-610705 (SDD 410 Phase C.3) — the standalone "handoff" route previewed the retired Project
-  // Handoff panel; Handoff is a cockpit-only section now — use ?view=cockpit&fixture=handoff (same
-  // App.tsx, same fixture VM, via the cockpit route's section injection above).
   // t-610705 (SDD 410 Phase A/B pilot, found + closed in the Phase E audit, 2026-07-22) — the
   // standalone "approval" route previewed the retired Approvals panel; Approvals is a cockpit-only
   // section now — use ?view=cockpit&fixture=approvals (same App.tsx, same fixture VM, via the
@@ -589,6 +580,14 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     globals: { __TACHYON_STRINGS__: cockpitStrings },
     makeMessage: (vm) => overviewModelMessage(vm as never),
+  },
+  handoff: {
+    bundle: "/dist/webview/handoff.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/activity.css", "/dist/webview/handoff.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: handoffFixtures,
+    module: true,
+    makeMessage: (vm) => handoffMessage(vm as never),
   },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.

@@ -61,6 +61,7 @@ function fakeWorkspace(opts: { hash?: string; name?: string } = {}) {
 function depsFor(all: Workspace[], overrides: {
   collect?: () => Promise<CockpitWorkspaceBundle[]>;
   openHumanInbox?: (wsHash?: string) => void;
+  openHandoff?: (wsHash?: string) => void;
 } = {}) {
   const missionBoard: CockpitMissionBoard = {
     getWorkspaces: () => all.map((w) => legacyMissionControlTarget(w)),
@@ -73,34 +74,11 @@ function depsFor(all: Workspace[], overrides: {
     getWorkspaces: () => all.map((w) => legacyTaskDetailTarget(w)),
     openDocument: () => {},
   };
-  // A minimal handoff target — no real ProjectHandoffStore. SDD 485 C4 made project-handoff the detail
-  // route these bracket assertions ride on (the task detail left Control), so the snapshot now carries
-  // every field `sendHandoff` reads: a stub that throws on a missing field posts NO content, and the
-  // ordering claims below are exactly about the content push landing before `routeReady`.
-  const handoff = {
-    getWorkspaces: () =>
-      all.map((w) => ({
-        workspaceRoot: (w as unknown as { workspaceRoot: string }).workspaceRoot,
-        wsHash: w.wsHash,
-        folderName: w.folderName,
-        loadHandoff: async () => ({
-          exists: true,
-          body: "",
-          revision: "r1",
-          staleness: "fresh",
-          pendingCount: 0,
-          notes: [],
-          distillTargets: [],
-        }),
-        ensureHandoffFile: async () => "HANDOFF.md",
-        startHandoffDistill: async () => ({ ok: true }),
-      })),
-  } as unknown as NonNullable<Parameters<typeof makeFakeCockpitDeps>[1]>["handoff"];
   return makeFakeCockpitDeps(missionBoard, {
     taskDetail,
-    handoff,
     ...(overrides.collect ? { collect: overrides.collect } : {}),
     ...(overrides.openHumanInbox ? { openHumanInbox: overrides.openHumanInbox } : {}),
+    ...(overrides.openHandoff ? { openHandoff: overrides.openHandoff } : {}),
   });
 }
 
@@ -114,14 +92,15 @@ const postedTypes = (): string[] => posted().map((m) => m.type ?? "");
 const firstIndexOf = (type: string): number => postedTypes().indexOf(type);
 
 describe("t-ac79a7: every navigation is bracketed by routePending / routeReady", () => {
-  it("posts routePending for a detail route BEFORE the model the client used to wait on", async () => {
+  it("does not bracket Project Handoff because it opens a standalone app", async () => {
     // This case used to drive a Board card click, which navigated Control to the task-detail subroute.
     // SDD 485 C4 made that a tab rather than a navigation, so the bracket is measured on the detail
     // route Control still owns. The property is unchanged and is the point of the feature:
     // acknowledgement lands ahead of the expensive payload.
     const ws = fakeWorkspace();
 
-    await openCockpit(depsFor([ws]), { section: "overview" });
+    const opened: Array<string | undefined> = [];
+    await openCockpit(depsFor([ws], { openHandoff: (hash) => opened.push(hash) }), { section: "overview", wsHash: ws.wsHash });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const before = posted().length;
@@ -131,17 +110,12 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
 
     const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
     const types = after.map((m) => m.type ?? "");
-    const pendingAt = types.indexOf("routePending");
-    const modelAt = types.indexOf("model");
-
-    expect(pendingAt, `no routePending after the click; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
-    expect(modelAt, `no model after the click; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
-    expect(pendingAt).toBeLessThan(modelAt);
-    // It names WHICH navigation, so the client can ignore a superseded route's late ready.
-    expect(after[pendingAt].routeKey).toBe(`project-handoff:${ws.wsHash}`);
+    expect(types).not.toContain("routePending");
+    expect(types).not.toContain("routeReady");
+    expect(opened).toEqual([ws.wsHash]);
   });
 
-  it("closes the bracket with routeReady only after the route's own content is posted", async () => {
+  it("posts no Handoff content through Control", async () => {
     const ws = fakeWorkspace();
 
     await openCockpit(depsFor([ws]), { section: "overview" });
@@ -154,15 +128,8 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
 
     const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
     const types = after.map((m) => m.type ?? "");
-    const contentAt = types.indexOf("handoff");
-    const readyAt = types.indexOf("routeReady");
-
-    expect(contentAt, `no content push; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
-    expect(readyAt, `no routeReady; got ${JSON.stringify(types)}`).toBeGreaterThanOrEqual(0);
-    // Ready must mean "the content is there", or the client would drop its pending state onto an
-    // empty surface — the abrupt swap this task exists to remove.
-    expect(contentAt).toBeLessThan(readyAt);
-    expect(after[readyAt].routeKey).toBe(`project-handoff:${ws.wsHash}`);
+    expect(types).not.toContain("handoff");
+    expect(types).not.toContain("routeReady");
   });
 
   it("does NOT bracket a click that opens a DOCUMENT — Control never navigated (SDD 485 C4)", async () => {
@@ -185,14 +152,15 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     expect(types).not.toContain("routeReady");
   });
 
-  it("brackets a DIFFERENT detail route kind with the same primitive — one emit, not one per route", async () => {
+  it("redirects a Project Handoff route without mounting its renderer", async () => {
     const ws = fakeWorkspace();
 
     // project-handoff is a detail route that shares nothing with task-detail's handler. It gets the
     // bracket anyway, because the emit lives at the shared commit point rather than in either
     // route's own code path. This is the "does the same primitive serve other detail routes without
     // duplication" question, answered by execution instead of by reading.
-    await openCockpit(depsFor([ws]), { section: "overview" });
+    const opened: Array<string | undefined> = [];
+    await openCockpit(depsFor([ws], { openHandoff: (hash) => opened.push(hash) }), { section: "overview" });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
     const before = posted().length;
@@ -201,10 +169,8 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     await flush();
 
     const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
-    const pending = after.find((m) => m.type === "routePending");
-    expect(pending, `no routePending for project-handoff; got ${JSON.stringify(after.map((m) => m.type))}`).toBeDefined();
-    expect(pending?.routeKey).toBe(`project-handoff:${ws.wsHash}`);
-    expect(after.some((m) => m.type === "routeReady" && m.routeKey === `project-handoff:${ws.wsHash}`)).toBe(true);
+    expect(after.map((message) => message.type)).not.toContain("handoff");
+    expect(opened).toHaveLength(1);
   });
 
   it("does not pretend a compatibility redirect is a Control section load", async () => {
@@ -271,21 +237,19 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     expect(modelsAfterStaleSettles.at(-1)).toMatchObject({ model: { section: "engine" } });
   });
 
-  it("still delivers model before a detail route's content — the ordering this feature must not disturb", async () => {
+  it("redirects a restored Handoff route before Control renders", async () => {
     // The client rejects content for a route it has not learned yet (t-9993cc's rule, which the task
     // detail carried before SDD 485 C4 moved it out; the same ordering still binds every detail route
     // Control keeps). This case passes both with and without the bracket, on purpose — it is here to
     // catch the bracket breaking someone else's invariant, not to prove the bracket.
     const ws = fakeWorkspace();
 
-    await openCockpit(depsFor([ws]), { route: { kind: "project-handoff", wsHash: ws.wsHash } });
+    const opened: Array<string | undefined> = [];
+    await openCockpit(depsFor([ws], { openHandoff: (hash) => opened.push(hash) }), { route: { kind: "project-handoff", wsHash: ws.wsHash } });
     __createdPanels[0].webview.__receive({ type: "ready" });
     await flush();
 
-    const modelAt = firstIndexOf("model");
-    const contentAt = firstIndexOf("handoff");
-    expect(modelAt).toBeGreaterThanOrEqual(0);
-    expect(contentAt).toBeGreaterThanOrEqual(0);
-    expect(modelAt).toBeLessThan(contentAt);
+    expect(opened).toEqual([ws.wsHash]);
+    expect(firstIndexOf("handoff")).toBe(-1);
   });
 });

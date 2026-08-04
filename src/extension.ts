@@ -28,7 +28,6 @@ import {
   refreshCockpitValidations,
   refreshCockpitTaskStudioEntity,
   refreshCockpitProbes,
-  refreshCockpitHandoff,
   refreshCockpitStudioReferenceData,
   markControlSourceResync,
   decodeCockpitPanelState,
@@ -45,7 +44,7 @@ import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState }
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
 import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
-import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
+import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { validationAwaitsHuman } from "./humanInbox/model.js";
@@ -1124,6 +1123,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     controlWorkspaceScope,
   );
   context.subscriptions.push({ dispose: () => pluginsPanels.dispose() });
+  const handoffPanels = new HandoffPanelManager(
+    context.extensionUri,
+    { getWorkspaces: () => workspaces().map((ws) => ws.handoff) },
+    undefined,
+    controlWorkspaceScope,
+  );
+  context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
+  const openHandoffTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so there is no project handoff to open."), "warn");
+      return false;
+    }
+    handoffPanels.open(ws.wsHash);
+    return true;
+  };
   /**
    * Open (or reveal) Plugins for a project — the same shape as `openBoard` below, and for the same reason:
    * a dashboard is opened AGAINST a project, so an ambient caller resolves one ONCE, here, rather than
@@ -1166,7 +1183,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
-    if (view === "handoff") refreshCockpitHandoff(); // t-610705 (Phase C.3) — Control → Handoff section
+    if (view === "handoff") handoffPanels.refresh();
     if (view === "probes") refreshCockpitProbes(); // t-610705 (Phase C.2) — Control → Probes subroute
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
     if (view === "pins") approvalPanels.refreshAll();
@@ -1970,9 +1987,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     // t-610705 (Phase C.3) — Handoff folds into a Control section (WorkspaceHandoffTarget already
     // carries everything the host needs).
-    handoff: {
-      getWorkspaces: () => workspaces().map((ws) => ws.handoff),
-    },
+    openHandoff: (wsHash) => openHandoffTab(wsHash),
     // t-610705 (Phase D, D0) — StudioPanelManagerBase-based studios migrated onto a Control route
     // (studios-routes-design.md). WorkspaceShellHandle already implements WorkspaceStudioTarget
     // directly (no per-studio accessor needed, unlike taskDetail/activity/handoff above) — command/
@@ -2540,13 +2555,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<ActivityPanelState | SectionPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => {
     activityPanels.deserialize(panel, state);
   }, { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => {
-    panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    if (!state?.wsHash) return;
-    // t-ace77f — the legacy panel's workspace is exactly the locator the detail route needs.
-    void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.projectHandoff(state.wsHash) });
-  });
+  registerTrustedPanelSerializer<SectionPanelState | HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => {
+    handoffPanels.deserialize(panel, state);
+  }, { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // SDD 485 D2 — the Plugins app's own restore, and the second REUSED viewType (after C4's and D1's):
   // the panel VS Code hands back is kept, keyed on the project it persisted, so a reload puts Plugins back
@@ -3350,15 +3361,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // spec 297 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
     // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
     vscode.commands.registerCommand("tachyon.openProjectHandoff", async (hash?: string) => {
-      // t-610705 (Phase C.3) — Handoff lives in Control; no second peer panel.
-      // t-ace77f — and inside Control it is a DETAIL ROUTE, not a tab: this command (the sidebar's
-      // `handoff · N` bar and the palette) is the entry point, and the document's breadcrumb leaves
-      // to Overview. Without a resolvable workspace there is no document to open — the picker
-      // already warned, so opening Control on Overview is the honest landing.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      await openCockpit(makeCockpitDeps(), ws
-        ? { route: cockpitRoutes.projectHandoff(ws.wsHash) }
-        : { section: "overview" });
+      if (ws) openHandoffTab(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
       // SDD 485 D2 — Plugins opens as its own editor tab, or reveals the one already open for this

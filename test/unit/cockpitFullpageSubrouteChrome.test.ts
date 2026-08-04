@@ -18,7 +18,7 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     // SDD 485 D4 — and `inbox-item` left the same way, one migration shape later. It had been the one
     // subroute WITH a nav tab lit under it; that whole arrangement moved INSIDE the Human Inbox app,
     // where the item is a subroute of the app rather than of Control.
-    expect(src).toContain("const isSubroute = isFleetSubroute || isProjectHandoff;");
+    expect(src).toContain("const isSubroute = isFleetSubroute;");
     expect(src).not.toContain("isStudioSubroute");
     expect(src).not.toContain("activeRoute?.kind === \"task-detail\"");
     expect(src).not.toContain("activeRoute?.kind === \"inbox-item\"");
@@ -43,8 +43,8 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     expect(src).not.toContain("studioMountProps");
     expect(src).not.toContain("control-studio-breadcrumb");
 
-    // t-ace77f — Project Handoff renders the same hoisted breadcrumb, back to Overview.
-    expect(src).toMatch(/breadcrumb = \(\s*<Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-handoff-breadcrumb"/);
+    // SDD 485 D19 — Project Handoff left Control with its renderer and breadcrumb.
+    expect(src).not.toContain("control-handoff-breadcrumb");
 
     // SDD 485 D4 — the inbox-item breadcrumb is gone from HERE, and that is a move rather than a loss:
     // an opened item still goes back to the aggregated list, through the app's own `inbox-item-back`
