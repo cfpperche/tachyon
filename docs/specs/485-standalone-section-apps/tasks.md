@@ -210,6 +210,28 @@ work in parallel only if the second re-applies onto the first before delivery, n
       First migration under the panel line budget (`panelSourceForm.test.ts`, added at D7): 179 lines,
       longest 151. It held with no correction needed.
 
+      **Measured for the last three, so nobody re-derives it** (2026-08-04, after D8 landed):
+
+      | section | branch | component | client state in Control | host source | shared classes |
+      |---|---|---|---|---|---|
+      | Execution | `:1072`, ~16 lines | **extracted** (`cockpit/ExecutionGraphSection.tsx`) | **YES** — `egSelected`, `egFilters` (`useState` at `:779-780`), `egDetail` derived from `m.executionGraph.details[…]` | `buildExecutionGraphSectionVm(deps, wsHash)` — **takes wsHash** | none |
+      | Settings | the final `else`, `:1088`, ~184 lines | **inline** | — | — | `ck-badge` 2, `ck-mono` 5, `ck-panel` 3, `ck-pair-actions` 1, plus ~16 `ck-settings-*` that look section-owned |
+      | Overview | `:943`, ~113 lines | **inline** | — | — | `ck-panel`, `ck-empty`, plus `ck-auto`/`ck-jump`/`ck-metric*`/`ck-overview-actions`/`ck-bridge-list` |
+
+      Three things that follow, and each changes a brief:
+
+      - **Execution's work is the STATE, not the JSX.** Its component is already extracted and its host
+        source already takes a project, so cardinality is settled and extraction is done. What has to move
+        is selection and filter state that currently lives in Control's `App.tsx`. Every migration so far
+        found this state already per-webview by luck (D5–D7) or created one deliberately (D4); this is the
+        first where existing state must be RELOCATED.
+      - **Settings is the largest remaining body and has no branch of its own** — it is the `else`, which
+        also catches unknown sections. Migrating it means first deciding what the fallback becomes when
+        Settings stops being the thing at the end of the chain. That is a real question, not bookkeeping.
+      - **Overview goes last**, and not only for size: it holds the workspace scope `<select>` and one of
+        the two remaining `ck-empty` uses. The other is Control's own no-model fallback, so the shared
+        sheet stays anchored regardless — see the correction above.
+
 - [ ] D9–D10. One PR per remaining dashboard (Overview, Execution,
       Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
