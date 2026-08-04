@@ -225,6 +225,10 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // SDD 485 D11 — Overview is scoped by buildCockpitModel(..., { wsHash }). It was born in Control,
   // so it has no legacy standalone id or persisted shape to reuse.
   { view: "overview", viewId: "tachyonOverview", section: "overview", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D17 — Activity has no launcher tile. Its route and feed source both take the immutable
+  // (workspace, agent) pair, so each pair is one document and two agents may remain open side by side.
+  // The retired viewType still names this exact app; its legacy wsHash/agent state maps without residue.
+  { view: "activity", viewId: "tachyonActivity", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

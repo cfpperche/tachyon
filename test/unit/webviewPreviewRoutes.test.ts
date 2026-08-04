@@ -50,7 +50,6 @@ describe("preview route table", () => {
       // SDD 485 D3 — runtime-ops.css left with its surface, exactly as the plugins sheets did one commit
       // earlier: Runtime Ops is a standalone app with its own route below.
       "/dist/webview/mermaid-block.css",
-      "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
       "/dist/webview/rich-doc.css",
@@ -65,7 +64,6 @@ describe("preview route table", () => {
       "/dist/webview/cockpit.css",
     ]);
     expect(Object.keys(r.fixtures).sort()).toEqual([
-      "agent-activity",
       "agent-probes",
       "approvals",
       "default",
@@ -122,10 +120,7 @@ describe("preview route table", () => {
     // SDD 485 C5 — no `mission` fixture and no `snapshot` push: the Board is its own route now. The
     // nav-pending fixture is what still names a `task-detail:` routeKey, and it carries only init+model
     // plus the pending envelope, because a route Control cannot render pushes no content of its own.
-    // t-610705 (Phase C.2) — the Fleet subroute fixtures: nav section is "fleet" (no embed push of
-    // its own), so only the subroute's own content message rides alongside init+model.
-    const activityMsgs = r.makeMessage(r.fixtures["agent-activity"]!.vm) as Array<{ type: string }>;
-    expect(activityMsgs.map((m) => m.type)).toEqual(["init", "model", "activity"]);
+    // Probes remains a Fleet subroute; Activity moved to its standalone route in D17.
     const probesMsgs = r.makeMessage(r.fixtures["agent-probes"]!.vm) as Array<{ type: string }>;
     expect(probesMsgs.map((m) => m.type)).toEqual(["init", "model", "probes"]);
     const validationsMsgs = r.makeMessage(r.fixtures.validations.vm) as Array<{ type: string }>;
@@ -166,6 +161,21 @@ describe("preview route table", () => {
     const pinNewMsgs = r.makeMessage(r.fixtures["studio-pin-new"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
     expect(pinNewMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
     expect(pinNewMsgs[2]?.studioProtocolVersion).toBe(1);
+  });
+
+  it("declares Activity against the real standalone bundle and host stylesheet list", () => {
+    const r = ROUTES.activity;
+    expect(r.bundle).toBe("/dist/webview/activity.js");
+    expect(r.module).toBe(true);
+    expect(r.cssLinks).toEqual([
+      "/dist/webview/codicon.css",
+      "/dist/webview/design-system.css",
+      "/dist/webview/highlight.css",
+      "/dist/webview/katex.min.css",
+      "/dist/webview/mermaid-block.css",
+      "/dist/webview/activity.css",
+    ]);
+    expect((r.makeMessage(r.fixtures.default.vm) as { type: string }).type).toBe("activity");
   });
 
   it("a route that links the page-frame sheet renders a REAL page frame (t-32c872)", () => {

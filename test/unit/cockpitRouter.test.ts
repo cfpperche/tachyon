@@ -141,6 +141,20 @@ describe("t-b30efd — legacy approval/validation Control routes redirect to Hum
   });
 });
 
+describe("SDD 485 D17 — legacy Control Activity routes redirect to the document app", () => {
+  it("passes the immutable workspace+agent pair through without mounting Activity in Control", async () => {
+    const ws = fakeWorkspace();
+    const opened: Array<{ wsHash: string; agent: string }> = [];
+    const deps = depsFor([target(ws)], {
+      openActivity: (wsHash, agent) => opened.push({ wsHash, agent }),
+    });
+
+    await openCockpit(deps, { route: { kind: "agent-activity", wsHash: ws.wsHash, agent: "claude" } });
+
+    expect(opened).toEqual([{ wsHash: ws.wsHash, agent: "claude" }]);
+  });
+});
+
 describe("navigation epoch — discards stale responses from a superseded route", () => {
   it("a slow section response that resolves AFTER navigating away is never posted", async () => {
     const ws = fakeWorkspace();

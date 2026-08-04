@@ -192,6 +192,8 @@ export interface CockpitDeps {
   taskDetail: CockpitTaskDetail;
   pinDetail?: CockpitPinDetail;
   activity: CockpitActivity;
+  /** D17 compatibility routes leave Control and open the immutable Activity document. */
+  openActivity: (wsHash: string, agent: string) => void;
   probes: CockpitProbes;
   handoff: CockpitHandoff;
   /** t-610705 (Phase D) — StudioPanelManagerBase-based editors migrated onto a Control route
@@ -614,6 +616,7 @@ let openOverviewApp: (() => void) | undefined;
 let openInboxApp: (() => void) | undefined;
 let openInboxItemApp: ((wsHash: string, itemKind: HumanInboxKind, itemId: string) => void) | undefined;
 let openFleetApp: (() => void) | undefined;
+let openActivityApp: ((wsHash: string, agent: string) => void) | undefined;
 
 function navigate(route: CockpitRoute): void {
   const deliberateOverview = route.kind === "section" && route.section === "overview";
@@ -729,6 +732,10 @@ function navigate(route: CockpitRoute): void {
     // t-b30efd — these are compatibility routes only. They can still arrive from pre-cutover panel
     // state and direct Control links, so keep the doors alive while leaving no Control renderer.
     openInboxApp?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "agent-activity") {
+    openActivityApp?.(route.wsHash, route.agent);
     route = routes.section("overview");
   }
   // SDD 485 D11 — every legacy landing route, including malformed-section recovery, funnels here.
@@ -1158,6 +1165,7 @@ export async function openCockpit(
         openInboxApp = undefined;
         openInboxItemApp = undefined;
         openFleetApp = undefined;
+        openActivityApp = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
@@ -1203,6 +1211,7 @@ export async function openCockpit(
   openInboxApp = () => deps.openHumanInbox(controlWorkspaceScope.current);
   openInboxItemApp = (wsHash, itemKind, itemId) => deps.openHumanInboxItem(wsHash, itemKind, itemId);
   openFleetApp = () => deps.openFleet(controlWorkspaceScope.current);
+  openActivityApp = (wsHash, agent) => deps.openActivity(wsHash, agent);
   openRuntimeConfigApp = () => deps.openRuntimeConfig(controlWorkspaceScope.current);
   openExecutionGraphApp = () => deps.openExecutionGraph(controlWorkspaceScope.current);
   openSettingsApp = () => deps.openSettings();
@@ -2166,7 +2175,6 @@ export async function openCockpit(
     // bootstrap global and the client injects it when the lazy section body loads
     // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
-    const activityIsActive = currentRoute.kind === "agent-activity";
     const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
     const handoffIsActive = currentRoute.kind === "project-handoff";
     // t-610705 (Phase D, D0/D1a) — studio-frame.css is shared by every StudioPanelManagerBase-based
@@ -2241,8 +2249,7 @@ export async function openCockpit(
         // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
         // would duplicate the link and fail cockpitCssParity's no-duplicate-link check (its source
         // scan can't tell a real call from one merely mentioned in a comment, so don't write it here).
-        (activityIsActive || handoffIsActive) ? uri("mermaid-block.css") : undefined,
-        activityIsActive ? uri("activity.css") : undefined,
+        handoffIsActive ? uri("mermaid-block.css") : undefined,
         probesIsActive ? uri("probes.css") : undefined,
         handoffIsActive ? uri("handoff.css") : undefined,
         // t-610705 (Phase D, D1b) — Agent Studio's Tailwind utilities sheet loads BEFORE studio-frame.css
@@ -2302,8 +2309,6 @@ export async function openCockpit(
          */
         __tachyonCardPreviewCss: uri("sidebar.css"),
         __tachyonSectionStyles: {
-          "activity-mermaid": uri("mermaid-block.css"),
-          activity: uri("activity.css"),
           probes: uri("probes.css"),
           "handoff-mermaid": uri("mermaid-block.css"),
           handoff: uri("handoff.css"),

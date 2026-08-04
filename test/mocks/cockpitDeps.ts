@@ -18,6 +18,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     // which (wsHash, taskId) it asked for overrides this.
     taskDetail: { getWorkspaces: () => [], openDocument: () => {} },
     activity: { getWorkspaces: () => [] },
+    openActivity: () => {},
     probes: { getWorkspaces: () => [] },
     handoff: { getWorkspaces: () => [] },
     studios: { getWorkspaces: () => [], onChanged: () => {} },

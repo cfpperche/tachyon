@@ -1,6 +1,5 @@
 import type { ComponentChildren } from "preact";
 import { lazy, Suspense } from "preact/compat";
-import { useRef } from "preact/hooks";
 import {
   type CockpitModel,
   type CockpitSectionId,
@@ -15,8 +14,6 @@ import {
 } from "./messages";
 import { Button, PageChrome, EmptyState } from "../shared/ui";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
-import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
-import type { ActivityViewModel } from "../../activity/activityView";
 import type { ProbesVM } from "../probes/messages";
 import type { HandoffDispatch } from "../handoff/App";
 import type { HandoffViewModel } from "../handoff/handoffViewModel";
@@ -58,13 +55,6 @@ import type { StudioDispatch } from "../shared/studio/protocol";
 // the mermaid-block.css sheet with Handoff (see Cockpit.ts's combined eager-styles condition)
 // but under its OWN bootstrap-global key ("activity-mermaid") — same href, distinct id, so the
 // cockpitCssParity key-parity check stays a clean 1:1 client-id ↔ host-key mapping.
-const ActivityApp = lazy(() =>
-  import("../activity/App").then((m) => {
-    loadSectionStylesheet("activity-mermaid");
-    loadSectionStylesheet("activity");
-    return { default: m.App };
-  }),
-);
 // t-610705 (Phase C.2) — CSS co-load, ninth surface: the agent-probes/workspace-probes subroutes of
 // Fleet (read-only, no mermaid content).
 const ProbesApp = lazy(() =>
@@ -161,14 +151,6 @@ export interface CockpitAppProps {
   navPending?: { routeKey: string; phase: "pending" | "slow" | "stalled" };
   /** t-ac79a7 — retry from the stalled banner. */
   onRetryNavigation?: () => void;
-  /** t-610705 (Phase C.2) — the agent-activity subroute of Fleet. */
-  activityVm?: ActivityViewModel;
-  activityPrepended: boolean;
-  activityImages: Record<string, string>;
-  activityDispatch: ActivityDispatch;
-  /** t-a983e1 — host-listed targets for Activity share → agent QuickPicker. */
-  pendingShareAgentTargets?: PendingShareAgentTargets | null;
-  onConsumeShareAgentTargets?: () => void;
   /** t-610705 (Phase C.2) — the agent-probes/workspace-probes subroutes of Fleet. */
   probesVm?: ProbesVM;
   /** t-610705 (Phase C.3) — the Handoff section. */
@@ -205,10 +187,6 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
 /** Countdown for pair-code TTL (mm:ss or "0:00" when expired). */
 
 export function App(p: CockpitAppProps) {
-  // t-610705 (Phase C.2) — declared BEFORE the `!s` early return below so this hook always runs in
-  // the same order every render (the Activity subroute needs the actual overflow:auto ancestor for
-  // its scroll math — window/document.body no longer work now that the standalone panel is retired).
-  const activityScrollRef = useRef<HTMLDivElement>(null);
   // SDD 443 — in-webview QuickPicker for Continue task (replaces vscode.showQuickPick).
   const s = p.strings;
   if (!s) return <div class="ds-empty" />;
@@ -218,7 +196,7 @@ export function App(p: CockpitAppProps) {
   // t-610705 (Phase C.2) — Fleet subroutes want the SAME full-bleed/no-checkedAt-footer treatment
   // as an embedded section, even though their nav section ("fleet") isn't one itself (Fleet's own
   // plain list IS a native page and keeps its checkedAt footer — only its subroutes opt out).
-  const isFleetSubroute = activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
+  const isFleetSubroute = activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
   const isStudioSubroute = !!activeRoute && isStudioRoute(activeRoute);
   // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
   // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
@@ -244,7 +222,7 @@ export function App(p: CockpitAppProps) {
   let body: ComponentChildren = null;
   if (!m) {
     body = <div class="ck-empty">{s.empty}</div>;
-  } else if (activeRoute?.kind === "agent-activity" || activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
+  } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
     // t-610705 (Phase C.2) — Fleet subroutes: same "checked before the section branch" reasoning as
     // the section branch below (nav section reads "fleet" for all three; this renders the content).
     const parent = parentRoute(activeRoute);
@@ -259,21 +237,9 @@ export function App(p: CockpitAppProps) {
       );
     }
     body = (
-      <div class="ck-embed-host" data-testid="control-fleet-subroute" ref={activityScrollRef}>
+      <div class="ck-embed-host" data-testid="control-fleet-subroute">
         <Suspense fallback={<SectionFallback />}>
-          {activeRoute.kind === "agent-activity" ? (
-            <ActivityApp
-              vm={p.activityVm}
-              prepended={p.activityPrepended}
-              images={p.activityImages}
-              dispatch={p.activityDispatch}
-              scrollContainer={activityScrollRef}
-              pendingShareAgentTargets={p.pendingShareAgentTargets}
-              onConsumeShareAgentTargets={p.onConsumeShareAgentTargets}
-            />
-          ) : (
-            <ProbesApp vm={p.probesVm} />
-          )}
+          <ProbesApp vm={p.probesVm} />
         </Suspense>
       </div>
     );

@@ -130,6 +130,8 @@ export interface SectionAppConfig<K extends string = string> {
   /** stylesheet filenames under `dist/webview`, IN ORDER (codicon → design-system → the app's own). */
   styleFiles: readonly string[];
   title(target: SectionPanelTarget): string;
+  /** Optional body class for a surface-wide theme mode (for example Activity's forced code theme). */
+  bodyClass?(target: SectionPanelTarget): string | undefined;
   /**
    * editor-tab icon, resolved via `media/icons/{light,dark}/<name>.svg`.
    *
@@ -379,6 +381,7 @@ export class SectionPanelManager<K extends string = string> {
     if (iconName) panel.iconPath = panelIcon(this.extensionUri, iconName);
 
     const uri = (file: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, file)).toString();
+    const bodyClass = config.bodyClass?.(target);
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title,
@@ -389,6 +392,7 @@ export class SectionPanelManager<K extends string = string> {
       module: true,
       mode: "live",
       surface: config.app.viewId,
+      ...(bodyClass ? { bodyClass } : {}),
       ...(config.extend?.length ? { extend: config.extend } : {}),
       ...(config.csp?.imgBlob ? { imgBlob: true } : {}),
       ...(config.csp?.connectSrc ? { connectSrc: true } : {}),

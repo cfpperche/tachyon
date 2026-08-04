@@ -78,12 +78,9 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // not the editor, so sidebar.css overrides the design system's editor background and page pad on `html, body`
   // (its own comment says so). Shared shell, shared kit, own page chrome → `extend`, not an exception entry.
   { viewId: "tachyonSidebar", view: "sidebar", hostFile: "src/webview/SidebarPrototype.ts", mode: "live", converted: true, editorHome: "sidebar", posture: "extend", extensionPoints: ["page-chrome"] },
-  // t-610705 (SDD 410 Phase C.2, 2026-07-21) — the standalone Activity panel was retired: it's a
-  // Control subroute now (src/webview/activity/App.tsx stays, lazy-imported by cockpit/App.tsx;
-  // standalone bundle + harness route retired — use ?view=cockpit&fixture=agent-activity instead).
-  // The trusted serializer for the legacy "tachyonActivity" viewType stays registered in
-  // extension.ts: a revived pre-410 panel disposes itself and redirects into Control → the agent's
-  // activity subroute.
+  // SDD 485 D17 — Activity is standalone again, keyed as a document by its immutable workspace+agent
+  // route identity. It mounts through SectionPanelManager and consumes the shared .ds-page chrome.
+  { viewId: "tachyonActivity", view: "activity", hostFile: "src/webview/ActivityPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "extend", extensionPoints: ["page-chrome"] },
   // t-610705 (SDD 410 Phase C.3, 2026-07-21) — the standalone Project Handoff panel was retired:
   // it's a Control section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx;
   // standalone bundle + harness route retired — use ?view=cockpit&fixture=handoff instead). The

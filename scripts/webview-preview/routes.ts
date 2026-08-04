@@ -119,10 +119,30 @@ export const ROUTES: Record<string, Route> = {
   },
   // t-6e2952 — the Control launcher has no route of its own: it is the "Control" TAB of the `sidebar`
   // route above (same bundle, same fixtures) — open ?view=sidebar and select the second tab.
-  // t-610705 (SDD 410 Phase C.2) — the standalone "activity" and "probes" routes previewed the
-  // retired Activity/Probes panels; both are Fleet subroutes now — use ?view=cockpit&fixture=
-  // agent-activity / agent-probes (same App.tsx components, same fixture VMs, via the cockpit
-  // route's activeRoute injection above).
+  // SDD 485 D17 — Activity is standalone again. The same captured VMs now drive the shipped
+  // activity.js entry directly, with the exact stylesheet list ActivityPanel links.
+  activity: {
+    bundle: "/dist/webview/activity.js",
+    cssLinks: [
+      CODICON,
+      DESIGN_SYSTEM,
+      "/dist/webview/highlight.css",
+      "/dist/webview/katex.min.css",
+      "/dist/webview/mermaid-block.css",
+      "/dist/webview/activity.css",
+    ],
+    frame: { w: 880, h: 900 },
+    fixtures: activityFixtures as Record<string, Fixture>,
+    module: true,
+    globals: {
+      __mermaidSrc: "/dist/webview/mermaid.js",
+      __katexSrc: "/dist/webview/katex.js",
+      __katexCssUri: "/dist/webview/katex.min.css",
+      __codeThemeForced: "auto",
+    },
+    makeMessage: (vm) => activityMessage("preview", "agent", vm as never),
+  },
+  // Probes remains a Control Fleet subroute for D18.
   // t-b5dcae — the standalone "control-inspector" route previewed the Engine/Bridge Control
   // Inspector POC, which was dead code (ControlInspector.ts had zero importers). The real domain
   // logic (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly,
@@ -143,7 +163,6 @@ export const ROUTES: Record<string, Route> = {
       // SDD 485 D3 — and no runtime-ops sheet: Runtime Ops has its own route in this table now, and
       // Control stopped linking it in the same change (cockpitCssParity asserts the two agree).
       "/dist/webview/mermaid-block.css",
-      "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
       "/dist/webview/rich-doc.css",
@@ -165,7 +184,8 @@ export const ROUTES: Record<string, Route> = {
       && fixture.vm.section !== "settings"
       && name !== "runtime-config"
       && name !== "settings"
-      && name !== "fleet")) as Record<string, Fixture>,
+      && name !== "fleet"
+      && name !== "agent-activity")) as Record<string, Fixture>,
     // SDD 410 Phase A — cockpit.js is now ESM with esbuild code-split chunks; the harness must load it as
     // a module (classic <script> injection dies with "Cannot use import statement outside a module").
     module: true,
@@ -207,10 +227,7 @@ export const ROUTES: Record<string, Route> = {
       // that fixture depicts CONTROL waiting on a navigation, and the routeKey is the wire string it
       // waits on, not a screen this route renders.
       const activeRoute = (model as { activeRoute?: { kind?: string; wsHash?: string; agent?: string } }).activeRoute;
-      if (activeRoute?.kind === "agent-activity" && activeRoute.wsHash && activeRoute.agent) {
-        const feed = activityFixtures.default?.vm;
-        if (feed) msgs.push(activityMessage(activeRoute.wsHash, activeRoute.agent, feed));
-      } else if (activeRoute?.kind === "project-handoff") {
+      if (activeRoute?.kind === "project-handoff") {
         // t-ace77f — Handoff moved from a section push to a detail route: same fixture VM, same
         // envelope, now keyed off the route instead of the tab.
         const handoff = handoffFixtures.default?.vm;
