@@ -381,10 +381,44 @@ work in parallel only if the second re-applies onto the first before delivery, n
       `approval` out of its per-kind sweep — it now invokes what Review asks for and asserts the ITEM
       that opens, for every kind in the inventory.
 
-- [ ] D17. **Agent Activity** — `document`, keyed by `(wsHash, agent)`. Reached by
-      `tachyon.openAgentActivity` (extension.ts:3354), the legacy serializer (:2540) and the Fleet app's
-      own activity action (:2488, which goes through the command). Carries the most state of any
-      remaining surface: a scroll container, prepended history, an image map and the share-agent targets.
+- [x] D17. **Agent Activity** — the first renderer found by the corrected post-D16 inventory, and a
+      `document` keyed by `(wsHash, agent)`. This cardinality was confirmed in both places that existed
+      before the migration rather than chosen from the desired UX: `cockpitRoutes.agentActivity(wsHash,
+      agent)` takes the pair, and `startActivityFeed(workspace, agent, …)` reads a different durable log for
+      each agent. The generic manager therefore opens three distinct tabs for `(A, claude)`, `(A, codex)`
+      and `(B, claude)`, while reopening one exact pair reveals it.
+
+      Both measured doors survive and are tests, not comments. `tachyon.openAgentActivity` resolves the
+      workspace exactly as before and calls `activityPanels.open(wsHash, agent)`; Fleet's activity action
+      still enters through that command. The retired `tachyonActivity` viewType is REUSED because its
+      legacy `{wsHash, agent}` record maps without residue onto `{project, identity}`; the serializer now
+      revives the panel it is handed through `ActivityPanelManager.deserialize` instead of disposing it and
+      redirecting through Control. The palette's “Open Raw Transcript” action moved with the app and now
+      resolves the visible Activity document rather than Control's current route.
+
+      **The CSS count produced the fifth distinct answer only in wording, not another implementation
+      branch.** Grepping `cockpit.css` first found ZERO Activity/transcript root rules: `activity.css`
+      already owned the complete surface, so nothing moved, copied or linked and Control stopped linking
+      that sheet. Activity does deliberately extend shared `PageChrome`: its transcript header is sticky
+      and theme-aware, so both the manifest and host declare the `page-chrome` extension point instead of
+      silently claiming default conformance. Its standalone root is `.ds-page`; the forced code-theme body
+      class and lazy Mermaid/KaTeX globals also moved with the surface rather than being lost in the cut.
+
+      **The brief's state measurement was right in inventory and wrong in ownership.** Prepended history,
+      the image map and pending share targets really were Control-client state and moved into
+      `activity/main.tsx`. But the “scroll container (a host ref)” was not host state: it was a PREACT ref
+      in `cockpit/App.tsx`, passed from Control's renderer shell only because the embedded Activity needed
+      its actual overflow ancestor. In the standalone app it is created by Activity's own client root — no
+      extension-host slot and no cross-panel state. Each panel's feed, allow-listed paths, last VM,
+      transcript path and async share liveness now live inside that panel's `bind`; a shared slot would let
+      one agent's file/share action resolve against another agent's transcript, the same worst-defect shape
+      D4 warned about.
+
+      Static guard `activityCutover.test.ts` proves Control has no lazy Activity import, render branch or
+      client state and was proven RED with an injected `const ActivityApp` residue before being trusted
+      green. Visual evidence at 880 and 360 uses the real `activity.js` route and exact host stylesheet
+      list: header controls wrap cleanly at 360, chat sides stay distinct, and long tool rows truncate
+      inside the viewport (`ev-2026-08-04T17:06:42.962Z-3`).
 - [ ] D18. **Probes** — one renderer, two identities: `agentProbes(wsHash, caller)` and
       `workspaceProbes(wsHash)`. Doors: `tachyon.openProbes` (:3398) and the serializer (:2562).
 - [ ] D19. **Project Handoff** — `dashboard`, keyed by project alone. Doors:

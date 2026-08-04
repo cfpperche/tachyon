@@ -28,17 +28,6 @@ import {
 } from "./messages";
 import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
-import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
-import type { ActivityViewModel } from "../../activity/activityView";
-import {
-  ACTIVITY,
-  IMAGE_DATA,
-  SHARE_AGENT_TARGETS,
-  copyShareTextMessage,
-  shareExternalMessage,
-  shareToAgentMessage,
-  type ExternalShareChannel,
-} from "../activity/messages";
 import type { ProbesVM } from "../probes/messages";
 import { PROBES } from "../probes/messages";
 import type { HandoffDispatch } from "../handoff/App";
@@ -93,11 +82,6 @@ function CockpitRoot() {
   /** Ephemeral pair offer — not stored in polled model. */
   const [companionPairOffer, setCompanionPairOffer] = useState<CompanionPairOffer | undefined>(undefined);
   const [auto, setAuto] = useState(true);
-  const [activityVm, setActivityVm] = useState<ActivityViewModel | undefined>(undefined);
-  const [activityPrepended, setActivityPrepended] = useState(false);
-  const [activityImages, setActivityImages] = useState<Record<string, string>>({});
-  /** t-a983e1 — host-listed agents for Activity "Send to agent" product QuickPicker. */
-  const [pendingShareAgentTargets, setPendingShareAgentTargets] = useState<PendingShareAgentTargets | null>(null);
   const [probesVm, setProbesVm] = useState<ProbesVM | undefined>(undefined);
   const [handoffVm, setHandoffVm] = useState<HandoffViewModel | undefined>(undefined);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
@@ -206,16 +190,6 @@ function CockpitRoot() {
           setCompanionPairOffer(undefined);
         }
         companionPairSnapshot.current = { paired, deviceKey };
-        // t-610705 (Phase C.2, hardening dueto probe-2d90286d) — Control hosts at most one active
-        // Activity feed; a stale image lingering after navigating to a different agent/workspace is
-        // low-risk (content-addressed ids rarely collide) but grows unbounded across a session, so
-        // drop it the moment the identity actually changes (never on a same-identity re-push).
-        const prevActivity = activeRouteRef.current?.kind === "agent-activity" ? activeRouteRef.current : undefined;
-        const nextActivity = next.activeRoute?.kind === "agent-activity" ? next.activeRoute : undefined;
-        if (!nextActivity || !prevActivity || prevActivity.wsHash !== nextActivity.wsHash || prevActivity.agent !== nextActivity.agent) {
-          setActivityVm(undefined);
-          setActivityImages({});
-        }
         activeRouteRef.current = next.activeRoute;
         if (next.studioMountNonce !== studioMountNonceRef.current) {
           studioMountNonceRef.current = next.studioMountNonce;
@@ -223,31 +197,7 @@ function CockpitRoot() {
         }
         setModel(next);
       }
-      else if (type === ACTIVITY && raw.vm) {
-        // t-610705 (Phase C.2, hardening dueto probe-2d90286d) — every Activity message carries its
-        // own feed identity (wsHash/agent); reject anything that doesn't match the CURRENT route
-        // rather than trusting message-arrival order alone (a delayed post from a torn-down feed
-        // must never repopulate whatever feed replaced it).
-        const route = activeRouteRef.current;
-        if (route?.kind === "agent-activity" && route.wsHash === raw.wsHash && route.agent === raw.agent) {
-          setActivityVm(raw.vm as ActivityViewModel);
-          setActivityPrepended(raw.prepended === true);
-        }
-      } else if (type === IMAGE_DATA && typeof raw.id === "string" && typeof raw.dataUri === "string") {
-        const route = activeRouteRef.current;
-        if (route?.kind === "agent-activity" && route.wsHash === raw.wsHash && route.agent === raw.agent) {
-          const id = raw.id;
-          const dataUri = raw.dataUri;
-          setActivityImages((prev) => (prev[id] ? prev : { ...prev, [id]: dataUri }));
-        }
-      } else if (type === SHARE_AGENT_TARGETS && typeof raw.sequence === "number" && typeof raw.key === "string") {
-        const targets = Array.isArray(raw.targets)
-          ? (raw.targets as Array<{ name?: string; description?: string }>)
-              .filter((t) => typeof t.name === "string" && t.name)
-              .map((t) => ({ name: t.name!, description: typeof t.description === "string" ? t.description : "" }))
-          : [];
-        setPendingShareAgentTargets({ sequence: raw.sequence, key: raw.key, targets });
-      } else if (type === PROBES && raw.vm) {
+      else if (type === PROBES && raw.vm) {
         setProbesVm(raw.vm as ProbesVM);
       } else if (type === HANDOFF && raw.vm) {
         setHandoffVm(raw.vm as HandoffViewModel);
@@ -331,19 +281,6 @@ function CockpitRoot() {
     };
   }, [navPending?.routeKey, navPending?.phase]);
 
-  const activityDispatch: ActivityDispatch = useMemo(
-    () => ({
-      openFile: (path: string) => post({ type: "openFile", path }),
-      terminal: () => post({ type: "terminal" }),
-      loadOlder: () => post({ type: "loadOlder" }),
-      copyShareText: (sequence, key) => post(copyShareTextMessage(sequence, key)),
-      shareExternal: (sequence, key, channel: ExternalShareChannel) =>
-        post(shareExternalMessage(sequence, key, channel)),
-      shareToAgent: (sequence, key, toAgent?) => post(shareToAgentMessage(sequence, key, toAgent)),
-    }),
-    [],
-  );
-
   const handoffDispatch: HandoffDispatch = useMemo(
     () => ({
       refresh: () => post(refreshHandoffAction()),
@@ -392,12 +329,6 @@ function CockpitRoot() {
       onIssueCompanionPairCode={(wsHash) => post(issueCompanionPairCodeAction(wsHash))}
       companionPairOffer={companionPairOffer}
       onPost={(action) => post(action)}
-      activityVm={activityVm}
-      activityPrepended={activityPrepended}
-      activityImages={activityImages}
-      activityDispatch={activityDispatch}
-      pendingShareAgentTargets={pendingShareAgentTargets}
-      onConsumeShareAgentTargets={() => setPendingShareAgentTargets(null)}
       probesVm={probesVm}
       handoffVm={handoffVm}
       handoffDispatch={handoffDispatch}
@@ -438,8 +369,6 @@ function CockpitRoot() {
         }
         // t-610705 (Phase C.2) — same optimistic-clear reasoning as activeRoute above, for the
         // feed-identity state the MODEL branch's reset otherwise only clears on the host's next reply.
-        setActivityVm(undefined);
-        setActivityImages({});
         post(setSectionAction(section));
       }}
       onSwitchWorkspace={(wsHash: string) => {

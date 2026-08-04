@@ -266,6 +266,106 @@
     ]
   },
   {
+    "view": "activity",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
+    ]
+  },
+  {
+    "view": "activity",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=empty",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
+    ]
+  },
+  {
+    "view": "activity",
+    "fixture": "interrupted",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=interrupted",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
+    ]
+  },
+  {
+    "view": "activity",
+    "fixture": "mermaid-nav",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=mermaid-nav",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
+    ]
+  },
+  {
+    "view": "activity",
+    "fixture": "grok-feed",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=grok-feed",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Activity",
+    "aliases": [
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
+    ]
+  },
+  {
     "view": "cockpit",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=default",
@@ -290,27 +390,6 @@
     "view": "cockpit",
     "fixture": "nav-pending",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=nav-pending",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "agent-activity",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=agent-activity",
     "frame": {
       "w": 1100,
       "h": 720

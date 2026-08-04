@@ -32,7 +32,6 @@ import {
   refreshCockpitHandoff,
   refreshCockpitStudioReferenceData,
   markControlSourceResync,
-  openCockpitAgentTranscript,
   decodeCockpitPanelState,
   COCKPIT_VIEW_TYPE,
   type CockpitPanelState,
@@ -47,7 +46,7 @@ import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { resolveCockpitSection } from "./cockpit/resolveSection.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
-import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
+import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
@@ -1967,6 +1966,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     activity: {
       getWorkspaces: () => workspaces().map((ws) => ws.activity),
     },
+    openActivity: (wsHash, agent) => activityPanels.open(wsHash, agent),
     probes: {
       getWorkspaces: () => workspaces().map((ws) => ws.probe),
     },
@@ -2363,6 +2363,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const callback of deferredWorkspacePanelRevives.splice(0)) callback();
   };
 
+  const activityPanels = new ActivityPanelManager(
+    context.extensionUri,
+    () => workspaces().map((workspace) => workspace.activity),
+  );
+  context.subscriptions.push({ dispose: () => activityPanels.dispose() });
+
   const engineHost = makeCockpitDeps();
   const enginePanels = new EnginePanelManager(context.extensionUri, {
     collect: engineHost.collect,
@@ -2533,12 +2539,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => {
     taskDetailPanels.deserialize(panel, state);
   });
-  registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => {
-    panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    if (!state?.wsHash || !state?.agent) return;
-    void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.agentActivity(state.wsHash, state.agent) });
-  });
+  registerTrustedPanelSerializer<ActivityPanelState | SectionPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => {
+    activityPanels.deserialize(panel, state);
+  }, { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => {
     panel.dispose();
     if (isCockpitSingletonClaimed()) return;
@@ -3353,10 +3356,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // command is mostly invoked from a Fleet row that already knows its own wsHash).
     vscode.commands.registerCommand("tachyon.openAgentActivity", async (agent: string, hash?: string) => {
       const ws = hash ? byHash(hash) : workspaces()[0];
-      if (ws) await openCockpit(makeCockpitDeps(), { route: cockpitRoutes.agentActivity(ws.wsHash, agent) });
+      if (ws) activityPanels.open(ws.wsHash, agent);
     }),
     // 0.29.1 — raw transcript escape hatch, demoted from the Activity header button to a palette command.
-    vscode.commands.registerCommand("tachyon.openAgentTranscript", () => openCockpitAgentTranscript()),
+    vscode.commands.registerCommand("tachyon.openAgentTranscript", () => activityPanels.openTranscript()),
     // spec 245 — open the read-only Project Handoff panel for a workspace root (from the sidebar header button).
     // spec 297 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
     // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
