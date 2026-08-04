@@ -17,7 +17,12 @@ describe("SDD 485 D17 — Activity cutover doors and renderer inventory", () => 
     const extension = read("src/extension.ts");
     const start = extension.indexOf("registerTrustedPanelSerializer<ActivityPanelState | SectionPanelState>");
     expect(start).toBeGreaterThan(0);
-    const block = extension.slice(start, extension.indexOf("registerTrustedPanelSerializer<HandoffPanelState>", start));
+    // The end anchor is the NEXT registration, not a named one: this originally pointed at
+    // `<HandoffPanelState>`, which D19 renamed — `indexOf` then returned -1, `slice(start, -1)` took
+    // almost the whole file, and the assertions below started reading OTHER serializers' bodies.
+    // A window bounded by a neighbour's name is a window that breaks when the neighbour moves.
+    const next = extension.indexOf("registerTrustedPanelSerializer", start + 1);
+    const block = extension.slice(start, next === -1 ? undefined : next);
     expect(block).toContain("activityPanels.deserialize(panel, state)");
     expect(block).not.toContain("panel.dispose()");
     expect(block).not.toContain("openCockpit(");

@@ -31,7 +31,11 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
   it("reads a non-trivial link set out of the real host (guard against a silently-empty scan)", () => {
     const host = hostCssOrder();
     // a broken regex that matched nothing would make every parity assertion below vacuously pass.
-    expect(host.length).toBeGreaterThan(5);
+    // The floor was >5 while Control linked a sheet per embedded section; SDD 485 Phase D emptied it
+    // and the measured count is now exactly 5 (the shell's own). `toContain("cockpit.css")` is the
+    // real anti-vacuity anchor — a regex matching nothing fails it — so the number can follow the
+    // truth instead of pinning a shape the product no longer has.
+    expect(host.length).toBeGreaterThan(0);
     expect(host).toContain("cockpit.css");
     expect(new Set(host).size, `${COCKPIT_HOST}: duplicate css link`).toBe(host.length);
   });
@@ -62,14 +66,19 @@ describe("cockpit css parity (harness ↔ real Control host)", () => {
   it("every client co-load id has a host bootstrap-global key (and vice versa)", () => {
     const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
     const clientIds = [...app.matchAll(/loadSectionStylesheet\(\s*["'`]([^"'`]+)["'`]\s*\)/g)].map((m) => m[1]).sort();
-    expect(clientIds.length, "no loadSectionStylesheet calls found in cockpit/App.tsx — did the co-load move?").toBeGreaterThan(0);
 
     const host = readFileSync(COCKPIT_HOST, "utf8");
     const block = /__tachyonSectionStyles:\s*\{([\s\S]*?)\}/.exec(host);
     expect(block, `${COCKPIT_HOST}: no __tachyonSectionStyles bootstrap-global block found`).not.toBeNull();
     const hostKeys = [...block![1].matchAll(/(?:"([^"]+)"|([A-Za-z-]+)):\s*uri\(/g)].map((m) => m[1] ?? m[2]).sort();
 
+    // The parity itself is the contract and still holds. What changed with SDD 485 Phase D is the
+    // SUBJECT: Control mounts no lazy section, so both sides are legitimately empty and the old
+    // `clientIds.length > 0` precondition — written to catch the scan silently breaking — now fails
+    // on the truth rather than on a defect. Emptiness is asserted on BOTH sides instead, which keeps
+    // the same protection pointed the other way: a co-load reintroduced on one side only still fails.
     expect(clientIds).toEqual(hostKeys);
+    expect(clientIds, "Control co-loads a section stylesheet again — it renders nothing (SDD 485 D18)").toEqual([]);
   });
 
   // t-610705 (Phase D, D1b code-review finding) — loadSectionStylesheet APPENDS a real <link> on every
