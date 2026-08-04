@@ -1,8 +1,7 @@
 # Disposable Dev Host fixture — t-588644: one refused profile must not take the roster with it.
 #
-# `agents: {}` alone is not a loadable roster ("must be a non-empty mapping ... or declare a
-# 'terminals' block"), so the terminal below is the non-empty half — and it is also how you run
-# ./drift.sh without leaving the EDH.
+# t-f67185 — empty agents alone is loadable. The shell terminal remains for a REAL reason: run
+# ./drift.sh without leaving the EDH (not a roster non-empty workaround).
 #
 # Both agents are created by hand in Agent Studio. They cannot be shipped here: a canonical agent's
 # authority lives in the host secret store keyed by the workspace hash, and an `agent.yml` without
