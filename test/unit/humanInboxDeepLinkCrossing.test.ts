@@ -19,6 +19,7 @@ import { savedAgentRemovalProposalPath } from "../../src/agents/savedAgentRemova
 import { workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
 import type { WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import type { Validation } from "../../src/validations/types.js";
+import { ProposalStore } from "../../src/schedule/ProposalStore.js";
 
 /**
  * t-d16698 — the Review of a Saved Agent proposal must OPEN the proposal.
@@ -73,6 +74,7 @@ const ITEM_ID: Record<HumanInboxKind, string> = {
   approval: "a-000001",
   "saved-agent-proposal": "sp-45042f",
   "saved-agent-removal": "sr-45042f",
+  "schedule-proposal": "45042f",
   validation: "v-1",
 };
 
@@ -127,6 +129,11 @@ function liveWorkspace(): { manager: HumanInboxPanelManager; root: string } {
   const removalFile = savedAgentRemovalProposalPath(root, removal.id);
   fs.mkdirSync(path.dirname(removalFile), { recursive: true });
   fs.writeFileSync(removalFile, `${JSON.stringify(removal)}\n`);
+  const schedules = new ProposalStore(root);
+  schedules.create("nightly", { every: "1h", run: "test" }, "claude", "keep it green");
+  const scheduleFile = JSON.parse(fs.readFileSync(schedules.file, "utf8")) as { proposals: Array<{ id: string }> };
+  scheduleFile.proposals[0]!.id = ITEM_ID["schedule-proposal"];
+  fs.writeFileSync(schedules.file, `${JSON.stringify(scheduleFile)}\n`);
 
   const validation: Validation = {
     id: ITEM_ID.validation,

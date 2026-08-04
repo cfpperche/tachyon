@@ -443,8 +443,8 @@ export interface BridgeDeps {
   scheduler?: Scheduler;
   /** Pending agent-proposed schedules — enables propose_schedule. */
   proposals?: ProposalStore;
-  /** Fired after a proposal is created — wired to the sidebar refresh + a human toast. */
-  onScheduleProposed?: (name: string, by: string) => void;
+  /** Fired after a proposal is created — routed to the exact Human Inbox item. */
+  onScheduleProposed?: (proposal: { id: string; name: string; by: string }) => void;
   /** spec 214 — verify-gate handoff: the recorded result + freshly-computed staleness for an agent (undefined → no verify/worktree). Enables verify state in list_agents. */
   verifyInfo?: (agent: string) => Promise<VerifyHandoff | undefined>;
   /** spec 214 — run an agent's declared verify-gate in its worktree, returning the result. Enables verify_agent. */
@@ -5433,8 +5433,13 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const problem = validateProposedSchedule(schedule);
         if (problem) return fail(new Error(problem));
         const by = proposalAuthor(deps);
+        if (readAgentProfileGrants(deps.workspaceRoot, by)?.proposeSavedAgent !== true) {
+          return fail(new Error(
+            `agent '${by}' has no 'grants.proposeSavedAgent' capability in its profile, so it cannot propose a schedule`,
+          ));
+        }
         const proposal = deps.proposals.create(name, schedule, by, reason);
-        deps.onScheduleProposed?.(name, by);
+        deps.onScheduleProposed?.({ id: proposal.id, name, by });
         return ok(JSON.stringify({ status: "pending human approval", id: proposal.id, name }));
       } catch (err) {
         return fail(err);

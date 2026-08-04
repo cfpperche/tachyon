@@ -17,6 +17,7 @@ import {
   closeInboxValidationAction,
   decideSavedAgentProposalAction,
   decideSavedAgentRemovalAction,
+  decideScheduleProposalAction,
   openInboxItemAction,
   pollInboxAction,
   readyMessage,
@@ -123,6 +124,8 @@ function HumanInboxRoot() {
         post(decideSavedAgentProposalAction(id, digest, decision, reason)),
       decideSavedAgentRemoval: (id: string, digest: string, decision: "approve" | "deny", reason?: string) =>
         post(decideSavedAgentRemovalAction(id, digest, decision, reason)),
+      decideScheduleProposal: (id: string, decision: "approve" | "deny") =>
+        post(decideScheduleProposalAction(id, decision)),
     }),
     [],
   );

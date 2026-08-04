@@ -36,6 +36,7 @@ import {
   type SavedAgentRemovalCommitResult,
 } from "../agents/savedAgentRemovalProposalCommit.js";
 import { workspaceConfigSha256 } from "../config/agentProfileGrants.js";
+import { ProposalStore } from "../schedule/ProposalStore.js";
 
 /**
  * The viewType, and it is NEW for a reason none of the five previous calls in this spec met: **there is no
@@ -104,6 +105,7 @@ export interface HumanInboxDeps {
     proposalId: string;
     approvedDigest: string;
   }) => Promise<SavedAgentRemovalCommitResult>;
+  decideScheduleProposal?: (wsHash: string, id: string, decision: "approve" | "deny") => Promise<void>;
 }
 
 /** The two workspace targets one panel reads, resolved together so an approvals-only workspace is visible. */
@@ -275,6 +277,7 @@ export class HumanInboxPanelManager {
       savedAgentRemovals: removals.proposals.map((proposal) =>
         buildSavedAgentRemovalProposalReview({ proposal, currentConfigSha256: configSha, nowMs })),
       untrustedSavedAgentRemovals: removals.unreadable,
+      scheduleProposals: new ProposalStore(approvalWs.workspaceRoot).list(),
       ...(configured === undefined ? {} : { staleAfterHours: configured }),
     });
   }
@@ -506,6 +509,16 @@ export class HumanInboxPanelManager {
       }
       return;
     }
+    if (m.type === "decideScheduleProposal" && typeof m.id === "string" && (m.decision === "approve" || m.decision === "deny")) {
+      try {
+        if (!this.deps.decideScheduleProposal) throw new Error(vscode.l10n.t("This window cannot decide schedule proposals."));
+        await this.deps.decideScheduleProposal(sources.approvalWs.wsHash, m.id, m.decision);
+        io.close();
+      } catch (err) {
+        session.post(humanInboxErrorMessage(err instanceof Error ? err.message : String(err)));
+      }
+      return;
+    }
     if (m.type === "closeInboxValidation" || m.type === "assignInboxValidation") {
       // The validation path, and it can never authorize anything: it reaches this workspace's own validation
       // target, which is the only object that owns these operations.
@@ -537,7 +550,7 @@ export class HumanInboxPanelManager {
 }
 
 function isInboxKind(value: unknown): value is HumanInboxKind {
-  return value === "approval" || value === "validation" || value === "saved-agent-proposal" || value === "saved-agent-removal";
+  return value === "approval" || value === "validation" || value === "saved-agent-proposal" || value === "saved-agent-removal" || value === "schedule-proposal";
 }
 
 /**

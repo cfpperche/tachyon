@@ -142,6 +142,8 @@ const INBOX_REVIEW_TARGET: Record<HumanInboxKind, (workspaceHash: string, id: st
     ["tachyon.openHumanInbox", workspaceHash, { kind: "saved-agent-proposal", id }],
   "saved-agent-removal": (workspaceHash, id) =>
     ["tachyon.openHumanInbox", workspaceHash, { kind: "saved-agent-removal", id }],
+  "schedule-proposal": (workspaceHash, id) =>
+    ["tachyon.openHumanInbox", workspaceHash, { kind: "schedule-proposal", id }],
 };
 
 /**
@@ -238,6 +240,18 @@ export function routeSavedAgentRemovalProposal(
       proposal.name,
       proposal.proposer,
     ),
+  });
+}
+
+export function routeScheduleProposal(
+  host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
+  workspaceHash: string,
+  proposal: { id: string; name: string; proposer: string },
+): void {
+  routeHumanInboxItem(host, workspaceHash, {
+    kind: "schedule-proposal",
+    id: proposal.id,
+    message: host.t("Schedule proposal {0} — '{1}' proposed by '{2}'", proposal.id, proposal.name, proposal.proposer),
   });
 }
 
@@ -364,6 +378,9 @@ export async function startDaemonEngineService(
       },
       onSavedAgentRemovalProposed: (proposalWorkspace, proposal) => {
         routeSavedAgentRemovalProposal(host, proposalWorkspace.wsHash, proposal);
+      },
+      onScheduleProposed: (proposalWorkspace, proposal) => {
+        routeScheduleProposal(host, proposalWorkspace.wsHash, proposal);
       },
       onHumanValidationPending: (validationWorkspace, validation) => {
         routeHumanValidationPending(host, validationWorkspace.wsHash, validation);

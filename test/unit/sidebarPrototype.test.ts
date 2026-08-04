@@ -342,6 +342,7 @@ describe("SidebarPrototypeProvider", () => {
         name: "actual-nightly",
         by: "codex",
         createdAt: "2026-07-14T00:00:00.000Z",
+        expiresAt: "2026-07-15T00:00:00.000Z",
         schedule: { every: "1h", run: "test" },
       }],
     });
@@ -356,7 +357,7 @@ describe("SidebarPrototypeProvider", () => {
     expect(calls).toEqual([]);
     expect(__getWarningMessageCalls()).toEqual([
       { message: "Tachyon: Delete schedule 'nightly' from tachyon.yml?", options: { modal: true }, actions: ["Delete"] },
-      { message: "Tachyon: Reject the proposed schedule 'actual-nightly'?", options: { modal: true }, actions: ["Reject"] },
+      { message: "Tachyon: Reject the proposed schedule 'abcdef123457'?", options: { modal: true }, actions: ["Reject"] },
     ]);
 
     __setWarningMessageResult("Delete");
