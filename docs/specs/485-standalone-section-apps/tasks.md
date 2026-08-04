@@ -165,7 +165,30 @@ work in parallel only if the second re-applies onto the first before delivery, n
       lies is worse than two copies. Two consumers, so it LINKS — the same branch as D5, reached by the
       same counting rule rather than by habit.
 
-- [ ] D7–D10. One PR per remaining dashboard (Overview, Fleet, Execution,
+- [x] D7. **Fleet** — the seventh migration, and the fourth shape the CSS question has taken. Fleet was
+      the last Control-side consumer of `ck-card-list`, which raised a question none of D4–D6 had: when a
+      section leaves, does Control still link the shared sheet it was linking FOR that section? The
+      Phase A contract treats a sheet linked without being anchored as a failure (the mirror rule), so
+      this could not be answered by preference. Counted: after Fleet leaves, Control has **0**
+      `ck-card-list`, **2** `ck-empty`, **0** `ci-*`. The link STAYS, anchored by `ck-empty` alone.
+
+      Worth carrying into D8–D10: the anchor is now one class. When whichever section still uses
+      `ck-empty` migrates, the count goes to zero and Control must STOP linking
+      `engine-workspace.css` — a fifth shape, and the mirror rule will say so rather than leaving it to
+      whoever notices.
+
+      **The instruction that failed twice, and what replaced it.** This panel arrived with an 884-char
+      strings table on one line — from a brief that said not to, and named D5's minified `EnginePanel`
+      as the example of what not to do. D5's cost two follow-up tasks and two agents to repair. The
+      second occurrence is the evidence that the instruction is the wrong mechanism: "write readable
+      code" cannot be checked, so it lasts only as long as the reviewer remembers it.
+      `test/unit/panelSourceForm.test.ts` now budgets panel-host line length (200 chars, measured — 24 of
+      25 hosts sit at ≤168, the two minified ones were 884 and 1014), with `PluginsPanel` exempted by
+      name and reason. It matters because panel hosts are where this repo keeps its decisions; a panel
+      written as one line has nowhere to put the why, and the reasoning ends up in a journal the next
+      reader will not know to open.
+
+- [ ] D8–D10. One PR per remaining dashboard (Overview, Execution,
       Runtime Config, Settings). Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
