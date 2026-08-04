@@ -4,6 +4,7 @@ import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 import { STUDIO_PROTOCOL_VERSION } from "../../src/webview/shared/studio/protocol";
 import type { TaskDetailEntity } from "../../src/webview/task-studio/domain";
+import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 
 // spec 342 T7 — Pilot B: Task Studio fields row (Kind/Priority/Assignee Kit migration).
 //
@@ -140,22 +141,22 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
     await page.waitForSelector('[data-slot="select-trigger"]', { visible: true, timeout: 5000 });
 
     await page.click('[data-slot="select-trigger"]');
-    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
     await page.evaluate(() => {
       const items = [...document.querySelectorAll('[data-slot="select-item"]')] as HTMLElement[];
       items.find((el) => el.textContent === "P2")?.click();
     });
-    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     let label = await page.$eval('[data-slot="select-trigger"]', (el) => el.textContent);
     expect(label).toContain("P2");
 
     await page.click('[data-slot="select-trigger"]');
-    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
     await page.evaluate(() => {
       const items = [...document.querySelectorAll('[data-slot="select-item"]')] as HTMLElement[];
       items.find((el) => el.textContent === "none")?.click();
     });
-    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     label = await page.$eval('[data-slot="select-trigger"]', (el) => el.textContent);
     expect(label).toContain("none");
     await page.close();

@@ -3,6 +3,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 
 const AXE_SOURCE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 
@@ -71,32 +72,32 @@ describe("Kit a11y contract (T4)", () => {
     expect(reachedTrigger).toBe(true);
 
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelector('[data-testid="kit-select-trigger"]')?.getAttribute("aria-expanded") === "true", { timeout: 2000 });
+    await page.waitForFunction(() => document.querySelector('[data-testid="kit-select-trigger"]')?.getAttribute("aria-expanded") === "true", { timeout: HANG_TIMEOUT_MS });
     await page.keyboard.press("Escape");
     // aria-expanded flips synchronously on close; focus restoration can land a tick later — wait on the
     // ACTUAL focus target, not just the aria flag, to avoid a race between the two.
-    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-select-trigger", { timeout: 2000 });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-select-trigger", { timeout: HANG_TIMEOUT_MS });
   });
 
   it("KitDropdown is keyboard-operable end to end (open, select an item via Enter, focus restore)", async () => {
     await page.click('[data-testid="kit-dropdown-trigger"]');
-    await page.waitForSelector('[data-testid="kit-dropdown-content"]', { visible: true, timeout: 2000 });
+    await page.waitForSelector('[data-testid="kit-dropdown-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
     // matches the DropdownMenu gate finding (T3): initial focus lands on the content wrapper, not the first
     // item — ArrowDown moves roving focus onto it (see uiGate.test.ts's "ArrowDown roving focus" case).
-    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-dropdown-content", { timeout: 2000 });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-dropdown-content", { timeout: HANG_TIMEOUT_MS });
     await page.keyboard.press("ArrowDown");
-    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-dropdown-item", { timeout: 2000 });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-dropdown-item", { timeout: HANG_TIMEOUT_MS });
     await page.keyboard.press("Enter");
-    await page.waitForSelector('[data-testid="kit-dropdown-content"]', { hidden: true, timeout: 2000 });
-    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-dropdown-trigger", { timeout: 2000 });
+    await page.waitForSelector('[data-testid="kit-dropdown-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-dropdown-trigger", { timeout: HANG_TIMEOUT_MS });
   });
 
   it("KitPopover (T6) is keyboard-operable: opens auto-focusing its field, Escape closes with focus restored", async () => {
     await page.click('[data-testid="kit-popover-trigger"]');
-    await page.waitForSelector('[data-testid="kit-popover-content"]', { visible: true, timeout: 2000 });
-    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-popover-input", { timeout: 2000 });
+    await page.waitForSelector('[data-testid="kit-popover-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-popover-input", { timeout: HANG_TIMEOUT_MS });
     await page.keyboard.press("Escape");
-    await page.waitForSelector('[data-testid="kit-popover-content"]', { hidden: true, timeout: 2000 });
-    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-popover-trigger", { timeout: 2000 });
+    await page.waitForSelector('[data-testid="kit-popover-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
+    await page.waitForFunction(() => document.activeElement?.getAttribute("data-testid") === "kit-popover-trigger", { timeout: HANG_TIMEOUT_MS });
   });
 });

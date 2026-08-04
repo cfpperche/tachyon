@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 
 // spec 342 T5 — Pilot A: the Plugins panel is the first REAL production surface adopting Kit components
 // (KitSelect for the installed-list sort control, KitDropdown as each card's secondary-actions overflow
@@ -52,13 +53,13 @@ describe("Pilot A: Plugins panel (real bundle + fixture, via the dev preview har
     const nameAsc = await namesInOrder();
 
     await page.click(".plugin-sort");
-    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
     await page.evaluate(() => {
       const items = [...document.querySelectorAll('[data-slot="select-item"]')] as HTMLElement[];
       const desc = items.find((el) => el.textContent?.includes("Z-A"));
       desc?.click();
     });
-    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     const nameDesc = await namesInOrder();
 
     expect(nameDesc).toEqual([...nameAsc].reverse());
@@ -71,12 +72,12 @@ describe("Pilot A: Plugins panel (real bundle + fixture, via the dev preview har
     await page.waitForSelector(".ds-card", { visible: true, timeout: 5000 });
 
     await page.click('.ds-card button[title^="More actions"]');
-    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { visible: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
     const hasItems = await page.evaluate(() => document.querySelectorAll('[data-slot="dropdown-menu-item"]').length > 0);
     expect(hasItems).toBe(true);
 
     await page.keyboard.press("Escape");
-    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { hidden: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     await page.close();
   });
 
