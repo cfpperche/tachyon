@@ -25,7 +25,7 @@ import {
   issueCompanionPairCodeAction,
   type CockpitStrings,
   type CompanionPairOffer,
-} from "./messages";
+} from "../shared/control/messages";
 import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 // SDD 485 C5 — the Board's envelope and its actions left with its renderer: they belong to

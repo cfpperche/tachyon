@@ -1,8 +1,8 @@
 import type { CockpitModel } from "../../cockpit/model";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
-import { EngineLogPanel } from "../cockpit/EngineLogPanel";
+import { EngineLogPanel } from "../shared/control/EngineLogPanel";
 import { Badge, Button, PageChrome } from "../shared/ui";
-import type { CockpitStrings } from "../cockpit/messages";
+import type { CockpitStrings } from "../shared/control/messages";
 import type { EngineAction } from "./messages";
 
 export type Strings = Pick<

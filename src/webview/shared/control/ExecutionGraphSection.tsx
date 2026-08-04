@@ -14,14 +14,14 @@
  * NO DESTRUCTIVE ACTIONS. There are no buttons here that kill, retry or mutate anything — selection
  * is the only interaction, and the view-model behind it cannot describe a mutation.
  */
-import type { ExecutionGraphStrings } from "../execution-graph/messages";
+import type { ExecutionGraphStrings } from "../../execution-graph/messages";
 import type {
   ExecutionGraphVm,
   ExecutionGraphDetailVm,
   ExecutionGraphNodeVm,
   ExecutionGraphRowVm,
-} from "../../cockpit/executionGraphVm";
-import { NODE_HEIGHT, NODE_WIDTH } from "../../cockpit/executionGraphVm";
+} from "../../../cockpit/executionGraphVm";
+import { NODE_HEIGHT, NODE_WIDTH } from "../../../cockpit/executionGraphVm";
 
 function formatDuration(ms?: number): string {
   if (ms === undefined) return "—";

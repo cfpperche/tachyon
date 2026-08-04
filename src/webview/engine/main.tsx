@@ -1,7 +1,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { CockpitModel } from "../../cockpit/model";
-import type { CockpitStrings } from "../cockpit/messages";
+import type { CockpitStrings } from "../shared/control/messages";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App, defaultStrings } from "./App";

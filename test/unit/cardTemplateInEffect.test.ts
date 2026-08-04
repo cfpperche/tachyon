@@ -2,12 +2,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 import path from "node:path";
 import { buildCockpitModel, type CockpitWorkspaceBundle } from "../../src/cockpit/model.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import type { CockpitStrings } from "../../src/webview/cockpit/messages.js";
+import type { CockpitStrings } from "../../src/webview/shared/control/messages.js";
 
 /** The block is a .tsx: compiled through the shared static-preact loader, like phase 4's own test. */
 let CardTemplateInEffect: (props: unknown) => unknown;
 beforeAll(async () => {
-  const mod = await loadWebviewModule(path.join(__dirname, "../../src/webview/cockpit/CardTemplateBlock.tsx"));
+  const mod = await loadWebviewModule(path.join(__dirname, "../../src/webview/shared/control/CardTemplateBlock.tsx"));
   CardTemplateInEffect = mod.CardTemplateInEffect as typeof CardTemplateInEffect;
 }, 60_000);
 

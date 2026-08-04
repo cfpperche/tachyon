@@ -16,10 +16,10 @@
  */
 import { render } from "preact";
 import { useLayoutEffect, useRef, useState } from "preact/hooks";
-import { Button } from "../shared/ui";
-import { AgentRow } from "../sidebar/App";
-import { CARD_PREVIEW_ROWS, CARD_PREVIEW_WIDTHS } from "../../sidebar/cardPreviewRows";
-import { CARD_REGIONS, type CardRegion, type CardTemplate } from "../../sidebar/cardTemplate";
+import { Button } from "../ui";
+import { AgentRow } from "../../sidebar/App";
+import { CARD_PREVIEW_ROWS, CARD_PREVIEW_WIDTHS } from "../../../sidebar/cardPreviewRows";
+import { CARD_REGIONS, type CardRegion, type CardTemplate } from "../../../sidebar/cardTemplate";
 import {
   editorStateFrom,
   moveComponent,
@@ -28,8 +28,8 @@ import {
   toggleComponent,
   validate,
   type CardEditorState,
-} from "../../cockpit/cardTemplateEditor";
-import type { CockpitCardTemplateState } from "../../cockpit/model";
+} from "../../../cockpit/cardTemplateEditor";
+import type { CockpitCardTemplateState } from "../../../cockpit/model";
 import type { CockpitStrings } from "./messages";
 
 declare global {

@@ -17,7 +17,7 @@ import { probesMessage } from "../../src/webview/probes/messages";
 import {
   initMessage as cockpitInitMessage,
   modelMessage as cockpitModelMessage,
-} from "../../src/webview/cockpit/messages";
+} from "../../src/webview/shared/control/messages";
 import { pinDocumentModeMessage, pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
 import { approvalsMessage } from "../../src/webview/approval/messages";

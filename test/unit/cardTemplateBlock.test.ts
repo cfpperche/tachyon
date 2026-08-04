@@ -14,7 +14,7 @@ import { CARD_PREVIEW_ROWS } from "../../src/sidebar/cardPreviewRows.js";
  *  - the preview renders the sidebar's OWN `AgentRow` and links the sidebar's OWN stylesheet;
  *  - that stylesheet never reaches the Cockpit page, where it would restyle Control.
  */
-const BLOCK = path.join(__dirname, "../../src/webview/cockpit/CardTemplateBlock.tsx");
+const BLOCK = path.join(__dirname, "../../src/webview/shared/control/CardTemplateBlock.tsx");
 const blockSource = readFileSync(BLOCK, "utf8");
 const cockpitHost = readFileSync(path.join(__dirname, "../../src/webview/Cockpit.ts"), "utf8");
 
@@ -69,7 +69,7 @@ describe("SDD 479 phase 4 — the card template Settings block", () => {
   it("previews with the sidebar's own component and stylesheet, in a shadow root", () => {
     // The three claims that make the preview trustworthy. Asserted on the source because the shadow
     // root itself needs a DOM: what matters is that no SECOND renderer or stylesheet exists.
-    expect(blockSource).toMatch(/import \{ AgentRow \} from "\.\.\/sidebar\/App"/);
+    expect(blockSource).toMatch(/import \{ AgentRow \} from "\.\.\/\.\.\/sidebar\/App"/);
     expect(blockSource).toContain("attachShadow");
     expect(blockSource).toMatch(/<link rel="stylesheet" href=\{href\} \/>/);
     // and it renders the FIXTURE rows: the block takes no fleet input at all, so it cannot depend on

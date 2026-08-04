@@ -30,7 +30,7 @@ const DIST = path.join(ROOT, "dist/webview");
 async function bundleMount(sidebarCssHref: string): Promise<string> {
   const entry = `
     import { render } from "preact";
-    import { CardTemplateBlock } from ${JSON.stringify(path.join(ROOT, "src/webview/cockpit/CardTemplateBlock.tsx"))};
+    import { CardTemplateBlock } from ${JSON.stringify(path.join(ROOT, "src/webview/shared/control/CardTemplateBlock.tsx"))};
     window.__tachyonCardPreviewCss = ${JSON.stringify(sidebarCssHref)};
     const s = new Proxy({}, { get: (_t, k) => String(k) });
     render(<CardTemplateBlock s={s} onOpenConfig={() => {}} />, document.getElementById("root"));

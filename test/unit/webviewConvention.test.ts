@@ -510,7 +510,7 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
   it("the Engine app consumes its linked shared workspace sheet (SDD 485 D5)", () => {
     const host = readFileSync("src/webview/EnginePanel.ts", "utf8");
     const consumers = readFileSync("src/webview/engine/App.tsx", "utf8")
-      + readFileSync("src/webview/cockpit/EngineLogPanel.tsx", "utf8");
+      + readFileSync("src/webview/shared/control/EngineLogPanel.tsx", "utf8");
     const shared = readFileSync("src/webview/shared/engine-workspace.css", "utf8");
     expect(host).toContain('"engine-workspace.css"');
     for (const className of ["ck-card-list", "ck-empty", "ci-ws", "ci-log"]) {

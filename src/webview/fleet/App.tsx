@@ -1,6 +1,6 @@
 import { useState } from "preact/hooks";
 import type { CockpitModel } from "../../cockpit/model";
-import type { CockpitStrings } from "../cockpit/messages";
+import type { CockpitStrings } from "../shared/control/messages";
 import { Badge, Button, EmptyState, ListRow, PageChrome, QuickPicker, type QuickPickerItem } from "../shared/ui";
 import type { FleetAction } from "./messages";
 

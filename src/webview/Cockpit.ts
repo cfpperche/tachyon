@@ -37,7 +37,7 @@ import {
   toastMessage,
   type CockpitAction,
   type CockpitStrings,
-} from "./cockpit/messages.js";
+} from "./shared/control/messages.js";
 import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
 import type { WorkspacePresentationTarget, WorkspaceProbePresentationTarget } from "../shell/WorkspacePresentation.js";
 // SDD 485 C5 — the Board's own envelope no longer travels through Control: the board is a standalone app

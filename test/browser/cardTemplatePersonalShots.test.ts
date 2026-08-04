@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import type { CockpitStrings } from "../../src/webview/cockpit/messages";
+import type { CockpitStrings } from "../../src/webview/shared/control/messages";
 
 /**
  * SDD 479 phase 5 — the two surfaces this phase adds, seen rather than asserted.
@@ -78,7 +78,7 @@ describe("SDD 479 phase 5 — the personal override's two surfaces", () => {
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
-    const block = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/cockpit/CardTemplateBlock.tsx"));
+    const block = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/shared/control/CardTemplateBlock.tsx"));
     CardTemplateInEffect = block.CardTemplateInEffect as typeof CardTemplateInEffect;
     const sidebar = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/sidebar/App.tsx"));
     CardTemplateRefusalBanner = sidebar.CardTemplateRefusalBanner as typeof CardTemplateRefusalBanner;

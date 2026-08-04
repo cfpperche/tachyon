@@ -8,7 +8,7 @@ import {
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
-} from "./messages";
+} from "../shared/control/messages";
 import { Button } from "../shared/ui";
 import type { StudioDispatch } from "../shared/studio/protocol";
 

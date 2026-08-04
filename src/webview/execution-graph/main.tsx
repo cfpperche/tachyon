@@ -1,7 +1,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { ExecutionGraphVm } from "../../cockpit/executionGraphVm";
-import { ExecutionGraphSection } from "../cockpit/ExecutionGraphSection";
+import { ExecutionGraphSection } from "../shared/control/ExecutionGraphSection";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { PageChrome } from "../shared/ui";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
