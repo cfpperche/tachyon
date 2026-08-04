@@ -525,12 +525,62 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
       for (const className of used) {
         if (!new RegExp(`\\.${className}(?![a-z0-9-])`).test(linkedCss)) {
           violations.push(`${app.view}: uses .${className}, but none of its linked stylesheets defines it`);
+          continue;
+        }
+        // t-f78665 — presence is not reach. `.ck-settings-status .ck-badge` made the presence check
+        // green while the device-list badge (outside that parent) rendered as plain text. Require an
+        // unconditional subject rule: rightmost compound includes the class, no ancestor combinator.
+        if (!cssDefinesUnconditionalClass(linkedCss, className)) {
+          violations.push(`${app.view}: uses .${className}, but linked CSS only styles it under a required ancestor or as an ancestor of something else — add a subject rule (e.g. .${className} { … }), or stop using the class outside the scoped parent`);
         }
       }
     }
     // A section app with no source at all is not a pass — it is the condition that hid the misses above.
     expect(skipped, `section apps with no readable JSX source — this guard cannot see them: ${skipped.join(", ")}`).toEqual([]);
     expect(violations, violations.join("\n")).toEqual([]);
+  });
+});
+
+/**
+ * t-f78665 — the D6 presence guard is blind to "class only under a parent". Full CSS matching is not
+ * free; this heuristic asks a cheaper, incomplete question: does any selector treat the class as a
+ * subject without a required ancestor? Measured 2026-08-04 against every section-app × linked-sheet
+ * pair (80 usages): one failure, the live `.ck-badge` bug. Zero false positives in that scope.
+ *
+ * Historical fixtures below are the red proof — they recreate the three named escapes before the
+ * production tree is asserted green.
+ */
+describe("webview CSS unconditional class subject (t-f78665)", () => {
+  it("FAILS the three historical escapes (red proof before the live tree is trusted green)", () => {
+    // 1. ck-badge — only descendant subjects under .ck-settings-status (pre-fix settings.css)
+    const badgeOnlyDescendant = `
+      .ck-settings-status .ck-badge { padding: 1px 6px; }
+      .ck-settings-status .ck-badge.ok { color: green; }
+      .ck-settings-status .ck-badge.muted { color: gray; }
+    `;
+    expect(cssClassNameAppears(badgeOnlyDescendant, "ck-badge"), "presence alone would still pass for badge").toBe(true);
+    expect(cssDefinesUnconditionalClass(badgeOnlyDescendant, "ck-badge"), "badge only as descendant subject").toBe(false);
+
+    // 2. ck-panel — D10/D11 shape: class only as ancestor of a child rule (base lived elsewhere)
+    const panelOnlyAsAncestor = `
+      .ck-panel p { margin: 0 0 6px; }
+    `;
+    expect(cssClassNameAppears(panelOnlyAsAncestor, "ck-panel"), "presence alone would still pass for panel").toBe(true);
+    expect(cssDefinesUnconditionalClass(panelOnlyAsAncestor, "ck-panel"), "panel only as ancestor qualifier").toBe(false);
+
+    // 3. ck-mono — D6 shape: name never appears in the linked sheet at all
+    const monoMissing = `
+      .ck-card-list { display: flex; }
+    `;
+    expect(cssClassNameAppears(monoMissing, "ck-mono"), "mono absent from sheet").toBe(false);
+    expect(cssDefinesUnconditionalClass(monoMissing, "ck-mono"), "mono has no subject rule").toBe(false);
+  });
+
+  it("PASSES when a bare or compound subject rule exists without an ancestor", () => {
+    expect(cssDefinesUnconditionalClass(".ck-badge { padding: 1px 6px; }", "ck-badge")).toBe(true);
+    expect(cssDefinesUnconditionalClass(".ck-badge.ok { color: green; }", "ck-badge")).toBe(true);
+    expect(cssDefinesUnconditionalClass(".ck-panel { border: 1px solid; }\n.ck-panel p { margin: 0; }", "ck-panel")).toBe(true);
+    expect(cssDefinesUnconditionalClass(".ck-mono { font-family: monospace; }", "ck-mono")).toBe(true);
   });
 });
 
@@ -558,5 +608,84 @@ function appSourceFiles(view: string): string[] {
     }
   };
   walk(dir);
+  return out;
+}
+
+/** Does the class token appear as a CSS class selector somewhere in the sheet (the D6 presence check). */
+function cssClassNameAppears(css: string, className: string): boolean {
+  return new RegExp(`\\.${className}(?![a-z0-9-])`).test(css);
+}
+
+/**
+ * Heuristic: some selector's rightmost compound includes `.className` and requires no ancestor
+ * combinator. Not full cascade matching — deliberately incomplete and cheap. Strips functional
+ * pseudos/attributes/simple pseudos before looking for combinators so `:hover` does not look like a
+ * descendant. Does not expand `:is()`/`:where()` argument lists (none of our `ck-*` sheets use them
+ * as the subject vehicle today).
+ *
+ * Uses brace-matching selector extraction rather than `cssRules`: that helper's flat regex drops
+ * every other rule on real sheets (measured: settings+shared yielded 52 vs 102 selectors), which
+ * would make this guard cry wolf on classes that do have bare subject rules.
+ */
+function cssDefinesUnconditionalClass(css: string, className: string): boolean {
+  for (const selector of cssSelectorsBraceMatched(css)) {
+    for (const part of selector.split(",")) {
+      if (selectorPartIsUnconditionalSubject(part.trim(), className)) return true;
+    }
+  }
+  return false;
+}
+
+function selectorPartIsUnconditionalSubject(sel: string, className: string): boolean {
+  let s = sel;
+  for (let i = 0; i < 6; i++) s = s.replace(/:[a-z-]+\((?:[^()]|\([^()]*\))*\)/gi, "");
+  s = s.replace(/\[[^\]]*\]/g, "");
+  s = s.replace(/::?[a-z-]+/gi, "");
+  s = s.trim();
+  if (!s || /[\s>+~]/.test(s)) return false;
+  const classes = [...s.matchAll(/\.([a-zA-Z_][\w-]*)/g)].map((m) => m[1]);
+  return classes.includes(className);
+}
+
+/** Every selector list entry in a stylesheet, including those nested under `@media`/`@supports`/`@layer`. */
+function cssSelectorsBraceMatched(css: string): string[] {
+  const out: string[] = [];
+  const extract = (text: string): void => {
+    let i = 0;
+    while (i < text.length) {
+      while (i < text.length && /\s/.test(text[i]!)) i++;
+      if (i >= text.length) break;
+      if (text.startsWith("@", i)) {
+        const brace = text.indexOf("{", i);
+        if (brace < 0) break;
+        let depth = 1;
+        let j = brace + 1;
+        while (j < text.length && depth > 0) {
+          if (text[j] === "{") depth++;
+          else if (text[j] === "}") depth--;
+          j++;
+        }
+        const atName = text.slice(i, brace).trim();
+        if (/^@(media|supports|layer)\b/i.test(atName)) extract(text.slice(brace + 1, j - 1));
+        i = j;
+        continue;
+      }
+      const brace = text.indexOf("{", i);
+      if (brace < 0) break;
+      let depth = 1;
+      let j = brace + 1;
+      while (j < text.length && depth > 0) {
+        if (text[j] === "{") depth++;
+        else if (text[j] === "}") depth--;
+        j++;
+      }
+      const selectorList = text.slice(i, brace).trim();
+      if (selectorList && !selectorList.startsWith("@")) {
+        for (const sel of selectorList.split(",")) out.push(sel.trim());
+      }
+      i = j;
+    }
+  };
+  extract(stripCssComments(css));
   return out;
 }

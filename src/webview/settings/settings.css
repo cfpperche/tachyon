@@ -209,7 +209,11 @@
   font-size: 11px;
 }
 
-.ck-settings-status .ck-badge {
+/* t-f78665 — base badge, not a `.ck-settings-status` descendant. Companion pair status and the
+ * device live/offline chip both use `ck-badge`; the device list sits under `.ck-device-meta`, so a
+ * parent-scoped rule left that chip as unstyled text from the day it was written. Promote the
+ * subject; do not invent a second chip language (`.ds-badge` is outline-style and has no `muted`). */
+.ck-badge {
   display: inline-block;
   padding: 1px 6px;
   border-radius: 4px;
@@ -217,12 +221,12 @@
   font-weight: 600;
 }
 
-.ck-settings-status .ck-badge.ok {
+.ck-badge.ok {
   background: color-mix(in srgb, var(--vscode-testing-iconPassed, #3ba55d) 22%, transparent);
   color: var(--vscode-testing-iconPassed, #3ba55d);
 }
 
-.ck-settings-status .ck-badge.muted {
+.ck-badge.muted {
   background: color-mix(in srgb, var(--ds-muted, #888) 18%, transparent);
   color: var(--ds-muted, #888);
 }
