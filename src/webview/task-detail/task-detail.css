@@ -101,3 +101,8 @@
 .prototype-decision { margin-top: var(--ds-2); padding: var(--ds-3); border: var(--ds-border-width) solid var(--ds-border); border-radius: var(--ds-radius); }
 .prototype-decision label { display: flex; flex-direction: column; gap: 6px; }
 .prototype-decision textarea { min-height: 64px; resize: vertical; }
+@media (max-width: 520px) {
+  .td-edit-mode .sf-header { align-items: stretch; flex-direction: column; }
+  .td-edit-mode .sf-title { white-space: normal; }
+  .td-edit-mode .sf-actions { flex-wrap: wrap; }
+}

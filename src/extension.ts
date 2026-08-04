@@ -1201,11 +1201,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // Task Studio is still a Control route (SDD 485 Phase D owns it), so "Open in Studio" from a task's
       // own tab lands in Control — the same door the Board's card menu already uses.
       openTaskStudio: (ws, taskId) => {
-        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, taskId) });
+        taskDetailPanels.openEdit(ws.wsHash, taskId);
       },
     },
     undefined,
     controlWorkspaceScope,
+    () => workspaces().map((ws) => ws.taskStudio),
   );
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
   // SDD 485 C5 — the Board is a standalone `dashboard` app: ONE editor tab per project, revealed rather
@@ -1216,7 +1217,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
     openTask: (ws, taskId) => taskDetailPanels.open(ws.wsHash, taskId),
     openTaskStudio: (ws, id) => {
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, id ?? mintTaskId()) });
+      taskDetailPanels.openEdit(ws.wsHash, id ?? mintTaskId());
     },
     // Deliberately a call THROUGH the shared fan-out rather than a direct self-refresh: a board edit must
     // reach every open Task Detail and the sidebar too, which is the whole reason that function exists.
@@ -1928,6 +1929,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // SDD 485 C4 — the Board card, the studio breadcrumb and a revived/deep-linked task-detail route all
       // arrive here. `wsHash` is the document's IDENTITY from this call onwards.
       openDocument: (wsHash, taskId) => taskDetailPanels.open(wsHash, taskId),
+      openEditDocument: (wsHash, taskId) => taskDetailPanels.openEdit(wsHash, taskId),
     },
     // t-610705 (Phase C.2) — Activity/Probes are Control subroutes now (WorkspaceActivityTarget /
     // WorkspaceProbePresentationTarget already carry everything the host needs — no separate
@@ -2565,10 +2567,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // to Mission instead of constructing an invalid route.
   registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => {
     panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
     if (!state?.wsKey) return;
     if (state.snapshot.mode === "edit" && state.snapshot.entityId) {
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", state.wsKey, state.snapshot.entityId) });
+      taskDetailPanels.openEdit(state.wsKey, state.snapshot.entityId);
       return;
     }
     // SDD 485 C5 — the Board is an app: a malformed "new" Task Studio state lands on it directly rather

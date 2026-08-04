@@ -159,6 +159,7 @@ export interface CockpitHandoff {
 export interface CockpitTaskDetail {
   getWorkspaces: () => WorkspaceTaskDetailTarget[];
   openDocument: (wsHash: string, taskId: string) => void;
+  openEditDocument?: (wsHash: string, taskId: string) => void;
 }
 
 /** t-610705 (Phase C.2) — one agent's normalized activity feed, a subroute of Fleet. */
@@ -560,6 +561,7 @@ function captureReturnRoute(route: CockpitRoute): CockpitRoute {
  * created, because `navigate()` is module-scoped and has no `deps` in reach; cleared with the panel.
  */
 let openTaskDocument: ((wsHash: string, taskId: string) => void) | undefined;
+let openTaskEditDocument: ((wsHash: string, taskId: string) => void) | undefined;
 
 /**
  * SDD 485 C5 — the same seam for the Board: `navigate()` is module-scoped and has no `deps` in reach, so the
@@ -603,6 +605,10 @@ let openInboxItemApp: ((wsHash: string, itemKind: HumanInboxKind, itemId: string
 let openFleetApp: (() => void) | undefined;
 
 function navigate(route: CockpitRoute): void {
+  if (route.kind === "studio-edit" && route.studio === "task") {
+    openTaskEditDocument?.(route.wsHash, route.entityId);
+    route = routes.section("overview");
+  }
   if (route.kind === "task-detail") {
     // SDD 485 C4 — Control has no task-detail renderer any more, so this route can never COMMIT here. It
     // still arrives: from persisted window state written before the cutover, from a deep link, and from
@@ -1111,6 +1117,7 @@ export async function openCockpit(
         pushPinStudioEntity = undefined;
         doOpenActivityTranscript = undefined;
         openTaskDocument = undefined;
+        openTaskEditDocument = undefined;
         openBoardDocument = undefined;
         openTmuxApp = undefined;
         openPluginsApp = undefined;
@@ -1137,6 +1144,7 @@ export async function openCockpit(
   // SDD 485 C4 — bound BEFORE the initial navigate below, because that navigate is exactly the call a
   // revived/deep-linked task-detail route arrives through, and a redirect wired later would miss it.
   openTaskDocument = (wsHash, taskId) => deps.taskDetail.openDocument(wsHash, taskId);
+  openTaskEditDocument = (wsHash, taskId) => deps.taskDetail.openEditDocument?.(wsHash, taskId);
   // SDD 485 C5 — same seam, same reason, and the scope handed over is the one Control itself would have
   // rendered (`resolveMissionWs`, which already prefers the shell scope `opts.wsHash` set a few lines
   // above). A launcher click, a Jump card and a Fleet action therefore land on the SAME project's panel —
@@ -2144,7 +2152,6 @@ export async function openCockpit(
     const runbookStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "runbook";
     const scheduleStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "schedule";
     const agentStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "agent";
-    const taskStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "task";
     const pinStudioIsActive = isStudioRoute(currentRoute) && currentRoute.studio === "pin";
     // t-610705 (Phase C.2) — ported from the retired standalone ActivityPanel.ts: mermaid/katex load
     // ON DEMAND client-side (activity/markdown.tsx), gated on these globals being present at all —
@@ -2228,19 +2235,17 @@ export async function openCockpit(
         // `styleFiles` order exactly (codicon, design-system, vscode-theme, task-studio.tailwind,
         // rich-doc, studio-frame, task-studio), so studio-frame.css's shell-chrome rules still win the
         // cascade over rich-doc.css at equal specificity, same as they always have for this surface.
-        taskStudioIsActive ? uri("task-studio.tailwind.css") : undefined,
         // t-610705 (Phase D, D3) — Pin Studio shares Task Studio's rich-doc.css (same entity-neutral
         // editor sheet, no Tailwind sheet of its own) — one shared conditional, same reasoning as the
         // "*-mermaid" shared conditionals above (a second, separately-gated call for the identical
         // file would duplicate the <link> and fail cockpitCssParity's no-duplicate-link check).
-        (taskStudioIsActive || pinStudioIsActive) ? uri("rich-doc.css") : undefined,
+        pinStudioIsActive ? uri("rich-doc.css") : undefined,
         studioIsActive ? uri("studio-frame.css") : undefined,
         commandStudioIsActive ? uri("command-studio-shell.css") : undefined,
         terminalStudioIsActive ? uri("terminal-studio-shell.css") : undefined,
         runbookStudioIsActive ? uri("runbook-studio-shell.css") : undefined,
         scheduleStudioIsActive ? uri("schedule-studio-shell.css") : undefined,
         agentStudioIsActive ? uri("agent-studio-shell.css") : undefined,
-        taskStudioIsActive ? uri("task-studio.css") : undefined,
         pinStudioIsActive ? uri("pin-studio.css") : undefined,
         // SDD 485 D6 linked `control-typography.css` here because Control used `ck-mono` six times.
         // D10 took the last five with Settings, and the count is now ZERO — measured across
@@ -2303,10 +2308,6 @@ export async function openCockpit(
           "studio-frame-agent": uri("studio-frame.css"),
           "studio-agent-tailwind": uri("agent-studio-shell.tailwind.css"),
           "studio-agent": uri("agent-studio-shell.css"),
-          "studio-frame-task": uri("studio-frame.css"),
-          "studio-task-tailwind": uri("task-studio.tailwind.css"),
-          "studio-task-richdoc": uri("rich-doc.css"),
-          "studio-task": uri("task-studio.css"),
           // t-610705 (Phase D, D3) — own key even though it resolves to the SAME rich-doc.css href as
           // "studio-task-richdoc" — matches the per-studio-key convention "studio-frame-<id>" already
           // uses (one distinct key per client call site, not a shared key across two lazy blocks).

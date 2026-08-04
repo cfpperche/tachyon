@@ -336,6 +336,12 @@ export class SectionPanelManager<K extends string = string> {
     this.panels.get(this.keyFor(target))?.panel.dispose();
   }
 
+  /** A document-specific binding may change state inside an already-open panel without changing its key. */
+  post(target: SectionPanelTarget, message: unknown): boolean {
+    const entry = this.panels.get(this.keyFor(target));
+    return entry ? this.postEntry(entry, message) : false;
+  }
+
   dispose(): void {
     this.disposed = true;
     for (const entry of [...this.panels.values()]) entry.panel.dispose();
@@ -413,16 +419,7 @@ export class SectionPanelManager<K extends string = string> {
       key,
       get visible() { return entry.gate.visible; },
       run: (kind, work) => entry.gate.run(kind, work),
-      post: (message) => {
-        if (!entry.gate.visible) {
-          // Not a lost message: a post nobody can see is work, and the panel that missed it rebuilds from
-          // scratch on reveal rather than coming back with a hole in it.
-          entry.gate.markSourceResync();
-          return false;
-        }
-        void panel.webview.postMessage(message);
-        return true;
-      },
+      post: (message) => this.postEntry(entry, message),
       asWebviewUri: (fsPath) => panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
       setTitle: (next) => { panel.title = next; },
       close: () => panel.dispose(),
@@ -444,5 +441,14 @@ export class SectionPanelManager<K extends string = string> {
       entry.binding.dispose?.();
       if (this.panels.get(key) === entry) this.panels.delete(key);
     });
+  }
+
+  private postEntry(entry: PanelEntry<K>, message: unknown): boolean {
+    if (!entry.gate.visible) {
+      entry.gate.markSourceResync();
+      return false;
+    }
+    void entry.panel.webview.postMessage(message);
+    return true;
   }
 }

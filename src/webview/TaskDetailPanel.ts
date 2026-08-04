@@ -7,11 +7,18 @@ import {
 } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import { buildTaskDetailVm, emptyTombstoneVm } from "../cockpit/taskDetailVm.js";
-import { taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "./task-detail/messages.js";
+import { taskDocumentModeMessage, taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "./task-detail/messages.js";
 import { READY } from "./shared/ready.js";
 import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
 import type { TaskDetailProjectionV1 } from "../runtime-api/taskDetailProjection.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
+import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
+import { TaskStudioAdapter } from "./TaskStudioAdapter.js";
+import { decodeStudioMessage, envelope } from "./shared/studio/protocol.js";
+import { mapUnknownError } from "./shared/studio/errorTaxonomy.js";
+import { handleTaskStudioDomainMessage } from "../cockpit/taskStudioDomain.js";
+import { TaskDocumentEditPolicy, type TaskDocumentDraft } from "./task-detail/editPolicy.js";
+import type { TaskPatch } from "./task-studio/domain.js";
 
 export const TASK_DETAIL_VIEW_TYPE = "tachyonTaskDetail";
 
@@ -64,6 +71,7 @@ export interface TaskDetailPanelState {
  */
 export class TaskDetailPanelManager {
   private readonly manager: SectionPanelManager<TaskDetailRefreshKind>;
+  private readonly drafts = new Map<string, TaskDocumentDraft<TaskPatch>>();
 
   constructor(
     extensionUri: vscode.Uri,
@@ -76,6 +84,7 @@ export class TaskDetailPanelManager {
     },
     app: WebviewAppEntry = webviewApp("task-detail"),
     workspaceScope?: ControlWorkspaceScope,
+    private readonly getStudioWorkspaces: () => WorkspaceTaskStudioTarget[] = () => [],
   ) {
     this.manager = new SectionPanelManager<TaskDetailRefreshKind>(extensionUri, this.configFor(app), workspaceScope);
   }
@@ -83,6 +92,13 @@ export class TaskDetailPanelManager {
   /** Open the task's own editor tab, or REVEAL it if this identity is already open. */
   open(wsHash: string, taskId: string): void {
     this.manager.open({ project: wsHash, identity: taskId });
+  }
+
+  /** `studio-edit(task)` and the read-mode button share this door: same target, therefore same panel. */
+  openEdit(wsHash: string, taskId: string): void {
+    const target = { project: wsHash, identity: taskId };
+    this.manager.open(target);
+    this.manager.post(target, taskDocumentModeMessage("edit"));
   }
 
   openInCurrentScope(taskId: string): boolean {
@@ -125,14 +141,20 @@ export class TaskDetailPanelManager {
       // The exact set Control linked for a task-detail route, in the same order: the shared base, the
       // mermaid sheet MarkdownView's blocks need, then this surface's own. This phase changes where the
       // screen renders, not how it looks.
-      styleFiles: ["codicon.css", "design-system.css", "mermaid-block.css", "task-detail.css"],
+      styleFiles: [
+        "codicon.css", "design-system.css", "vscode-theme.css", "task-studio.tailwind.css",
+        "rich-doc.css", "studio-frame.css", "task-studio.css", "mermaid-block.css", "task-detail.css",
+      ],
+      csp: { frameSrc: "self", imgBlob: true, connectSrc: true, workerSrc: "blob" },
+      bootstrapGlobals: (_target, uri) => ({
+        EXCALIDRAW_SCRIPT_URI: uri("excalidraw.js"),
+        EXCALIDRAW_CSS_URI: uri("excalidraw.css"),
+        EXCALIDRAW_ASSET_PATH: uri("").replace(/\/?$/, "/"),
+      }),
       // Both carried forward verbatim from the pre-410 standalone panel this restores — the tab a human
       // used to see for a task is the tab they see again.
       title: (target) => `Task ${target.identity ?? ""}`.trim(),
       iconName: "note",
-      // PrototypePreview renders reviewer prototypes in a sandboxed `srcdoc` iframe (spec 335). A security
-      // axis, not a conformance posture — see SHELL_EXTENSION_POINTS.
-      csp: { frameSrc: "self" },
       // t-4d59d3 — the blob root must be an allowed local resource root before `asWebviewUri` can resolve
       // `attachment:<id>` refs in the body. Granted ONCE at creation, and only for THIS document's own
       // workspace: Control had to grant every workspace's attachments parent because one panel served them
@@ -145,8 +167,10 @@ export class TaskDetailPanelManager {
       // Routing them through the gate rather than to `onMessage` is what makes a hidden panel's request cost
       // nothing (SDD 485 Phase B's loudest finding, generalized by C1).
       refreshKindFor: (message) => {
-        const type = (message as { type?: unknown } | undefined)?.type;
-        return type === READY || type === "requestSnapshot" ? "task" : undefined;
+        const raw = message as { type?: unknown; studioProtocolVersion?: unknown } | undefined;
+        return (raw?.type === READY && raw.studioProtocolVersion === undefined) || raw?.type === "requestSnapshot"
+          ? "task"
+          : undefined;
       },
       bind: (session) => {
         // `sectionPanelKey` refuses a `document` target missing either half, so a panel cannot exist
@@ -158,6 +182,34 @@ export class TaskDetailPanelManager {
          * correct only because Control was a singleton — a document app has as many as it has tabs.
          */
         let lastKnown: TaskDetailProjectionV1 | undefined;
+        const studioTarget = this.getStudioWorkspaces().find((w) => w.wsHash === project);
+        const studio = studioTarget ? new TaskStudioAdapter(studioTarget) : undefined;
+        const policy = new TaskDocumentEditPolicy<TaskPatch>("read", this.drafts.get(session.key));
+
+        const postStudioError = (err: unknown): void => {
+          const e = mapUnknownError("transport", err);
+          session.post(envelope({ type: "error", code: e.code, message: e.message, source: e.source, blocking: e.blocking }));
+        };
+
+        const sendStudioLoad = async (): Promise<void> => {
+          if (!studio) return;
+          const result = await studio.load(taskId);
+          if (result.status !== "ok") {
+            postStudioError(new Error(result.status === "not-found" ? "not found" : result.error));
+            return;
+          }
+          session.post(envelope({
+            type: "load",
+            entity: result.entity,
+            concurrency: { kind: "cas", expected: studio.revisionOf(result.entity) },
+          }));
+          if (policy.draft.dirty && policy.draft.patch) {
+            session.post(envelope({
+              type: "restore",
+              snapshot: { schemaVersion: 1, entityType: "task", mode: "edit", patch: policy.draft.patch },
+            }));
+          }
+        };
 
         const sendTask = async (): Promise<void> => {
           const ws = resolveWs(session.target);
@@ -197,7 +249,15 @@ export class TaskDetailPanelManager {
           const ws = resolveWs(session.target);
           if (!ws) return;
           if (m.type === "openTaskStudio") {
-            this.hooks.openTaskStudio(ws, taskId);
+            policy.switchMode("edit");
+            session.post(taskDocumentModeMessage("edit"));
+            void sendStudioLoad();
+            return;
+          }
+          if (m.type === "setTaskDocumentMode") {
+            if (m.mode !== "read" && m.mode !== "edit") return;
+            policy.switchMode(m.mode);
+            session.post(taskDocumentModeMessage(m.mode));
             return;
           }
           if (m.type === "updateTask" && m.patch) {
@@ -227,10 +287,52 @@ export class TaskDetailPanelManager {
           }
         };
 
+        const onMessage = async (message: unknown): Promise<void> => {
+          const action = message as Partial<TaskDetailAction>;
+          if (action.type === "setTaskDocumentMode" || action.type === "openTaskStudio") {
+            await onAction(action);
+            return;
+          }
+          const decoded = decodeStudioMessage<{ type: string; patch?: TaskPatch; dirty?: boolean }>(message, studio?.domainMessageNames ?? []);
+          if (decoded.ok && decoded.message && studio) {
+            const msg = decoded.message;
+            if (msg.type === "ready") { await sendStudioLoad(); return; }
+            if (msg.type === "patch" && msg.patch) { policy.receivePatch(msg.patch); return; }
+            if (msg.type === "dirty") { policy.receiveDirty(msg.dirty ?? false); return; }
+            if (msg.type === "cancel") {
+              policy.clearDraft();
+              policy.switchMode("read");
+              session.post(taskDocumentModeMessage("read"));
+              return;
+            }
+            if (msg.type === "save" && policy.draft.patch) {
+              const result = await studio.save(taskId, policy.draft.patch);
+              if (result.status === "ok") {
+                policy.clearDraft();
+                policy.switchMode("read");
+                this.hooks.onTasksChanged();
+                session.post(taskDocumentModeMessage("read"));
+              } else postStudioError(new Error(result.error.message));
+              return;
+            }
+            handleTaskStudioDomainMessage(studioTarget!, {
+              entityId: taskId,
+              post: (m) => { session.post(m); },
+            }, msg);
+            return;
+          }
+          await onAction(action);
+        };
+
         return {
-          replay: () => { void sendTask(); },
-          resync: () => { void sendTask(); },
-          onMessage: (message) => { void onAction(message as Partial<TaskDetailAction>); },
+          replay: () => { void sendTask(); if (policy.mode === "edit" || policy.draft.dirty) void sendStudioLoad(); },
+          resync: () => { void sendTask(); if (policy.mode === "edit" || policy.draft.dirty) void sendStudioLoad(); },
+          onMessage: (message) => { void onMessage(message); },
+          dispose: () => {
+            const draft = policy.close();
+            if (draft) this.drafts.set(session.key, draft);
+            else this.drafts.delete(session.key);
+          },
         };
       },
     };

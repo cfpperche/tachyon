@@ -154,6 +154,19 @@ describe("SDD 485 C4 — two task details, side by side", () => {
     expect(panelAt(0).disposed).toBe(false);
   });
 
+  it("opens edit mode in the SAME task panel and a later read open only reveals it", async () => {
+    const ws = fakeWorkspace();
+    const t = await ws.taskStore.create({ title: "one document", author: "human" });
+    const h = harness(ws);
+
+    h.manager.openEdit(ws.wsHash, t.id);
+    h.manager.open(ws.wsHash, t.id);
+
+    expect(__createdPanels).toHaveLength(1);
+    expect(panelAt(0).revealCount).toBe(1);
+    expect(panelAt(0).webview.posted).toContainEqual({ type: "taskDocumentMode", mode: "edit" });
+  });
+
   it("fans out to EVERY open document, each re-reading its own task", async () => {
     const ws = fakeWorkspace();
     const a = await ws.taskStore.create({ title: "A", author: "human" });
@@ -525,7 +538,7 @@ describe("SDD 485 C4 — the pre-existing Task Detail contract still holds", () 
     expect(taskVms().at(-1)?.journal).toEqual([expect.objectContaining({ author: "codex", text: "note" })]);
   });
 
-  it("routes openTaskStudio to the injected callback for THIS document's task", async () => {
+  it("turns openTaskStudio into edit mode on THIS document instead of opening another host", async () => {
     const ws = fakeWorkspace();
     const t = await ws.taskStore.create({ title: "x", author: "human" });
     const h = harness(ws);
@@ -534,7 +547,8 @@ describe("SDD 485 C4 — the pre-existing Task Detail contract still holds", () 
     lastPanel().webview.__receive({ type: "openTaskStudio" });
     await flush();
 
-    expect(h.studioOpens()).toEqual([[ws.wsHash, t.id]]);
+    expect(h.studioOpens()).toEqual([]);
+    expect(lastPanel().webview.posted).toContainEqual({ type: "taskDocumentMode", mode: "edit" });
   });
 
   it("approves through first-party chrome and clears only an exact matching prototype subject", async () => {

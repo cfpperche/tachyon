@@ -1492,3 +1492,20 @@ Two rules for Phase D, which removes from this file ten more times:
 
 The orchestration error was mine: the briefs warned both agents about `cockpit/App.tsx` and said
 nothing about the HOST they both had to gut.
+### Phase D12 — Task Studio is task-detail edit mode (2026-08-04)
+
+The unsaved policy is deliberately document-owned: switching to read keeps the draft; closing detaches the
+draft into `TaskDetailPanelManager`'s key-scoped memory for this extension-host lifetime; a newer host snapshot
+updates the read model and is delivered to the editor, but never rebases or erases the pending patch. The patch
+keeps its original `expectUpdatedAt`, so Save uses CAS and conflicts instead of overwriting external work.
+
+The boundary reopened from `StudioPanelManagerBase` is narrow and explicit in `task-detail/editPolicy.ts`:
+mode, dirty, patch, save/cancel and Task CAS came across. The base's second panel lifecycle/key, new-entity
+lifecycle, generic navigation transaction, and generic restore protocol did not: the document already owns the
+panel/key, Task has no id-less route, and keeping those mechanisms would recreate two owners for one entity.
+
+The new Control-renderer guard was observed red while `cockpit/App.tsx` still contained `TaskStudioApp`, then
+green after the lazy renderer and its CSS bootstrap keys were removed. Visual evidence uses the shipped
+`task-detail.js` at browser viewport plus matching `?width=`: read/edit at 880 and 360 all reported matching
+`window.innerWidth` and `documentElement.scrollWidth` (880/880 and 360/360). Evidence lives under
+`.vqa/visual-qa/task-detail-{read,edit}-{880,360}.png` and is attached to the worktree evidence channel.

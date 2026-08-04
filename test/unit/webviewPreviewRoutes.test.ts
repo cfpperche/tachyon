@@ -56,7 +56,6 @@ describe("preview route table", () => {
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
       "/dist/webview/agent-studio-shell.tailwind.css",
-      "/dist/webview/task-studio.tailwind.css",
       "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
       "/dist/webview/command-studio-shell.css",
@@ -64,7 +63,6 @@ describe("preview route table", () => {
       "/dist/webview/runbook-studio-shell.css",
       "/dist/webview/schedule-studio-shell.css",
       "/dist/webview/agent-studio-shell.css",
-      "/dist/webview/task-studio.css",
       "/dist/webview/pin-studio.css",
       // t-967b5b — `control-typography.css` dropped out of Control's list when the Settings migration
       // took its last `ck-mono` consumer. Three files spell this list out: the host, the preview route
@@ -200,13 +198,18 @@ describe("preview route table", () => {
     expect(r.cssLinks).toEqual([
       "/dist/webview/codicon.css",
       "/dist/webview/design-system.css",
+      "/dist/webview/vscode-theme.css",
+      "/dist/webview/task-studio.tailwind.css",
+      "/dist/webview/rich-doc.css",
+      "/dist/webview/studio-frame.css",
+      "/dist/webview/task-studio.css",
       "/dist/webview/mermaid-block.css",
       "/dist/webview/task-detail.css",
     ]);
     // an entry of the code-split invocation: a classic <script> injection dies on its first `import`.
     expect(r.module).toBe(true);
-    // the four content shapes t-5564b4 established, carried over from the cockpit route intact.
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "heavy", "sparse", "tombstone"]);
+    // The four read shapes t-5564b4 established plus D12's edit mode on the same document route.
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "edit", "heavy", "sparse", "tombstone"]);
     const msg = r.makeMessage(r.fixtures.default!.vm) as { type: string; vm?: { id?: string } };
     expect(msg.type).toBe("task");
     expect(msg.vm?.id).toBeTruthy();
