@@ -1,18 +1,15 @@
 import type { ComponentChildren } from "preact";
-import { lazy, Suspense } from "preact/compat";
 import {
   type CockpitModel,
   type CockpitSectionId,
 } from "../../cockpit/model";
-import { parentRoute, routeKey } from "../../cockpit/route";
+import { routeKey } from "../../cockpit/route";
 import {
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
 } from "./messages";
-import { Button, PageChrome, EmptyState } from "../shared/ui";
-import { loadSectionStylesheet } from "../shared/lazySectionStyles";
-import type { ProbesVM } from "../probes/messages";
+import { Button } from "../shared/ui";
 import type { StudioDispatch } from "../shared/studio/protocol";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
@@ -53,33 +50,6 @@ import type { StudioDispatch } from "../shared/studio/protocol";
 // cockpitCssParity key-parity check stays a clean 1:1 client-id ↔ host-key mapping.
 // t-610705 (Phase C.2) — CSS co-load, ninth surface: the agent-probes/workspace-probes subroutes of
 // Fleet (read-only, no mermaid content).
-const ProbesApp = lazy(() =>
-  import("../probes/App").then((m) => {
-    loadSectionStylesheet("probes");
-    return { default: m.App };
-  }),
-);
-/**
- * t-aa2780 — a lazy section's loading screen now NAMES the section.
- *
- * With the tab strip gone, the body is the only thing that says which section is on screen, and a
- * code-split chunk's fallback is frequently the FIRST thing a human sees after clicking a launcher
- * tile. A bare "Loading…" left the whole panel anonymous for that window. `title` is the launcher's
- * own label (TAB_META's navKey), so the screen echoes the tile that was clicked rather than the
- * section's eventual H1, which is sometimes worded differently ("Inbox" tile → "Human Inbox" page).
- *
- * Subroutes deliberately pass nothing: they render the "← Back" breadcrumb above this, which already
- * says where the human is and where they came from.
- */
-function SectionFallback({ title }: { title?: string }) {
-  return (
-    <>
-      {title ? <PageChrome title={title} /> : null}
-      <EmptyState kind="loading" message="Loading…" />
-    </>
-  );
-}
-
 /** t-d16a39 — non-empty UI sentinel for "All workspaces" (Radix Select forbids value=""). */
 
 export interface CockpitAppProps {
@@ -118,8 +88,6 @@ export interface CockpitAppProps {
   navPending?: { routeKey: string; phase: "pending" | "slow" | "stalled" };
   /** t-ac79a7 — retry from the stalled banner. */
   onRetryNavigation?: () => void;
-  /** t-610705 (Phase C.2) — the agent-probes/workspace-probes subroutes of Fleet. */
-  probesVm?: ProbesVM;
   /** t-610705 (Phase D, D0/D1a) — the studio-new/studio-edit subroute (fleet/... — command, terminal,
    *  runbook, schedule). The studio App receives raw protocol/nav-transaction messages, not a
    *  decoded VM — see command-studio-shell/App.tsx's own doc comment for why. `studioDispatch` is
@@ -148,13 +116,12 @@ export function App(p: CockpitAppProps) {
   // TEXT for it, so even a comment would keep the guard red). Both removals belong here: this is the
   // merge the Phase D header warns about, where two migrations touch one line and keeping either
   // side alone silently restores a renderer the other retired.
-  const isFleetSubroute = activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
   // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
   // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
   // SDD 485 D4 — no `inbox-item` term: Control never commits that route any more (Cockpit.ts's
   // `navigate` redirects it into the Human Inbox app, which renders the item as its own subroute), so a
   // branch for it here would be a path nothing reaches — the same shape C4 left for `task-detail`.
-  const isEmbed = isFleetSubroute;
+  const isEmbed = false;
   // t-aa2780 — `isNavlessStudio` is gone with the tab strip: it existed ONLY to stop the Overview tab
   // rendering as active while a nav-less route (Project Handoff) was open. There is no tab
   // to light now, and `model.section` was deliberately never coerced (t-610705 Phase D, D3), so the
@@ -166,34 +133,10 @@ export function App(p: CockpitAppProps) {
   // inline placement — this only changes WHERE it renders, not the navigation logic itself.
   // SDD 485 C4 — no `task-detail` term: Control never commits that route any more (Cockpit.ts's
   // `navigate` redirects it to the document app), so a branch for it here would be a path nothing reaches.
-  const isSubroute = isFleetSubroute;
-  let breadcrumb: ComponentChildren = null;
-
   let body: ComponentChildren = null;
   if (!m) {
     body = <div class="ck-empty">{s.empty}</div>;
-  } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
-    // t-610705 (Phase C.2) — Fleet subroutes: same "checked before the section branch" reasoning as
-    // the section branch below (nav section reads "fleet" for all three; this renders the content).
-    const parent = parentRoute(activeRoute);
-    // t-fullpage-proto — was a compact "← Fleet" line under the surface's OWN title
-    // (ActivityApp/ProbesApp rendered it there); now lives in the top chrome instead, so neither
-    // component receives a backLink prop any more.
-    if (parent && parent.kind === "section") {
-      breadcrumb = (
-        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-fleet-subroute-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
-          {s.navFleet}
-        </Button>
-      );
-    }
-    body = (
-      <div class="ck-embed-host" data-testid="control-fleet-subroute">
-        <Suspense fallback={<SectionFallback />}>
-          <ProbesApp vm={p.probesVm} />
-        </Suspense>
-      </div>
-    );
- } else {
+  } else {
     // SDD 485 D10 — unknown sections never masquerade as Settings; the host redirects them to Overview.
     body = null;
   }
@@ -229,12 +172,6 @@ export function App(p: CockpitAppProps) {
           When `breadcrumb` is null (the deep-link edge: a studio whose parent is neither a section nor
           a task-detail) there is now no header at all rather than a fallback tab strip — the way out of
           that route is the launcher, the same as from any section. */}
-      {isSubroute && breadcrumb ? (
-        <header class="ck-top ck-top--fullpage">
-          <div class="ck-chrome ck-chrome--fullpage">{breadcrumb}</div>
-        </header>
-      ) : null}
-
       <main
         class={`ck-main${isEmbed ? " ck-main--embed" : ""}`}
         aria-busy={navBusy ? "true" : undefined}

@@ -49,7 +49,6 @@ describe("preview route table", () => {
       // C4's task-detail.css did one commit earlier.
       // SDD 485 D3 — runtime-ops.css left with its surface, exactly as the plugins sheets did one commit
       // earlier: Runtime Ops is a standalone app with its own route below.
-      "/dist/webview/probes.css",
       // t-967b5b — `control-typography.css` dropped out of Control's list when the Settings migration
       // took its last `ck-mono` consumer. Three files spell this list out: the host, the preview route
       // table, and this expectation. `cockpitCssParity` ties the first two together, so a change caught
@@ -112,9 +111,9 @@ describe("preview route table", () => {
     // SDD 485 C5 — no `mission` fixture and no `snapshot` push: the Board is its own route now. The
     // nav-pending fixture is what still names a `task-detail:` routeKey, and it carries only init+model
     // plus the pending envelope, because a route Control cannot render pushes no content of its own.
-    // Probes remains a Fleet subroute; Activity moved to its standalone route in D17.
+    // D18 routes Probes out to its standalone app, so the compatibility route pushes no content.
     const probesMsgs = r.makeMessage(r.fixtures["agent-probes"]!.vm) as Array<{ type: string }>;
-    expect(probesMsgs.map((m) => m.type)).toEqual(["init", "model", "probes"]);
+    expect(probesMsgs.map((m) => m.type)).toEqual(["init", "model"]);
     const validationsMsgs = r.makeMessage(r.fixtures.validations.vm) as Array<{ type: string }>;
     expect(validationsMsgs.map((m) => m.type)).toEqual(["init", "model", "validations"]);
     const approvalMsgs = r.makeMessage(r.fixtures.approvals.vm) as Array<{ type: string }>;

@@ -18,13 +18,14 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     // SDD 485 D4 — and `inbox-item` left the same way, one migration shape later. It had been the one
     // subroute WITH a nav tab lit under it; that whole arrangement moved INSIDE the Human Inbox app,
     // where the item is a subroute of the app rather than of Control.
-    expect(src).toContain("const isSubroute = isFleetSubroute;");
+    // D17–D19 moved every surviving detail route to its standalone app. With Probes gone there is
+    // no Control subroute left to hoist a breadcrumb for; Phase E can remove the dormant CSS next.
+    expect(src).not.toContain("const isSubroute =");
     expect(src).not.toContain("isStudioSubroute");
     expect(src).not.toContain("activeRoute?.kind === \"task-detail\"");
     expect(src).not.toContain("activeRoute?.kind === \"inbox-item\"");
-    expect(src).toContain("let breadcrumb: ComponentChildren = null;");
-    expect(src).toMatch(/isSubroute && breadcrumb \? \(\s*<header class="ck-top ck-top--fullpage">/);
-    expect(src).toContain('<div class="ck-chrome ck-chrome--fullpage">{breadcrumb}</div>');
+    expect(src).not.toContain("let breadcrumb: ComponentChildren = null;");
+    expect(src).not.toContain('class="ck-top ck-top--fullpage"');
   });
 
   it("each surviving branch sets breadcrumb instead of rendering its own inline back-link", () => {
@@ -34,10 +35,10 @@ describe("Control subroutes render fullpage chrome (t-fullpage-proto)", () => {
     expect(src).not.toContain('<div class="td-breadcrumb"');
     expect(src).not.toContain('data-testid="control-task-detail-breadcrumb"');
 
-    // Fleet subroutes (Activity/Probes): backLink prop no longer passed to either component.
+    // Fleet subroutes (Activity/Probes) have no Control renderer or breadcrumb branch at all.
     expect(src).not.toMatch(/<ActivityApp[^>]*backLink=/);
     expect(src).not.toMatch(/<ProbesApp[^>]*backLink=/);
-    expect(src).toMatch(/breadcrumb = \(\s*<Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-fleet-subroute-breadcrumb"/);
+    expect(src).not.toContain("control-fleet-subroute-breadcrumb");
 
     // D13/D20 — studios have no Control renderer or breadcrumb branch at all.
     expect(src).not.toContain("studioMountProps");

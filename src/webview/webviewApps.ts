@@ -230,6 +230,10 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // (workspace, agent) pair, so each pair is one document and two agents may remain open side by side.
   // The retired viewType still names this exact app; its legacy wsHash/agent state maps without residue.
   { view: "activity", viewId: "tachyonActivity", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D18 — probeView(caller?) is one source with two immutable identity variants. Encoding the
+  // workspace-wide scope and agent scope as distinct document identities keeps the existing cardinality:
+  // every panel is still keyed by project + required identity, and the retired viewType/state revive whole.
+  { view: "probes", viewId: "tachyonProbes", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

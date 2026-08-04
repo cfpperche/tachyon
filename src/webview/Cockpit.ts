@@ -58,7 +58,6 @@ import {
 } from "./activity/messages.js";
 import { withActivityShareKeys, resolveActivityShare, internalSharePrompt } from "../activity/activityShare.js";
 import type { ActivityViewModel } from "../activity/activityView.js";
-import { probesMessage } from "./probes/messages.js";
 import {
   approvalsMessage,
   approvalErrorMessage,
@@ -188,6 +187,8 @@ export interface CockpitDeps {
   /** D17 compatibility routes leave Control and open the immutable Activity document. */
   openActivity: (wsHash: string, agent: string) => void;
   probes: CockpitProbes;
+  /** D18 compatibility routes leave Control and open the immutable Probes document. */
+  openProbes: (wsHash: string, caller?: string) => void;
   openHandoff: (wsHash?: string) => void;
   /** t-610705 (Phase D) — StudioPanelManagerBase-based editors migrated onto a Control route
    *  (studios-routes-design.md). D0 only wires `studio:"command"`; D1-D3 add the rest onto the SAME
@@ -613,9 +614,14 @@ let openInboxItemApp: ((wsHash: string, itemKind: HumanInboxKind, itemId: string
 let openFleetApp: (() => void) | undefined;
 let openActivityApp: ((wsHash: string, agent: string) => void) | undefined;
 let openHandoffApp: ((wsHash: string) => void) | undefined;
+let openProbesApp: ((wsHash: string, caller?: string) => void) | undefined;
 
 function navigate(route: CockpitRoute): void {
   const deliberateOverview = route.kind === "section" && route.section === "overview";
+  if (route.kind === "agent-probes" || route.kind === "workspace-probes") {
+    openProbesApp?.(route.wsHash, route.kind === "agent-probes" ? route.agent : undefined);
+    route = routes.section("overview");
+  }
   if ((route.kind === "studio-new" || route.kind === "studio-edit") && route.studio !== "task" && route.studio !== "pin") {
     if (route.kind === "studio-new") openStudioDocument?.openNew(route.studio, route.wsHash);
     else openStudioDocument?.openExisting(route.studio, route.wsHash, route.entityId);
@@ -810,7 +816,6 @@ async function requestNavigate(route: CockpitRoute, live: vscode.WebviewPanel, a
  *  former pair of per-section scope aliases and Plugins' derived fallback. */
 let pushApprovals: (() => void) | undefined;
 let pushValidations: (() => void) | undefined;
-let pushProbes: (() => void) | undefined;
 let pushStudioReferenceData: (() => void) | undefined;
 let pushTaskStudioEntity: (() => void) | undefined;
 let doOpenActivityTranscript: (() => void) | undefined;
@@ -824,13 +829,12 @@ let wiredPanel: vscode.WebviewPanel | undefined;
  */
 type ControlRefreshKind =
   | "shell-poll"
-  | "probes" | "approvals" | "validations"
+  | "approvals" | "validations"
   | "studio-reference" | "task-studio";
 
 function pushControlRefresh(kind: ControlRefreshKind): void {
   switch (kind) {
     case "shell-poll": pushControlPoll?.(); return;
-    case "probes": pushProbes?.(); return;
     case "approvals": pushApprovals?.(); return;
     case "validations": pushValidations?.(); return;
     case "studio-reference": pushStudioReferenceData?.(); return;
@@ -878,10 +882,6 @@ export function __controlGateProbe(): { visible: boolean; pending: number; lastC
 /** t-610705 (Phase C.2) — refresh an open agent-probes/workspace-probes subroute after the probe
  *  ledger changes (wired into extension.ts's onViewsChanged("probes"), replacing the retired
  *  ProbeResultPanelManager.refreshAll()). A no-op off a probes route. */
-export function refreshCockpitProbes(): void {
-  refreshControl("probes");
-}
-
 /** t-610705 (Phase D, D1a) — re-fetch reference data (catalogs, not the entity) for an open studio
  *  route after an external tachyon.yml change (wired into extension.ts's onViewsChanged("commands")/
  *  refreshAll, replacing the retired RunbookStudioPanelManager/ScheduleStudioPanelManager's
@@ -1105,7 +1105,6 @@ export async function openCockpit(
         clearCockpitSingletonClaim();
         pushApprovals = undefined;
         pushValidations = undefined;
-        pushProbes = undefined;
         pushStudioReferenceData = undefined;
         pushTaskStudioEntity = undefined;
         doOpenActivityTranscript = undefined;
@@ -1128,6 +1127,7 @@ export async function openCockpit(
         openFleetApp = undefined;
         openActivityApp = undefined;
         openHandoffApp = undefined;
+        openProbesApp = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
@@ -1177,6 +1177,7 @@ export async function openCockpit(
   openFleetApp = () => deps.openFleet(controlWorkspaceScope.current);
   openActivityApp = (wsHash, agent) => deps.openActivity(wsHash, agent);
   openHandoffApp = (wsHash) => deps.openHandoff(wsHash);
+  openProbesApp = (wsHash, caller) => deps.openProbes(wsHash, caller);
   openRuntimeConfigApp = () => deps.openRuntimeConfig(controlWorkspaceScope.current);
   openExecutionGraphApp = () => deps.openExecutionGraph(controlWorkspaceScope.current);
   openSettingsApp = () => deps.openSettings();
@@ -1604,38 +1605,6 @@ export async function openCockpit(
     return false;
   };
 
-  const resolveProbesWs = (wsHash: string): WorkspaceProbePresentationTarget | undefined =>
-    deps.probes.getWorkspaces().find((w) => w.wsHash === wsHash);
-
-  // t-610705 (Phase C.2) — mirrors the retired ProbeResultPanelManager's renderToken (same-route
-  // double-call ordering guard) — deliberately a SEPARATE counter from navEpoch/activityGeneration,
-  // since two sendProbes() calls for the SAME route+epoch can legitimately overlap (e.g. cockpit
-  // READY racing the refreshCockpitProbes fan-out).
-  let probesRequestToken = 0;
-
-  const sendProbes = async () => {
-    if (panel !== live) return;
-    if (currentRoute.kind !== "agent-probes" && currentRoute.kind !== "workspace-probes") return;
-    const route = currentRoute;
-    const epoch = navEpoch;
-    const myToken = ++probesRequestToken;
-    const ws = resolveProbesWs(route.wsHash);
-    if (!ws) {
-      if (panel !== live || navEpoch !== epoch || myToken !== probesRequestToken) return;
-      live.webview.postMessage(probesMessage({ folder: "", error: "No Tachyon workspace for Probes." }));
-      return;
-    }
-    const caller = route.kind === "agent-probes" ? route.agent : undefined;
-    try {
-      const view = await ws.probeView(caller);
-      if (panel !== live || navEpoch !== epoch || myToken !== probesRequestToken) return;
-      live.webview.postMessage(probesMessage({ folder: ws.folderName, view }));
-    } catch (err) {
-      if (panel !== live || navEpoch !== epoch || myToken !== probesRequestToken) return;
-      live.webview.postMessage(probesMessage({ folder: ws.folderName, error: err instanceof Error ? err.message : String(err) }));
-    }
-  };
-
   const sendSectionModule = async () => {
     // t-ac79a7 — the ready half of the navigation bracket. Captured here (not after the awaits)
     // because `currentRoute` can be superseded while a module loads; the client matches this key
@@ -1646,7 +1615,6 @@ export async function openCockpit(
     if (isSection(currentRoute, "validations")) await sendValidations();
     else if (isSection(currentRoute, "approvals")) await sendApprovals();
     else if (currentRoute.kind === "agent-activity") ensureActivityBinding();
-    else if (currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes") await sendProbes();
     else if (isStudioRoute(currentRoute)) {
       // t-610705 (Phase D, D0) — start-if-missing only, same idempotent-on-same-identity convention
       // as ensureActivityBinding: the actual content push happens once the mounted studio App's OWN
@@ -1676,7 +1644,6 @@ export async function openCockpit(
   pushControlPoll = () => { void shellPoll(); };
   pushApprovals = () => { void sendApprovals(); };
   pushValidations = () => { void sendValidations(); };
-  pushProbes = () => { void sendProbes(); };
   // t-610705 (Phase D, D1a) — no "sendX" wrapper needed: refreshStudioReferenceData already takes
   // the io capability directly (same studioIo the studio-envelope dispatch above uses), and is a
   // no-op with no binding — the isStudioRoute guard here just avoids the pointless call off-route.
@@ -2046,7 +2013,6 @@ export async function openCockpit(
     // bootstrap global and the client injects it when the lazy section body loads
     // (src/webview/shared/lazySectionStyles.ts). Each Phase B PR moves one more surface's sheet
     // from always-eager to this scheme; sheets not yet migrated stay eager unconditionally.
-    const probesIsActive = currentRoute.kind === "agent-probes" || currentRoute.kind === "workspace-probes";
     // t-610705 (Phase D, D0/D1a) — studio-frame.css is shared by every StudioPanelManagerBase-based
     // studio (StudioFrame.tsx); each studio's OWN sheet is a separate conditional (D1b/D2/D3 add
     // theirs alongside command/terminal/runbook/schedule here, one `studioX ? uri(...) : undefined`
@@ -2117,7 +2083,6 @@ export async function openCockpit(
         // markdown that can carry mermaid blocks; a second, separately-gated call for that same file
         // would duplicate the link and fail cockpitCssParity's no-duplicate-link check (its source
         // scan can't tell a real call from one merely mentioned in a comment, so don't write it here).
-        probesIsActive ? uri("probes.css") : undefined,
         // t-610705 (Phase D, D1b) — Agent Studio's Tailwind utilities sheet loads BEFORE studio-frame.css
         // (not alongside its own surface sheet below) — matches the retired standalone panel's
         // styleFiles order exactly (vscode-theme.css → agent-studio-shell.tailwind.css → studio-frame.css
@@ -2168,7 +2133,6 @@ export async function openCockpit(
          */
         __tachyonCardPreviewCss: uri("sidebar.css"),
         __tachyonSectionStyles: {
-          probes: uri("probes.css"),
           // per-studio "studio-frame-<id>" keys (not one shared "studio-frame") — see
           // cockpit/App.tsx's doc comment on the lazy studio blocks for why: same convention as the
           // 3 "*-mermaid" keys above, one distinct key per client call site even though every key

@@ -142,7 +142,15 @@ export const ROUTES: Record<string, Route> = {
     },
     makeMessage: (vm) => activityMessage("preview", "agent", vm as never),
   },
-  // Probes remains a Control Fleet subroute for D18.
+  // SDD 485 D18 — both Probes identities use the same standalone bundle and model envelope.
+  probes: {
+    bundle: "/dist/webview/probes.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/probes.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: probesFixtures as Record<string, Fixture>,
+    module: true,
+    makeMessage: (vm) => probesMessage(vm as never),
+  },
   // t-b5dcae — the standalone "control-inspector" route previewed the Engine/Bridge Control
   // Inspector POC, which was dead code (ControlInspector.ts had zero importers). The real domain
   // logic (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly,
@@ -162,7 +170,6 @@ export const ROUTES: Record<string, Route> = {
       // t-b30efd — approvals and validations now share that Inbox app; Control owns neither stylesheet.
       // SDD 485 D3 — and no runtime-ops sheet: Runtime Ops has its own route in this table now, and
       // Control stopped linking it in the same change (cockpitCssParity asserts the two agree).
-      "/dist/webview/probes.css",
       // t-967b5b — `control-typography.css` left this list with the same edit that removed it from
       // `Cockpit.ts`: Control's last `ck-mono` use went out with the Settings migration (D10), and a
       // host linking a sheet it does not render is bytes for nobody. `cockpitCssParity` is what made
@@ -225,10 +232,7 @@ export const ROUTES: Record<string, Route> = {
       const activeRoute = (model as { activeRoute?: { kind?: string; wsHash?: string; agent?: string } }).activeRoute;
       // SDD 485 D4 — no `inbox-item` arm either: the item is a subroute INSIDE the Human Inbox app now,
       // reachable as `?view=human-inbox&fixture=item`, and Control commits neither route.
-      if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
-        const probes = probesFixtures.default?.vm;
-        if (probes) msgs.push(probesMessage(probes));
-      } else if ((activeRoute?.kind === "studio-new" || activeRoute?.kind === "studio-edit") && (activeRoute as { studio?: string }).studio) {
+      if ((activeRoute?.kind === "studio-new" || activeRoute?.kind === "studio-edit") && (activeRoute as { studio?: string }).studio) {
         // t-610705 (Phase D, D0/D1a) — a studio route: reuses the SAME fixture VMs + envelope shape
         // each (now-retired-standalone) <studio>-studio-shell route used, pushed unconditionally
         // rather than gated on a real "ready" mount handshake (this static harness has no live host

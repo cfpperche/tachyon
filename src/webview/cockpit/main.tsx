@@ -28,8 +28,6 @@ import {
 } from "./messages";
 import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
-import type { ProbesVM } from "../probes/messages";
-import { PROBES } from "../probes/messages";
 // SDD 485 C5 — the Board's envelope and its actions left with its renderer: they belong to
 // src/webview/mission-control/main.tsx, the board app's own client, and nothing here speaks them.
 import type { StudioDispatch } from "../shared/studio/protocol";
@@ -73,7 +71,6 @@ function CockpitRoot() {
   /** Ephemeral pair offer — not stored in polled model. */
   const [companionPairOffer, setCompanionPairOffer] = useState<CompanionPairOffer | undefined>(undefined);
   const [auto, setAuto] = useState(true);
-  const [probesVm, setProbesVm] = useState<ProbesVM | undefined>(undefined);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
    *  decode/reshape here — command-studio-shell/App.tsx's own decodeStudioMessage handles it, same
    *  as it did as a standalone panel); `seq` guarantees change detection even across two arrivals
@@ -187,8 +184,6 @@ function CockpitRoot() {
         }
         setModel(next);
       }
-      else if (type === PROBES && raw.vm) {
-        setProbesVm(raw.vm as ProbesVM);
       // SDD 485 D4 — the four Human Inbox arms left with the renderer: the Inbox is a standalone
       // `dashboard` app, and its client half is `human-inbox/main.tsx`, which owns its state slots, its
       // own 3s poll, and the list/item subroute the HOST decides. The identity checks these two arms
@@ -196,7 +191,7 @@ function CockpitRoot() {
       // panel that IS one project's queue has no second identity for a late push to belong to.
       // SDD 485 D3 — the two runtime-ops arms left with the renderer: Runtime Ops is a standalone app, and
       // its client half is `runtime-ops/main.tsx`, which owns both state slots and its own 3s poll.
-      } else if (type === "toast" && typeof raw.text === "string") {
+      else if (type === "toast" && typeof raw.text === "string") {
         const toneRaw = typeof raw.tone === "string" ? raw.tone : "info";
         const tone: ToastTone =
           toneRaw === "ok" || toneRaw === "warn" || toneRaw === "err" || toneRaw === "info"
@@ -308,7 +303,6 @@ function CockpitRoot() {
       onIssueCompanionPairCode={(wsHash) => post(issueCompanionPairCodeAction(wsHash))}
       companionPairOffer={companionPairOffer}
       onPost={(action) => post(action)}
-      probesVm={probesVm}
       studioIncoming={studioIncoming}
       studioDispatch={studioDispatch}
       onSetSection={(section: CockpitSectionId) => {

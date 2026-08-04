@@ -33,7 +33,6 @@ const COCKPIT_APP = "src/webview/cockpit/App.tsx";
  * Names are the lazy binding, matched against `const <name> = lazy(`.
  */
 const REMAINING = {
-  ProbesApp: "D18 — Probes becomes an app; one renderer, two identities",
   HandoffApp: "D19 — Project Handoff becomes a dashboard app keyed by project",
 } as const;
 
