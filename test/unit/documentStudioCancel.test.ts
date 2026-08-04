@@ -13,12 +13,16 @@ describe("document studio Cancel", () => {
     expect(discard).toHaveBeenCalledOnce();
   });
 
-  it("offers all three destinations for a dirty draft", async () => {
+  it("offers the two affirmatives as buttons and names the third in the detail line", async () => {
+    // Three destinations, two controls. VS Code appends its own dismiss button to a modal, so passing
+    // "Continue editing" too produced FOUR buttons of which two did the same thing — the redundancy
+    // that got the read-mode breadcrumb removed. The dismiss button cannot carry the meaning on its
+    // own here (the action being confirmed is itself called "Cancel"), so the detail line says it.
     await confirmDocumentStudioCancel(true, vi.fn(), vi.fn());
     expect(__getWarningMessageCalls()).toEqual([{
       message: "This draft has unsaved changes. What would you like to do?",
-      options: { modal: true },
-      actions: ["Save", "Discard", "Continue editing"],
+      options: { modal: true, detail: "Dismissing this dialog keeps the draft open for editing." },
+      actions: ["Save", "Discard"],
     }]);
   });
 
@@ -43,8 +47,11 @@ describe("document studio Cancel", () => {
     expect(discard).toHaveBeenCalledOnce();
   });
 
-  it("does nothing when Continue editing is selected", async () => {
-    __setWarningMessageResult("Continue editing");
+  it("does nothing when the dialog is dismissed — the third destination", async () => {
+    // undefined is what VS Code returns for Esc or its own dismiss button, and it must land on
+    // "editing": the draft is the thing the whole dialog exists to protect, so the ambiguous answer
+    // must never be the destructive one.
+    __setWarningMessageResult(undefined);
     const save = vi.fn();
     const discard = vi.fn();
     expect(await confirmDocumentStudioCancel(true, save, discard)).toBe("editing");
