@@ -231,6 +231,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonEngine", view: "engine", hostFile: "src/webview/EnginePanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   { viewId: "tachyonWorktrees", view: "worktrees", hostFile: "src/webview/WorktreesPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   { viewId: "tachyonFleet", view: "fleet", hostFile: "src/webview/FleetPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonExecutionGraph", view: "execution-graph", hostFile: "src/webview/ExecutionGraphPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.

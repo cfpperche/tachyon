@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { sealExecutionEvent, type SealedExecutionEvent } from "../../src/executionGraph/eventSchema.js";
 import { indexExecutionDetail, projectExecutions } from "../../src/executionGraph/executionProjection.js";
 import { buildExecutionDetailVm } from "../../src/cockpit/executionGraphVm.js";
-import { buildExecutionGraphSectionVm } from "../../src/webview/Cockpit.js";
+import { buildExecutionGraphSectionVm } from "../../src/webview/ExecutionGraphPanel.js";
 
 /**
  * t-441b0f — the ledger carried `cwd`/`worktree`/`tool` and the panel never showed them.
@@ -28,7 +28,7 @@ function ev(over: Partial<Parameters<typeof sealExecutionEvent>[0]> = {}): Seale
 
 function sectionFor(events: SealedExecutionEvent[]) {
   return buildExecutionGraphSectionVm(
-    { executionGraph: () => ({ events, available: true }) } as never,
+    { read: () => ({ events, available: true }) },
     "wshash",
   );
 }

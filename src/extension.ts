@@ -18,6 +18,7 @@ import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanIn
 import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
 import { FLEET_VIEW_TYPE, FleetPanelManager } from "./webview/FleetPanel.js";
+import { EXECUTION_GRAPH_VIEW_TYPE, ExecutionGraphPanelManager } from "./webview/ExecutionGraphPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import {
   openCockpit,
@@ -1965,15 +1966,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         refreshCockpitApprovals();
       },
     },
-    /**
-     * t-c6a89e — the ledger Control's Execution section reads.
-     *
-     * This dependency was declared and never supplied, so the section returned `undefined` before it
-     * could touch a ledger and rendered `no-telemetry` for every workspace, forever. The wiring lives
-     * in `makeExecutionGraphDep` so a test can drive it; an inline closure is exactly what let this
-     * go unnoticed while every test around it passed.
-     */
-    executionGraph: makeExecutionGraphDep(byHash),
     validations: {
       getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
       onValidationsChanged: () => {
@@ -1986,6 +1978,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openBoard,
     openFleet: (hash?: string) => openFleetTab(hash),
     openRuntimeConfig: (hash?: string) => openRuntimeConfigTab(hash),
+    openExecutionGraph: (hash?: string) => openExecutionGraphTab(hash),
     // SDD 485 D2 — and Plugins, the second dashboard: Control opens the app for a project rather than
     // rendering the section. `openPluginsTab` resolves the ambient scope once, at open.
     openPlugins: (hash?: string) => openPluginsTab(hash),
@@ -2389,6 +2382,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return true;
   };
 
+  // SDD 485 D9 — the ledger reader accepts a wsHash, so each immutable dashboard project receives
+  // its own VM and its own webview-local selection/filter state.
+  const executionGraphPanels = new ExecutionGraphPanelManager(
+    context.extensionUri,
+    { read: makeExecutionGraphDep(byHash) },
+    undefined,
+    controlWorkspaceScope,
+  );
+  context.subscriptions.push({ dispose: () => executionGraphPanels.dispose() });
+  const openExecutionGraphTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+      return false;
+    }
+    executionGraphPanels.open(ws.wsHash);
+    return true;
+  };
+
   // SDD 485 D7 — Fleet is one dashboard per immutable project. Its source is the same scoped
   // buildCockpitModel slice Control used; every action receives the panel project, never a row fallback.
   const fleetPanels = new FleetPanelManager(context.extensionUri, {
@@ -2431,6 +2445,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, ENGINE_VIEW_TYPE, (panel, state) => enginePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, EXECUTION_GRAPH_VIEW_TYPE, (panel, state) => executionGraphPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, FLEET_VIEW_TYPE, (panel, state) => fleetPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
@@ -2914,6 +2929,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "runtime-config") {
           openRuntimeConfigTab();
+          return Promise.resolve();
+        }
+        if (resolved === "execution-graph") {
+          openExecutionGraphTab();
           return Promise.resolve();
         }
         return openCockpit(makeCockpitDeps(), { section: resolved });

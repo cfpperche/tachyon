@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classifyEngineCurrency, engineCurrencyNote } from "../../src/engine-service/engineCurrency.js";
-import { buildExecutionGraphSectionVm } from "../../src/webview/Cockpit.js";
+import { buildExecutionGraphSectionVm } from "../../src/webview/ExecutionGraphPanel.js";
 
 /**
  * t-f54b62 — the running engine can be arbitrarily older than the installed one, and nothing said so.
@@ -80,7 +80,7 @@ describe("t-f54b62 — is the running engine the installed one", () => {
   describe("the Execution section explains an empty view when the host knows why", () => {
     const section = (currency?: Parameters<typeof engineCurrencyNote>[0]) =>
       buildExecutionGraphSectionVm(
-        { executionGraph: () => ({ events: [], available: false, ...(currency ? { currency } : {}) }) } as never,
+        { read: () => ({ events: [], available: false, ...(currency ? { currency } : {}) }) },
         "wshash",
       );
 

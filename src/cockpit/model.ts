@@ -65,11 +65,11 @@ export type CockpitSectionId =
  * not move at all. D2 — `plugins`, the third, by exactly that edit and no other. D3 — `runtime`
  * (Runtime Ops), the fourth. D4 — `inbox` (the Human Inbox), the fifth, and the
  * first whose departure also takes a SUBROUTE with it: `inbox-item` is rendered inside that app now, so
- * both route kinds redirect (see `navigate()` in Cockpit.ts).
+ * both route kinds redirect (see `navigate()` in Cockpit.ts). D9 — `execution-graph`, the ninth:
+ * it remains decodable but Control no longer renders it.
  */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "overview",
-  "execution-graph",
   "settings",
 ];
 
@@ -85,6 +85,7 @@ export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   ...COCKPIT_SECTION_ORDER,
   "approvals",
   "engine",
+  "execution-graph",
   "fleet",
   "inbox",
   "mission",

@@ -28,6 +28,7 @@ export function makeFakeCockpitDeps(missionBoard: CockpitMissionBoard, overrides
     openBoard: () => {},
     openFleet: () => {},
     openRuntimeConfig: () => {},
+    openExecutionGraph: () => {},
     // SDD 485 D1 — Control opens the tmux app instead of rendering it; a test that cares that it was asked
     // (rather than that Control navigated) overrides this.
     openTmux: () => {},

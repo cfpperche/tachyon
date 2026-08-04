@@ -5,6 +5,7 @@
 import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
 import { routes as cockpitRoutes } from "../../../src/cockpit/route";
 import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
+import type { ExecutionGraphStrings } from "../../../src/webview/execution-graph/messages";
 import type { WorktreesStrings } from "../../../src/webview/worktrees/messages";
 import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/types";
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
@@ -19,7 +20,7 @@ import { sealExecutionEvent, type SealedExecutionEvent } from "../../../src/exec
 import { projectExecutions } from "../../../src/executionGraph/executionProjection";
 import { buildExecutionGraphVm } from "../../../src/cockpit/executionGraphVm";
 
-export const strings: CockpitStrings & WorktreesStrings = {
+export const strings: CockpitStrings & WorktreesStrings & ExecutionGraphStrings = {
   title: "Control",
   subtitle: "Project sysadmin",
   navOverview: "Overview",
@@ -886,42 +887,6 @@ const executionGraphVm = buildExecutionGraphVm({ projection: projectExecutions(e
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
-  // SDD 480 Phase 4 — the four surfaces Visual QA has to see: heavy/grouped, and each explicit state.
-  "execution-graph": {
-    provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }), executionGraph: executionGraphVm },
-  },
-  /**
-   * SDD 480 Phase 5 — the graph captured from a REAL dogfood run: a real tmux session, a really
-   * reparented process (PPID reassigned to systemd), a real process exit code, and the real engine
-   * unit claimed by three agents. Committed so the surface is validated against data the system
-   * actually produced rather than data a fixture author imagined.
-   */
-  "execution-graph-real": {
-    provenance: "captured-host-vm",
-    vm: { ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }), executionGraph: realExecutionGraphVm as never },
-  },
-  "execution-graph-empty": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
-      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]) }),
-    },
-  },
-  "execution-graph-no-telemetry": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
-      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]), status: "no-telemetry" }),
-    },
-  },
-  "execution-graph-error": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
-      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]), status: "error", errorDetail: "execution ledger is unreadable" }),
-    },
-  },
   fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
   // SDD 485 C5 — no `mission` fixture: Control has no Board section to photograph any more. The Board has
   // its own harness route (?view=mission-control), rendering the same component in the page it really ships.
@@ -1104,3 +1069,12 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     vm: buildCockpitModel([...bundles, goldenBundle], { section: "overview", nowIso: now }),
   },
 };
+
+// SDD 485 D9 — these fixtures now drive the standalone app's real envelope and bundle.
+export const executionGraphFixtures = {
+  "execution-graph": { provenance: "synthetic-edge", vm: executionGraphVm },
+  "execution-graph-real": { provenance: "captured-host-vm", vm: realExecutionGraphVm },
+  "execution-graph-empty": { provenance: "synthetic-edge", vm: buildExecutionGraphVm({ projection: projectExecutions([]) }) },
+  "execution-graph-no-telemetry": { provenance: "synthetic-edge", vm: buildExecutionGraphVm({ projection: projectExecutions([]), status: "no-telemetry" }) },
+  "execution-graph-error": { provenance: "synthetic-edge", vm: buildExecutionGraphVm({ projection: projectExecutions([]), status: "error", errorDetail: "execution ledger is unreadable" }) },
+} satisfies Record<string, Fixture>;
