@@ -27,7 +27,6 @@ import {
   refreshCockpitApprovals,
   refreshCockpitValidations,
   refreshCockpitTaskStudioEntity,
-  refreshCockpitProbes,
   refreshCockpitStudioReferenceData,
   markControlSourceResync,
   decodeCockpitPanelState,
@@ -35,7 +34,6 @@ import {
   type CockpitPanelState,
   type CockpitDeps,
 } from "./webview/Cockpit.js";
-import { isCockpitSingletonClaimed } from "./webview/cockpitSingleton.js";
 import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { routes as cockpitRoutes } from "./cockpit/route.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
@@ -53,7 +51,7 @@ import { approveSavedAgentProposal, type SavedAgentCommitResult } from "./agents
 import { approveSavedAgentRemovalProposal, type SavedAgentRemovalCommitResult } from "./agents/savedAgentRemovalProposalCommit.js";
 import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
-import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
+import { PROBES_VIEW_TYPE, ProbeResultPanelManager, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
@@ -1184,7 +1182,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
     if (view === "handoff") handoffPanels.refresh();
-    if (view === "probes") refreshCockpitProbes(); // t-610705 (Phase C.2) — Control → Probes subroute
+    if (view === "probes") probesPanels.refresh();
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
     if (view === "pins") approvalPanels.refreshAll();
     // t-610705 (Phase D, D1a) — Runbook/Schedule's refreshReferenceData() retired with their panel
@@ -1982,6 +1980,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       getWorkspaces: () => workspaces().map((ws) => ws.activity),
     },
     openActivity: (wsHash, agent) => activityPanels.open(wsHash, agent),
+    openProbes: (wsHash, caller) => probesPanels.open(wsHash, caller),
     probes: {
       getWorkspaces: () => workspaces().map((ws) => ws.probe),
     },
@@ -2381,6 +2380,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     () => workspaces().map((workspace) => workspace.activity),
   );
   context.subscriptions.push({ dispose: () => activityPanels.dispose() });
+  const probesPanels = new ProbeResultPanelManager(
+    context.extensionUri,
+    () => workspaces().map((workspace) => workspace.probe),
+  );
+  context.subscriptions.push({ dispose: () => probesPanels.dispose() });
 
   const engineHost = makeCockpitDeps();
   const enginePanels = new EnginePanelManager(context.extensionUri, {
@@ -2567,13 +2571,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // painting "no workspace attached" for a moment (see `workspacePanelReviveDeferral`, which now reads
   // either field name).
   registerTrustedPanelSerializer<SectionPanelState | PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => {
-    panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    if (!state?.wsHash) return;
-    const route = state.caller ? cockpitRoutes.agentProbes(state.wsHash, state.caller) : cockpitRoutes.workspaceProbes(state.wsHash);
-    void openCockpit(makeCockpitDeps(), { route });
-  });
+  registerTrustedPanelSerializer<ProbesPanelState | SectionPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => {
+    probesPanels.deserialize(panel, state);
+  }, { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<LegacyPinDetailState>(context, PIN_DETAIL_VIEW_TYPE, (panel, state) => pinDetailPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentPanePanelState>(context, AGENT_PANE_VIEW_TYPE, (panel, state) => agentPanes.deserialize(panel, state));
   registerTrustedPanelSerializer<CommandStudioPanelState | SectionPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.command.deserialize(panel, state));
@@ -3391,8 +3391,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openProbes", async (hash?: string, agent?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (!ws) return;
-      const route = agent ? cockpitRoutes.agentProbes(ws.wsHash, agent) : cockpitRoutes.workspaceProbes(ws.wsHash);
-      await openCockpit(makeCockpitDeps(), { route });
+      probesPanels.open(ws.wsHash, agent);
     }),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {

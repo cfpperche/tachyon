@@ -81,6 +81,8 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // SDD 485 D17 — Activity is standalone again, keyed as a document by its immutable workspace+agent
   // route identity. It mounts through SectionPanelManager and consumes the shared .ds-page chrome.
   { viewId: "tachyonActivity", view: "activity", hostFile: "src/webview/ActivityPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "extend", extensionPoints: ["page-chrome"] },
+  // SDD 485 D18 — one document app whose immutable identity is workspace-wide or agent-scoped.
+  { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   // t-610705 (SDD 410 Phase C.3, 2026-07-21) — the standalone Project Handoff panel was retired:
   // it's a Control section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx;
   // standalone bundle + harness route retired — use ?view=cockpit&fixture=handoff instead). The
@@ -99,12 +101,6 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // (registerLegacyStudioRedirect): a revived pre-410 panel disposes itself and redirects into
   // Control → the pin's studio route.
   // spec 279 conversions (flip `converted` as each lane lands)
-  // t-610705 (SDD 410 Phase C.2, 2026-07-21) — the standalone Probes panel was retired: it's a
-  // Control subroute now (src/webview/probes/App.tsx stays, lazy-imported by cockpit/App.tsx;
-  // standalone bundle + harness route retired — use ?view=cockpit&fixture=agent-probes instead).
-  // The trusted serializer for the legacy "tachyonProbes" viewType stays registered in
-  // extension.ts: a revived pre-410 panel disposes itself and redirects into Control → the matching
-  // probes subroute.
   // SDD 485 D1 (2026-08-03) — the tmux Server Inspector is a STANDALONE APP again, reversing 410 Phase B
   // #5's retirement. It is the `window` kind, and it is the app that introduced that cardinality: the tmux
   // socket is cross-workspace by design (the sentence this comment used to carry as the REASON no scoping

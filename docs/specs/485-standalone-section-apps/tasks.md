@@ -419,8 +419,30 @@ work in parallel only if the second re-applies onto the first before delivery, n
       green. Visual evidence at 880 and 360 uses the real `activity.js` route and exact host stylesheet
       list: header controls wrap cleanly at 360, chat sides stay distinct, and long tool rows truncate
       inside the viewport (`ev-2026-08-04T17:06:42.962Z-3`).
-- [ ] D18. **Probes** — one renderer, two identities: `agentProbes(wsHash, caller)` and
+- [x] D18. **Probes** — one renderer, two identities: `agentProbes(wsHash, caller)` and
       `workspaceProbes(wsHash)`. Doors: `tachyon.openProbes` (:3398) and the serializer (:2562).
+      Measured answer: this is NOT a fourth cardinality. The source is one function,
+      `WorkspaceProbePresentationTarget.probeView(caller?)`, and the pre-410 persisted shape already
+      described the same one surface with `caller?`. The standalone app therefore uses the existing
+      `document` cardinality, whose required immutable identity is either `workspace` or
+      `agent:<caller>`; the prefix keeps an agent literally named `workspace` from colliding with the
+      workspace-wide document. In both variants the manager key remains exactly
+      `viewId | project | identity`; only this domain's identity namespace has two variants.
+
+      Cost and lesson: the retired `tachyonProbes` id/state revive directly into the new manager, both
+      command variants call the same `open(project, caller?)`, and old Control/deep-link routes redirect
+      at Control's single navigation commit point. Control lost the lazy renderer, client VM slot,
+      sender/refresh fan-out and probes stylesheet link; the app gained one ESM entry, preview route and
+      a thin async host preserving the old request-token stale-response guard. CSS was counted before
+      moving: `cockpit.css` has zero `.probes-root` consumers and `probes.css` owns all of them, so the
+      standalone host links only codicons, design-system and its own sheet and mounts `.ds-page`.
+
+      The cutover guard covers the command, serializer, renderer/client/host absence and shared page
+      chrome; it was proven RED by injecting a `ProbesApp` residue into Control before the green run.
+      Visual QA used the real `probes.js` bundle at 880 and 360. Desktop preserves the full inventory and
+      token colours; at 360 the fixed nine-column table remains horizontally wider than the viewport, so
+      the advisory verdict is `concern` rather than claiming a responsive layout this migration did not
+      create. Evidence: `.vqa/visual-qa/probes-default-{880,360}.png`.
 - [x] D19. **Project Handoff** — `dashboard`, keyed by project alone. Doors:
       `tachyon.openProjectHandoff` (:3363) and the serializer (:2547).
       The cardinality was the cheapest check in the tail of Phase D: `WorkspaceHandoffTarget` carries one

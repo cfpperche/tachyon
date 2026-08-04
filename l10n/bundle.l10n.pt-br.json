@@ -693,5 +693,7 @@
   "Invalid handoff distillation request.": "Solicitação de destilação do handoff inválida.",
   "Handoff distillation task sent to '{0}'.": "Tarefa de destilação do handoff enviada para '{0}'.",
   "Handoff distillation agent '{0}' started.": "Agente de destilação do handoff '{0}' iniciado.",
-  "Could not start handoff distillation: {0}": "Não foi possível iniciar a destilação do handoff: {0}"
+  "Could not start handoff distillation: {0}": "Não foi possível iniciar a destilação do handoff: {0}",
+  "Captured Probes": "Probes capturados",
+  "Probes — {0}": "Probes — {0}"
 }
