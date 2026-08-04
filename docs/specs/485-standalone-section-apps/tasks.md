@@ -262,9 +262,30 @@ work in parallel only if the second re-applies onto the first before delivery, n
       That one removal needed THREE edits (host, preview route table, hardcoded expectation);
       `cockpitCssParity` ties the first two, the third is unbound and only surfaced on the second gate run.
 
-- [ ] D11. Overview — the last one. Each PR: app lands,
+- [x] D11. **Overview** — the last dashboard, and the only one that was a DESTINATION before it was a
+      surface. Nineteen `routes.section("overview")` sites across `Cockpit.ts` pointed at it, left there
+      by the ten migrations before: every legacy landing route, plus D10's malformed-section recovery.
+      They converge on one shim placed AFTER the others, and Control falls through to `approvals` — a
+      section it still renders — so no redirect lands on something Control does not draw.
+
+      The trap that bit D6 and D10 was checked and avoided: `cockpit.css` kept `.ck-panel p` as a
+      DESCENDANT rule while the base moved to the shared sheet, and Overview renders `<p class="ck-empty">`
+      inside a `ck-panel`. The rule travelled into `overview.css` with the surface. Descendant rules are
+      the blind spot the class guard does not cover — it checks that the base is reachable, nobody checks
+      the descendants.
+
+      **My brief for this one was wrong and had to be corrected mid-flight.** It said the workspace scope
+      `<select>` lived here and should travel with the app. There is no `<select>`: C6 moved it to the
+      sidebar header, and what remained at `:491` was a COMMENT still describing it. I read the comment as
+      the code. The comment died with the section rather than being carried into the new app — a comment
+      that describes an absent mechanism is the same family the t-6dcc32 sweep catalogued, except it
+      misleads the next author instead of the user, which is exactly what it did to me.
+
+- [x] **The dashboard series is complete (D1–D11).** Every PR held the same contract: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
+      What follows below was written when this was one bucket, and is kept because the measurements in
+      it are what made the last seven cheap — not as work still to do.
 
       **These are a different shape of work from D1–D4, and the difference is not where anyone expects.**
       Measured before planning: the JSX is NOT the cost. Engine is 12 lines, Worktrees 13, Execution 16 —
@@ -316,21 +337,21 @@ work in parallel only if the second re-applies onto the first before delivery, n
           (`SidebarPrototype.ts:286`). Overview's select is a second writer, not the owner.
         - **Settings has no `section === "settings"` branch.** It is the `else` fallback at the end of the
           chain. Whoever migrates it finds that out before starting, not during.
-- [ ] D11. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
+- [ ] D12. **Task Studio becomes the EDIT MODE of the task-detail document**, not its own app
       (spec.md § "A document is one ENTITY"). Same panel, same key (`taskId`), mode as state. Declare
       and test the unsaved-edit policy on mode switch — that policy is the cost this decision accepts,
       and leaving it implicit is how it turns into data loss.
-- [ ] D12. The remaining studios (command, terminal, runbook, schedule, agent) become document apps
+- [ ] D13. The remaining studios (command, terminal, runbook, schedule, agent) become document apps
       with ONE mode. Their parent is a flat section (`route.ts:187`), not an entity route, so do not
       invent a reading view none of them has.
-- [ ] D13. **One Pins document app carrying detail and edit**, keyed by pin id — same shape as D11.
+- [ ] D14. **One Pins document app carrying detail and edit**, keyed by pin id — same shape as D12.
       The LIST stays in the sidebar. `studio-edit(pin)`'s `returnRoute ?? overview` fallback becomes
       the app's own read mode, since it existed only for lack of a detail route to return to.
       Its current host is `SidebarPrototype.previewPin` (`:439`), which already opens an editor panel;
       moving it to `SectionPanelManager` also gets it the Phase B gate it has never had.
-- [ ] D14. Decide the Overview JUMP card — survives, mirrors the launcher, or goes. It is a second
+- [ ] D15. Decide the Overview JUMP card — survives, mirrors the launcher, or goes. It is a second
       navigation surface left open deliberately by t-aa2780.
-- [ ] D15. Exercise restore with all apps open across editor groups, then reload. Spec 361's
+- [ ] D16. Exercise restore with all apps open across editor groups, then reload. Spec 361's
       machinery has never been tested at this count.
 
 ### Phase E — remove Control
