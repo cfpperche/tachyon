@@ -141,21 +141,7 @@ describe("SectionPanelManager — the two cardinalities are one code path", () =
     expect(h.manager.openKeys).toEqual(["tachyonSectionAppFixture|ws-a", "tachyonSectionAppFixture|ws-b"]);
   });
 
-  it("refuses to drive an app whose manifest row is not host \"section\"", () => {
-    // Control is in the app manifest because it shares the BUILD. Constructing a section manager over it
-    // would have to invent a cardinality nobody declared.
-    expect(() => new SectionPanelManager(extensionUri, { ...harnessConfigOf(), app: webviewApp("cockpit") })).toThrow(/host "section" apps only/);
-  });
 });
-
-function harnessConfigOf(): SectionAppConfig<"model"> {
-  return {
-    app: appWith("dashboard"),
-    styleFiles: ["design-system.css"],
-    title: () => "x",
-    bind: () => ({ replay: () => {}, resync: () => {} }),
-  };
-}
 
 describe("SectionPanelManager — it mounts through the shared shell", () => {
   it("renders the shared shell page, as an ES module, carrying its own conformance claim", () => {

@@ -30,7 +30,7 @@ const DIST = path.join(ROOT, "dist/webview");
 async function bundleMount(sidebarCssHref: string): Promise<string> {
   const entry = `
     import { render } from "preact";
-    import { CardTemplateBlock } from ${JSON.stringify(path.join(ROOT, "src/webview/cockpit/CardTemplateBlock.tsx"))};
+    import { CardTemplateBlock } from ${JSON.stringify(path.join(ROOT, "src/webview/shared/control/CardTemplateBlock.tsx"))};
     window.__tachyonCardPreviewCss = ${JSON.stringify(sidebarCssHref)};
     const s = new Proxy({}, { get: (_t, k) => String(k) });
     render(<CardTemplateBlock s={s} onOpenConfig={() => {}} />, document.getElementById("root"));
@@ -63,13 +63,15 @@ describe("SDD 479 phase 4 — the shadow preview, mounted and measured", () => {
     const sidebarCss = readFileSync(path.join(DIST, "sidebar.css"), "utf8");
     const href = `data:text/css;base64,${Buffer.from(sidebarCss, "utf8").toString("base64")}`;
     const script = await bundleMount(href);
-    const cockpitCss = readFileSync(path.join(DIST, "cockpit.css"), "utf8");
+    const settingsCss = ["control-typography.css", "engine-workspace.css", "settings.css"]
+      .map((file) => readFileSync(path.join(DIST, file), "utf8"))
+      .join("\n");
     const designCss = readFileSync(path.join(DIST, "design-system.css"), "utf8");
     const codiconCss = readFileSync(path.join(DIST, "codicon.css"), "utf8");
 
     await page.setContent(
       `<!doctype html><html><head><meta charset="utf-8">
-       <style>${codiconCss}</style><style>${designCss}</style><style>${cockpitCss}</style>
+       <style>${codiconCss}</style><style>${designCss}</style><style>${settingsCss}</style>
        <style>
          :root{--vscode-editor-background:#1f1f1f;--vscode-sideBar-background:#181818;--vscode-foreground:#ccc;
            --vscode-font-family:system-ui,sans-serif;--vscode-font-size:13px;--vscode-panel-border:#2b2b2b;

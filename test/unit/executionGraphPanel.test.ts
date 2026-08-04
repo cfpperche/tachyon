@@ -28,10 +28,9 @@ describe("SDD 485 D9 — standalone Execution dashboard", () => {
 
   it("owns selection, filters and derived detail inside each app root, never Control", () => {
     const root = readFileSync("src/webview/execution-graph/main.tsx", "utf8");
-    const control = readFileSync("src/webview/cockpit/App.tsx", "utf8");
     expect(root).toContain("const [selected, setSelected] = useState<string>()");
     expect(root).toContain("const [filters, setFilters] = useState");
     expect(root).toContain("const detail = selected ? vm?.details[selected] : undefined");
-    expect(control).not.toMatch(/egSelected|egFilters|egDetail|ExecutionGraphSection/);
+    expect(() => readFileSync("src/webview/cockpit/App.tsx", "utf8")).toThrow();
   });
 });

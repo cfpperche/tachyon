@@ -4,7 +4,7 @@ import {
   formatCompanionPairClipboard,
   issueCompanionPairCodeAction,
   type CompanionPairOffer,
-} from "../../src/webview/cockpit/messages.js";
+} from "../../src/webview/shared/control/messages.js";
 
 describe("companion pair offer messages (Control Settings)", () => {
   it("issueCompanionPairCodeAction carries wsHash", () => {

@@ -29,11 +29,9 @@ describe("SDD 485 D17 — Activity cutover doors and renderer inventory", () => 
   });
 
   it("Control has no Activity renderer, lazy import, or Activity client state", () => {
-    const app = read("src/webview/cockpit/App.tsx");
-    const client = read("src/webview/cockpit/main.tsx");
-    expect(app).not.toMatch(/const ActivityApp|import\(["']\.\.\/activity\/App["']\)/);
-    expect(app).not.toContain('activeRoute?.kind === "agent-activity"');
-    expect(client).not.toMatch(/activityVm|activityImages|SHARE_AGENT_TARGETS|type === ACTIVITY/);
+    expect(fs.existsSync("src/webview/cockpit/App.tsx")).toBe(false);
+    expect(fs.existsSync("src/webview/cockpit/main.tsx")).toBe(false);
+    expect(fs.existsSync("src/webview/Cockpit.ts")).toBe(false);
   });
 
   it("the standalone root consumes shared page chrome", () => {

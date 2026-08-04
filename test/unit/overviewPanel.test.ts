@@ -18,12 +18,8 @@ describe("SDD 485 D11 — standalone Overview dashboard", () => {
   });
 
   it("leaves no Overview renderer in Control", () => {
-    const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
-    const host = readFileSync("src/webview/Cockpit.ts", "utf8");
-    expect(app).not.toContain('section === "overview"');
-    expect(app).not.toContain("ck-overview-actions");
-    expect(host).toContain('const deliberateOverview = route.kind === "section" && route.section === "overview"');
-    expect(host).toMatch(/section === "overview"[\s\S]*if \(deliberateOverview\) openOverviewApp\?\.\(\);[\s\S]*routes\.section\("validations"\)/);
+    expect(() => readFileSync("src/webview/cockpit/App.tsx", "utf8")).toThrow();
+    expect(() => readFileSync("src/webview/Cockpit.ts", "utf8")).toThrow();
   });
 
   it("ships the stylesheet the standalone panel links", () => {

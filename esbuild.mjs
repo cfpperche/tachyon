@@ -305,7 +305,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["cockpit", "section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "mission-control", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "engine", "worktrees", "fleet", "execution-graph", "settings", "overview", "activity", "probes"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "mission-control", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "engine", "worktrees", "fleet", "execution-graph", "settings", "overview", "activity", "probes"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `src/webview/${view}/main.tsx`])),
@@ -453,6 +453,10 @@ function buildTailwind() {
 }
 
 mkdirSync("dist/webview", { recursive: true });
+// SDD 485 E1 — reused build directories must not package the retired Control entry or stylesheet.
+for (const retired of ["cockpit.js", "cockpit.js.map", "cockpit.css"]) {
+  rmSync(path.join("dist/webview", retired), { force: true });
+}
 // t-06a542 — wipe the previous content-hashed chunk tree before esbuild writes a new one. Leaving
 // it in place is how 134 stale cockpit-App-* files accumulated into 0.56.110 (only ~24 reachable).
 rmSync("dist/webview/chunks", { recursive: true, force: true });
@@ -504,7 +508,6 @@ copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // 
 copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/cockpit/cockpit.css", "dist/webview/cockpit.css"); // Cockpit desktop POC
 copyFileSync("src/webview/worktrees/worktrees.css", "dist/webview/worktrees.css"); // SDD 485 D6 — standalone Worktrees leaf
 copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/agent-pane/agent-pane.css", "dist/webview/agent-pane.css"); // t-610355 — layer-2 agent pane chrome

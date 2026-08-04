@@ -24,9 +24,6 @@ describe("SDD 485 D10 — standalone Settings dashboard", () => {
   });
 
   it("leaves no Settings renderer or unknown-section fallback in Control", () => {
-    const app = readFileSync("src/webview/cockpit/App.tsx", "utf8");
-    expect(app).not.toContain("control-settings");
-    expect(app).not.toContain("unknown section fallback");
-    expect(app).toContain("unknown sections never masquerade as Settings");
+    expect(() => readFileSync("src/webview/cockpit/App.tsx", "utf8")).toThrow();
   });
 });

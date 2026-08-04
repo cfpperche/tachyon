@@ -137,7 +137,7 @@ function inlineCodiconFont(css: string): string {
 }
 
 function pageHtml(bodyHtml: string, width: number): string {
-  const css = ["codicon.css", "design-system.css", "vscode-theme.css", "human-inbox.css", "cockpit.css"]
+  const css = ["codicon.css", "design-system.css", "vscode-theme.css", "human-inbox.css"]
     .map((f) => {
       const raw = readFileSync(path.join(DIST, f), "utf8");
       return `<style>${f === "codicon.css" ? inlineCodiconFont(raw) : raw}</style>`;

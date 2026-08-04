@@ -12,7 +12,7 @@ const read = (rel: string) => fs.readFileSync(path.join(root, rel), "utf8");
 
 describe("t-7b4bb5 — Settings scope copy", () => {
   it("host strings no longer send people to VS Code Settings UI", () => {
-    const host = read("src/webview/Cockpit.ts");
+    const host = read("src/webview/controlStrings.ts");
     expect(host).toContain('t("Open global settings")');
     expect(host).toContain('t("Open workspace settings")');
     expect(host).not.toMatch(/VS Code Settings UI/);

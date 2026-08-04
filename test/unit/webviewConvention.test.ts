@@ -102,7 +102,6 @@ describe("webview convention (spec 279)", () => {
       tachyonWorktrees: "WORKTREES_VIEW_TYPE",
       tachyonFleet: "FLEET_VIEW_TYPE",
       tachyonExecutionGraph: "EXECUTION_GRAPH_VIEW_TYPE",
-      tachyonCockpit: "COCKPIT_VIEW_TYPE",
       tachyonPinPreview: "PIN_DETAIL_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
       // SDD 485 C5 — the Board's own viewType, and the first app on `SectionPanelManager` that genuinely
@@ -110,7 +109,6 @@ describe("webview convention (spec 279)", () => {
       tachyonBoard: "BOARD_VIEW_TYPE",
       tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
       tachyonTaskStudio: "TASK_STUDIO_VIEW_TYPE",
-      tachyonApprovals: "APPROVAL_VIEW_TYPE",
       tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",
       tachyonAgentStudioShell: "AGENT_STUDIO_SHELL_VIEW_TYPE",
       tachyonTerminalStudioShell: "TERMINAL_STUDIO_SHELL_VIEW_TYPE",
@@ -510,7 +508,7 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
   it("the Engine app consumes its linked shared workspace sheet (SDD 485 D5)", () => {
     const host = readFileSync("src/webview/EnginePanel.ts", "utf8");
     const consumers = readFileSync("src/webview/engine/App.tsx", "utf8")
-      + readFileSync("src/webview/cockpit/EngineLogPanel.tsx", "utf8");
+      + readFileSync("src/webview/shared/control/EngineLogPanel.tsx", "utf8");
     const shared = readFileSync("src/webview/shared/engine-workspace.css", "utf8");
     expect(host).toContain('"engine-workspace.css"');
     for (const className of ["ck-card-list", "ck-empty", "ci-ws", "ci-log"]) {

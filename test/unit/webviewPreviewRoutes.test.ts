@@ -38,107 +38,6 @@ describe("preview route table", () => {
     expect(msg.fleets).toEqual([SAMPLE]);
   });
 
-  it("declares the cockpit route (Control monolith embeds + CSS) with init + model", () => {
-    const r = ROUTES.cockpit;
-    expect(r.bundle).toBe("/dist/webview/cockpit.js");
-    expect(r.cssLinks).toEqual([
-      "/dist/webview/codicon.css",
-      "/dist/webview/design-system.css",
-      "/dist/webview/vscode-theme.css",
-      // SDD 485 C5 — the two mission-control sheets left with the Board (its own route now), exactly as
-      // C4's task-detail.css did one commit earlier.
-      // SDD 485 D3 — runtime-ops.css left with its surface, exactly as the plugins sheets did one commit
-      // earlier: Runtime Ops is a standalone app with its own route below.
-      // t-967b5b — `control-typography.css` dropped out of Control's list when the Settings migration
-      // took its last `ck-mono` consumer. Three files spell this list out: the host, the preview route
-      // table, and this expectation. `cockpitCssParity` ties the first two together, so a change caught
-      // there still lands here by hand — which is how one edit needed three, and why the third only
-      // surfaced on the second gate run.
-      "/dist/webview/engine-workspace.css",
-      "/dist/webview/cockpit.css",
-    ]);
-    expect(Object.keys(r.fixtures).sort()).toEqual([
-      "agent-probes",
-      "approvals",
-      "default",
-      "empty",
-      // t-d16698 — the Human Inbox list and ONE opened item: the two surfaces every "Review"
-      // doorbell can land on, and the deep-link destination this task is about.
-      // SDD 485 C5 — no "mission" fixture: the Board is a standalone app with its own route now, so
-      // Control has no Board section to render or photograph (same as C4's four task-detail fixtures).
-      "multi-workspace",
-      // t-46eb4f — Overview with two roots attached: the one global scope selector, with its
-      // "All workspaces" option (the single-root case is `default`, where it still renders).
-      "multi-workspace-overview",
-      "multi-workspace-scoped",
-      // t-ac79a7 — the navigation-pending state: Control's landing screen still on display while the
-      // route it just committed is loading (the fixture pushes routePending, never routeReady).
-      "nav-pending",
-      "studio-agent",
-      "studio-agent-canonical",
-      "studio-agent-claude-bypass-off",
-      "studio-agent-claude-bypass-on",
-      "studio-agent-codex-danger-off",
-      "studio-agent-codex-danger-on",
-      "studio-agent-edit",
-      // t-e722ce — the Forget plan panel, in both of its shapes. Addressable without driving a click
-      // (the plan arrives as a second host message), so it can be reviewed like any other surface.
-      "studio-agent-forget-plan",
-      "studio-agent-forget-plan-blocked",
-      "studio-command",
-      "studio-command-edit",
-      "studio-runbook",
-      "studio-runbook-edit",
-      "studio-schedule",
-      "studio-schedule-edit",
-      "studio-task-edit",
-      "studio-terminal",
-      "studio-terminal-edit",
-      // SDD 485 C4 — the four `task-detail*` fixtures left this route with the subroute: the task
-      // detail is a standalone app and has its own route below, previewing the REAL shipped bundle.
-      // SDD 485 D1 — and no "tmux" fixture, for the same reason: the inspector is a standalone app with
-      // its own route now, so Control has no tmux section to render or photograph.
-      // SDD 485 D2 — and none of the four `plugins*` fixtures: Plugins has its own route below, whose
-      // fixtures name the four card states directly instead of four Control models disambiguated by
-      // object identity.
-      // SDD 485 D3 — and no "runtime" fixture: Runtime Ops has its own route below too, with all
-      // seventeen of its fixtures reachable rather than the single one this list could carry.
-      "validations",
-    ]);
-    const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string; model?: { section?: string } }>;
-    expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
-    expect(msgs[1]?.model?.section).toBe("overview");
-    // SDD 485 C5 — no `mission` fixture and no `snapshot` push: the Board is its own route now. The
-    // nav-pending fixture is what still names a `task-detail:` routeKey, and it carries only init+model
-    // plus the pending envelope, because a route Control cannot render pushes no content of its own.
-    // D18 routes Probes out to its standalone app, so the compatibility route pushes no content.
-    const probesMsgs = r.makeMessage(r.fixtures["agent-probes"]!.vm) as Array<{ type: string }>;
-    expect(probesMsgs.map((m) => m.type)).toEqual(["init", "model"]);
-    const validationsMsgs = r.makeMessage(r.fixtures.validations.vm) as Array<{ type: string }>;
-    expect(validationsMsgs.map((m) => m.type)).toEqual(["init", "model", "validations"]);
-    const approvalMsgs = r.makeMessage(r.fixtures.approvals.vm) as Array<{ type: string }>;
-    expect(approvalMsgs.map((m) => m.type)).toEqual(["init", "model", "approvals"]);
-    // t-610705 (Phase D, D0) — the pilot studio route: same "rides alongside its parent section's
-    // push" pattern as the Fleet subroutes above (nav section is "fleet"), envelope-carrying so no
-    // bare `type` field — asserted via studioProtocolVersion presence instead.
-    const studioMsgs = r.makeMessage(r.fixtures["studio-command"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
-    expect(studioMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
-    expect(studioMsgs[2]?.studioProtocolVersion).toBe(1);
-    // t-610705 (Phase D, D1a) — the same studio branch, generalized by StudioId (routes.ts's
-    // `byStudio` lookup) rather than hardcoded to "command" — one more StudioId is enough to prove
-    // the lookup, not the loop.
-    const terminalMsgs = r.makeMessage(r.fixtures["studio-terminal-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
-    expect(terminalMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
-    expect(terminalMsgs[2]?.studioProtocolVersion).toBe(1);
-    // t-610705 (Phase D, D2) — task's fixtures module reuses "dense-edit" via the SAME byStudio
-    // lookup (routes.ts) — no separate "studio-task" new-session fixture (task is edit-only). Its nav
-    // section is "mission" (not "fleet" like the other 5 studios); SDD 485 C5 made that section push
-    // nothing of its own, so only "load" rides alongside init+model, like every other studio.
-    const taskMsgs = r.makeMessage(r.fixtures["studio-task-edit"]!.vm) as Array<{ type: string; studioProtocolVersion?: number }>;
-    expect(taskMsgs.map((m) => m.type)).toEqual(["init", "model", "load"]);
-    expect(taskMsgs[2]?.studioProtocolVersion).toBe(1);
-  });
-
   it("declares Activity against the real standalone bundle and host stylesheet list", () => {
     const r = ROUTES.activity;
     expect(r.bundle).toBe("/dist/webview/activity.js");
@@ -339,15 +238,10 @@ describe("preview references in the browser suite (t-fdfbd4)", () => {
     // test/browser is not the only caller: scripts/visual-qa/*.mjs drive the same harness by URL. Both
     // roots are walked, so a dead route in either is caught by the same rule.
     expect(files).toContain("test/browser/runtimeOpsView.test.ts");
-    expect(files).toContain("scripts/visual-qa/task-detail-overflow.mjs");
     expect(files.length).toBeGreaterThan(15);
   });
 
-  it("derives the live bundle set from esbuild.mjs, including the code-split cockpit target", () => {
-    // A canary on the derivation, not a second copy of the list: `outfile:` alone would miss cockpit.js
-    // (emitted via outdir + entryNames, with the inherited outfile deleted) and would then reject every
-    // test t-c55f8d repointed AT cockpit — a false positive that would get this guard deleted in a week.
-    expect(bundles.has("dist/webview/cockpit.js")).toBe(true);
+  it("derives the live bundle set from esbuild.mjs, including the code-split app targets", () => {
     expect(bundles.has("dist/webview/sidebar.js")).toBe(true);
     // SDD 485 C4/C5 — task-detail.js and mission-control.js are BACK, as entries of the same splitting
     // invocation: both surfaces are standalone apps again. They are the canary that this derivation sees

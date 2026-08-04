@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
-import { Button, Input, Select } from "../shared/ui";
-import type { EngineAction } from "../engine/messages";
+import type { ControlInspectorWorkspaceRow } from "../../../control-inspector/model";
+import { Button, Input, Select } from "../ui";
+import type { EngineAction } from "../../engine/messages";
 
 export type LogSource = "daemon" | "events" | "bridge";
 type Since = "all" | "2m" | "15m";

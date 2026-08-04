@@ -58,13 +58,7 @@ export type SectionAppCardinality = "dashboard" | "document" | "window";
  */
 export type WebviewAppHost =
   /** SDD 485's generic `SectionPanelManager`. Cardinality is its one behavioural parameter. */
-  | { host: "section"; cardinality: SectionAppCardinality }
-  /**
-   * Control's own singleton host (`Cockpit.ts`), which SDD 485 Phase E removes. It is listed here because
-   * it SHARES this build — it is the reason the split chunks have a second consumer at all today — not
-   * because `SectionPanelManager` drives it. When Phase E lands, this row goes with it.
-   */
-  | { host: "control" };
+  | { host: "section"; cardinality: SectionAppCardinality };
 
 interface WebviewAppBase {
   /** the app directory + bundle basename: `src/webview/<view>/main.tsx` → `dist/webview/<view>.js`. */
@@ -98,9 +92,6 @@ export type WebviewAppEntry = WebviewAppBase & WebviewAppHost;
 const EAGER_BUDGET_BYTES = 350 * 1024;
 
 export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
-  // Control. Still the singleton it has been since SDD 410; here because it is an entry of the same
-  // splitting invocation, and because its eager size is the number 410's budget was written about.
-  { view: "cockpit", viewId: "tachyonCockpit", host: "control", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 485 C1–C3's proof surface. Dev-only, never contributed as a command, never opened by
   // `extension.ts` — the same status as spec 350's two studio fakes, and like them it buys NO exemption
   // from the Phase A conformance contract (it is a `conform` row in `WEBVIEW_SURFACES`). It exists so the

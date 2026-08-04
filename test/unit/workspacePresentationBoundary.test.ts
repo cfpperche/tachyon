@@ -31,7 +31,6 @@ describe("persistent workspace presentation boundary", () => {
 
   it("keeps migrated presentation surfaces off the concrete Workspace class", () => {
     const migrated = [
-      "src/webview/ApprovalPanel.ts",
       "src/webview/PluginsPanel.ts",
       "src/webview/AgentStudioAdapter.ts",
       "src/webview/CommandStudioAdapter.ts",

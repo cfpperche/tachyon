@@ -1,5 +1,5 @@
 import type { CockpitModel } from "../../cockpit/model";
-import type { CockpitStrings } from "../cockpit/messages";
+import type { CockpitStrings } from "../shared/control/messages";
 import { Button, PageChrome } from "../shared/ui";
 import { POLL, type OverviewAction } from "./messages";
 

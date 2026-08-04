@@ -4,7 +4,7 @@
 
 import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
 import { routes as cockpitRoutes } from "../../../src/cockpit/route";
-import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
+import type { CockpitStrings } from "../../../src/webview/shared/control/messages";
 import type { ExecutionGraphStrings } from "../../../src/webview/execution-graph/messages";
 import type { WorktreesStrings } from "../../../src/webview/worktrees/messages";
 import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/types";

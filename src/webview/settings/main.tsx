@@ -1,8 +1,8 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { CockpitModel } from "../../cockpit/model";
-import { CardTemplateBlock } from "../cockpit/CardTemplateBlock";
-import { formatCompanionPairClipboard, openGlobalSettingsFileAction, openPersonalCardTemplateAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings, type CompanionPairOffer } from "../cockpit/messages";
+import { CardTemplateBlock } from "../shared/control/CardTemplateBlock";
+import { formatCompanionPairClipboard, openGlobalSettingsFileAction, openPersonalCardTemplateAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings, type CompanionPairOffer } from "../shared/control/messages";
 import { Button, PageChrome } from "../shared/ui";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
