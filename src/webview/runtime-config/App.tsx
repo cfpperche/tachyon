@@ -77,7 +77,7 @@ export function App({
   // two different screens.
   if (!config) {
     return (
-      <div class="rcp-root" data-testid="control-runtime-config">
+      <div class="rcp-root ds-page" data-testid="control-runtime-config">
         <PageChrome title={s.runtimeConfigTitle} hint={s.runtimeConfigHint} />
         <div class="ds-empty">{unavailable ? s.runtimeConfigUnavailable : "Loading runtime configuration…"}</div>
       </div>
@@ -104,7 +104,7 @@ export function App({
     setDraftMcp(initialMcp);
   };
   return (
-    <div class="rcp-root" data-testid="control-runtime-config">
+    <div class="rcp-root ds-page" data-testid="control-runtime-config">
       <PageChrome
         title={s.runtimeConfigTitle}
         hint={s.runtimeConfigHint}

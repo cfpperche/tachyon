@@ -31,6 +31,7 @@ const RUNTIME_OPS_CSS = "src/webview/runtime-ops/runtime-ops.css";
 const HUMAN_INBOX_CSS = "src/webview/human-inbox/human-inbox.css";
 const VALIDATIONS_APP = "src/webview/validations/App.tsx";
 const COCKPIT_APP = "src/webview/cockpit/App.tsx";
+const DESIGN_SYSTEM_CSS = "src/webview/shared/design-system.css";
 
 /** strip comments, then collect every `selector { declarations }` block (nested at-rule inner rules included). */
 function rules(css: string): { selector: string; body: string }[] {
@@ -76,8 +77,8 @@ describe("Control embed page padding (t-dc9f64, t-0739f7)", () => {
   // SDD 485 D3 — this claim OUTLIVED the migration and is now the whole of Runtime Ops' pad story: the
   // rule was always in this surface's own sheet, so unlike Plugins (D2) nothing had to move. See the
   // describe below for the half that DID change.
-  it("the Runtime Ops root applies the Fleet page pad standalone", () => {
-    expectPagePad(runtimeOps, ".runtime-ops");
+  it("the shared page owner applies the Fleet page pad standalone", () => {
+    expectPagePad(read(DESIGN_SYSTEM_CSS), ".ds-page");
   });
 
   // `.ck-embed-host > main { padding: 0 !important }` (cockpit.css) outranks the bare root rule above on
@@ -126,10 +127,9 @@ describe("Control embed page padding (t-dc9f64, t-0739f7)", () => {
  * reader looking for "who owns this surface's page pad" already looks.
  */
 describe("Plugins owns its own page pad now that it is a standalone app (SDD 485 D2)", () => {
-  const plugins = read("src/webview/plugins/plugins.css");
-
-  it("the Plugins root applies the Fleet page pad from its OWN stylesheet", () => {
-    expectPagePad(plugins, ".ck-plugins-root");
+  it("the Plugins root consumes the shared Fleet page pad", () => {
+    expect(read("src/webview/plugins/App.tsx")).toMatch(/class="ck-plugins-root ds-page"/);
+    expectPagePad(read(DESIGN_SYSTEM_CSS), ".ds-page");
   });
 
   it("cockpit.css no longer pads it — a rule with no element left to match", () => {
@@ -152,7 +152,7 @@ describe("Plugins owns its own page pad now that it is a standalone app (SDD 485
 
   it("PluginsApp still owns exactly one .ck-plugins-root as its own render root", () => {
     const app = read("src/webview/plugins/App.tsx");
-    expect(app.match(/class="ck-plugins-root"/g)?.length).toBe(2); // loading branch + loaded branch, each a single root
+    expect(app.match(/class="ck-plugins-root ds-page"/g)?.length).toBe(2); // loading branch + loaded branch, each a single root
   });
 });
 
@@ -232,10 +232,9 @@ describe("the Human Inbox owns its own page pad, and always did (SDD 485 D4)", (
    * surface never consumed anything from the sheet it was about to stop linking — which is what the pad
    * MEASUREMENT in the visual pass confirms, since a static test cannot.
    */
-  it("the Inbox root applies the Fleet page pad from its OWN stylesheet", () => {
-    const root = rulesFor(inbox, ".hi-root");
-    expect(root, "no rule found for `.hi-root`").not.toHaveLength(0);
-    expect(root.some((r) => /padding:\s*var\(--ds-page-pad-y\)/.test(r.body)), ".hi-root does not apply the page pad").toBe(true);
+  it("the Inbox root consumes the shared Fleet page pad", () => {
+    expect(read("src/webview/human-inbox/App.tsx")).toContain("hi-root ds-page");
+    expectPagePad(read(DESIGN_SYSTEM_CSS), ".ds-page");
   });
 
   it("cockpit.css styles no Inbox selector — it never did, and now there is no element either", () => {

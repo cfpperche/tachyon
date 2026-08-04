@@ -1,6 +1,5 @@
 /* spec 279 — Inspector view styles. Density aligned for Control embed (no max-width column). */
 .insp-root {
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   width: 100%;
   max-width: none;
   margin: 0;

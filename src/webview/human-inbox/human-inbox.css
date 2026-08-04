@@ -10,7 +10,6 @@
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom);
   min-height: 100%;
   color: var(--ds-fg);
   background: var(--vscode-editor-background);
