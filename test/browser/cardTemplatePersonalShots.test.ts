@@ -112,7 +112,7 @@ describe("SDD 479 phase 5 — the personal override's two surfaces", () => {
     written.push(path.basename(file));
   }
 
-  const CONTROL_SHEETS = ["codicon.css", "design-system.css", "vscode-theme.css", "cockpit.css"];
+  const CONTROL_SHEETS = ["codicon.css", "design-system.css", "vscode-theme.css", "control-typography.css", "engine-workspace.css", "settings.css"];
   const SIDEBAR_SHEETS = ["codicon.css", "design-system.css", "sidebar.css"];
 
   it("shoots the statement when a personal override is winning", async () => {
