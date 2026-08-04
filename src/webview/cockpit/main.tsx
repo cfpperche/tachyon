@@ -30,15 +30,6 @@ import type { CockpitModel, CockpitSectionId } from "../../cockpit/model";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import type { ProbesVM } from "../probes/messages";
 import { PROBES } from "../probes/messages";
-import type { HandoffDispatch } from "../handoff/App";
-import type { HandoffViewModel } from "../handoff/handoffViewModel";
-import {
-  HANDOFF,
-  refreshAction as refreshHandoffAction,
-  openFileAction as openHandoffFileAction,
-  distillExistingAction,
-  distillTemporaryAction,
-} from "../handoff/messages";
 // SDD 485 C5 — the Board's envelope and its actions left with its renderer: they belong to
 // src/webview/mission-control/main.tsx, the board app's own client, and nothing here speaks them.
 import type { StudioDispatch } from "../shared/studio/protocol";
@@ -83,7 +74,6 @@ function CockpitRoot() {
   const [companionPairOffer, setCompanionPairOffer] = useState<CompanionPairOffer | undefined>(undefined);
   const [auto, setAuto] = useState(true);
   const [probesVm, setProbesVm] = useState<ProbesVM | undefined>(undefined);
-  const [handoffVm, setHandoffVm] = useState<HandoffViewModel | undefined>(undefined);
   /** t-610705 (Phase D, D0) — the studio-envelope + nav-transaction protocols are forwarded raw (no
    *  decode/reshape here — command-studio-shell/App.tsx's own decodeStudioMessage handles it, same
    *  as it did as a standalone panel); `seq` guarantees change detection even across two arrivals
@@ -199,8 +189,6 @@ function CockpitRoot() {
       }
       else if (type === PROBES && raw.vm) {
         setProbesVm(raw.vm as ProbesVM);
-      } else if (type === HANDOFF && raw.vm) {
-        setHandoffVm(raw.vm as HandoffViewModel);
       // SDD 485 D4 — the four Human Inbox arms left with the renderer: the Inbox is a standalone
       // `dashboard` app, and its client half is `human-inbox/main.tsx`, which owns its state slots, its
       // own 3s poll, and the list/item subroute the HOST decides. The identity checks these two arms
@@ -281,15 +269,6 @@ function CockpitRoot() {
     };
   }, [navPending?.routeKey, navPending?.phase]);
 
-  const handoffDispatch: HandoffDispatch = useMemo(
-    () => ({
-      refresh: () => post(refreshHandoffAction()),
-      openFile: () => post(openHandoffFileAction()),
-      distillExisting: (agent: string, instructions?: string) => post(distillExistingAction(agent, instructions)),
-      distillAdhoc: (profileId: string, args?: string, instructions?: string) => post(distillTemporaryAction(profileId, args, instructions)),
-    }),
-    [],
-  );
 
   // t-610705 (Phase D, D0/D1a) — {post} is the whole contract (StudioDispatch); every studio App
   // posts fully-formed enveloped messages itself (readyMessage/patchMessage/etc.), same as it did as
@@ -330,8 +309,6 @@ function CockpitRoot() {
       companionPairOffer={companionPairOffer}
       onPost={(action) => post(action)}
       probesVm={probesVm}
-      handoffVm={handoffVm}
-      handoffDispatch={handoffDispatch}
       studioIncoming={studioIncoming}
       studioDispatch={studioDispatch}
       onSetSection={(section: CockpitSectionId) => {

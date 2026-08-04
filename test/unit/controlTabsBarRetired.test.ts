@@ -132,16 +132,14 @@ describe("t-aa2780 — Control renders no section tab strip", () => {
   });
 });
 
-describe("t-aa2780 — the subroute breadcrumb, and TAB_META under it, survived", () => {
+describe("t-aa2780 — the surviving Fleet breadcrumb remains", () => {
   let Shell: (props: unknown) => unknown;
   beforeAll(async () => {
     Shell = (await loadWebviewModule(SHELL_TSX, { packageResolution: true })).App as (props: unknown) => unknown;
   });
 
-  // D13/D20 removed every studio renderer; Handoff is the surviving TAB_META-labelled breadcrumb.
-  const SUBROUTES = [
-    { fixture: "handoff", testid: "control-handoff-breadcrumb", label: "Overview" },
-  ] as const;
+  // D13/D19/D20 removed every Studio and Handoff breadcrumb from Control.
+  const SUBROUTES = [] as const;
   // SDD 485 D4 — `inbox-item` was the third and left with the Human Inbox app; its fixture is gone too,
   // the same way C4's `task-detail` went. The affordance did NOT disappear with it: the app renders its
   // own back button now (`inbox-item-back`), because that breadcrumb was the EMBED HOST's chrome and a
@@ -157,10 +155,10 @@ describe("t-aa2780 — the subroute breadcrumb, and TAB_META under it, survived"
     }
   });
 
-  it("TAB_META is still the breadcrumb's label source (removing it breaks ← Back, not just the tabs)", () => {
+  it("retires TAB_META after the final breadcrumb consumers leave Control", () => {
     const src = read("src/webview/cockpit/App.tsx");
-    expect(src).toContain("const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }>");
-    expect((src.match(/s\[TAB_META\[parent\.section\]\.navKey\]/g) ?? []).length).toBe(1);
+    expect(src).not.toContain("const TAB_META");
+    expect(src).not.toContain("s[TAB_META[parent.section].navKey]");
   });
 });
 

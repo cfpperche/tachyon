@@ -230,6 +230,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // cockpit.css never carried one for `.hi-root`, which is the third answer that grep has now given
   // (D2 had to move a rule, D3 had to delete two, this one had nothing to do).
   { viewId: "tachyonHumanInbox", view: "human-inbox", hostFile: "src/webview/HumanInboxPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   { viewId: "tachyonEngine", view: "engine", hostFile: "src/webview/EnginePanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   { viewId: "tachyonWorktrees", view: "worktrees", hostFile: "src/webview/WorktreesPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
   { viewId: "tachyonFleet", view: "fleet", hostFile: "src/webview/FleetPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },

@@ -13,8 +13,6 @@ import {
 import { Button, PageChrome, EmptyState } from "../shared/ui";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { ProbesVM } from "../probes/messages";
-import type { HandoffDispatch } from "../handoff/App";
-import type { HandoffViewModel } from "../handoff/handoffViewModel";
 import type { StudioDispatch } from "../shared/studio/protocol";
 
 // spec 410 — lazy section bodies (ESM chunks). Keeps eager cockpit.js under budget.
@@ -61,17 +59,6 @@ const ProbesApp = lazy(() =>
     return { default: m.App };
   }),
 );
-// t-610705 (Phase C.3) — CSS co-load, tenth surface: the Handoff section (its own sheet plus the
-// mermaid-block sheet its doc body's MarkdownView can render, same combined-condition mechanism as
-// activity above).
-const HandoffApp = lazy(() =>
-  import("../handoff/App").then((m) => {
-    loadSectionStylesheet("handoff-mermaid");
-    loadSectionStylesheet("handoff");
-    return { default: m.App };
-  }),
-);
-
 /**
  * t-aa2780 — a lazy section's loading screen now NAMES the section.
  *
@@ -133,9 +120,6 @@ export interface CockpitAppProps {
   onRetryNavigation?: () => void;
   /** t-610705 (Phase C.2) — the agent-probes/workspace-probes subroutes of Fleet. */
   probesVm?: ProbesVM;
-  /** t-610705 (Phase C.3) — the Handoff section. */
-  handoffVm?: HandoffViewModel;
-  handoffDispatch: HandoffDispatch;
   /** t-610705 (Phase D, D0/D1a) — the studio-new/studio-edit subroute (fleet/... — command, terminal,
    *  runbook, schedule). The studio App receives raw protocol/nav-transaction messages, not a
    *  decoded VM — see command-studio-shell/App.tsx's own doc comment for why. `studioDispatch` is
@@ -146,23 +130,6 @@ export interface CockpitAppProps {
   studioIncoming?: { seq: number; message: unknown };
   studioDispatch: StudioDispatch;
 }
-
-const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitStrings }> = {
-  overview: { icon: "dashboard", navKey: "navOverview" },
-  engine: { icon: "server-environment", navKey: "navEngine" },
-  fleet: { icon: "organization", navKey: "navFleet" },
-  inbox: { icon: "inbox", navKey: "navInbox" },
-  approvals: { icon: "pass", navKey: "navApprovals" },
-  mission: { icon: "checklist", navKey: "navMission" },
-  validations: { icon: "checklist", navKey: "navValidations" },
-  worktrees: { icon: "folder-library", navKey: "navWorktrees" },
-  "execution-graph": { icon: "type-hierarchy", navKey: "navExecutionGraph" },
-  runtime: { icon: "graph", navKey: "navRuntime" },
-  "runtime-config": { icon: "settings", navKey: "navRuntimeConfig" },
-  tmux: { icon: "terminal-tmux", navKey: "navTmux" },
-  plugins: { icon: "extensions", navKey: "navPlugins" },
-  settings: { icon: "settings-gear", navKey: "navSettings" },
-};
 
 /** Countdown for pair-code TTL (mm:ss or "0:00" when expired). */
 
@@ -184,11 +151,10 @@ export function App(p: CockpitAppProps) {
   const isFleetSubroute = activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes";
   // t-ace77f — Project Handoff is a detail route now; it keeps the embedded full-bleed body it had
   // as a section, and gains the same "← Overview" top chrome every other subroute already renders.
-  const isProjectHandoff = activeRoute?.kind === "project-handoff";
   // SDD 485 D4 — no `inbox-item` term: Control never commits that route any more (Cockpit.ts's
   // `navigate` redirects it into the Human Inbox app, which renders the item as its own subroute), so a
   // branch for it here would be a path nothing reaches — the same shape C4 left for `task-detail`.
-  const isEmbed = isFleetSubroute || isProjectHandoff;
+  const isEmbed = isFleetSubroute;
   // t-aa2780 — `isNavlessStudio` is gone with the tab strip: it existed ONLY to stop the Overview tab
   // rendering as active while a nav-less route (Project Handoff) was open. There is no tab
   // to light now, and `model.section` was deliberately never coerced (t-610705 Phase D, D3), so the
@@ -200,7 +166,7 @@ export function App(p: CockpitAppProps) {
   // inline placement — this only changes WHERE it renders, not the navigation logic itself.
   // SDD 485 C4 — no `task-detail` term: Control never commits that route any more (Cockpit.ts's
   // `navigate` redirects it to the document app), so a branch for it here would be a path nothing reaches.
-  const isSubroute = isFleetSubroute || isProjectHandoff;
+  const isSubroute = isFleetSubroute;
   let breadcrumb: ComponentChildren = null;
 
   let body: ComponentChildren = null;
@@ -227,25 +193,7 @@ export function App(p: CockpitAppProps) {
         </Suspense>
       </div>
     );
-  } else if (activeRoute?.kind === "project-handoff") {
-    // t-ace77f — checked before the section branch, same as every other subroute: `model.section`
-    // reads "overview" underneath (the nav-less fallback), but the document is what renders.
-    const parent = parentRoute(activeRoute);
-    if (parent && parent.kind === "section") {
-      breadcrumb = (
-        <Button variant="default" icon="arrow-left" class="ck-top-breadcrumb-btn" data-testid="control-handoff-breadcrumb" onClick={() => p.onSetSection(parent.section)}>
-          {s[TAB_META[parent.section].navKey]}
-        </Button>
-      );
-    }
-    body = (
-      <div class="ck-embed-host" data-testid="control-handoff">
-        <Suspense fallback={<SectionFallback />}>
-          <HandoffApp vm={p.handoffVm} dispatch={p.handoffDispatch} />
-        </Suspense>
-      </div>
-    );
-  } else {
+ } else {
     // SDD 485 D10 — unknown sections never masquerade as Settings; the host redirects them to Overview.
     body = null;
   }
