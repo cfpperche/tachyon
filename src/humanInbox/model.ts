@@ -32,8 +32,9 @@ import type { ValidationViewItem } from "../webview/validations/viewModel.js";
 import type { ArtifactRef } from "../tasks/types.js";
 import type { SavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
 import type { SavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview.js";
+import type { ScheduleProposal } from "../schedule/ProposalStore.js";
 
-export const HUMAN_INBOX_KINDS = ["approval", "saved-agent-proposal", "saved-agent-removal", "validation"] as const;
+export const HUMAN_INBOX_KINDS = ["approval", "saved-agent-proposal", "saved-agent-removal", "schedule-proposal", "validation"] as const;
 export type HumanInboxKind = (typeof HUMAN_INBOX_KINDS)[number];
 
 /**
@@ -48,11 +49,14 @@ export type HumanInboxKind = (typeof HUMAN_INBOX_KINDS)[number];
  * orders the list; it grants nothing.
  *
  * A removal proposal ranks with create proposals: same durable authority weight, opposite direction.
+ * A schedule proposal ranks with them too: it blocks nobody, but approval writes durable fleet
+ * authority and may create agents repeatedly through `spawn`.
  */
 const KIND_SEVERITY: Record<HumanInboxKind, number> = {
   approval: 0,
   "saved-agent-proposal": 1,
   "saved-agent-removal": 1,
+  "schedule-proposal": 1,
   validation: 2,
 };
 
@@ -64,6 +68,7 @@ export type HumanInboxDetail =
   | { kind: "approval"; approval: ApprovalViewItem }
   | { kind: "saved-agent-proposal"; proposal: SavedAgentProposalReview }
   | { kind: "saved-agent-removal"; proposal: SavedAgentRemovalProposalReview }
+  | { kind: "schedule-proposal"; proposal: ScheduleProposal }
   | { kind: "validation"; validation: ValidationViewItem };
 
 /** One row. The shared fields are only what a LIST needs; anything else lives on the `detail` arm. */
@@ -109,6 +114,8 @@ export interface HumanInboxInput {
   /** t-afe120 — live Saved Agent removal proposals */
   savedAgentRemovals?: readonly SavedAgentRemovalProposalReview[];
   untrustedSavedAgentRemovals?: readonly { id: string; reason: string }[];
+  /** Pending schedules share the Inbox as the sole owner of human decisions. */
+  scheduleProposals?: readonly ScheduleProposal[];
 }
 
 /** The product's answer when a workspace configures nothing. */
@@ -336,6 +343,25 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
     });
   }
 
+  for (const proposal of input.scheduleProposals ?? []) {
+    // Same rule as Saved Agent proposals: an expired record is no longer an actionable decision.
+    const expiry = Date.parse(proposal.expiresAt);
+    if (!Number.isFinite(expiry) || expiry <= Date.parse(now)) continue;
+    items.push({
+      id: proposal.id,
+      kind: "schedule-proposal",
+      title: `activate schedule '${proposal.name}'`,
+      requester: proposal.by,
+      requesterTrust: "bridge-resolved",
+      createdAt: proposal.createdAt,
+      wsHash: input.wsHash,
+      folder: input.folder,
+      stale: isStale(proposal.createdAt),
+      artifacts: [],
+      detail: { kind: "schedule-proposal", proposal },
+    });
+  }
+
   return items.sort((a, b) => {
     const bySeverity = KIND_SEVERITY[a.kind] - KIND_SEVERITY[b.kind];
     if (bySeverity !== 0) return bySeverity;
@@ -351,6 +377,7 @@ export interface HumanInboxCounts {
   savedAgentProposals: number;
   /** t-afe120 — counted separately because approving one retires durable authority. */
   savedAgentRemovals: number;
+  scheduleProposals: number;
   validations: number;
   stale: number;
 }
@@ -362,6 +389,7 @@ export function humanInboxCounts(items: readonly HumanInboxItem[]): HumanInboxCo
     approvals: items.filter((i) => i.kind === "approval").length,
     savedAgentProposals: items.filter((i) => i.kind === "saved-agent-proposal").length,
     savedAgentRemovals: items.filter((i) => i.kind === "saved-agent-removal").length,
+    scheduleProposals: items.filter((i) => i.kind === "schedule-proposal").length,
     validations: items.filter((i) => i.kind === "validation").length,
     stale: items.filter((i) => i.stale).length,
   };

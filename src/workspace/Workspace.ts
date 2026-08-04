@@ -227,7 +227,8 @@ import { VSCODE_RELOAD_WINDOW_POLICY_HASH, VSCODE_RELOAD_WINDOW_POLICY_JSON } fr
 import { CommandRunner } from "../commands/CommandRunner.js";
 import { RunbookRunner } from "../commands/RunbookRunner.js";
 import { Scheduler } from "../schedule/Scheduler.js";
-import { ProposalStore } from "../schedule/ProposalStore.js";
+import { ProposalStore, scheduleProposalExpired } from "../schedule/ProposalStore.js";
+import { readAgentProfileGrants } from "../config/agentProfileGrants.js";
 import { PinStore } from "../pins/PinStore.js";
 import { TaskStore } from "../tasks/TaskStore.js";
 import { collectSessionInspection } from "../runtimeOps/collectSessionInspection.js";
@@ -360,6 +361,8 @@ export interface WorkspaceDeps {
   onSavedAgentProposed?: (ws: Workspace, proposal: { id: string; name: string; proposer: string }) => void;
   /** t-afe120 — a Saved Agent removal proposal needs a human, same doorbell doctrine as create. */
   onSavedAgentRemovalProposed?: (ws: Workspace, proposal: { id: string; name: string; proposer: string }) => void;
+  /** t-d4f246 — schedule proposals are first-class Human Inbox decisions. */
+  onScheduleProposed?: (ws: Workspace, proposal: { id: string; name: string; proposer: string }) => void;
   /**
    * t-e76acc — the same affordance for a validation that lands on a human. Symmetric with the
    * approval hook above in EVERYTHING except authority: it carries a self-declared author (that is
@@ -2037,11 +2040,9 @@ export class Workspace {
         runbooks: this.runbookRunner,
         scheduler: this.scheduler,
         proposals: this.proposals,
-        onScheduleProposed: (name, by) => {
+        onScheduleProposed: (proposal) => {
           deps.onViewsChanged("schedules");
-          this.host.notify(this.t("{0} proposed a schedule '{1}' — approve it?", by, name), "info", [
-            { label: this.t("Review"), run: () => this.host.focusPrimaryView() },
-          ]);
+          deps.onScheduleProposed?.(this, { id: proposal.id, name: proposal.name, proposer: proposal.by });
         },
         // spec 214 — verify-gate handoff over MCP: list_agents reads this, verify_agent runs it.
         verifyInfo: async (agent) => {
@@ -6041,6 +6042,15 @@ export class Workspace {
     const proposal = this.proposals.get(id);
     if (!proposal) {
       this.host.notify(this.t("that proposal is no longer pending"), "warn");
+      return false;
+    }
+    if (scheduleProposalExpired(proposal)) {
+      this.host.notify(this.t("that schedule proposal expired at {0}", proposal.expiresAt), "warn");
+      return false;
+    }
+    // Revocation is retroactive: the same durable-authority grant gates creation and commit.
+    if (readAgentProfileGrants(this.workspaceRoot, proposal.by)?.proposeSavedAgent !== true) {
+      this.host.notify(this.t("'{0}' no longer holds grants.proposeSavedAgent", proposal.by), "warn");
       return false;
     }
     const ok = this.mutateConfig(

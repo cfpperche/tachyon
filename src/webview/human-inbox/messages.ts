@@ -121,7 +121,8 @@ export type HumanInboxAction =
    */
   | { type: "decideSavedAgentProposal"; id: string; digest: string; decision: "approve" | "deny"; reason?: string }
   /** t-afe120 — same digest binding as create, opposite durable effect */
-  | { type: "decideSavedAgentRemoval"; id: string; digest: string; decision: "approve" | "deny"; reason?: string };
+  | { type: "decideSavedAgentRemoval"; id: string; digest: string; decision: "approve" | "deny"; reason?: string }
+  | { type: "decideScheduleProposal"; id: string; decision: "approve" | "deny" };
 
 export const humanInboxMessage = (vm: HumanInboxViewModel): HumanInboxMessage => ({ type: HUMAN_INBOX, vm });
 export const humanInboxErrorMessage = (message: string): HumanInboxErrorMessage => ({ type: HUMAN_INBOX_ERROR, message });
@@ -146,6 +147,8 @@ export const decideSavedAgentRemovalAction = (
   decision: "approve" | "deny",
   reason?: string,
 ): HumanInboxAction => ({ type: "decideSavedAgentRemoval", id, digest, decision, ...(reason ? { reason } : {}) });
+export const decideScheduleProposalAction = (id: string, decision: "approve" | "deny"): HumanInboxAction =>
+  ({ type: "decideScheduleProposal", id, decision });
 export const openInboxItemAction = (kind: HumanInboxKind, id: string): HumanInboxAction => ({ type: "openInboxItem", kind, id });
 export const resolveInboxApprovalAction = (id: string, decision: ApprovalDecision): HumanInboxAction => ({
   type: "resolveInboxApproval",

@@ -1579,6 +1579,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       humanInboxStaleAfter: (wsHash: string) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
       approveSavedAgentProposal: (input) => commitSavedAgentProposal(input),
       approveSavedAgentRemoval: (input) => commitSavedAgentRemoval(input),
+      decideScheduleProposal: async (wsHash, id, decision) => {
+        const ws = byHash(wsHash);
+        if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+        await extensionInvoke(ws, { action: decision === "approve" ? "proposal.approve" : "proposal.reject", id });
+        refreshAll();
+        humanInboxPanels.refresh();
+      },
     },
   );
   context.subscriptions.push({ dispose: () => humanInboxPanels.dispose() });

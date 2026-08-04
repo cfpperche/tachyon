@@ -135,7 +135,7 @@ const bridge = new Bridge(
     runbooks,
     scheduler,
     proposals,
-    onScheduleProposed: (name, by) => console.error(`PROPOSED: ${name} by ${by}`),
+    onScheduleProposed: ({ name, by }) => console.error(`PROPOSED: ${name} by ${by}`),
   },
   { token },
 );

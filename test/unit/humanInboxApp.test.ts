@@ -286,7 +286,7 @@ describe("SDD 485 D4 — the Human Inbox app lists both stores, counted once", (
 
     const vm = posted(panel, "humanInbox").at(-1)?.vm;
     expect(vm?.items?.map((i) => `${i.kind}:${i.id}`)).toEqual(["approval:a-000001", "validation:v-1"]);
-    expect(vm?.counts).toEqual({ total: 2, approvals: 1, savedAgentProposals: 0, savedAgentRemovals: 0, validations: 1, stale: 0 });
+    expect(vm?.counts).toEqual({ total: 2, approvals: 1, savedAgentProposals: 0, savedAgentRemovals: 0, scheduleProposals: 0, validations: 1, stale: 0 });
   });
 
   it("says validations could not be read rather than showing an approvals-only list as complete", async () => {
