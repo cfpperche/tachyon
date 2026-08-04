@@ -85,38 +85,6 @@ select.ck-workspace-select {
   font-weight: 400;
 }
 
-.ck-auto {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--ds-muted);
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-}
-
-/* Overview-only shell actions (not on the tab strip). */
-.ck-overview-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-
-.ck-overview-actions button {
-  font-size: 11px;
-  padding: 2px 8px;
-  min-height: 22px;
-  gap: 4px;
-}
-
-.ck-overview-actions button .codicon {
-  font-size: 13px;
-}
-
 /* ---- t-fullpage-proto: fullpage subroute chrome — ONE minimal back-link row above the subroute's
    own content. Since t-aa2780 removed the section tab strip, this is the only .ck-top there is. ---- */
 .ck-top--fullpage {
@@ -287,94 +255,6 @@ main.ck-main.ck-main--embed,
   font-size: 11px;
   line-height: 1.45;
   color: var(--ds-fg);
-}
-
-.ck-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-  gap: var(--ds-2);
-  margin-bottom: var(--ds-3);
-}
-
-.ck-metric {
-  border: var(--ds-border-width) solid var(--ds-border);
-  border-radius: var(--ds-radius);
-  padding: var(--ds-2);
-  background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent);
-}
-
-.ck-metric .label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ds-muted);
-}
-
-.ck-metric .value {
-  font-size: 16px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  margin-top: 2px;
-  line-height: 1.2;
-  color: var(--vscode-foreground);
-}
-
-/* t-e76acc — the one metric that is also a destination (Overview → Human Inbox). Same box as its
-   siblings; only the affordances differ, so a clickable count never reads as a different kind of
-   thing than the counts beside it. */
-.ck-metric-btn {
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  width: 100%;
-}
-
-.ck-metric-btn:hover {
-  border-color: color-mix(in srgb, var(--vscode-foreground) 35%, var(--ds-border));
-}
-
-.ck-metric.warn .value {
-  color: var(--ds-err);
-}
-
-.ck-metric.ok .value {
-  color: var(--ds-ok);
-}
-
-.ck-panel p {
-  margin: 0 0 6px;
-  font-size: 11px;
-  line-height: 1.45;
-  color: var(--ds-muted);
-}
-
-.ck-bridge-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.ck-bridge-list li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
-  padding: 5px 0;
-  border-top: 1px solid var(--ds-border);
-  font-size: 11px;
-}
-
-.ck-bridge-list .name {
-  font-weight: 600;
-  min-width: 88px;
-  color: var(--vscode-foreground);
-}
-
-.ck-bridge-list li > span:not(.name):not(.ci-badge) {
-  font-size: 10px;
-  color: var(--ds-muted);
 }
 
 /* ---- engine cards ---- */
@@ -676,16 +556,6 @@ main.ck-main.ck-main--embed,
 /* Match sidebar row hover feel */
 .ck-table tbody tr:hover td {
   background: var(--vscode-list-hoverBackground);
-}
-
-/* Overview Jump / panel action rows (not the top chrome). */
-.ck-jump,
-.ck-panel .ck-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-left: 0;
 }
 
 /* Fleet / Worktrees / Deliveries entity cards use shared/engine-workspace.css while their last users migrate. */

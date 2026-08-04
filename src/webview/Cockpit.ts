@@ -254,6 +254,7 @@ export interface CockpitDeps {
   /** SDD 485 D7 — open Fleet as a project dashboard; persisted/deep-linked section routes redirect. */
   openFleet: (wsHash?: string) => void;
   openSettings: () => void;
+  openOverview: (wsHash?: string) => void;
   openDoctor: () => void;
   revealPath: (fsPath: string) => void;
   openConfigFile: (wsHash?: string) => Promise<void>;
@@ -589,6 +590,7 @@ let openRuntimeOpsApp: (() => void) | undefined;
 let openRuntimeConfigApp: (() => void) | undefined;
 let openExecutionGraphApp: (() => void) | undefined;
 let openSettingsApp: (() => void) | undefined;
+let openOverviewApp: (() => void) | undefined;
 
 /**
  * SDD 485 D4 — and the same seam for the Human Inbox. Sixth and seventh of these, and the first PAIR:
@@ -695,6 +697,12 @@ function navigate(route: CockpitRoute): void {
     // readable inventory of what has left Control: task detail, Board, tmux, Plugins, Runtime Ops, Inbox.
     openInboxApp?.();
     route = routes.section("overview");
+  }
+  // SDD 485 D11 — every legacy landing route, including malformed-section recovery, funnels here.
+  // Overview opens in its project dashboard; Control commits a renderer it still owns.
+  if (route.kind === "section" && route.section === "overview") {
+    openOverviewApp?.();
+    route = routes.section("approvals");
   }
   reconcileActivityTeardown(route);
   reconcileStudioTeardown(route);
@@ -1110,6 +1118,7 @@ export async function openCockpit(
         openRuntimeConfigApp = undefined;
         openExecutionGraphApp = undefined;
         openSettingsApp = undefined;
+        openOverviewApp = undefined;
         openInboxApp = undefined;
         openInboxItemApp = undefined;
         openFleetApp = undefined;
@@ -1158,6 +1167,7 @@ export async function openCockpit(
   openRuntimeConfigApp = () => deps.openRuntimeConfig(controlWorkspaceScope.current);
   openExecutionGraphApp = () => deps.openExecutionGraph(controlWorkspaceScope.current);
   openSettingsApp = () => deps.openSettings();
+  openOverviewApp = () => deps.openOverview(controlWorkspaceScope.current);
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -1166,6 +1176,8 @@ export async function openCockpit(
     const target = routes.section(resolveCockpitSection(opts.section));
     if (revealingExisting) await requestNavigate(target, live);
     else navigate(target);
+  } else if (!revealingExisting) {
+    navigate(routes.section("overview"));
   }
 
   /**

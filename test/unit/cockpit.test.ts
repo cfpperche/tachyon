@@ -3,7 +3,7 @@ import { buildCockpitModel, COCKPIT_SECTION_ORDER, formatCockpitDiagnostics } fr
 
 describe("cockpit model", () => {
   it("orders sections by ops frequency (no soon slots)", () => {
-    expect(COCKPIT_SECTION_ORDER[0]).toBe("overview");
+    expect(COCKPIT_SECTION_ORDER).not.toContain("overview");
     expect(COCKPIT_SECTION_ORDER).not.toContain("settings");
     expect(COCKPIT_SECTION_ORDER).not.toContain("execution-graph");
     expect(COCKPIT_SECTION_ORDER).not.toContain("engine");

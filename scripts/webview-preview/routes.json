@@ -1950,6 +1950,18 @@
     ]
   },
   {
+    "view": "overview",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=overview&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
     "view": "section-app-fixture",
     "fixture": "document",
     "url": "/scripts/webview-preview/index.html?view=section-app-fixture&fixture=document",

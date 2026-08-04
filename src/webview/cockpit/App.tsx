@@ -9,12 +9,11 @@ import { parentRoute, isStudioRoute, routeKey } from "../../cockpit/route";
 import {
   navigateReturnAction,
   navigateStudioParentAction,
-  openProjectHandoffAction,
   type CockpitAction,
   type CockpitStrings,
   type CompanionPairOffer,
 } from "./messages";
-import { Button, Badge, PageChrome, EmptyState } from "../shared/ui";
+import { Button, PageChrome, EmptyState } from "../shared/ui";
 import { loadSectionStylesheet } from "../shared/lazySectionStyles";
 import type { ActivityDispatch, PendingShareAgentTargets } from "../activity/App";
 import type { ActivityViewModel } from "../../activity/activityView";
@@ -303,13 +302,6 @@ const TAB_META: Record<CockpitSectionId, { icon: string; navKey: keyof CockpitSt
   settings: { icon: "settings-gear", navKey: "navSettings" },
 };
 
-function StateBadge({ s, state }: { s: CockpitStrings; state: "attached" | "error" | "none" }) {
-  const label = state === "attached" ? s.attached : state === "error" ? s.error : s.none;
-  const tone = state === "attached" ? "ok" : state === "error" ? "err" : "default";
-  return <Badge tone={tone}>{label}</Badge>;
-}
-
-
 /** Countdown for pair-code TTL (mm:ss or "0:00" when expired). */
 
 export function App(p: CockpitAppProps) {
@@ -478,119 +470,6 @@ export function App(p: CockpitAppProps) {
           ) : null}
         </Suspense>
       </div>
-    );
-  } else if (section === "overview") {
-    const o = m.overview;
-    body = (
-      <>
-        <PageChrome
-          title={s.overviewTitle}
-          hint={s.overviewHint}
-          actions={
-            <div class="ck-overview-actions">
-              {/* t-46eb4f — THE global workspace scope, and the only one in Control. It lives here,
-                  in Overview, and is always visible: with a single root it still answers "which root
-                  am I looking at", which the header's old >1-workspace condition never did. Every
-                  other screen consumes the resulting scope; none offers its own copy of it. */}
-              <label class="ck-auto" title={s.auto}>
-                <input type="checkbox" checked={p.auto} onChange={(e) => p.onToggleAuto((e.target as HTMLInputElement).checked)} />
-                {s.auto}
-              </label>
-              <Button variant="default" icon="refresh" onClick={p.onRefresh} title={s.refresh}>
-                {s.refresh}
-              </Button>
-              <Button variant="default" icon="copy" onClick={p.onCopyDiagnostics} title={s.copyDiagnostics}>
-                {s.copyDiagnostics}
-              </Button>
-            </div>
-          }
-        />
-        <div class="ck-metrics">
-          <div class="ck-metric">
-            <div class="label">{s.workspaces}</div>
-            <div class="value">{o.workspaceCount}</div>
-          </div>
-          <div class={`ck-metric ${o.enginesAttached > 0 ? "ok" : ""}`}>
-            <div class="label">{s.engines}</div>
-            <div class="value">{o.enginesAttached}</div>
-          </div>
-          <div class={`ck-metric ${o.enginesError > 0 ? "warn" : ""}`}>
-            <div class="label">{s.errors}</div>
-            <div class="value">{o.enginesError}</div>
-          </div>
-          <div class="ck-metric">
-            <div class="label">{s.agents}</div>
-            <div class="value">
-              {o.agentsRunning}/{o.agentsTotal}
-            </div>
-          </div>
-          {/* t-e76acc / t-bce1ad — ONE actionable number for everything waiting on a human. */}
-          <button
-            type="button"
-            class={`ck-metric ck-metric-btn ${o.inboxPending > 0 ? "warn" : ""}`}
-            data-testid="control-overview-inbox"
-            onClick={() => p.onSetSection("inbox")}
-          >
-            <div class="label">{s.inbox}</div>
-            <div class="value">{o.inboxPending}</div>
-          </button>
-          <div class="ck-metric">
-            <div class="label">{s.worktrees}</div>
-            <div class="value">{o.worktreesActive}</div>
-          </div>
-        </div>
-        <div class="ck-panel">
-          <h2>{s.bridges}</h2>
-          {o.bridges.length === 0 ? (
-            <p class="ck-empty">{s.empty}</p>
-          ) : (
-            <ul class="ck-bridge-list">
-              {o.bridges.map((b) => (
-                <li key={b.folder + b.url}>
-                  <span class="name">{b.folder}</span>
-                  <span>{b.url}</span>
-                  <StateBadge s={s} state={b.ok ? "attached" : "error"} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <div class="ck-panel">
-          <h2>Jump</h2>
-          <div class="ck-jump">
-            <Button variant="default" onClick={() => p.onSetSection("engine")}>
-              {s.navEngine}
-            </Button>
-            <Button variant="default" onClick={() => p.onSetSection("fleet")}>
-              {s.navFleet}
-            </Button>
-            <Button variant="default" onClick={() => p.onSetSection("inbox")}>
-              {s.navInbox}
-            </Button>
-            <Button variant="default" onClick={() => p.onSetSection("mission")}>
-              {s.navMission}
-            </Button>
-            <Button variant="default" data-testid="control-overview-open-handoff" onClick={() => p.onPost(openProjectHandoffAction())}>
-              {s.navHandoff}
-            </Button>
-            <Button variant="default" onClick={() => p.onSetSection("runtime")}>
-              {s.navRuntime}
-            </Button>
-            <Button variant="default" onClick={() => p.onSetSection("plugins")}>
-              {s.navPlugins}
-            </Button>
-            <Button variant="default" onClick={p.onOpenSettings}>
-              {s.navSettings}
-            </Button>
-            <Button variant="default" onClick={() => p.onSetSection("tmux")}>
-              {s.navTmux}
-            </Button>
-            <Button variant="default" onClick={p.onOpenDoctor}>
-              Doctor
-            </Button>
-          </div>
-        </div>
-      </>
     );
   } else if (section === "approvals") {
     body = (

@@ -90,6 +90,9 @@ function depsFor(ws: Workspace) {
 function routeTable(ws: Workspace, taskId: string): { label: string; route: CockpitRoute }[] {
   const wsHash = ws.wsHash;
   return [
+    // Phase D is complete: launcher sections are standalone apps, but Control still owns the section
+    // route kind for its approvals/validations compatibility renderers.
+    { label: "section:approvals", route: { kind: "section", section: "approvals" } as CockpitRoute },
     ...COCKPIT_SECTION_ORDER.map((section) => ({
       label: `section:${section}`,
       route: { kind: "section", section } as CockpitRoute,

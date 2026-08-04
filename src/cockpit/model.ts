@@ -70,7 +70,6 @@ export type CockpitSectionId =
  * decodable solely so old state and deep links can redirect to its standalone app.
  */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
-  "overview",
 ];
 
 /**
@@ -83,6 +82,7 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
  */
 export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   ...COCKPIT_SECTION_ORDER,
+  "overview",
   "approvals",
   "engine",
   "execution-graph",

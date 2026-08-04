@@ -31,6 +31,7 @@ import { fleetModelMessage } from "../../src/webview/fleet/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
 import { executionGraphModelMessage } from "../../src/webview/execution-graph/messages";
 import { settingsModelMessage } from "../../src/webview/settings/messages";
+import { overviewModelMessage } from "../../src/webview/overview/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { approvalFixtures } from "./fixtures/approval";
@@ -501,6 +502,15 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     globals: { __TACHYON_STRINGS__: cockpitStrings },
     makeMessage: (vm) => settingsModelMessage(vm as never),
+  },
+  overview: {
+    bundle: "/dist/webview/overview.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/engine-workspace.css", "/dist/webview/overview.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.default },
+    module: true,
+    globals: { __TACHYON_STRINGS__: cockpitStrings },
+    makeMessage: (vm) => overviewModelMessage(vm as never),
   },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.

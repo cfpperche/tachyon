@@ -214,6 +214,9 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // SDD 485 D10 — companion and every mutation accept one wsHash. Settings was born in Control,
   // so there is no retired standalone id or persisted shape to revive.
   { view: "settings", viewId: "tachyonSettings", section: "settings", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D11 — Overview is scoped by buildCockpitModel(..., { wsHash }). It was born in Control,
+  // so it has no legacy standalone id or persisted shape to reuse.
+  { view: "overview", viewId: "tachyonOverview", section: "overview", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**
