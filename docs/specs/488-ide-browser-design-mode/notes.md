@@ -42,6 +42,13 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 - **Notes:** Theme surface tokens for picker blocks landed same day; reply-tool reliability still
   runtime-dependent (Codex may list tool and not call it — F3).
 
+## Merge-review readiness
+
+- Branch `tachyon/grok` prepared for main merge **review** (no auto-merge).
+- Maintainer commissioned **architecture adversarial review** (not security): brief
+  `adversarial-review-architecture-brief.md` → dispatch to **claude** + **codex**.
+- Deliverables expected: `review-architecture-claude.md`, `review-architecture-codex.md`.
+
 ## Prototype inventory (as of 2026-08-04, branch `tachyon/grok`)
 
 Present in code (exploratory / dogfood quality — not a ship claim):
