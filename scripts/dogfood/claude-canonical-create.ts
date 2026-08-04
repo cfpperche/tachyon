@@ -101,8 +101,8 @@ function makeHome(settings: unknown): string {
  */
 async function createSave(home: string, nativeConfig: Record<string, unknown>, seedRoster = true) {
   const root = temporaryDir("tachyon-dogfood-claude-ws-");
-  // A real workspace already has at least one entry; seeding keeps rollback able to reload a
-  // valid roster. `seedRoster: false` reproduces the empty-roster edge on purpose.
+  // t-f67185 — empty roster is valid. seedRoster still plants a terminal when the scenario wants
+  // a non-empty prior so rollback is not onto the empty edge; seedRoster: false starts empty.
   fs.writeFileSync(
     path.join(root, "tachyon.yml"),
     seedRoster ? "agents: {}\nterminals:\n  shell:\n    cmd: bash\n" : "agents: {}\n",
@@ -295,9 +295,9 @@ console.log("\n== Scenario 5: bypassPermissions HOME converges with permissions 
   }
 }
 
-// ── Scenario 4: rolling the FIRST agent back restores an empty roster, which loadConfig refuses.
-// The durable restore is complete by then, so the person must get the real refusal and a clean
-// rollback — not a degraded transaction blocking an agent that no longer exists (t-07d05c).
+// ── Scenario 4: rolling the FIRST agent back restores an empty roster (valid after t-f67185).
+// Activation still fails for the projected-permissions reason under test; the person must get
+// that real refusal and a clean rollback — not a degraded transaction (t-07d05c).
 console.log("\n== Scenario 4: empty-roster rollback stays clean (t-07d05c) ==");
 {
   const home = makeHome({ ...AMBIENT_GLOBAL_SETTINGS, permissions: { defaultMode: "bypassPermissions" } });

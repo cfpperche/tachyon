@@ -420,8 +420,8 @@ describe("agent profile lifecycle kernel", () => {
     const config = configPort(root);
     const original = config.read();
     const activations: string[] = [];
-    // The real host reloads config on activation, and loadConfig refuses a roster with neither
-    // agents nor terminals — so restoring the prior state of a first-ever create throws.
+    // t-07d05c — host reactivation of the restored prior can still fail for host-local reasons;
+    // empty roster (t-f67185 valid load) must not degrade the transaction after durable restore.
     await expect(commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "codex",
@@ -432,7 +432,7 @@ describe("agent profile lifecycle kernel", () => {
       activateState: (state) => {
         activations.push(state);
         if (state === "target") throw new Error("activation rejected");
-        if (state === "prior") throw new Error("'agents' must be a non-empty mapping of agent name -> definition");
+        if (state === "prior") throw new Error("host refused empty-roster reactivation");
       },
     })).rejects.toThrow("activation rejected");
 

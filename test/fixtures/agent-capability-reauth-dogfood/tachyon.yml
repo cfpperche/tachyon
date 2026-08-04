@@ -1,10 +1,9 @@
 # Disposable Dev Host fixture — t-4a2a6f: Authorize / Reauthorize / Authorized.
 #
-# `agents: {}` alone is not a loadable roster ("must be a non-empty mapping ... or declare a
-# 'terminals' block"), so the terminal below is the non-empty half. Every agent in this scenario is
-# created through Agent Studio — starting from zero agents is the point.
+# t-f67185 — empty agents alone is loadable. The shell terminal remains for a REAL reason: run
+# ./drift.sh without leaving the EDH (not a roster non-empty workaround).
 #
-# The shell terminal is also how you run ./drift.sh without leaving the EDH.
+# Every agent in this scenario is created through Agent Studio — starting from zero agents is the point.
 settings:
   maxAgents: 4
 
