@@ -97,7 +97,7 @@ export class ActivityPanelManager {
       ?? (visible.length === 1 ? visible[0] : undefined);
     if (!binding) {
       notify(visible.length > 1
-        ? "Several Activity views are open — click the one you want, then run “Open Raw Transcript”."
+        ? vscode.l10n.t("Several Activity views are open — click the one you want, then run “Open Raw Transcript”.")
         : "Open an agent's Activity view first, then run “Open Raw Transcript”.");
       return;
     }
