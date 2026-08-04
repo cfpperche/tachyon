@@ -442,7 +442,7 @@ work in parallel only if the second re-applies onto the first before delivery, n
       Visual QA used the real `probes.js` bundle at 880 and 360. Desktop preserves the full inventory and
       token colours; at 360 the fixed nine-column table remains horizontally wider than the viewport, so
       the advisory verdict is `concern` rather than claiming a responsive layout this migration did not
-      create. Evidence: `.vqa/visual-qa/probes-default-{880,360}.png`.
+      create. Evidence: `ev-2026-08-04T17:33:49.095Z-5` (probesapp; probes-default at 880 and 360).
 - [x] D19. **Project Handoff** — `dashboard`, keyed by project alone. Doors:
       `tachyon.openProjectHandoff` (:3363) and the serializer (:2547).
       The cardinality was the cheapest check in the tail of Phase D: `WorkspaceHandoffTarget` carries one
@@ -590,6 +590,15 @@ rule, restore); the human half is the checkpoint below, which is the point of th
 5. Hide an app behind another tab, change something it shows, bring it forward. It is current.
 
 ## Visual QA
+
+**Artifact-Location-Opt-Out:** the screenshots live in Tachyon's own evidence store
+(`.tachyon/evidence/<agent>/<evidence-id>/`), not under this spec directory, and that is deliberate:
+each capture is produced by the agent that made the change, in its own worktree, and `attach_evidence`
+is what moves it somewhere durable — the worktree is removed when the agent is dismissed. Copying them
+into `docs/specs/` would duplicate a record that already has an owner and a lifecycle. Paths written as
+`.vqa/...` below are the agent-local WORKING copies (gitignored, and gone with their worktrees); where a
+line needs a durable reference it names the EVIDENCE ID, which is the handle the store is keyed by
+(and which, unlike a full path, carries no colons for a path-scanning auditor to trip over).
 
 Every phase from C on changes a visible surface. Per the convention agreed with the maintainer on
 2026-08-02, each surface PR captures preview screenshots (`npm run preview:webview` + agent-browser)
@@ -752,7 +761,7 @@ launcher grid read as a grafted widget (t-6e2952), and an Overview action row th
 
 - [x] **Evidence + verdict (D19, 2026-08-04):** the real `dist/webview/handoff.js` app on the default
       fixture at browser + harness widths 880×900 and 360×900, captured under
-      `.vqa/visual-qa/handoff-default-*.png` and attached to `handoffapp`
+      `ev-2026-08-04T17:11:20.565Z-4` and attached to `handoffapp`
       (`ev-2026-08-04T17:11:20.565Z-4`). Anchor written before capture: *Project Handoff must render in
       its own editor tab with the same content hierarchy and calm reading rhythm it had in Control, one
       shared page chrome, no Control breadcrumb, and usable wrapping at both widths.* Verdict: pass. At
