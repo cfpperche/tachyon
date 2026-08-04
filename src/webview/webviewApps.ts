@@ -116,6 +116,12 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   { view: "task-detail", viewId: "tachyonTaskDetail", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 485 D14 — one Pins document app per (project, pin). Read and edit are modes of this key.
   { view: "pin-preview", viewId: "tachyonPinPreview", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // D13 — editing-only documents. "new" is the provisional creation identity; saved entities use their id.
+  { view: "command-studio-shell", viewId: "tachyonCommandStudioShell", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "terminal-studio-shell", viewId: "tachyonTerminalStudioShell", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "runbook-studio-shell", viewId: "tachyonRunbookStudioShell", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "schedule-studio-shell", viewId: "tachyonScheduleStudioShell", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "agent-studio-shell", viewId: "tachyonAgentStudioShell", host: "section", cardinality: "document", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 485 C5 — the Board, and the maintainer's motivating case #1 (the Board open beside an agent
   // terminal). `dashboard` is the whole of its difference from the task detail above: one panel per project,
   // and re-opening it reveals the panel that is already open rather than making a second. `view` stays

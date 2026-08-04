@@ -68,11 +68,11 @@ import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelStat
 import { PinDetailPanelManager, PIN_DETAIL_VIEW_TYPE, type LegacyPinDetailState } from "./webview/PinDetailPanel.js";
 import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { mintTaskId } from "./tasks/TaskStore.js";
-import { AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
-import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
-import { COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
-import { RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
-import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
+import { AGENT_STUDIO_SHELL_VIEW_TYPE, AgentStudioPanelManager, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
+import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, TerminalStudioPanelManager, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
+import { COMMAND_STUDIO_SHELL_VIEW_TYPE, CommandStudioPanelManager, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
+import { RUNBOOK_STUDIO_SHELL_VIEW_TYPE, RunbookStudioPanelManager, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
+import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, ScheduleStudioPanelManager, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
@@ -1177,7 +1177,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // managers; the Control-route equivalent doesn't need a per-studio "which kind changed" gate
     // (refreshStudioReferenceData is a no-op off a studio route, and best-effort otherwise — see its
     // own doc comment in studioHost.ts).
-    if (view === "commands" || view === "agents") refreshCockpitStudioReferenceData();
+    if (view === "commands" || view === "agents") {
+      refreshCockpitStudioReferenceData();
+      for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
+    }
     if (view === "agents") void applyWorktreeFolderReveal(); // spec 210/263 — onSpawned/onStopping/onKilled fire this
     sidebarProto.refresh();
   };
@@ -1186,6 +1189,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     sidebarProto.refresh();
     pluginSurfaces.refreshAll();
     refreshCockpitStudioReferenceData(); // t-610705 (Phase D, D1a) — was runbook/scheduleStudioPanels.refreshReferenceData()
+    for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
     refreshCockpitPinStudioEntity(); // t-610705 (Phase D, D3) — was pinStudioPanels.refreshAll() (retired panel)
     approvalPanels.refreshAll();
   };
@@ -1222,6 +1226,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   openPinDocumentFromSidebar = (wsHash, pinId) => pinDetailPanels.open(wsHash, pinId);
   context.subscriptions.push({ dispose: () => pinDetailPanels.dispose() });
+  const studioPanels = {
+    command: new CommandStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+    terminal: new TerminalStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+    runbook: new RunbookStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+    schedule: new ScheduleStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+    agent: new AgentStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+  } as const;
+  for (const manager of Object.values(studioPanels)) context.subscriptions.push({ dispose: () => manager.dispose() });
   // SDD 485 C5 — the Board is a standalone `dashboard` app: ONE editor tab per project, revealed rather
   // than duplicated, so it can be read beside an agent terminal. `openTask` hands the card's own workspace
   // to the task-detail app above — the Board never learns where a task detail lives, which is what let C4
@@ -1971,6 +1983,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       getWorkspaces: () => workspaces(),
       onChanged: refreshAll,
     },
+    studioDocuments: {
+      openNew: (studio, wsHash) => studioPanels[studio].openNew(wsHash),
+      openExisting: (studio, wsHash, entityId) => studioPanels[studio].openExisting(wsHash, entityId),
+    },
     approvals: {
       getWorkspaces: () =>
         workspaces().map((ws) => ({
@@ -2568,11 +2584,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       void openCockpit(makeCockpitDeps(), { route });
     });
   };
-  registerLegacyStudioRedirect<CommandStudioPanelState>(COMMAND_STUDIO_SHELL_VIEW_TYPE, "command");
-  registerLegacyStudioRedirect<TerminalStudioPanelState>(TERMINAL_STUDIO_SHELL_VIEW_TYPE, "terminal");
-  registerLegacyStudioRedirect<RunbookStudioPanelState>(RUNBOOK_STUDIO_SHELL_VIEW_TYPE, "runbook");
-  registerLegacyStudioRedirect<ScheduleStudioPanelState>(SCHEDULE_STUDIO_SHELL_VIEW_TYPE, "schedule");
-  registerLegacyStudioRedirect<AgentStudioPanelState>(AGENT_STUDIO_SHELL_VIEW_TYPE, "agent");
+  registerTrustedPanelSerializer<CommandStudioPanelState | SectionPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.command.deserialize(panel, state));
+  registerTrustedPanelSerializer<TerminalStudioPanelState | SectionPanelState>(context, TERMINAL_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.terminal.deserialize(panel, state));
+  registerTrustedPanelSerializer<RunbookStudioPanelState | SectionPanelState>(context, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.runbook.deserialize(panel, state));
+  registerTrustedPanelSerializer<ScheduleStudioPanelState | SectionPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.schedule.deserialize(panel, state));
+  registerTrustedPanelSerializer<AgentStudioPanelState | SectionPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.agent.deserialize(panel, state));
   // t-610705 (Phase D, D3) — unlike Task, Pin's studioNew never throws (pin IS reachable id-less —
   // a brand-new pin has no id until its first save) — the shared helper works as-is.
   registerLegacyStudioRedirect<PinStudioPanelState>(PIN_STUDIO_VIEW_TYPE, "pin");
@@ -3527,22 +3543,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("agent", ws.wsHash) });
+      studioPanels.agent.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.newAgentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("agent", ws.wsHash) });
+      studioPanels.agent.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.terminalStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("terminal", ws.wsHash) });
+      studioPanels.terminal.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.runbookStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("runbook", ws.wsHash) });
+      studioPanels.runbook.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentItem) => {
       const ws = wsOf(item);
@@ -3554,8 +3570,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       // t-610705 (Phase D, D1a/D1b) — both branches are Control routes now.
       const dispatch = {
-        agent: () => { void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("agent", ws.wsHash, item.agentName) }); },
-        terminal: () => { void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("terminal", ws.wsHash, item.agentName) }); },
+        agent: () => studioPanels.agent.openExisting(ws.wsHash, item.agentName),
+        terminal: () => studioPanels.terminal.openExisting(ws.wsHash, item.agentName),
       } satisfies Record<"agent" | "terminal", () => void>;
       dispatch[def.kind === "terminal" ? "terminal" : "agent"]();
     }),
@@ -3978,17 +3994,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.commandName), "warn");
         return;
       }
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("command", ws.wsHash, item.commandName) });
+      studioPanels.command.openExisting(ws.wsHash, item.commandName);
     }),
     vscode.commands.registerCommand("tachyon.commandStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("command", ws.wsHash) });
+      studioPanels.command.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.scheduleStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("schedule", ws.wsHash) });
+      studioPanels.schedule.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.editScheduleStudioItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
@@ -3998,7 +4014,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.scheduleName), "warn");
         return;
       }
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("schedule", ws.wsHash, item.scheduleName) });
+      studioPanels.schedule.openExisting(ws.wsHash, item.scheduleName);
     }),
     vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookItem) => {
       const ws = wsOf(item);
@@ -4008,7 +4024,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.runbookName), "warn");
         return;
       }
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("runbook", ws.wsHash, item.runbookName) });
+      studioPanels.runbook.openExisting(ws.wsHash, item.runbookName);
     }),
     vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookItem) => {
       const ws = wsOf(item);

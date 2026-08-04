@@ -102,64 +102,7 @@ const HandoffApp = lazy(() =>
   }),
 );
 
-// t-610705 (Phase D, D0/D1a) — CSS co-load, eleventh+ surfaces: the shared studio-frame.css (every
-// StudioPanelManagerBase-based studio) plus THIS studio's own sheet under its own bootstrap-global
-// key. D1b/D2/D3 each add their own studio-scoped loadSectionStylesheet call the same way. Each
-// studio's own loadSectionStylesheet call for the shared sheet uses a PER-STUDIO "studio-frame-X" key
-// even though every key resolves to the SAME studio-frame.css href — same convention as the 3
-// "*-mermaid" keys below
-// (activity-mermaid/handoff-mermaid, both → mermaid-block.css): cockpitCssParity's
-// client/host id-set comparison is a plain 1:1 match, not a dedup, so 4 lazy blocks sharing ONE
-// "studio-frame" key would read as 4 client calls against 1 host key and fail parity.
-const CommandStudioApp = lazy(() =>
-  import("../command-studio-shell/App").then((m) => {
-    loadSectionStylesheet("studio-frame-command");
-    loadSectionStylesheet("studio-command");
-    return { default: m.App };
-  }),
-);
-const TerminalStudioApp = lazy(() =>
-  import("../terminal-studio-shell/App").then((m) => {
-    loadSectionStylesheet("studio-frame-terminal");
-    loadSectionStylesheet("studio-terminal");
-    return { default: m.App };
-  }),
-);
-const RunbookStudioApp = lazy(() =>
-  import("../runbook-studio-shell/App").then((m) => {
-    loadSectionStylesheet("studio-frame-runbook");
-    loadSectionStylesheet("studio-runbook");
-    return { default: m.App };
-  }),
-);
-const ScheduleStudioApp = lazy(() =>
-  import("../schedule-studio-shell/App").then((m) => {
-    loadSectionStylesheet("studio-frame-schedule");
-    loadSectionStylesheet("studio-schedule");
-    return { default: m.App };
-  }),
-);
-// t-610705 (Phase D, D1b) — Agent Studio additionally needs its own compiled Tailwind utilities
-// (KitDropdown/KitFilePicker) before its surface CSS — same 3-sheet order the retired standalone
-// panel's styleFiles declared (vscode-theme.css is already unconditional in Cockpit.ts's main
-// styles: [...] array, so only the token-bridge Tailwind sheet needs its own co-load key here).
-// t-610705 (Phase D, D1b code-review finding) — `loadSectionStylesheet` APPENDS a real `<link>` to
-// <head> on every call, so CSS precedence follows the ACTUAL DOM insertion order, not call intent —
-// the tailwind sheet must be requested BEFORE studio-frame-agent here, or a lazy in-session
-// navigation INTO Agent Studio (e.g. from Terminal) ends up with the opposite cascade order from a
-// direct deep-link (whose initial unconditional <link> tags — Cockpit.ts's styles: [...] array — are
-// already correctly ordered tailwind-before-studio-frame). Getting this backwards is invisible on a
-// fresh Control open (agent-studio-shell.tailwind.css never gets a lazy call at all when it was
-// already eagerly linked) and only bites on the lazy-navigation path — exactly the kind of
-// route-history-dependent rendering bug that's easy to miss without testing BOTH entry paths.
-const AgentStudioApp = lazy(() =>
-  import("../agent-studio-shell/App").then((m) => {
-    loadSectionStylesheet("studio-agent-tailwind");
-    loadSectionStylesheet("studio-frame-agent");
-    loadSectionStylesheet("studio-agent");
-    return { default: m.App };
-  }),
-);
+// D13 — command, terminal, runbook, schedule and agent render only in their document apps.
 // t-610705 (Phase D, D3) — Pin Studio needs the SAME entity-neutral rich-doc.css HREF as Task Studio
 // BEFORE studio-frame.css, matching the retired standalone panel's own styleFiles order (`rich-doc.css,
 // studio-frame.css, pin-studio.css`) — no Tailwind sheet of its own (unlike Task/Agent Studio: Pin's UI
@@ -438,17 +381,7 @@ export function App(p: CockpitAppProps) {
     body = (
       <div class="ck-embed-host" data-testid="control-studio">
         <Suspense fallback={<SectionFallback />}>
-          {activeRoute.studio === "command" ? (
-            <CommandStudioApp key={studioKey} {...studioMountProps} />
-          ) : activeRoute.studio === "terminal" ? (
-            <TerminalStudioApp key={studioKey} {...studioMountProps} />
-          ) : activeRoute.studio === "runbook" ? (
-            <RunbookStudioApp key={studioKey} {...studioMountProps} />
-          ) : activeRoute.studio === "schedule" ? (
-            <ScheduleStudioApp key={studioKey} {...studioMountProps} />
-          ) : activeRoute.studio === "agent" ? (
-            <AgentStudioApp key={studioKey} {...studioMountProps} />
-          ) : activeRoute.studio === "pin" ? (
+          {activeRoute.studio === "pin" ? (
             <PinStudioApp key={studioKey} {...studioMountProps} />
           ) : null}
         </Suspense>

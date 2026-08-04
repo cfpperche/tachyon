@@ -55,14 +55,8 @@ describe("preview route table", () => {
       "/dist/webview/activity.css",
       "/dist/webview/probes.css",
       "/dist/webview/handoff.css",
-      "/dist/webview/agent-studio-shell.tailwind.css",
       "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
-      "/dist/webview/command-studio-shell.css",
-      "/dist/webview/terminal-studio-shell.css",
-      "/dist/webview/runbook-studio-shell.css",
-      "/dist/webview/schedule-studio-shell.css",
-      "/dist/webview/agent-studio-shell.css",
       "/dist/webview/pin-studio.css",
       // t-967b5b — `control-typography.css` dropped out of Control's list when the Settings migration
       // took its last `ck-mono` consumer. Three files spell this list out: the host, the preview route

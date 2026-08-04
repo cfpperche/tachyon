@@ -1,15 +1,40 @@
+import type * as vscode from "vscode";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import type { StudioPanelState } from "./shared/studio/StudioPanelManagerBase.js";
 import type { AgentStudioPatch } from "./agent-studio-shell/domain.js";
-
+import { SingleModeStudioPanelManager } from "./shared/studio/SingleModeStudioPanelManager.js";
+import { STUDIO_REGISTRY } from "../cockpit/studioRegistry.js";
+import { webviewApp } from "./webviewApps.js";
 export const AGENT_STUDIO_SHELL_VIEW_TYPE = "tachyonAgentStudioShell";
-
-/**
- * t-610705 (SDD 410 Phase D, D1b) — the standalone Agent Studio panel was retired: it's a Control
- * route now (studio-new/studio-edit, studio:"agent" — studios-routes-design.md). src/webview/
- * agent-studio-shell/App.tsx stays, lazy-imported by cockpit/App.tsx. The trusted serializer for the
- * legacy "tachyonAgentStudioShell" viewType stays registered in extension.ts: a revived pre-410 panel
- * disposes itself and redirects into Control → the mapped studio route. The soul-profile/evolution
- * domain-message dispatch (17 message types) that used to live here moved to
- * src/cockpit/agentStudioDomain.ts, wired through studioRegistry.ts's `agent` entry.
- */
 export type AgentStudioPanelState = StudioPanelState<AgentStudioPatch>;
+export class AgentStudioPanelManager extends SingleModeStudioPanelManager {
+  constructor(
+    uri: vscode.Uri,
+    workspaces: () => WorkspaceStudioTarget[],
+    onChanged: () => void,
+    scope?: ControlWorkspaceScope,
+  ) {
+    const row = STUDIO_REGISTRY.agent;
+    super(
+      uri,
+      {
+        app: webviewApp("agent-studio-shell"),
+        styleFiles: [
+          "codicon.css",
+          "design-system.css",
+          "vscode-theme.css",
+          "agent-studio-shell.tailwind.css",
+          "studio-frame.css",
+          "agent-studio-shell.css",
+        ],
+        iconName: "hubot",
+        getWorkspaces: workspaces,
+        makeAdapter: row.makeAdapter,
+        onChanged,
+        handleDomainMessage: row.handleDomainMessage,
+      },
+      scope,
+    );
+  }
+}
