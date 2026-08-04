@@ -344,13 +344,21 @@ work in parallel only if the second re-applies onto the first before delivery, n
 - [ ] D13. The remaining studios (command, terminal, runbook, schedule, agent) become document apps
       with ONE mode. Their parent is a flat section (`route.ts:187`), not an entity route, so do not
       invent a reading view none of them has.
-- [ ] D14. **One Pins document app carrying detail and edit**, keyed by pin id — same shape as D12.
+- [x] D14. **One Pins document app carrying detail and edit**, keyed by pin id — same shape as D12.
       The LIST stays in the sidebar. `studio-edit(pin)`'s `returnRoute ?? overview` fallback becomes
       the app's own read mode, since it existed only for lack of a detail route to return to.
       Its current host is `SidebarPrototype.previewPin` (`:439`), which already opens an editor panel;
       moving it to `SectionPanelManager` also gets it the Phase B gate it has never had.
-- [ ] D15. Decide the Overview JUMP card — survives, mirrors the launcher, or goes. It is a second
-      navigation surface left open deliberately by t-aa2780.
+- [x] D15. **The Overview JUMP card GOES.** Decided by measurement rather than taste, and both halves of
+      the measurement mattered. It had DRIFTED: nine hand-written entries against the launcher's twelve,
+      missing `worktrees`, `execution-graph` and `runtime-config` — the copy stopped tracking its source
+      and nobody noticed, which is the risk t-aa2780 left the card open to name. And every entry already
+      had a door: the eight sections through the always-visible sidebar launcher, `Doctor` through
+      `tachyon.doctor` and handoff through `tachyon.openProjectHandoff`, both CONTRIBUTED commands with
+      titles and so reachable from the palette. Those last two decided the shape of the answer: they are
+      not launcher tiles, so had they lacked their own doors the verdict would have been "mirror the
+      launcher" instead of "goes". The `openSection` message SURVIVES — the Overview inbox metric is a
+      second consumer, found by checking rather than assumed absent.
 - [ ] D16. Exercise restore with all apps open across editor groups, then reload. Spec 361's
       machinery has never been tested at this count.
 
