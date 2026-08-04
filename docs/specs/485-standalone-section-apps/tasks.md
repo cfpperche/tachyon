@@ -232,8 +232,37 @@ work in parallel only if the second re-applies onto the first before delivery, n
         the two remaining `ck-empty` uses. The other is Control's own no-model fallback, so the shared
         sheet stays anchored regardless — see the correction above.
 
-- [ ] D9–D10. One PR per remaining dashboard (Overview, Execution,
-      Settings). Each PR: app lands,
+- [x] D9. **Execution** — the first migration whose work was the STATE rather than the JSX. Its component
+      was already extracted and its host source already took a project, so what had to move was
+      `egSelected`/`egFilters` and the derived `egDetail`, which lived in Control's `App.tsx`. Every
+      earlier migration either found that state already per-webview (D5–D7, by luck — it sat in component
+      hooks) or created one deliberately (D4). Covered from three sides, none sufficient alone: a
+      behavioural test opening two projects and proving each read is scoped, the host holding no
+      selection slot at all, and a static check that the state is in the app root and gone from Control.
+
+- [x] D10. **Settings** — the last section with no branch of its own: it was the final `else`, whose
+      comment admitted the double duty ("settings (and any unknown section fallback)"). So an unknown
+      section id rendered the Settings page in silence, as if that were what was asked for. The migration
+      ends that: unknown now redirects to Overview and says so. The `ck-settings-*` block MOVED — 408
+      lines out of `cockpit.css`, zero left — because Settings was its only consumer.
+
+      **It also shipped a regression, and the guard that should have caught it was skipping the app.**
+      `settings/main.tsx` renders `ck-panel` on its outermost container; that rule lived only in
+      `cockpit.css`, which a standalone app does not link, so the panel shipped with no border, padding
+      or background. Found in review AFTER merge. `webviewConvention`'s class-consumption check read
+      `<view>/App.tsx` and `continue`d when absent — four directories were invisible, including this app
+      and D9's. **A guard whose miss is indistinguishable from a pass is worse than no guard, because it
+      is believed.** It now reads whatever the app ships, treats an unreadable section app as a failure,
+      and looks only at class attribute positions (widening it alone turned `id="ck-settings-scope-*"`
+      aria hooks into false reds).
+
+      Control also stopped linking `control-typography.css`: D6 added it for six `ck-mono` uses and D10
+      took the last five. D7 predicted that shape for Phase E; it arrived here, and nothing caught it,
+      because the Phase A mirror rule is about the page-frame height chain — not unused links in general.
+      That one removal needed THREE edits (host, preview route table, hardcoded expectation);
+      `cockpitCssParity` ties the first two, the third is unbound and only surfaced on the second gate run.
+
+- [ ] D11. Overview — the last one. Each PR: app lands,
       launcher + commands point at it, old restore state and deep links redirect, that section's
       renderer leaves `cockpit/App.tsx`. A shim with no UI may survive; two live renderers may not.
 
