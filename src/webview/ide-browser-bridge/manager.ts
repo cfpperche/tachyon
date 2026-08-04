@@ -456,6 +456,23 @@ export class IdeBrowserBridgeManager {
     }
     if (!agents.includes(this.designAgent)) this.designAgent = agents[0]!;
 
+    // t-348c9a — refuse send when the agent pane has a human draft (sendAgentInput would clobber it).
+    try {
+      const attMap = await ws.extension.query({ action: "attention.list" }) as
+        | Record<string, { composerOccupied?: boolean }>
+        | null;
+      if (attMap?.[this.designAgent]?.composerOccupied) {
+        await this.cdp.pushDesignModeChat({
+          type: "error",
+          text:
+            `${this.designAgent} has a draft in the terminal — clear or submit it before sending from Design Mode.`,
+        });
+        return;
+      }
+    } catch {
+      /* best-effort; offline attention does not block send */
+    }
+
     const pick = this.lastPick;
     const displayText = pick
       ? `[selection: <${pick.tag.toLowerCase()}> ${pick.selectorHint}]\n${text}`

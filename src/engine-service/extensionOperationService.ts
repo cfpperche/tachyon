@@ -75,10 +75,12 @@ export async function executeExtensionQuery(
     case "agents.list":
       return json(await workspace.manager.list());
     case "attention.list": {
-      const out: Record<string, { state: string; matchedLine?: string }> = {};
+      const out: Record<string, { state: string; composerOccupied?: boolean; matchedLine?: string }> = {};
       for (const [agent, attention] of workspace.monitor.states()) {
         out[agent] = {
           state: attention.state,
+          // Design Mode chat send uses this to avoid clobbering a human draft (t-348c9a).
+          composerOccupied: !!attention.composerOccupied,
           ...(attention.matchedLine !== undefined ? { matchedLine: attention.matchedLine } : {}),
         };
       }

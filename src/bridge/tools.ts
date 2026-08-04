@@ -2439,6 +2439,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   // SDD 414 + SDD 420 — Companion browser tools (tabId-scoped; tabTools settings opt-in).
+  // t-7aef5a — disambiguate from ide_browser_* (VS Code Integrated Browser) in every tool blurb.
+  const USER_BROWSER_SCOPE =
+    "[Companion human browser — paired device session; NOT VS Code Integrated Browser (ide_browser_*) and NOT agent-browser] ";
   const companionNotPairedMessage =
     "Companion tab tools are enabled in settings (settings.companion.tabTools), but no browser is paired " +
     "to this engine. Open Tachyon Companion, pair this engine (same Base URL as the Bridge), enable " +
@@ -2534,7 +2537,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_tabs_list",
       {
         description:
-          "List the human's browser tabs via Tachyon Companion. Returns opaque tabId handles, title, url, " +
+          USER_BROWSER_SCOPE +
+          "List the human's browser tabs. Returns opaque tabId handles, title, url, " +
           "active flag, and documentToken. Use tabId on every other user_browser_* call (SDD 420).",
         inputSchema: { timeoutSec: tabTimeoutSchema },
       },
@@ -2566,6 +2570,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_snapshot",
       {
         description:
+          USER_BROWSER_SCOPE +
           "DOM outline of a specific companion tabId. Returns outline, stable @e refs, documentToken. SDD 420.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -2604,6 +2609,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_click",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Click an element on companion tabId. Prefer ref from snapshot (@eN); selector is fragile fallback.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -2660,6 +2666,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_type",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Type into an element on companion tabId (focus + insert, optional Enter). Prefer ref from snapshot.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -2721,6 +2728,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_fill",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Set value of input/textarea/select on companion tabId. Password fields refused.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -2779,6 +2787,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_screenshot",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Screenshot companion tabId (viewport, full page, or element). Saves under .tachyon/companion/screenshots/.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -2848,6 +2857,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_eval",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Evaluate a short JS expression in the MAIN world of companion tabId.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -2886,7 +2896,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_console",
       {
-        description: "Read recent console.* lines from companion tabId.",
+        description: USER_BROWSER_SCOPE +
+          "Read recent console.* lines from companion tabId.",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -2924,7 +2935,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_navigate",
       {
-        description: "Navigate companion tabId: goto URL, back, forward, or reload.",
+        description: USER_BROWSER_SCOPE +
+          "Navigate companion tabId: goto URL, back, forward, or reload.",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -2969,7 +2981,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_scroll",
       {
-        description: "Scroll companion tabId by direction/pixels or until element ref/selector.",
+        description: USER_BROWSER_SCOPE +
+          "Scroll companion tabId by direction/pixels or until element ref/selector.",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3003,7 +3016,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_press_key",
       {
-        description: "Press a key or chord on companion tabId (optional focused ref).",
+        description: USER_BROWSER_SCOPE +
+          "Press a key or chord on companion tabId (optional focused ref).",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3052,7 +3066,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_wait_for",
       {
-        description: "Wait on companion tabId for element, text, navigation, or load (bounded).",
+        description: USER_BROWSER_SCOPE +
+          "Wait on companion tabId for element, text, navigation, or load (bounded).",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3086,7 +3101,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_tab_open",
       {
-        description: "Open a new browser tab (optional URL). Returns new opaque tabId.",
+        description: USER_BROWSER_SCOPE +
+          "Open a new browser tab (optional URL). Returns new opaque tabId.",
         inputSchema: {
           url: z.string().url().optional(),
           active: z.boolean().optional(),
@@ -3123,7 +3139,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_tab_activate",
       {
-        description: "Focus/activate companion tabId in the browser.",
+        description: USER_BROWSER_SCOPE +
+          "Focus/activate companion tabId in the browser.",
         inputSchema: { tabId: tabIdSchema, timeoutSec: tabTimeoutSchema },
       },
       async ({ tabId, timeoutSec }) => {
@@ -3144,7 +3161,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_tab_close",
       {
-        description: "Close companion tabId.",
+        description: USER_BROWSER_SCOPE +
+          "Close companion tabId.",
         inputSchema: { tabId: tabIdSchema, timeoutSec: tabTimeoutSchema },
       },
       async ({ tabId, timeoutSec }) => {
@@ -3173,6 +3191,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_get",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Directed read on companion tabId element (prefer ref): text, html, value, attribute, or state. Never returns password values or secret-like attributes.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -3210,7 +3229,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_find",
       {
-        description: "Find visible text on companion tabId; returns matching nodes (ref when stamped).",
+        description: USER_BROWSER_SCOPE +
+          "Find visible text on companion tabId; returns matching nodes (ref when stamped).",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3240,7 +3260,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_hover",
       {
-        description: "Hover an element on companion tabId (prefer ref).",
+        description: USER_BROWSER_SCOPE +
+          "Hover an element on companion tabId (prefer ref).",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3270,7 +3291,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_select_option",
       {
-        description: "Select an option in a <select> on companion tabId (by value, label, or index).",
+        description: USER_BROWSER_SCOPE +
+          "Select an option in a <select> on companion tabId (by value, label, or index).",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3318,7 +3340,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_check",
       {
-        description: "Check or uncheck a checkbox/radio on companion tabId.",
+        description: USER_BROWSER_SCOPE +
+          "Check or uncheck a checkbox/radio on companion tabId.",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3358,7 +3381,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_drag",
       {
-        description: "Drag from source element to target on companion tabId (prefer @e refs).",
+        description: USER_BROWSER_SCOPE +
+          "Drag from source element to target on companion tabId (prefer @e refs).",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3405,6 +3429,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_upload",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Upload workspace file(s) into an <input type=file> on companion tabId. Paths are relative to workspace root (or absolute under it).",
         inputSchema: {
           tabId: tabIdSchema,
@@ -3479,6 +3504,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_download",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Trigger a download on companion tabId (optional click on ref) and wait for chrome.downloads result. Requires human confirm class when gated as download.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -3526,6 +3552,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_network",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Recent network requests for companion tabId (method, url, status). No cookies/Authorization bodies — redacted.",
         inputSchema: {
           tabId: tabIdSchema,
@@ -3558,7 +3585,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "user_browser_list_frames",
       {
-        description: "List frames/iframes for companion tabId (frameId, parent, url).",
+        description: USER_BROWSER_SCOPE +
+          "List frames/iframes for companion tabId (frameId, parent, url).",
         inputSchema: {
           tabId: tabIdSchema,
           expectedDocumentToken: documentTokenSchema,
@@ -3587,6 +3615,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "user_browser_dialog",
       {
         description:
+          USER_BROWSER_SCOPE +
           "Read/accept/dismiss an open HTML <dialog> or role=dialog on companion tabId (native window.alert needs browser UI).",
         inputSchema: {
           tabId: tabIdSchema,
@@ -3620,6 +3649,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   // Do NOT gate on "instance file is live right now" — MCP sessions freeze the tool catalog
   // at connect, and agents spawned before Design Mode would never see design_mode_chat_reply.
   // Offline calls fail closed via bridge_offline from the client (companion-style).
+  // t-7aef5a — disambiguate from user_browser_* (Companion) and agent-browser plugin tools.
+  const IDE_BROWSER_SCOPE =
+    "[VS Code Integrated Browser — editor Chromium tab + Design Mode; NOT Companion user_browser_* and NOT agent-browser] ";
   if (deps.ideBrowserRequest || deps.ideBrowserToolsEnabled?.()) {
     const ideReq = async (route: string, body?: Record<string, unknown>) => {
       if (!deps.ideBrowserRequest) {
@@ -3632,8 +3664,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "ide_browser_status",
       {
         description:
-          "Status of the Tachyon IDE Integrated Browser bridge (VS Code editor-browser + CDP). " +
-          "Use before other ide_browser_* tools. Offline means the VS Code shell is not running the bridge.",
+          IDE_BROWSER_SCOPE +
+          "Status of the IDE browser host (CDP). Use before other ide_browser_* tools. " +
+          "Offline means the VS Code shell is not running the Integrated Browser bridge.",
         inputSchema: {},
       },
       async () => {
@@ -3651,8 +3684,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "ide_browser_navigate",
       {
         description:
-          "Navigate the VS Code Integrated Browser (real Chromium tab in the editor) to a URL. " +
-          "Lazily launches editor-browser on first use. Prefer this for UI preview inside VS Code.",
+          IDE_BROWSER_SCOPE +
+          "Navigate the editor Integrated Browser tab to a URL. Lazily launches editor-browser on first use.",
         inputSchema: {
           url: z.string().min(1).max(4000).describe("Absolute http(s) URL or host to open"),
         },
@@ -3672,8 +3705,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "ide_browser_screenshot",
       {
         description:
-          "Capture a PNG screenshot of the VS Code Integrated Browser viewport (base64). " +
-          "High-fidelity native frame — not a synthetic stream panel.",
+          IDE_BROWSER_SCOPE +
+          "Capture a PNG screenshot of the Integrated Browser viewport (base64).",
         inputSchema: {},
       },
       async () => {
@@ -3691,7 +3724,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "ide_browser_snapshot",
       {
         description:
-          "Accessibility / text snapshot of the current Integrated Browser page for agent reasoning.",
+          IDE_BROWSER_SCOPE +
+          "Accessibility / text snapshot of the current Integrated Browser page.",
         inputSchema: {},
       },
       async () => {
@@ -3709,9 +3743,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "ide_browser_eval",
       {
         description:
-          "Evaluate JavaScript in the Integrated Browser *page* (DevTools-equivalent). " +
-          "Use to change styles, text, attributes, or call page APIs. " +
-          "Examples: document.querySelector('h1').style.color='red'  |  document.body.style.background='#111'.",
+          IDE_BROWSER_SCOPE +
+          "Evaluate JavaScript in the Integrated Browser page (DevTools-equivalent). " +
+          "Examples: document.querySelector('h1').style.color='red'.",
         inputSchema: {
           expression: z.string().min(1).max(50_000).describe(
             "JS expression/statement to evaluate in the page context",
@@ -3733,8 +3767,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "ide_browser_click",
       {
         description:
-          "Click an element in the Integrated Browser by CSS selector " +
-          "(e.g. 'a[href]', '#cta', 'button.primary'). Prefer selector hints from Design Mode picks.",
+          IDE_BROWSER_SCOPE +
+          "Click an element by CSS selector (prefer Design Mode pick selector hints).",
         inputSchema: {
           selector: z.string().min(1).max(1000).describe("CSS selector"),
         },
@@ -3753,7 +3787,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     mcp.registerTool(
       "ide_browser_url",
       {
-        description: "Return the current URL of the Integrated Browser page.",
+        description: IDE_BROWSER_SCOPE + "Return the current URL of the Integrated Browser page.",
         inputSchema: {},
       },
       async () => {
@@ -3771,7 +3805,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       "design_mode_chat_reply",
       {
         description:
-          "Post a plain-language reply into the Design Mode chat panel (Integrated Browser). " +
+          IDE_BROWSER_SCOPE +
+          "Post a plain-language reply into the Design Mode chat panel. " +
           "Required when the human messaged you from Design Mode — the panel only updates via this tool. " +
           "Plain answer only: no tool narration, no JSON dumps, no terminal-only reply.",
         inputSchema: {
