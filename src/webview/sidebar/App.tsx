@@ -830,11 +830,22 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
             </Button>
           )}
         </div>
+        {/*
+          t-456ce0 — one visible control on the row, and Edit is gone rather than moved.
+
+          Edit went because the pin document owns editing now (SDD 485 D14/D20): opening the pin and
+          switching mode there is the path, so a second door in the sidebar was a different-looking
+          way to reach the same screen — the duplication that also cost the read-mode breadcrumb its
+          place in t-8182f4. `tachyon.editPinItem` itself survives; only this entry point left.
+
+          Preview and Copy moved INTO the menu rather than staying beside it: with Edit gone the row
+          would otherwise carry two icons and a menu holding one item, which reads as three levels of
+          importance where there is one.
+        */}
         {p.id && <div class="actions">
-          <Act icon="eye" title="Preview pin" on={() => d.section("pin:preview", p.id!)} />
-          <Act icon="copy" title="Copy pin ID and title" on={() => d.section("pin:copy", p.id!, { label: p.text })} />
           <MoreBtn items={[
-            { label: "Edit", icon: "pencil", run: () => d.section("pin:edit", p.id!) },
+            { label: "Preview", icon: "eye", run: () => d.section("pin:preview", p.id!) },
+            { label: "Copy", icon: "copy", run: () => d.section("pin:copy", p.id!, { label: p.text }) },
             { label: "Delete", icon: "trash", run: () => d.section("pin:delete", p.id!) },
           ]} />
         </div>}

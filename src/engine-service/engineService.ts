@@ -132,16 +132,18 @@ export interface RunningDaemonEngineService {
  * guard: the defect this replaced was a kind that existed in the Inbox and rang nothing, and no test
  * would have caught it because nothing claimed to enumerate the kinds.
  *
- * Approval keeps its own destination deliberately: it predates the unified Inbox and opens the
- * Approvals section. That is a real difference in where a person should land, not a duplicated path.
+ * Every kind lands on its exact Inbox item. Approval is the most important case: it blocks an agent,
+ * so landing on the queue rather than the request would make the human hunt while work is stopped.
  */
 const INBOX_REVIEW_TARGET: Record<HumanInboxKind, (workspaceHash: string, id: string) => [string, ...unknown[]]> = {
-  approval: (workspaceHash) => ["tachyon.openApprovals", workspaceHash],
+  approval: (workspaceHash, id) => ["tachyon.openHumanInbox", workspaceHash, { kind: "approval", id }],
   validation: (workspaceHash, id) => ["tachyon.openHumanInbox", workspaceHash, { kind: "validation", id }],
   "saved-agent-proposal": (workspaceHash, id) =>
     ["tachyon.openHumanInbox", workspaceHash, { kind: "saved-agent-proposal", id }],
   "saved-agent-removal": (workspaceHash, id) =>
     ["tachyon.openHumanInbox", workspaceHash, { kind: "saved-agent-removal", id }],
+  "schedule-proposal": (workspaceHash, id) =>
+    ["tachyon.openHumanInbox", workspaceHash, { kind: "schedule-proposal", id }],
 };
 
 /**
@@ -238,6 +240,18 @@ export function routeSavedAgentRemovalProposal(
       proposal.name,
       proposal.proposer,
     ),
+  });
+}
+
+export function routeScheduleProposal(
+  host: Pick<DaemonEngineHost, "t" | "notify" | "executeCommand">,
+  workspaceHash: string,
+  proposal: { id: string; name: string; proposer: string },
+): void {
+  routeHumanInboxItem(host, workspaceHash, {
+    kind: "schedule-proposal",
+    id: proposal.id,
+    message: host.t("Schedule proposal {0} — '{1}' proposed by '{2}'", proposal.id, proposal.name, proposal.proposer),
   });
 }
 
@@ -364,6 +378,9 @@ export async function startDaemonEngineService(
       },
       onSavedAgentRemovalProposed: (proposalWorkspace, proposal) => {
         routeSavedAgentRemovalProposal(host, proposalWorkspace.wsHash, proposal);
+      },
+      onScheduleProposed: (proposalWorkspace, proposal) => {
+        routeScheduleProposal(host, proposalWorkspace.wsHash, proposal);
       },
       onHumanValidationPending: (validationWorkspace, validation) => {
         routeHumanValidationPending(host, validationWorkspace.wsHash, validation);
@@ -663,6 +680,7 @@ async function executeWorkspaceCommand(
       if (!("patch" in payload)) throw new Error("Pin Studio save payload has the wrong shape");
       const saved = savePinStudio(workspace.pinStore, command.input.pinId, payload.patch);
       if (saved.status === "error") throw new Error(saved.message);
+      if (saved.status === "conflict") throw new Error(saved.message);
       onViewsChanged("pins");
       return workspacePinStudioApplySuccessV1(command, { outcome: "saved", pinId: saved.pinId });
     }

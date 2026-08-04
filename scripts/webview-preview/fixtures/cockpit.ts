@@ -4,7 +4,9 @@
 
 import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
 import { routes as cockpitRoutes } from "../../../src/cockpit/route";
-import type { CockpitStrings } from "../../../src/webview/cockpit/messages";
+import type { CockpitStrings } from "../../../src/webview/shared/control/messages";
+import type { ExecutionGraphStrings } from "../../../src/webview/execution-graph/messages";
+import type { WorktreesStrings } from "../../../src/webview/worktrees/messages";
 import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/types";
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
 import type { HumanInboxItemViewModel, HumanInboxViewModel } from "../../../src/webview/human-inbox/viewModel";
@@ -18,7 +20,7 @@ import { sealExecutionEvent, type SealedExecutionEvent } from "../../../src/exec
 import { projectExecutions } from "../../../src/executionGraph/executionProjection";
 import { buildExecutionGraphVm } from "../../../src/cockpit/executionGraphVm";
 
-export const strings: CockpitStrings = {
+export const strings: CockpitStrings & WorktreesStrings & ExecutionGraphStrings = {
   title: "Control",
   subtitle: "Project sysadmin",
   navOverview: "Overview",
@@ -92,56 +94,6 @@ export const strings: CockpitStrings = {
   validationsHint: "Validation queue — close dogfoods and checks (not on the Board).",
   worktreesTitle: "Managed worktrees",
   worktreesHint: "Tachyon-managed checkouts — reveal and copy paths.",
-  runtimeTitle: "Runtime Ops",
-  runtimeHint: "Usage and rate limits (embedded).",
-  runtimeConfigTitle: "Runtime Config",
-  runtimeConfigHint: "Global runtime configuration, capabilities, and agent impact.",
-  runtimeConfigPrototype: "Visual prototype",
-  runtimeConfigEditable: "Editable measured settings",
-  runtimeConfigGlobalWarning: "Global changes also affect the selected runtime outside Tachyon.",
-  runtimeConfigUnset: "Not set",
-  runtimeConfigDisableMcp: "Disable from source",
-  runtimeConfigGlobal: "Global",
-  runtimeConfigWorkspace: "Workspace",
-  runtimeConfigRuntime: "Runtime",
-  runtimeConfigScope: "Scope",
-  runtimeConfigCapabilitiesTitle: "Skills, MCPs, hooks & extensions",
-  runtimeConfigDetected: "detected",
-  runtimeConfigKnown: "Known settings",
-  runtimeConfigCapabilities: "Runtime capabilities",
-  runtimeConfigOther: "Other settings",
-  runtimeConfigOtherHint: "Preserved in the source file even when Tachyon does not edit them visually.",
-  runtimeConfigSourceFile: "Source file",
-  runtimeConfigUsedBy: "Used by agents",
-  runtimeConfigConfigured: "configured",
-  runtimeConfigEnabled: "Enabled",
-  runtimeConfigDisabled: "Disabled",
-  runtimeConfigReload: "Reload",
-  runtimeConfigOpenFile: "Open file",
-  runtimeConfigSave: "Save changes",
-  runtimeConfigViewRaw: "View raw",
-  runtimeConfigCodex: "OpenAI Codex",
-  runtimeConfigClaude: "Anthropic Claude",
-  runtimeConfigGrok: "xAI Grok",
-  runtimeConfigGlobalConfig: "Global config",
-  runtimeConfigWorkspaceConfig: "Workspace config",
-  runtimeConfigGlobalSettings: "Global settings",
-  runtimeConfigWorkspaceSettings: "Workspace settings",
-  runtimeConfigWorkspaceMcp: "Workspace MCP",
-  runtimeConfigFolderTrust: "Folder trust",
-  runtimeConfigTheme: "Theme",
-  runtimeConfigReducedMotion: "Reduced motion",
-  runtimeConfigSpinnerTips: "Spinner tips",
-  runtimeConfigTurnDuration: "Turn duration",
-  runtimeConfigTerminalProgress: "Terminal progress bar",
-  runtimeConfigAlwaysThinking: "Always thinking",
-  runtimeConfigReadOnly: "Read only",
-  runtimeConfigReadOnlyDocument: "This source is read-only in Control.",
-  runtimeConfigHiddenRecords: "runtime-managed records are hidden from this inventory.",
-  runtimeConfigOverriddenBy: "Overridden by",
-  runtimeConfigOpaqueSections: "Opaque sections",
-  runtimeConfigReadError: "Could not read this runtime configuration source",
-  runtimeConfigUnavailable: "Runtime configuration is unavailable because this workspace configuration did not load.",
   settingsTitle: "Settings",
   settingsHint: "Tachyon settings and workspace config.",
   workspaces: "Workspaces",
@@ -339,6 +291,49 @@ export const strings: CockpitStrings = {
   wtOccupiedBy: "occupied by",
   wtShowAll: "Show all",
 };
+/** Standalone Runtime Config receives this bootstrap global from its host; preview mirrors it. */
+export const runtimeConfigPreviewStrings: import("../../../src/webview/runtime-config/messages.js").RuntimeConfigStrings = {
+    none: "None",
+    runtimeConfigTitle: "Runtime Config",
+    runtimeConfigHint: "Global runtime configuration, capabilities, and agent impact.",
+    runtimeConfigEditable: "Editable measured settings",
+    runtimeConfigGlobalWarning: "Global changes also affect the selected runtime outside Tachyon.",
+    runtimeConfigUnset: "Not set",
+    runtimeConfigRuntime: "Runtime",
+    runtimeConfigScope: "Scope",
+    runtimeConfigCapabilities: "Runtime capabilities",
+    runtimeConfigOther: "Other settings",
+    runtimeConfigSourceFile: "Source file",
+    runtimeConfigUsedBy: "Used by agents",
+    runtimeConfigConfigured: "configured",
+    runtimeConfigDetected: "detected",
+    runtimeConfigOpenFile: "Open file",
+    runtimeConfigSave: "Save changes",
+    runtimeConfigViewRaw: "View keys",
+    runtimeConfigCodex: "OpenAI Codex",
+    runtimeConfigClaude: "Anthropic Claude",
+    runtimeConfigGrok: "xAI Grok",
+    runtimeConfigGlobalConfig: "Global config",
+    runtimeConfigWorkspaceConfig: "Workspace config",
+    runtimeConfigGlobalSettings: "Global settings",
+    runtimeConfigWorkspaceSettings: "Workspace settings",
+    runtimeConfigWorkspaceMcp: "Workspace MCP",
+    runtimeConfigFolderTrust: "Folder trust",
+    runtimeConfigTheme: "Theme",
+    runtimeConfigReducedMotion: "Reduced motion",
+    runtimeConfigSpinnerTips: "Spinner tips",
+    runtimeConfigTurnDuration: "Turn duration",
+    runtimeConfigTerminalProgress: "Terminal progress bar",
+    runtimeConfigAlwaysThinking: "Always thinking",
+    runtimeConfigReadOnly: "Read only",
+    runtimeConfigReadOnlyDocument: "This source is read-only in Control.",
+    runtimeConfigHiddenRecords: "runtime-managed records are hidden from this inventory.",
+    runtimeConfigOverriddenBy: "Overridden by",
+    runtimeConfigOpaqueSections: "Opaque sections",
+    runtimeConfigReadError: "Could not read this runtime configuration source",
+    runtimeConfigUnavailable: "Runtime configuration is unavailable because this workspace configuration did not load.",
+};
+
 
 const bundles: CockpitWorkspaceBundle[] = [
   {
@@ -892,42 +887,6 @@ const executionGraphVm = buildExecutionGraphVm({ projection: projectExecutions(e
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
-  // SDD 480 Phase 4 — the four surfaces Visual QA has to see: heavy/grouped, and each explicit state.
-  "execution-graph": {
-    provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }), executionGraph: executionGraphVm },
-  },
-  /**
-   * SDD 480 Phase 5 — the graph captured from a REAL dogfood run: a real tmux session, a really
-   * reparented process (PPID reassigned to systemd), a real process exit code, and the real engine
-   * unit claimed by three agents. Committed so the surface is validated against data the system
-   * actually produced rather than data a fixture author imagined.
-   */
-  "execution-graph-real": {
-    provenance: "captured-host-vm",
-    vm: { ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }), executionGraph: realExecutionGraphVm as never },
-  },
-  "execution-graph-empty": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
-      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]) }),
-    },
-  },
-  "execution-graph-no-telemetry": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
-      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]), status: "no-telemetry" }),
-    },
-  },
-  "execution-graph-error": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "execution-graph", nowIso: now }),
-      executionGraph: buildExecutionGraphVm({ projection: projectExecutions([]), status: "error", errorDetail: "execution ledger is unreadable" }),
-    },
-  },
   fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
   // SDD 485 C5 — no `mission` fixture: Control has no Board section to photograph any more. The Board has
   // its own harness route (?view=mission-control), rendering the same component in the page it really ships.
@@ -1052,39 +1011,12 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("task", "b349073a", "t-4f2c91"), studioMountNonce: "fixture-mount-nonce" },
   },
-  // t-610705 (Phase D, D3) — pin is nav-less (navSection: null — route.ts): unlike every studio
-  // above, its underlying `section` isn't a fixed answer, so this uses "overview" (the same fallback
-  // Cockpit.ts's real host uses at every navSection(currentRoute) call site) — and its `returnRoute`
-  // is explicit here (a static preview harness never runs the real navigate()/captureReturnRoute
-  // logic that fills it in automatically), demonstrating the "back to Mission" breadcrumb.
-  "studio-pin-edit": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "overview", nowIso: now }),
-      activeRoute: cockpitRoutes.studioEdit("pin", "b349073a", "pin-7f3a", cockpitRoutes.section("mission")),
-      studioMountNonce: "fixture-mount-nonce",
-    },
-  },
-  "studio-pin-new": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "overview", nowIso: now }),
-      activeRoute: cockpitRoutes.studioNew("pin", "b349073a", cockpitRoutes.section("mission")),
-      studioMountNonce: "fixture-mount-nonce",
-    },
-  },
   validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
   approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
-  // t-d16698 — the two Inbox surfaces a "Review" doorbell can land on. Both were unpreviewable, which
-  // is why a deep-link defect that ended on one of them could only be judged inside a real editor.
-  inbox: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "inbox", nowIso: now }) },
-  "inbox-item": {
-    provenance: "synthetic-edge",
-    vm: {
-      ...buildCockpitModel(bundles, { section: "inbox", nowIso: now }),
-      activeRoute: cockpitRoutes.inboxItem("b349073a", "saved-agent-proposal", "sp-45042f"),
-    },
-  },
+  // SDD 485 D4 — the two Inbox fixtures left with the section: both are `?view=human-inbox` now
+  // (`fixture=list` and `fixture=item`), rendering the real standalone bundle rather than the same
+  // components embedded in Control. The VMs below are still built HERE, because they derive from this
+  // harness's own approval and validation fixtures, and `fixtures/human-inbox.ts` imports them.
   // t-ace77f — Handoff is a DETAIL ROUTE, not a section: the model still carries a background
   // section (nav-less routes fall back to overview at every call site) and `activeRoute` is what
   // actually renders, same shape as the task-detail/Fleet-subroute fixtures above.
@@ -1095,7 +1027,6 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
       activeRoute: cockpitRoutes.projectHandoff("b349073a"),
     },
   },
-  runtime: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime", nowIso: now }) },
   "runtime-config": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime-config", nowIso: now }) },
   worktrees: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "worktrees", nowIso: now }) },
   settings: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "settings", nowIso: now }) },
@@ -1117,3 +1048,12 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     vm: buildCockpitModel([...bundles, goldenBundle], { section: "overview", nowIso: now }),
   },
 };
+
+// SDD 485 D9 — these fixtures now drive the standalone app's real envelope and bundle.
+export const executionGraphFixtures = {
+  "execution-graph": { provenance: "synthetic-edge", vm: executionGraphVm },
+  "execution-graph-real": { provenance: "captured-host-vm", vm: realExecutionGraphVm },
+  "execution-graph-empty": { provenance: "synthetic-edge", vm: buildExecutionGraphVm({ projection: projectExecutions([]) }) },
+  "execution-graph-no-telemetry": { provenance: "synthetic-edge", vm: buildExecutionGraphVm({ projection: projectExecutions([]), status: "no-telemetry" }) },
+  "execution-graph-error": { provenance: "synthetic-edge", vm: buildExecutionGraphVm({ projection: projectExecutions([]), status: "error", errorDetail: "execution ledger is unreadable" }) },
+} satisfies Record<string, Fixture>;

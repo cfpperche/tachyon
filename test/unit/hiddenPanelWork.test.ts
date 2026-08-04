@@ -6,20 +6,6 @@ import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
 import { StudioPanelManagerBase, type StudioSurfaceConfig } from "../../src/webview/shared/studio/StudioPanelManagerBase.js";
 import type { StudioHostAdapter, StudioLoadResult } from "../../src/webview/shared/studio/adapter.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import {
-  openCockpit,
-  refreshCockpitHandoff,
-  markControlSourceResync,
-  __controlGateProbe,
-  type CockpitHandoff,
-  type CockpitMissionBoard,
-} from "../../src/webview/Cockpit.js";
-import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
-import { routes as cockpitRoutes } from "../../src/cockpit/route.js";
-import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
 import { DaemonEngineHost, type DaemonHostEvent } from "../../src/workspace/DaemonEngineHost.js";
 
 /**
@@ -41,8 +27,8 @@ import { DaemonEngineHost, type DaemonHostEvent } from "../../src/workspace/Daem
  * them, so the exemplar door here is Handoff: still reached from `onViewsChanged("handoff")`, still exactly
  * ONE refresh kind (Validations pushes two — validations AND inbox — which doubles every suppressed count).
  * Nothing about the mechanism changed; what the migrated surfaces' own gating proves now lives in
- * `boardPanel.test.ts` and `taskDetailApp.test.ts`, driven through those apps' doors. That is the cutover
- * working, not a gap it left.
+ * `boardPanel.test.ts` and `taskDetailApp.test.ts`, driven through those apps' doors. Control itself was
+ * removed in E1, while this manager-level guard remains the contract for every surviving app.
  */
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -180,187 +166,6 @@ describe("SDD 485 B3 — with N panels open and one visible, a views-changed is 
     expect(hidden.webview.posted.map((m) => (m as { type?: string }).type)).toContain("load");
   });
 });
-
-/**
- * SDD 485 B1/B2 applied to Control, through `refreshCockpitHandoff` — the function
- * `onViewsChanged("handoff")` calls whenever the project handoff document changes, from any source.
- */
-describe("SDD 485 B4 — Control does no work behind another tab", () => {
-  const dirs: string[] = [];
-  const mkroot = (): string => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hidden-panel-work-"));
-    dirs.push(dir);
-    return dir;
-  };
-
-  beforeEach(() => __resetVscodeMock());
-  afterEach(() => {
-    for (const p of __createdPanels) if (!p.disposed) p.dispose();
-    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  function fakeWorkspace() {
-    const root = mkroot();
-    return {
-      wsHash: "ws-1",
-      folderName: "Project",
-      workspaceRoot: root,
-      taskStore: new TaskStore(root),
-      validationStore: new ValidationStore(root),
-      config: { agents: {} },
-      manager: { list: async () => [] },
-    } as unknown as Workspace;
-  }
-
-  const handoffDep = (): CockpitHandoff => ({
-    getWorkspaces: () => [{
-      workspaceRoot: "/repo",
-      wsHash: "ws-1",
-      folderName: "Project",
-      loadHandoff: async () => ({
-        canonicalRelativePath: ".tachyon/HANDOFF.md",
-        exists: true,
-        body: "## Current State\n",
-        staleness: "fresh",
-        pendingCount: 0,
-        updatedAt: "2026-07-21T00:00:00.000Z",
-        updatedBy: "human",
-        revision: "0123456789abcdef",
-        notes: [],
-        distillTargets: [],
-      }),
-      ensureHandoffFile: async () => "/repo/.tachyon/HANDOFF.md",
-      startHandoffDistill: async () => ({ mode: "existing", agent: "codex" }),
-    }] as never,
-  });
-
-  async function openControlOnHandoff() {
-    const ws = fakeWorkspace();
-    const board: CockpitMissionBoard = {
-      getWorkspaces: () => [legacyMissionControlTarget(ws)],
-      openTaskStudio: () => {},
-      onTasksChanged: () => {},
-    };
-    let collects = 0;
-    const deps = makeFakeCockpitDeps(board, {
-      collect: async () => { collects += 1; return []; },
-      handoff: handoffDep(),
-    });
-    await openCockpit(deps, { route: cockpitRoutes.projectHandoff("ws-1"), wsHash: "ws-1" });
-    await flush();
-    const panel = __createdPanels[0]!;
-    panel.webview.posted.length = 0;
-    return { panel, collects: () => collects, resetCollects: () => { collects = 0; } };
-  }
-
-  const snapshots = (panel: typeof __createdPanels[number]) =>
-    panel.webview.posted.filter((m) => (m as { type?: string }).type === "handoff");
-
-  it("posts the section's own model while visible", async () => {
-    const { panel } = await openControlOnHandoff();
-
-    refreshCockpitHandoff();
-    await flush();
-
-    expect(snapshots(panel)).toHaveLength(1);
-  });
-
-  it("posts NOTHING while hidden, however many task mutations arrive", async () => {
-    const { panel, collects, resetCollects } = await openControlOnHandoff();
-    __setPanelVisible(panel, false);
-    resetCollects();
-    panel.webview.posted.length = 0;
-
-    for (let i = 0; i < 20; i++) refreshCockpitHandoff();
-    await flush();
-
-    expect(panel.webview.posted).toEqual([]);
-    expect(collects()).toBe(0);
-    expect(__controlGateProbe().pending).toBe(20);
-  });
-
-  it("catches up by delta on reveal — one snapshot for twenty suppressed invalidations", async () => {
-    const { panel, collects, resetCollects } = await openControlOnHandoff();
-    __setPanelVisible(panel, false);
-    for (let i = 0; i < 20; i++) refreshCockpitHandoff();
-    resetCollects();
-    panel.webview.posted.length = 0;
-
-    __setPanelVisible(panel, true);
-    await flush();
-
-    expect(__controlGateProbe().lastCatchUp).toMatchObject({ mode: "delta", kinds: ["handoff"], suppressed: 20 });
-    expect(snapshots(panel)).toHaveLength(1);
-    expect(collects()).toBe(0); // a delta does not re-post the whole model
-  });
-
-  it("catches up by FULL RESYNC when the upstream event cursor expired while hidden", async () => {
-    const { panel, collects, resetCollects } = await openControlOnHandoff();
-    __setPanelVisible(panel, false);
-    refreshCockpitHandoff();
-    // extension.ts calls this next to `refreshAll()` on `result.resynced || result.engineChanged`.
-    markControlSourceResync();
-    resetCollects();
-    panel.webview.posted.length = 0;
-
-    __setPanelVisible(panel, true);
-    await flush();
-
-    expect(__controlGateProbe().lastCatchUp).toMatchObject({ mode: "resync", reason: "source-resync" });
-    // The model push a delta never carries — the reason this branch exists at all.
-    expect(collects()).toBe(1);
-    expect(panel.webview.posted.some((m) => (m as { type?: string }).type === "model")).toBe(true);
-    expect(snapshots(panel)).toHaveLength(1);
-  });
-
-  it("ignores the client's own 3s poll while hidden, and answers it on reveal", async () => {
-    // The door the `views-changed` fan-out never reaches: `retainContextWhenHidden` keeps the
-    // webview's timer alive, so a hidden Control used to run a full model collect twenty times a
-    // minute. Driven here the way the client drives it — a `refresh` message on the wire.
-    const { panel, collects, resetCollects } = await openControlOnHandoff();
-    __setPanelVisible(panel, false);
-    resetCollects();
-    panel.webview.posted.length = 0;
-
-    for (let i = 0; i < 20; i++) panel.webview.__receive({ type: "refresh" }); // one minute of polling
-    await flush();
-
-    expect(collects()).toBe(0);
-    expect(panel.webview.posted).toEqual([]);
-
-    __setPanelVisible(panel, true);
-    await flush();
-    await flush();
-
-    // One catch-up, not twenty replays: the poll body runs once and the panel is current again.
-    expect(collects()).toBe(1);
-    expect(panel.webview.posted.some((m) => (m as { type?: string }).type === "model")).toBe(true);
-    expect(snapshots(panel)).toHaveLength(1);
-  });
-
-  it("still answers the poll while visible", async () => {
-    const { panel, collects, resetCollects } = await openControlOnHandoff();
-    resetCollects();
-
-    panel.webview.__receive({ type: "refresh" });
-    await flush();
-
-    expect(collects()).toBe(1);
-  });
-
-  it("keeps refreshing a panel that lost FOCUS but is still on screen", async () => {
-    // Two apps side by side is the capability SDD 485 is buying; gating on `active` would break it.
-    const { panel } = await openControlOnHandoff();
-    panel.active = false;
-    panel.__fireViewState();
-
-    refreshCockpitHandoff();
-    await flush();
-
-    expect(snapshots(panel)).toHaveLength(1);
-  });
-});
-
 
 /**
  * SDD 485 B4 — the before/after, measured the way t-b51923 measured: count the events, count the

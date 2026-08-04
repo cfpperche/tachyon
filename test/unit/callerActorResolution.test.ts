@@ -270,7 +270,10 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
 
     const full = await claudeClient.callTool({ name: "get_task", arguments: { id: task.id } });
     const parsed = JSON.parse((full.content as Array<{ text: string }>)[0].text);
+    // t-f33480 — status moves journal first (author = Bridge-resolved caller); notes follow.
     expect(parsed.journal.map((e: { text: string; author: string }) => [e.author, e.text])).toEqual([
+      ["claude", "status inbox -> triaged"],
+      ["claude", "status triaged -> active"],
       ["claude", "blocked on review"],
       ["codex", "assignee note"],
     ]);

@@ -36,4 +36,7 @@
     main { padding: 16px; }
     .visual { grid-template-columns: 72px minmax(0, 1fr); }
     .visual img, .missing { width: 72px; height: 54px; }
+    /* D14: the unified edit mode has four actions; give its title/backlink a real row at narrow widths. */
+    .pin-edit-mode .sf-header { display: grid; grid-template-columns: minmax(0, 1fr); }
+    .pin-edit-mode .sf-actions { flex-wrap: wrap; }
   }

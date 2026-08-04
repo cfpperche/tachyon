@@ -24,10 +24,18 @@ export interface ScheduleProposal {
   /** why the agent wants it — shown to the human */
   reason?: string;
   createdAt: string;
+  /** Same review window as Saved Agent proposals: pending authority is not evergreen. */
+  expiresAt: string;
   schedule: ScheduleDef;
 }
 
 const CAP = 10;
+export const SCHEDULE_PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function scheduleProposalExpired(proposal: Pick<ScheduleProposal, "expiresAt">, nowMs = Date.now()): boolean {
+  const expiry = Date.parse(proposal.expiresAt);
+  return !Number.isFinite(expiry) || expiry <= nowMs;
+}
 
 export class ProposalStore {
   constructor(private readonly workspaceRoot: string) {}
@@ -68,12 +76,14 @@ export class ProposalStore {
     if (proposals.length >= CAP) {
       throw new Error(`too many pending schedule proposals (cap ${CAP}) — approve or reject some first`);
     }
+    const createdAt = new Date().toISOString();
     const proposal: ScheduleProposal = {
       id: crypto.randomBytes(6).toString("hex"),
       name,
       by,
       reason,
-      createdAt: new Date().toISOString(),
+      createdAt,
+      expiresAt: new Date(Date.parse(createdAt) + SCHEDULE_PROPOSAL_TTL_MS).toISOString(),
       schedule,
     };
     this.write([...proposals, proposal]);

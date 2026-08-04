@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { makeTempDir } from "../helpers/tempDir.js";
 import { makeExecutionGraphDep, type ExecutionGraphWorkspace } from "../../src/cockpit/executionGraphDep.js";
-import { buildExecutionGraphSectionVm } from "../../src/webview/Cockpit.js";
+import { buildExecutionGraphSectionVm } from "../../src/webview/ExecutionGraphPanel.js";
 import { openExecutionLedger, executionLedgerLocation } from "../../src/executionGraph/executionLedger.js";
 import { sealExecutionEvent } from "../../src/executionGraph/eventSchema.js";
 import type { EngineCurrency } from "../../src/engine-service/engineCurrency.js";
@@ -47,7 +47,7 @@ describe("t-c6a89e — Control's execution dependency, as production builds it",
     recordInto(storageRoot, HASH, ["exec-1", "exec-2"]);
     const dep = makeExecutionGraphDep(() => workspace(), () => storageRoot);
 
-    const vm = buildExecutionGraphSectionVm({ executionGraph: dep } as never, HASH);
+    const vm = buildExecutionGraphSectionVm({ read: dep }, HASH);
 
     expect(vm?.status).toBe("ready");
     expect(vm?.matched).toBe(2);
@@ -87,7 +87,7 @@ describe("t-c6a89e — Control's execution dependency, as production builds it",
     it("reports no-telemetry when the workspace has never recorded", () => {
       const dep = makeExecutionGraphDep(() => workspace(), () => makeTempDir("exec-dep-virgin-"));
 
-      expect(buildExecutionGraphSectionVm({ executionGraph: dep } as never, HASH)?.status).toBe("no-telemetry");
+      expect(buildExecutionGraphSectionVm({ read: dep }, HASH).status).toBe("no-telemetry");
     });
 
     it("surfaces a corrupt ledger as an error with its reason, never as 'nothing ran'", () => {
@@ -96,7 +96,7 @@ describe("t-c6a89e — Control's execution dependency, as production builds it",
       fs.appendFileSync(executionLedgerLocation({ storageRoot, workspaceHash: HASH }).filePath, "{nope}\n");
       const dep = makeExecutionGraphDep(() => workspace(), () => storageRoot);
 
-      const vm = buildExecutionGraphSectionVm({ executionGraph: dep } as never, HASH);
+      const vm = buildExecutionGraphSectionVm({ read: dep }, HASH);
 
       expect(vm?.status).toBe("error");
       expect(vm?.errorDetail).toBeTruthy();
@@ -117,7 +117,7 @@ describe("t-c6a89e — Control's execution dependency, as production builds it",
         () => makeTempDir("exec-dep-stale-"),
       );
 
-      const vm = buildExecutionGraphSectionVm({ executionGraph: dep } as never, HASH);
+      const vm = buildExecutionGraphSectionVm({ read: dep }, HASH);
 
       expect(vm?.status).toBe("no-telemetry");
       expect(vm?.statusNote).toContain("2026-07-26T16:32:34.000Z");
@@ -127,7 +127,7 @@ describe("t-c6a89e — Control's execution dependency, as production builds it",
       // `unknown` must not become an explanation: a guess here sends someone to restart production.
       const dep = makeExecutionGraphDep(() => workspace(), () => makeTempDir("exec-dep-unknown-"));
 
-      expect(buildExecutionGraphSectionVm({ executionGraph: dep } as never, HASH)?.statusNote).toBeUndefined();
+      expect(buildExecutionGraphSectionVm({ read: dep }, HASH).statusNote).toBeUndefined();
     });
   });
 
@@ -147,7 +147,7 @@ describe("t-c6a89e — Control's execution dependency, as production builds it",
   it("is actually supplied by the extension host's dependency factory", () => {
     const source = fs.readFileSync(path.resolve(__dirname, "..", "..", "src/extension.ts"), "utf8");
 
-    expect(source).toContain("executionGraph: makeExecutionGraphDep(byHash)");
+    expect(source).toContain("{ read: makeExecutionGraphDep(byHash) }");
   });
 
   it("does not create the state directory for a workspace that never recorded", () => {

@@ -13,56 +13,46 @@ import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine, 
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
-import {
-  openCockpit,
-  refreshCockpitApprovals,
-  refreshCockpitValidations,
-  refreshCockpitTaskStudioEntity,
-  refreshCockpitPinStudioEntity,
-  refreshCockpitProbes,
-  refreshCockpitHandoff,
-  refreshCockpitStudioReferenceData,
-  markControlSourceResync,
-  openCockpitAgentTranscript,
-  decodeCockpitPanelState,
-  COCKPIT_VIEW_TYPE,
-  type CockpitPanelState,
-  type CockpitDeps,
-} from "./webview/Cockpit.js";
-import { isCockpitSingletonClaimed } from "./webview/cockpitSingleton.js";
+import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
+import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
+import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
+import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
+import { FLEET_VIEW_TYPE, FleetPanelManager } from "./webview/FleetPanel.js";
+import { EXECUTION_GRAPH_VIEW_TYPE, ExecutionGraphPanelManager } from "./webview/ExecutionGraphPanel.js";
+import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
+import { OVERVIEW_VIEW_TYPE, OverviewPanelManager } from "./webview/OverviewPanel.js";
+import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
-import { routes as cockpitRoutes } from "./cockpit/route.js";
-import type { StudioId } from "./cockpit/studioIds.js";
-import type { StudioPanelState } from "./webview/shared/studio/StudioPanelManagerBase.js";
-import { SidebarPrototypeProvider, PIN_PREVIEW_VIEW_TYPE, type PinPreviewPanelState } from "./webview/SidebarPrototype.js";
+import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { resolveCockpitSection } from "./cockpit/resolveSection.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
-import { ACTIVITY_VIEW_TYPE, type ActivityPanelState } from "./webview/ActivityPanel.js";
+import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
-import { HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
-import { ApprovalPanelManager, APPROVAL_VIEW_TYPE, type ApprovalPanelState } from "./webview/ApprovalPanel.js";
+import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
 import { pendingApprovalRows } from "./webview/approval/viewModel.js";
 import { validationAwaitsHuman } from "./humanInbox/model.js";
 import { decodeHumanInboxDeepLink } from "./humanInbox/deepLink.js";
-import { approveSavedAgentProposal } from "./agents/savedAgentProposalCommit.js";
-import { approveSavedAgentRemovalProposal } from "./agents/savedAgentRemovalProposalCommit.js";
+import { approveSavedAgentProposal, type SavedAgentCommitResult } from "./agents/savedAgentProposalCommit.js";
+import { approveSavedAgentRemovalProposal, type SavedAgentRemovalCommitResult } from "./agents/savedAgentRemovalProposalCommit.js";
 import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
-import { PROBES_VIEW_TYPE, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
+import { PROBES_VIEW_TYPE, ProbeResultPanelManager, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
 import { controlWorkspaceScope } from "./webview/shared/ControlWorkspaceScope.js";
 import type { SectionPanelState } from "./webview/shared/SectionPanelManager.js";
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
+import { PinDetailPanelManager, PIN_DETAIL_VIEW_TYPE, type LegacyPinDetailState } from "./webview/PinDetailPanel.js";
 import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
 import { mintTaskId } from "./tasks/TaskStore.js";
-import { AGENT_STUDIO_SHELL_VIEW_TYPE, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
-import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
-import { COMMAND_STUDIO_SHELL_VIEW_TYPE, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
-import { RUNBOOK_STUDIO_SHELL_VIEW_TYPE, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
-import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
+import { mintPinId } from "./pins/PinStore.js";
+import { AGENT_STUDIO_SHELL_VIEW_TYPE, AgentStudioPanelManager, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
+import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, TerminalStudioPanelManager, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
+import { COMMAND_STUDIO_SHELL_VIEW_TYPE, CommandStudioPanelManager, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
+import { RUNBOOK_STUDIO_SHELL_VIEW_TYPE, RunbookStudioPanelManager, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
+import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, ScheduleStudioPanelManager, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
 import { registerIdeBrowserProto } from "./webview/ide-browser-proto/register.js";
 import { registerIdeBrowserBridge } from "./webview/ide-browser-bridge/register.js";
@@ -1087,11 +1077,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
+  let openPinDocumentFromSidebar: ((wsHash: string, pinId: string) => void) | undefined;
   const sidebarProto = new SidebarPrototypeProvider(
     context.extensionUri,
     () => workspaces().map((ws) => ws.sidebar),
     context.globalState,
     (context.extension.packageJSON as { version?: string }).version,
+    (wsHash, pinId) => openPinDocumentFromSidebar?.(wsHash, pinId),
   );
   context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
@@ -1119,6 +1111,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     controlWorkspaceScope,
   );
   context.subscriptions.push({ dispose: () => pluginsPanels.dispose() });
+  const handoffPanels = new HandoffPanelManager(
+    context.extensionUri,
+    { getWorkspaces: () => workspaces().map((ws) => ws.handoff) },
+    undefined,
+    controlWorkspaceScope,
+  );
+  context.subscriptions.push({ dispose: () => handoffPanels.dispose() });
+  const openHandoffTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so there is no project handoff to open."), "warn");
+      return false;
+    }
+    handoffPanels.open(ws.wsHash);
+    return true;
+  };
   /**
    * Open (or reveal) Plugins for a project — the same shape as `openBoard` below, and for the same reason:
    * a dashboard is opened AGAINST a project, so an ambient caller resolves one ONCE, here, rather than
@@ -1143,7 +1153,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const onTasksChanged = () => {
     boardPanels.refresh(); // SDD 485 C5 — every open Board panel, gated: hidden ones journal and do nothing
     taskDetailPanels.refresh(); // SDD 485 C4 — EVERY open task-detail document, each re-reading its own task
-    refreshCockpitTaskStudioEntity(); // Control → task studio-edit route (t-610705 Phase D, D2, same reasoning)
     sidebarProto.refresh();
   };
   let lastBridgeLagNoticeAt = 0;
@@ -1161,15 +1170,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Any engine/Bridge-driven state change re-pushes the whole fleet to the webview.
   const onViewsChanged = (view: ViewKind) => {
-    if (view === "handoff") refreshCockpitHandoff(); // t-610705 (Phase C.3) — Control → Handoff section
-    if (view === "probes") refreshCockpitProbes(); // t-610705 (Phase C.2) — Control → Probes subroute
+    if (view === "handoff") handoffPanels.refresh();
+    if (view === "probes") probesPanels.refresh();
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
-    if (view === "pins") approvalPanels.refreshAll();
     // t-610705 (Phase D, D1a) — Runbook/Schedule's refreshReferenceData() retired with their panel
     // managers; the Control-route equivalent doesn't need a per-studio "which kind changed" gate
     // (refreshStudioReferenceData is a no-op off a studio route, and best-effort otherwise — see its
     // own doc comment in studioHost.ts).
-    if (view === "commands" || view === "agents") refreshCockpitStudioReferenceData();
+    if (view === "commands" || view === "agents") {
+      for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
+    }
     if (view === "agents") void applyWorktreeFolderReveal(); // spec 210/263 — onSpawned/onStopping/onKilled fire this
     sidebarProto.refresh();
   };
@@ -1177,14 +1187,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void applyWorktreeFolderReveal(); // spec 210/263 — the worktree-remove commands only re-render through here
     sidebarProto.refresh();
     pluginSurfaces.refreshAll();
-    refreshCockpitStudioReferenceData(); // t-610705 (Phase D, D1a) — was runbook/scheduleStudioPanels.refreshReferenceData()
-    refreshCockpitPinStudioEntity(); // t-610705 (Phase D, D3) — was pinStudioPanels.refreshAll() (retired panel)
-    approvalPanels.refreshAll();
+    for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
   };
   const pipelineStudioPanels = new PipelineStudioPanelManager(context.extensionUri, refreshAll);
   context.subscriptions.push({ dispose: () => pipelineStudioPanels.dispose() });
-  const approvalPanels = new ApprovalPanelManager(context.extensionUri, workspaces);
-  context.subscriptions.push({ dispose: () => approvalPanels.dispose() });
   // SDD 485 C4 — Task Detail is a standalone `document` app again: one editor tab per (project, task),
   // so two task details stand side by side and neither is retargeted by a later scope change. Control
   // asks it to open a tab (`deps.taskDetail.openDocument`) and never renders one itself.
@@ -1196,13 +1202,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // Task Studio is still a Control route (SDD 485 Phase D owns it), so "Open in Studio" from a task's
       // own tab lands in Control — the same door the Board's card menu already uses.
       openTaskStudio: (ws, taskId) => {
-        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, taskId) });
+        taskDetailPanels.openEdit(ws.wsHash, taskId);
       },
     },
     undefined,
     controlWorkspaceScope,
+    () => workspaces().map((ws) => ws.taskStudio),
   );
   context.subscriptions.push({ dispose: () => taskDetailPanels.dispose() });
+  const pinDetailPanels = new PinDetailPanelManager(
+    context.extensionUri,
+    () => workspaces().map((ws) => ws.sidebar),
+    () => workspaces().map((ws) => ws.pinStudio),
+    () => { pinDetailPanels.refresh(); sidebarProto.refresh(); },
+    undefined,
+    controlWorkspaceScope,
+  );
+  openPinDocumentFromSidebar = (wsHash, pinId) => pinDetailPanels.open(wsHash, pinId);
+  context.subscriptions.push({ dispose: () => pinDetailPanels.dispose() });
+  const studioPanels = {
+    command: new CommandStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+    terminal: new TerminalStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+    runbook: new RunbookStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+    schedule: new ScheduleStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+    agent: new AgentStudioPanelManager(context.extensionUri, workspaces, refreshAll, controlWorkspaceScope),
+  } as const;
+  for (const manager of Object.values(studioPanels)) context.subscriptions.push({ dispose: () => manager.dispose() });
   // SDD 485 C5 — the Board is a standalone `dashboard` app: ONE editor tab per project, revealed rather
   // than duplicated, so it can be read beside an agent terminal. `openTask` hands the card's own workspace
   // to the task-detail app above — the Board never learns where a task detail lives, which is what let C4
@@ -1211,7 +1236,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
     openTask: (ws, taskId) => taskDetailPanels.open(ws.wsHash, taskId),
     openTaskStudio: (ws, id) => {
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, id ?? mintTaskId()) });
+      // t-3c8f2a — the Board's "+ Task" (no id) is a CREATE: the document opens against a pre-minted
+      // id nothing has written, so Cancel must close the tab rather than fall back to reading a task
+      // that never existed. An id means an existing task, and that stays an edit.
+      if (id) taskDetailPanels.openEdit(ws.wsHash, id);
+      else taskDetailPanels.openCreate(ws.wsHash, mintTaskId());
     },
     // Deliberately a call THROUGH the shared fan-out rather than a direct self-refresh: a board edit must
     // reach every open Task Detail and the sidebar too, which is the whole reason that function exists.
@@ -1373,9 +1402,347 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const tmuxPanels = new TmuxPanelManager(context.extensionUri, makeServerInspectorDeps());
   context.subscriptions.push({ dispose: () => tmuxPanels.dispose() });
 
+  /**
+   * SDD 485 D3 — Runtime Ops is a standalone `window` app: ONE editor tab for the whole window, because
+   * the inventory it shows is not per-project. `buildSnapshot` takes no workspace and merges every
+   * attached one (`runtimeOpsFleetView`); the provider quota it renders is account-wide. Note the deps
+   * below are the SAME three `makeCockpitDeps` used to pass as `runtimeOps` — the domain did not change,
+   * only who owns the panel. Built once here, like tmux's, though for a weaker reason: these three close
+   * over `workspaces()` and `byHash`, which are stable for the window's life.
+   */
+  const runtimeOpsPanels = new RuntimeOpsPanelManager(context.extensionUri, {
+    buildSnapshot: () => runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps)),
+    configureProviderObservation: async (provider, enabled) => {
+      await Promise.all(
+        workspaces().map((ws) =>
+          extensionInvoke(ws, {
+            action: "runtime-ops.provider.configure",
+            provider,
+            enabled,
+          }),
+        ),
+      );
+    },
+    // t-283149 — the panel's agent rows carry `workspaceKey`, which IS the wsHash the snapshot was
+    // built from (runtimeOps/snapshotService.ts), so the row addresses its own workspace directly
+    // rather than this fanning out and guessing which reply belongs to the row. It is also the reason
+    // this app cannot be a `dashboard`: the row's workspace and the panel's would be two different
+    // answers, and only the row's is right.
+    inspectAgentSession: async (workspaceKey, agent) => {
+      const ws = byHash(workspaceKey);
+      if (!ws) throw new Error(`Workspace '${workspaceKey}' is no longer open.`);
+      return jsonObject(
+        await extensionQuery(ws, { action: "agent.session-inspection", agent }),
+        "agent.session-inspection",
+      ) as unknown as InspectedSession;
+    },
+  });
+  context.subscriptions.push({ dispose: () => runtimeOpsPanels.dispose() });
+
+  /*
+   * SDD 485 D4 — the two Saved Agent commit doors, lifted out of `makeCockpitDeps` because Control is no
+   * longer their caller: the Human Inbox is the surface an approval is redeemed on, and it left. Both are
+   * unchanged inside — same canonical transactions, same ports, same receipts — and they are consts here
+   * rather than inline in the manager's deps so their reasoning stays readable at this width.
+   */
+  /**
+   * SDD 482 phase 4C — commit an approved Saved Agent proposal.
+   *
+   * NO PROTOCOL BUMP WAS NEEDED, and finding that out changed the design. `commitAgentProfileStudio`
+   * with no `expectedRevision` already IS the canonical create, and it already crosses the
+   * engine/shell seam as `agent-profile.studio-commit`; `set-subagents` crosses it too. So this door
+   * opens on paths a human already uses, rather than on a new operation — which also means the
+   * canonical validator, not this code, is what refuses capability references at creation.
+   *
+   * TWO transactions, because the lifecycle transaction is per-agent and the second one edits the
+   * PROPOSER's profile. That window is real and is why the receipt has an `owning` state: a crash
+   * between them leaves an existing, unowned agent, and re-approving finishes it.
+   */
+  const commitSavedAgentProposal = async ({ workspaceRoot, proposalId, approvedDigest }: { workspaceRoot: string; proposalId: string; approvedDigest: string }): Promise<SavedAgentCommitResult> => {
+    const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
+    if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
+    return approveSavedAgentProposal({
+      workspaceRoot,
+      proposalId,
+      approvedDigest,
+      approvedBy: "human",
+      nowMs: Date.now(),
+      ports: {
+        createSavedAgent: async ({ agentName, spec, owner, grants }) => {
+          // ONE canonical transaction for both subjects — the new agent's profile/authority/roster
+          // and the proposer's ownership edge. Ratified 2026-07-29 after an audit rejected the
+          // two-transaction version: ownership is parent-side, so committing separately left a
+          // window where the agent existed unowned.
+          // t-ca9086 (create writes enabled, autostart never) and t-4071e4 (isolation the proposal
+          // asked for) both live in `savedAgentCreateMutation`, which is unit-tested. This closure
+          // stays wiring only — the previous inline literal is what let the isolation bug hide.
+          return ws.createSavedAgent(savedAgentCreateMutation(agentName, spec), {
+            ...(owner ? { owner } : {}),
+            ...(grants ? { grants: { proposeSavedAgent: true } } : {}),
+          });
+        },
+        // Re-read at commit time, which is what makes a revoked capability effective on a proposal
+        // queued before the revocation.
+        // t-5498a6 — the SAME door the Studio uses. Reaching the shared function here is what keeps
+        // the two approval surfaces from drifting into different rules about pinning and refusals.
+        authorizeSkill: async ({ agentName, skillName }) => {
+          const result = await ws.authorizeAgentSkill(agentName, skillName);
+          return result.ok ? { ok: true } : { ok: false, error: result.error };
+        },
+        readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
+        currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
+      },
+    });
+  };
+  /**
+   * t-afe120 — host-only commit for Saved Agent removal. Reaches the SAME studio-lifecycle forget
+   * door Agent Studio uses (cascade: stop → governed worktree → profile+authority+roster).
+   */
+  const commitSavedAgentRemoval = async ({ workspaceRoot, proposalId, approvedDigest }: { workspaceRoot: string; proposalId: string; approvedDigest: string }): Promise<SavedAgentRemovalCommitResult> => {
+    const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
+    if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
+    return approveSavedAgentRemovalProposal({
+      workspaceRoot,
+      proposalId,
+      approvedDigest,
+      approvedBy: "human",
+      nowMs: Date.now(),
+      ports: {
+        forgetSavedAgent: async ({ agentName, expectedRevision }) => {
+          const result = await ws.commitAgentProfileStudioLifecycle({
+            schemaVersion: 1,
+            operation: "forget",
+            agentName,
+            expectedRevision,
+            confirmation: agentName,
+          });
+          if (result.kind === "refused") {
+            throw new Error(`${result.code}: ${result.message}`);
+          }
+          if (result.kind !== "forgotten") {
+            throw new Error(`unexpected lifecycle result '${result.kind}' for Saved Agent removal`);
+          }
+          // The cascade does not surface a separate txid on the forgotten receipt; the agentId is the
+          // durable identity that was retired. Bind revision to the approved one for the receipt.
+          return { txid: result.agentId, revision: expectedRevision };
+        },
+        readTargetIdentity: async (agentName) => {
+          try {
+            const snapshot = await ws.inspectAgentProfileStudio(agentName);
+            return { agentId: snapshot.agentId, revision: snapshot.revision };
+          } catch {
+            return undefined;
+          }
+        },
+        readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
+        currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
+      },
+    });
+  };
+
+  /**
+   * t-e76acc → SDD 485 D4 — the Human Inbox app: one editor tab PER PROJECT for everything waiting on a
+   * human, which can now sit beside the agent terminal that is blocked on the approval it shows.
+   *
+   * `dashboard`, and the fact is in the domain rather than in a policy: every read below is rooted at one
+   * `workspaceRoot` — the pending approval queue, that workspace's validations, both Saved Agent proposal
+   * queues, and the digest they are checked against. Two attached projects have two genuinely different
+   * queues, which is the exact inverse of the `runtimeOpsPanels` above (one merged snapshot, no project
+   * anywhere in its signature). Two adjacent Phase D migrations, opposite cardinalities, and the
+   * difference is visible in the deps' types rather than in a convention someone has to remember.
+   *
+   * The commit ports are handed over unchanged: they are what an approval on this surface REDEEMS, and
+   * they were only ever reachable from here. Optional, so a window that cannot commit says so on the pane
+   * rather than accepting a click and doing nothing.
+   */
+  const humanInboxPanels = new HumanInboxPanelManager(
+    context.extensionUri,
+    {
+      approvals: {
+        getWorkspaces: () => workspaces().map((ws) => ({
+          wsHash: ws.wsHash,
+          workspaceRoot: ws.workspaceRoot,
+          folderName: ws.folderName,
+        })),
+        resolve: async (wsHash, id, decision) => {
+          const ws = byHash(wsHash);
+          if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+          await extensionInvoke(ws, { action: "approval.resolve", id, decision });
+          notify(`approval request ${id} ${decision}`);
+          refreshAll();
+          humanInboxPanels.refresh();
+        },
+      },
+      validations: { getWorkspaces: () => workspaces().map((ws) => ws.missionControl) },
+      onValidationsChanged: () => {
+        boardPanels.refresh();
+        humanInboxPanels.refresh();
+      },
+      // t-e4f662 — the staleness threshold from the SAME loaded config the rest of the workspace's
+      // project-owned settings come from. Per wsHash: two roots may legitimately answer differently.
+      humanInboxStaleAfter: (wsHash: string) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
+      approveSavedAgentProposal: (input) => commitSavedAgentProposal(input),
+      approveSavedAgentRemoval: (input) => commitSavedAgentRemoval(input),
+      decideScheduleProposal: async (wsHash, id, decision) => {
+        const ws = byHash(wsHash);
+        if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+        await extensionInvoke(ws, { action: decision === "approve" ? "proposal.approve" : "proposal.reject", id });
+        refreshAll();
+        humanInboxPanels.refresh();
+      },
+    },
+  );
+  context.subscriptions.push({ dispose: () => humanInboxPanels.dispose() });
+  /**
+   * Open (or reveal) the Inbox for a project — the same shape as `openPluginsTab`, and for the same
+   * reason: a dashboard is opened AGAINST a project, so an ambient caller resolves one ONCE, here.
+   */
+  const openHumanInboxTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window, so nothing is waiting on you here."), "warn");
+      return false;
+    }
+    humanInboxPanels.open(ws.wsHash);
+    return true;
+  };
+
   /** Cockpit desktop (editor sysadmin; t-fe52f0 frente 1). Sidebar unchanged. */
-  const makeCockpitDeps = (): CockpitDeps => ({
-    extensionUri: context.extensionUri,
+  const clearEngineLog = async (wsHash: string): Promise<void> => {
+    const ws = byHash(wsHash); if (!ws) throw new Error("no Tachyon workspace for that hash");
+    await ws.client.clearEngineLog();
+  };
+  const openEngineJournal = (wsHash: string): void => {
+    const ws = byHash(wsHash); if (!ws) throw new Error("no Tachyon workspace for that hash");
+    const unit = engineSystemdUnitName(ws.workspaceRoot);
+    const term = vscode.window.createTerminal({ name: `Engine log · ${ws.folderName}` });
+    term.show(); term.sendText(`journalctl --user -u ${JSON.stringify(unit)} -n 200 -f`, true);
+  };
+
+  // SDD 485 D6 — Worktrees owns these ports now. Both require the dashboard's immutable project;
+  // there is deliberately no first-workspace fallback, because that would let a stale/malicious row
+  // address another project's checkout.
+  const removeManagedWorktree = async (id: string, deleteBranch: boolean, wsHash: string): Promise<string | undefined> => {
+    const ws = byHash(wsHash);
+    if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+    const result = jsonObject(
+      await extensionInvoke(ws, { action: "worktree.remove-managed", id, ...(deleteBranch ? { deleteBranch: true } : {}) }),
+      "worktree.remove-managed",
+    );
+    return result.removed === true ? undefined : String(result.error ?? "removal refused");
+  };
+  const forgetManagedWorktreeRecord = async (id: string, wsHash: string): Promise<string | undefined> => {
+    const ws = byHash(wsHash);
+    if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+    const result = jsonObject(
+      await extensionInvoke(ws, { action: "worktree.forget-record", id }),
+      "worktree.forget-record",
+    );
+    return result.forgotten === true ? undefined : `record not found or refused: ${id}`;
+  };
+  // SDD 485 D7 — the Continue picker moved with Fleet; this remains the authoritative host action.
+  const continueFleetTask = async (fromName: string, toName: string, wsHash: string): Promise<void> => {
+    const ws = byHash(wsHash);
+    if (!ws) throw new Error("no Tachyon workspace for that hash");
+    if (!toName || toName === fromName) throw new Error("Continue task requires a different destination agent");
+    const listed = await extensionQuery(ws, { action: "agents.list" });
+    type AgentRow = { name?: string; running?: boolean; kind?: string; lifetime?: "saved" | "temporary" };
+    const dest = (Array.isArray(listed) ? listed : []).map((row) => row as AgentRow).find((row) => row.name === toName);
+    if (!dest || typeof dest.name !== "string") throw new Error(`destination agent '${toName}' not found`);
+    if (dest.kind === "terminal") throw new Error(`destination '${toName}' is a terminal agent — pick a declared runtime agent`);
+    if (dest.lifetime !== "saved") throw new Error(`destination '${toName}' is a Temporary Agent (not declared in tachyon.yml)`);
+    if (dest.running) throw new Error(`destination '${toName}' is running — stop it first`);
+    const result = jsonObject(await extensionInvoke(ws, {
+      action: "agent.continue-task", fromAgent: fromName, toAgent: toName, reason: "continued from Fleet",
+    }), "agent.continue-task");
+    if (result.ok !== true) throw new Error(typeof result.message === "string" ? result.message : "continue-task failed");
+    const handoff = typeof result.handoffPath === "string" ? result.handoffPath : "";
+    void vscode.window.showInformationMessage(handoff
+      ? vscode.l10n.t("Continued {0} → {1} ({2})", fromName, toName, handoff)
+      : vscode.l10n.t("Continued {0} → {1}", fromName, toName));
+  };
+  const runtimeConfigDeps: RuntimeConfigDeps = {
+    buildSnapshot: (wsHash) => {
+      const ws = byHash(wsHash);
+        if (!ws?.config) return undefined;
+        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
+        const pendingAgents = ws.client.presentation.agents.items.filter((agent) => agent.configurationPending).map((agent) => agent.name);
+        const common = {
+          workspaceRoot: ws.workspaceRoot,
+          agents: ws.config.agents,
+          pendingAgents,
+          ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
+        };
+        try {
+          return {
+            runtimes: [
+              inspectCodexRuntimeConfig(common),
+              inspectClaudeRuntimeConfig(common),
+              inspectGrokRuntimeConfig({
+                ...common,
+                grokHome: grokConfigHome({ homeDir: common.homeDir, env: process.env, profileHome: !!common.homeDir }),
+              }),
+            ],
+          };
+        } catch (error) {
+          console.error("[Tachyon] Runtime Config snapshot failed", error);
+          return undefined;
+        }
+    },
+    openSource: async (sourcePath) => {
+      await vscode.window.showTextDocument(
+        vscode.Uri.file(sourcePath),
+        { preview: false, viewColumn: vscode.ViewColumn.Beside },
+      );
+    },
+    saveChanges: async ({ wsHash, runtime, documentId, expectedRevision, changes }) => {
+        const ws = byHash(wsHash);
+        if (!ws?.config) throw new Error("The selected workspace is unavailable.");
+        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
+        const home = profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {};
+        let scope: "global" | "workspace";
+        let revision: string;
+        if (runtime === "codex") {
+          scope = documentId === "codex-global" ? "global" : documentId === "codex-workspace" ? "workspace" : (() => { throw new Error("Unknown Codex Runtime Config document."); })();
+          const applied = applyCodexNativeConfigChange({
+            workspaceRoot: ws.workspaceRoot,
+            ...home,
+            scope,
+            expectedRevision,
+            changes: changes.map((change) => change.kind === "setting"
+              ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
+                : change),
+          });
+          revision = applied.revision;
+        } else if (runtime === "grok") {
+          scope = grokDocumentScope(documentId);
+          const applied = applyGrokRuntimeConfigChange({
+            workspaceRoot: ws.workspaceRoot,
+            grokHome: grokConfigHome({ homeDir: home.homeDir, env: process.env, profileHome: !!home.homeDir }),
+            documentId,
+            expectedRevision,
+            changes,
+          });
+          revision = applied.revision;
+        } else {
+          scope = documentId === "claude-global-settings" ? "global" : "workspace";
+          const applied = applyClaudeRuntimeConfigChange({
+            workspaceRoot: ws.workspaceRoot,
+            ...home,
+            documentId,
+            expectedRevision,
+            changes,
+          });
+          revision = applied.revision;
+        }
+        if (revision) {
+          await ws.extension.invoke({ action: "runtime-config.mark-pending", runtime, scope, revision });
+          await ws.client.sync();
+        }
+    },
+  };
+
+  const makeControlModelHost = () => ({
     // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
     // not needed is not queried and its field is ABSENT, so a caller can tell "not collected" from
     // "none exist". Navigation used to pay for every slice regardless of the route.
@@ -1566,382 +1933,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return bundles;
     },
-    missionBoard: {
-      getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
-      // t-610705 (Phase D, D2) — Task Studio is a Control studio-edit route now, not a standalone
-      // panel: navigate the (already-open, since this fires from inside a live Cockpit message
-      // handler) singleton in place, same idiom every other "open a studio route" command/action
-      // uses elsewhere in this file. "new" mints an id up front (route.ts's decodeRoute rejects
-      // studio-new + "task" outright — same pre-minting TaskStudioAdapter.save() already does for a
-      // caller that skips this path entirely) rather than reaching for a "studio-new" route that
-      // doesn't exist for "task".
-      openTaskStudio: (target, id) => {
-        const ws = wsOf({ ws: target });
-        if (!ws) return;
-        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, id ?? mintTaskId()) });
-      },
-      onTasksChanged,
-    },
-    // t-610705 (Phase C.1) — Task Detail is a Control subroute now (WorkspaceTaskDetailTarget
-    // already carries loadTaskDetail/updateTask/reviewPrototype/attachment resolution).
-    taskDetail: {
-      getWorkspaces: () => workspaces().map((ws) => ws.taskDetail),
-      // SDD 485 C4 — the Board card, the studio breadcrumb and a revived/deep-linked task-detail route all
-      // arrive here. `wsHash` is the document's IDENTITY from this call onwards.
-      openDocument: (wsHash, taskId) => taskDetailPanels.open(wsHash, taskId),
-    },
-    // t-610705 (Phase C.2) — Activity/Probes are Control subroutes now (WorkspaceActivityTarget /
-    // WorkspaceProbePresentationTarget already carry everything the host needs — no separate
-    // wrapper interface, same reasoning as taskDetail above).
-    activity: {
-      getWorkspaces: () => workspaces().map((ws) => ws.activity),
-    },
-    probes: {
-      getWorkspaces: () => workspaces().map((ws) => ws.probe),
-    },
-    // t-610705 (Phase C.3) — Handoff folds into a Control section (WorkspaceHandoffTarget already
-    // carries everything the host needs).
-    handoff: {
-      getWorkspaces: () => workspaces().map((ws) => ws.handoff),
-    },
-    // t-610705 (Phase D, D0) — StudioPanelManagerBase-based studios migrated onto a Control route
-    // (studios-routes-design.md). WorkspaceShellHandle already implements WorkspaceStudioTarget
-    // directly (no per-studio accessor needed, unlike taskDetail/activity/handoff above) — command/
-    // terminal/runbook/schedule/agent studios all read the SAME shape; onChanged mirrors every
-    // retired studio panel manager's refreshAll fan-out.
-    studios: {
-      getWorkspaces: () => workspaces(),
-      onChanged: refreshAll,
-    },
-    approvals: {
-      getWorkspaces: () =>
-        workspaces().map((ws) => ({
-          workspaceRoot: ws.workspaceRoot,
-          wsHash: ws.wsHash,
-          folderName: ws.folderName,
-        })),
-      resolve: async (wsHash, id, decision) => {
-        const ws = byHash(wsHash);
-        if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
-        await extensionInvoke(ws, { action: "approval.resolve", id, decision });
-        notify(`approval request ${id} ${decision}`);
-        refreshAll();
-        refreshCockpitApprovals();
-      },
-    },
-    // t-e4f662 — the Human Inbox's staleness threshold, from the SAME loaded config the rest of the
-    // workspace's project-owned settings come from. Per wsHash: two roots may answer differently.
-    humanInboxStaleAfter: (wsHash) => byHash(wsHash)?.config?.settings?.humanInbox?.staleAfterHours,
-    /**
-     * SDD 482 phase 4C — commit an approved Saved Agent proposal.
-     *
-     * NO PROTOCOL BUMP WAS NEEDED, and finding that out changed the design. `commitAgentProfileStudio`
-     * with no `expectedRevision` already IS the canonical create, and it already crosses the
-     * engine/shell seam as `agent-profile.studio-commit`; `set-subagents` crosses it too. So this door
-     * opens on paths a human already uses, rather than on a new operation — which also means the
-     * canonical validator, not this code, is what refuses capability references at creation.
-     *
-     * TWO transactions, because the lifecycle transaction is per-agent and the second one edits the
-     * PROPOSER's profile. That window is real and is why the receipt has an `owning` state: a crash
-     * between them leaves an existing, unowned agent, and re-approving finishes it.
-     */
-    approveSavedAgentProposal: async ({ workspaceRoot, proposalId, approvedDigest }) => {
-      const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
-      if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
-      return approveSavedAgentProposal({
-        workspaceRoot,
-        proposalId,
-        approvedDigest,
-        approvedBy: "human",
-        nowMs: Date.now(),
-        ports: {
-          createSavedAgent: async ({ agentName, spec, owner, grants }) => {
-            // ONE canonical transaction for both subjects — the new agent's profile/authority/roster
-            // and the proposer's ownership edge. Ratified 2026-07-29 after an audit rejected the
-            // two-transaction version: ownership is parent-side, so committing separately left a
-            // window where the agent existed unowned.
-            // t-ca9086 (create writes enabled, autostart never) and t-4071e4 (isolation the proposal
-            // asked for) both live in `savedAgentCreateMutation`, which is unit-tested. This closure
-            // stays wiring only — the previous inline literal is what let the isolation bug hide.
-            return ws.createSavedAgent(savedAgentCreateMutation(agentName, spec), {
-              ...(owner ? { owner } : {}),
-              ...(grants ? { grants: { proposeSavedAgent: true } } : {}),
-            });
-          },
-          // Re-read at commit time, which is what makes a revoked capability effective on a proposal
-          // queued before the revocation.
-          // t-5498a6 — the SAME door the Studio uses. Reaching the shared function here is what keeps
-          // the two approval surfaces from drifting into different rules about pinning and refusals.
-          authorizeSkill: async ({ agentName, skillName }) => {
-            const result = await ws.authorizeAgentSkill(agentName, skillName);
-            return result.ok ? { ok: true } : { ok: false, error: result.error };
-          },
-          readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
-          currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
-        },
-      });
-    },
-    /**
-     * t-afe120 — host-only commit for Saved Agent removal. Reaches the SAME studio-lifecycle forget
-     * door Agent Studio uses (cascade: stop → governed worktree → profile+authority+roster).
-     */
-    approveSavedAgentRemoval: async ({ workspaceRoot, proposalId, approvedDigest }) => {
-      const ws = workspaces().find((candidate) => candidate.workspaceRoot === workspaceRoot);
-      if (!ws) return { ok: false, code: "commit_failed", reason: "no Tachyon workspace for this folder" };
-      return approveSavedAgentRemovalProposal({
-        workspaceRoot,
-        proposalId,
-        approvedDigest,
-        approvedBy: "human",
-        nowMs: Date.now(),
-        ports: {
-          forgetSavedAgent: async ({ agentName, expectedRevision }) => {
-            const result = await ws.commitAgentProfileStudioLifecycle({
-              schemaVersion: 1,
-              operation: "forget",
-              agentName,
-              expectedRevision,
-              confirmation: agentName,
-            });
-            if (result.kind === "refused") {
-              throw new Error(`${result.code}: ${result.message}`);
-            }
-            if (result.kind !== "forgotten") {
-              throw new Error(`unexpected lifecycle result '${result.kind}' for Saved Agent removal`);
-            }
-            // The cascade does not surface a separate txid on the forgotten receipt; the agentId is the
-            // durable identity that was retired. Bind revision to the approved one for the receipt.
-            return { txid: result.agentId, revision: expectedRevision };
-          },
-          readTargetIdentity: async (agentName) => {
-            try {
-              const snapshot = await ws.inspectAgentProfileStudio(agentName);
-              return { agentId: snapshot.agentId, revision: snapshot.revision };
-            } catch {
-              return undefined;
-            }
-          },
-          readProposerGrants: (agentName) => readAgentProfileGrants(workspaceRoot, agentName),
-          currentConfigSha256: () => workspaceConfigSha256(workspaceRoot),
-        },
-      });
-    },
-    /**
-     * t-c6a89e — the ledger Control's Execution section reads.
-     *
-     * This dependency was declared and never supplied, so the section returned `undefined` before it
-     * could touch a ledger and rendered `no-telemetry` for every workspace, forever. The wiring lives
-     * in `makeExecutionGraphDep` so a test can drive it; an inline closure is exactly what let this
-     * go unnoticed while every test around it passed.
-     */
-    executionGraph: makeExecutionGraphDep(byHash),
-    validations: {
-      getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
-      onValidationsChanged: () => {
-        refreshCockpitValidations();
-        // SDD 485 C5 — the board carries validation counts, so a close still re-posts it; the target is the
-        // app's own fan-out door now, and it is gated per panel like every other push into it.
-        boardPanels.refresh();
-      },
-    },
-    runtimeOps: {
-      buildSnapshot: () => runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps)),
-      configureProviderObservation: async (provider, enabled) => {
-        await Promise.all(
-          workspaces().map((ws) =>
-            extensionInvoke(ws, {
-              action: "runtime-ops.provider.configure",
-              provider,
-              enabled,
-            }),
-          ),
-        );
-      },
-      // t-283149 — the panel's agent rows carry `workspaceKey`, which IS the wsHash the snapshot was
-      // built from (runtimeOps/snapshotService.ts), so the row addresses its own workspace directly
-      // rather than this fanning out and guessing which reply belongs to the row.
-      inspectAgentSession: async (workspaceKey, agent) => {
-        const ws = byHash(workspaceKey);
-        if (!ws) throw new Error(`Workspace '${workspaceKey}' is no longer open.`);
-        return jsonObject(
-          await extensionQuery(ws, { action: "agent.session-inspection", agent }),
-          "agent.session-inspection",
-        ) as unknown as InspectedSession;
-      },
-    },
-    runtimeConfig: {
-      buildSnapshot: (wsHash) => {
-        const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-        if (!ws?.config) return undefined;
-        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
-        const pendingAgents = ws.client.presentation.agents.items.filter((agent) => agent.configurationPending).map((agent) => agent.name);
-        const common = {
-          workspaceRoot: ws.workspaceRoot,
-          agents: ws.config.agents,
-          pendingAgents,
-          ...(profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {}),
-        };
-        try {
-          return {
-            runtimes: [
-              inspectCodexRuntimeConfig(common),
-              inspectClaudeRuntimeConfig(common),
-              inspectGrokRuntimeConfig({
-                ...common,
-                grokHome: grokConfigHome({ homeDir: common.homeDir, env: process.env, profileHome: !!common.homeDir }),
-              }),
-            ],
-          };
-        } catch (error) {
-          console.error("[Tachyon] Runtime Config snapshot failed", error);
-          return undefined;
-        }
-      },
-      openSource: async (sourcePath) => {
-        await vscode.window.showTextDocument(vscode.Uri.file(sourcePath), { preview: false, viewColumn: vscode.ViewColumn.Beside });
-      },
-      saveChanges: async ({ wsHash, runtime, documentId, expectedRevision, changes }) => {
-        const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-        if (!ws?.config) throw new Error("The selected workspace is unavailable.");
-        const profileHome = process.env.TACHYON_DEV_HOST === "1" ? process.env.TACHYON_DEV_HOST_PROFILE_HOME : undefined;
-        const home = profileHome && path.isAbsolute(profileHome) ? { homeDir: profileHome } : {};
-        let scope: "global" | "workspace";
-        let revision: string;
-        if (runtime === "codex") {
-          scope = documentId === "codex-global" ? "global" : documentId === "codex-workspace" ? "workspace" : (() => { throw new Error("Unknown Codex Runtime Config document."); })();
-          const applied = applyCodexNativeConfigChange({
-            workspaceRoot: ws.workspaceRoot,
-            ...home,
-            scope,
-            expectedRevision,
-            changes: changes.map((change) => change.kind === "setting"
-              ? { kind: "setting" as const, key: change.key as CodexEditableSettingKey, value: change.value as string | boolean | string[] }
-                : change),
-          });
-          revision = applied.revision;
-        } else if (runtime === "grok") {
-          scope = grokDocumentScope(documentId);
-          const applied = applyGrokRuntimeConfigChange({
-            workspaceRoot: ws.workspaceRoot,
-            grokHome: grokConfigHome({ homeDir: home.homeDir, env: process.env, profileHome: !!home.homeDir }),
-            documentId,
-            expectedRevision,
-            changes,
-          });
-          revision = applied.revision;
-        } else {
-          scope = documentId === "claude-global-settings" ? "global" : "workspace";
-          const applied = applyClaudeRuntimeConfigChange({
-            workspaceRoot: ws.workspaceRoot,
-            ...home,
-            documentId,
-            expectedRevision,
-            changes,
-          });
-          revision = applied.revision;
-        }
-        if (revision) {
-          await ws.extension.invoke({ action: "runtime-config.mark-pending", runtime, scope, revision });
-          await ws.client.sync();
-        }
-      },
-    },
-    // SDD 485 C5 — Control opens the Board rather than rendering it (sibling of taskDetail.openDocument).
-    openBoard,
-    // SDD 485 D2 — and Plugins, the second dashboard: Control opens the app for a project rather than
-    // rendering the section. `openPluginsTab` resolves the ambient scope once, at open.
-    openPlugins: (hash?: string) => openPluginsTab(hash),
-    // SDD 485 D1 — and the tmux app, which takes no argument at all: `window` cardinality means there is
-    // one panel for the window and nothing to key it on.
-    openTmux: () => tmuxPanels.open(),
-    openSettings: () => {
-      void vscode.commands.executeCommand("tachyon.openGlobalSettings");
-    },
     openDoctor: () => {
       void vscode.commands.executeCommand("tachyon.doctor");
     },
-    fleetStart: async (name, wsHash) => {
-      await vscode.commands.executeCommand("tachyon.spawnAgentItem", { agentName: name, workspaceHash: wsHash });
-    },
-    fleetStop: async (name, wsHash) => {
-      await vscode.commands.executeCommand("tachyon.stopAgentItem", { agentName: name, workspaceHash: wsHash });
-    },
-    // SDD 443 — webview QuickPicker already chose toName; host revalidates against live list.
-    fleetContinueTask: async (fromName, toName, wsHash) => {
-      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-      if (!ws) throw new Error("no Tachyon workspace for that hash");
-      if (!toName || toName === fromName) {
-        throw new Error("Continue task requires a different destination agent");
-      }
-      const listed = await extensionQuery(ws, { action: "agents.list" });
-      const rows = Array.isArray(listed) ? listed : [];
-      type AgentRow = { name?: string; running?: boolean; kind?: string; lifetime?: "saved" | "temporary" };
-      const dest = rows
-        .map((r) => r as AgentRow)
-        .find((r) => r.name === toName);
-      if (!dest || typeof dest.name !== "string") {
-        throw new Error(`destination agent '${toName}' not found`);
-      }
-      if (dest.kind === "terminal") {
-        throw new Error(`destination '${toName}' is a terminal agent — pick a declared runtime agent`);
-      }
-      // t-04052d — fail-closed on `!== "saved"`, not on `=== "temporary"`. This guard is over an
-      // untyped `agents.list` payload, so an absent field must refuse rather than pass: written the
-      // other way it silently stopped firing the moment the field it named was removed.
-      if (dest.lifetime !== "saved") {
-        throw new Error(`destination '${toName}' is a Temporary Agent (not declared in tachyon.yml)`);
-      }
-      if (dest.running) {
-        throw new Error(`destination '${toName}' is running — stop it first`);
-      }
-      const result = jsonObject(
-        await extensionInvoke(ws, {
-          action: "agent.continue-task",
-          fromAgent: fromName,
-          toAgent: toName,
-          reason: "continued from Control Fleet",
-        }),
-        "agent.continue-task",
-      );
-      if (result.ok !== true) {
-        throw new Error(typeof result.message === "string" ? result.message : "continue-task failed");
-      }
-      const handoff = typeof result.handoffPath === "string" ? result.handoffPath : "";
-      void vscode.window.showInformationMessage(
-        handoff
-          ? vscode.l10n.t("Continued {0} → {1} ({2})", fromName, toName, handoff)
-          : vscode.l10n.t("Continued {0} → {1}", fromName, toName),
-      );
-    },
-    fleetTerminal: async (name, wsHash) => {
-      await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, wsHash);
-    },
-    revealPath: (fsPath) => {
+    revealPath: (fsPath: string) => {
       void vscode.commands.executeCommand("revealFileInOS", vscode.Uri.file(fsPath));
     },
-    // spec 444 — Worktrees hygiene. Return value = human-readable refusal (undefined = success);
-    // the engine's ManagedWorktreeService re-validates fail-closed on every call.
-    worktreeRemove: async (id, deleteBranch, wsHash) => {
-      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-      if (!ws) throw new Error("no Tachyon workspace attached");
-      const result = jsonObject(
-        await extensionInvoke(ws, { action: "worktree.remove-managed", id, ...(deleteBranch ? { deleteBranch: true } : {}) }),
-        "worktree.remove-managed",
-      );
-      if (result.removed === true) return undefined;
-      return String(result.error ?? "removal refused");
-    },
-    worktreeForgetRecord: async (id, wsHash) => {
-      const ws = wsHash ? byHash(wsHash) : workspaces()[0];
-      if (!ws) throw new Error("no Tachyon workspace attached");
-      const result = jsonObject(
-        await extensionInvoke(ws, { action: "worktree.forget-record", id }),
-        "worktree.forget-record",
-      );
-      if (result.forgotten === true) return undefined;
-      return `record not found or refused: ${id}`;
-    },
-    openConfigFile: async (wsHash) => {
+    openConfigFile: async (wsHash?: string) => {
       const ws = wsHash ? byHash(wsHash) : workspaces()[0];
       if (!ws) throw new Error("no Tachyon workspace attached");
       const cfg = CONFIG_FILENAMES.map((name) => path.join(ws.workspaceRoot, name)).find((file) => fs.existsSync(file));
@@ -1949,25 +1947,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(cfg));
       await vscode.window.showTextDocument(doc, { preview: false });
     },
-    clearEngineLog: async (wsHash) => {
-      const ws = byHash(wsHash);
-      if (!ws) throw new Error("no Tachyon workspace for that hash");
-      await ws.client.clearEngineLog();
-    },
-    openEngineJournal: (wsHash) => {
-      const ws = byHash(wsHash);
-      if (!ws) throw new Error("no Tachyon workspace for that hash");
-      // t-05097f — one authority for the unit name. Rebuilding it from the hash here would open the
-      // journal of a DIFFERENT unit whenever the engine runs under tmux-socket isolation.
-      const unit = engineSystemdUnitName(ws.workspaceRoot);
-      const term = vscode.window.createTerminal({ name: `Engine log · ${ws.folderName}` });
-      term.show();
-      // follow journal for this workspace engine unit
-      term.sendText(`journalctl --user -u ${JSON.stringify(unit)} -n 200 -f`, true);
-    },
     // t-585d5c — Control -> Settings writes the idle-notification window through the same governed
     // operation an API client would use, so there is one validated entrance and not a UI-only path.
-    setIdleAfterMinutes: async (wsHash, minutes) => {
+    setIdleAfterMinutes: async (wsHash: string, minutes?: number | "never") => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, {
@@ -1975,17 +1957,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ...(minutes === undefined ? {} : { minutes }),
       });
     },
-    setCompanionTabTools: async (wsHash, enabled) => {
+    setCompanionTabTools: async (wsHash: string, enabled: boolean) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "config.companion.tabTools", enabled });
     },
-    setCompanionAllowedHosts: async (wsHash, hosts) => {
+    setCompanionAllowedHosts: async (wsHash: string, hosts: string[]) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "config.companion.allowedHosts", hosts });
     },
-    unpairCompanionDevice: async (wsHash, deviceId) => {
+    unpairCompanionDevice: async (wsHash: string, deviceId?: string) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, {
@@ -1993,7 +1975,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ...(deviceId ? { deviceId } : {}),
       });
     },
-    issueCompanionPairCode: async (wsHash) => {
+    issueCompanionPairCode: async (wsHash: string) => {
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       const result = jsonObject(await extensionQuery(ws, { action: "companion.pair-code" }), "companion.pair-code");
@@ -2199,7 +2181,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // SDD 485 B2 — the event cursor expired (or the engine changed incarnation), so "what
         // changed" is unknowable from any journal downstream of here. A hidden Control must rebuild
         // on reveal rather than replay the handful of kinds `refreshAll` happens to touch.
-        markControlSourceResync();
         taskDetailPanels.markSourceResync(); // SDD 485 C4 — same bargain for every open task document
         boardPanels.markSourceResync(); // SDD 485 C5 — and for every open Board panel
         refreshAll();
@@ -2285,6 +2266,154 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     for (const callback of deferredWorkspacePanelRevives.splice(0)) callback();
   };
 
+  const activityPanels = new ActivityPanelManager(
+    context.extensionUri,
+    () => workspaces().map((workspace) => workspace.activity),
+  );
+  context.subscriptions.push({ dispose: () => activityPanels.dispose() });
+  const probesPanels = new ProbeResultPanelManager(
+    context.extensionUri,
+    () => workspaces().map((workspace) => workspace.probe),
+  );
+  context.subscriptions.push({ dispose: () => probesPanels.dispose() });
+
+  const engineHost = makeControlModelHost();
+  const enginePanels = new EnginePanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    openDoctor: engineHost.openDoctor,
+    clearEngineLog,
+    openEngineJournal,
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => enginePanels.dispose() });
+  const openEngineTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    enginePanels.open(ws.wsHash); return true;
+  };
+
+  // SDD 485 D6 — Worktrees uses the same validated model source as Control did, but the standalone
+  // dashboard binds one immutable project. All destructive calls below receive that project from the
+  // panel session, not from an untrusted row/message field.
+  const worktreesPanels = new WorktreesPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    revealPath: engineHost.revealPath,
+    remove: removeManagedWorktree,
+    forget: forgetManagedWorktreeRecord,
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => worktreesPanels.dispose() });
+  const openWorktreesTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+      return false;
+    }
+    worktreesPanels.open(ws.wsHash);
+    return true;
+  };
+
+  // SDD 485 D8 — every read and write is rooted in the immutable dashboard project.
+  const runtimeConfigPanels = new RuntimeConfigPanelManager(
+    context.extensionUri,
+    runtimeConfigDeps,
+    undefined,
+    controlWorkspaceScope,
+  );
+  context.subscriptions.push({ dispose: () => runtimeConfigPanels.dispose() });
+  const openRuntimeConfigTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+      return false;
+    }
+    runtimeConfigPanels.open(ws.wsHash);
+    return true;
+  };
+
+  // SDD 485 D9 — the ledger reader accepts a wsHash, so each immutable dashboard project receives
+  // its own VM and its own webview-local selection/filter state.
+  const executionGraphPanels = new ExecutionGraphPanelManager(
+    context.extensionUri,
+    { read: makeExecutionGraphDep(byHash) },
+    undefined,
+    controlWorkspaceScope,
+  );
+  context.subscriptions.push({ dispose: () => executionGraphPanels.dispose() });
+  const openExecutionGraphTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) {
+      notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
+      return false;
+    }
+    executionGraphPanels.open(ws.wsHash);
+    return true;
+  };
+
+  // SDD 485 D10 — Settings is one immutable project dashboard. Its source and mutations all use
+  // that project; client-supplied wsHash fields are deliberately ignored by SettingsPanelManager.
+  const settingsPanels = new SettingsPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    openDoctor: engineHost.openDoctor,
+    openConfigFile: engineHost.openConfigFile,
+    setCompanionTabTools: engineHost.setCompanionTabTools,
+    setIdleAfterMinutes: engineHost.setIdleAfterMinutes,
+    setCompanionAllowedHosts: engineHost.setCompanionAllowedHosts,
+    unpairCompanionDevice: engineHost.unpairCompanionDevice,
+    issueCompanionPairCode: engineHost.issueCompanionPairCode,
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => settingsPanels.dispose() });
+  const openSettingsTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    settingsPanels.open(ws.wsHash);
+    return true;
+  };
+
+  const overviewPanels = new OverviewPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    // t-3bcd57 — JUMP card removed; openSection remains for the inbox metric shortcut only.
+    // Project handoff is tachyon.openProjectHandoff; Doctor is tachyon.doctor (palette + other panels).
+    openSection: (section) => {
+      void vscode.commands.executeCommand("tachyon.openControl", section);
+    },
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => overviewPanels.dispose() });
+  const openOverviewTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    overviewPanels.open(ws.wsHash); return true;
+  };
+
+  // SDD 485 D7 — Fleet is one dashboard per immutable project. Its source is the same scoped
+  // buildCockpitModel slice Control used; every action receives the panel project, never a row fallback.
+  const fleetPanels = new FleetPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    openBoard: (project) => openBoard(project),
+    start: async (name, project) => { await vscode.commands.executeCommand("tachyon.spawnAgentItem", { agentName: name, workspaceHash: project }); },
+    stop: async (name, project) => { await vscode.commands.executeCommand("tachyon.stopAgentItem", { agentName: name, workspaceHash: project }); },
+    terminal: async (name, project) => { await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, project); },
+    activity: async (name, project) => { await vscode.commands.executeCommand("tachyon.openAgentActivity", name, project); },
+    probes: async (name, project) => { await vscode.commands.executeCommand("tachyon.openProbes", project, name); },
+    edit: async (name, project) => { await vscode.commands.executeCommand("tachyon.editAgentStudioItem", { agentName: name, workspaceHash: project }); },
+    continueTask: continueFleetTask,
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => fleetPanels.dispose() });
+  const openFleetTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    fleetPanels.open(ws.wsHash);
+    return true;
+  };
+
   // SDD 485 C5 — the pre-410 standalone Board panel's viewType, revived a second time into a second home.
   // It disposes itself and opens the Board APP for the workspace it persisted, so the screen the human had
   // comes back where it lives now. Unlike C4's task-detail row, this viewType could NOT simply be reused by
@@ -2301,6 +2430,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // SDD 485 C5 — the Board app's own restore: the panel VS Code hands back is REUSED, keyed on the project
   // it persisted, so a reload puts the Board back in its tab instead of opening a second one.
   registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
+  registerTrustedPanelSerializer<SectionPanelState>(context, ENGINE_VIEW_TYPE, (panel, state) => enginePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, EXECUTION_GRAPH_VIEW_TYPE, (panel, state) => executionGraphPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, OVERVIEW_VIEW_TYPE, (panel, state) => overviewPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, FLEET_VIEW_TYPE, (panel, state) => fleetPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
   // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
@@ -2311,20 +2447,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<TaskDetailPanelState>(context, TASK_DETAIL_VIEW_TYPE, (panel, state) => {
     taskDetailPanels.deserialize(panel, state);
   });
-  registerTrustedPanelSerializer<ActivityPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => {
-    panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    if (!state?.wsHash || !state?.agent) return;
-    void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.agentActivity(state.wsHash, state.agent) });
-  });
-  registerTrustedPanelSerializer<HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => {
-    panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    if (!state?.wsHash) return;
-    // t-ace77f — the legacy panel's workspace is exactly the locator the detail route needs.
-    void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.projectHandoff(state.wsHash) });
-  });
-  registerTrustedPanelSerializer<ApprovalPanelState>(context, APPROVAL_VIEW_TYPE, (panel, state) => approvalPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<ActivityPanelState | SectionPanelState>(context, ACTIVITY_VIEW_TYPE, (panel, state) => {
+    activityPanels.deserialize(panel, state);
+  }, { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState | HandoffPanelState>(context, HANDOFF_VIEW_TYPE, (panel, state) => {
+    handoffPanels.deserialize(panel, state);
+  }, { defer: workspacePanelReviveDeferral });
   // SDD 485 D2 — the Plugins app's own restore, and the second REUSED viewType (after C4's and D1's):
   // the panel VS Code hands back is kept, keyed on the project it persisted, so a reload puts Plugins back
   // in its tab instead of opening a second one. A pre-410 record carrying `wsHash` instead of `project` is
@@ -2333,44 +2461,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // painting "no workspace attached" for a moment (see `workspacePanelReviveDeferral`, which now reads
   // either field name).
   registerTrustedPanelSerializer<SectionPanelState | PluginsPanelState>(context, PLUGINS_VIEW_TYPE, (panel, state) => pluginsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<ProbesPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => {
-    panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
-    if (!state?.wsHash) return;
-    const route = state.caller ? cockpitRoutes.agentProbes(state.wsHash, state.caller) : cockpitRoutes.workspaceProbes(state.wsHash);
-    void openCockpit(makeCockpitDeps(), { route });
-  });
-  registerTrustedPanelSerializer<PinPreviewPanelState>(context, PIN_PREVIEW_VIEW_TYPE, (panel, state) => sidebarProto.deserializePinPreview(panel, state));
+  registerTrustedPanelSerializer<ProbesPanelState | SectionPanelState>(context, PROBES_VIEW_TYPE, (panel, state) => {
+    probesPanels.deserialize(panel, state);
+  }, { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<LegacyPinDetailState>(context, PIN_DETAIL_VIEW_TYPE, (panel, state) => pinDetailPanels.deserialize(panel, state));
   registerTrustedPanelSerializer<AgentPanePanelState>(context, AGENT_PANE_VIEW_TYPE, (panel, state) => agentPanes.deserialize(panel, state));
-  // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — a revived pre-410 standalone studio panel disposes itself
-  // and redirects into Control → the mapped studio route, same claimed-singleton guard as every
-  // other retired-panel serializer above. KNOWN GAP (documented, not silently dropped): unlike the
-  // full studios-routes-design.md's exactly-once ack-based legacy handoff (round-1 F7 / round-2 F6 —
-  // custody transfers only after Control durably accepts the seed), THIS redirect does not attempt
-  // to carry `state.snapshot.patch` forward — a dirty pre-410 draft open across a reload is simply
-  // not restored. Scopes down to the in-SESSION draft cache only (studioHost.ts's cacheDraft/
-  // takeDraftFor); the reload-survival mechanism is deferred to when a studio genuinely needs it
-  // (flagged for the D0 code review probe). One shared helper (D1a) — command/terminal/runbook/
-  // schedule all redirect identically, only the viewType/StudioId differ.
-  const registerLegacyStudioRedirect = <TState extends StudioPanelState<unknown>>(viewType: string, studio: StudioId) => {
-    registerTrustedPanelSerializer<TState>(context, viewType, (panel, state) => {
-      panel.dispose();
-      if (isCockpitSingletonClaimed()) return;
-      if (!state?.wsKey) return;
-      const route = state.snapshot.mode === "edit" && state.snapshot.entityId
-        ? cockpitRoutes.studioEdit(studio, state.wsKey, state.snapshot.entityId)
-        : cockpitRoutes.studioNew(studio, state.wsKey);
-      void openCockpit(makeCockpitDeps(), { route });
-    });
-  };
-  registerLegacyStudioRedirect<CommandStudioPanelState>(COMMAND_STUDIO_SHELL_VIEW_TYPE, "command");
-  registerLegacyStudioRedirect<TerminalStudioPanelState>(TERMINAL_STUDIO_SHELL_VIEW_TYPE, "terminal");
-  registerLegacyStudioRedirect<RunbookStudioPanelState>(RUNBOOK_STUDIO_SHELL_VIEW_TYPE, "runbook");
-  registerLegacyStudioRedirect<ScheduleStudioPanelState>(SCHEDULE_STUDIO_SHELL_VIEW_TYPE, "schedule");
-  registerLegacyStudioRedirect<AgentStudioPanelState>(AGENT_STUDIO_SHELL_VIEW_TYPE, "agent");
-  // t-610705 (Phase D, D3) — unlike Task, Pin's studioNew never throws (pin IS reachable id-less —
-  // a brand-new pin has no id until its first save) — the shared helper works as-is.
-  registerLegacyStudioRedirect<PinStudioPanelState>(PIN_STUDIO_VIEW_TYPE, "pin");
+  registerTrustedPanelSerializer<CommandStudioPanelState | SectionPanelState>(context, COMMAND_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.command.deserialize(panel, state));
+  registerTrustedPanelSerializer<TerminalStudioPanelState | SectionPanelState>(context, TERMINAL_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.terminal.deserialize(panel, state));
+  registerTrustedPanelSerializer<RunbookStudioPanelState | SectionPanelState>(context, RUNBOOK_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.runbook.deserialize(panel, state));
+  registerTrustedPanelSerializer<ScheduleStudioPanelState | SectionPanelState>(context, SCHEDULE_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.schedule.deserialize(panel, state));
+  registerTrustedPanelSerializer<AgentStudioPanelState | SectionPanelState>(context, AGENT_STUDIO_SHELL_VIEW_TYPE, (panel, state) => studioPanels.agent.deserialize(panel, state));
+  // SDD 485 D20 — a pre-410 Pin Studio panel is still a live restore door. Reopen it in the Pins
+  // document app instead of routing through Control: edit keeps its identity; new gets a provisional
+  // identity and the document's existing staged-create policy (cancel closes without saving).
+  registerTrustedPanelSerializer<PinStudioPanelState>(context, PIN_STUDIO_VIEW_TYPE, (panel, state) => {
+    panel.dispose();
+    if (!state?.wsKey) return;
+    if (state.snapshot.mode === "edit" && state.snapshot.entityId) {
+      pinDetailPanels.openEdit(state.wsKey, state.snapshot.entityId);
+      return;
+    }
+    pinDetailPanels.openCreate(state.wsKey, mintPinId());
+  });
   // t-610705 (Phase D, D2) — Task Studio's redirect can't reuse registerLegacyStudioRedirect's shared
   // helper as-is: its non-edit fallback calls cockpitRoutes.studioNew(studio, wsKey), which THROWS for
   // "task" (route.ts's defensive assertion — task is never id-less in practice). A persisted "new"
@@ -2379,10 +2491,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // to Mission instead of constructing an invalid route.
   registerTrustedPanelSerializer<TaskStudioPanelState>(context, TASK_STUDIO_VIEW_TYPE, (panel, state) => {
     panel.dispose();
-    if (isCockpitSingletonClaimed()) return;
     if (!state?.wsKey) return;
     if (state.snapshot.mode === "edit" && state.snapshot.entityId) {
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", state.wsKey, state.snapshot.entityId) });
+      taskDetailPanels.openEdit(state.wsKey, state.snapshot.entityId);
       return;
     }
     // SDD 485 C5 — the Board is an app: a malformed "new" Task Studio state lands on it directly rather
@@ -2398,12 +2509,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Control panel someone else had restored; opening an app touches no Control state, and re-opening
   // reveals rather than duplicating, which makes this safe against VS Code's unspecified revive order).
   registerTrustedPanelSerializer<SectionPanelState>(context, TMUX_VIEW_TYPE, (panel, state) => tmuxPanels.deserialize(panel, state));
-  // t-610705 (Phase C.0) — decodePanelState is the ONE place a v1 disk record (bare section) or a
-  // v2 record (a real CockpitRoute) gets trusted; a malformed/unrecognized route falls back to
-  // overview rather than reviving into whatever the raw payload happened to contain.
-  registerTrustedPanelSerializer<CockpitPanelState>(context, COCKPIT_VIEW_TYPE, (panel, state) => {
-    const { route, wsHash } = decodeCockpitPanelState(state);
-    return openCockpit(makeCockpitDeps(), { revivedPanel: panel, route, wsHash });
+  // SDD 485 D3 — the Runtime Ops app's own restore. A NEW viewType, unlike C4's, D1's and D2's reuses:
+  // the only legacy id, `tachyonRuntimeOpsView`, names spec 367's retired WebviewView (a bottom-panel
+  // view container that was never registered), so there is no record to revive and nothing to migrate.
+  // That tombstone therefore stays exactly where it is, in the dispose-only loop below, and this app's
+  // own `{schemaVersion, view}` state is what a reload hands back. No revive deferral either: a `window`
+  // app names no workspace, so there is nothing for `workspacePanelReviveDeferral` to wait for.
+  registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_OPS_VIEW_TYPE, (panel, state) => runtimeOpsPanels.deserialize(panel, state));
+  // SDD 485 D4 — the Human Inbox app's own restore, and the simplest of the six: the viewType is NEW
+  // because there is NO legacy id at all (this surface was born as a Control section after 410 and never
+  // had a standalone panel), so there is no tombstone to keep in the dispose-only loop, no record to
+  // migrate and no redirect to leave behind. The revive deferral DOES apply — it is a dashboard, so its
+  // persisted `project` names a workspace, and without it a panel restored before its workspace attaches
+  // paints "that workspace is no longer attached" for a moment.
+  registerTrustedPanelSerializer<SectionPanelState>(context, HUMAN_INBOX_VIEW_TYPE, (panel, state) => humanInboxPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  // SDD 485 E1 — a persisted pre-cutover Control panel has no host to revive into. Dispose the stale
+  // panel VS Code handed us and open Overview, the sensible default for an unscoped legacy shell.
+  registerTrustedPanelSerializer<{ schemaVersion: 1 | 2; view: string; wsHash?: unknown }>(context, "tachyonCockpit", (panel, state) => {
+    panel.dispose();
+    openOverviewTab(typeof state?.wsHash === "string" ? state.wsHash : undefined);
   });
   // SDD 485 C1 — `tachyonSectionAppFixture` is dispose-only for the same reason `tachyonAgentFixtureStudio`
   // is: it is a dev-only proof surface that nothing here instantiates, so there is no manager to revive a
@@ -2663,12 +2787,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // ---- views ----
     vscode.commands.registerCommand("tachyon.refreshViews", refreshAll),
     vscode.commands.registerCommand("tachyon.openApprovals", async (hash?: string) => {
-      // spec 410 — Approvals live in Control (cockpit section); do not open a second peer panel.
+      // t-b30efd — compatibility command retained for palette, notice-inbox and legacy panel callers.
+      // The command carries no item id, so its honest destination is the unified Inbox queue.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      await openCockpit(makeCockpitDeps(), {
-        section: "approvals",
-        ...(ws ? { approvalWsHash: ws.wsHash } : {}),
-      });
+      openHumanInboxTab(ws?.wsHash);
     }),
     // t-e76acc — one destination for "what is waiting on me", and the target of the Review action on
     // both the approval and the human-validation notices.
@@ -2682,18 +2804,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(
       "tachyon.openHumanInbox",
       async (hash?: string, target?: unknown) => {
+        // SDD 485 D4 — the destination is the Inbox APP, not a Control route. Both halves of this
+        // command move together: a targeted "Review" opens (or reveals) that project's tab AND lands it
+        // on the item, and an untargeted palette invocation opens the queue. `openItem` navigates a
+        // revealed panel rather than making a second one, which is what `dashboard` buys and what makes
+        // "the item you were just told about" reachable from a tab that was already open.
         const ws = hash ? byHash(hash) : await pickWorkspace();
         const link = decodeHumanInboxDeepLink(target);
         if (ws && link.target === "item") {
-          await openCockpit(makeCockpitDeps(), {
-            route: cockpitRoutes.inboxItem(ws.wsHash, link.itemKind, link.itemId),
-          });
+          humanInboxPanels.openItem(ws.wsHash, link.itemKind, link.itemId);
           return;
         }
-        await openCockpit(makeCockpitDeps(), {
-          section: "inbox",
-          ...(ws ? { approvalWsHash: ws.wsHash } : {}),
-        });
+        openHumanInboxTab(ws?.wsHash);
       },
     ),
     vscode.commands.registerCommand("tachyon.resolveApproval", async (arg: { id?: string; decision?: "approved" | "denied"; wsHash?: string }) => {
@@ -2703,11 +2825,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await extensionInvoke(ws, { action: "approval.resolve", id: arg.id, decision: arg.decision });
         notify(`approval request ${arg.id} ${arg.decision}`);
         refreshAll();
-        refreshCockpitApprovals();
+        humanInboxPanels.refresh();
       } catch (err) {
         notify(err instanceof Error ? err.message : String(err), "error");
-        approvalPanels.refreshAll();
-        refreshCockpitApprovals();
+        humanInboxPanels.refresh();
       }
     }),
     // t-aaad95 — `tachyon.openSettings` (which opened VS Code's settings page filtered to this
@@ -2740,16 +2861,68 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openPluginsTab();
           return Promise.resolve();
         }
-        return openCockpit(makeCockpitDeps(), { section: resolved });
+        // SDD 485 D3 — the fourth, and the second that takes no argument (a `window` app has nothing to
+        // key on). This is also the line `tachyon.openControlRuntime` funnels into below.
+        if (resolved === "runtime") {
+          runtimeOpsPanels.open();
+          return Promise.resolve();
+        }
+        // SDD 485 D4 — the fifth, and the second that resolves a PROJECT (a dashboard is opened against
+        // one). The tile is short for the surface's product name: the id is `inbox`, the app is the
+        // Human Inbox, and `openHumanInboxTab` picks the same scope Control would have rendered it for.
+        if (resolved === "inbox") {
+          openHumanInboxTab();
+          return Promise.resolve();
+        }
+        if (resolved === "approvals" || resolved === "validations") {
+          openHumanInboxTab();
+          return Promise.resolve();
+        }
+        if (resolved === "engine") {
+          openEngineTab();
+          return Promise.resolve();
+        }
+        if (resolved === "worktrees") {
+          openWorktreesTab();
+          return Promise.resolve();
+        }
+        if (resolved === "fleet") {
+          openFleetTab();
+          return Promise.resolve();
+        }
+        if (resolved === "runtime-config") {
+          openRuntimeConfigTab();
+          return Promise.resolve();
+        }
+        if (resolved === "execution-graph") {
+          openExecutionGraphTab();
+          return Promise.resolve();
+        }
+        if (resolved === "settings") {
+          openSettingsTab();
+          return Promise.resolve();
+        }
+        if (resolved === "overview") {
+          openOverviewTab();
+          return Promise.resolve();
+        }
+        openOverviewTab();
+        return Promise.resolve();
       }
-      return openCockpit(makeCockpitDeps());
+      openOverviewTab();
+      return Promise.resolve();
     }),
     // legacy aliases (palette hidden for openCockpit)
-    vscode.commands.registerCommand("tachyon.openCockpit", () => openCockpit(makeCockpitDeps())),
-    vscode.commands.registerCommand("tachyon.inspectEngine", () => openCockpit(makeCockpitDeps(), { section: "engine" })),
+    vscode.commands.registerCommand("tachyon.openCockpit", () => { openOverviewTab(); }),
+    vscode.commands.registerCommand("tachyon.inspectEngine", () => { openEngineTab(); }),
     // SDD 485 C5 — the Board opens as its own editor tab (same as tachyon.missionControl without the pick).
     vscode.commands.registerCommand("tachyon.openControlMission", () => { openBoard(); }),
-    vscode.commands.registerCommand("tachyon.openControlRuntime", () => openCockpit(makeCockpitDeps(), { section: "runtime" })),
+    // SDD 485 D3 — Runtime Ops opens as its own editor tab, or reveals the one already open. The command
+    // id keeps its `openControl` spelling on purpose: `tachyon.showRuntimeUsage` and
+    // `src/runtimeOps/openRuntimeOps.ts` both route through it, and renaming it inside a cutover would
+    // churn three call sites to say the same thing (the same call C5 made for the `mission-control`
+    // directory name).
+    vscode.commands.registerCommand("tachyon.openControlRuntime", () => { runtimeOpsPanels.open(); }),
     // t-75fd3c — deep-link straight to a task's detail subroute (the host-agnostic EngineHost.openTask
     // port calls this by name, same indirection focusPrimaryView() uses for tachyonSidebarPrototype.focus).
     // SDD 485 C4 — the same command name and the same (wsHash, taskId) contract the host-agnostic
@@ -2945,7 +3118,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = (node?.workspaceHash ? byHash(node.workspaceHash) : node?.ws ? wsOf({ ws: node.ws }) : undefined) ?? (await pickWorkspace());
       if (!ws) return;
       if (text === undefined) {
-        void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("pin", ws.wsHash) });
+        pinDetailPanels.openCreate(ws.wsHash, mintPinId());
         return;
       }
       if (text.trim().length === 0) return;
@@ -2968,7 +3141,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editPinItem", async (item: PinItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("pin", ws.wsHash, item.pinId) });
+      pinDetailPanels.openEdit(ws.wsHash, item.pinId);
     }),
     // ---- agents ----
     vscode.commands.registerCommand("tachyon.spawnAgentItem", async (item: AgentItem) => {
@@ -3072,23 +3245,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // command is mostly invoked from a Fleet row that already knows its own wsHash).
     vscode.commands.registerCommand("tachyon.openAgentActivity", async (agent: string, hash?: string) => {
       const ws = hash ? byHash(hash) : workspaces()[0];
-      if (ws) await openCockpit(makeCockpitDeps(), { route: cockpitRoutes.agentActivity(ws.wsHash, agent) });
+      if (ws) activityPanels.open(ws.wsHash, agent);
     }),
     // 0.29.1 — raw transcript escape hatch, demoted from the Activity header button to a palette command.
-    vscode.commands.registerCommand("tachyon.openAgentTranscript", () => openCockpitAgentTranscript()),
+    vscode.commands.registerCommand("tachyon.openAgentTranscript", () => activityPanels.openTranscript()),
     // spec 245 — open the read-only Project Handoff panel for a workspace root (from the sidebar header button).
     // spec 297 — resolve the target folder via the shared picker when no hash is passed (no silent folder[0]
     // in a multi-root window); an explicit hash (e.g. the sidebar handoff bar) is honored verbatim.
     vscode.commands.registerCommand("tachyon.openProjectHandoff", async (hash?: string) => {
-      // t-610705 (Phase C.3) — Handoff lives in Control; no second peer panel.
-      // t-ace77f — and inside Control it is a DETAIL ROUTE, not a tab: this command (the sidebar's
-      // `handoff · N` bar and the palette) is the entry point, and the document's breadcrumb leaves
-      // to Overview. Without a resolvable workspace there is no document to open — the picker
-      // already warned, so opening Control on Overview is the honest landing.
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      await openCockpit(makeCockpitDeps(), ws
-        ? { route: cockpitRoutes.projectHandoff(ws.wsHash) }
-        : { section: "overview" });
+      if (ws) openHandoffTab(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.openPlugins", async (hash?: string) => {
       // SDD 485 D2 — Plugins opens as its own editor tab, or reveals the one already open for this
@@ -3109,7 +3275,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // webview's openTaskStudio action instead of a command).
     vscode.commands.registerCommand("tachyon.taskStudio.new", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
-      if (ws) await openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("task", ws.wsHash, mintTaskId()) });
+      if (ws) taskDetailPanels.openCreate(ws.wsHash, mintTaskId());
     }),
     // spec 322 — per-agent probes: the agent row's "…" action passes (hash, agent) and gets that agent's
     // probes only. The no-arg/agent-less form opens the UNFILTERED list — an internal/debug escape hatch for
@@ -3117,8 +3283,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openProbes", async (hash?: string, agent?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (!ws) return;
-      const route = agent ? cockpitRoutes.agentProbes(ws.wsHash, agent) : cockpitRoutes.workspaceProbes(ws.wsHash);
-      await openCockpit(makeCockpitDeps(), { route });
+      probesPanels.open(ws.wsHash, agent);
     }),
     // ---- session resume (F29 / spec 209) ----
     vscode.commands.registerCommand("tachyon.resumeAgentItem", async (item: AgentItem) => {
@@ -3261,22 +3426,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.agentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("agent", ws.wsHash) });
+      studioPanels.agent.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.newAgentStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("agent", ws.wsHash) });
+      studioPanels.agent.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.terminalStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("terminal", ws.wsHash) });
+      studioPanels.terminal.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.runbookStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("runbook", ws.wsHash) });
+      studioPanels.runbook.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.editAgentStudioItem", async (item: AgentItem) => {
       const ws = wsOf(item);
@@ -3288,8 +3453,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       // t-610705 (Phase D, D1a/D1b) — both branches are Control routes now.
       const dispatch = {
-        agent: () => { void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("agent", ws.wsHash, item.agentName) }); },
-        terminal: () => { void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("terminal", ws.wsHash, item.agentName) }); },
+        agent: () => studioPanels.agent.openExisting(ws.wsHash, item.agentName),
+        terminal: () => studioPanels.terminal.openExisting(ws.wsHash, item.agentName),
       } satisfies Record<"agent" | "terminal", () => void>;
       dispatch[def.kind === "terminal" ? "terminal" : "agent"]();
     }),
@@ -3712,17 +3877,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.commandName), "warn");
         return;
       }
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("command", ws.wsHash, item.commandName) });
+      studioPanels.command.openExisting(ws.wsHash, item.commandName);
     }),
     vscode.commands.registerCommand("tachyon.commandStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("command", ws.wsHash) });
+      studioPanels.command.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.scheduleStudio", async () => {
       const ws = await pickFolderForCreate();
       if (!ws) return;
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioNew("schedule", ws.wsHash) });
+      studioPanels.schedule.openNew(ws.wsHash);
     }),
     vscode.commands.registerCommand("tachyon.editScheduleStudioItem", async (item: ScheduleItem) => {
       const ws = wsOf(item);
@@ -3732,7 +3897,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.scheduleName), "warn");
         return;
       }
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("schedule", ws.wsHash, item.scheduleName) });
+      studioPanels.schedule.openExisting(ws.wsHash, item.scheduleName);
     }),
     vscode.commands.registerCommand("tachyon.editRunbookStudioItem", async (item: RunbookItem) => {
       const ws = wsOf(item);
@@ -3742,7 +3907,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("'{0}' is not declared in tachyon.yml", item.runbookName), "warn");
         return;
       }
-      void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.studioEdit("runbook", ws.wsHash, item.runbookName) });
+      studioPanels.runbook.openExisting(ws.wsHash, item.runbookName);
     }),
     vscode.commands.registerCommand("tachyon.editRunbookItem", async (item: RunbookItem) => {
       const ws = wsOf(item);

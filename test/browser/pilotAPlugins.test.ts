@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 
 // spec 342 T5 — Pilot A: the Plugins panel is the first REAL production surface adopting Kit components
 // (KitSelect for the installed-list sort control, KitDropdown as each card's secondary-actions overflow
@@ -9,10 +10,8 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 // this drives the ACTUAL shipped bundle + a captured fixture VM through the dev preview harness
 // (scripts/webview-preview), not the synthetic ui-gate page, so the proof is about this surface specifically.
 //
-// t-c55f8d (2026-08-01): the standalone `?view=plugins` preview route is gone — Plugins is an embedded
-// Control section now, reached as `?view=cockpit&fixture=plugins` (the cockpit route's makeMessage pushes
-// the SAME pluginsFixtures.default VM the retired route did). Every assertion below is unchanged; only the
-// door moved. Before this repoint all four tests timed out on a route the harness no longer knows.
+// SDD 485 D2: Plugins is a standalone app again. The assertions remain about the same production
+// bundle and fixture VM; only the preview door follows the surface back to `view=plugins`.
 describe("Pilot A: Plugins panel (real bundle + fixture, via the dev preview harness)", () => {
   let server: GateServer;
   let browser: Browser;
@@ -36,8 +35,8 @@ describe("Pilot A: Plugins panel (real bundle + fixture, via the dev preview har
       if (!res.ok() && !res.url().endsWith("/favicon.ico")) failedResponses.push(`${res.status()} ${res.url()}`);
     });
 
-    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=cockpit&fixture=plugins`, { waitUntil: "networkidle0" });
-    await page.waitForFunction(() => document.body.dataset.previewFixture === "plugins", { timeout: 5000 });
+    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=default`, { waitUntil: "networkidle0" });
+    await page.waitForFunction(() => document.body.dataset.previewFixture === "default", { timeout: 5000 });
     await page.waitForSelector(".plugin-sort", { visible: true, timeout: 5000 });
 
     expect(failedResponses).toEqual([]);
@@ -47,20 +46,20 @@ describe("Pilot A: Plugins panel (real bundle + fixture, via the dev preview har
 
   it("KitSelect sort control actually reorders the visible plugin list", async () => {
     const page = await browser.newPage();
-    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=cockpit&fixture=plugins`, { waitUntil: "networkidle0" });
+    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=default`, { waitUntil: "networkidle0" });
     await page.waitForSelector(".plugin-sort", { visible: true, timeout: 5000 });
 
     const namesInOrder = () => page.evaluate(() => [...document.querySelectorAll(".pname")].map((el) => el.textContent));
     const nameAsc = await namesInOrder();
 
     await page.click(".plugin-sort");
-    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
     await page.evaluate(() => {
       const items = [...document.querySelectorAll('[data-slot="select-item"]')] as HTMLElement[];
       const desc = items.find((el) => el.textContent?.includes("Z-A"));
       desc?.click();
     });
-    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     const nameDesc = await namesInOrder();
 
     expect(nameDesc).toEqual([...nameAsc].reverse());
@@ -69,16 +68,16 @@ describe("Pilot A: Plugins panel (real bundle + fixture, via the dev preview har
 
   it("a card's KitDropdown overflow menu opens and its items are reachable by keyboard", async () => {
     const page = await browser.newPage();
-    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=cockpit&fixture=plugins`, { waitUntil: "networkidle0" });
+    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=default`, { waitUntil: "networkidle0" });
     await page.waitForSelector(".ds-card", { visible: true, timeout: 5000 });
 
     await page.click('.ds-card button[title^="More actions"]');
-    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { visible: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
     const hasItems = await page.evaluate(() => document.querySelectorAll('[data-slot="dropdown-menu-item"]').length > 0);
     expect(hasItems).toBe(true);
 
     await page.keyboard.press("Escape");
-    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { hidden: true, timeout: 2000 });
+    await page.waitForSelector('[data-slot="dropdown-menu-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     await page.close();
   });
 
@@ -86,7 +85,7 @@ describe("Pilot A: Plugins panel (real bundle + fixture, via the dev preview har
   // (Remove, then ⋯), not the other way around.
   it("a card's primary action button renders before its '⋯' overflow trigger in DOM order", async () => {
     const page = await browser.newPage();
-    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=cockpit&fixture=plugins`, { waitUntil: "networkidle0" });
+    await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=default`, { waitUntil: "networkidle0" });
     await page.waitForSelector(".ds-card", { visible: true, timeout: 5000 });
 
     const order = await page.evaluate(() => {

@@ -532,11 +532,10 @@ export function agentProfileAuthorityFor(
 }
 
 /**
- * t-07d05c — a roster with neither agents nor terminals is what an untouched workspace looks like,
- * and `loadConfig` deliberately refuses it. Rolling back the FIRST canonical agent therefore
- * restores a config the host cannot reactivate, even though the restore itself was perfect.
- * Recognising that exact shape keeps the refusal in `loadConfig` intact while letting the
- * compensation report a clean rollback instead of a degraded transaction.
+ * t-07d05c — a roster with neither agents nor terminals is what an untouched workspace looks like.
+ * t-f67185 made empty roster a valid load; this helper still swallows host reactivation failures
+ * for that shape so rolling back the FIRST canonical agent reports a clean rollback instead of
+ * degrading a transaction whose durable restore already succeeded.
  */
 function isEmptyRoster(configText: string): boolean {
   let raw: unknown;
@@ -615,9 +614,9 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
       input.config.replace(journal.targetConfigSha256, prior);
     } else if (configSha !== journal.priorConfigSha256) throw new Error("config changed outside lifecycle transaction");
     // Every durable artifact is restored by this point, so the rollback has already succeeded.
-    // Reactivating the restored state is the host's concern, and it legitimately fails when that
-    // state is an empty roster — the workspace simply has no agents again. Degrading there would
-    // block an agent that no longer exists and demand manual recovery (t-07d05c).
+    // Reactivating the restored state is the host's concern. Empty roster is valid (t-f67185),
+    // but a host-side failure on that shape must still not degrade a transaction that already
+    // restored cleanly — the workspace simply has no agents again (t-07d05c).
     try {
       input.activateState("prior");
     } catch (error) {

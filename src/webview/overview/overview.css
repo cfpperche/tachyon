@@ -1,0 +1,13 @@
+.ck-overview-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ck-auto { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ds-muted); }
+.ck-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: var(--ds-2); margin-bottom: var(--ds-3); }
+.ck-metric { border: var(--ds-border-width) solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2); background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }
+.ck-metric .label { display: block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--ds-muted); }
+.ck-metric .value { display: block; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; line-height: 1.2; color: var(--vscode-foreground); }
+.ck-metric-btn { font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; }
+.ck-metric-btn:hover { border-color: color-mix(in srgb, var(--vscode-foreground) 35%, var(--ds-border)); }
+.ck-metric.warn .value { color: var(--ds-err); } .ck-metric.ok .value { color: var(--ds-ok); }
+.ck-panel p { margin: 0 0 6px; font-size: 11px; line-height: 1.45; color: var(--ds-muted); }
+.ck-bridge-list { list-style: none; margin: 0; padding: 0; }
+.ck-bridge-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 5px 0; border-top: 1px solid var(--ds-border); font-size: 11px; }
+.ck-bridge-list .name { font-weight: 600; }

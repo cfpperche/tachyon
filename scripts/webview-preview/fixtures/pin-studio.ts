@@ -25,7 +25,7 @@ export function pinStudioMakeMessage(vm: PinStudioFixtureVM): unknown[] {
   if (vm.loadError) {
     return [envelope({ type: "error", code: vm.loadError.code, message: vm.loadError.message, blocking: true })];
   }
-  return [envelope({ type: "load", entity: vm.entity, concurrency: { kind: "none" }, saveInFlight: false })];
+  return [envelope({ type: "load", entity: vm.entity, concurrency: { kind: "cas", expected: vm.entity.expectUpdatedAt ?? "fixture-rev" }, saveInFlight: false })];
 }
 
 const editPin: PinDetailEntity = {
@@ -42,6 +42,7 @@ const editPin: PinDetailEntity = {
     ],
   },
   attachments: [],
+  expectUpdatedAt: "fixture-rev",
 };
 
 const newPin: PinDetailEntity = { workspaceHash: "a1b2c3", folder: "tachyon", title: "", tags: [], doc: null, attachments: [] };

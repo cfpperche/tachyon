@@ -1,6 +1,7 @@
 import type { PinPreviewVM } from "../../sidebar/types";
 import { toEditorDoc } from "../rich-doc/document";
 import { StaticDoc } from "../rich-doc/StaticDoc";
+import { Button } from "../shared/ui";
 
 // spec 279 — the Pin Preview view (converted from SidebarPrototype's inline pinPreviewHtml). Read-only,
 // `preact-static`. SECURITY: every user-supplied field (title, body, tags, attachment names) is rendered as
@@ -8,7 +9,7 @@ import { StaticDoc } from "../rich-doc/StaticDoc";
 // hostile pin (`<img onerror=…>`, `<script>`) renders as literal text, never as markup. Images load only from
 // a host-resolved `uri` (an asWebviewUri blob), never user HTML.
 
-export function App({ vm }: { vm: PinPreviewVM | undefined }) {
+export function App({ vm, onEdit }: { vm: PinPreviewVM | undefined; onEdit?: () => void }) {
   if (!vm) return <main />;
   // t-321e9d — a rich pin renders its actual doc (images/sketches resolve to real webview URIs via the same
   // `toEditorDoc` pipeline the Studio/editor uses); a plain pin (no doc) falls back to the flattened `body`
@@ -19,6 +20,7 @@ export function App({ vm }: { vm: PinPreviewVM | undefined }) {
     <main>
       <header>
         <div class="kicker">Pin Preview</div>
+        {onEdit && <Button icon="edit" onClick={onEdit}>Edit pin</Button>}
         <h1>{vm.title}</h1>
         <div class="meta">
           <span class="pill">{vm.id}</span>

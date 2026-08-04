@@ -1249,7 +1249,7 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   if (!isPlainObject(raw)) {
-    return { errors: ["tachyon.yml must be a YAML mapping with at least an 'agents' section"], warnings };
+    return { errors: ["tachyon.yml must be a YAML mapping"], warnings };
   }
 
   for (const key of Object.keys(raw)) {
@@ -1259,14 +1259,11 @@ export function parseConfig(yamlText: string): ParseResult {
   }
 
   // spec 215 — agents: and terminals: merge into ONE kind-tagged record (the engine's single
-  // source of truth). At least one entry must exist across the two blocks.
+  // source of truth). t-f67185 — an empty roster is valid: Board, pins, plugins, and commands-only
+  // workspaces do not need a declared agent or terminal. Malformed blocks still refuse.
   const agents: Record<string, ManagedEntryDef> = {};
-  const hasAgents = isPlainObject(raw.agents) && Object.keys(raw.agents).length > 0;
-  const hasTerminals = isPlainObject(raw.terminals) && Object.keys(raw.terminals as Record<string, unknown>).length > 0;
   if (raw.agents !== undefined && !isPlainObject(raw.agents)) {
-    errors.push("'agents' must be a non-empty mapping of agent name -> definition");
-  } else if (!hasAgents && !hasTerminals) {
-    errors.push("'agents' must be a non-empty mapping of agent name -> definition (or declare a 'terminals' block)");
+    errors.push("'agents' must be a mapping of agent name -> definition");
   }
   if (isPlainObject(raw.agents)) {
     for (const [name, def] of Object.entries(raw.agents)) {

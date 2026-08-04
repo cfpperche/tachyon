@@ -9,7 +9,8 @@
 # the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
 # SDD 478 M7 — the rows here were `cmd: bash` with `kind: agent` forced on, which is exactly the
 # process-pretending-to-be-an-agent shape this SDD removes. Create the agent rows the chips need in
-# Agent Studio; the terminals below give the roster its non-agent half.
+# Agent Studio. The terminals below are real scenario rows (live vs stopped chips), not empty-roster
+# placeholders (t-f67185).
 terminals:
   live-shell:
     cmd: sh

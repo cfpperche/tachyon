@@ -1,13 +1,10 @@
 import path from "node:path";
 import * as vscode from "vscode";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
-import { panelIcon } from "./shared/panelIcon.js";
-import { isAgentRow, type FleetVM, type AgentVM, type PinPreviewAttachmentVM, type PinPreviewVM } from "../sidebar/types.js";
+import { isAgentRow, type FleetVM, type AgentVM } from "../sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
-import { READY } from "./shared/ready.js";
 import { isCockpitSectionId } from "../cockpit/resolveSection.js";
 import { renderWebviewShell } from "./shared/shell.js";
-import { pinPreviewMessage } from "./pin-preview/messages.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { notify } from "../workspace/notify.js";
@@ -109,6 +106,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     private readonly memento?: vscode.Memento, // spec 242 — persists the sort prefs (context.globalState)
     /** t-38c2a1 — extension package version shown in the sidebar header. */
     private readonly appVersion?: string,
+    private readonly openPinDocument?: (wsHash: string, pinId: string) => void,
   ) {
     this.scopeSubscription = controlWorkspaceScope.onDidChange(() => void this.push());
   }
@@ -370,7 +368,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         if (!extra?.actionId) return;
         return this.mutateSidebar(ws, { action: "notice.invoke", id, actionId: extra.actionId });
       }
-      case "pin:preview": return void this.previewPin(ws, id);
+      case "pin:preview": return void this.openPinDocument?.(ws.wsHash, id);
       case "pin:copy": {
         // Never trust the label echoed by the webview. The first projection may still be in flight after
         // activation, so read the authoritative engine projection for this gesture as well.
@@ -388,7 +386,10 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         notify(vscode.l10n.t("Pin ID copied: {0}", id));
         return;
       }
-      case "pin:edit": return exec("tachyon.editPinItem", { kind: "pin", pinId: id });
+      // t-456ce0 — `pin:edit` is gone with the sidebar row's Edit entry: the pin document owns
+      // editing now, so the webview no longer sends this action and the arm had no remaining caller.
+      // `tachyon.editPinItem` itself is untouched — it is a CONTRIBUTED command (package.json) with
+      // its own menu entry, so removing this arm retires one door, not the capability.
       case "pin:delete": return this.mutateSidebar(ws, { action: "pin.delete", id });
       case "schedule:pause": return this.mutateSidebar(ws, { action: "schedule.toggle-pause", id });
       case "schedule:edit": return exec("tachyon.editScheduleStudioItem", { kind: "schedule", scheduleName: id });
@@ -433,90 +434,6 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       this.refresh();
     } catch (error) {
       notify(vscode.l10n.t("Could not update sidebar state: {0}", error instanceof Error ? error.message : String(error)), "error");
-    }
-  }
-
-  deserializePinPreview(panel: vscode.WebviewPanel, state: PinPreviewPanelState): void {
-    const ws = this.wsFor(state.wsHash);
-    if (!ws) { panel.dispose(); return; }
-    void this.previewPin(ws, state.pinId, panel);
-  }
-
-  private async previewPin(ws: WorkspaceSidebarTarget, id: string, revivedPanel?: vscode.WebviewPanel): Promise<void> {
-    let panel: vscode.WebviewPanel | undefined;
-    try {
-      const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
-      const blobRoot = vscode.Uri.file(ws.pinAttachmentBlobRoot());
-      // spec 279 — scripts ON to load the preact bundle. SAFE because the bundle renders all pin content as
-      // TEXT (preact escapes by default), never innerHTML, under a strict nonce'd CSP (the shell). Images load
-      // only from host-resolved asWebviewUri blobs in blobRoot.
-      panel = revivedPanel ?? vscode.window.createWebviewPanel(
-        PIN_PREVIEW_VIEW_TYPE,
-        `Pin Preview — ${id}`,
-        { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
-        // t-b5e6e5 — the native VS Code find widget (Ctrl+F), piggybacking on Mission Control's validation.
-        { enableScripts: true, localResourceRoots: [root, blobRoot], enableFindWidget: true },
-      );
-      const activePanel = panel;
-      activePanel.title = `Pin Preview — ${id}`;
-      activePanel.webview.options = { enableScripts: true, localResourceRoots: [root, blobRoot] };
-      activePanel.iconPath = panelIcon(this.extensionUri, "eye"); // spec 282 — contextual editor-tab icon
-      const detail = await ws.loadPinPreview(id, {
-        asWebviewUri: (filePath) => activePanel.webview.asWebviewUri(vscode.Uri.file(filePath)).toString(),
-      });
-      const preview: PinPreviewVM = {
-        id,
-        title: detail.title,
-        ...(detail.by ? { by: detail.by } : {}),
-        done: detail.done,
-        tags: detail.tags,
-        body: pinDocPreview(detail.doc) || detail.title,
-        // t-321e9d — the raw doc travels alongside the flattened `body` fallback; pin-preview's App resolves
-        // it through the SAME `toEditorDoc` pipeline the Studio/editor uses (webview URIs via `attachments`)
-        // instead of rendering the flattened "[Image]"/"[Sketch]" text placeholders.
-        doc: detail.doc,
-        attachments: detail.attachments.map((att): PinPreviewAttachmentVM => {
-          if (att.kind === "image") {
-            return {
-              id: att.id,
-              kind: "image",
-              name: att.name,
-              available: att.available,
-              ...(att.available && att.uri ? { uri: att.uri } : {}),
-              detail: `${att.mediaType.replace(/^image\//, "").toUpperCase()} · ${Math.round(att.size / 1024)} KB`,
-            };
-          }
-          return {
-            id: att.id,
-            kind: "excalidraw",
-            name: att.name,
-            available: att.previewAvailable,
-            ...(att.previewAvailable && att.previewUri ? { previewUri: att.previewUri } : {}),
-            detail: `Sketch · ${att.elementCount} element${att.elementCount === 1 ? "" : "s"} · ${Math.round(att.previewSize / 1024)} KB preview`,
-          };
-        }),
-      };
-      const uri = (f: string): string => activePanel.webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
-      activePanel.webview.html = renderWebviewShell({
-        cspSource: activePanel.webview.cspSource,
-        title: `Pin Preview — ${id}`,
-        styles: [uri("codicon.css"), uri("design-system.css"), uri("pin-preview.css")],
-        bundle: uri("pin-preview.js"),
-        mode: "static",
-        imgBlob: true,
-        // spec 485 A2/A3 — pin-preview sets its own `body` baseline and centres a fixed column, so it composes
-        // page chrome over the shared one and says so here as well as in the manifest.
-        surface: PIN_PREVIEW_VIEW_TYPE,
-        extend: ["page-chrome"],
-        persistedState: { schemaVersion: 1, view: PIN_PREVIEW_VIEW_TYPE, wsHash: ws.wsHash, pinId: id } satisfies PinPreviewPanelState,
-      });
-      // preact-static: post the VM once the bundle signals ready.
-      activePanel.webview.onDidReceiveMessage((m: { type?: string } | undefined) => {
-        if (m?.type === READY) void activePanel.webview.postMessage(pinPreviewMessage(preview));
-      });
-    } catch (err) {
-      panel?.dispose();
-      notify(vscode.l10n.t("Could not preview pin: {0}", err instanceof Error ? err.message : String(err)), "error");
     }
   }
 

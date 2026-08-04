@@ -16,7 +16,10 @@ describe("CONTROL_SECTION_NAV (t-6e2952)", () => {
 
   it("marks exactly the standalone-app tiles, and only those (SDD 485)", () => {
     const standalone = CONTROL_SECTION_NAV.filter((t) => t.standalone).map((t) => t.id);
-    expect(standalone).toEqual(["mission", "tmux", "plugins"]);
+    // in LAUNCHER_ORDER, which is why `runtime` lands between `mission` and `tmux` rather than at the end:
+    // a migration changes a tile's destination and never its position (SDD 485 D4 is the fifth to prove
+    // it: `inbox` leads this list because its tile sits fourth in LAUNCHER_ORDER, exactly where it was).
+    expect(standalone).toEqual(CONTROL_SECTION_NAV.map((tile) => tile.id));
     // the flag and the section list are two statements of one fact; they must not disagree.
     for (const id of standalone) expect(COCKPIT_SECTION_ORDER).not.toContain(id);
   });

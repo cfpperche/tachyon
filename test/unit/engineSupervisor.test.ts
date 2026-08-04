@@ -34,6 +34,7 @@ import { workspaceVersionStateKey } from "../../src/workspace/operationalStateKe
 import { ENGINE_SHELL_PROTOCOL, type EngineBundleManifestV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
+import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -739,7 +740,21 @@ function hello(identity: EngineServiceIdentityV1, shellId: string): EngineShellH
 function spawnWorker(encodedOptions: string): ChildProcessWithoutNullStreams {
   const viteNode = path.join(process.cwd(), "node_modules/vite-node/vite-node.mjs");
   const worker = path.join(process.cwd(), "test/fixtures/engineSupervisorWorker.ts");
-  const child = spawn(process.execPath, [viteNode, worker, encodedOptions], { stdio: ["pipe", "pipe", "pipe"] });
+  // t-93ec7f: the daemon fixture is a new Tachyon machine. Host isolation (beforeAll) already
+  // redirects XDG/TMUX on process.env; strip every ambient TACHYON_* so a live fleet token never
+  // reaches the child, then reintroduce only the private tmux pointer the daemon needs.
+  const childEnv = isolatedDaemonChildEnv(process.env, {
+    ...(process.env.TMUX_TMPDIR
+      ? { TMUX_TMPDIR: process.env.TMUX_TMPDIR, TACHYON_ENGINE_TMUX_TMPDIR: process.env.TMUX_TMPDIR }
+      : {}),
+    ...(process.env.XDG_RUNTIME_DIR ? { XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR } : {}),
+  });
+  delete childEnv.TMUX;
+  assertNoFleetLeak(childEnv);
+  const child = spawn(process.execPath, [viteNode, worker, encodedOptions], {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: childEnv,
+  });
   children.push(child);
   return child;
 }

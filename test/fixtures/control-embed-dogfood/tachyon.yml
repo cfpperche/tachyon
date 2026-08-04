@@ -5,11 +5,6 @@
 # custodied by the host (VS Code secret storage), which a checked-in fixture cannot ship. Create
 # the agents this scenario needs with "Tachyon: Agent Studio" after opening the Dev Host.
 # Create three grok agents (grok / solo / idle), autostart off.
+# t-f67185 — no shell placeholder: empty roster is valid until Studio creates the agents.
 settings:
   maxAgents: 8
-
-terminals:
-  # Placeholder so the roster is non-empty before any agent exists. Not part of the scenario.
-  shell:
-    cmd: sh
-    autostart: false

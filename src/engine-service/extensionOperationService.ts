@@ -801,10 +801,16 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
   let configValid = !workspace.configFailure && !!workspace.config;
   let configFailure = workspace.configFailure ?? null;
   let configWarnings: string[] = [];
-  if (configPath && fileExists) {
-    const { errors, warnings } = workspace.parseTrustedConfigText(fs.readFileSync(configPath, "utf8"));
+  const refusedProfiles = Object.entries(workspace.refusedAgents())
+    .map(([name, reason]) => ({ name, reason }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  // A loader failure is authoritative, especially when the file exists but cannot be read. Re-reading
+  // here would either throw away that retained diagnostic or make the Doctor operation itself fail.
+  if (configPath && fileExists && !workspace.configFailure) {
+    const { config, errors, warnings, profileErrors } = workspace.parseTrustedConfigText(fs.readFileSync(configPath, "utf8"));
     configWarnings = [...warnings];
-    if (errors.length > 0) {
+    const onlyRefusedProfiles = errors.length > 0 && errors.length === profileErrors.length && config !== undefined;
+    if (errors.length > 0 && !onlyRefusedProfiles) {
       configValid = false;
       configFailure = { path: configPath, file: path.basename(configPath), errors: [...errors], at: new Date().toISOString() };
     } else {
@@ -828,6 +834,7 @@ async function doctorReport(workspace: Workspace): Promise<JsonValue> {
     configFileExists: fileExists,
     configValid,
     configWarnings,
+    refusedProfiles,
     lkg: workspace.readConfigLkg(),
     ledger: [...workspace.ledger.all()],
     liveSessions,

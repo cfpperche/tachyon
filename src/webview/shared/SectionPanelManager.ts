@@ -3,6 +3,7 @@ import { renderWebviewShell, type ShellExtensionPoint } from "./shell.js";
 import { panelIcon } from "./panelIcon.js";
 import { PanelWorkGate, panelVisibility } from "./panelWorkGate.js";
 import type { TrustedPanelState } from "./panelSerializer.js";
+import { sectionAppIconName } from "../webviewApps.js";
 import type { SectionAppCardinality, WebviewAppEntry } from "../webviewApps.js";
 import type { ControlWorkspaceScope } from "./ControlWorkspaceScope.js";
 
@@ -92,6 +93,19 @@ export interface SectionPanelSession<K extends string = string> {
   readonly key: string;
   /** is a human looking at this panel right now (`visible`, not `active` — see panelWorkGate.ts). */
   readonly visible: boolean;
+  /**
+   * Is this the panel the human is TYPING at — `vscode.WebviewPanel.active`.
+   *
+   * For DISAMBIGUATION only, never for work gating: two panels in two editor groups are both
+   * `visible` at once, so a command that has to pick one ("open the raw transcript") cannot use
+   * `visible` and stay honest — it picks by Map insertion order and silently acts on the wrong
+   * entity. Exactly one panel is `active`, or none is (focus is in the editor or a terminal), which
+   * is why a caller must still handle the zero case rather than fall back to guessing.
+   *
+   * Work gating stays on `visible` for the reason panelWorkGate.ts gives: a panel a human can SEE
+   * must be current, whether or not it holds focus.
+   */
+  readonly focused: boolean;
   /** Do `work` now if visible; otherwise journal `kind` and run NOTHING. Returns whether it ran. */
   run(kind: K, work: () => void): boolean;
   /**
@@ -129,7 +143,15 @@ export interface SectionAppConfig<K extends string = string> {
   /** stylesheet filenames under `dist/webview`, IN ORDER (codicon → design-system → the app's own). */
   styleFiles: readonly string[];
   title(target: SectionPanelTarget): string;
-  /** editor-tab icon, resolved via `media/icons/{light,dark}/<name>.svg`. */
+  /** Optional body class for a surface-wide theme mode (for example Activity's forced code theme). */
+  bodyClass?(target: SectionPanelTarget): string | undefined;
+  /**
+   * editor-tab icon, resolved via `media/icons/{light,dark}/<name>.svg`.
+   *
+   * t-icon — only for an app NO launcher tile opens. When the manifest row names a `section`, the icon
+   * comes from `controlSectionIcon(section)` and declaring it here is a startup error rather than a second
+   * opinion: a tab whose icon differs from the tile that opened it is the bug this refusal exists for.
+   */
   iconName?: string;
   /**
    * SDD 485 A2 — the shell extension points this app composes through, emitted as `data-shell-extends` and
@@ -329,6 +351,12 @@ export class SectionPanelManager<K extends string = string> {
     this.panels.get(this.keyFor(target))?.panel.dispose();
   }
 
+  /** A document-specific binding may change state inside an already-open panel without changing its key. */
+  post(target: SectionPanelTarget, message: unknown): boolean {
+    const entry = this.panels.get(this.keyFor(target));
+    return entry ? this.postEntry(entry, message) : false;
+  }
+
   dispose(): void {
     this.disposed = true;
     for (const entry of [...this.panels.values()]) entry.panel.dispose();
@@ -362,9 +390,11 @@ export class SectionPanelManager<K extends string = string> {
     );
     panel.title = title;
     panel.webview.options = { enableScripts: true, localResourceRoots };
-    if (config.iconName) panel.iconPath = panelIcon(this.extensionUri, config.iconName);
+    const iconName = sectionAppIconName(config.app, config.iconName);
+    if (iconName) panel.iconPath = panelIcon(this.extensionUri, iconName);
 
     const uri = (file: string): string => panel.webview.asWebviewUri(vscode.Uri.joinPath(root, file)).toString();
+    const bodyClass = config.bodyClass?.(target);
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title,
@@ -375,6 +405,7 @@ export class SectionPanelManager<K extends string = string> {
       module: true,
       mode: "live",
       surface: config.app.viewId,
+      ...(bodyClass ? { bodyClass } : {}),
       ...(config.extend?.length ? { extend: config.extend } : {}),
       ...(config.csp?.imgBlob ? { imgBlob: true } : {}),
       ...(config.csp?.connectSrc ? { connectSrc: true } : {}),
@@ -404,17 +435,9 @@ export class SectionPanelManager<K extends string = string> {
       target,
       key,
       get visible() { return entry.gate.visible; },
+      get focused() { return panel.active; },
       run: (kind, work) => entry.gate.run(kind, work),
-      post: (message) => {
-        if (!entry.gate.visible) {
-          // Not a lost message: a post nobody can see is work, and the panel that missed it rebuilds from
-          // scratch on reveal rather than coming back with a hole in it.
-          entry.gate.markSourceResync();
-          return false;
-        }
-        void panel.webview.postMessage(message);
-        return true;
-      },
+      post: (message) => this.postEntry(entry, message),
       asWebviewUri: (fsPath) => panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
       setTitle: (next) => { panel.title = next; },
       close: () => panel.dispose(),
@@ -436,5 +459,14 @@ export class SectionPanelManager<K extends string = string> {
       entry.binding.dispose?.();
       if (this.panels.get(key) === entry) this.panels.delete(key);
     });
+  }
+
+  private postEntry(entry: PanelEntry<K>, message: unknown): boolean {
+    if (!entry.gate.visible) {
+      entry.gate.markSourceResync();
+      return false;
+    }
+    void entry.panel.webview.postMessage(message);
+    return true;
   }
 }

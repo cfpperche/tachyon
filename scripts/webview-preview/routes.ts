@@ -14,21 +14,20 @@ import { fleetMessage } from "../../src/webview/sidebar/messages";
 import { pluginsMessage } from "../../src/webview/plugins/messages";
 import { activityMessage } from "../../src/webview/activity/messages";
 import { probesMessage } from "../../src/webview/probes/messages";
-import {
-  initMessage as cockpitInitMessage,
-  modelMessage as cockpitModelMessage,
-} from "../../src/webview/cockpit/messages";
-import { pinPreviewMessage } from "../../src/webview/pin-preview/messages";
+import { pinDocumentModeMessage, pinPreviewMessage } from "../../src/webview/pin-preview/messages";
 import { handoffMessage } from "../../src/webview/handoff/messages";
-import { approvalsMessage } from "../../src/webview/approval/messages";
-import { validationsMessage } from "../../src/webview/validations/messages";
 import { humanInboxItemMessage, humanInboxMessage } from "../../src/webview/human-inbox/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
+import { engineModelMessage } from "../../src/webview/engine/messages";
+import { worktreesModelMessage } from "../../src/webview/worktrees/messages";
+import { fleetModelMessage } from "../../src/webview/fleet/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
+import { executionGraphModelMessage } from "../../src/webview/execution-graph/messages";
+import { settingsModelMessage } from "../../src/webview/settings/messages";
+import { overviewModelMessage } from "../../src/webview/overview/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
-import { approvalFixtures } from "./fixtures/approval";
 import { pinStudioFixtures, pinStudioMakeMessage } from "./fixtures/pin-studio";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
@@ -37,19 +36,17 @@ import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspe
 import { initMessage as inspectorInitMessage, modelMessage as inspectorModelMessage } from "../../src/webview/inspector/messages";
 import {
   cockpitFixtures,
-  humanInboxFixtureVm,
-  humanInboxItemFixtureVm,
-  NAV_PENDING_TASK_ID,
+  executionGraphFixtures,
   runtimeConfigFixtureSnapshot,
+  runtimeConfigPreviewStrings,
   strings as cockpitStrings,
-  validationsFixtureVm,
 } from "./fixtures/cockpit";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
-import { taskStudioFixtures, taskStudioMakeMessage } from "./fixtures/task-studio";
 import { taskDetailFixtures } from "./fixtures/task-detail";
 import { missionControlFixtures } from "./fixtures/mission-control";
 import { snapshotMessage as missionControlSnapshotMessage } from "../../src/webview/mission-control/messages";
 import { runtimeOpsFixtures, type RuntimeOpsPreviewState } from "./fixtures/runtime-ops";
+import { humanInboxFixtures, type HumanInboxPreviewState } from "./fixtures/human-inbox";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
 import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixtures/agent-studio-shell";
@@ -82,6 +79,8 @@ export interface Route<VM = unknown> {
   /** set when the built bundle is an ESM module (esbuild code-splitting) rather than a classic script — the
    *  harness must inject it via `<script type="module">` or the browser rejects its `import` statements. */
   module?: boolean;
+  /** globals the production panel bootstraps before loading the app bundle. */
+  globals?: Record<string, unknown>;
   /**
    * t-32c872 — this surface IS the page (an SDD 485 standalone app that links `page-frame.css`), so the
    * harness must not interpose its own sized `#frame` box: `preview.ts` collapses it (`display: contents`)
@@ -110,179 +109,65 @@ export const ROUTES: Record<string, Route> = {
   },
   // t-6e2952 — the Control launcher has no route of its own: it is the "Control" TAB of the `sidebar`
   // route above (same bundle, same fixtures) — open ?view=sidebar and select the second tab.
-  // t-610705 (SDD 410 Phase C.2) — the standalone "activity" and "probes" routes previewed the
-  // retired Activity/Probes panels; both are Fleet subroutes now — use ?view=cockpit&fixture=
-  // agent-activity / agent-probes (same App.tsx components, same fixture VMs, via the cockpit
-  // route's activeRoute injection above).
-  // t-b5dcae — the standalone "control-inspector" route previewed the Engine/Bridge Control
-  // Inspector POC, which was dead code (ControlInspector.ts had zero importers). The real domain
-  // logic (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly,
-  // covered by the cockpit route's own fixtures below.
-  // Control visual monolith — Mission + Approvals + Plugins + Runtime Ops + tmux Inspector embeds.
-  cockpit: {
-    bundle: "/dist/webview/cockpit.js",
+  // SDD 485 D17 — Activity is standalone again. The same captured VMs now drive the shipped
+  // activity.js entry directly, with the exact stylesheet list ActivityPanel links.
+  activity: {
+    bundle: "/dist/webview/activity.js",
+    cssLinks: [
+      CODICON,
+      DESIGN_SYSTEM,
+      "/dist/webview/highlight.css",
+      "/dist/webview/katex.min.css",
+      "/dist/webview/mermaid-block.css",
+      "/dist/webview/activity.css",
+    ],
+    frame: { w: 880, h: 900 },
+    fixtures: activityFixtures as Record<string, Fixture>,
+    module: true,
+    globals: {
+      __mermaidSrc: "/dist/webview/mermaid.js",
+      __katexSrc: "/dist/webview/katex.js",
+      __katexCssUri: "/dist/webview/katex.min.css",
+      __codeThemeForced: "auto",
+    },
+    makeMessage: (vm) => activityMessage("preview", "agent", vm as never),
+  },
+  // SDD 485 D18 — both Probes identities use the same standalone bundle and model envelope.
+  probes: {
+    bundle: "/dist/webview/probes.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/probes.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: probesFixtures as Record<string, Fixture>,
+    module: true,
+    makeMessage: (vm) => probesMessage(vm as never),
+  },
+  "execution-graph": {
+    bundle: "/dist/webview/execution-graph.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/execution-graph.css"],
+    frame: { w: 880, h: 720 },
+    fixtures: executionGraphFixtures,
+    module: true,
+    globals: { __TACHYON_STRINGS__: cockpitStrings },
+    makeMessage: (vm) => executionGraphModelMessage(vm as never),
+  },
+  "pin-preview": {
+    bundle: "/dist/webview/pin-preview.js",
     cssLinks: [
       CODICON,
       DESIGN_SYSTEM,
       "/dist/webview/vscode-theme.css",
-      // SDD 485 C5 — no mission-control sheets: the Board is a standalone app with its own route below,
-      // and Control stopped linking them in the same change (cockpitCssParity asserts the two agree).
-      // SDD 485 D2 — and no plugins sheets, for the same reason and in the same change.
-      "/dist/webview/approval.css",
-      "/dist/webview/human-inbox.css",
-      "/dist/webview/validations.css",
-      "/dist/webview/runtime-ops.css",
-      "/dist/webview/mermaid-block.css",
-      "/dist/webview/activity.css",
-      "/dist/webview/probes.css",
-      "/dist/webview/handoff.css",
-      "/dist/webview/agent-studio-shell.tailwind.css",
-      "/dist/webview/task-studio.tailwind.css",
       "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
-      "/dist/webview/command-studio-shell.css",
-      "/dist/webview/terminal-studio-shell.css",
-      "/dist/webview/runbook-studio-shell.css",
-      "/dist/webview/schedule-studio-shell.css",
-      "/dist/webview/agent-studio-shell.css",
-      "/dist/webview/task-studio.css",
       "/dist/webview/pin-studio.css",
-      "/dist/webview/cockpit.css",
+      "/dist/webview/pin-preview.css",
     ],
-    frame: { w: 1100, h: 720 },
-    fixtures: cockpitFixtures as Record<string, Fixture>,
-    // SDD 410 Phase A — cockpit.js is now ESM with esbuild code-split chunks; the harness must load it as
-    // a module (classic <script> injection dies with "Cannot use import statement outside a module").
-    module: true,
-    makeMessage: (vm) => {
-      const model = vm as { section?: string };
-      const msgs: unknown[] = [cockpitInitMessage(cockpitStrings), cockpitModelMessage(vm as never)];
-      // t-ac79a7 — the nav-feedback fixture: push the SAME `routePending` envelope the live host
-      // posts from navigate(), and deliberately never the matching `routeReady`, so the surface
-      // stays in the pending bracket for as long as the screenshot needs. The client's own timers
-      // then produce "slow" and "stalled" — the states are the real client's, not the harness's.
-      // Identified by reference against the fixture entry itself: this fixture's model is an
-      // ordinary Board (that IS the state being depicted — the origin screen, still on screen while
-      // the destination loads), so there is no marker inside it to key off, and inventing one would
-      // have meant a fixture that no longer looks like what the client really holds.
-      if (vm === cockpitFixtures["nav-pending"]?.vm) {
-        msgs.push({ type: "routePending", routeKey: `task-detail:b349073a:${NAV_PENDING_TASK_ID}` });
-      }
-      // Push the same host envelopes the live Control panel uses for embedded tabs.
-      // SDD 485 C5 — no `section === "mission"` arm: the Board has its own route in this table now, for
-      // the same reason C4's task detail does. `nav-pending` still carries `section: "mission"` — that
-      // fixture depicts CONTROL waiting on a navigation, and its section is only what the model happened
-      // to hold; nothing renders a board here.
-      if (model.section === "validations") {
-        msgs.push(validationsMessage(validationsFixtureVm));
-      } else if (model.section === "approvals") {
-        const approval = approvalFixtures.pending?.vm;
-        if (approval) msgs.push(approvalsMessage(approval));
-      } else if (model.section === "inbox") {
-        // t-d16698 — the Inbox list. The item subroute rides on top of this same section push below,
-        // exactly like task-detail rides on Mission's.
-        msgs.push(humanInboxMessage(humanInboxFixtureVm));
-      } else if (model.section === "runtime") {
-        const runtime = runtimeOpsFixtures.default?.vm as RuntimeOpsPreviewState | undefined;
-        if (runtime) {
-          msgs.push(
-            runtime.state === "loading"
-              ? runtimeOpsLoadingMessage()
-              : runtimeOpsSnapshotMessage(runtime.snapshot),
-          );
-        }
-      } else if (model.section === "runtime-config") {
-        msgs.push(runtimeConfigSnapshotMessage(runtimeConfigFixtureSnapshot));
-      }
-      // SDD 485 D2 — no `section === "plugins"` arm: Plugins has its own route in this table now, for the
-      // same reason C4's task detail and C5's Board do. The identity-matching this arm used to do (four
-      // cockpit fixtures sharing one section, disambiguated by object identity) is gone with it — the
-      // plugins route names its fixtures directly, which is what a route of one's own buys.
-      // t-610705 (Phase C.1/C.2) — a subroute rides alongside its parent section's push (the Fleet
-      // subroutes below all nav to a section with no embed push of its own for THEM, so this just adds
-      // the subroute's own content on top).
-      // SDD 485 C4 — the `task-detail` arm is GONE with the subroute: the task detail has its own route
-      // in this table now (`?view=task-detail`), rendering the real standalone bundle rather than the
-      // same component embedded in Control. `nav-pending` still names a `task-detail:` routeKey below —
-      // that fixture depicts CONTROL waiting on a navigation, and the routeKey is the wire string it
-      // waits on, not a screen this route renders.
-      const activeRoute = (model as { activeRoute?: { kind?: string; wsHash?: string; agent?: string } }).activeRoute;
-      if (activeRoute?.kind === "agent-activity" && activeRoute.wsHash && activeRoute.agent) {
-        const feed = activityFixtures.default?.vm;
-        if (feed) msgs.push(activityMessage(activeRoute.wsHash, activeRoute.agent, feed));
-      } else if (activeRoute?.kind === "project-handoff") {
-        // t-ace77f — Handoff moved from a section push to a detail route: same fixture VM, same
-        // envelope, now keyed off the route instead of the tab.
-        const handoff = handoffFixtures.default?.vm;
-        if (handoff) msgs.push(handoffMessage(handoff));
-      } else if (activeRoute?.kind === "inbox-item") {
-        // t-d16698 — where every Inbox doorbell's "Review" is supposed to land: ONE item, opened.
-        msgs.push(humanInboxItemMessage(humanInboxItemFixtureVm));
-      } else if (activeRoute?.kind === "agent-probes" || activeRoute?.kind === "workspace-probes") {
-        const probes = probesFixtures.default?.vm;
-        if (probes) msgs.push(probesMessage(probes));
-      } else if ((activeRoute?.kind === "studio-new" || activeRoute?.kind === "studio-edit") && (activeRoute as { studio?: string }).studio) {
-        // t-610705 (Phase D, D0/D1a) — a studio route: reuses the SAME fixture VMs + envelope shape
-        // each (now-retired-standalone) <studio>-studio-shell route used, pushed unconditionally
-        // rather than gated on a real "ready" mount handshake (this static harness has no live host
-        // to answer one — the client processes whatever arrives regardless of handshake state).
-        // SDD 471 — entityId selects which agent-shell fixture the studio route renders, so the
-        // Claude bypass-authorization states are reachable the same way canonical-reviewer is.
-        const agentFixtureByEntity: Record<string, string> = {
-          "canonical-reviewer": "canonical-disabled",
-          "canonical-claude-bypass-off": "canonical-claude-bypass-off",
-          "canonical-claude-bypass-on": "canonical-claude-bypass-on",
-          "canonical-codex-danger-off": "canonical-codex-danger-off",
-          "canonical-codex-danger-on": "canonical-codex-danger-on",
-          // t-e722ce — the forget plan panel, both shapes, addressable without driving a click.
-          "canonical-forget-plan": "forget-plan",
-          "canonical-forget-plan-blocked": "forget-plan-blocked",
-        };
-        const entityId = (activeRoute as { entityId?: string }).entityId ?? "";
-        const key = (activeRoute as { studio?: string }).studio === "agent" && agentFixtureByEntity[entityId]
-          ? agentFixtureByEntity[entityId]
-          : activeRoute.kind === "studio-edit" ? "dense-edit" : "new";
-        const byStudio: Record<string, { fixtures: Record<string, Fixture>; makeMessage: (vm: unknown) => unknown }> = {
-          command: { fixtures: commandStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => commandStudioShellMakeMessage(vm as never) },
-          terminal: { fixtures: terminalStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never) },
-          runbook: { fixtures: runbookStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never) },
-          schedule: { fixtures: scheduleStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never) },
-          agent: { fixtures: agentStudioShellFixtures as Record<string, Fixture>, makeMessage: (vm) => agentStudioShellMakeMessage(vm as never) },
-          // t-610705 (Phase D, D2) — task's fixtures module predates the "-shell" naming convention
-          // (it's task-studio/, not task-studio-shell/) and was written for the now-retired standalone
-          // "task-studio" preview route below — reused as-is here rather than renamed, same "dense-edit"
-          // key every other studio's fixtures module provides.
-          task: { fixtures: taskStudioFixtures as Record<string, Fixture>, makeMessage: (vm) => taskStudioMakeMessage(vm as never) },
-          // t-610705 (Phase D, D3) — same "-shell" naming exception as task above (pin-studio/, not
-          // pin-studio-shell/) — reused as-is from the now-retired standalone "pin-studio" preview
-          // route below.
-          pin: { fixtures: pinStudioFixtures as Record<string, Fixture>, makeMessage: (vm) => pinStudioMakeMessage(vm as never) },
-        };
-        const entry = byStudio[(activeRoute as { studio: string }).studio];
-        const studio = entry?.fixtures[key]?.vm;
-        if (studio) {
-          // t-610705 (Phase D, D2) — task's makeMessage (unlike the other 5 studio-shell modules'
-          // single-object return) returns unknown[] (its "conflict" fixture needs a second, distinct
-          // error envelope alongside "load" — see fixtures/task-studio.ts) — spread rather than push
-          // the array itself as one opaque element.
-          const result = entry.makeMessage(studio);
-          if (Array.isArray(result)) msgs.push(...result);
-          else msgs.push(result);
-        }
-      }
-      return msgs;
-    },
-  },
-  "pin-preview": {
-    bundle: "/dist/webview/pin-preview.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/pin-preview.css"],
     frame: { w: 880, h: 700 },
-    fixtures: pinPreviewFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => pinPreviewMessage(vm as never),
+    fixtures: { ...pinPreviewFixtures, edit: pinStudioFixtures.default } as Record<string, Fixture>,
+    module: true,
+    makeMessage: (vm) => "entity" in (vm as object)
+      ? [pinDocumentModeMessage("edit"), ...pinStudioMakeMessage(vm as never)]
+      : pinPreviewMessage(vm as never),
   },
-  // t-610705 (SDD 410 Phase C.3) — the standalone "handoff" route previewed the retired Project
-  // Handoff panel; Handoff is a cockpit-only section now — use ?view=cockpit&fixture=handoff (same
-  // App.tsx, same fixture VM, via the cockpit route's section injection above).
   // t-610705 (SDD 410 Phase A/B pilot, found + closed in the Phase E audit, 2026-07-22) — the
   // standalone "approval" route previewed the retired Approvals panel; Approvals is a cockpit-only
   // section now — use ?view=cockpit&fixture=approvals (same App.tsx, same fixture VM, via the
@@ -290,9 +175,6 @@ export const ROUTES: Record<string, Route> = {
   // t-610705 (SDD 410 Phase B #6) — the standalone "mission-control" route previewed the retired
   // Board panel; the Board is a cockpit-only section now — use ?view=cockpit&fixture=mission
   // (same App.tsx, same fixture VM via the cockpit route's board injection below).
-  // t-ed3067 — the standalone "runtime-ops" route previewed RuntimeOpsView.ts, retired as dead code
-  // (never registered in production). Runtime Ops is a cockpit-only section now; use
-  // ?view=cockpit&fixture=runtime for its visual QA — same App.tsx component either way.
   // t-610705 (SDD 410 Phase D, D2) — the standalone "task-studio" route previewed the retired
   // TaskStudioPanel.ts webview; Task Studio is a cockpit-only studio route now — use
   // ?view=cockpit&fixture=studio-task-edit (same App.tsx, same fixture VMs, via the cockpit route's
@@ -301,10 +183,6 @@ export const ROUTES: Record<string, Route> = {
   // Detail panel; Task Detail is a cockpit-only subroute now — use
   // ?view=cockpit&fixture=task-detail (same App.tsx, same fixture VM, via the cockpit route's
   // activeRoute injection above).
-  // t-610705 (SDD 410 Phase D, D3) — the standalone "pin-studio" route previewed the retired
-  // PinStudioPanel.ts webview; Pin Studio is a cockpit-only studio route now — use
-  // ?view=cockpit&fixture=studio-pin-edit (same App.tsx, same fixture VMs, via the cockpit route's
-  // byStudio fixture injection above).
   // spec 350 T4 — Pipeline Studio (Fake 1): the studio-shell's Phase 1 proof surface. Dev-flag-hidden (no
   // command contribution) — reachable only through this route and its own host-side tests.
   "pipeline-studio": {
@@ -323,18 +201,88 @@ export const ROUTES: Record<string, Route> = {
     fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
   },
+  // SDD 485 D13 — the five real studio documents are standalone routes again. The component and
+  // fixture payload are unchanged; only the host moved out of Control.
+  "agent-studio-shell": {
+    bundle: "/dist/webview/agent-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/agent-studio-shell.tailwind.css", "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-shell.css"],
+    frame: { w: 900, h: 900 },
+    fixtures: agentStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => agentStudioShellMakeMessage(vm as never),
+  },
+  "terminal-studio-shell": {
+    bundle: "/dist/webview/terminal-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/terminal-studio-shell.css"],
+    frame: { w: 900, h: 760 },
+    fixtures: terminalStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never),
+  },
+  "command-studio-shell": {
+    bundle: "/dist/webview/command-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/command-studio-shell.css"],
+    frame: { w: 760, h: 640 },
+    fixtures: commandStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => commandStudioShellMakeMessage(vm as never),
+  },
+  "runbook-studio-shell": {
+    bundle: "/dist/webview/runbook-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/runbook-studio-shell.css"],
+    frame: { w: 760, h: 760 },
+    fixtures: runbookStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never),
+  },
+  "schedule-studio-shell": {
+    bundle: "/dist/webview/schedule-studio-shell.js",
+    module: true,
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/schedule-studio-shell.css"],
+    frame: { w: 760, h: 760 },
+    fixtures: scheduleStudioShellFixtures as Record<string, Fixture>,
+    makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never),
+  },
   // SDD 485 C4 — Task Detail is a standalone app again, so it gets its own route back: this renders the
   // REAL shipped `task-detail.js` bundle with the exact stylesheet list `TaskDetailPanel.ts` links, rather
   // than the same component embedded inside Control (which is what `?view=cockpit&fixture=task-detail`
   // used to preview). 880 is this repo's wide measurement width and the reading column's own max-width.
   "task-detail": {
     bundle: "/dist/webview/task-detail.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css"],
+    cssLinks: [
+      CODICON, DESIGN_SYSTEM, "/dist/webview/vscode-theme.css", "/dist/webview/task-studio.tailwind.css",
+      "/dist/webview/rich-doc.css", "/dist/webview/studio-frame.css", "/dist/webview/task-studio.css",
+      "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css",
+    ],
     frame: { w: 880, h: 900 },
     fixtures: taskDetailFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
     module: true,
-    makeMessage: (vm) => taskMessage(vm as never),
+    globals: {
+      EXCALIDRAW_SCRIPT_URI: "/dist/webview/excalidraw.js",
+      EXCALIDRAW_CSS_URI: "/dist/webview/excalidraw.css",
+      EXCALIDRAW_ASSET_PATH: "/dist/webview/",
+    },
+    makeMessage: (vm) => {
+      const detail = vm as { previewMode?: string; task?: { id: string; title: string; body?: string; kind?: string; priority?: number; assignee?: string; artifact_refs?: unknown[]; updatedAt: string }; wsHash: string; deps?: Array<{ id: string; title?: string; missing: boolean }> };
+      if (detail.previewMode !== "edit" || !detail.task) return taskMessage(vm as never);
+      return [
+        taskMessage(vm as never),
+        { type: "taskDocumentMode", mode: "edit" },
+        {
+          type: "load", studioProtocolVersion: 1,
+          entity: {
+            taskId: detail.task.id, workspaceHash: detail.wsHash, folder: "Taskedit", title: detail.task.title,
+            kind: detail.task.kind, priority: detail.task.priority, assignee: detail.task.assignee,
+            deps: detail.deps ?? [], artifact_refs: detail.task.artifact_refs ?? [],
+            doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: detail.task.body ?? "" }] }] },
+            attachments: [], bodyBaseline: detail.task.body ?? "", anchor: "load",
+            expectUpdatedAt: detail.task.updatedAt, knownAgents: ["claude", "codex"],
+          },
+          concurrency: { kind: "cas", expected: detail.task.updatedAt },
+        },
+      ];
+    },
   },
   // SDD 485 C5 — the Board, standalone again, so it gets its own route back for the same reason the task
   // detail did one commit earlier: this renders the REAL shipped `mission-control.js` with the exact
@@ -396,6 +344,116 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => pluginsMessage(vm as never),
   },
+  // SDD 485 D3 — Runtime Ops, standalone again, so it gets its own route back for the same reason the
+  // task detail, the Board, the inspector and Plugins did: this renders the REAL shipped `runtime-ops.js`
+  // with the exact stylesheet list `RuntimeOpsPanel.ts` links, rather than the same component embedded
+  // inside Control.
+  //
+  // **Restoring this key does more than serve a screenshot.** `?view=runtime-ops` was retired by t-ed3067
+  // and `test/browser/runtimeOpsView.test.ts` has been knowingly RED ever since, held open by an in-file
+  // `preview-route-check: allow` waiver (t-2a49b2) whose own text says it dies the day the route returns.
+  // It returns here, with all seventeen fixtures addressable again — including the fifteen
+  // `?view=cockpit&fixture=runtime` never could reach, which is the reason that suite was parked rather
+  // than repointed.
+  //
+  // No `pageFrame`: Runtime Ops is a page-scrolling document (like the task detail, the inspector and
+  // Plugins), links no `page-frame.css`, and anchors `#root` to nothing — so the harness's own sized
+  // `#frame` is the right model of what a real webview gives it. The height is generous because the
+  // provider-capacity block sits above a runtime table, and `runtime-ops.css`'s own
+  // `@container (max-width: 720px)` / `@media (max-width: 760px)` blocks are what make the 360 pass worth
+  // taking (the media query needs the BROWSER viewport set, not only `?width=` — t-b24282).
+  /**
+   * SDD 485 D4 — the Human Inbox app. `list` and `item` are the app's TWO surfaces, and the route renders
+   * whichever the fixture names, exactly as the real host does: this client picks its screen from the
+   * message type the host posted, never from a local mode it flips itself.
+   */
+  "human-inbox": {
+    bundle: "/dist/webview/human-inbox.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/human-inbox.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: humanInboxFixtures as Record<string, Fixture>,
+    // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
+    module: true,
+    makeMessage: (vm) => {
+      const state = vm as HumanInboxPreviewState;
+      return state.state === "item" ? humanInboxItemMessage(state.vm) : humanInboxMessage(state.vm);
+    },
+  },
+  "runtime-ops": {
+    bundle: "/dist/webview/runtime-ops.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/runtime-ops.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: runtimeOpsFixtures as Record<string, Fixture>,
+    // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
+    module: true,
+    makeMessage: (vm) => {
+      const state = vm as RuntimeOpsPreviewState;
+      return state.state === "loading" ? runtimeOpsLoadingMessage() : runtimeOpsSnapshotMessage(state.snapshot);
+    },
+  },
+  "runtime-config": {
+    bundle: "/dist/webview/runtime-config.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/runtime-config.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: { provenance: "unit-fixture-derived", vm: runtimeConfigFixtureSnapshot } },
+    module: true,
+    globals: { __TACHYON_STRINGS__: runtimeConfigPreviewStrings },
+    makeMessage: (vm) => runtimeConfigSnapshotMessage(vm as never),
+  },
+  engine: {
+    bundle: "/dist/webview/engine.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/engine-workspace.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.engine },
+    module: true,
+    makeMessage: (vm) => engineModelMessage(vm as never),
+  },
+  // SDD 485 D6 — the fixture moved with the renderer: the same classified model now reaches the real
+  // standalone Worktrees bundle, with both shared sheets its production panel declares.
+  worktrees: {
+    bundle: "/dist/webview/worktrees.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/worktrees.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.worktrees },
+    module: true,
+    makeMessage: (vm) => worktreesModelMessage(vm as never),
+  },
+  // SDD 485 D7 — Fleet keeps the same fixture, now delivered through its own app envelope. Both
+  // linked shared sheets are production parity: ck-card-list and ck-mono respectively.
+  fleet: {
+    bundle: "/dist/webview/fleet.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.fleet },
+    module: true,
+    makeMessage: (vm) => fleetModelMessage(vm as never),
+  },
+  settings: {
+    bundle: "/dist/webview/settings.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/settings.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.settings },
+    module: true,
+    globals: { __TACHYON_STRINGS__: cockpitStrings },
+    makeMessage: (vm) => settingsModelMessage(vm as never),
+  },
+  overview: {
+    bundle: "/dist/webview/overview.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/engine-workspace.css", "/dist/webview/overview.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.default },
+    module: true,
+    globals: { __TACHYON_STRINGS__: cockpitStrings },
+    makeMessage: (vm) => overviewModelMessage(vm as never),
+  },
+  handoff: {
+    bundle: "/dist/webview/handoff.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/mermaid-block.css", "/dist/webview/activity.css", "/dist/webview/handoff.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: handoffFixtures,
+    module: true,
+    makeMessage: (vm) => handoffMessage(vm as never),
+  },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
@@ -429,10 +487,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet", "control tab", "control launcher"] },
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
-  cockpit: {
-    title: "Control",
-    aliases: ["control", "cockpit", "sysadmin", "project control", "fleet control", "control plane"],
-  },
   "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
   approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },
@@ -445,6 +499,11 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab"] },
   inspector: { title: "tmux", aliases: ["tmux", "server inspector", "tmux server inspector", "sessions"] },
   plugins: { title: "Plugins", aliases: ["plugins", "plugin manager", "install plugin", "marketplace"] },
+  "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime", "quota", "provider capacity", "rate limit"] },
+  "human-inbox": { title: "Human Inbox", aliases: ["inbox", "human inbox", "waiting on you", "approvals queue"] },
+  engine: { title: "Engine", aliases: ["engine", "bridge", "control plane"] },
+  worktrees: { title: "Worktrees", aliases: ["worktrees", "managed worktrees", "checkout hygiene"] },
+  fleet: { title: "Fleet", aliases: ["fleet", "agents", "agent runtime"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },

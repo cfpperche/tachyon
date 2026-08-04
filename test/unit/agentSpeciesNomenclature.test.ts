@@ -47,7 +47,6 @@ const BOUNDARY = {
   "src/handoff/distill.ts": "HandoffDistillMode, the discriminant's type",
   "src/webview/handoff/messages.ts": "webview action carrying the discriminant",
   "src/webview/handoff/App.tsx": "<option value> IS the discriminant; its label already reads Temporary",
-  "src/webview/Cockpit.ts": "routes the discriminant + the note recording this boundary",
   // the sidebar row's `adhoc` capability flag, produced and consumed across the engine/shell wire
   "src/runtime-api/sidebarProjection.ts": "strict() wire schema field",
   "src/sidebar/types.ts": "the row VM that schema validates",
@@ -201,7 +200,6 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
       files: [
         "scripts/dogfood/adhoc-agent-boundary.ts",
         "scripts/dogfood/run.mjs",
-        "test/unit/agentRuntimeAdmission.test.ts",
         "test/unit/gatedCompletionMonitor.test.ts",
         "test/unit/loadPipeline.test.ts",
         "test/unit/runbooks.test.ts",
@@ -214,7 +212,6 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
         "test/unit/agentModel.test.ts",
         "test/unit/attention.test.ts",
         "test/unit/bridge.test.ts",
-        "test/unit/cockpitFleetActions.test.ts",
         "test/unit/pipelineDurability.test.ts",
       ],
     },

@@ -62,33 +62,39 @@ export type CockpitSectionId =
  *
  * SDD 485 D1 — `tmux` left the same way, and it is the second of ten. Phase D's whole shape is this one
  * edit: an id moves from here into the compatibility list, `WEBVIEW_APPS` gains a row, and the tile does
- * not move at all. D2 — `plugins`, the third, by exactly that edit and no other.
+ * not move at all. D2 — `plugins`, the third, by exactly that edit and no other. D3 — `runtime`
+ * (Runtime Ops), the fourth. D4 — `inbox` (the Human Inbox), the fifth, and the
+ * first whose departure also takes a SUBROUTE with it: `inbox-item` is rendered inside that app now, so
+ * both route kinds redirect (see `navigate()` in Cockpit.ts). D9 — `execution-graph`, the ninth:
+ * it remains decodable but Control no longer renders it. D10 — `settings`, the tenth, likewise remains
+ * decodable solely so old state and deep links can redirect to its standalone app.
  */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
-  "overview",
-  "engine",
-  "fleet",
-  "inbox",
-  "worktrees",
-  "execution-graph",
-  "runtime",
-  "runtime-config",
-  "settings",
 ];
 
 /**
  * All accepted section routes. Approvals and Validations remain valid compatibility/deep-link targets, but
- * the Human Inbox is their only top-level navigation entry. `mission` (SDD 485 C5), `tmux` (D1) and
- * `plugins` (D2) are here for a different reason: all three are apps now, and these entries are what let a
- * persisted or deep-linked `section:mission` / `section:tmux` / `section:plugins` still DECODE, so it can
- * be redirected to the app instead of falling back to Overview and losing which screen the human had.
+ * the Human Inbox is still their only top-level navigation entry — it is an APP now (SDD 485 D4) rather
+ * than a section, which changes where it opens and not what it aggregates. `mission` (C5), `tmux` (D1),
+ * `plugins` (D2), `runtime` (D3) and `inbox` (D4) are here for that reason: all five are apps, and these
+ * entries are what let a persisted or deep-linked `section:<id>` still DECODE, so it can be redirected to
+ * the app instead of falling back to Overview and losing which screen the human had.
  */
 export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   ...COCKPIT_SECTION_ORDER,
+  "overview",
   "approvals",
+  "engine",
+  "execution-graph",
+  "fleet",
+  "inbox",
   "mission",
   "plugins",
+  "runtime",
+  "runtime-config",
+  "settings",
   "tmux",
+  "worktrees",
   "validations",
 ];
 

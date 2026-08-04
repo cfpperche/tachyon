@@ -79,6 +79,12 @@ function run(): void {
   const frameW = widthParam && Number(widthParam) > 0 ? Number(widthParam) : route.frame.w;
   const frameH = heightParam && Number(heightParam) > 0 ? Number(heightParam) : route.frame.h;
   frameTo({ w: frameW, h: frameH }, route.pageFrame === true);
+  if (params.get("showWidth") === "1") {
+    const proof = document.createElement("output");
+    proof.textContent = `window.innerWidth = ${window.innerWidth}`;
+    proof.style.cssText = "position:fixed;right:8px;bottom:8px;z-index:99999;padding:4px 7px;background:#111;color:#fff;font:12px monospace;border:1px solid #888";
+    document.body.appendChild(proof);
+  }
   // Optional theme stand-ins; default remains Dark+ harness tokens.
   const requestedTheme = params.get("theme");
   const theme = requestedTheme === "light" || requestedTheme === "high-contrast" ? requestedTheme : "dark";
@@ -106,6 +112,7 @@ function run(): void {
     "/dist/webview/mermaid.js";
   (window as Window & { __katexSrc?: string }).__katexSrc = "/dist/webview/katex.js";
   (window as Window & { __katexCssUri?: string }).__katexCssUri = "/dist/webview/katex.min.css";
+  if (route.globals) Object.assign(window, route.globals);
 
   // deterministic injection: wait for the view's ready handshake, inject the fixture exactly once.
   let injected = false;

@@ -27,6 +27,7 @@ import type { ApprovalViewItem } from "../approval/viewModel.js";
 import type { ValidationViewItem } from "../validations/viewModel.js";
 import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview.js";
 import type { SavedAgentRemovalProposalReview } from "../../agents/savedAgentRemovalProposalReview.js";
+import type { ScheduleProposal } from "../../schedule/ProposalStore.js";
 
 export interface HumanInboxViewModel {
   folder: string;
@@ -60,6 +61,7 @@ export function buildHumanInboxViewModel(input: {
   /** t-afe120 — live Saved Agent removal proposals */
   savedAgentRemovals?: readonly SavedAgentRemovalProposalReview[];
   untrustedSavedAgentRemovals?: readonly { id: string; reason: string }[];
+  scheduleProposals?: readonly ScheduleProposal[];
   now?: string;
   /**
    * t-e4f662 — the workspace's configured staleness threshold, or absent for the product default.
@@ -79,6 +81,7 @@ export function buildHumanInboxViewModel(input: {
       ...(input.untrustedSavedAgentProposals ? { untrustedSavedAgentProposals: input.untrustedSavedAgentProposals } : {}),
       ...(input.savedAgentRemovals ? { savedAgentRemovals: input.savedAgentRemovals } : {}),
       ...(input.untrustedSavedAgentRemovals ? { untrustedSavedAgentRemovals: input.untrustedSavedAgentRemovals } : {}),
+      ...(input.scheduleProposals ? { scheduleProposals: input.scheduleProposals } : {}),
     },
     {
       ...(input.now ? { now: input.now } : {}),

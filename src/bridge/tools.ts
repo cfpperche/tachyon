@@ -458,8 +458,8 @@ export interface BridgeDeps {
   scheduler?: Scheduler;
   /** Pending agent-proposed schedules — enables propose_schedule. */
   proposals?: ProposalStore;
-  /** Fired after a proposal is created — wired to the sidebar refresh + a human toast. */
-  onScheduleProposed?: (name: string, by: string) => void;
+  /** Fired after a proposal is created — routed to the exact Human Inbox item. */
+  onScheduleProposed?: (proposal: { id: string; name: string; by: string }) => void;
   /** spec 214 — verify-gate handoff: the recorded result + freshly-computed staleness for an agent (undefined → no verify/worktree). Enables verify state in list_agents. */
   verifyInfo?: (agent: string) => Promise<VerifyHandoff | undefined>;
   /** spec 214 — run an agent's declared verify-gate in its worktree, returning the result. Enables verify_agent. */
@@ -1570,8 +1570,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "active with this agent as assignee in the same operation, so the brief you write and the work the agent " +
         "reads off the board are one fact instead of two that can disagree. A task this agent cannot hold (still in " +
         "inbox, closed, or assigned to someone else) is refused HERE, naming the reason, instead of launching an " +
-        "agent that discovers it a turn later. Triage stays a separate, human decision: an inbox task is never " +
-        "claimed by spawning at it. " +
+        "agent that discovers it a turn later. Triage stays a SEPARATE, DELIBERATE decision — not a human-only one: " +
+        "an inbox task is never claimed by spawning at it, and whoever triages leaves author and reason in the " +
+        "task journal (t-f33480). The old wording said \"human decision\" and nothing enforced it; a boundary that " +
+        "is neither imposed nor audited is a sentence, so the enforcement became the TRACE rather than the caller. " +
         "With parent set, the child's brief already teaches it to call notify_agent(to: \"<your name>\", summary: ...) when the " +
         "deliverable/done_when is met, so YOU get woken up — no need to tell it separately. " +
         "Subject to the maxAgents guardrail.",
@@ -5669,8 +5671,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const problem = validateProposedSchedule(schedule);
         if (problem) return fail(new Error(problem));
         const by = proposalAuthor(deps);
+        // t-d4f246 — NO capability gate here, and the absence is a decision rather than an omission.
+        //
+        // A gate on `grants.proposeSavedAgent` was written and removed: it would have denied this tool
+        // to every agent in the roster (no canonical profile grants it), and it would have made one flag
+        // mean two powers — which is the exact conflation `grants` was created narrow to prevent
+        // (t-5e1113: "joining the two would leave a reader unable to tell 'has the fetch MCP' from
+        // 'may create agents'"). Whether a schedule proposal deserves a gate OF ITS OWN is a policy
+        // question for the maintainer, tracked in t-e5ecec; until then this stays as it has always been.
+        //
+        // What holds today is the same thing that held before the Inbox landed: the proposal is INERT.
+        // It never fires until a human approves it, and approval is now a first-class Inbox decision
+        // with a doorbell rather than a row nobody was told about.
         const proposal = deps.proposals.create(name, schedule, by, reason);
-        deps.onScheduleProposed?.(name, by);
+        deps.onScheduleProposed?.({ id: proposal.id, name, by });
         return ok(JSON.stringify({ status: "pending human approval", id: proposal.id, name }));
       } catch (err) {
         return fail(err);

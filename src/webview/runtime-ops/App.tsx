@@ -39,7 +39,7 @@ export function App({
 }: AppProps) {
   if (!snapshot) {
     return (
-      <main class="runtime-ops" aria-busy="true">
+      <main class="runtime-ops ds-page" aria-busy="true">
         <PageChrome title="Runtime Ops" hint="Local runtime inventory and provider capacity." />
         <EmptyState kind="loading" message="Loading runtime inventory…" />
       </main>
@@ -47,7 +47,7 @@ export function App({
   }
   if (snapshot.error) {
     return (
-      <main class="runtime-ops">
+      <main class="runtime-ops ds-page">
         <PageChrome title="Runtime Ops" hint="Local runtime inventory and provider capacity." />
         <EmptyState
           kind="error"
@@ -58,7 +58,7 @@ export function App({
   }
   const providerCapacity = snapshot.schemaVersion === 2 ? snapshot.providerCapacity : [];
   return (
-    <main class="runtime-ops">
+    <main class="runtime-ops ds-page">
       <PageChrome title="Runtime Ops" hint="Local runtime inventory and provider capacity." />
       <section class="runtime-ops-summary" aria-label="Runtime summary">
         {SUMMARY.map(({ key, label }) => (

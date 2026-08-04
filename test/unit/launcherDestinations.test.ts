@@ -20,16 +20,23 @@ import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
  */
 describe("SDD 485 C8 — every launcher tile has a live destination", () => {
   const appSections = new Set(WEBVIEW_APPS.filter((a) => a.host === "section").map((a) => a.view));
-  /** `mission` (the Board) is the app whose bundle dir is `mission-control`; the manifest keys on the
-   *  bundle dir, the launcher on the section id, so the seam needs one explicit map rather than a
-   *  guessed transform. Phase D adds a line here per migration — deliberately, so the mapping is read
-   *  rather than inferred. */
-  const SECTION_TO_APP_VIEW: Record<string, string> = {
-    mission: "mission-control",
-    // SDD 485 D1 — the tmux tile's section id is `tmux`; its bundle directory has always been `inspector`
-    // (and stayed that way through the migration, because renaming a directory inside a cutover buys
-    // nothing). The second line in this map, and the second migration — exactly as this file predicted.
-    tmux: "inspector",
+  /**
+   * `mission` (the Board) is the app whose bundle dir is `mission-control`; the manifest keys on the
+   * bundle dir, the launcher on the section id, so the seam needs an explicit mapping rather than a
+   * guessed transform — two of the four migrated so far do not match, and no transform predicts which.
+   *
+   * t-icon — this map used to be WRITTEN HERE, one hand-added line per migration. It is now DERIVED: the
+   * manifest row declares the `section` its tile opens, because a second consumer appeared that needed the
+   * same fact (`sectionAppIconName`, resolving the editor-tab icon from the tile's). A fact two places
+   * need is a fact that must be declared once, and the test is the wrong place to declare it — a mapping
+   * only the test knows cannot be read by the product it describes.
+   */
+  const SECTION_TO_APP_VIEW: Record<string, string> = Object.fromEntries(
+    WEBVIEW_APPS.filter((a) => a.section !== undefined).map((a) => [a.section!, a.view]),
+  );
+  const COMPATIBILITY_VIEW: Record<string, string> = {
+    approvals: "human-inbox",
+    validations: "human-inbox",
   };
 
   it("each tile is rendered by Control or backed by a standalone app — never neither", () => {
@@ -66,7 +73,7 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
     const routed = [...open.matchAll(/resolved === "([a-z-]+)"/g)].map((m) => m[1]);
     expect(routed.length, "no section is routed to an app — either the branch shape changed or C5's wiring is gone").toBeGreaterThan(0);
 
-    const unbacked = routed.filter((id) => !appSections.has(SECTION_TO_APP_VIEW[id] ?? id));
+    const unbacked = routed.filter((id) => !appSections.has(COMPATIBILITY_VIEW[id] ?? SECTION_TO_APP_VIEW[id] ?? id));
     expect(unbacked, `tachyon.openControl routes these ids to an app, but WEBVIEW_APPS declares no such app: ${unbacked.join(", ")}`).toEqual([]);
 
     // and the other direction: an id moved to an app but never routed still opens Control, silently.

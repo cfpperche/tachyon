@@ -31,7 +31,7 @@ import {
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
-import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, projectScopedTranscriptWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
 import { removeDerivedAgentFiles } from "./derivedFile.js";
@@ -2763,6 +2763,15 @@ export class AgentManager {
       const footgun = opencodeIsolationFootgunWarning(def.cmd, { name, harness: !!asAgent(def)?.harness, isolatedWorktree });
       if (footgun) this.opts.notify?.(footgun, "warn");
     }
+    if (temporaryAgent) {
+      const projectScoped = projectScopedTranscriptWarning(temporaryAgent.cmd, {
+        name,
+        parented: !!parent,
+        harness: !!temporaryAgent.harness,
+        isolatedWorktree,
+      });
+      if (projectScoped) this.opts.notify?.(projectScoped, "warn");
+    }
     if (parent && temporaryAgent && !temporaryAgent.harness) {
       assertVerifiedTranscriptIsolation(temporaryAgent.cmd, { name, isolatedWorktree, parented: true });
     }
@@ -3116,7 +3125,11 @@ export class AgentManager {
     // t-eb4b30 — no second write. The launch row above already persisted this definition
     // (`defBlock`, with `cmd: originalCmd`), and `definitionOf` reads it from there.
     this.startedHere.add(name);
+    // A successful spawn settles the lineage for THIS instance. Replace the stopped instance's
+    // retained display lineage even when the new instance is deliberately top-level; otherwise a
+    // reused Saved name would inherit its predecessor's parent in memory.
     if (parent) this.lineage.set(name, parent);
+    else this.lineage.delete(name);
     if (delegator) this.delegators.set(name, delegator);
     this.opts.onSpawned?.(name, opts?.reveal === false ? "silent" : "reveal", { worktree, temporary });
     await this.attachPaneTranscript(session);
@@ -3559,7 +3572,6 @@ export class AgentManager {
     // (so it stays listed + resumable), dropping them only on an explicit Dismiss. The marker is
     // durable (ledger def.fork), so this holds after a window reload too.
     const persistent = this.opts.ledger?.get(name)?.def?.fork === true;
-    this.lineage.delete(name); // children of a killed parent are promoted at render time
     if (!persistent) {
       // Spec 211: a Temporary agent's ledger row must go, or it resurrects as a permanent stopped
       // entry on the next activation. Since t-eb4b30 the row IS the listing — there is no in-memory
@@ -3572,6 +3584,8 @@ export class AgentManager {
         // remain-on-exit clean-exit dead pane), so the durable log is unreachable — it dies with the row.
         // spec 247: the row+log pair is one named operation now, so this can no longer drift apart.
         this.removeEphemeralFootprint(name);
+        // This Temporary no longer has a roster row, so its lineage is an end-of-life footprint too.
+        this.lineage.delete(name);
       }
     }
     this.opts.revokeAgentToken?.(name); // spec 351 — the torn-down session's token is dead too
@@ -5318,7 +5332,6 @@ export class AgentManager {
         const name = agentFromSession(this.opts.wsHash, session);
         if (name === null) return;
         await this.detachPaneTranscript(session);
-        this.lineage.delete(name);
         // t-eb4b30 — spec 211 applies to the SWEEP too, and it did not before.
         //
         // This used to delete the in-memory map entry and leave the ledger row, so the name dropped
@@ -5336,6 +5349,7 @@ export class AgentManager {
         // repeated here or the invariant holds everywhere except the one door that stops everything.
         if (this.opts.ledger?.get(name)?.def?.fork !== true && this.isTemporary(name) && !this.ownsWorktree(name)) {
           this.removeEphemeralFootprint(name);
+          this.lineage.delete(name);
         }
         this.opts.onKilled?.(name);
         killedAgents.push(name);

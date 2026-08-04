@@ -4,6 +4,37 @@ _Created 2026-07-18._
 
 **Status:** shipped
 
+**Superseded on its app-count decision by [SDD 485](../485-standalone-section-apps/spec.md)
+(2026-08-04).** What 485 reversed is narrow, and worth stating precisely so a reader does not throw
+out more than was overturned: **"two Preact apps only"** is dead. Every Control section became a
+standalone app that opens as its own editor tab, and `Cockpit.ts` — the single editor host this spec
+built — is gone.
+
+What SURVIVES, because 485 kept it rather than inherited it:
+
+- **The sidebar is still the other app**, and still not absorbed. That half of "two apps" was never
+  the contested half.
+- **`WEBVIEW_SURFACES` as the manifest** (spec 279 + this spec's `editorHome`) is not only intact,
+  it carries more: 485 added `posture` (`conform`/`extend`/`replace`), so a surface must now DECLARE
+  its relationship to the shared shell and an undeclared departure fails the build.
+- **The CSS co-load pattern and its parity guards** kept working through all twenty migrations and
+  decided several of them.
+
+**Why it was reversed.** One runtime was the MECHANISM this spec chose for one enforcement problem:
+a shared kit cannot make peer apps consistent. 485's finding is that the mechanism and the goal are
+separable — conformance can be enforced *mechanically* (a declared posture plus tests that fail the
+build) without a single host, and the single host was paying a product price the enforcement never
+required: one panel means one screen at a time, so a task detail could not sit beside the terminal
+running it, and two projects could not show two boards.
+
+**The cost this spec's own closure could not have predicted**, and 485's most transferable finding:
+the audit above ("cross-checked `plan.md`'s full scope against the live `surfaces.ts` manifest and
+found zero gaps") was correct about what surfaces DECLARE and blind to what Control RENDERED. Four
+surfaces — activity, probes, project-handoff and a pin-studio route — had no launcher tile, so no
+inventory built from the manifest ever listed them, and 485 discovered them only by reading the
+`lazy()` calls out of Control's client. An inventory of declarations cannot see renderers. 485 turned
+that into a test rather than a paragraph.
+
 **Closure:** 2026-07-24 — Phases B–E complete (`tasks.md`): foundation guard extends `WEBVIEW_SURFACES`
 (`editorHome` field) rather than a parallel manifest; every Phase B/C/D surface (Approvals, Runtime
 Ops, Validations, Plugins, tmux inspector, Board, task detail/handoff/probes as subroutes, 7

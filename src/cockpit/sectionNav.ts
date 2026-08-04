@@ -66,7 +66,7 @@ const LAUNCHER_ORDER: readonly CockpitSectionId[] = [
 ];
 
 /** the ids whose tile opens a standalone app instead of navigating Control (SDD 485). */
-const STANDALONE_APPS = new Set<CockpitSectionId>(["mission", "tmux", "plugins"]);
+const STANDALONE_APPS = new Set<CockpitSectionId>(LAUNCHER_ORDER);
 
 /** Top-level launcher entries in product order — the launcher grid's sole catalog. */
 export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.map((id) => {
@@ -77,6 +77,25 @@ export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.
   }
   return { id, ...meta, ...(STANDALONE_APPS.has(id) ? { standalone: true as const } : {}) };
 });
+
+/**
+ * The codicon a section is drawn with, wherever it is drawn.
+ *
+ * t-icon — the editor TAB of a standalone section app is the second place a section wears an icon, and
+ * until now each app declared its own `iconName` beside the launcher's. Two declarations of one fact drift
+ * by default: `mission` was shipping the launcher's `checklist` glyph under the name `tasklist`, and
+ * `runtime` declared `graph` against an asset that did not exist — so the Runtime Ops tab had NO icon at
+ * all, because `panelIcon` builds a Uri and a missing file is a silent fallback to VS Code's generic one.
+ *
+ * `SectionPanelManager` resolves through here for any app whose manifest row names a `section`, so the two
+ * surfaces cannot disagree: there is one name, and changing it changes both.
+ */
+export function controlSectionIcon(id: CockpitSectionId): string {
+  const meta = NAV_BY_ID.get(id);
+  // Every caller passes a literal from the manifest, so a miss is a typo at startup, not a runtime branch.
+  if (!meta) throw new Error(`controlSectionIcon: no launcher metadata for section '${id}'`);
+  return meta.icon;
+}
 
 /** Every section Control renders must have a tile — a new section without one is unreachable. */
 for (const id of COCKPIT_SECTION_ORDER) {

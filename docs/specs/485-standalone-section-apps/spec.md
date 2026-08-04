@@ -2,7 +2,42 @@
 
 _Created 2026-08-02._
 
-**Status:** in-progress
+**Status:** shipped-partial
+
+**Closure:** 2026-08-04 — Control is gone. Every section it rendered is a standalone app that opens
+as its own editor tab, `Cockpit.ts` / `cockpit/main.tsx` / `cockpitSingleton.ts` no longer exist, and
+`test/unit/controlRendererRatchet.test.ts` became a resurrection guard so the host cannot return
+through another door. Phases A, B, C and E complete; D delivered twenty migrations (D1–D20). Gate on
+delivery: 682 files / 7639 unit tests, 116 browser tests.
+
+`shipped-partial` rather than `shipped`, and the two gaps are named rather than rounded off:
+
+1. **"One broken app does not take the others" is measured FALSE.** E1 deleted
+   `errorBoundary.test.ts` along with Control; restoring it turned the criterion from an assertion
+   into a measurement, and 12 of 29 webview mounts carry no boundary — seven of them real product
+   surfaces. Ratcheted in that test, owned by t-cd01bb.
+2. **Reload restore was never exercised at this app count.** The headless Dev Host harness dies on
+   `Developer: Reload Window` (t-5fc17d), so it needs a human (D21).
+
+The **Phase C CHECKPOINT** was never struck; it was insurance against side-by-side not being what the
+use wanted, and the use answered by continuing.
+
+**What this cost, and what it taught.** The enforcement mechanism the spec proposed — declare a
+posture, and let a test fail the build — worked, and it kept working through twenty migrations that
+each moved a live surface. The recurring finding is narrower and more transferable: **an inventory of
+what a surface DECLARES cannot see what it RENDERS.** It appeared three times in different costumes —
+the Phase A consumption check, the class guard's base-vs-descendant hole, and finally Phase E itself,
+which was planned believing the launcher's twelve tiles were the list of things Control drew. They
+were not: four surfaces had no tile and were found only by reading the `lazy()` calls out of the
+client. Each time, the fix was to stop writing the rule as prose and make the mechanism read the
+truth instead — which is also why the page pad, the panel line budget and the renderer inventory are
+tests today rather than instructions that had already failed two, two and one time respectively.
+
+The second lesson is about deletion. Three test files were nearly lost in E1 because each was named
+for the SITUATION that produced it rather than for what it protects, so all three looked disposable
+when the situation ended. `embedPagePad` held six live guards to retire one; `errorBoundary` held a
+shared component's contract; `studioCrossStudioResidue` held a fix the standalone Terminal Studio
+still depends on. Two were caught by review, the third by the agent that had deleted it.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -148,77 +183,83 @@ contract will be worked around instead of used._
 | **Extend** | shared shell, but composes its own regions/controls into it | declare what it extends; first-class, not an exception |
 | **Replace** | own shell | declared entry with a non-empty reason, reviewed as a decision |
 
-- [ ] **Scenario: an UNDECLARED departure fails the build**
+- [x] **Scenario: an UNDECLARED departure fails the build**
   - **Given** the conformance contract is in place
   - **When** a webview app mounts its own page chrome, or introduces its own chrome/pad/token values,
     without declaring `extend` or `replace`
   - **Then** a test fails and names the offending surface — the failure is mechanical, not a review
     comment
-- [ ] **Scenario: extending the shell is supported, not tolerated**
+- [x] **Scenario: extending the shell is supported, not tolerated**
   - **Given** a section that genuinely needs chrome the shared shell does not offer
   - **When** its author composes that chrome through the shell's declared extension points
   - **Then** it passes the contract with no exception entry, and the extension it uses is visible in
     the manifest
-- [ ] **Scenario: replacing the shell is possible and expensive on purpose**
+- [x] **Scenario: replacing the shell is possible and expensive on purpose**
   - **Given** a surface whose needs the shell cannot serve even by extension
   - **When** its author declares `replace` with a reason
   - **Then** the build passes, the reason is recorded next to the surface, and an empty or missing
     reason fails
-- [ ] The shell offers real extension points, evidenced by at least one section using `extend`
+- [x] The shell offers real extension points, evidenced by at least one section using `extend`
       rather than every section landing on `conform` — a shell nobody can extend is a shell people
       will replace
-- [ ] The conformance contract covers **every** editor webview surface, not only the ones migrated by
+- [x] The conformance contract covers **every** editor webview surface, not only the ones migrated by
       this spec — declared through the existing `WEBVIEW_SURFACES` manifest (spec 279) rather than a
       parallel inventory
-- [ ] 410's standing exceptions (sidebar, pin-preview, dev-only spec-350 fakes, plugin surfaces)
+- [x] 410's standing exceptions (sidebar, pin-preview, dev-only spec-350 fakes, plugin surfaces)
       carry forward as explicit entries or are re-justified; none survives implicitly
 
-- [ ] **Scenario: a hidden app stops working, not merely stops mattering**
+- [x] **Scenario: a hidden app stops working, not merely stops mattering**
   - **Given** several apps are open and one is visible
   - **When** a `views-changed` event is emitted
   - **Then** the hidden apps run no refresh, no collection, no subscriber callback and post no model
   - _Not "a hidden app costs nothing" — `retainContextWhenHidden: true` keeps an iframe and its
     memory, and codex was right to call the absolute claim false. What must go to zero is the WORK._
-- [ ] **Scenario: a revealed app is correct, not stale**
+- [x] **Scenario: a revealed app is correct, not stale**
   - **Given** an app was hidden while the workspace changed
   - **When** the human brings its tab forward
   - **Then** it shows current state — caught up by delta from the event journal where the window
     covers it, by full resync where it does not, and never by showing stale data
 
-- [ ] **Scenario: the motivating capability**
+- [x] **Scenario: the motivating capability**
   - **Given** the migration has shipped
   - **When** the human opens the Board and a terminal, or two task details, in a split editor
   - **Then** both are visible and live at the same time
-- [ ] **Scenario: choosing the project does not rewrite an open document**
+- [x] **Scenario: choosing the project does not rewrite an open document**
   - **Given** a task detail opened from project A, and the sidebar's Control tab header offering the
     project selector
   - **When** the human switches the selector to project B
   - **Then** the open task detail still shows project A's task — the switch changes what the next
     thing opens against, never what an open document *is*
-- [ ] The project selector lives in the header row of the sidebar's Control tab, in the slot the
+- [x] The project selector lives in the header row of the sidebar's Control tab, in the slot the
       Agents tab already uses, and exists exactly once — no per-app copy, no mirror
-- [ ] **Scenario: the launcher opens apps**
+- [x] **Scenario: the launcher opens apps**
   - **Given** the sidebar Control tab (t-6e2952)
   - **When** the human activates a section tile
   - **Then** that section's app opens as its own editor tab, or is revealed if already open
-- [ ] **Scenario: reload restores what was open**
+- [ ] **Scenario: reload restores what was open** — NOT verified, and deliberately left open: the
+      headless Dev Host harness dies on `Developer: Reload Window` (t-5fc17d), so half the restore
+      question is unreachable by an agent. Needs a human with apps open across editor groups (D21).
   - **Given** several section apps open across editor groups
   - **When** the window reloads
   - **Then** each returns to its tab and its state, using the restore machinery spec 361 established
-- [ ] **Scenario: a deep link still lands**
+- [x] **Scenario: a deep link still lands**
   - **Given** an existing `tachyon.*` open-command or a route that today redirects into a Control
     section
   - **When** it is invoked
   - **Then** it opens the corresponding app on the corresponding route, with no dead redirect left
     behind
-- [ ] **Scenario: one broken app does not take the others**
+- [ ] **Scenario: one broken app does not take the others** — MEASURED FALSE and left open on
+      purpose. Restoring `errorBoundary.test.ts` in E1 turned this from an assertion into a
+      measurement, and 12 of 29 webview mounts have no boundary at all — seven of them real product
+      surfaces (the five studio shells, agent-pane, pin-preview). The gap is named and ratcheted in
+      that test; t-cd01bb closes it. Marking this today would have been the easy lie.
   - **Given** two section apps open
   - **When** one fails to render or its host path throws
   - **Then** the other keeps working — the isolation that centralization could not offer
-- [ ] Control's single-app machinery is removed once the last section has moved: the internal
+- [x] Control's single-app machinery is removed once the last section has moved: the internal
       router, `navEpoch`, the singleton claim, the subroute breadcrumb chrome, and the section tab
       strip (already removed by t-aa2780)
-- [ ] `docs/specs/410-cockpit-single-app/spec.md` records that its app-count decision was superseded
+- [x] `docs/specs/410-cockpit-single-app/spec.md` records that its app-count decision was superseded
       here, so a future reader finds the reversal from either direction
 
 ## Non-goals

@@ -266,927 +266,214 @@
     ]
   },
   {
-    "view": "cockpit",
+    "view": "activity",
     "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=default",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=default",
     "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "engine",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=engine",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "execution-graph",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "execution-graph-real",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-real",
-    "frame": {
-      "w": 1100,
-      "h": 720
+      "w": 880,
+      "h": 900
     },
     "tags": [
       "captured-host-vm"
     ],
-    "title": "Control",
+    "title": "Activity",
     "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
     ]
   },
   {
-    "view": "cockpit",
-    "fixture": "execution-graph-empty",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-empty",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "execution-graph-no-telemetry",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-no-telemetry",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "execution-graph-error",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=execution-graph-error",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "fleet",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=fleet",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "nav-pending",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=nav-pending",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "agent-activity",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=agent-activity",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "agent-probes",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=agent-probes",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-command",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-command",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-command-edit",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-command-edit",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-terminal",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-terminal",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-terminal-edit",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-terminal-edit",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-runbook",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-runbook",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-runbook-edit",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-runbook-edit",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-schedule",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-schedule",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-schedule-edit",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-schedule-edit",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent-edit",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-edit",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent-canonical",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-canonical",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent-claude-bypass-off",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-claude-bypass-off",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent-claude-bypass-on",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-claude-bypass-on",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent-codex-danger-off",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-codex-danger-off",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent-codex-danger-on",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-codex-danger-on",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent-forget-plan",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-forget-plan",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-agent-forget-plan-blocked",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-agent-forget-plan-blocked",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-task-edit",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-task-edit",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-pin-edit",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-pin-edit",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "studio-pin-new",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-pin-new",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "validations",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=validations",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "approvals",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=approvals",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "inbox",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=inbox",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "inbox-item",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=inbox-item",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "handoff",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=handoff",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "runtime",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=runtime",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "runtime-config",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=runtime-config",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "worktrees",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=worktrees",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
-    "fixture": "settings",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=settings",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
+    "view": "activity",
     "fixture": "empty",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=empty",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=empty",
     "frame": {
-      "w": 1100,
-      "h": 720
+      "w": 880,
+      "h": 900
     },
     "tags": [
-      "synthetic-edge"
+      "captured-host-vm"
     ],
-    "title": "Control",
+    "title": "Activity",
     "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
     ]
   },
   {
-    "view": "cockpit",
-    "fixture": "multi-workspace",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=multi-workspace",
+    "view": "activity",
+    "fixture": "interrupted",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=interrupted",
     "frame": {
-      "w": 1100,
-      "h": 720
+      "w": 880,
+      "h": 900
     },
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Control",
+    "title": "Activity",
     "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
     ]
   },
   {
-    "view": "cockpit",
-    "fixture": "multi-workspace-scoped",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=multi-workspace-scoped",
+    "view": "activity",
+    "fixture": "mermaid-nav",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=mermaid-nav",
     "frame": {
-      "w": 1100,
-      "h": 720
+      "w": 880,
+      "h": 900
     },
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Control",
+    "title": "Activity",
     "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
     ]
   },
   {
-    "view": "cockpit",
-    "fixture": "multi-workspace-overview",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=multi-workspace-overview",
+    "view": "activity",
+    "fixture": "grok-feed",
+    "url": "/scripts/webview-preview/index.html?view=activity&fixture=grok-feed",
     "frame": {
-      "w": 1100,
-      "h": 720
+      "w": 880,
+      "h": 900
     },
     "tags": [
       "synthetic-edge"
     ],
-    "title": "Control",
+    "title": "Activity",
     "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
+      "activity",
+      "agent activity",
+      "chat",
+      "transcript",
+      "studio chat"
+    ]
+  },
+  {
+    "view": "probes",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
+    ]
+  },
+  {
+    "view": "probes",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=empty",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
+    ]
+  },
+  {
+    "view": "probes",
+    "fixture": "error",
+    "url": "/scripts/webview-preview/index.html?view=probes&fixture=error",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Probes",
+    "aliases": [
+      "probes",
+      "probe inspector"
+    ]
+  },
+  {
+    "view": "execution-graph",
+    "fixture": "execution-graph",
+    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph",
+    "frame": {
+      "w": 880,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "execution-graph",
+    "fixture": "execution-graph-real",
+    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph-real",
+    "frame": {
+      "w": 880,
+      "h": 720
+    },
+    "tags": [
+      "captured-host-vm"
+    ]
+  },
+  {
+    "view": "execution-graph",
+    "fixture": "execution-graph-empty",
+    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph-empty",
+    "frame": {
+      "w": 880,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "execution-graph",
+    "fixture": "execution-graph-no-telemetry",
+    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph-no-telemetry",
+    "frame": {
+      "w": 880,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "execution-graph",
+    "fixture": "execution-graph-error",
+    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph-error",
+    "frame": {
+      "w": 880,
+      "h": 720
+    },
+    "tags": [
+      "synthetic-edge"
     ]
   },
   {
@@ -1227,6 +514,23 @@
     "view": "pin-preview",
     "fixture": "with-image",
     "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=with-image",
+    "frame": {
+      "w": 880,
+      "h": 700
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Pin Preview",
+    "aliases": [
+      "pin preview",
+      "pin readonly"
+    ]
+  },
+  {
+    "view": "pin-preview",
+    "fixture": "edit",
+    "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=edit",
     "frame": {
       "w": 880,
       "h": 700
@@ -1403,9 +707,424 @@
     ]
   },
   {
+    "view": "agent-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=new",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "canonical-disabled",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-disabled",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "canonical-claude-bypass-off",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-claude-bypass-off",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "canonical-claude-bypass-on",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-claude-bypass-on",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "canonical-codex-danger-off",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-codex-danger-off",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "canonical-codex-danger-on",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-codex-danger-on",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "forget-plan",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=forget-plan",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "forget-plan-blocked",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=forget-plan-blocked",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "terminal-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=new",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Terminal Studio",
+    "aliases": [
+      "terminal studio",
+      "new terminal",
+      "edit terminal"
+    ]
+  },
+  {
+    "view": "terminal-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Terminal Studio",
+    "aliases": [
+      "terminal studio",
+      "new terminal",
+      "edit terminal"
+    ]
+  },
+  {
+    "view": "terminal-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=terminal-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 900,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Terminal Studio",
+    "aliases": [
+      "terminal studio",
+      "new terminal",
+      "edit terminal"
+    ]
+  },
+  {
+    "view": "command-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=new",
+    "frame": {
+      "w": 760,
+      "h": 640
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Command Studio",
+    "aliases": [
+      "command studio",
+      "new command",
+      "edit command"
+    ]
+  },
+  {
+    "view": "command-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 760,
+      "h": 640
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Command Studio",
+    "aliases": [
+      "command studio",
+      "new command",
+      "edit command"
+    ]
+  },
+  {
+    "view": "command-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=command-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 760,
+      "h": 640
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Command Studio",
+    "aliases": [
+      "command studio",
+      "new command",
+      "edit command"
+    ]
+  },
+  {
+    "view": "runbook-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=new",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runbook Studio",
+    "aliases": [
+      "runbook studio",
+      "new runbook",
+      "edit runbook"
+    ]
+  },
+  {
+    "view": "runbook-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runbook Studio",
+    "aliases": [
+      "runbook studio",
+      "new runbook",
+      "edit runbook"
+    ]
+  },
+  {
+    "view": "runbook-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=runbook-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runbook Studio",
+    "aliases": [
+      "runbook studio",
+      "new runbook",
+      "edit runbook"
+    ]
+  },
+  {
+    "view": "schedule-studio-shell",
+    "fixture": "new",
+    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=new",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Schedule Studio",
+    "aliases": [
+      "schedule studio",
+      "new schedule",
+      "edit schedule"
+    ]
+  },
+  {
+    "view": "schedule-studio-shell",
+    "fixture": "dense-edit",
+    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=dense-edit",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Schedule Studio",
+    "aliases": [
+      "schedule studio",
+      "new schedule",
+      "edit schedule"
+    ]
+  },
+  {
+    "view": "schedule-studio-shell",
+    "fixture": "load-error",
+    "url": "/scripts/webview-preview/index.html?view=schedule-studio-shell&fixture=load-error",
+    "frame": {
+      "w": 760,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Schedule Studio",
+    "aliases": [
+      "schedule studio",
+      "new schedule",
+      "edit schedule"
+    ]
+  },
+  {
     "view": "task-detail",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Task Detail",
+    "aliases": [
+      "task detail",
+      "task",
+      "task document",
+      "detail tab"
+    ]
+  },
+  {
+    "view": "task-detail",
+    "fixture": "edit",
+    "url": "/scripts/webview-preview/index.html?view=task-detail&fixture=edit",
     "frame": {
       "w": 880,
       "h": 900
@@ -1666,6 +1385,580 @@
       "plugin manager",
       "install plugin",
       "marketplace"
+    ]
+  },
+  {
+    "view": "human-inbox",
+    "fixture": "list",
+    "url": "/scripts/webview-preview/index.html?view=human-inbox&fixture=list",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "unit-fixture-derived"
+    ],
+    "title": "Human Inbox",
+    "aliases": [
+      "inbox",
+      "human inbox",
+      "waiting on you",
+      "approvals queue"
+    ]
+  },
+  {
+    "view": "human-inbox",
+    "fixture": "item",
+    "url": "/scripts/webview-preview/index.html?view=human-inbox&fixture=item",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "unit-fixture-derived"
+    ],
+    "title": "Human Inbox",
+    "aliases": [
+      "inbox",
+      "human inbox",
+      "waiting on you",
+      "approvals queue"
+    ]
+  },
+  {
+    "view": "human-inbox",
+    "fixture": "volume",
+    "url": "/scripts/webview-preview/index.html?view=human-inbox&fixture=volume",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Human Inbox",
+    "aliases": [
+      "inbox",
+      "human inbox",
+      "waiting on you",
+      "approvals queue"
+    ]
+  },
+  {
+    "view": "human-inbox",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=human-inbox&fixture=empty",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Human Inbox",
+    "aliases": [
+      "inbox",
+      "human inbox",
+      "waiting on you",
+      "approvals queue"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "loading",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=loading",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "empty",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=empty",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "error",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=error",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "mixed",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=mixed",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "throttled",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=throttled",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "stale-bridge",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=stale-bridge",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "long-label",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=long-label",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "duplicate-workspace",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=duplicate-workspace",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-healthy",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-healthy",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-exhausted",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-exhausted",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-partial",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-partial",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-unauthenticated",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-unauthenticated",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-stale",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-stale",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-timeout",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-timeout",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-invalid",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-invalid",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-ops",
+    "fixture": "provider-disabled",
+    "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=provider-disabled",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Runtime Ops",
+    "aliases": [
+      "runtime ops",
+      "runtime",
+      "quota",
+      "provider capacity",
+      "rate limit"
+    ]
+  },
+  {
+    "view": "runtime-config",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=runtime-config&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "unit-fixture-derived"
+    ]
+  },
+  {
+    "view": "engine",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=engine&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Engine",
+    "aliases": [
+      "engine",
+      "bridge",
+      "control plane"
+    ]
+  },
+  {
+    "view": "worktrees",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=worktrees&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Worktrees",
+    "aliases": [
+      "worktrees",
+      "managed worktrees",
+      "checkout hygiene"
+    ]
+  },
+  {
+    "view": "fleet",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=fleet&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Fleet",
+    "aliases": [
+      "fleet",
+      "agents",
+      "agent runtime"
+    ]
+  },
+  {
+    "view": "settings",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=settings&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "overview",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=overview&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ]
+  },
+  {
+    "view": "handoff",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Project Handoff",
+    "aliases": [
+      "handoff",
+      "project handoff"
+    ]
+  },
+  {
+    "view": "handoff",
+    "fixture": "cold",
+    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=cold",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Project Handoff",
+    "aliases": [
+      "handoff",
+      "project handoff"
+    ]
+  },
+  {
+    "view": "handoff",
+    "fixture": "stale",
+    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=stale",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Project Handoff",
+    "aliases": [
+      "handoff",
+      "project handoff"
+    ]
+  },
+  {
+    "view": "handoff",
+    "fixture": "distill-list",
+    "url": "/scripts/webview-preview/index.html?view=handoff&fixture=distill-list",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Project Handoff",
+    "aliases": [
+      "handoff",
+      "project handoff"
     ]
   },
   {

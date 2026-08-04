@@ -18,7 +18,7 @@ import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
 import { buildCockpitModel, type CockpitWorkspaceBundle, type CockpitWorktreeRow } from "../../src/cockpit/model.js";
 
-const SHELL_TSX = path.join(__dirname, "../../src/webview/cockpit/App.tsx");
+const SHELL_TSX = path.join(__dirname, "../../src/webview/worktrees/App.tsx");
 
 const READY = {
   state: "ready-to-remove" as const,
@@ -73,7 +73,11 @@ describe("t-621613 — the Worktrees tab and an agent home with nobody in it", (
   });
 
   const render = (rows: CockpitWorktreeRow[]): string =>
-    renderStatic(Shell({ strings: fixtureStrings, model: buildCockpitModel([bundle(rows)], { section: "worktrees" }) }));
+    renderStatic(Shell({
+      strings: fixtureStrings,
+      model: buildCockpitModel([bundle(rows)], { section: "worktrees", wsHash: "h" }),
+      post: () => {},
+    }));
 
   it("offers Remove checkout, and says why, when the agent is proved gone", () => {
     const html = render([agentRow({ ownerPresence: "absent" })]);

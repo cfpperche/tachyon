@@ -4,6 +4,7 @@ import type { ValidationOutcome } from "../../validations/types";
 import type { HumanInboxItem, HumanInboxKind } from "../../humanInbox/model";
 import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview";
 import type { SavedAgentRemovalProposalReview } from "../../agents/savedAgentRemovalProposalReview";
+import type { ScheduleProposal } from "../../schedule/ProposalStore";
 import type { InboxArtifactPreview } from "../../humanInbox/artifacts";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "./viewModel";
 import type { HumanInboxErrorReceipt } from "./messages";
@@ -21,6 +22,16 @@ import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textar
 export interface HumanInboxDispatch {
   refresh(): void;
   open(kind: HumanInboxKind, id: string): void;
+  /**
+   * SDD 485 D4 — back to the list from an opened item.
+   *
+   * This is the ONE member this migration added, and it is a restoration rather than a feature: inside
+   * Control the `← Inbox` breadcrumb was `cockpit/App.tsx`'s chrome (`control-inbox-item-breadcrumb`),
+   * posting `onSetSection("inbox")`. A standalone app has no embed host to render it, so without this the
+   * detail route is reachable and unleavable. The host owns the subroute either way — the client asks, it
+   * does not navigate itself.
+   */
+  back(): void;
   /** approval-only — the capability path; there is no validation caller for this by construction */
   resolveApproval(id: string, decision: ApprovalDecision): void;
   closeValidation(id: string, outcome: ValidationOutcome, note: string): void;
@@ -29,6 +40,7 @@ export interface HumanInboxDispatch {
   decideSavedAgentProposal(id: string, digest: string, decision: "approve" | "deny", reason?: string): void;
   /** t-afe120 — same digest binding for retirement */
   decideSavedAgentRemoval(id: string, digest: string, decision: "approve" | "deny", reason?: string): void;
+  decideScheduleProposal(id: string, decision: "approve" | "deny"): void;
 }
 
 /** "3h" / "2d" — how long this has been waiting, which is the thing a human scans the list for. */
@@ -48,6 +60,7 @@ function KindBadge({ kind }: { kind: HumanInboxKind }) {
   if (kind === "approval") return <Badge tone="warn">approval</Badge>;
   if (kind === "saved-agent-proposal") return <Badge tone="warn">new Saved Agent</Badge>;
   if (kind === "saved-agent-removal") return <Badge tone="err">retire Saved Agent</Badge>;
+  if (kind === "schedule-proposal") return <Badge tone="warn">new schedule</Badge>;
   return <Badge tone="info">validation</Badge>;
 }
 
@@ -99,14 +112,14 @@ function InboxRow({ item, dispatch }: { item: HumanInboxItem; dispatch: HumanInb
 export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?: HumanInboxErrorReceipt; dispatch: HumanInboxDispatch }) {
   if (!vm) {
     return (
-      <div class="hi-root">
+      <div class="hi-root ds-page">
         <EmptyState kind="loading" message="Loading inbox…" />
       </div>
     );
   }
   const { counts } = vm;
   return (
-    <div class="hi-root" data-testid="control-human-inbox">
+    <div class="hi-root ds-page" data-testid="control-human-inbox">
       <PageChrome
         title="Human Inbox"
         hint={vm.folder}
@@ -545,6 +558,25 @@ function SavedAgentRemovalDetail({
   );
 }
 
+function ScheduleProposalDetail({ proposal, dispatch }: { proposal: ScheduleProposal; dispatch: HumanInboxDispatch }) {
+  return (
+    <div class="hi-proposal" data-testid="inbox-schedule-proposal">
+      <p class="hi-proposal-rationale">{proposal.reason ?? "No reason supplied."}</p>
+      <dl class="hi-proposal-facts">
+        <dt>Name</dt><dd>{proposal.name}</dd>
+        <dt>Proposed by</dt><dd>{proposal.by} <Badge tone="info">Bridge-resolved</Badge></dd>
+        <dt>Timing</dt><dd>{proposal.schedule.every ? `every ${proposal.schedule.every}` : `daily at ${proposal.schedule.at}`}</dd>
+        <dt>Action</dt><dd>{proposal.schedule.spawn ? `spawn ${proposal.schedule.spawn}` : `run ${proposal.schedule.run}`}</dd>
+        <dt>Expires</dt><dd>{proposal.expiresAt}</dd>
+      </dl>
+      <div class="hi-proposal-decide">
+        <Button variant="primary" data-testid="inbox-approve-schedule" onClick={() => dispatch.decideScheduleProposal(proposal.id, "approve")}>Approve and activate</Button>
+        <Button variant="default" data-testid="inbox-deny-schedule" onClick={() => dispatch.decideScheduleProposal(proposal.id, "deny")}>Deny</Button>
+      </div>
+    </div>
+  );
+}
+
 export function ItemApp({
   vm,
   missing,
@@ -558,16 +590,26 @@ export function ItemApp({
 }) {
   // Gone-while-you-were-reading is its own state, never a blank document: something else resolved or
   // closed this, and saying so is the difference between "handled" and "lost".
+  // SDD 485 D4 — the way back, and it renders in EVERY state of this route including the two dead ends
+  // below. Inside Control the breadcrumb was the embed host's chrome and therefore always on screen; a
+  // tombstone or a stuck loading state with no exit is the one way this migration could strand a human.
+  const backLink = (
+    <Button variant="default" icon="arrow-left" data-testid="inbox-item-back" onClick={() => dispatch.back()}>
+      Inbox
+    </Button>
+  );
   if (missing) {
     return (
-      <div class="hi-root">
+      <div class="hi-root ds-page">
+        {backLink}
         <EmptyState kind="empty" message={`${missing.kind} ${missing.id} is no longer waiting — it was resolved or closed elsewhere.`} />
       </div>
     );
   }
   if (!vm) {
     return (
-      <div class="hi-root">
+      <div class="hi-root ds-page">
+        {backLink}
         <EmptyState kind="loading" message="Loading item…" />
       </div>
     );
@@ -577,8 +619,8 @@ export function ItemApp({
   const item = vm.item;
   const waited = age(item.createdAt);
   return (
-    <div class="hi-root hi-detail" data-testid="control-human-inbox-item">
-      <PageChrome title={item.title} hint={`${item.id} · ${vm.folder}`} />
+    <div class="hi-root hi-detail ds-page" data-testid="control-human-inbox-item">
+      <PageChrome title={item.title} hint={`${item.id} · ${vm.folder}`} backLink={backLink} />
       <div class="hi-detail-meta">
         <KindBadge kind={item.kind} />
         <Requester item={item} />
@@ -594,6 +636,8 @@ export function ItemApp({
         <SavedAgentProposalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} />
       ) : item.detail.kind === "saved-agent-removal" ? (
         <SavedAgentRemovalDetail proposal={item.detail.proposal} dispatch={dispatch} error={error} />
+      ) : item.detail.kind === "schedule-proposal" ? (
+        <ScheduleProposalDetail proposal={item.detail.proposal} dispatch={dispatch} />
       ) : (
         <ValidationDetail item={item.detail.validation} dispatch={dispatch} />
       )}

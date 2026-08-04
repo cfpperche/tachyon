@@ -2,35 +2,115 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 
-// t-2a49b2 / t-c55f8d — ALL FOUR TESTS IN THIS FILE ARE RED, KNOWINGLY, AND ARE NOT BEING REPOINTED.
-// The `?view=runtime-ops` standalone preview route was retired in t-ed3067, so every `openRuntimeOpsFixture`
-// below times out waiting for a `previewFixture` marker the harness never sets. Its three sibling files
-// (boardCardLayout, boardHeaderKitParity, pilotAPlugins, pilotBTaskStudio) were repointed at the Control
-// route in t-c55f8d because their surfaces survived intact behind ONE cockpit fixture each. This one did not:
-// the route below drives 16 runtime-ops fixtures (loading, error, empty, mixed, throttled, stale-bridge,
-// long-label, duplicate-workspace, provider-*) and `?view=cockpit&fixture=runtime` exposes exactly one of
-// them. Reaching the other 15 means either restoring a standalone entry point or teaching the cockpit route
-// to select a sub-fixture — and the narrow-width overflow assertions would then be measuring the Control
-// chrome's page box, not this panel's, so they need rewriting rather than repointing.
+// t-2a49b2 — layout-first rewrite of the Runtime Ops browser suite.
 //
-// The human decided on 2026-07-31 (t-2a49b2 journal) that this guard comes back only after the plugin work
-// lands — deps t-54cdb2 and t-54cdb1, both still inbox as of 2026-08-01. Repointing it now would also mean
-// deciding what it covers, including the t-283149 session-inspection panel, which is design work, not a
-// mechanical fix. Left as-is so the guard's absence stays loud instead of being silently skipped.
+// History (kept short; the journal owns the rest):
+//   - t-ed3067 retired `?view=runtime-ops`; four tests went red and stayed red on purpose.
+//   - SDD 485 D3 restored the standalone route; t-6e929b put the suite on the conditional gate.
+//   - t-b8e416 measured this file at 40.00s inside the concurrent gate and asked for an aggressive
+//     rewrite: keep two widths + overflow/breakpoint/focus; drop the textual matrix already covered
+//     by named unit files. The session-inspection panel from t-283149 was never on that list.
 //
-// preview-route-check: allow view=runtime-ops (t-2a49b2) — the ONE dead preview route this repo keeps on
-// purpose. t-fdfbd4's portable guard (test/unit/webviewPreviewRoutes.test.ts) fails verify:full on any
-// browser test that opens a route ROUTES no longer has; this waiver is the human's 2026-07-31 decision
-// written where the reference lives, so the exception stays visible and dies with the file. It is checked,
-// not merely tolerated: the moment this file stops naming `view=runtime-ops` — because the route came back
-// with t-54cdb2/t-54cdb1, or because the file was repointed — the guard fails on the STALE waiver instead.
+// What this file proves NOW (browser-only):
+//   - table grid → flex at the narrow breakpoint, header hidden, page/cell overflow free
+//   - provider capacity row grid → flex + visible focus outline
+//   - session inspection panel (launch <pre> + settings/env grids) contained at 340px
+//
+// What was removed, and the unit that owns each claim (do not re-add without dropping the pair):
+//   - loading/error/empty/mixed/throttled/stale/duplicate fixture text and agent-count smoke
+//       → `runtimeOpsModel.test.ts` (summary counts, throttle/bridge projection, workspace labels)
+//       → `runtimeOpsApp.test.ts` ("snapshot that cannot be built posts the UNAVAILABLE inventory")
+//       → `runtimeOpsSnapshotService.test.ts` (lifecycle/throttle projection without matchedLine)
+//   - RAW_* marker DOM scans on throttled + provider-invalid
+//       → `runtimeOpsModel.test.ts` "drops hostile raw host values before they become snapshot protocol data"
+//       → `runtimeOpsProviderProjection.test.ts` "re-allows only quota/source/confidence… and strips … raw"
+//       → `runtimeOpsSnapshotService.test.ts` "projects … without serializing matchedLine"
+//   - 8-state × 2-width provider capacity TEXT matrix (Exact confidence / 100% used / …)
+//       → `runtimeOpsProviderProjection.test.ts` (confidence, unavailable reasons, disabled, stale, strip)
+//   - "Native usage" / "Summed activity deltas" / "managed agent" copy checks
+//       → usage semantics: `runtimeOpsModel.test.ts` + `runtimeOpsSnapshotService.test.ts`
+//       → account-wide non-attribution: `runtimeOpsProviderProjection.test.ts`
+//         "publishes schema V2 with account capacity separate from native runtime and agent attribution"
+//   - session inspection CONTENT (hooks/settings/MCP/env/redaction/live-vs-file)
+//       → `runtimeOpsSessionInspectionView.test.ts` (static Preact render of the real App)
+//
+// Content of the inspection panel stays in units. This file owns geometry of the panel that units cannot
+// measure: the launch <pre> and the two grids (settings, env) at 340px — the width the brief named.
+//
+// `test:browser` still needs system Chrome; it is on the conditional verify gate (t-6e929b), not the
+// unconditional full path. That is deliberate.
+
 const PREVIEW_PATH = "/scripts/webview-preview/index.html?view=runtime-ops&fixture=";
+
+/** mixed fixture agent key — `workspaceKey:agentName` from `buildRuntimeOpsSnapshot`. */
+const MIXED_CLAUDE_KEY = "a1b2c3:claude";
 
 interface Viewport {
   width: number;
   height: number;
 }
+
+/**
+ * Payload deliberately long: a multi-arg launch line plus multi-column settings/env so a 340px box
+ * has something real to clip if wrapping/grid collapse fail. Content assertions live in
+ * `runtimeOpsSessionInspectionView.test.ts`; this object only exists to stress layout.
+ */
+const RICH_INSPECTION = {
+  agent: "claude",
+  runtime: "claude",
+  state: "live" as const,
+  command: [
+    "claude",
+    "--resume",
+    "sess_abc123xyz_deliberately_long_session_id_for_wrap",
+    "--settings",
+    "/home/goat/.cache/tachyon/worktrees/example/project/.tachyon/harness/claude/settings/projected-settings.json",
+    "--mcp-config",
+    "/home/goat/.cache/tachyon/worktrees/example/project/.tachyon/harness/claude/mcp/servers.json",
+    "--bridge-token",
+    "•••",
+  ],
+  hooks: [
+    {
+      event: "SessionStart",
+      command: "node session-owner-record.cjs",
+      purpose: "records which agent owns this session",
+      writes: ".tachyon/activity/session-owners.jsonl",
+    },
+    {
+      event: "PreToolUse",
+      command: "bash /home/goat/my-own-hook-with-a-very-long-path/tools/guard.sh --strict",
+    },
+  ],
+  settings: [
+    { key: "permissions", value: "bypassPermissions", origin: "projected" as const },
+    { key: "skipDangerousModePermissionPrompt", value: "true", origin: "host" as const },
+    {
+      key: "statusLine",
+      value: "node wrapper.cjs",
+      origin: "host" as const,
+      wraps: "bash ~/.claude/statusline-command.sh",
+    },
+    {
+      key: "switchModelsOnFlag",
+      value: "true",
+      origin: "not-projected" as const,
+    },
+  ],
+  mcpServers: ["tachyon_bridge", "some_other_server_with_a_long_identifier"],
+  strictMcp: true,
+  env: [
+    { key: "TACHYON_AGENT_NAME", value: "claude" },
+    { key: "TACHYON_BRIDGE_TOKEN", value: "•••" },
+    {
+      key: "TACHYON_WORKSPACE_ROOT",
+      value: "/home/goat/.cache/tachyon/worktrees/example/project-with-a-deliberately-long-path-segment",
+    },
+  ],
+  notExposed: [] as string[],
+};
 
 async function openRuntimeOpsFixture(page: Page, origin: string, fixture: string, viewport: Viewport): Promise<void> {
   await page.setViewport(viewport);
@@ -53,7 +133,50 @@ async function hasNoCellOverflow(page: Page): Promise<boolean> {
     .every((cell) => cell.scrollWidth <= cell.clientWidth + 1));
 }
 
-describe("Runtime Ops view (spec 367 Phase 4)", () => {
+/** Session panel geometry: neither the panel nor its pre/grids may scroll sideways inside #frame. */
+async function sessionPanelContainedInFrame(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const frame = document.getElementById("frame");
+    const panel = document.querySelector<HTMLElement>(".runtime-ops-session");
+    if (!frame || !panel) return false;
+    const fr = frame.getBoundingClientRect();
+    const pr = panel.getBoundingClientRect();
+    if (pr.right > fr.right + 1) return false;
+    const nodes = [
+      panel,
+      ...panel.querySelectorAll<HTMLElement>(
+        ".runtime-ops-session-command, .runtime-ops-session-setting, .runtime-ops-session-kv, .runtime-ops-session-hook, .runtime-ops-session-kv > div",
+      ),
+    ];
+    return nodes.every((el) => el.scrollWidth <= el.clientWidth + 1);
+  });
+}
+
+/**
+ * Expand the mixed-fixture claude row and inject a host inspection reply.
+ * The preview stub's `acquireVsCodeApi` swallows the inspect request (only re-posts READY), so the
+ * test is the host: post `runtimeOpsSessionInspection` once the client has the row in loading state.
+ */
+async function openSessionInspection(page: Page, inspection: typeof RICH_INSPECTION): Promise<void> {
+  await page.click(".runtime-ops-agents summary");
+  await page.waitForSelector(`[data-agent-key="${MIXED_CLAUDE_KEY}"] .runtime-ops-inspect-toggle`, {
+    visible: true,
+    timeout: 3000,
+  });
+  await page.click(`[data-agent-key="${MIXED_CLAUDE_KEY}"] .runtime-ops-inspect-toggle`);
+  await page.waitForSelector(".runtime-ops-session[aria-busy='true']", { visible: true, timeout: 3000 });
+
+  await page.evaluate(
+    (agentKey, payload) => {
+      window.postMessage({ type: "runtimeOpsSessionInspection", agentKey, inspection: payload }, "*");
+    },
+    MIXED_CLAUDE_KEY,
+    inspection,
+  );
+  await page.waitForSelector(".runtime-ops-session-command", { visible: true, timeout: 3000 });
+}
+
+describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
   let server: GateServer;
   let browser: Browser;
 
@@ -65,121 +188,6 @@ describe("Runtime Ops view (spec 367 Phase 4)", () => {
   afterAll(async () => {
     await browser.close();
     await server.close();
-  });
-
-  it("renders explicit loading, error, empty, mixed, throttled, stale Bridge, and duplicate-workspace fixtures", async () => {
-    const loading = await browser.newPage();
-    await openRuntimeOpsFixture(loading, server.origin, "loading", { width: 1100, height: 360 });
-    expect(await loading.$eval(".runtime-ops", (el) => el.getAttribute("aria-busy"))).toBe("true");
-    expect(await loading.$eval(".runtime-ops", (el) => el.textContent)).toContain("Loading runtime inventory...");
-    await loading.close();
-
-    const error = await browser.newPage();
-    await openRuntimeOpsFixture(error, server.origin, "error", { width: 1100, height: 360 });
-    expect(await error.$eval("[role='alert']", (el) => el.textContent)).toContain("Runtime Ops could not refresh the inventory.");
-    expect(await error.$eval(".runtime-ops-refresh", (el) => el.getAttribute("href"))).toBe("command:tachyon.refreshRuntimeOps");
-    await error.close();
-
-    const empty = await browser.newPage();
-    await openRuntimeOpsFixture(empty, server.origin, "empty", { width: 1100, height: 360 });
-    expect(await empty.$eval(".runtime-ops-table", (el) => el.textContent)).toContain("No supported runtimes found.");
-    await empty.close();
-
-    const mixed = await browser.newPage();
-    await openRuntimeOpsFixture(mixed, server.origin, "mixed", { width: 1100, height: 360 });
-    expect(await mixed.$$eval(".runtime-ops-runtime-group", (rows) => rows.length)).toBe(3);
-    expect(await mixed.$eval(".runtime-ops-summary", (el) => el.textContent)).toContain("Throttled");
-    await mixed.close();
-
-    const throttled = await browser.newPage();
-    await openRuntimeOpsFixture(throttled, server.origin, "throttled", { width: 1100, height: 360 });
-    await throttled.click(".runtime-ops-agents summary");
-    const throttledText = await throttled.$eval(".runtime-ops", (el) => el.textContent ?? "");
-    const throttledDom = await throttled.content();
-    expect(throttledText).toContain("Throttled - see agent terminal");
-    expect(throttledText).toContain("Codex · 5-hour window");
-    expect(throttledText).toContain("Throttle runtime and scope unavailable");
-    for (const marker of [
-      "RAW_THROTTLE_RUNTIME_MUST_NOT_RENDER",
-      "RAW_THROTTLE_SCOPE_MUST_NOT_RENDER",
-      "RAW_THROTTLE_LINE_MUST_NOT_RENDER",
-      "RAW_MODEL_VALUE_MUST_NOT_RENDER",
-      "RAW_MODEL_REASON_MUST_NOT_RENDER",
-      "RAW_CONTEXT_REASON_MUST_NOT_RENDER",
-      "RAW_MATCHED_LINE_MUST_NOT_RENDER",
-      "RAW_SESSION_ID_MUST_NOT_RENDER",
-      "RAW_PATH_MUST_NOT_RENDER",
-      "RAW_TOKEN_MUST_NOT_RENDER",
-    ]) {
-      expect(throttledText).not.toContain(marker);
-      expect(throttledDom).not.toContain(marker);
-    }
-    await throttled.close();
-
-    const staleBridge = await browser.newPage();
-    await openRuntimeOpsFixture(staleBridge, server.origin, "stale-bridge", { width: 1100, height: 360 });
-    await staleBridge.click(".runtime-ops-agents summary");
-    expect(await staleBridge.$eval(".runtime-ops", (el) => el.textContent)).toContain("Bridge binding needs attention.");
-    await staleBridge.close();
-
-    const duplicateWorkspace = await browser.newPage();
-    await openRuntimeOpsFixture(duplicateWorkspace, server.origin, "duplicate-workspace", { width: 1100, height: 360 });
-    await duplicateWorkspace.click(".runtime-ops-agents summary");
-    const duplicateText = await duplicateWorkspace.$eval(".runtime-ops", (el) => el.textContent ?? "");
-    expect(duplicateText).toContain("apps/api");
-    expect(duplicateText).toContain("tools/api");
-    expect(await duplicateWorkspace.$$eval(".runtime-ops-agent-row", (rows) => rows.length)).toBe(2);
-    await duplicateWorkspace.close();
-  });
-
-  it("renders every provider capacity state at wide and narrow widths without false agent attribution", async () => {
-    const fixtures: Array<[string, string]> = [
-      ["provider-healthy", "Exact confidence"],
-      ["provider-exhausted", "100% used"],
-      ["provider-partial", "Estimated confidence"],
-      ["provider-unauthenticated", "Authentication required"],
-      ["provider-stale", "Stale; last good"],
-      ["provider-timeout", "Provider timed out"],
-      ["provider-invalid", "Incompatible quota data"],
-      ["provider-disabled", "Observation disabled"],
-    ];
-    const page = await browser.newPage();
-
-    for (const [fixture, expected] of fixtures) {
-      for (const viewport of [{ width: 1100, height: 760 }, { width: 340, height: 900 }]) {
-        await openRuntimeOpsFixture(page, server.origin, fixture, viewport);
-        const text = await page.$eval(".runtime-ops", (element) => element.textContent ?? "");
-        expect(text).toContain("Provider capacity");
-        expect(text).toContain("Account-wide quota");
-        expect(text).toContain(expected);
-        expect(await page.$$eval(".runtime-ops-provider-row", (rows) => rows.length)).toBe(2);
-        expect(await hasNoHorizontalOverflow(page)).toBe(true);
-        expect(await page.$eval(".runtime-ops-provider-row", (element) => getComputedStyle(element).display))
-          .toBe(viewport.width === 1100 ? "grid" : "flex");
-      }
-    }
-
-    await openRuntimeOpsFixture(page, server.origin, "provider-invalid", { width: 1100, height: 760 });
-    const invalidDom = await page.content();
-    for (const marker of [
-      "RAW_ACCOUNT_MUST_NOT_RENDER",
-      "RAW_PROVIDER_TOKEN_MUST_NOT_RENDER",
-      "RAW_PROVIDER_ERROR_MUST_NOT_RENDER",
-    ]) expect(invalidDom).not.toContain(marker);
-
-    await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 1100, height: 760 });
-    expect(await page.$eval(".runtime-ops-header", (element) => element.textContent)).toContain("Native usage");
-    expect(await page.$eval(".runtime-ops-table", (element) => element.textContent)).toContain("Summed activity deltas · Observed");
-    expect(await page.$eval(".runtime-ops-capacity", (element) => element.textContent)).not.toContain("managed agent");
-    expect(await page.$$eval("[role='progressbar']", (meters) => meters.length)).toBe(4);
-    await page.focus(".runtime-ops-provider-control button");
-    const controlFocus = await page.$eval(".runtime-ops-provider-control button", (element) => ({
-      active: document.activeElement === element,
-      outlineWidth: getComputedStyle(element).outlineWidth,
-      outlineStyle: getComputedStyle(element).outlineStyle,
-    }));
-    expect(controlFocus).toEqual({ active: true, outlineWidth: "2px", outlineStyle: "solid" });
-    await page.close();
   });
 
   it("uses the wide table at 1100x360 with keyboard-operable agent details and visible focus", async () => {
@@ -201,7 +209,7 @@ describe("Runtime Ops view (spec 367 Phase 4)", () => {
     expect(focus.outlineStyle).toBe("solid");
 
     await page.keyboard.press("Space");
-    await page.waitForFunction(() => document.querySelector(".runtime-ops-agents")?.hasAttribute("open"), { timeout: 2000 });
+    await page.waitForFunction(() => document.querySelector(".runtime-ops-agents")?.hasAttribute("open"), { timeout: HANG_TIMEOUT_MS });
     expect(await page.$eval(".runtime-ops-agents", (el) => el.hasAttribute("open"))).toBe(true);
     expect(await page.$eval(".runtime-ops-agents summary", (el) => document.activeElement === el)).toBe(true);
     await page.close();
@@ -213,10 +221,81 @@ describe("Runtime Ops view (spec 367 Phase 4)", () => {
 
     expect(await page.$eval(".runtime-ops-row", (el) => getComputedStyle(el).display)).toBe("flex");
     expect(await page.$eval(".runtime-ops-header", (el) => getComputedStyle(el).display)).toBe("none");
+    // Precondition that the long-label fixture landed (not a content matrix). Layout is the claim.
     await page.click(".runtime-ops-agents summary");
-    expect(await page.$eval(".runtime-ops", (el) => el.textContent)).toContain("migration-coordinator-with-a-deliberately-long-operational-label");
+    expect(await page.$eval(".runtime-ops", (el) => el.textContent))
+      .toContain("migration-coordinator-with-a-deliberately-long-operational-label");
     expect(await hasNoHorizontalOverflow(page)).toBe(true);
     expect(await hasNoCellOverflow(page)).toBe(true);
+    await page.close();
+  });
+
+  it("provider capacity: grid at 1100, flex at 340, no overflow, visible control focus", async () => {
+    // One fixture × two widths. Capacity STATE text (Exact confidence, 100% used, …) lives in
+    // `runtimeOpsProviderProjection.test.ts` — not re-asserted here across eight fixtures.
+    const page = await browser.newPage();
+
+    await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 1100, height: 760 });
+    expect(await page.$(".runtime-ops-provider-row")).not.toBeNull();
+    expect(await page.$eval(".runtime-ops-provider-row", (el) => getComputedStyle(el).display)).toBe("grid");
+    expect(await hasNoHorizontalOverflow(page)).toBe(true);
+
+    await page.focus(".runtime-ops-provider-control button");
+    const controlFocus = await page.$eval(".runtime-ops-provider-control button", (element) => ({
+      active: document.activeElement === element,
+      outlineWidth: getComputedStyle(element).outlineWidth,
+      outlineStyle: getComputedStyle(element).outlineStyle,
+    }));
+    expect(controlFocus).toEqual({ active: true, outlineWidth: "2px", outlineStyle: "solid" });
+
+    await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 340, height: 900 });
+    expect(await page.$eval(".runtime-ops-provider-row", (el) => getComputedStyle(el).display)).toBe("flex");
+    expect(await hasNoHorizontalOverflow(page)).toBe(true);
+    await page.close();
+  });
+
+  it("session inspection panel stays inside the frame at 340px (launch pre + settings/env grids)", async () => {
+    // t-283149 landed without visual evidence. This is that evidence: the panel's <pre> launch
+    // command and two grids (settings, env) at the width the brief named (340), not only 880/360.
+    // Content of the panel: `runtimeOpsSessionInspectionView.test.ts`. Geometry only, here.
+    //
+    // RED-BEFORE-GREEN: first run inverted the containment assertion (expected false) and watched
+    // it fail while the panel rendered correctly — harness sees overflow, not a free pass. Then
+    // restored the real claim (contained === true). Evidence: journal of t-2a49b2.
+    const page = await browser.newPage();
+    await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 340, height: 1200 });
+    await openSessionInspection(page, RICH_INSPECTION);
+
+    // Narrow CSS (max-width: 760px on the viewport) collapses both grids to a single track.
+    const tracks = await page.evaluate(() => {
+      const setting = document.querySelector<HTMLElement>(".runtime-ops-session-setting");
+      const kv = document.querySelector<HTMLElement>(".runtime-ops-session-kv > div");
+      const parseTracks = (el: HTMLElement | null): number => {
+        if (!el) return -1;
+        const raw = getComputedStyle(el).gridTemplateColumns;
+        if (!raw || raw === "none") return 0;
+        return raw.split(" ").filter(Boolean).length;
+      };
+      return { settingTracks: parseTracks(setting), kvTracks: parseTracks(kv) };
+    });
+    expect(tracks.settingTracks).toBe(1);
+    expect(tracks.kvTracks).toBe(1);
+
+    expect(await hasNoHorizontalOverflow(page)).toBe(true);
+    expect(await sessionPanelContainedInFrame(page)).toBe(true);
+
+    // Wide counterpart: multi-column settings grid returns, still no overflow.
+    await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 880, height: 900 });
+    await openSessionInspection(page, RICH_INSPECTION);
+    const wideTracks = await page.evaluate(() => {
+      const setting = document.querySelector<HTMLElement>(".runtime-ops-session-setting");
+      const raw = setting ? getComputedStyle(setting).gridTemplateColumns : "";
+      return raw.split(" ").filter(Boolean).length;
+    });
+    expect(wideTracks).toBeGreaterThan(1);
+    expect(await hasNoHorizontalOverflow(page)).toBe(true);
+    expect(await sessionPanelContainedInFrame(page)).toBe(true);
+
     await page.close();
   });
 });

@@ -588,18 +588,29 @@ export function opencodeIsolationFootgunWarning(
   );
 }
 
+/**
+ * t-110aaa — verified project-scoped state is a disclosed capability trade-off, not a delegation
+ * boundary. The warning belongs to the only affected door: a parented, non-harness spawn sharing
+ * its checkout. Top-level, harnessed, and isolated-worktree launches do not incur that trade-off.
+ */
+export function projectScopedTranscriptWarning(
+  cmd: string,
+  context: { name: string; parented?: boolean; harness?: boolean; isolatedWorktree?: boolean },
+): string | undefined {
+  const isolation = isolationMechanismForCommand(cmd);
+  if (!context.parented || context.harness || context.isolatedWorktree) return undefined;
+  if (!isolation.verified || isolation.mechanism !== "project-scoped") return undefined;
+  return (
+    `agent '${context.name}' uses project-scoped transcript and runtime state in this checkout — ` +
+    "other same-user processes may read it; use worktree: true or harness isolation for a private scope"
+  );
+}
+
 export function assertVerifiedTranscriptIsolation(cmd: string, context: { name: string } & TranscriptIsolationContext): void {
   const isolation = isolationMechanismForCommand(cmd);
   if (hasVerifiedTranscriptIsolation(isolation, context)) return;
   if (isolation.verified && isolation.mechanism === "project-scoped" && !context.isolatedWorktree) {
-    const remedy = context.parented
-      ? "Spawn with worktree: true to create a child worktree, use a gated delegation, or set cwd to a registered Tachyon worktree."
-      : "Use a gated delegation, spawn with worktree: true, or set cwd to a registered Tachyon worktree.";
-    throw new Error(
-      `cannot delegate '${context.name}': this runtime's project-scoped transcript isolation requires an isolated worktree for this spawn ` +
-        `(mechanism=${isolation.mechanism}, source=${isolation.source}, verified=${isolation.verified}). ` +
-        remedy,
-    );
+    return;
   }
   throw new Error(
     `cannot delegate '${context.name}': runtime transcript isolation is not verified ` +

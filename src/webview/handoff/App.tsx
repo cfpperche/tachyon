@@ -142,7 +142,7 @@ export function App({ vm, dispatch }: { vm?: HandoffViewModel; dispatch: Handoff
   };
 
   return (
-    <div>
+    <div class="ds-page">
       <PageChrome
         class="handoff-chrome"
         title={`Project Handoff — ${vm.folder}`}

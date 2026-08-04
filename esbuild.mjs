@@ -305,7 +305,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["cockpit", "section-app-fixture", "task-detail", "mission-control", "inspector", "plugins"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "mission-control", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "engine", "worktrees", "fleet", "execution-graph", "settings", "overview", "activity", "probes"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `src/webview/${view}/main.tsx`])),
@@ -317,13 +317,6 @@ const webviewApps = {
   plugins: [...(sidebar.plugins ?? []), webviewChunkHygienePlugin],
 };
 delete webviewApps.outfile;
-
-// spec 279 — the Preact Pin Preview view bundle (converted from inline HTML; read-only, never imports vscode).
-const pinPreview = {
-  ...sidebar,
-  entryPoints: ["src/webview/pin-preview/main.tsx"],
-  outfile: "dist/webview/pin-preview.js",
-};
 
 // t-610355 — layer-2 first-party agent pane (xterm.js viewport; never imports vscode)
 const agentPane = {
@@ -460,6 +453,10 @@ function buildTailwind() {
 }
 
 mkdirSync("dist/webview", { recursive: true });
+// SDD 485 E1 — reused build directories must not package the retired Control entry or stylesheet.
+for (const retired of ["cockpit.js", "cockpit.js.map", "cockpit.css"]) {
+  rmSync(path.join("dist/webview", retired), { force: true });
+}
 // t-06a542 — wipe the previous content-hashed chunk tree before esbuild writes a new one. Leaving
 // it in place is how 134 stale cockpit-App-* files accumulated into 0.56.110 (only ~24 reachable).
 rmSync("dist/webview/chunks", { recursive: true, force: true });
@@ -483,6 +480,8 @@ copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
 copyFileSync("src/webview/shared/design-system.css", "dist/webview/design-system.css"); // spec 252 — shared webview design system
 copyFileSync("src/webview/shared/page-frame.css", "dist/webview/page-frame.css"); // t-32c872 — the shared PAGE FRAME (html/body height, no page scroll) a standalone app links
+copyFileSync("src/webview/shared/engine-workspace.css", "dist/webview/engine-workspace.css"); // SDD 485 D5 — opt-in Engine workspace/log contract
+copyFileSync("src/webview/shared/control-typography.css", "dist/webview/control-typography.css"); // SDD 485 D6 — Control + Worktrees typography utility
 copyFileSync("src/webview/shared/mermaid-block.css", "dist/webview/mermaid-block.css"); // spec 374 — Mermaid block + read-only nav (Activity/Handoff/Task Detail)
 copyFileSync("src/webview/shared/vscode-theme.css", "dist/webview/vscode-theme.css"); // spec 342 — shadcn/vendor token bridge (ONE shared source; see its header)
 // spec 345 — Tachyon-owned webview fonts live in their own subtree so KaTeX/Excalidraw can continue owning
@@ -501,11 +500,15 @@ copyFileSync("src/webview/task-studio/task-studio.css", "dist/webview/task-studi
 copyFileSync("src/webview/mission-control/mission-control.css", "dist/webview/mission-control.css"); // spec 335 — Mission Control board styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/task-detail/task-detail.css", "dist/webview/task-detail.css"); // spec 335 — Task Detail styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/runtime-ops/runtime-ops.css", "dist/webview/runtime-ops.css"); // spec 367 — Runtime Ops bottom-panel styles
+copyFileSync("src/webview/runtime-config/runtime-config.css", "dist/webview/runtime-config.css"); // SDD 485 D8 — standalone Runtime Config styles
+copyFileSync("src/webview/execution-graph/execution-graph.css", "dist/webview/execution-graph.css"); // SDD 485 D9
+copyFileSync("src/webview/settings/settings.css", "dist/webview/settings.css"); // SDD 485 D10
+copyFileSync("src/webview/overview/overview.css", "dist/webview/overview.css"); // SDD 485 D11
 copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // spec 278 — plugins styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/cockpit/cockpit.css", "dist/webview/cockpit.css"); // Cockpit desktop POC
+copyFileSync("src/webview/worktrees/worktrees.css", "dist/webview/worktrees.css"); // SDD 485 D6 — standalone Worktrees leaf
 copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/agent-pane/agent-pane.css", "dist/webview/agent-pane.css"); // t-610355 — layer-2 agent pane chrome
 copyFileSync("node_modules/@xterm/xterm/css/xterm.css", "dist/webview/xterm.css"); // t-610355 — xterm.js styles
@@ -544,7 +547,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, webviewApps, pinPreview, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

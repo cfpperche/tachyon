@@ -1,13 +1,40 @@
+import type * as vscode from "vscode";
+import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import type { StudioPanelState } from "./shared/studio/StudioPanelManagerBase.js";
 import type { CommandStudioPatch } from "./command-studio-shell/domain.js";
+import { SingleModeStudioPanelManager } from "./shared/studio/SingleModeStudioPanelManager.js";
+import { STUDIO_REGISTRY } from "../cockpit/studioRegistry.js";
+import { webviewApp } from "./webviewApps.js";
 
 export const COMMAND_STUDIO_SHELL_VIEW_TYPE = "tachyonCommandStudioShell";
-
-/**
- * t-610705 (SDD 410 Phase D, D0) — the standalone Command Studio panel was retired: it's the pilot
- * Control route now (studio-new/studio-edit with studio:"command" — studios-routes-design.md).
- * src/webview/command-studio-shell/App.tsx stays, lazy-imported by cockpit/App.tsx. The trusted
- * serializer for the legacy "tachyonCommandStudioShell" viewType stays registered in extension.ts:
- * a revived pre-410 panel disposes itself and redirects into Control → the mapped studio route.
- */
 export type CommandStudioPanelState = StudioPanelState<CommandStudioPatch>;
+export class CommandStudioPanelManager extends SingleModeStudioPanelManager {
+  constructor(
+    uri: vscode.Uri,
+    workspaces: () => WorkspaceStudioTarget[],
+    onChanged: () => void,
+    scope?: ControlWorkspaceScope,
+  ) {
+    const row = STUDIO_REGISTRY.command;
+    super(
+      uri,
+      {
+        app: webviewApp("command-studio-shell"),
+        styleFiles: [
+          "codicon.css",
+          "design-system.css",
+          "vscode-theme.css",
+          "studio-frame.css",
+          "command-studio-shell.css",
+        ],
+        iconName: "terminal",
+        getWorkspaces: workspaces,
+        makeAdapter: row.makeAdapter,
+        onChanged,
+        handleDomainMessage: row.handleDomainMessage,
+      },
+      scope,
+    );
+  }
+}

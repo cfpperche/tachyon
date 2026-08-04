@@ -20,6 +20,8 @@ export interface PinDetailEntity {
   tags: string[];
   doc: TiptapJSON | null;
   attachments: PinStudioAttachmentVM[];
+  /** CAS baseline inherited by the unified Pin document from D12's task-document policy. */
+  expectUpdatedAt?: string;
 }
 
 export interface PinFields {
@@ -28,6 +30,8 @@ export interface PinFields {
   doc: TiptapJSON;
   attachments: PinAttachment[];
   docDirty: boolean;
+  /** The revision loaded when this draft began; host refreshes never advance a dirty draft's base. */
+  expectUpdatedAt?: string;
 }
 
 export type PinPatch = PinFields;

@@ -138,6 +138,7 @@ const tombstoneTask: TaskDetailVM = {
 
 export const taskDetailFixtures: Record<string, Fixture<TaskDetailVM>> = {
   default: { provenance: "synthetic-edge", vm: detailTask },
+  edit: { provenance: "synthetic-edge", vm: { ...detailTask, previewMode: "edit" } as TaskDetailVM },
   // t-5564b4 — the reported breakage, reproducible: long title, long body with a code block,
   // awaiting-human, six artifact refs carrying a sha256 / absolute path / long URL, journal, missing dep.
   heavy: { provenance: "synthetic-edge", vm: heavyTask },

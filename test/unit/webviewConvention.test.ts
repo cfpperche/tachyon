@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
 import { SHELL_DESIGN_SYSTEM_STYLESHEET, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
+import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 
 // spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
 // tsx dependency, and more robust than a grep script). It asserts the inline-HTML panel class can't recur:
@@ -89,15 +90,25 @@ describe("webview convention (spec 279)", () => {
       // SDD 485 D1 — the same viewType, a LIVE app again: its serializer revives the panel into
       // TmuxPanelManager instead of disposing and redirecting (the token moved to TmuxPanel.ts with it).
       tachyonServerInspector: "TMUX_VIEW_TYPE",
-      tachyonCockpit: "COCKPIT_VIEW_TYPE",
-      tachyonPinPreview: "PIN_PREVIEW_VIEW_TYPE",
+      // SDD 485 D3 — a NEW viewType, unlike the three reuses above it: the only legacy id
+      // (`tachyonRuntimeOpsView`) names spec 367's retired WebviewView, a different surface KIND that was
+      // never registered, so it stays in the dispose-only loop and this app registers its own.
+      tachyonRuntimeOps: "RUNTIME_OPS_VIEW_TYPE",
+      // SDD 485 D4 — the Human Inbox app. A NEW viewType with NO legacy id behind it: this surface was
+      // born as a Control section after 410 and never had a standalone panel, so unlike C4's and D2's
+      // reuses there is no tombstone and no `migrateLegacy`.
+      tachyonHumanInbox: "HUMAN_INBOX_VIEW_TYPE",
+      tachyonEngine: "ENGINE_VIEW_TYPE",
+      tachyonWorktrees: "WORKTREES_VIEW_TYPE",
+      tachyonFleet: "FLEET_VIEW_TYPE",
+      tachyonExecutionGraph: "EXECUTION_GRAPH_VIEW_TYPE",
+      tachyonPinPreview: "PIN_DETAIL_VIEW_TYPE",
       tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
       // SDD 485 C5 — the Board's own viewType, and the first app on `SectionPanelManager` that genuinely
       // revives (the legacy id above stays a dispose+redirect INTO this one).
       tachyonBoard: "BOARD_VIEW_TYPE",
       tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
       tachyonTaskStudio: "TASK_STUDIO_VIEW_TYPE",
-      tachyonApprovals: "APPROVAL_VIEW_TYPE",
       tachyonPipelineStudio: "PIPELINE_STUDIO_VIEW_TYPE",
       tachyonAgentStudioShell: "AGENT_STUDIO_SHELL_VIEW_TYPE",
       tachyonTerminalStudioShell: "TERMINAL_STUDIO_SHELL_VIEW_TYPE",
@@ -105,6 +116,9 @@ describe("webview convention (spec 279)", () => {
       tachyonRunbookStudioShell: "RUNBOOK_STUDIO_SHELL_VIEW_TYPE",
       tachyonScheduleStudioShell: "SCHEDULE_STUDIO_SHELL_VIEW_TYPE",
       tachyonAgentPane: "AGENT_PANE_VIEW_TYPE",
+      tachyonRuntimeConfig: "RUNTIME_CONFIG_VIEW_TYPE",
+      tachyonSettings: "SETTINGS_VIEW_TYPE",
+      tachyonOverview: "OVERVIEW_VIEW_TYPE",
     };
     const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
     const violations: string[] = [];
@@ -317,6 +331,31 @@ function linkedPageFrameProviders(s: WebviewSurface, sources: Map<string, string
 }
 
 describe("webview design-system conformance contract (spec 485 Phase A)", () => {
+  it("every launcher-backed section app consumes the shared page chrome or declares a measured exception (t-a07b1e)", () => {
+    const exceptions: Record<string, string> = {
+      "mission-control": "fixed-height board splits the standard pad between its header and independently scrolling columns",
+    };
+    const violations: string[] = [];
+    for (const app of WEBVIEW_APPS.filter((entry) => entry.host === "section" && entry.section !== undefined)) {
+      const sourceDir = `src/webview/${app.view}`;
+      const source = readdirSync(sourceDir)
+        .filter((name) => name.endsWith(".tsx"))
+        .map((name) => readFileSync(join(sourceDir, name), "utf8"))
+        .join("\n");
+      const surface = WEBVIEW_SURFACES.find((entry) => entry.view === app.view);
+      const linkedCss = surface ? linkedStylesheets(surface)
+        .flatMap((name) => stylesheetSourcesByName().get(name) ?? [])
+        .map((file) => readFileSync(file, "utf8"))
+        .join("\n") : "";
+      const mountsPage = /<(?:main|div)\b[^>]*\bclass="[^"]*\bds-page\b/.test(source);
+      if (mountsPage && cssDefinesUnconditionalClass(linkedCss, "ds-page")) continue;
+      const reason = exceptions[app.view];
+      if (!reason?.trim()) violations.push(`${app.viewId}: section app does not mount the shared .ds-page chrome and has no measured exception`);
+    }
+    expect(violations, violations.join("\n")).toEqual([]);
+    expect(Object.entries(exceptions).filter(([, reason]) => reason.trim().length < 20)).toEqual([]);
+  });
+
   it("every surface declares a posture, and the declaration is well-formed", () => {
     // A1 — 410's standing exceptions (sidebar, pin-preview, the dev-only spec-350 fakes, the plugin surfaces)
     // carry forward as EXPLICIT entries. `posture` is required by the type, so "no posture" cannot compile;
@@ -465,4 +504,211 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
     const unused = SHELL_EXTENSION_POINTS.filter((p) => !used.has(p));
     expect(unused, `extension points declared by the shell but used by nothing: ${unused.join(", ")}`).toEqual([]);
   });
+
+  it("the Engine app consumes its linked shared workspace sheet (SDD 485 D5)", () => {
+    const host = readFileSync("src/webview/EnginePanel.ts", "utf8");
+    const consumers = readFileSync("src/webview/engine/App.tsx", "utf8")
+      + readFileSync("src/webview/shared/control/EngineLogPanel.tsx", "utf8");
+    const shared = readFileSync("src/webview/shared/engine-workspace.css", "utf8");
+    expect(host).toContain('"engine-workspace.css"');
+    for (const className of ["ck-card-list", "ck-empty", "ci-ws", "ci-log"]) {
+      expect(consumers).toContain(className);
+      expect(shared).toContain(`.${className}`);
+    }
+  });
+
+  it("every section app links definitions for the ck/ci classes its JSX consumes", () => {
+    const sources = stylesheetSourcesByName();
+    const violations: string[] = [];
+    const skipped: string[] = [];
+    for (const app of WEBVIEW_APPS.filter((entry) => entry.host === "section")) {
+      // t-967b5b — this used to read ONLY `<view>/App.tsx` and `continue` when it was absent, which
+      // skipped the app in silence and reported green for a surface it never opened. Four directories
+      // were invisible that way, two of them the section apps D9 and D10 had just delivered; the
+      // Settings app shipped `ck-panel` on its outermost container with no linked sheet defining it,
+      // and this guard said nothing. A guard whose miss looks identical to a pass is worse than no
+      // guard, because it is BELIEVED. Read whatever the app actually ships.
+      const jsxSources = appSourceFiles(app.view);
+      const surface = WEBVIEW_SURFACES.find((entry) => entry.view === app.view);
+      if (!surface) continue;
+      if (jsxSources.length === 0) { skipped.push(app.view); continue; }
+      const linkedCss = linkedStylesheets(surface)
+        .flatMap((name) => sources.get(name) ?? [])
+        .map((file) => readFileSync(file, "utf8"))
+        .join("\n");
+      const jsx = jsxSources.map((file) => readFileSync(file, "utf8")).join("\n");
+      // Only CLASS positions. Matching the bare token anywhere caught `id="ck-settings-scope-global-title"`
+      // and its `aria-labelledby` partner — accessibility ids that follow the same naming convention and
+      // are styled by nothing on purpose. The narrow read (App.tsx only) never saw them, so widening the
+      // guard without narrowing WHERE it looks would have traded a silent miss for a false red, and a
+      // guard that cries wolf gets edited until it stops crying.
+      const used = new Set(classAttributeValues(jsx)
+        .flatMap((value) => [...value.matchAll(/\b(?:ck|ci)-[a-z0-9-]+/g)].map((m) => m[0]))
+        .map((name) => name.replace(/-$/, "")));
+      for (const className of used) {
+        if (!new RegExp(`\\.${className}(?![a-z0-9-])`).test(linkedCss)) {
+          violations.push(`${app.view}: uses .${className}, but none of its linked stylesheets defines it`);
+          continue;
+        }
+        // t-f78665 — presence is not reach. `.ck-settings-status .ck-badge` made the presence check
+        // green while the device-list badge (outside that parent) rendered as plain text. Require an
+        // unconditional subject rule: rightmost compound includes the class, no ancestor combinator.
+        if (!cssDefinesUnconditionalClass(linkedCss, className)) {
+          violations.push(`${app.view}: uses .${className}, but linked CSS only styles it under a required ancestor or as an ancestor of something else — add a subject rule (e.g. .${className} { … }), or stop using the class outside the scoped parent`);
+        }
+      }
+    }
+    // A section app with no source at all is not a pass — it is the condition that hid the misses above.
+    expect(skipped, `section apps with no readable JSX source — this guard cannot see them: ${skipped.join(", ")}`).toEqual([]);
+    expect(violations, violations.join("\n")).toEqual([]);
+  });
 });
+
+/**
+ * t-f78665 — the D6 presence guard is blind to "class only under a parent". Full CSS matching is not
+ * free; this heuristic asks a cheaper, incomplete question: does any selector treat the class as a
+ * subject without a required ancestor? Measured 2026-08-04 against every section-app × linked-sheet
+ * pair (80 usages): one failure, the live `.ck-badge` bug. Zero false positives in that scope.
+ *
+ * Historical fixtures below are the red proof — they recreate the three named escapes before the
+ * production tree is asserted green.
+ */
+describe("webview CSS unconditional class subject (t-f78665)", () => {
+  it("FAILS the three historical escapes (red proof before the live tree is trusted green)", () => {
+    // 1. ck-badge — only descendant subjects under .ck-settings-status (pre-fix settings.css)
+    const badgeOnlyDescendant = `
+      .ck-settings-status .ck-badge { padding: 1px 6px; }
+      .ck-settings-status .ck-badge.ok { color: green; }
+      .ck-settings-status .ck-badge.muted { color: gray; }
+    `;
+    expect(cssClassNameAppears(badgeOnlyDescendant, "ck-badge"), "presence alone would still pass for badge").toBe(true);
+    expect(cssDefinesUnconditionalClass(badgeOnlyDescendant, "ck-badge"), "badge only as descendant subject").toBe(false);
+
+    // 2. ck-panel — D10/D11 shape: class only as ancestor of a child rule (base lived elsewhere)
+    const panelOnlyAsAncestor = `
+      .ck-panel p { margin: 0 0 6px; }
+    `;
+    expect(cssClassNameAppears(panelOnlyAsAncestor, "ck-panel"), "presence alone would still pass for panel").toBe(true);
+    expect(cssDefinesUnconditionalClass(panelOnlyAsAncestor, "ck-panel"), "panel only as ancestor qualifier").toBe(false);
+
+    // 3. ck-mono — D6 shape: name never appears in the linked sheet at all
+    const monoMissing = `
+      .ck-card-list { display: flex; }
+    `;
+    expect(cssClassNameAppears(monoMissing, "ck-mono"), "mono absent from sheet").toBe(false);
+    expect(cssDefinesUnconditionalClass(monoMissing, "ck-mono"), "mono has no subject rule").toBe(false);
+  });
+
+  it("PASSES when a bare or compound subject rule exists without an ancestor", () => {
+    expect(cssDefinesUnconditionalClass(".ck-badge { padding: 1px 6px; }", "ck-badge")).toBe(true);
+    expect(cssDefinesUnconditionalClass(".ck-badge.ok { color: green; }", "ck-badge")).toBe(true);
+    expect(cssDefinesUnconditionalClass(".ck-panel { border: 1px solid; }\n.ck-panel p { margin: 0; }", "ck-panel")).toBe(true);
+    expect(cssDefinesUnconditionalClass(".ck-mono { font-family: monospace; }", "ck-mono")).toBe(true);
+  });
+});
+
+/**
+ * The text of every `class` attribute in a JSX source — both `class="a b"` and `class={…}` forms, the
+ * second taken whole so template literals and conditionals inside it still yield their class names.
+ */
+function classAttributeValues(jsx: string): string[] {
+  return [
+    ...[...jsx.matchAll(/\bclass="([^"]*)"/g)].map((m) => m[1]),
+    ...[...jsx.matchAll(/\bclass=\{([^}]*)\}/g)].map((m) => m[1]),
+  ];
+}
+
+/** Every component source that ships inside one app's bundle — its whole directory, not one hoped-for name. */
+function appSourceFiles(view: string): string[] {
+  const dir = `src/webview/${view}`;
+  if (!existsSync(dir)) return [];
+  const out: string[] = [];
+  const walk = (d: string): void => {
+    for (const entry of readdirSync(d, { withFileTypes: true })) {
+      const path = `${d}/${entry.name}`;
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith(".tsx")) out.push(path);
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+/** Does the class token appear as a CSS class selector somewhere in the sheet (the D6 presence check). */
+function cssClassNameAppears(css: string, className: string): boolean {
+  return new RegExp(`\\.${className}(?![a-z0-9-])`).test(css);
+}
+
+/**
+ * Heuristic: some selector's rightmost compound includes `.className` and requires no ancestor
+ * combinator. Not full cascade matching — deliberately incomplete and cheap. Strips functional
+ * pseudos/attributes/simple pseudos before looking for combinators so `:hover` does not look like a
+ * descendant. Does not expand `:is()`/`:where()` argument lists (none of our `ck-*` sheets use them
+ * as the subject vehicle today).
+ *
+ * Uses brace-matching selector extraction rather than `cssRules`: that helper's flat regex drops
+ * every other rule on real sheets (measured: settings+shared yielded 52 vs 102 selectors), which
+ * would make this guard cry wolf on classes that do have bare subject rules.
+ */
+function cssDefinesUnconditionalClass(css: string, className: string): boolean {
+  for (const selector of cssSelectorsBraceMatched(css)) {
+    for (const part of selector.split(",")) {
+      if (selectorPartIsUnconditionalSubject(part.trim(), className)) return true;
+    }
+  }
+  return false;
+}
+
+function selectorPartIsUnconditionalSubject(sel: string, className: string): boolean {
+  let s = sel;
+  for (let i = 0; i < 6; i++) s = s.replace(/:[a-z-]+\((?:[^()]|\([^()]*\))*\)/gi, "");
+  s = s.replace(/\[[^\]]*\]/g, "");
+  s = s.replace(/::?[a-z-]+/gi, "");
+  s = s.trim();
+  if (!s || /[\s>+~]/.test(s)) return false;
+  const classes = [...s.matchAll(/\.([a-zA-Z_][\w-]*)/g)].map((m) => m[1]);
+  return classes.includes(className);
+}
+
+/** Every selector list entry in a stylesheet, including those nested under `@media`/`@supports`/`@layer`. */
+function cssSelectorsBraceMatched(css: string): string[] {
+  const out: string[] = [];
+  const extract = (text: string): void => {
+    let i = 0;
+    while (i < text.length) {
+      while (i < text.length && /\s/.test(text[i]!)) i++;
+      if (i >= text.length) break;
+      if (text.startsWith("@", i)) {
+        const brace = text.indexOf("{", i);
+        if (brace < 0) break;
+        let depth = 1;
+        let j = brace + 1;
+        while (j < text.length && depth > 0) {
+          if (text[j] === "{") depth++;
+          else if (text[j] === "}") depth--;
+          j++;
+        }
+        const atName = text.slice(i, brace).trim();
+        if (/^@(media|supports|layer)\b/i.test(atName)) extract(text.slice(brace + 1, j - 1));
+        i = j;
+        continue;
+      }
+      const brace = text.indexOf("{", i);
+      if (brace < 0) break;
+      let depth = 1;
+      let j = brace + 1;
+      while (j < text.length && depth > 0) {
+        if (text[j] === "{") depth++;
+        else if (text[j] === "}") depth--;
+        j++;
+      }
+      const selectorList = text.slice(i, brace).trim();
+      if (selectorList && !selectorList.startsWith("@")) {
+        for (const sel of selectorList.split(",")) out.push(sel.trim());
+      }
+      i = j;
+    }
+  };
+  extract(stripCssComments(css));
+  return out;
+}

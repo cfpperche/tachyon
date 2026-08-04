@@ -485,7 +485,8 @@ describe("AgentManager", () => {
 
     it("the recorded parent OUTLIVES the parent's death — promotion is a render decision", async () => {
       // Measured, and worth stating because the opposite is the intuitive guess: killing the parent
-      // does NOT rewrite or erase the child's link (`kill` only forgets the DEAD agent's own parent).
+      // does NOT rewrite or erase the child's link. A stopped agent that remains in the roster also
+      // keeps its own parent; only collection/dismissal erases that identity fact.
       // The child is promoted to top level when it is RENDERED, because the sidebar nests only
       // against parents that are actually present in the row set. Keeping the recorded fact and
       // deciding presentation separately is what lets a re-spawned parent re-adopt its children.
@@ -2220,6 +2221,20 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     await expect(h.manager.prepareAgentProfileForget("reviewer")).resolves.toMatchObject({
       ledgerSha256: expect.any(String),
+    });
+  });
+
+  it("t-110aaa guard: canonical forget still refuses a running agent", async () => {
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    await h.manager.spawn("reviewer");
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).rejects.toMatchObject({
+      code: "agent-profile/forget-agent-running",
     });
   });
 
@@ -4136,6 +4151,19 @@ describe("AgentManager — session resume (spec 209)", () => {
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
     await expect(manager.spawn("reviewer", { cmd: "gemini", parent: "boss" })).rejects.toThrow(/runtime transcript isolation is not verified/);
     expect(newSessionArgs).toEqual([]);
+  });
+
+  it("t-110aaa: parented Grok delegates without a worktree and visibly reports project-scoped state", async () => {
+    const warnings: string[] = [];
+    const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+      notify: (message) => warnings.push(message),
+    });
+    await manager.spawn("grok-child", { cmd: "grok", parent: "boss" });
+    expect(newSessionArgs).toHaveLength(1);
+    expect(warnings).toEqual([
+      expect.stringContaining("project-scoped transcript and runtime state"),
+    ]);
+    expect(warnings[0]).toContain("same-user processes may read it");
   });
 
   it("spec t-e2ebe3: private-home opencode delegation passes UNGATED (no isolated worktree required)", async () => {
@@ -6837,6 +6865,33 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect(manager.parentOf("child")).toBe("boss");
     expect((await manager.list()).find((entry) => entry.name === "child")?.parent).toBe("boss");
     expect(ledger.get("child")?.def?.parent).toBe("boss");
+  });
+
+  it("keeps a stopped Temporary worktree child's parent in the listing", async () => {
+    const worktree = { path: "/wt/child", branch: "tachyon/child", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
+    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => ({ cwd: worktree.path, worktree }),
+    });
+    await manager.spawn("child", { cmd: "codex", parent: "boss" });
+
+    await manager.kill("child");
+
+    expect((await manager.list()).find((entry) => entry.name === "child")).toMatchObject({
+      lifetime: "temporary",
+      running: false,
+      parent: "boss",
+    });
+  });
+
+  it("does not carry a stopped instance's parent into a reused top-level name", async () => {
+    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: sh\n");
+    await manager.spawn("child", { parent: "boss" });
+    await manager.kill("child");
+
+    await manager.spawn("child");
+
+    expect(manager.parentOf("child")).toBeUndefined();
+    expect((await manager.list()).find((entry) => entry.name === "child")?.parent).toBeUndefined();
   });
 
   it("Saved spawn/restart preserves explicit runtime lineage separately from declaredOwner", async () => {

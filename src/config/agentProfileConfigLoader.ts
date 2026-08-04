@@ -169,9 +169,9 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   // declaration itself cannot be trusted, and there is no healthy subset to salvage.
   //
   // Neither is there when EVERY agent was refused. Continuing then would hand the legacy parser an
-  // empty `agents` map, and its own "must be a non-empty mapping" would replace the per-agent reasons
-  // with a message about the wrong thing. Isolation is for saving a healthy remainder; with no
-  // remainder the honest answer is the original failure.
+  // empty `agents` map — which is a valid empty roster after t-f67185 — and silently drop the
+  // per-agent refusal reasons. Isolation is for saving a healthy remainder; with no remainder the
+  // honest answer is the original failure.
   if (errors.length > profileErrors.length || (errors.length > 0 && projected.size === 0)) {
     return { errors, warnings: [], profileErrors };
   }

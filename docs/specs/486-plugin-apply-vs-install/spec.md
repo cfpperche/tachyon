@@ -37,8 +37,41 @@ Three levels, each with an owner and a moment:
 | Level | What exists | Who decides | Reversible by |
 |---|---|---|---|
 | **Installed** | payload under `.tachyon/plugins/<plugin>/`, nothing materialized | whoever installs | uninstall |
-| **Applied to the workspace** | Tachyon materializes that skill into each served runtime's project dir | the human, per skill | un-applying, without uninstalling |
+| **Applied to the workspace** | Tachyon materializes that contribution into each served runtime's project dir | the human, per contribution | un-applying, without uninstalling |
 | **Delivered to an agent** | the skill is copied into that agent's private home | the human, when creating or editing a Saved Agent | de-selecting it |
+
+### A plugin is not only skills, and the middle row is not only `skill-dir`
+
+Raised by the maintainer, 2026-08-03, before ratification: *"plugins nao sao apenas de skills, podem ter
+hooks, binarios e outras coisas … hooks vao poder ser habilitados e desabilitados tambem?"* The draft this
+replaces said "skill" throughout and mentioned hooks exactly once — as a file path, not as a decision. The
+answer is yes, and the reason it is yes matters more than the answer.
+
+Two lists, and only one of them is this spec's subject. A plugin's manifest can declare seven kinds of
+thing (`manifest.ts:213`): `blocks` (a runtime's native hooks), `gitHooks`, `tools` (author-pinned
+binaries), `data`, `externalTools`, `config`, `views`. But what Tachyon **materializes into a place
+something else reads** is a shorter, already-enumerated list — the lockfile's `TargetKind`
+(`lockfile.ts:22`), which exists precisely because it is what a removal must be able to undo exactly:
+
+| kind | what lands, and where | in this spec |
+|---|---|---|
+| `skill-dir` | a skill directory into `.claude/skills/`, `.agents/skills/`, `.grok/skills/` | **Phase A** |
+| `settings-hook` | a hook entry MERGED into the runtime's settings file | **Phase A** |
+| `mcp-server` | a server entry MERGED into the runtime's MCP config | **Phase C** |
+| `view` | a UI surface inside Tachyon itself | **out** — see Non-goals |
+
+**The case for gating hooks is stronger than the case for gating skills, not weaker.** A skill is text a
+model MAY read. A hook is code that RUNS, on every event that matches, without anyone asking at the moment
+it fires. If the principle is that installing must not silently put text in front of a model, then
+installing must not silently ARM CODE is the same principle at higher stakes. Shipping this for skills
+alone would leave a human in control of the quiet half and not the loud one.
+
+What a plugin ships that is **not** projected is out by nature rather than by omission, and each for a
+reason worth stating once so nobody re-opens it: `tools` and `data` are fetched content-addressed into
+Tachyon's own directory and reached only through an explicit shim (`_tachyon-tool`, `_tachyon-data`) —
+installing puts no binary anywhere a runtime discovers by itself, so there is nothing to "apply".
+`externalTools` are declared and detected, never provisioned. `config` lives in the plugin's own payload
+directory. None of the four enters a runtime's ambient scope, which is the only thing this spec regulates.
 
 The maintainer's rule for delegation is unchanged and rides on top: a **Temporary agent always gets
 its own worktree**, and therefore its own cwd, and inherits the skills its **parent** can see,
@@ -89,19 +122,30 @@ done twice.
 
 - [ ] **Scenario: installing materializes nothing**
   - **Given** a workspace with no plugins applied
-  - **When** a human installs a plugin that ships skills
-  - **Then** the payload exists under `.tachyon/plugins/<plugin>/` and **no** runtime project
-    directory gained a skill — not `.claude/skills`, not `.agents/skills`, not `.grok/skills`
-- [ ] **Scenario: applying is a separate, per-skill act**
-  - **Given** an installed plugin shipping several skills
+  - **When** a human installs a plugin that ships skills AND hooks
+  - **Then** the payload exists under `.tachyon/plugins/<plugin>/`, **no** runtime project directory
+    gained a skill — not `.claude/skills`, not `.agents/skills`, not `.grok/skills` — and **no**
+    runtime settings file gained a hook entry
+- [ ] **Scenario: applying is a separate, per-contribution act**
+  - **Given** an installed plugin shipping several skills and at least one hook
   - **When** the human applies ONE of them to the workspace
-  - **Then** exactly that skill is materialized, into every runtime the plugin declares support for,
-    and the others remain installed-but-unapplied
+  - **Then** exactly that contribution is materialized, into every runtime the plugin declares support
+    for, and the others remain installed-but-unapplied
 - [ ] **Scenario: un-applying does not uninstall**
-  - **Given** a skill applied to the workspace
+  - **Given** a contribution applied to the workspace
   - **When** the human un-applies it
   - **Then** the materialization is removed from every runtime dir, the payload stays installed, and
     re-applying needs no refetch
+- [ ] **Scenario: un-applying a hook un-merges rather than overwrites**
+  - **Given** an applied hook whose runtime settings file the human has ALSO edited by hand
+  - **When** the human un-applies that hook
+  - **Then** Tachyon's entry is removed by the lockfile's adapter-owned removal identity and the
+    human's own edits to that file survive untouched
+- [ ] **Scenario: an armed hook is visible as armed**
+  - **Given** a plugin installed with a hook not applied, and a second with its hook applied
+  - **When** the human looks at the Plugins app
+  - **Then** the two are distinguishable without opening a file — code that will run on the next
+    matching event is never indistinguishable from code that will not
 - [ ] **Scenario: a Temporary agent inherits its parent's, filtered by runtime**
   - **Given** a parent agent that can see a set of skills
   - **When** it spawns a Temporary child
@@ -131,6 +175,20 @@ done twice.
 - **Not the inspector's content check.** `t-09be02` stays: a materialization the lockfile claims is
   still not ambient. This spec makes that path rarer, not wrong.
 - **Terminals are out of scope** — a terminal is not an agent and holds no skills.
+- **`view` is out, and not by oversight.** It is the one `TargetKind` that does not enter a *runtime's*
+  ambient scope: a view is a surface inside Tachyon's own UI (spec 349), read by Tachyon and by nobody
+  else. Toggling it is an interface preference, and modelling a preference as an authority grant would
+  make the word "applied" mean two different things in one table. If views need a disable switch, that is
+  its own small spec about UI, not this one about what a runtime can see. Written down so the omission is
+  a decision the next reader can disagree with, rather than a gap they have to guess at.
+- **`tools`, `data`, `externalTools` and `config` are out** — none is projected into a runtime-read
+  location; see the table above for what each does instead. `${tool:<name>}` coupling is a sequencing
+  question, recorded under Open questions.
+- **`gitHooks` are out of Phases A–C.** They materialize into `.git/hooks/` through a Tachyon-managed
+  chaining dispatcher with its own ownership registry (`gitHookRegistry.ts`), NOT through the lockfile's
+  `TargetKind` — a different mechanism with a different removal story, and folding it in would mean
+  designing two un-merges in one spec. It is a genuine follow-up, not an exclusion on principle: a git
+  hook is code that runs too, and the argument above applies to it in full.
 
 ## Open questions
 
@@ -138,9 +196,44 @@ done twice.
   wrote. Applied-state is a different fact with a different lifetime (a human toggles it; an install
   does not). Same file with a new field, or its own record? The test is which one makes an
   un-applied skill impossible to resurrect by reload.
-- **What does a fresh clone do?** A teammate clones a repo whose `tachyon.yml` lists plugins. Does
-  applied-state travel in the repo (so the team shares one answer) or stay local (so each machine
-  decides)? These give opposite defaults and both are defensible; the maintainer decides.
-- **Does the Temporary child's runtime filter already exist?** `AgentManager.ts:1256` captures parent
-  skills per delegation and already withholds BY NAME on failure. Whether it filters on runtime
-  support — and whether the shortfall is reported — must be measured before it is assumed.
+- **Does un-applying a hook mid-session need a different answer from un-applying a skill?** A1 already
+  asks what each runtime does when a skill DIRECTORY disappears mid-session. A hook is sharper in two
+  ways and the measurement must cover both: the entry lives in a settings file the runtime may have read
+  once at start, so removal may not take effect until restart — and a hook may be MID-EXECUTION when its
+  entry is removed. "It stops firing next time" and "the one currently running is killed" are different
+  products; nobody has measured which one each runtime gives.
+- **Does applying a skill that references `${tool:<name>}` require the tool first?** A skill's argv can
+  reference a plugin-provisioned binary. Tools are out of the apply model (nothing to apply), but the
+  ORDER still matters: applying a skill whose tool was never consented and provisioned delivers a skill
+  that fails at first use. Either apply refuses with the reason, or the skill lands and fails later. The
+  first is this repo's habit; it is not yet a decision.
+- ~~**What does a fresh clone do?**~~ **RESOLVED by the maintainer, 2026-08-03.** Applied-state stays
+  **local**. The rule stated is broader than this spec and worth recording as such: *"tachyon nunca
+  deve viajar no repo … exceto o explicitamente declarado como as specs do plugin sdd"*.
+
+  It is already the practice, which is why it is the right answer here rather than a preference:
+  `.gitignore:13` closes `.tachyon/` and `:32` closes `tachyon.yml` itself. A fleet's own
+  configuration does not travel; only deliberately published documents do.
+
+  **Correction, measured 2026-08-03:** an earlier draft of this paragraph said the exceptions are
+  "re-opened BY NAME" in `.gitignore`. They are not — there is no `!.tachyon/…` line at the repo root
+  at all, and the only exceptions in that file are under `test/fixtures/`. Files DO exist in the repo
+  under `.tachyon/designs/` and `.tachyon/evidence/`; they got there by `git add -f`, one at a time,
+  by hand. The conclusion does not change — it gets stronger, since nothing under `.tachyon/` travels
+  by default. But the difference is the one this repo keeps paying for elsewhere: "re-opened by name
+  in `.gitignore`" is a rule a machine enforces; "somebody force-added it" is a habit. Do not build
+  on the first sentence, because only the second is true.
+
+  Consequence, and it is the correct default rather than a shortfall: a teammate who clones this repo
+  gets the plugins declared and **nothing applied**. They choose, on their machine, exactly as this
+  spec asks the first human to. The alternative would have handed someone skills they never selected,
+  in a workspace they just opened — the same accident this whole spec exists to end, arriving through
+  git instead of through install.
+
+- ~~**Does the Temporary child's runtime filter already exist?**~~ **MEASURED, 2026-08-03 — yes.**
+  `AgentManager.ts:1238` filters plugin targets with
+  `candidate.kind === "skill-dir" && candidate.runtime === runtime`, over the four runtimes the
+  toolkit admits (claude, codex, grok, pi). The shortfall IS reported: capture failure withholds the
+  one skill BY NAME through `notifyDelegatedToolkitCondition` rather than failing the delegation
+  (`t-b505b3` follow-up), and a digest conflict refuses rather than refreshing (`t-b0cfd4`). Nothing
+  to build; Phase B only moves what it reads FROM.

@@ -22,7 +22,6 @@ const BARE_ELEMENT_OWNERS: Record<string, string> = {
   "shared/design-system.css": "the ONE base sheet every webview links first — owns body/button/a/select defaults by contract",
   "shared/vscode-theme.css": "theme token bridge — may restyle base elements for vendor parity",
   "shared/page-frame.css": "t-32c872 — the shared PAGE FRAME: html/body height + no page scroll IS its whole content, opt-in per app and never co-loaded into Control (which pins the same properties last, with !important)",
-  "cockpit/cockpit.css": "the Control shell owner — pins html/body with !important, linked last by contract",
   "sidebar/sidebar.css": "standalone sidebar app — sole stylesheet of its own document",
   "shared/mermaid-block.css": "read-only rendered-markdown region — scopes via :where() internally where needed",
   "pin-preview/pin-preview.css": "standalone-by-standing-exception (SDD 410: static preview, never co-loaded into Control) — owns its own document",

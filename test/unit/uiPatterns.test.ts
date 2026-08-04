@@ -31,12 +31,15 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(guide).toContain("shared/ui");
   });
 
-  it("Control ModuleChrome and Approvals adopt the patterns", () => {
-    const cockpit = readFileSync("src/webview/cockpit/App.tsx", "utf8");
-    expect(cockpit).toContain("PageChrome");
-    expect(cockpit).toContain("ListRow");
-    expect(cockpit).toContain("EmptyState");
-    expect(cockpit).not.toMatch(/ci-badge/);
+  it("standalone Fleet and Approvals adopt the patterns", () => {
+    // SDD 485 D18 — Control was the first subject in this list and has been dropped, not repointed:
+    // it renders no product surface any more, so "does the page adopt the shared page patterns" has
+    // no page to ask about. The surfaces that inherited its screens are each asserted in their own
+    // cutover test plus the shared page-chrome guard, so nothing this line covered went uncovered.
+    const fleet = readFileSync("src/webview/fleet/App.tsx", "utf8");
+    expect(fleet).toContain("PageChrome");
+    expect(fleet).toContain("ListRow");
+    expect(fleet).toContain("EmptyState");
     const approvals = readFileSync("src/webview/approval/App.tsx", "utf8");
     expect(approvals).toContain("PageChrome");
     expect(approvals).toContain("EmptyState");

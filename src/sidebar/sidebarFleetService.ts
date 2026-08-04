@@ -352,13 +352,9 @@ export async function buildSidebarFleet(
     read: n.read,
     actionsLive: n.actionsLive,
   }));
-  const proposals = source.proposals.list().map((proposal) => ({
-    id: proposal.id,
-    name: proposal.name,
-    by: proposal.by,
-    reason: proposal.reason,
-    when: scheduleSummary(proposal.schedule),
-  }));
+  // t-d4f246 — Human Inbox is the single owner of pending human decisions. The sidebar remains the
+  // fleet's active-schedule/status surface; mirroring proposals here recreates two queues.
+  const proposals: never[] = [];
   const now = options.now?.() ?? Date.now();
   const schedules = source.scheduler.list().map((schedule) => ({
     name: schedule.name,

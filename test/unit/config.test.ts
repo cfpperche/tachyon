@@ -72,9 +72,36 @@ describe("parseConfig", () => {
     expect(parseConfig("- just\n- a list\n").errors[0]).toContain("YAML mapping");
   });
 
-  it("requires a non-empty agents section", () => {
-    expect(parseConfig("agents: {}\n").errors[0]).toContain("non-empty");
-    expect(parseConfig("layouts: {}\n").errors.some((e) => e.includes("agents"))).toBe(true);
+  // t-f67185 — empty roster is a valid product state (Board/pins/plugins without agents).
+  // Guard against re-tightening: prove empty accepts and malformed still refuses.
+  it("t-f67185: empty agents / commands-only / bare mapping load as valid empty rosters", () => {
+    for (const yaml of [
+      "agents: {}\n",
+      "commands:\n  build:\n    cmd: npm run build\n",
+      "{}\n",
+      "settings:\n  maxAgents: 4\n",
+      "terminals: {}\n",
+    ]) {
+      const { config, errors } = parseConfig(yaml);
+      expect(errors, yaml).toEqual([]);
+      expect(config, yaml).toBeDefined();
+      expect(config?.agents, yaml).toEqual({});
+    }
+  });
+
+  it("t-f67185: malformed agents/terminals still refuse (empty ≠ malformed)", () => {
+    const scalar = parseConfig('agents: "olá"\n');
+    expect(scalar.config).toBeUndefined();
+    expect(scalar.errors.some((e) => e.includes("'agents'") && e.includes("mapping"))).toBe(true);
+    expect(scalar.errors.some((e) => e.includes("non-empty"))).toBe(false);
+
+    const list = parseConfig("agents:\n  - one\n");
+    expect(list.config).toBeUndefined();
+    expect(list.errors.some((e) => e.includes("'agents'") && e.includes("mapping"))).toBe(true);
+
+    const termScalar = parseConfig("agents: {}\nterminals: oops\n");
+    expect(termScalar.config).toBeUndefined();
+    expect(termScalar.errors.some((e) => e.includes("'terminals'") && e.includes("mapping"))).toBe(true);
   });
 
   it("requires cmd and validates field types with paths in messages", () => {
@@ -404,9 +431,11 @@ describe("parseConfig", () => {
     expect(errors[0]).toContain("already declared under agents");
   });
 
-  it("still requires at least one entry across both blocks", () => {
-    expect(parseConfig(`terminals: {}\n`).errors.some((e) => e.includes("agents"))).toBe(true);
-    expect(parseConfig(`agents: {}\n`).errors[0]).toContain("non-empty");
+  it("t-f67185: empty agents: and empty terminals: are both valid empty rosters", () => {
+    expect(parseConfig(`terminals: {}\n`).errors).toEqual([]);
+    expect(parseConfig(`terminals: {}\n`).config?.agents).toEqual({});
+    expect(parseConfig(`agents: {}\n`).errors).toEqual([]);
+    expect(parseConfig(`agents: {}\n`).config?.agents).toEqual({});
   });
 
   it("backward compatible: a terminal declared the old way (agents: + kind: terminal) is identical", () => {

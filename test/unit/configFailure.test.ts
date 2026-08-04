@@ -157,6 +157,32 @@ agents:
 });
 
 describe("doctor report", () => {
+  it("reports a loaded config with an isolated refused profile without calling the file invalid", () => {
+    const report = buildDoctorReport({
+      workspaceRoot: "/ws",
+      configPath: "/ws/tachyon.yml",
+      configFileExists: true,
+      configValid: true,
+      configFailure: null,
+      refusedProfiles: [{ name: "broken", reason: "profile/schema: schemaVersion: Invalid literal value, expected 1" }],
+      lkg: null,
+      ledger: [],
+      liveSessions: new Set(),
+      knownSessions: new Set(),
+      bridge: { port: 42897, url: "http://127.0.0.1:42897/mcp", reachable: true, authConfigured: true },
+    });
+
+    expect(report.findings).toContainEqual(expect.objectContaining({
+      id: "config.profiles_refused",
+      severity: "warn",
+      title: expect.stringMatching(/loaded.*1.*refused agent profile/i),
+      detail: expect.stringMatching(/broken.*profile\/schema.*schemaVersion/is),
+    }));
+    expect(report.findings.some((finding) => finding.id === "config.invalid")).toBe(false);
+    expect(report.findings.some((finding) => finding.id === "config.ok")).toBe(false);
+    expect(formatDoctorReport(report)).not.toMatch(/Invalid tachyon\.yml/);
+  });
+
   it("reports ignored obsolete settings without treating the config as invalid", () => {
     const report = buildDoctorReport({
       workspaceRoot: "/ws",
@@ -192,7 +218,7 @@ describe("doctor report", () => {
       configFailure: {
         path: "/ws/tachyon.yml",
         file: "tachyon.yml",
-        errors: ["'reviewer' is not declared in agents/terminals"],
+        errors: ["cannot read /ws/tachyon.yml: permission denied"],
         at: "2026-07-10T16:09:00.000Z",
       },
       lkg: {
@@ -220,7 +246,7 @@ describe("doctor report", () => {
     const text = formatDoctorReport(report);
     expect(text).toContain("Tachyon Doctor");
     expect(text).toContain("Invalid tachyon.yml");
-    expect(text).toContain("reviewer");
+    expect(text).toContain("permission denied");
   });
 
   it("shows the retained persistent Bridge launch detail when startup failed", () => {

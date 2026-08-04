@@ -3,10 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
-import { openCockpit, type CockpitDeps, type CockpitMissionBoard } from "../../src/webview/Cockpit.js";
-import { makeFakeCockpitDeps } from "../mocks/cockpitDeps.js";
-import { routes as cockpitRoutes } from "../../src/cockpit/route.js";
+import { HumanInboxPanelManager, type HumanInboxDeps } from "../../src/webview/HumanInboxPanel.js";
+import { readyMessage } from "../../src/webview/human-inbox/messages.js";
 import { routeHumanInboxItem } from "../../src/engine-service/engineService.js";
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "../../src/humanInbox/model.js";
 import { decodeHumanInboxDeepLink } from "../../src/humanInbox/deepLink.js";
@@ -19,6 +19,7 @@ import { savedAgentRemovalProposalPath } from "../../src/agents/savedAgentRemova
 import { workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
 import type { WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
 import type { Validation } from "../../src/validations/types.js";
+import { ProposalStore } from "../../src/schedule/ProposalStore.js";
 
 /**
  * t-d16698 — the Review of a Saved Agent proposal must OPEN the proposal.
@@ -31,8 +32,14 @@ import type { Validation } from "../../src/validations/types.js";
  * effect, coverage over only one.
  *
  * So this file crosses. It takes the args the REAL emitter produced, feeds them to the REAL receiver
- * (`decodeHumanInboxDeepLink`, which is what `tachyon.openHumanInbox` runs), drives the REAL Control
- * host with a REAL item on disk, and asserts the ITEM surface came back — not the queue.
+ * (`decodeHumanInboxDeepLink`, which is what `tachyon.openHumanInbox` runs), drives the REAL host with a
+ * REAL item on disk, and asserts the ITEM surface came back — not the queue.
+ *
+ * SDD 485 D4 — the host on the far side of that crossing is the Human Inbox APP now, not Control. The
+ * crossing itself is unchanged and is the whole point of the file: what a doorbell rings, a human must
+ * land on. Two things about the destination did change and are asserted below rather than assumed —
+ * `openItem` opens (or REVEALS) the project's panel and navigates it to the item, and a target it cannot
+ * name opens the queue on that same panel instead of a route nothing can render.
  *
  * The one seam a unit test cannot execute is `vscode.commands.registerCommand` itself, so the source
  * scan below pins the two facts that would make the crossing a fiction: that extension.ts registers
@@ -67,11 +74,12 @@ const ITEM_ID: Record<HumanInboxKind, string> = {
   approval: "a-000001",
   "saved-agent-proposal": "sp-45042f",
   "saved-agent-removal": "sr-45042f",
+  "schedule-proposal": "45042f",
   validation: "v-1",
 };
 
 /** Every kind, live on disk, so a deep-link that resolves has something real to resolve TO. */
-function liveWorkspace(): { deps: CockpitDeps; root: string } {
+function liveWorkspace(): { manager: HumanInboxPanelManager; root: string } {
   const root = workspace();
   writeApprovalRequest(
     root,
@@ -121,6 +129,11 @@ function liveWorkspace(): { deps: CockpitDeps; root: string } {
   const removalFile = savedAgentRemovalProposalPath(root, removal.id);
   fs.mkdirSync(path.dirname(removalFile), { recursive: true });
   fs.writeFileSync(removalFile, `${JSON.stringify(removal)}\n`);
+  const schedules = new ProposalStore(root);
+  schedules.create("nightly", { every: "1h", run: "test" }, "claude", "keep it green");
+  const scheduleFile = JSON.parse(fs.readFileSync(schedules.file, "utf8")) as { proposals: Array<{ id: string }> };
+  scheduleFile.proposals[0]!.id = ITEM_ID["schedule-proposal"];
+  fs.writeFileSync(schedules.file, `${JSON.stringify(scheduleFile)}\n`);
 
   const validation: Validation = {
     id: ITEM_ID.validation,
@@ -141,15 +154,14 @@ function liveWorkspace(): { deps: CockpitDeps; root: string } {
     assignValidation: async () => {},
   } as unknown as WorkspaceMissionControlTarget;
 
-  const missionBoard: CockpitMissionBoard = { getWorkspaces: () => [], openTaskStudio: () => {}, onTasksChanged: () => {} };
-  const deps = makeFakeCockpitDeps(missionBoard, {
+  const deps: HumanInboxDeps = {
     approvals: {
       getWorkspaces: () => [{ workspaceRoot: root, wsHash: WS_HASH, folderName: "tachyon" }],
       resolve: async () => {},
     },
-    validations: { getWorkspaces: () => [target], onValidationsChanged: () => {} },
-  });
-  return { deps, root };
+    validations: { getWorkspaces: () => [target] },
+  };
+  return { manager: new HumanInboxPanelManager(Uri.file("/ext"), deps), root };
 }
 
 /** What the notice's Review button actually hands the editor, from the shipped emitter. */
@@ -177,18 +189,16 @@ function emittedReviewCall(kind: HumanInboxKind): [string, ...unknown[]] {
  * The receiver, run exactly as `tachyon.openHumanInbox` runs it. The two lines below ARE the
  * registered body's decision (see the source-scan block at the bottom, which pins that).
  */
-async function openWhatReviewAsksFor(deps: CockpitDeps, args: unknown[]): Promise<void> {
+async function openWhatReviewAsksFor(manager: HumanInboxPanelManager, args: unknown[]): Promise<void> {
   const link = decodeHumanInboxDeepLink(args[1]);
-  if (link.target === "item") {
-    await openCockpit(deps, { route: cockpitRoutes.inboxItem(WS_HASH, link.itemKind, link.itemId) });
-  } else {
-    await openCockpit(deps, { section: "inbox", approvalWsHash: WS_HASH });
-  }
-  livePanel().webview.__receive({ type: "ready" });
+  if (link.target === "item") manager.openItem(WS_HASH, link.itemKind, link.itemId);
+  else manager.open(WS_HASH);
+  livePanel().webview.__receive(readyMessage());
+  await flush();
   await flush();
 }
 
-/** Control is a singleton, so the panel under test is always the most recently created one. */
+/** One panel per project, so the panel under test is always the most recently created one. */
 const livePanel = () => __createdPanels.at(-1)!;
 
 const posted = (type: string): Array<Record<string, unknown>> =>
@@ -196,11 +206,11 @@ const posted = (type: string): Array<Record<string, unknown>> =>
 
 describe("t-d16698 — Review crosses into Control and the ITEM is what opens", () => {
   it("a Saved Agent proposal's Review opens THAT proposal, not the queue", async () => {
-    const { deps } = liveWorkspace();
+    const { manager } = liveWorkspace();
     const [command, ...args] = emittedReviewCall("saved-agent-proposal");
     expect(command).toBe("tachyon.openHumanInbox");
 
-    await openWhatReviewAsksFor(deps, args);
+    await openWhatReviewAsksFor(manager, args);
 
     // The assertion the old doorbell test could not make: the EFFECT, not the call.
     const item = posted("humanInboxItem").at(-1) as { vm?: { item?: { id?: string; kind?: string } } } | undefined;
@@ -210,32 +220,49 @@ describe("t-d16698 — Review crosses into Control and the ITEM is what opens", 
     expect(posted("humanInbox"), "Review fell back to the queue").toHaveLength(0);
   });
 
-  it("every kind whose Review targets the Inbox lands on its own item", async () => {
-    // Derived from the inventory, not from a list written here: a fourth kind is covered the day it
-    // is declared. `approval` deliberately opens the Approvals section instead (t-8e9b5e), so the
-    // filter is on the COMMAND the emitter chose, never on a kind name spelled out in this test.
-    const inboxKinds = HUMAN_INBOX_KINDS.filter((kind) => emittedReviewCall(kind)[0] === "tachyon.openHumanInbox");
-    expect(inboxKinds.length, "no kind routes Review to the Inbox — the emitter changed shape").toBeGreaterThan(0);
-
-    for (const kind of inboxKinds) {
-      const { deps } = liveWorkspace();
-      const [, ...args] = emittedReviewCall(kind);
-      await openWhatReviewAsksFor(deps, args);
+  it("every kind's Review lands on its own Inbox item", async () => {
+    // Derived from the inventory, not from a list written here: approval is the load-bearing bell
+    // because it blocks an agent, and a fourth kind is covered the day it is declared.
+    for (const kind of HUMAN_INBOX_KINDS) {
+      const { manager } = liveWorkspace();
+      const [command, ...args] = emittedReviewCall(kind);
+      expect(command, `${kind}: Review bypassed the Inbox`).toBe("tachyon.openHumanInbox");
+      await openWhatReviewAsksFor(manager, args);
       const item = posted("humanInboxItem").at(-1) as { vm?: { item?: { id?: string; kind?: string } } } | undefined;
       expect(item?.vm?.item?.kind, `${kind}: Review did not open the item`).toBe(kind);
       expect(item?.vm?.item?.id, `${kind}: Review opened the wrong item`).toBe(ITEM_ID[kind]);
-      // Each kind gets a COLD Control, the shape the notification actually creates — reusing a
-      // revealed panel would let one kind's success carry the next one's.
+      // Each kind gets a COLD panel, the shape the notification actually creates on a first ring —
+      // reusing a revealed panel would let one kind's success carry the next one's. (The REVEALED case
+      // is the more common one in practice and is asserted on its own, below.)
       livePanel().dispose();
       await flush();
     }
   });
 
   it("an unknown target opens the queue rather than a route it cannot name", async () => {
-    const { deps } = liveWorkspace();
-    await openWhatReviewAsksFor(deps, [WS_HASH, { kind: "not-a-kind", id: "x-1" }]);
+    const { manager } = liveWorkspace();
+    await openWhatReviewAsksFor(manager, [WS_HASH, { kind: "not-a-kind", id: "x-1" }]);
     expect(posted("humanInbox").at(-1)).toBeTruthy();
     expect(posted("humanInboxItem")).toHaveLength(0);
+  });
+
+  it("SDD 485 D4 — a Review that arrives while the tab is ALREADY OPEN still lands on the item", async () => {
+    // The case the migration creates, and the one a human hits most: the Inbox is a `dashboard`, so a
+    // second open REVEALS rather than duplicating. Revealing and leaving the human on the queue they were
+    // already looking at would be a silent regression of exactly the effect this whole file exists to
+    // assert — the doorbell rang about ONE item.
+    const { manager } = liveWorkspace();
+    manager.open(WS_HASH);
+    livePanel().webview.__receive(readyMessage());
+    await flush();
+    expect(posted("humanInboxItem")).toHaveLength(0);
+
+    const [, ...args] = emittedReviewCall("saved-agent-proposal");
+    await openWhatReviewAsksFor(manager, args);
+
+    expect(__createdPanels.filter((p) => !p.disposed), "Review opened a SECOND panel").toHaveLength(1);
+    const item = posted("humanInboxItem").at(-1) as { vm?: { item?: { id?: string } } } | undefined;
+    expect(item?.vm?.item?.id, "Review revealed the tab but left it on the queue").toBe(ITEM_ID["saved-agent-proposal"]);
   });
 });
 
@@ -294,5 +321,14 @@ describe("t-d16698 — the command the doorbell names is the command the shell r
     for (const kind of HUMAN_INBOX_KINDS) {
       expect(DURABLE_NOTICE_COMMANDS, `${kind}'s Review dies on reload`).toContain(emittedReviewCall(kind)[0]);
     }
+  });
+
+  it("keeps openApprovals as a compatibility command that opens the Inbox list", () => {
+    const start = registrationOf("tachyon.openApprovals");
+    expect(start, "tachyon.openApprovals registration missing").toBeGreaterThanOrEqual(0);
+    const next = source.indexOf("vscode.commands.registerCommand", start + 1);
+    const approvalBody = source.slice(start, next === -1 ? undefined : next);
+    expect(approvalBody).toContain("openHumanInboxTab");
+    expect(approvalBody).not.toContain("openCockpit");
   });
 });

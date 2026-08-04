@@ -604,6 +604,280 @@ The t-0fc9ee cases from `pluginsControlEmbed.test.ts` came with it, rewritten ra
 embed had to defend by NOT rebinding, a per-panel closure gets for free, so the same properties are asserted
 against the hazard that still exists (the poll) instead of the one that cannot recur (the rebind).
 
+### Phase D3 — the cardinality CONTRADICTS the launcher neighbour, and `buildSnapshot`'s signature is what says so (2026-08-03)
+
+**The D3 brief specified `dashboard`. It was wrong, and the argument that changed it is ten seconds long.**
+This is the second surface to land on `window`, and the first where the answer disagrees with the tile
+sitting next to it — which is why it is recorded as a METHOD rather than as one more row in the table.
+
+Two neighbouring lines in `Cockpit.ts`, before this migration touched anything:
+
+    216:  buildSnapshot: () => RuntimeOpsSnapshot | Promise<…>       ← NO parameter
+    228:  buildSnapshot: (wsHash?: string) => RuntimeConfigControl…   ← takes a workspace
+
+    1788: const snap = await deps.runtimeOps.buildSnapshot();
+    1801: const snapshot = deps.runtimeConfig.buildSnapshot(controlWorkspaceScope.current);
+
+Runtime **Ops** is global; Runtime **Config** is per project. Adjacent tiles in `CONTROL_SECTION_NAV`,
+opposite cardinalities, and the difference lives in a TYPE rather than in a policy someone has to remember.
+The rest of the evidence all points the same way and all of it predates this task: `extension.ts` implements
+that parameterless call as `runtimeOpsFleetView(workspaces().map((ws) => ws.runtimeOps))` — a MERGE across
+every attached workspace; `configureProviderObservation` fans out to every workspace because the preference
+is the account's; `runtimeOps/types.ts:165` says "Provider quota is account-wide and deliberately has no
+agent/workspace key" and the screen prints that sentence; each runtime row prints
+`runtime.workspaces.map((w) => w.label).join(", ")`; `sendRuntime` never read `controlWorkspaceScope`, so
+moving the project selector changes nothing on this screen today; and `inspectAgentSession(workspaceKey, …)`
+resolves its workspace from the ROW, so a panel keyed to project A must act on project B's agents.
+
+Under `dashboard`, two attached projects would open two byte-identical panels over one merged model — the
+outcome D1 introduced this member to make impossible.
+
+**The tell that the contract itself was wrong.** D3's `DONE_WHEN` asked for a test distinguishing two
+projects' panels BY CONTENT — the exact test D2 was right to demand, because for Plugins two projects have
+two genuinely different lockfiles. Here it is unsatisfiable without inventing per-project scoping, which the
+same brief forbade ("do not change behaviour"). *A requirement that can only be met by doing something the
+same document prohibits is describing the wrong cardinality.* The maintainer replaced it with the symmetric
+proof D1 established: one panel with two projects attached, and `sectionPanelKey` REFUSING a project in the
+key (`runtimeOpsApp.test.ts`). The content assertion survives in inverted form and is worth keeping —
+Plugins had to show two DIFFERENT models, and this one shows a single panel carrying BOTH workspaces at
+once, which is what makes a second panel redundant rather than merely untidy.
+
+**For D4–D10, this is the second ten-second check to run, beside D2's `cockpit.css` grep:** "it is a Control
+section" says NOTHING about cardinality. Ask whether the surface's data source ACCEPTS a project. The
+signature of its `buildSnapshot` — or whatever the host dep is called — answers immediately, and it answers
+from code that existed before the migration, so it cannot be arranged after the fact.
+
+### Phase D3 — the viewType is NEW, for a reason none of the first four met (2026-08-03)
+
+D2 recorded that the question is not "was the tombstone a redirect" but **does the id still NAME this app,
+and does its legacy record map onto this app's key with no residue?** D3 is the first surface to fail the
+FIRST half, and it fails it in a way the table did not anticipate.
+
+| | id still names it | legacy record maps | call |
+|---|---|---|---|
+| C4 task detail | yes | `{wsHash, taskId}` → `{project, identity}` | reuse + 2-field rename |
+| C5 Board | **no** — the screen is the Board | would have | new id; legacy stays a redirect |
+| D1 tmux | yes | `{schemaVersion, view}` is ALREADY a `window` state | reuse, no shim |
+| D2 Plugins | yes | `{wsHash}` → `{project}` | reuse + 1-field rename |
+| D3 Runtime Ops | **no — the id names a different surface KIND that never shipped** | **no record exists** | new id; tombstone stays dispose-only |
+
+The only legacy id available is `tachyonRuntimeOpsView`, and it names spec 367 Phase 1's `RuntimeOpsView.ts`
+— a **WebviewView**, a bottom-panel view container rather than an editor tab — retired by t-ed3067 as code
+that was never registered at all (no `registerWebviewViewProvider` call ever existed). So there is nothing
+in production that could have written a record under it, and `extension.ts` keeps it only in the
+dispose-only loop beside the dev and dead viewTypes.
+
+That makes the second half of the question moot rather than answered: reuse would buy exactly ZERO restore
+fidelity — the thing reuse is FOR — while leaving an id that says "View" naming an editor tab forever. Hence
+`tachyonRuntimeOps`, with the tombstone untouched. It needs no redirect either, which is the last difference
+from C5: that tombstone was a LIVE redirect carrying its own persisted `{wsHash}`, and this one has never
+had a panel to redirect.
+
+### Phase D3 — the `cockpit.css` grep answered "delete", not "move" (2026-08-03)
+
+D2's parting instruction was to grep `cockpit.css` for the surface's root class before anything else, and it
+was worth the ten seconds — but the answer came back the OTHER WAY, and both shapes need to be in the record
+or the next migration will look for the wrong one.
+
+For Plugins the pad rule LIVED in `cockpit.css` and had to move, or the screen shipped flush against the tab
+edge at every width. For Runtime Ops, `.runtime-ops`'s `padding: var(--ds-page-pad-*)` was always in
+`runtime-ops.css`. What `cockpit.css` provided was only embed-context NEUTRALIZATION
+(`.ck-embed-host > .runtime-ops` — flex/min-height/width/margin), and this sheet answered it with an
+`!important` re-assert of its own pad (t-0739f7), because `.ck-embed-host > main { padding: 0 !important }`
+outranked the bare root rule. **Both are dead the moment there is no embed host, in both sheets.**
+
+So the residue here was a rule to DELETE rather than one to MOVE, and the guard is the mirror of D2's:
+`embedPagePad.test.ts` now asserts that `cockpit.css` styles no `.runtime-ops` selector AND that
+`runtime-ops.css` carries no `.ck-embed-host > main.runtime-ops` re-assert. Fail-before was run on both by
+re-injecting each rule; each goes red naming the offending selector.
+
+The visual pass is what proves the deletion was safe rather than merely tidy: the pad measures **12px/16px
+at both widths on all five fixtures**, identical to what it was inside Control. A pad that had changed would
+have meant one of those two "dead" rules was load-bearing after all — which is exactly the claim a static
+CSS test cannot make.
+
+### Phase D3 — restoring the preview route un-parked a suite the repo had deliberately left red (2026-08-03)
+
+An effect worth recording because nobody planned it and the next migration may inherit one like it.
+
+`test/browser/runtimeOpsView.test.ts` had been knowingly RED since t-ed3067 retired the `?view=runtime-ops`
+preview route (decision recorded by the human on 2026-07-31, t-2a49b2): its four tests drove SEVENTEEN
+runtime-ops fixtures, and `?view=cockpit&fixture=runtime` exposed exactly one of them, so repointing it
+would have meant measuring Control's page box instead of this panel's. It was held open by an in-file
+`preview-route-check: allow` waiver whose own text predicted its ending — *"the moment this file stops
+naming `view=runtime-ops` … the guard fails on the STALE waiver instead."*
+
+This migration restores that route, pointing at the REAL shipped bundle. All seventeen fixtures are
+addressable again, the URL in that file is unchanged from the day it was written, and what changed is that
+it resolves. The waiver is DELETED rather than updated, because `webviewPreviewRoutes.test.ts`'s "no waiver
+outlives the reference it excuses" case would otherwise go red on it — which is how this was noticed rather
+than remembered. `test:browser` still needs a system Chrome and still is not in `verify:full`; what came
+back is the suite's ability to run at all.
+
+### Phase D3 — Control has no async section module left, and the navEpoch cases had nowhere else to go (2026-08-03)
+
+`cockpitRouter.test.ts`'s three navigation-epoch cases needed a genuinely async, injectable await to wedge
+across a navigation. C5 moved them off the Board's `listMissionControlAgents()`; D3 moves them off Runtime
+Ops' `buildSnapshot()` — and this time the search inside the sections came up empty. `sendApprovals`,
+`sendValidations`, `sendInbox` and `sendRuntimeConfig` are all `async` functions with **no `await` in their
+bodies**, so their epoch check can never observe a difference; every remaining wedgeable await belongs to a
+detail ROUTE (handoff, probes) whose workspace comes from the route's own immutable locator, which makes the
+scope-switch case unstateable against them.
+
+They now wedge `deps.collect()` inside `sendModel`, chosen because it cannot be migrated away by the next
+Phase D section leaving: it is the ONE await every navigation and every scope switch makes for as long as
+Control renders anything. The helper wedges only the FIRST call and answers later ones instantly, so each
+case asserts that exactly ONE model lands and it is the CURRENT one — a strictly stronger claim than "the
+stale one was not posted", which would pass just as readily against a door that posts nothing at all.
+
+The same force repointed `controlTabsBarRetired.test.ts`'s lazy-section case for the second time (Plugins →
+Runtime Ops → Inbox). Three lazy sections are left for it: `inbox`, `approvals`, `validations`.
+
+### Phase D4 — the `cockpit.css` grep has now given THREE different answers, and the third looks like a skipped check (2026-08-03)
+
+D2 left the instruction (grep `cockpit.css` for your surface's root class before anything else) and D3 recorded
+that it can answer "delete" rather than "move". D4 is the third answer and the one most likely to be misread:
+
+| | what `cockpit.css` held for the surface | the work |
+|---|---|---|
+| D2 Plugins | `.ck-plugins-root`'s `--ds-page-pad-*` rule | a rule to **MOVE** |
+| D3 Runtime Ops | `.ck-embed-host > .runtime-ops` neutralization + this sheet's `!important` re-assert | two rules to **DELETE** |
+| D4 Human Inbox | **nothing at all** | **none** |
+
+`grep -n "hi-root\|human-inbox" src/webview/cockpit/cockpit.css` returns zero lines, and that is a real
+result rather than a check that did not run: `.hi-root` carries its own `--ds-page-pad-*` in
+`human-inbox.css:14`, and cockpit.css's embed neutralization is `.ck-embed-host > main`, which reaches
+`<main>`-rooted surfaces only — `.hi-root` is a `div`. So this surface never consumed page chrome from the
+sheet it was about to stop linking.
+
+**A static test cannot make that claim, which is why the MEASUREMENT is the proof** (D3's lesson, applied to
+the opposite outcome): the pad measures **12px/16px at both widths on all four fixtures**, identical to the
+Fleet page pad every other migrated surface measured. `embedPagePad.test.ts` holds the three directions
+anyway — the pad is in this sheet, cockpit.css styles no `.hi-` selector, and this sheet carries no embed
+re-assert — with fail-before run on each.
+
+### Phase D4 — `dashboard`, and this time the ten-second check agreed with the brief (2026-08-03)
+
+D3 had to overturn its own brief with the signature check and left it as the method: "it is a Control section"
+says nothing about cardinality; ask whether the surface's DATA SOURCE accepts a project. Here it does, and the
+evidence is unanimous and entirely older than this migration — `inboxSources(wsHash?)` resolved ONE approval
+workspace by hash, and every read underneath is rooted at that single `workspaceRoot`: the pending approval
+queue, that workspace's validations, both Saved Agent proposal queues, the `workspaceConfigSha256` those
+proposals are checked against, `makeInboxArtifactLoader`'s containment root, and the per-workspace staleness
+threshold. Two attached projects have two genuinely different queues.
+
+So this is D2's Plugins case, and `pluginsApp.test.ts`'s content assertion transfers directly:
+`humanInboxApp.test.ts` gives one project an approval and the other a validation, so the two panels post
+visibly different queues. Counting panels would have passed against a shared model.
+
+One consequence rides along, and it is C5's rule arriving on a surface where it is not cosmetic. The workspace
+lookup is now STRICT (exact `wsHash`) where Control resolved through a fallback chain (preferred → shell scope
+→ first attached). On a surface that RESOLVES APPROVALS, borrowing a neighbouring project's queue would mean a
+consent token from project A being redeemable against project B's root.
+
+### Phase D4 — the viewType question had NO SUBJECT, which is a sixth kind of answer (2026-08-03)
+
+D2 distilled the rule into two halves — does the id still NAME this app, and does its legacy record map onto
+this app's key with no residue? Five migrations have now answered them. This one cannot: **there is no legacy
+id.** The Human Inbox was born as a Control SECTION (t-e76acc) *after* SDD 410 had already retired the
+standalone panels, so it never had a `createWebviewPanel` call and never wrote a persisted record under any id.
+
+| | id still names it | legacy record maps | call |
+|---|---|---|---|
+| C4 task detail | yes | `{wsHash, taskId}` → `{project, identity}` | reuse + 2-field rename |
+| C5 Board | no — the screen is the Board | would have | new id; legacy stays a redirect |
+| D1 tmux | yes | `{schemaVersion, view}` is ALREADY a `window` state | reuse, no shim |
+| D2 Plugins | yes | `{wsHash}` → `{project}` | reuse + 1-field rename |
+| D3 Runtime Ops | no — the id names a retired WebviewView that never shipped | no record exists | new id; tombstone dispose-only |
+| D4 Human Inbox | **no id exists at all** | **nothing was ever written** | new id; no tombstone, no shim |
+
+The id that LOOKS available is `tachyonApprovals`, and taking it would have been two mistakes at once: it is a
+LIVE redirect carrying its own `{wsHash}` (which is what stopped C5 reusing `tachyonMissionControl`), and it
+names a DIFFERENT surface — Approvals, which `spec.md` § Non-goals keeps as a compatibility route rather than
+promoting to an app. An id naming the surface this one AGGREGATES is worse than a merely stale one. So
+`tachyonHumanInbox`, with no `migrateLegacy` anywhere in the host.
+
+### Phase D4 — the state between messages is the SUBROUTE, and it is inherent rather than inherited (2026-08-03)
+
+C4 predicted that every "we are a singleton, so one slot is enough" in Control is a defect waiting for its
+section to be migrated; D2 found three of them in Plugins; D3 checked and found none. D4 is the first where the
+state is created by the DESIGN rather than inherited from the embed: the app keeps its item detail as an
+internal subroute (see below), so "which item is this panel showing" is state between messages, exactly as
+Control's module-scoped `currentRoute` was.
+
+It lives inside `bind`, per panel by construction. `humanInboxApp.test.ts` drives the failure a shared slot
+would produce: two projects open, project A's panel navigated to its item, and the assertion is that project
+B's panel is still on B's queue and a poll on B still answers with B's list. On a surface that RESOLVES
+APPROVALS, showing project A's decision under project B's tab is the worst version of this defect the phase has
+produced — worse than D2's shared consent token, because there is no click required for it to be wrong.
+
+The manager holds one more per-panel map for the same reason: `controllers`, keyed by panel key, is how a deep
+link reaches an ALREADY-OPEN panel (see below). A single controller slot would work perfectly with one project
+attached and retarget the wrong panel with two.
+
+### Phase D4 — the detail stays INSIDE, and the cost of that is a redirect PAIR (2026-08-03)
+
+`inbox-item` carries identity (wsHash + itemKind + itemId), so a `document` app was representable. The
+maintainer's decision was to keep it a subroute, and the reason is in `route.ts:258`'s own words — the parent
+route exists so a human "works the inbox down, item by item". Two inbox items side by side is a product
+decision nobody asked for.
+
+Two consequences, both paid here rather than discovered later:
+
+- **this surface leaves Control with TWO route kinds, not one.** `navigate()`'s redirect block gains a pair:
+  `section:inbox` opens the project's panel, and `inbox-item` opens it AND navigates it to the item. That block
+  is now the readable inventory of what has left Control — task detail, Board, tmux, Plugins, Runtime Ops,
+  Inbox — and D4 is the first entry in it that carries identity rather than only a destination;
+- **a revealed panel must be NAVIGATED, not merely revealed.** A dashboard reveals on re-open; the "Review"
+  doorbell rang about ONE item, so revealing the tab and leaving the human on the queue they were already
+  looking at would be a silent regression of the exact effect `humanInboxDeepLinkCrossing.test.ts` exists to
+  assert. That file was retargeted onto the app and gained the case (`a Review that arrives while the tab is
+  ALREADY OPEN still lands on the item`).
+
+### Phase D4 — the back affordance was the EMBED HOST's chrome, and nothing else would have caught it (2026-08-03)
+
+Not in the brief, and the only change this migration made to `human-inbox/App.tsx` (D1–D3 all kept their
+`App.tsx` byte-identical). `cockpit/App.tsx:1546` rendered the `← Inbox` breadcrumb for the `inbox-item` route
+— `data-testid="control-inbox-item-breadcrumb"`, one of the three subroutes in
+`cockpitFullpageSubrouteChrome.test.ts` — so the way back belonged to Control, not to this surface. Standing
+alone there is no host to draw it, and `ItemApp` had no affordance of its own: the detail would have been
+reachable and unleavable.
+
+So the app carries its own, through the kit's existing `PageChrome backLink` slot (`conform`, not a new
+component), and the host still owns the subroute — the client asks, it does not navigate itself. It renders in
+EVERY state of the route including the two dead ends (`missing`, not-yet-loaded), because a tombstone with no
+exit is the one way this migration could still strand a human.
+
+**The general lesson for D5–D10, which is where it will matter most:** the six remaining dashboards all require
+extracting JSX out of `cockpit/App.tsx` first, and that file is where a section's chrome lives. Before
+declaring a migration behaviour-preserving, grep `cockpit/App.tsx` for what it renders AROUND your surface —
+breadcrumbs, fallbacks, `EMBED_SECTIONS` membership, the fullpage-chrome branch — not only for the surface
+itself. A green functional suite does not notice an affordance that stopped existing.
+
+### Phase D4 — the poll's word was separated even though sharing was MEASURED safe (2026-08-03)
+
+D2 had to mint `POLL` because Plugins' `refresh` drops every update check it has found; D3 minted it for the
+inverse reason (no `refresh` existed, so the word stayed free). D4 is the third shape: `refreshInbox` EXISTS,
+is a human pressing a real button, and its whole host handler was `sendInbox(); sendInboxItem();` — a pure
+re-read with no side effect. Sharing would have been safe.
+
+It is still separated, for one constant, and the reason is recorded so the next author does not read it as
+cargo: keeping the human action and the 20×/min timer distinguishable in the gate is what stops a future side
+effect on the button from silently acquiring a periodic caller. That is D2's bug described one step before it
+happens.
+
+### Phase D4 — the FIRST Phase D surface with a real fan-out door (2026-08-03)
+
+tmux, Plugins and Runtime Ops each recorded that their `refresh()` had no caller yet: all three are polled
+rather than watched. The Inbox has two — `refreshCockpitApprovals` and `refreshCockpitValidations` both called
+`refreshControl("inbox")`, because the Inbox is a projection over both stores and a unified count that goes
+stale the moment a validation is closed elsewhere is worse than no count.
+
+That fan-out did not disappear with the renderer; it moved. `extension.ts` calls
+`humanInboxPanels.refresh()` beside each of those two, and the approval-resolve path calls it too.
+`humanInboxApp.test.ts` counts the work (`refresh()` returns 2 with two panels open) rather than timing it, the
+way `hiddenPanelWork.test.ts` does.
+
 ## Deviations
 
 ### C6/C7 — one window scope, resolved only at open (2026-08-03)
@@ -1218,3 +1492,26 @@ Two rules for Phase D, which removes from this file ten more times:
 
 The orchestration error was mine: the briefs warned both agents about `cockpit/App.tsx` and said
 nothing about the HOST they both had to gut.
+### Phase D12 — Task Studio is task-detail edit mode (2026-08-04)
+
+The unsaved policy is deliberately document-owned: switching to read keeps the draft; closing detaches the
+draft into `TaskDetailPanelManager`'s key-scoped memory for this extension-host lifetime; a newer host snapshot
+updates the read model and is delivered to the editor, but never rebases or erases the pending patch. The patch
+keeps its original `expectUpdatedAt`, so Save uses CAS and conflicts instead of overwriting external work.
+
+The boundary reopened from `StudioPanelManagerBase` is narrow and explicit in `task-detail/editPolicy.ts`:
+mode, dirty, patch, save/cancel and Task CAS came across. The base's second panel lifecycle/key, new-entity
+lifecycle, generic navigation transaction, and generic restore protocol did not: the document already owns the
+panel/key, Task has no id-less route, and keeping those mechanisms would recreate two owners for one entity.
+
+The new Control-renderer guard was observed red while `cockpit/App.tsx` still contained `TaskStudioApp`, then
+green after the lazy renderer and its CSS bootstrap keys were removed. Visual evidence uses the shipped
+`task-detail.js` at browser viewport plus matching `?width=`: read/edit at 880 and 360 all reported matching
+`window.innerWidth` and `documentElement.scrollWidth` (880/880 and 360/360). Evidence lives under
+`.vqa/visual-qa/task-detail-{read,edit}-{880,360}.png` and is attached to the worktree evidence channel.
+## D13 visual QA — 2026-08-04
+
+Evidence: `.vqa/visual-qa/{command,terminal,runbook,schedule,agent}-studio-{880,360}.png`.
+Verdict: pass — the five existing editing forms keep their visual hierarchy without Control chrome;
+at 360px fields stack without horizontal overflow. Browser viewport and `?width=` were both set,
+and the harness reported `window.innerWidth = 880` / `360` for every surface.
