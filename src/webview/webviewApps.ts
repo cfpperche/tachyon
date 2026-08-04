@@ -211,6 +211,9 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // SDD 485 D9 — buildExecutionGraphSectionVm(deps, wsHash) accepts one project. New id: this
   // surface was born in Control, so there is no retired standalone identity or persisted shape.
   { view: "execution-graph", viewId: "tachyonExecutionGraph", section: "execution-graph", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D10 — companion and every mutation accept one wsHash. Settings was born in Control,
+  // so there is no retired standalone id or persisted shape to revive.
+  { view: "settings", viewId: "tachyonSettings", section: "settings", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**

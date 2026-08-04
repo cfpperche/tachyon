@@ -211,12 +211,12 @@ describe("t-ac79a7: every navigation is bracketed by routePending / routeReady",
     await flush();
     const before = posted().length;
 
-    __createdPanels[0].webview.__receive({ type: "setSection", section: "settings" });
+    __createdPanels[0].webview.__receive({ type: "setSection", section: "approvals" });
     await flush();
 
     const after = posted().slice(before) as Array<{ type?: string; routeKey?: string }>;
-    expect(after.some((m) => m.type === "routePending" && m.routeKey === "section:settings")).toBe(true);
-    expect(after.some((m) => m.type === "routeReady" && m.routeKey === "section:settings")).toBe(true);
+    expect(after.some((m) => m.type === "routePending" && m.routeKey === "section:approvals")).toBe(true);
+    expect(after.some((m) => m.type === "routeReady" && m.routeKey === "section:approvals")).toBe(true);
   });
 
   it("suppresses a superseded route's routeReady so it cannot clear a newer navigation's pending state", async () => {

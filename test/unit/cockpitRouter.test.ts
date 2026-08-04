@@ -250,7 +250,8 @@ describe("persisted state — always writes schemaVersion 2", () => {
     await openCockpit(deps, { section: "settings" });
     expect(__createdPanels[0].webview.html).toContain('"schemaVersion":2');
     expect(__createdPanels[0].webview.html).toContain('"kind":"section"');
-    expect(__createdPanels[0].webview.html).toContain('"section":"settings"');
+    // SDD 485 D10 — Settings is redirected to its own app before Control commits state.
+    expect(__createdPanels[0].webview.html).toContain('"section":"overview"');
   });
 });
 

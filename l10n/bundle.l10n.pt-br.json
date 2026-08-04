@@ -681,5 +681,6 @@
   "Auth": "Autenticação",
   "Root": "Raiz",
   "Hash": "Hash",
-  "Fleet": "Frota"
+  "Fleet": "Frota",
+  "Settings": "Configurações"
 }

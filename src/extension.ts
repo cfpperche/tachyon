@@ -19,6 +19,7 @@ import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
 import { FLEET_VIEW_TYPE, FleetPanelManager } from "./webview/FleetPanel.js";
 import { EXECUTION_GRAPH_VIEW_TYPE, ExecutionGraphPanelManager } from "./webview/ExecutionGraphPanel.js";
+import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import {
   openCockpit,
@@ -1989,9 +1990,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openRuntimeOps: () => runtimeOpsPanels.open(),
     openHumanInbox: (wsHash) => { openHumanInboxTab(wsHash); },
     openHumanInboxItem: (wsHash, itemKind, itemId) => { humanInboxPanels.openItem(wsHash, itemKind, itemId); },
-    openSettings: () => {
-      void vscode.commands.executeCommand("tachyon.openGlobalSettings");
-    },
+    openSettings: () => { openSettingsTab(); },
     openDoctor: () => {
       void vscode.commands.executeCommand("tachyon.doctor");
     },
@@ -2403,6 +2402,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return true;
   };
 
+  // SDD 485 D10 — Settings is one immutable project dashboard. Its source and mutations all use
+  // that project; client-supplied wsHash fields are deliberately ignored by SettingsPanelManager.
+  const settingsPanels = new SettingsPanelManager(context.extensionUri, {
+    collect: engineHost.collect,
+    openDoctor: engineHost.openDoctor,
+    openConfigFile: engineHost.openConfigFile,
+    setCompanionTabTools: engineHost.setCompanionTabTools,
+    setIdleAfterMinutes: engineHost.setIdleAfterMinutes,
+    setCompanionAllowedHosts: engineHost.setCompanionAllowedHosts,
+    unpairCompanionDevice: engineHost.unpairCompanionDevice,
+    issueCompanionPairCode: engineHost.issueCompanionPairCode,
+  }, undefined, controlWorkspaceScope);
+  context.subscriptions.push({ dispose: () => settingsPanels.dispose() });
+  const openSettingsTab = (hash?: string): boolean => {
+    const ws = (hash ? byHash(hash) : undefined)
+      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0];
+    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
+    settingsPanels.open(ws.wsHash);
+    return true;
+  };
+
   // SDD 485 D7 — Fleet is one dashboard per immutable project. Its source is the same scoped
   // buildCockpitModel slice Control used; every action receives the panel project, never a row fallback.
   const fleetPanels = new FleetPanelManager(context.extensionUri, {
@@ -2446,6 +2467,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, EXECUTION_GRAPH_VIEW_TYPE, (panel, state) => executionGraphPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, FLEET_VIEW_TYPE, (panel, state) => fleetPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
@@ -2933,6 +2955,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "execution-graph") {
           openExecutionGraphTab();
+          return Promise.resolve();
+        }
+        if (resolved === "settings") {
+          openSettingsTab();
           return Promise.resolve();
         }
         return openCockpit(makeCockpitDeps(), { section: resolved });

@@ -283,7 +283,7 @@ export interface CockpitDeps {
   } | { ok: false; reason: string }>;
 }
 
-function strings(): CockpitStrings {
+export function cockpitStrings(): CockpitStrings {
   const t = vscode.l10n.t;
   return {
     title: t("Control"),
@@ -588,6 +588,7 @@ let openPluginsApp: (() => void) | undefined;
 let openRuntimeOpsApp: (() => void) | undefined;
 let openRuntimeConfigApp: (() => void) | undefined;
 let openExecutionGraphApp: (() => void) | undefined;
+let openSettingsApp: (() => void) | undefined;
 
 /**
  * SDD 485 D4 — and the same seam for the Human Inbox. Sixth and seventh of these, and the first PAIR:
@@ -665,6 +666,12 @@ function navigate(route: CockpitRoute): void {
   }
   if (route.kind === "section" && route.section === "execution-graph") {
     openExecutionGraphApp?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "settings") {
+    // SDD 485 D10 — Settings leaves through the same single commit point as D3-D9. Control commits
+    // Overview; malformed/unknown section ids are normalized to Overview before reaching this point.
+    openSettingsApp?.();
     route = routes.section("overview");
   }
   if (route.kind === "inbox-item") {
@@ -1006,7 +1013,7 @@ export async function openCockpit(
     approvalWsHash?: string;
   },
 ): Promise<void> {
-  const s = strings();
+  const s = cockpitStrings();
   // t-610705 (Phase C.0) — the router design dueto's "retired-panel revive redirects can overwrite
   // a live cockpit session" finding: VS Code does not guarantee revive order across view types.
   // If a legacy shim's redirect raced ahead of the Cockpit's OWN trusted revival and already
@@ -1102,6 +1109,7 @@ export async function openCockpit(
         openRuntimeOpsApp = undefined;
         openRuntimeConfigApp = undefined;
         openExecutionGraphApp = undefined;
+        openSettingsApp = undefined;
         openInboxApp = undefined;
         openInboxItemApp = undefined;
         openFleetApp = undefined;
@@ -1149,6 +1157,7 @@ export async function openCockpit(
   openFleetApp = () => deps.openFleet(controlWorkspaceScope.current);
   openRuntimeConfigApp = () => deps.openRuntimeConfig(controlWorkspaceScope.current);
   openExecutionGraphApp = () => deps.openExecutionGraph(controlWorkspaceScope.current);
+  openSettingsApp = () => deps.openSettings();
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
