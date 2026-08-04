@@ -485,7 +485,8 @@ describe("AgentManager", () => {
 
     it("the recorded parent OUTLIVES the parent's death — promotion is a render decision", async () => {
       // Measured, and worth stating because the opposite is the intuitive guess: killing the parent
-      // does NOT rewrite or erase the child's link (`kill` only forgets the DEAD agent's own parent).
+      // does NOT rewrite or erase the child's link. A stopped agent that remains in the roster also
+      // keeps its own parent; only collection/dismissal erases that identity fact.
       // The child is promoted to top level when it is RENDERED, because the sidebar nests only
       // against parents that are actually present in the row set. Keeping the recorded fact and
       // deciding presentation separately is what lets a re-spawned parent re-adopt its children.
@@ -6864,6 +6865,33 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect(manager.parentOf("child")).toBe("boss");
     expect((await manager.list()).find((entry) => entry.name === "child")?.parent).toBe("boss");
     expect(ledger.get("child")?.def?.parent).toBe("boss");
+  });
+
+  it("keeps a stopped Temporary worktree child's parent in the listing", async () => {
+    const worktree = { path: "/wt/child", branch: "tachyon/child", tachyonCreatedBranch: true, baseRef: "base", createdAt: "t" };
+    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n", {
+      resolveSpawnCwd: async () => ({ cwd: worktree.path, worktree }),
+    });
+    await manager.spawn("child", { cmd: "codex", parent: "boss" });
+
+    await manager.kill("child");
+
+    expect((await manager.list()).find((entry) => entry.name === "child")).toMatchObject({
+      lifetime: "temporary",
+      running: false,
+      parent: "boss",
+    });
+  });
+
+  it("does not carry a stopped instance's parent into a reused top-level name", async () => {
+    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: sh\n");
+    await manager.spawn("child", { parent: "boss" });
+    await manager.kill("child");
+
+    await manager.spawn("child");
+
+    expect(manager.parentOf("child")).toBeUndefined();
+    expect((await manager.list()).find((entry) => entry.name === "child")?.parent).toBeUndefined();
   });
 
   it("Saved spawn/restart preserves explicit runtime lineage separately from declaredOwner", async () => {
