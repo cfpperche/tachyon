@@ -5433,11 +5433,18 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         const problem = validateProposedSchedule(schedule);
         if (problem) return fail(new Error(problem));
         const by = proposalAuthor(deps);
-        if (readAgentProfileGrants(deps.workspaceRoot, by)?.proposeSavedAgent !== true) {
-          return fail(new Error(
-            `agent '${by}' has no 'grants.proposeSavedAgent' capability in its profile, so it cannot propose a schedule`,
-          ));
-        }
+        // t-d4f246 — NO capability gate here, and the absence is a decision rather than an omission.
+        //
+        // A gate on `grants.proposeSavedAgent` was written and removed: it would have denied this tool
+        // to every agent in the roster (no canonical profile grants it), and it would have made one flag
+        // mean two powers — which is the exact conflation `grants` was created narrow to prevent
+        // (t-5e1113: "joining the two would leave a reader unable to tell 'has the fetch MCP' from
+        // 'may create agents'"). Whether a schedule proposal deserves a gate OF ITS OWN is a policy
+        // question for the maintainer, tracked in t-e5ecec; until then this stays as it has always been.
+        //
+        // What holds today is the same thing that held before the Inbox landed: the proposal is INERT.
+        // It never fires until a human approves it, and approval is now a first-class Inbox decision
+        // with a doorbell rather than a row nobody was told about.
         const proposal = deps.proposals.create(name, schedule, by, reason);
         deps.onScheduleProposed?.({ id: proposal.id, name, by });
         return ok(JSON.stringify({ status: "pending human approval", id: proposal.id, name }));

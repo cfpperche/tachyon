@@ -29,7 +29,7 @@ function bridge(caller: CallerSnapshot | undefined) {
   if (caller?.kind === "agent" && caller.name) {
     const dir = path.join(root, ".tachyon", "agents", caller.name);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "agent.yml"), "schemaVersion: 1\nagentId: 123e4567-e89b-42d3-a456-426614174000\nruntime:\n  adapter: claude\n  executable: claude\ngrants:\n  proposeSavedAgent: true\n");
+    fs.writeFileSync(path.join(dir, "agent.yml"), "schemaVersion: 1\nagentId: 123e4567-e89b-42d3-a456-426614174000\nruntime:\n  adapter: claude\n  executable: claude\n");
   }
   const toasts: Array<{ name: string; by: string }> = [];
   const mcp = new FakeMcp();
@@ -52,6 +52,13 @@ function bridge(caller: CallerSnapshot | undefined) {
   return { proposals, toasts, propose };
 }
 
+/**
+ * t-d4f246 — the non-agent case below was briefly rewritten to assert a REFUSAL, because a capability
+ * gate added in the same commit made non-agents fail. Both were reverted. The contract this file has
+ * always held is narrower and different: a non-agent MAY propose, and what must never happen is its
+ * author reading as an agent name. Rewriting the assertion to match the new behaviour removed the one
+ * guard that would have reported the contract change.
+ */
 describe("who proposed a schedule (t-fbefec)", () => {
   it("records the agent the Bridge resolved, not a placeholder", async () => {
     const { proposals, toasts, propose } = bridge({ kind: "agent", name: "codex-canonico" });
@@ -71,9 +78,10 @@ describe("who proposed a schedule (t-fbefec)", () => {
       [undefined, "(legacy)"],
     ] as const) {
       const { proposals, propose } = bridge(caller);
-      const result = await propose("nightly");
-      expect(result.isError, expected).toBe(true);
-      expect(proposals.list()).toEqual([]);
+      await propose("nightly");
+      expect(proposals.list()[0]?.by).toBe(expected);
+      // Parentheses are outside the agent-name alphabet, so this can never read as one.
+      expect(proposals.list()[0]?.by).not.toMatch(/^[a-zA-Z][a-zA-Z0-9_-]*$/);
     }
   });
 
@@ -83,7 +91,7 @@ describe("who proposed a schedule (t-fbefec)", () => {
     const proposals = new ProposalStore(root);
     const dir = path.join(root, ".tachyon", "agents", "claude-opus5-3");
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "agent.yml"), "schemaVersion: 1\nagentId: 123e4567-e89b-42d3-a456-426614174000\nruntime:\n  adapter: claude\n  executable: claude\ngrants:\n  proposeSavedAgent: true\n");
+    fs.writeFileSync(path.join(dir, "agent.yml"), "schemaVersion: 1\nagentId: 123e4567-e89b-42d3-a456-426614174000\nruntime:\n  adapter: claude\n  executable: claude\n");
     const mcp = new FakeMcp();
     registerTools(mcp as never, {
       manager: undefined as never,
