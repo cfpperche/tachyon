@@ -1,4 +1,4 @@
-.ck-overview-actions, .ck-jump { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ck-overview-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ck-auto { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ds-muted); }
 .ck-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: var(--ds-2); margin-bottom: var(--ds-3); }
 .ck-metric { border: var(--ds-border-width) solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2); background: color-mix(in srgb, var(--vscode-foreground) 4%, transparent); }

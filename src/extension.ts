@@ -2428,10 +2428,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const overviewPanels = new OverviewPanelManager(context.extensionUri, {
     collect: engineHost.collect,
-    openDoctor: engineHost.openDoctor,
-    openSection: (section, project) => {
-      if (section === "handoff") void openCockpit(makeCockpitDeps(), { route: cockpitRoutes.projectHandoff(project) });
-      else void vscode.commands.executeCommand("tachyon.openControl", section);
+    // t-3bcd57 — JUMP card removed; openSection remains for the inbox metric shortcut only.
+    // Project handoff is tachyon.openProjectHandoff; Doctor is tachyon.doctor (palette + other panels).
+    openSection: (section) => {
+      void vscode.commands.executeCommand("tachyon.openControl", section);
     },
   }, undefined, controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => overviewPanels.dispose() });
