@@ -51,9 +51,8 @@ describe("cockpit validations fixture (t-e61439)", () => {
 
   it("other cockpit fixtures are unaffected — no extra section-specific message leaks in", () => {
     const r = ROUTES.cockpit;
-    // SDD 485 C5 — was the `mission` fixture, which went with the Board's Control renderer. Fleet is the
-    // same check on the same premise: a section that pushes no validations must not receive one.
-    const fleetMsgs = r.makeMessage(r.fixtures.fleet!.vm) as Array<{ type: string }>;
-    expect(fleetMsgs.some((m) => m.type === VALIDATIONS)).toBe(false);
+    // SDD 485 D7 — Fleet's fixture moved with its renderer; Overview remains an unrelated Control fixture.
+    const overviewMsgs = r.makeMessage(r.fixtures.default!.vm) as Array<{ type: string }>;
+    expect(overviewMsgs.some((m) => m.type === VALIDATIONS)).toBe(false);
   });
 });

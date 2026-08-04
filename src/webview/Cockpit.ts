@@ -39,7 +39,7 @@ import {
   type CockpitStrings,
 } from "./cockpit/messages.js";
 import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
-import type { WorkspacePresentationTarget, WorkspaceProbePresentationTarget, WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import type { WorkspacePresentationTarget, WorkspaceProbePresentationTarget } from "../shell/WorkspacePresentation.js";
 // SDD 485 C5 — the Board's own envelope no longer travels through Control: the board is a standalone app
 // (`src/webview/BoardPanel.ts`) and its `snapshot`/`taskError` messages belong to that panel's client, the
 // same way C4's moved to `TaskDetailPanel.ts` one commit earlier.
@@ -336,14 +336,10 @@ export interface CockpitDeps {
    * the app keys its panel on it. Sibling of C4's `taskDetail.openDocument`, and for the same reason.
    */
   openBoard: (wsHash?: string) => void;
+  /** SDD 485 D7 — open Fleet as a project dashboard; persisted/deep-linked section routes redirect. */
+  openFleet: (wsHash?: string) => void;
   openSettings: () => void;
   openDoctor: () => void;
-  /** Fleet lifecycle + surface openers (wsHash optional for single-root). */
-  fleetStart: (name: string, wsHash?: string) => Promise<void>;
-  fleetStop: (name: string, wsHash?: string) => Promise<void>;
-  /** SDD 443 — continue unfinished task on another agent (webview already picked dest). */
-  fleetContinueTask: (fromName: string, toName: string, wsHash?: string) => Promise<void>;
-  fleetTerminal: (name: string, wsHash?: string) => Promise<void>;
   revealPath: (fsPath: string) => void;
   openConfigFile: (wsHash?: string) => Promise<void>;
   /** SDD 414 — settings.companion.tabTools for one workspace engine. */
@@ -768,6 +764,7 @@ let openRuntimeOpsApp: (() => void) | undefined;
  */
 let openInboxApp: (() => void) | undefined;
 let openInboxItemApp: ((wsHash: string, itemKind: HumanInboxKind, itemId: string) => void) | undefined;
+let openFleetApp: (() => void) | undefined;
 
 function navigate(route: CockpitRoute): void {
   if (route.kind === "task-detail") {
@@ -793,6 +790,12 @@ function navigate(route: CockpitRoute): void {
     // exit); guarding each is nine guards and one that gets forgotten. Here it is one, at the point every
     // one of them funnels through, next to C4's for exactly the same reason.
     openBoardDocument?.();
+    route = routes.section("overview");
+  }
+  if (route.kind === "section" && route.section === "fleet") {
+    // SDD 485 D7 — Fleet's launcher, Overview jump, subroute breadcrumbs and old section state all
+    // converge here. The app opens against Control's current project; Control commits Overview.
+    openFleetApp?.();
     route = routes.section("overview");
   }
   if (route.kind === "section" && route.section === "tmux") {
@@ -1090,57 +1093,6 @@ function resolveHandoffWs(handoff: CockpitHandoff, prefer?: string): WorkspaceHa
   return all[0];
 }
 
-/** Fallback-style resolver for the Fleet card's "Activity" click (mirrors resolveMissionWs/
- *  resolveApprovalWs) — used ONLY to decide which wsHash to bake into a fresh agent-activity route.
- *  Once that route exists, resolving ITS workspace is strict (see resolveActivityWs below, entity
- *  routes carry an immutable locator, same reasoning as resolveTaskDetailWs). */
-function resolveFleetActivityWs(activity: CockpitActivity, prefer?: string): WorkspaceActivityTarget | undefined {
-  const all = activity.getWorkspaces();
-  if (all.length === 0) return undefined;
-  if (prefer) {
-    const hit = all.find((w) => w.wsHash === prefer);
-    if (hit) return hit;
-  }
-  if (controlWorkspaceScope.current) {
-    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
-    if (hit) return hit;
-  }
-  return all[0];
-}
-
-/** t-610705 (Phase D, D1c) — same fallback-style resolver shape as resolveFleetActivityWs above, for
- *  Fleet's own "Probes" button. */
-function resolveFleetProbesWs(probes: CockpitProbes, prefer?: string): WorkspaceProbePresentationTarget | undefined {
-  const all = probes.getWorkspaces();
-  if (all.length === 0) return undefined;
-  if (prefer) {
-    const hit = all.find((w) => w.wsHash === prefer);
-    if (hit) return hit;
-  }
-  if (controlWorkspaceScope.current) {
-    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
-    if (hit) return hit;
-  }
-  return all[0];
-}
-
-/** t-610705 (Phase D, D1c) — same fallback-style resolver shape, for Fleet's own "Edit" button
- *  (opens the agent's definition in Agent or Terminal Studio — studios.getWorkspaces() already
- *  carries `config`, unlike CockpitActivity/CockpitProbes's narrower target shapes). */
-function resolveFleetStudioWs(studios: CockpitStudios, prefer?: string): WorkspaceStudioTarget | undefined {
-  const all = studios.getWorkspaces();
-  if (all.length === 0) return undefined;
-  if (prefer) {
-    const hit = all.find((w) => w.wsHash === prefer);
-    if (hit) return hit;
-  }
-  if (controlWorkspaceScope.current) {
-    const hit = all.find((w) => w.wsHash === controlWorkspaceScope.current);
-    if (hit) return hit;
-  }
-  return all[0];
-}
-
 /**
  * t-610705 (Phase C.2) — Control hosts AT MOST ONE active Activity feed at a time (unlike the
  * retired standalone panel's one-Map-slot-per-agent). A hardening dueto (probe-2d90286d) found that
@@ -1308,6 +1260,7 @@ export async function openCockpit(
         openRuntimeOpsApp = undefined;
         openInboxApp = undefined;
         openInboxItemApp = undefined;
+        openFleetApp = undefined;
         wiredPanel = undefined;
         navEpoch += 1;
         // t-610705 (Phase D, D3) — a later fresh panel must never inherit a disposed panel's route
@@ -1349,6 +1302,7 @@ export async function openCockpit(
   // that it now also picks which PANEL answers.
   openInboxApp = () => deps.openHumanInbox(controlWorkspaceScope.current);
   openInboxItemApp = (wsHash, itemKind, itemId) => deps.openHumanInboxItem(wsHash, itemKind, itemId);
+  openFleetApp = () => deps.openFleet(controlWorkspaceScope.current);
 
   if (opts?.route) {
     if (revealingExisting) await requestNavigate(opts.route, live);
@@ -2209,103 +2163,6 @@ export async function openCockpit(
         case "openDoctor":
           deps.openDoctor();
           return;
-        case "fleetStart":
-          if (typeof c.name === "string") {
-            try {
-              await deps.fleetStart(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
-              await sendModel();
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
-            }
-          }
-          return;
-        case "fleetStop":
-          if (typeof c.name === "string") {
-            try {
-              await deps.fleetStop(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
-              await sendModel();
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
-            }
-          }
-          return;
-        case "fleetTerminal":
-          if (typeof c.name === "string") {
-            try {
-              await deps.fleetTerminal(c.name, typeof c.wsHash === "string" ? c.wsHash : undefined);
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
-            }
-          }
-          return;
-        case "fleetActivity":
-          // t-610705 (Phase C.2) — navigates in place, same pattern as the Board's "openTask" case
-          // in C.1: resolve the workspace ONCE at dispatch time (fallback-style, mirrors every other
-          // Fleet action), then bake the resolved wsHash into the route as its immutable locator.
-          if (typeof c.name === "string") {
-            const ws = resolveFleetActivityWs(deps.activity, typeof c.wsHash === "string" ? c.wsHash : undefined);
-            if (ws) {
-              await requestNavigate(routes.agentActivity(ws.wsHash, c.name), live, async () => {
-                await sendModel();
-                await sendSectionModule();
-              });
-            }
-          }
-          return;
-        case "fleetProbes":
-          // t-610705 (Phase D, D1c) — same fallback-resolve-then-navigate pattern as fleetActivity
-          // above; the agent-probes route existed since C.2 but was only reachable via the
-          // agent-less `tachyon.openProbes` command until Fleet grew its own button.
-          if (typeof c.name === "string") {
-            const ws = resolveFleetProbesWs(deps.probes, typeof c.wsHash === "string" ? c.wsHash : undefined);
-            if (ws) {
-              await requestNavigate(routes.agentProbes(ws.wsHash, c.name), live, async () => {
-                await sendModel();
-                await sendSectionModule();
-              });
-            }
-          }
-          return;
-        case "fleetAgentStudio":
-          // t-610705 (Phase D, D1c) — same kind-routed dispatch as the sidebar's
-          // `tachyon.editAgentStudioItem` (extension.ts): a Temporary (undeclared) agent has no stored
-          // definition to edit — the client already hides this button for those rows (`a.declared
-          // !== false`), this re-checks authoritatively rather than trusting that client-side gate.
-          if (typeof c.name === "string") {
-            const ws = resolveFleetStudioWs(deps.studios, typeof c.wsHash === "string" ? c.wsHash : undefined);
-            // t-610705 (Phase D, D1c code-review finding) — Object.hasOwn, not a plain index read:
-            // `c.name` is an attacker-reachable webview-message field, and `agents[c.name]` for a
-            // name like "constructor"/"__proto__"/"toString" would otherwise resolve an INHERITED
-            // Object.prototype property instead of `undefined` — truthy, so it would slip past the
-            // "not declared" guard and navigate to a bogus studio-edit route for a nonexistent
-            // entity instead of warning.
-            const def = ws?.config && Object.hasOwn(ws.config.agents, c.name) ? ws.config.agents[c.name] : undefined;
-            if (ws && def) {
-              const studio = def.kind === "terminal" ? "terminal" : "agent";
-              await requestNavigate(routes.studioEdit(studio, ws.wsHash, c.name), live, async () => {
-                await sendModel();
-                await sendSectionModule();
-              });
-            } else if (ws) {
-              notify(`'${c.name}' is not saved in tachyon.yml (a Temporary instance has no stored definition)`, "warn");
-            }
-          }
-          return;
-        case "fleetContinueTask":
-          if (typeof c.name === "string" && typeof c.toName === "string") {
-            try {
-              await deps.fleetContinueTask(
-                c.name,
-                c.toName,
-                typeof c.wsHash === "string" ? c.wsHash : undefined,
-              );
-              await sendModel();
-              live.webview.postMessage(toastMessage(vscode.l10n.t("Continue task started"), "ok"));
-            } catch (err) {
-              live.webview.postMessage(toastMessage(err instanceof Error ? err.message : String(err), "err"));
-            }
-          }
-          return;
         case "revealPath":
           if (typeof c.path === "string" && c.path) deps.revealPath(c.path);
           return;
@@ -2567,6 +2424,8 @@ export async function openCockpit(
         // SDD 485 D6 — ck-mono has two consumers now: Control and standalone Worktrees. Its shared
         // typography sheet is linked here rather than leaving the definition trapped in cockpit.css.
         uri("control-typography.css"),
+        // SDD 485 D7 — Control has 0 ck-card-list and 0 ci-* consumers after Fleet leaves, but
+        // Overview still has 2 ck-empty consumers. The mirror contract therefore requires this link.
         uri("engine-workspace.css"),
         uri("cockpit.css"),
       ].filter((href): href is string => href !== undefined),

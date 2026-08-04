@@ -15,13 +15,6 @@ import {
   openDoctorAction,
   setSectionAction,
   switchControlWorkspaceAction,
-  fleetStartAction,
-  fleetStopAction,
-  fleetContinueTaskAction,
-  fleetTerminalAction,
-  fleetActivityAction,
-  fleetProbesAction,
-  fleetAgentStudioAction,
   revealPathAction,
   copyTextAction,
   openConfigFileAction,
@@ -448,15 +441,6 @@ function CockpitRoot() {
       onCopyDiagnostics={() => post(copyDiagnosticsAction())}
       onOpenSettings={() => post(openSettingsAction())}
       onOpenDoctor={() => post(openDoctorAction())}
-      onFleetStart={(name, wsHash) => post(fleetStartAction(name, wsHash))}
-      onFleetStop={(name, wsHash) => post(fleetStopAction(name, wsHash))}
-      onFleetTerminal={(name, wsHash) => post(fleetTerminalAction(name, wsHash))}
-      onFleetActivity={(name, wsHash) => post(fleetActivityAction(name, wsHash))}
-      onFleetProbes={(name, wsHash) => post(fleetProbesAction(name, wsHash))}
-      onFleetAgentStudio={(name, wsHash) => post(fleetAgentStudioAction(name, wsHash))}
-      onFleetContinueTask={(fromName, toName, wsHash) =>
-        post(fleetContinueTaskAction(fromName, toName, wsHash))
-      }
       onRevealPath={(path) => post(revealPathAction(path))}
       onCopyText={(text) => post(copyTextAction(text))}
       onOpenConfigFile={(wsHash) => post(openConfigFileAction(wsHash))}

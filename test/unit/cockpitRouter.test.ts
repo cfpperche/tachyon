@@ -247,10 +247,10 @@ describe("persisted state — always writes schemaVersion 2", () => {
   it("a freshly created panel persists {schemaVersion:2, route} not the old bare section", async () => {
     const ws = fakeWorkspace();
     const deps = depsFor([target(ws)]);
-    await openCockpit(deps, { section: "fleet" });
+    await openCockpit(deps, { section: "runtime-config" });
     expect(__createdPanels[0].webview.html).toContain('"schemaVersion":2');
     expect(__createdPanels[0].webview.html).toContain('"kind":"section"');
-    expect(__createdPanels[0].webview.html).toContain('"section":"fleet"');
+    expect(__createdPanels[0].webview.html).toContain('"section":"runtime-config"');
   });
 });
 

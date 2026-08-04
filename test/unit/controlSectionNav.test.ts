@@ -19,7 +19,7 @@ describe("CONTROL_SECTION_NAV (t-6e2952)", () => {
     // in LAUNCHER_ORDER, which is why `runtime` lands between `mission` and `tmux` rather than at the end:
     // a migration changes a tile's destination and never its position (SDD 485 D4 is the fifth to prove
     // it: `inbox` leads this list because its tile sits fourth in LAUNCHER_ORDER, exactly where it was).
-    expect(standalone).toEqual(["engine", "inbox", "mission", "worktrees", "runtime", "tmux", "plugins"]);
+    expect(standalone).toEqual(["engine", "fleet", "inbox", "mission", "worktrees", "runtime", "tmux", "plugins"]);
     // the flag and the section list are two statements of one fact; they must not disagree.
     for (const id of standalone) expect(COCKPIT_SECTION_ORDER).not.toContain(id);
   });

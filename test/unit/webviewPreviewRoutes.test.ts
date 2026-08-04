@@ -83,7 +83,6 @@ describe("preview route table", () => {
       "execution-graph-error",
       "execution-graph-no-telemetry",
       "execution-graph-real",
-      "fleet",
       "handoff",
       // t-d16698 — the Human Inbox list and ONE opened item: the two surfaces every "Review"
       // doorbell can land on, and the deep-link destination this task is about.

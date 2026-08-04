@@ -393,27 +393,6 @@
   },
   {
     "view": "cockpit",
-    "fixture": "fleet",
-    "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=fleet",
-    "frame": {
-      "w": 1100,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Control",
-    "aliases": [
-      "control",
-      "cockpit",
-      "sysadmin",
-      "project control",
-      "fleet control",
-      "control plane"
-    ]
-  },
-  {
-    "view": "cockpit",
     "fixture": "nav-pending",
     "url": "/scripts/webview-preview/index.html?view=cockpit&fixture=nav-pending",
     "frame": {
@@ -2013,6 +1992,24 @@
       "worktrees",
       "managed worktrees",
       "checkout hygiene"
+    ]
+  },
+  {
+    "view": "fleet",
+    "fixture": "default",
+    "url": "/scripts/webview-preview/index.html?view=fleet&fixture=default",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Fleet",
+    "aliases": [
+      "fleet",
+      "agents",
+      "agent runtime"
     ]
   },
   {

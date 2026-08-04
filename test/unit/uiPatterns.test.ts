@@ -31,12 +31,15 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(guide).toContain("shared/ui");
   });
 
-  it("Control ModuleChrome and Approvals adopt the patterns", () => {
+  it("Control, standalone Fleet and Approvals adopt the patterns", () => {
     const cockpit = readFileSync("src/webview/cockpit/App.tsx", "utf8");
     expect(cockpit).toContain("PageChrome");
-    expect(cockpit).toContain("ListRow");
     expect(cockpit).toContain("EmptyState");
     expect(cockpit).not.toMatch(/ci-badge/);
+    const fleet = readFileSync("src/webview/fleet/App.tsx", "utf8");
+    expect(fleet).toContain("PageChrome");
+    expect(fleet).toContain("ListRow");
+    expect(fleet).toContain("EmptyState");
     const approvals = readFileSync("src/webview/approval/App.tsx", "utf8");
     expect(approvals).toContain("PageChrome");
     expect(approvals).toContain("EmptyState");

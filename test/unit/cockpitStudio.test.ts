@@ -222,7 +222,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     await flush();
 
     const model = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").at(-1) as { model: { section: string; activeRoute?: unknown } };
-    expect(model.model.section).toBe("fleet");
+    expect(model.model.section).toBe("overview");
     expect(model.model.activeRoute).toBeUndefined();
     expect(__getWarningMessageCalls()).toHaveLength(0);
   });
@@ -244,7 +244,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     const warn = __getWarningMessageCalls().at(-1);
     expect(warn?.actions).toEqual(["Save", "Leave and keep draft", "Discard"]);
     const model = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model").at(-1) as { model: { section: string } };
-    expect(model.model.section).toBe("fleet");
+    expect(model.model.section).toBe("overview");
 
     // re-entering the SAME identity must NOT resurrect the discarded draft.
     await openCockpit(deps, { route: { kind: "studio-new", studio: "command", wsHash: "ws-1", returnRoute: null } });
@@ -377,7 +377,7 @@ describe("Control → studio (D0 pilot: command) routing", () => {
     resolveModal("Discard");
     await flush();
     const modelsAfter = __createdPanels[0].webview.posted.filter((m) => (m as { type?: string }).type === "model") as Array<{ model: { section: string } }>;
-    expect(modelsAfter.at(-1)?.model.section).toBe("fleet"); // N1 (the only one that ever actually ran) committed
+    expect(modelsAfter.at(-1)?.model.section).toBe("overview"); // N1 opened Fleet's app; Control committed its fallback
     spy.mockRestore();
   });
 

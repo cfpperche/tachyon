@@ -678,5 +678,6 @@
   "Port": "Porta",
   "Auth": "Autenticação",
   "Root": "Raiz",
-  "Hash": "Hash"
+  "Hash": "Hash",
+  "Fleet": "Frota"
 }

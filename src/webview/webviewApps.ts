@@ -202,6 +202,9 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // SDD 485 D6 — Worktrees is filtered by buildCockpitModel's wsHash before its classified rows are
   // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
   { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 485 D7 — Fleet is filtered by buildCockpitModel's wsHash before its agent rows are exposed,
+  // so two projects have genuinely different fleets. It never had a standalone id; use a new one.
+  { view: "fleet", viewId: "tachyonFleet", section: "fleet", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
 ];
 
 /**
