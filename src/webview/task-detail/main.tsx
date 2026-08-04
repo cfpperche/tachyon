@@ -1,6 +1,5 @@
 import { render } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Button } from "../shared/ui";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App, type TaskDetailDispatch } from "./App";
@@ -16,7 +15,6 @@ import {
   readyMessage,
   requestSnapshotAction,
   updateTaskAction,
-  setTaskDocumentModeAction,
   type TaskDetailAction,
   type TaskDetailVM,
 } from "./messages";
@@ -108,7 +106,6 @@ function Root() {
         routeKey={`task-detail:${vm?.wsHash ?? ""}:${vm?.id ?? ""}`}
         mountNonce="task-document"
         incoming={studioIncoming}
-        backLink={<Button icon="arrow-left" onClick={() => post(setTaskDocumentModeAction("read"))}>Read task</Button>}
       />
     </div>;
   }

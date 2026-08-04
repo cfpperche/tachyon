@@ -19,6 +19,7 @@ import { mapUnknownError } from "./shared/studio/errorTaxonomy.js";
 import { handleTaskStudioDomainMessage } from "../cockpit/taskStudioDomain.js";
 import { TaskDocumentEditPolicy, type TaskDocumentDraft } from "./task-detail/editPolicy.js";
 import type { TaskPatch } from "./task-studio/domain.js";
+import { confirmDocumentStudioCancel } from "./shared/studio/documentStudioCancel.js";
 
 export const TASK_DETAIL_VIEW_TYPE = "tachyonTaskDetail";
 
@@ -300,9 +301,22 @@ export class TaskDetailPanelManager {
             if (msg.type === "patch" && msg.patch) { policy.receivePatch(msg.patch); return; }
             if (msg.type === "dirty") { policy.receiveDirty(msg.dirty ?? false); return; }
             if (msg.type === "cancel") {
-              policy.clearDraft();
-              policy.switchMode("read");
-              session.post(taskDocumentModeMessage("read"));
+              const leaveEditMode = () => {
+                policy.clearDraft();
+                policy.switchMode("read");
+                session.post(taskDocumentModeMessage("read"));
+              };
+              await confirmDocumentStudioCancel(policy.draft.dirty, async () => {
+                if (!policy.draft.patch) return false;
+                const result = await studio.save(taskId, policy.draft.patch);
+                if (result.status !== "ok") {
+                  postStudioError(new Error(result.error.message));
+                  return false;
+                }
+                leaveEditMode();
+                this.hooks.onTasksChanged();
+                return true;
+              }, leaveEditMode);
               return;
             }
             if (msg.type === "save" && policy.draft.patch) {

@@ -695,5 +695,9 @@
   "Handoff distillation agent '{0}' started.": "Agente de destilação do handoff '{0}' iniciado.",
   "Could not start handoff distillation: {0}": "Não foi possível iniciar a destilação do handoff: {0}",
   "Captured Probes": "Probes capturados",
-  "Probes — {0}": "Probes — {0}"
+  "Probes — {0}": "Probes — {0}",
+  "Continue editing": "Continuar editando",
+  "Discard": "Descartar",
+  "Save": "Salvar",
+  "This draft has unsaved changes. What would you like to do?": "Este rascunho tem alterações não salvas. O que você deseja fazer?"
 }
