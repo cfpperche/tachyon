@@ -12,10 +12,8 @@ import type { TaskDetailEntity } from "../../src/webview/task-studio/domain";
 // `{ type: "taskStudio", vm }` push. The fixture is a TaskDetailEntity (mode lives on the shell
 // panel entry; assets come from bootstrapGlobals in product — optional here).
 //
-// t-c55f8d (2026-08-01): there is no `dist/webview/task-studio.js` any more — after t-610705 Phase D
-// the task studio is a Control route inside the cockpit bundle, so the hand-rolled host page that
-// loaded a standalone bundle 404'd and all six tests timed out. The door is now the dev preview
-// harness at `?view=cockpit&fixture=studio-task-edit`, which mounts the studio route for real. The
+// D12 (2026-08-04): Task Studio is edit mode of the task-detail document, so the production door is
+// the task-detail bundle and its edit fixture — never Control and never a second panel. The
 // `load` injection below is UNCHANGED and still the thing under test: the mounted studio keeps
 // listening for the versioned envelope, so each test still drives its OWN entity (new vs edit, long
 // dep title, long artifact paths) rather than whatever the catalog fixture happens to hold.
@@ -44,7 +42,7 @@ const ENTITY_EDIT: TaskDetailEntity = {
   expectUpdatedAt: "2026-07-03T00:00:00.000Z",
 };
 
-const PREVIEW = "/scripts/webview-preview/index.html?view=cockpit&fixture=studio-task-edit";
+const PREVIEW = "/scripts/webview-preview/index.html?view=task-detail&fixture=edit";
 
 /** Open the studio route on the real bundle, then inject a TaskDetailEntity via the studio-shell
  *  `load` message — the entity the test wants, replacing the catalog fixture the route mounted with.
