@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 
 // t-2a49b2 — layout-first rewrite of the Runtime Ops browser suite.
 //
@@ -208,7 +209,7 @@ describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
     expect(focus.outlineStyle).toBe("solid");
 
     await page.keyboard.press("Space");
-    await page.waitForFunction(() => document.querySelector(".runtime-ops-agents")?.hasAttribute("open"), { timeout: 2000 });
+    await page.waitForFunction(() => document.querySelector(".runtime-ops-agents")?.hasAttribute("open"), { timeout: HANG_TIMEOUT_MS });
     expect(await page.$eval(".runtime-ops-agents", (el) => el.hasAttribute("open"))).toBe(true);
     expect(await page.$eval(".runtime-ops-agents summary", (el) => document.activeElement === el)).toBe(true);
     await page.close();

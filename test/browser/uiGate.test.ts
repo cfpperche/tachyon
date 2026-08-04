@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 
 // spec 342 T3 — THE COMPAT GATE. Per spec.md's checklist, browser-level (not jsdom): open/close, Esc,
 // outside-click dismissal, Tab/Shift+Tab containment where applicable, focus restore, nested portals,
@@ -46,7 +47,7 @@ describe("ui-gate compat gate (T3)", () => {
   // the expected activeElement (instead of a fixed sleep) is what makes these checks non-flaky WITHOUT
   // silently forgiving a real timing regression — a component that never reaches the expected state still
   // times out and fails.
-  const waitForActiveTestId = (p: Page, testId: string, timeout = 2000) =>
+  const waitForActiveTestId = (p: Page, testId: string, timeout = HANG_TIMEOUT_MS) =>
     p.waitForFunction((id) => document.activeElement?.getAttribute("data-testid") === id, { timeout }, testId);
 
   describe("Tooltip — GATE FAILURE (excluded; T4 ships no KitTooltip)", () => {
@@ -56,15 +57,15 @@ describe("ui-gate compat gate (T3)", () => {
     // encoding as a permanent `.fails` regression probe.
     it.fails("opens on trigger focus, restoring focus on Escape close", async () => {
       await page.focus('[data-testid="tooltip-trigger"]');
-      await page.waitForSelector('[data-testid="tooltip-content"]', { visible: true, timeout: 1000 });
+      await page.waitForSelector('[data-testid="tooltip-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       expect(await activeTestId(page)).toBe("tooltip-trigger");
       await page.keyboard.press("Escape");
-      await page.waitForSelector('[data-testid="tooltip-content"]', { hidden: true, timeout: 1000 });
+      await page.waitForSelector('[data-testid="tooltip-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
 
     it.fails("keeps aria-describedby on the trigger pointed at the content's id", async () => {
       await page.focus('[data-testid="tooltip-trigger"]');
-      await page.waitForSelector('[data-testid="tooltip-content"]', { visible: true, timeout: 1000 });
+      await page.waitForSelector('[data-testid="tooltip-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       const linked = await page.evaluate(() => {
         const trigger = document.querySelector('[data-testid="tooltip-trigger"]');
         const content = document.querySelector('[data-testid="tooltip-content"]');
@@ -78,7 +79,7 @@ describe("ui-gate compat gate (T3)", () => {
   describe("DropdownMenu — GATE PASS", () => {
     it("opens on click, exposes aria-expanded + aria-controls matching the content id", async () => {
       await page.click('[data-testid="dropdown-trigger"]');
-      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       const linked = await page.evaluate(() => {
         const trigger = document.querySelector('[data-testid="dropdown-trigger"]');
         const content = document.querySelector('[data-testid="dropdown-content"]');
@@ -90,7 +91,7 @@ describe("ui-gate compat gate (T3)", () => {
 
     it("supports ArrowDown roving focus between items (keyboard nav)", async () => {
       await page.click('[data-testid="dropdown-trigger"]');
-      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "dropdown-content"); // initial focus lands on the content wrapper
       await page.keyboard.press("ArrowDown");
       await waitForActiveTestId(page, "dropdown-item-alpha");
@@ -100,22 +101,22 @@ describe("ui-gate compat gate (T3)", () => {
 
     it("closes on Escape and restores focus to the trigger", async () => {
       await page.click('[data-testid="dropdown-trigger"]');
-      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.keyboard.press("Escape");
-      await page.waitForSelector('[data-testid="dropdown-content"]', { hidden: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="dropdown-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "dropdown-trigger");
     });
 
     it("dismisses on outside click", async () => {
       await page.click('[data-testid="dropdown-trigger"]');
-      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.mouse.click(5, 5);
-      await page.waitForSelector('[data-testid="dropdown-content"]', { hidden: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="dropdown-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
 
     it("renders its content via a portal outside #root (nested-portal check)", async () => {
       await page.click('[data-testid="dropdown-trigger"]');
-      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="dropdown-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       expect(await isInBodyOutsideRoot(page, '[data-testid="dropdown-content"]')).toBe(true);
     });
 
@@ -132,7 +133,7 @@ describe("ui-gate compat gate (T3)", () => {
       // under test — a tall viewport isolates "is it positioned at all" from "did it fit."
       await page.setViewport({ width: 1024, height: 1400 });
       await page.click('[data-testid="kit-dropdown-card-trigger-a"]');
-      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       const rect = await page.evaluate(() => {
         const el = document.querySelector('[data-testid="kit-dropdown-card-content-a"]');
         const r = el!.getBoundingClientRect();
@@ -145,17 +146,17 @@ describe("ui-gate compat gate (T3)", () => {
       // functional proof, not just a position read: a real click at the item's rendered coordinates must
       // actually select it (matches this repo's existing "functional, not just visual" testing convention).
       await page.click('[data-testid="kit-dropdown-card-item-a"]');
-      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { hidden: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
 
     it("opening a second KitDropdown instance after closing the first works (multi-instance, real clicks)", async () => {
       await page.click('[data-testid="kit-dropdown-card-trigger-a"]');
-      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.keyboard.press("Escape");
-      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { hidden: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-a"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
 
       await page.click('[data-testid="kit-dropdown-card-trigger-b"]');
-      await page.waitForSelector('[data-testid="kit-dropdown-card-content-b"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="kit-dropdown-card-content-b"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       const expanded = await page.evaluate(() => document.querySelector('[data-testid="kit-dropdown-card-trigger-b"]')?.getAttribute("aria-expanded"));
       expect(expanded).toBe("true");
     });
@@ -164,27 +165,27 @@ describe("ui-gate compat gate (T3)", () => {
   describe("Select — GATE PASS", () => {
     it("opens on click, selects via keyboard (typeahead + Enter), and updates the trigger value", async () => {
       await page.click('[data-testid="select-trigger"]');
-      await page.waitForSelector('[data-testid="select-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "select-item-alpha"); // the current value's item is focused on open
       await page.keyboard.type("b"); // typeahead → jumps to "Bravo"
       await waitForActiveTestId(page, "select-item-bravo");
       await page.keyboard.press("Enter");
-      await page.waitForSelector('[data-testid="select-content"]', { hidden: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
       const label = await page.$eval('[data-testid="select-trigger"]', (el) => el.textContent);
       expect(label).toContain("Bravo");
     });
 
     it("closes on Escape and restores focus to the trigger", async () => {
       await page.click('[data-testid="select-trigger"]');
-      await page.waitForSelector('[data-testid="select-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.keyboard.press("Escape");
-      await page.waitForSelector('[data-testid="select-content"]', { hidden: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "select-trigger");
     });
 
     it("exposes aria-expanded + aria-controls matching the content id", async () => {
       await page.click('[data-testid="select-trigger"]');
-      await page.waitForSelector('[data-testid="select-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       const linked = await page.evaluate(() => {
         const trigger = document.querySelector('[data-testid="select-trigger"]');
         const content = document.querySelector('[data-testid="select-content"]');
@@ -196,7 +197,7 @@ describe("ui-gate compat gate (T3)", () => {
 
     it("opens with popper positioning and no phantom scroll chevron chrome", async () => {
       await page.click('[data-testid="kit-select-trigger"]');
-      await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       const state = await page.evaluate(() => {
         const trigger = document.querySelector('[data-testid="kit-select-trigger"]') as HTMLElement | null;
         const content = document.querySelector('[data-slot="select-content"]') as HTMLElement | null;
@@ -217,29 +218,29 @@ describe("ui-gate compat gate (T3)", () => {
   describe("Popover — GATE PASS", () => {
     it("opens on click, auto-focusing the first focusable field in its content", async () => {
       await page.click('[data-testid="popover-trigger"]');
-      await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "popover-input");
     });
 
     it("closes on Escape and restores focus to the trigger", async () => {
       await page.click('[data-testid="popover-trigger"]');
-      await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "popover-input");
       await page.keyboard.press("Escape");
-      await page.waitForSelector('[data-testid="popover-content"]', { hidden: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="popover-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
       await waitForActiveTestId(page, "popover-trigger");
     });
 
     it("dismisses on outside click", async () => {
       await page.click('[data-testid="popover-trigger"]');
-      await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.mouse.click(5, 5);
-      await page.waitForSelector('[data-testid="popover-content"]', { hidden: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="popover-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
 
     it("renders its content via a portal outside #root (nested-portal check)", async () => {
       await page.click('[data-testid="popover-trigger"]');
-      await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: 2000 });
+      await page.waitForSelector('[data-testid="popover-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       expect(await isInBodyOutsideRoot(page, '[data-testid="popover-content"]')).toBe(true);
     });
   });
@@ -254,13 +255,13 @@ describe("ui-gate compat gate (T3)", () => {
       const pageErrors: string[] = [];
       page.on("pageerror", (err) => pageErrors.push(String(err)));
       await page.click('[data-testid="dialog-trigger"]');
-      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: 1000 });
+      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       expect(pageErrors).toEqual([]);
     });
 
     it.fails("traps Tab within the modal (last → first wraps forward)", async () => {
       await page.click('[data-testid="dialog-trigger"]');
-      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: 1000 });
+      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.focus('[data-testid="dialog-close-footer"]');
       await page.keyboard.press("Tab");
       const stillInDialog = await page.evaluate(() => {
@@ -272,17 +273,17 @@ describe("ui-gate compat gate (T3)", () => {
 
     it.fails("closes on Escape and restores focus to the trigger", async () => {
       await page.click('[data-testid="dialog-trigger"]');
-      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: 1000 });
+      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.keyboard.press("Escape");
-      await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: 1000 });
-      await waitForActiveTestId(page, "dialog-trigger", 1000);
+      await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
+      await waitForActiveTestId(page, "dialog-trigger");
     });
 
     it.fails("dismisses on outside click (clicking the overlay)", async () => {
       await page.click('[data-testid="dialog-trigger"]');
-      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: 1000 });
+      await page.waitForSelector('[data-testid="dialog-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
       await page.mouse.click(5, 5);
-      await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: 1000 });
+      await page.waitForSelector('[data-testid="dialog-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
     });
   });
 
