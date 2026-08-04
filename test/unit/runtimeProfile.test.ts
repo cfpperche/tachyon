@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertVerifiedTranscriptIsolation, hasVerifiedTranscriptIsolation, isolationMechanismForCommand, modelLabelForRuntime, runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, hasVerifiedTranscriptIsolation, isolationMechanismForCommand, modelLabelForRuntime, projectScopedTranscriptWarning, runtimeProfile } from "../../src/runtime/runtimeProfile.js";
 
 describe("runtime profiles (spec 358 phase 1)", () => {
   it("declares Claude isolation as measured mint", () => {
@@ -155,6 +155,26 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     ]);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(false);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
+    expect(() => assertVerifiedTranscriptIsolation("grok", { name: "grok-child", parented: true })).not.toThrow();
+  });
+
+  it.each([
+    { parented: false, isolatedWorktree: false, harness: false, warns: false },
+    { parented: false, isolatedWorktree: false, harness: true, warns: false },
+    { parented: false, isolatedWorktree: true, harness: false, warns: false },
+    { parented: false, isolatedWorktree: true, harness: true, warns: false },
+    { parented: true, isolatedWorktree: false, harness: false, warns: true },
+    { parented: true, isolatedWorktree: false, harness: true, warns: false },
+    { parented: true, isolatedWorktree: true, harness: false, warns: false },
+    { parented: true, isolatedWorktree: true, harness: true, warns: false },
+  ])("t-110aaa: project-scoped warning matrix $parented/$isolatedWorktree/$harness", (context) => {
+    const warning = projectScopedTranscriptWarning("grok", { name: "grok-child", ...context });
+    expect(!!warning).toBe(context.warns);
+    if (context.warns) {
+      expect(warning).toContain("project-scoped transcript and runtime state");
+      expect(warning).toContain("same-user processes may read it");
+      expect(warning).toContain("worktree: true or harness");
+    }
   });
 
   it("declares hermes isolation as measured private-home (HERMES_HOME)", () => {
