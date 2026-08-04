@@ -30,6 +30,7 @@ import { worktreesModelMessage } from "../../src/webview/worktrees/messages";
 import { fleetModelMessage } from "../../src/webview/fleet/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
 import { executionGraphModelMessage } from "../../src/webview/execution-graph/messages";
+import { settingsModelMessage } from "../../src/webview/settings/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { approvalFixtures } from "./fixtures/approval";
@@ -165,7 +166,9 @@ export const ROUTES: Record<string, Route> = {
       fixture.vm.section !== "engine"
       && fixture.vm.section !== "worktrees"
       && fixture.vm.section !== "runtime-config"
+      && fixture.vm.section !== "settings"
       && name !== "runtime-config"
+      && name !== "settings"
       && name !== "fleet")) as Record<string, Fixture>,
     // SDD 410 Phase A — cockpit.js is now ESM with esbuild code-split chunks; the harness must load it as
     // a module (classic <script> injection dies with "Cannot use import statement outside a module").
@@ -485,6 +488,15 @@ export const ROUTES: Record<string, Route> = {
     fixtures: { default: cockpitFixtures.fleet },
     module: true,
     makeMessage: (vm) => fleetModelMessage(vm as never),
+  },
+  settings: {
+    bundle: "/dist/webview/settings.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/settings.css"],
+    frame: { w: 880, h: 900 },
+    fixtures: { default: cockpitFixtures.settings },
+    module: true,
+    globals: { __TACHYON_STRINGS__: cockpitStrings },
+    makeMessage: (vm) => settingsModelMessage(vm as never),
   },
   // SDD 485 C1–C3 — the section-app proof surface: one manager, cardinality as a parameter. Dev-only, same
   // status as the two spec-350 fakes above.

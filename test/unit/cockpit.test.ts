@@ -4,7 +4,7 @@ import { buildCockpitModel, COCKPIT_SECTION_ORDER, formatCockpitDiagnostics } fr
 describe("cockpit model", () => {
   it("orders sections by ops frequency (no soon slots)", () => {
     expect(COCKPIT_SECTION_ORDER[0]).toBe("overview");
-    expect(COCKPIT_SECTION_ORDER[1]).toBe("settings");
+    expect(COCKPIT_SECTION_ORDER).not.toContain("settings");
     expect(COCKPIT_SECTION_ORDER).not.toContain("execution-graph");
     expect(COCKPIT_SECTION_ORDER).not.toContain("engine");
     // SDD 485 D4 — the Human Inbox is a standalone `dashboard` app: still a CockpitSectionId (so a
@@ -28,7 +28,6 @@ describe("cockpit model", () => {
     // Its launcher neighbour followed in D8, with opposite cardinality because it reads one project.
     expect(COCKPIT_SECTION_ORDER).not.toContain("runtime");
     expect(COCKPIT_SECTION_ORDER).not.toContain("runtime-config");
-    expect(COCKPIT_SECTION_ORDER).toContain("settings");
   });
 
   it("builds fleet/worktrees overview counts", () => {

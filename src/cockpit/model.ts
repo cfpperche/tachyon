@@ -66,11 +66,11 @@ export type CockpitSectionId =
  * (Runtime Ops), the fourth. D4 — `inbox` (the Human Inbox), the fifth, and the
  * first whose departure also takes a SUBROUTE with it: `inbox-item` is rendered inside that app now, so
  * both route kinds redirect (see `navigate()` in Cockpit.ts). D9 — `execution-graph`, the ninth:
- * it remains decodable but Control no longer renders it.
+ * it remains decodable but Control no longer renders it. D10 — `settings`, the tenth, likewise remains
+ * decodable solely so old state and deep links can redirect to its standalone app.
  */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
   "overview",
-  "settings",
 ];
 
 /**
@@ -92,6 +92,7 @@ export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   "plugins",
   "runtime",
   "runtime-config",
+  "settings",
   "tmux",
   "worktrees",
   "validations",
