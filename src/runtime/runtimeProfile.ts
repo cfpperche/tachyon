@@ -592,9 +592,15 @@ export function assertVerifiedTranscriptIsolation(cmd: string, context: { name: 
   const isolation = isolationMechanismForCommand(cmd);
   if (hasVerifiedTranscriptIsolation(isolation, context)) return;
   if (isolation.verified && isolation.mechanism === "project-scoped" && !context.isolatedWorktree) {
+    // t-a9559d — both sentences used to offer "a gated delegation" as a way out. That operation was
+    // RETIRED, and the product says so in its own words (`loadConfig.ts:1621`: "verify_task and gated
+    // delegation were retired"). A refusal that names a remedy the caller cannot perform is the most
+    // expensive shape of this defect: the reader tries it, finds nothing, and concludes the refusal is
+    // arbitrary — which is exactly how a governed boundary gets worked around instead of satisfied.
+    // What remains is what still exists, and both remaining options are real operations today.
     const remedy = context.parented
-      ? "Spawn with worktree: true to create a child worktree, use a gated delegation, or set cwd to a registered Tachyon worktree."
-      : "Use a gated delegation, spawn with worktree: true, or set cwd to a registered Tachyon worktree.";
+      ? "Spawn with worktree: true to create a child worktree, or set cwd to a registered Tachyon worktree."
+      : "Spawn with worktree: true, or set cwd to a registered Tachyon worktree.";
     throw new Error(
       `cannot delegate '${context.name}': this runtime's project-scoped transcript isolation requires an isolated worktree for this spawn ` +
         `(mechanism=${isolation.mechanism}, source=${isolation.source}, verified=${isolation.verified}). ` +
