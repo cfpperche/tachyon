@@ -5,7 +5,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { handleCompanionHttp, isCompanionPath, type CompanionHttpSurface } from "../companion/CompanionHttp.js";
 import { registerTools, type BridgeDeps } from "./tools.js";
-import { resolveCaller, type CallerIdentityRegistry, type CallerScope } from "./callerIdentity.js";
+import { resolveCaller, type CallerIdentityRegistry, type CallerScope, type CallerSnapshot } from "./callerIdentity.js";
 
 export const BRIDGE_PATH = "/mcp";
 
@@ -119,6 +119,11 @@ export class Bridge {
       /** spec 351 (dueto F1) — every legacy-authenticated call is logged with tool + claimed identity;
        *  wired by Workspace to a durable line, best-effort (never blocks the request). */
       onLegacyCall?: (info: { tool: string; claimedIdentity?: string }) => void;
+      /**
+       * Dogfood heal: when a bearer is `token_unknown`, try to match it against live managed agent
+       * process env and adopt into the registry. Returns an agent snapshot on success.
+       */
+      healUnknownBearer?: (bearer: string) => CallerSnapshot | undefined;
       onRequestComplete?: (info: BridgeRequestCompleteInfo) => void;
       slowRequestMs?: number;
     } = {},
@@ -292,8 +297,10 @@ export class Bridge {
     // request completes on its snapshot even if the underlying token is invalidated mid-request.
     if (this.options.token !== undefined) {
       const auth = req.headers.authorization;
-      const bearer = auth?.startsWith("Bearer ") ? auth.slice(7) : undefined;
-      const result = resolveCaller({
+      // Case-insensitive scheme; trim so "Bearer  <token>" still works.
+      const bearerMatch = typeof auth === "string" ? auth.match(/^Bearer\s+(.+)$/i) : null;
+      const bearer = bearerMatch?.[1]?.trim() || undefined;
+      let result = resolveCaller({
         bearer,
         registry: this.options.getRegistry?.(),
         scope: this.options.scope ?? { workspaceId: "", instanceId: "" },
@@ -301,6 +308,11 @@ export class Bridge {
         externalToken: this.options.externalToken,
         legacyCompatEnabled: this.options.legacyCompatEnabled ?? true,
       });
+      // Self-heal: process still holds a token the digest registry forgot (remint/sweep/reload).
+      if (!result.ok && result.reason === "token_unknown" && bearer && this.options.healUnknownBearer) {
+        const healed = this.options.healUnknownBearer(bearer);
+        if (healed) result = { ok: true, snapshot: healed };
+      }
       if (!result.ok) {
         res.writeHead(401, { "content-type": "application/json" });
         res.end(

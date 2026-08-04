@@ -7667,7 +7667,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     expect(registry.isLive("a", SCOPE)).toBe(false);
   });
 
-  it("restart revokes the old token before minting a new one — a resolve against the pre-restart token fails", async () => {
+  it("restart remints a fresh token; prior token stays valid during supersede grace (kill hard-revokes)", async () => {
     const registry = new CallerIdentityRegistry(crypto.randomBytes(32));
     let lastMinted = "";
     const { tmux } = fakeTmux();
@@ -7686,7 +7686,8 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
     await manager.spawn("a");
     const preRestartToken = lastMinted;
     await manager.restart("a", { stop: "force", session: "new" });
-    expect(registry.resolve(preRestartToken, SCOPE)).toEqual({ ok: false, reason: "token_revoked" });
+    // Dogfood: surviving pane with preRestartToken must not 401 during remint races.
+    expect(registry.resolve(preRestartToken, SCOPE)).toEqual({ ok: true, snapshot: { kind: "agent", name: "a" } });
     expect(registry.resolve(lastMinted, SCOPE)).toEqual({ ok: true, snapshot: { kind: "agent", name: "a" } });
   });
 

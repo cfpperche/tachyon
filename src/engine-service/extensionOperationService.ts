@@ -75,10 +75,12 @@ export async function executeExtensionQuery(
     case "agents.list":
       return json(await workspace.manager.list());
     case "attention.list": {
-      const out: Record<string, { state: string; matchedLine?: string }> = {};
+      const out: Record<string, { state: string; composerOccupied?: boolean; matchedLine?: string }> = {};
       for (const [agent, attention] of workspace.monitor.states()) {
         out[agent] = {
           state: attention.state,
+          // Design Mode chat send uses this to avoid clobbering a human draft (t-348c9a).
+          composerOccupied: !!attention.composerOccupied,
           ...(attention.matchedLine !== undefined ? { matchedLine: attention.matchedLine } : {}),
         };
       }
@@ -578,6 +580,11 @@ export async function executeExtensionCommand(
     case "bridge.stop":
       await workspace.stopBridge();
       return json({ stopped: true });
+    case "bridge.refresh-tools":
+      // IDE browser start/stop (and similar): close live MCP sessions so registerTools re-runs
+      // and runtimes re-discover ide_browser_* / design_mode_chat_reply.
+      workspace.bridge.forceToolListRefresh();
+      return json({ refreshed: true });
     case "tmux.kill": {
       assertTachyonSession(command.expected.session);
       const rows = (await workspace.tmux.serverSnapshot(SESSION_PREFIX))

@@ -54,6 +54,10 @@ import { COMMAND_STUDIO_SHELL_VIEW_TYPE, CommandStudioPanelManager, type Command
 import { RUNBOOK_STUDIO_SHELL_VIEW_TYPE, RunbookStudioPanelManager, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
 import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, ScheduleStudioPanelManager, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
+import { registerIdeBrowserProto } from "./webview/ide-browser-proto/register.js";
+import { registerIdeBrowserBridge } from "./webview/ide-browser-bridge/register.js";
+import { registerTachyonChatBridge } from "./webview/chat-bridge/register.js";
+import { normalizeAgentRows } from "./webview/chat-bridge/ops.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { reconcileGitHookHarness } from "./plugins/engine.js";
@@ -3941,6 +3945,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
   );
+
+  // Option A prototype — external Chrome/CDP + stream panel. Dev Host only (see register.ts).
+  registerIdeBrowserProto(context);
+
+  // Thimo-style Integrated Browser bridge (HTTP + editor-browser CDP) → Bridge ide_browser_* tools.
+  // Fixture ide-browser-dogfood: agents claude/codex/grok only (no auto-boot, no shell-as-agent).
+  registerIdeBrowserBridge(context, {
+    getWorkspace: () =>
+      (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+      ?? workspaces()[0],
+  });
+
+  // VS Code Chat → Tachyon agents (@tachyon + LM tools). See docs/research/tachyon-chat-bridge.md.
+  registerTachyonChatBridge(context, {
+    resolveWorkspace: (wsHash) => {
+      const ws = (wsHash ? byHash(wsHash) : undefined)
+        ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+        ?? workspaces()[0];
+      if (!ws) return undefined;
+      return { folderName: ws.folderName, wsHash: ws.wsHash, workspaceRoot: ws.workspaceRoot };
+    },
+    listAgents: async (wsHash) => {
+      const ws = (wsHash ? byHash(wsHash) : undefined)
+        ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+        ?? workspaces()[0];
+      if (!ws) return [];
+      const listed = await extensionQuery(ws, { action: "agents.list" });
+      return normalizeAgentRows(listed);
+    },
+    sendPrompt: async (agent, text, opts) => {
+      const ws = (opts?.wsHash ? byHash(opts.wsHash) : undefined)
+        ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
+        ?? workspaces()[0];
+      if (!ws) throw new Error("No Tachyon workspace is active.");
+      const submit = opts?.submit !== false;
+      await ws.activity.sendAgentInput(agent, text, submit);
+    },
+  });
 
 }
 

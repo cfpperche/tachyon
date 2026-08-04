@@ -1,0 +1,21 @@
+# IDE Browser Dev Host fixture.
+# - Empty agent roster: create claude / codex / grok yourself in Agent Studio.
+# - No autostart (browser, agents).
+# - homeUrl: workspace default when the human clicks the globe status bar.
+#
+# SDD 478: agents: {} alone is not a loadable roster — the terminal below is only a
+# non-empty mapping so the config loads. It is kind: terminal (not an agent). Do not
+# treat it as a coding agent.
+settings:
+  maxAgents: 8
+  auth: true
+  ideBrowser:
+    # Change this to your app under development (http(s) URL or host).
+    homeUrl: about:blank
+
+agents: {}
+
+terminals:
+  shell:
+    cmd: sh
+    autostart: false

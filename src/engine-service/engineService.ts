@@ -694,6 +694,19 @@ async function executeWorkspaceCommand(
     return workspacePinStudioApplySuccessV1(command, { outcome: "attachment-stored", ...stored });
   }
   if (command.method === "agent.input") {
+    // t-348c9a — refuse submitted input when a fresh composer probe sees a human draft
+    // (cached attention.list alone is too stale for write guards; see AttentionMonitor.probeComposerOccupied).
+    if (command.input.submit) {
+      const probe = await workspace.monitor.probeComposerOccupied(command.input.agent);
+      const occupied =
+        probe === true
+        || (probe === undefined && workspace.attentionOf(command.input.agent)?.composerOccupied === true);
+      if (occupied) {
+        throw new Error(
+          `agent '${command.input.agent}' has a non-empty composer draft — refused-composer: clear or submit the terminal draft first`,
+        );
+      }
+    }
     await sendManagedAgentInput(workspace, command.input.agent, command.input.text, command.input.submit);
     return workspaceCommandSuccessV1(command);
   }

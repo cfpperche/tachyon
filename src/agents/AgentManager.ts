@@ -2807,12 +2807,14 @@ export class AgentManager {
     const effectiveCmd = this.effectiveCmd(name, def, effectiveInstructions, !!(parent || delegator));
     const tokenEnv = this.opts.mintAgentToken?.(name);
     launchTokenMinted = tokenEnv !== undefined && Object.keys(tokenEnv).length > 0;
+    // Host-minted Bridge identity wins over def.env / opts.env (a stale TACHYON_AGENT_BRIDGE_TOKEN
+    // in YAML used to overwrite the digest just registered → MCP 401 token_unknown).
     const spawnBuild = this.applyHarness(
       name,
       def,
       cwd,
       effectiveCmd,
-      { ...extraEnv, ...tokenEnv, ...def.env, ...(opts?.env ?? {}), TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(def, effectiveInstructions) },
+      { ...extraEnv, ...def.env, ...(opts?.env ?? {}), ...tokenEnv, TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(def, effectiveInstructions) },
       preparedRuntimeHarness,
     );
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
@@ -4802,7 +4804,8 @@ export class AgentManager {
         ),
         id,
       ),
-      { ...this.opts.getExtraEnv?.(), ...this.opts.mintAgentToken?.(name), ...resumeDef?.env, TACHYON_AGENT_NAME: name },
+      // Mint last so resumeDef.env cannot clobber TACHYON_AGENT_BRIDGE_TOKEN.
+      { ...this.opts.getExtraEnv?.(), ...resumeDef?.env, ...this.opts.mintAgentToken?.(name), TACHYON_AGENT_NAME: name },
       resumeHarness,
     );
     this.applyDelegatedOpencodeHarnessPermission(resumeDef, resumeBuild.env, resumeDelegatedOpencode);

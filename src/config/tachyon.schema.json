@@ -542,6 +542,18 @@
             }
           }
         },
+        "ideBrowser": {
+          "type": "object",
+          "description": "VS Code Integrated Browser (Tachyon Design Mode / ide_browser_* tools). Workspace-owned defaults for the human globe control.",
+          "additionalProperties": false,
+          "properties": {
+            "homeUrl": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Default URL opened when the human clicks the IDE Browser status-bar globe (or first Design Mode open). Absolute http(s) URL, or a host (https is assumed). When unset, opens about:blank."
+            }
+          }
+        },
         "delivery": {
           "deprecated": true,
           "description": "Ignored compatibility key. Canonical Delivery with mechanism-only handoff is always active; remove this block from tachyon.yml."
