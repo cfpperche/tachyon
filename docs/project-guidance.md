@@ -20,6 +20,15 @@ is wrong — a stuck agent is a symptom worth reading, not a rule to work around
 - Bugs and improvements are Tasks, not prose-only findings. Keep evidence and detailed reasoning in
   the task journal or its spec; `docs/` contains durable project documentation, not loose work
   evidence or generated screenshots.
+- When coordinating delegated work, use the Bridge tools (`create_pin/list_pins`,
+  `append_project_handoff_note`, `write_input`, `spawn_agent`, `wait_for_agent`) so the work remains
+  visible to the team. If you delegate, spawn through the Bridge; a bug you find is a Task
+  (`create_task`, kind `bug`), not a pin.
+- If you have a declared verify gate, run it and confirm it passes before reporting done; going idle
+  is not proof that the work is green.
+- These coordination and delivery rules moved here from `bridgeGuidanceTail` on 2026-08-05
+  (t-f050af): they are this repository's working convention, while the native-sub-agent visibility
+  limitation is a product fact and remains in the delivered guidance.
 - Prefer the smallest coherent, reversible change. Use SDD only for ambiguous contracts,
   cross-cutting lifecycle or authority changes, migrations, or costly decisions. Avoid speculative
   hardening and unrelated follow-ups.
