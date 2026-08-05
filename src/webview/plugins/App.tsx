@@ -350,6 +350,21 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
             </div>
           )}
 
+          {vm.settingsHooks && vm.settingsHooks.length > 0 && (
+            <div class="sec">
+              <h3>Runtime settings hooks — these can intercept agent tool calls</h3>
+              {vm.settingsHooks.map((hook) => (
+                <div key={`${hook.runtime}:${hook.event}`} class="cmd">
+                  <span class="ev">{hook.runtime}</span> <b>{hook.event}</b>{" "}
+                  <span class="ds-dim">({hook.matchers.length > 0 ? hook.matchers.join(", ") : "all tools"})</span>
+                </div>
+              ))}
+              <div class="ds-dim" style="margin-top:6px">
+                This package registers these hooks in the selected runtime settings. Tachyon-managed agent sessions receive them only when this workspace classifies <b>{vm.pluginName}</b> as <span class="ds-mono">enforcement</span> under <span class="ds-mono">settings.agentHookProjection</span>; an unclassified plugin projects nothing.
+              </div>
+            </div>
+          )}
+
           {vm.writes && (
             <div class="sec">
               <h3>File writes</h3>

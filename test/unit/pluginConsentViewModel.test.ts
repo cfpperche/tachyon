@@ -9,7 +9,14 @@ const PROV: InstallProvenance = {
 };
 
 function step(runtime: "claude" | "codex", settingsRel: string, cmds: string[]): InstallStep {
-  return { runtime, settingsRel, before: {} as never, after: {} as never, owned: {} as never, wiredCommands: cmds };
+  return {
+    runtime,
+    settingsRel,
+    before: {} as never,
+    after: {} as never,
+    owned: { PreToolUse: [{ matcher: runtime === "claude" ? "Bash" : "^Bash$", hooks: cmds.map((command) => ({ type: "command", command })) }] },
+    wiredCommands: cmds,
+  };
 }
 
 function installPreview(over: Partial<InstallPreview> = {}): InstallPreview {
@@ -79,6 +86,25 @@ describe("buildInstallConsent", () => {
       ".tachyon/plugins.lock.json",
     ]);
     expect(vm.errors).toBeUndefined();
+  });
+
+  it("discloses runtime settings-hooks and keeps activation a workspace classification", () => {
+    const vm = buildInstallConsent(installPreview(), PROV);
+    expect(vm.settingsHooks).toEqual([
+      { runtime: "claude", event: "PreToolUse", matchers: ["Bash"] },
+      { runtime: "codex", event: "PreToolUse", matchers: ["^Bash$"] },
+    ]);
+    // Informational at install: projection into managed agent sessions remains the workspace-wide
+    // settings.agentHookProjection decision, never a per-agent or second-confirm grant.
+    expect((vm as unknown as Record<string, unknown>).requiresSettingsHookConfirm).toBeUndefined();
+  });
+
+  it("omits the settings-hook section when the plugin ships no runtime blocks", () => {
+    const preview = installPreview({
+      manifest: { ...installPreview().manifest, blocks: {} },
+      steps: [],
+    });
+    expect(buildInstallConsent(preview, PROV).settingsHooks).toBeUndefined();
   });
 
   it("renders each declared runtime as a selector row (selected = in target, present = on disk) — spec 263", () => {
