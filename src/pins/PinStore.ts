@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { withProcessLockSync } from "../locks/processLock.js";
 import { PinAttachmentStore, type PinAttachment, type ResolvedPinAttachment } from "./PinAttachmentStore.js";
 import type { TiptapJSON } from "./types.js";
 
@@ -66,6 +67,12 @@ export function mintPinId(): string {
 
 export class PinStore {
   private static readonly lockTimeoutMs = 5_000;
+  /**
+   * A holder still older than this is orphaned even if its pid answers — the pid-reuse guard. The
+   * real critical section is a small JSON read-modify-write (milliseconds), so this is ~1000× the
+   * legitimate hold: the only holder it can take from is one that is no longer running.
+   */
+  private static readonly maxLockHoldMs = 2_500;
 
   constructor(private readonly workspaceRoot: string) {}
 
@@ -266,27 +273,28 @@ export class PinStore {
     return path.join(this.pinDetailsDir, `${id}.json`);
   }
 
+  /**
+   * Serialize the read-modify-write across processes (a second window, a Dev Host beside the host).
+   *
+   * The wait is SYNCHRONOUS and that is a known cost, registered rather than hidden (t-7843d0): this
+   * class's whole API is synchronous and its largest consumer is `src/bridge/tools.ts`, so making it
+   * async is a separate change with a much wider blast radius. Two things make the residual cost
+   * small. Within one extension host these calls cannot contend at all — the thread that would wait
+   * is the thread that would release. And the wait is now bounded by a LIVE holder's actual critical
+   * section (a few milliseconds of JSON read-modify-write); the case that used to burn the whole five
+   * seconds and then throw forever — a holder that died and left its lock behind — is recovered by
+   * `withProcessLockSync` before the first retry.
+   */
   private mutatePins(update: (pins: Pin[]) => Pin[]): void {
     fs.mkdirSync(this.dir, { recursive: true });
-    const lock = this.lockPath();
-    const start = Date.now();
-    while (true) {
-      try {
-        fs.mkdirSync(lock);
-        break;
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-        if (Date.now() - start > PinStore.lockTimeoutMs) {
-          throw new Error(`timed out waiting for .tachyon/pins.json mutation lock`);
-        }
-        sleepSync(10);
-      }
-    }
-    try {
+    withProcessLockSync(this.lockPath, () => {
       this.write(update(this.readPins()));
-    } finally {
-      try { fs.rmSync(lock, { recursive: true, force: true }); } catch { /* best-effort lock cleanup */ }
-    }
+    }, {
+      label: ".tachyon/pins.json mutation lock",
+      timeoutMs: PinStore.lockTimeoutMs,
+      pollMs: 10,
+      maxHoldMs: PinStore.maxLockHoldMs,
+    });
   }
 
   private write(pins: Pin[]): void {
@@ -315,13 +323,13 @@ export class PinStore {
     fs.renameSync(tmp, p);
   }
 
-  private lockPath(): string {
+  /**
+   * The cross-process lock the mutation path takes. Public so a test can hold the REAL lock from
+   * another process and then be killed — a hand-made lock file would only prove the test's own shape.
+   */
+  get lockPath(): string {
     return path.join(this.dir, "pins.json.lock");
   }
-}
-
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 export function normalizePinTags(input: unknown, authoring = true): string[] {
