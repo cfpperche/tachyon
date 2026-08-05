@@ -1331,7 +1331,7 @@ export class Workspace {
         await this.worktrees.rollbackPreparation(rec, beforeHead, afterHead);
       },
       completePreparedWorktree: (rec) => this.worktrees.completePreparation(rec),
-      removeHarnessHome: (name) => this.harness.remove(name),
+      removeHarnessHome: (name) => this.harness.retireCredentials(name),
       removePiSessionDir: (name) => removePiSessionDir(this.workspaceRoot, name),
     });
 
@@ -2084,6 +2084,7 @@ export class Workspace {
         // spec 359 — host actions are authorized with the per-request Bridge caller snapshot.
         runHostAction: (input) => this.runHostAction(input),
         managedWorktrees: this.managedWorktrees,
+        runtimeCredentialHygiene: (input) => this.reconcileRuntimeCredentials(input),
         // t-d06da3 — the ports of the shared agent-removal cascade, so `dismiss_agent` takes an owned
         // checkout down through the SAME code `config.agent.delete` uses. The Workspace IS the port
         // bundle (manager + ledger + worktrees + registry), which is exactly how the operation service
@@ -3923,10 +3924,26 @@ export class Workspace {
     forgetAgentFootprint(name, {
       workspaceRoot: this.workspaceRoot,
       ledger: this.ledger,
-      removeHarnessHome: (agent) => this.harness.remove(agent),
+      removeHarnessHome: (agent) => this.harness.retireCredentials(agent),
       removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
     });
     this.removeContinuity(name);
+  }
+
+  async reconcileRuntimeCredentials(input: { dryRun: boolean; agentNames: string[] }): Promise<unknown> {
+    const live = new Set(await this.manager.runningAgentsStrict() ?? []);
+    const known = new Set([...Object.keys(this.config?.agents ?? {}), ...this.ledger.all().keys(), ...live]);
+    const orphans = this.harness.credentialHomeNames().filter((name) => !known.has(name));
+    if (input.dryRun) return { dryRun: true, orphans };
+    const requested = [...new Set(input.agentNames)];
+    const removed: string[] = [];
+    const refused: Array<{ agent: string; reason: string }> = [];
+    for (const name of requested) {
+      if (!orphans.includes(name)) { refused.push({ agent: name, reason: "agent is known or no credential-bearing home exists" }); continue; }
+      try { this.harness.retireCredentials(name); removed.push(name); }
+      catch (error) { refused.push({ agent: name, reason: error instanceof Error ? error.message : String(error) }); }
+    }
+    return { dryRun: false, removed, refused };
   }
 
   isAgentProfileAgent(name: string): boolean {
@@ -4864,7 +4881,7 @@ export class Workspace {
           forgetAgentFootprint(name, {
             workspaceRoot: this.workspaceRoot,
             ledger: this.ledger,
-            removeHarnessHome: (agent) => this.harness.remove(agent),
+            removeHarnessHome: (agent) => this.harness.retireCredentials(agent),
             removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
           });
         } catch (error) {

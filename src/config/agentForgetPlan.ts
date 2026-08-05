@@ -151,7 +151,6 @@ export type AgentForgetPlanResultV1 = z.infer<typeof agentForgetPlanResultSchema
  */
 export const AGENT_PROFILE_FORGET_RETAINED_BINDINGS = [
   "runtime homes",
-  "runtime secrets",
   "worktrees",
   "session-owner rows",
   "continuity",
