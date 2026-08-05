@@ -2357,7 +2357,12 @@ export class AgentManager {
       );
       if (occ.pid !== undefined) {
         const root = probeRememberedRootProcess(occ.pid, worktreePath);
-        if (root.state === "live") throw new Error(`agent '${agent}' still has a live root process for its worktree`);
+        if (root.state === "live") {
+          throw new Error(
+            `agent '${agent}' still has a live root process for its worktree; ` +
+            `wait for that process to exit, then retry kill_agent('${agent}')`,
+          );
+        }
         if (root.state === "unknown") throw new AgentOccupancyUnverifiableError(agent, `the remembered root process could not be measured (${root.detail})`);
       }
       this.worktreeOccupancy.delete(key);

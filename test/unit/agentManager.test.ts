@@ -2425,7 +2425,9 @@ describe("AgentManager — session resume (spec 209)", () => {
     // Conversely, the same fresh measurement still refuses a process actually rooted in the target.
     const cwdKey = internals.canonicalWorktreeKey(process.cwd());
     internals.worktreeOccupancy.set(cwdKey, { state: "dirty", agentId: "claude", cwd: process.cwd(), pid: process.pid });
-    await expect(manager.releaseOwnedWorktreeForRemoval("claude", process.cwd())).rejects.toThrow(/live root process/);
+    await expect(manager.releaseOwnedWorktreeForRemoval("claude", process.cwd())).rejects.toThrow(
+      /live root process.*wait for that process to exit, then retry kill_agent\('claude'\)/,
+    );
 
     // An unreadable measurement is not collapsed into either life or death and changes no state.
     internals.worktreeOccupancy.set(key, { state: "dirty", agentId: "claude", cwd: wt, pid: 424242 });

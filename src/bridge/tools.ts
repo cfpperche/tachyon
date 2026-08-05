@@ -2031,7 +2031,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         if (!receipt) {
           return fail(new Error(
             `no outstanding idle poke for '${name}' — nothing to acknowledge. ` +
-            "Acknowledgement answers a notice you were sent; it cannot be taken in advance.",
+            `The notice may already have expired; wait for the next idle/stall notice, then call acknowledge_agent('${name}') ` +
+            "if you have decided to leave the child as it is. A child that has never been poked cannot be acknowledged in advance.",
           ));
         }
         return ok(JSON.stringify({
