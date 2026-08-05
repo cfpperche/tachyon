@@ -28,7 +28,7 @@ import path from "node:path";
  * | actor × trigger                          | outcome                                              |
  * |------------------------------------------|------------------------------------------------------|
  * | holder releases normally                 | `release` unlinks the file it created                |
- * | holder dies (crash / kill / window close)| next arrival reads a dead pid and steals it once     |
+ * | holder dies (crash / kill / window close)| next arrival may steal; residual path-rm TOCTOU (↓)  |
  * | holder is alive and working              | arrival waits, then times out naming the path        |
  * | holder's pid was REUSED by another proc  | age exceeds `maxHoldMs` → stolen (see below)         |
  * | holder is mid-create, pid not stamped yet| grace window protects it; older than that is a crash |
@@ -249,8 +249,12 @@ function acquireOnce(lock: string, options: ProcessLockOptions, stolen: boolean)
           && still.pid === holder.pid
           && still.stampedAtMs === holder.stampedAtMs
           && !holderIsAlive(still, options)) {
-          // `rm -r` rather than `unlink` so a legacy mkdir lock DIRECTORY at this path is also
-          // recoverable — otherwise the migration itself would be a permanent wedge.
+          // Residual TOCTOU (t-b457ce follow-up): between this last identity read and rmSync,
+          // another waiter can clear the same orphan and a *new* holder can publish; path-based
+          // rm then deletes the new lock. Same family as the absent steal, but a much smaller
+          // window, and only after someone was already judged orphan. Not closed here: conditional
+          // unlink-by-inode is not atomic on POSIX. `rm -r` (not plain unlink) also recovers a
+          // legacy mkdir lock DIRECTORY at this path — otherwise migration itself is a permanent wedge.
           fs.rmSync(lock, { recursive: true, force: true });
         }
       } catch {

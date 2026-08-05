@@ -133,6 +133,11 @@ describe("processLock", () => {
    * steals were logged as reason=absent (force-rm of a lock that vanished between EEXIST and stat
    * deleted a *new* holder's lock published in the gap). This harness is the commit gap that
    * measurement left open.
+   *
+   * What this does NOT cover: `isHolderAlive: () => true` (and no maxHoldMs) never takes the
+   * orphan-recovery branch, so the post-orphan path-rm never runs. A green result here proves the
+   * absent path only — not residual dual-holder risk between last identity read and rmSync when a
+   * real holder dies under multi-waiter load.
    */
   it("does not admit dual holders under multi-process contention (t-b457ce)", async () => {
     const repoRoot = process.cwd();
