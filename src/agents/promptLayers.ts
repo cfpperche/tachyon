@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { Role } from "../roles/templates.js";
 import { bridgeGuidanceTail, composeInstructions, roleTemplate, withBridgeGuidance } from "../roles/templates.js";
 import { briefCarriesTaskSubstance } from "../bridge/spawnContract.js";
@@ -9,6 +10,15 @@ export interface AgentPromptLayers {
   soul?: ResolvedSoul;
   role?: Role;
   instructions?: string;
+  /** Authority receipt for canonical instructions. Absent means the bytes came from the legacy
+   * definition path; an unadopted agent remains a valid, explicitly non-formation composition. */
+  instructionsFormation?: {
+    source: "formation";
+    agentId: string;
+    workspaceId: string;
+    formationGeneration: number;
+    formationGenerationSha256: string;
+  };
   evolution?: EvolutionStartupSnapshot;
   /** Canonical formation-owned Evolution layer. Mutually exclusive with the legacy startup snapshot. */
   formationEvolution?: string;
@@ -33,6 +43,16 @@ export interface AgentPromptManifest {
   soul: boolean;
   role: boolean;
   persistentInstructions: boolean;
+  instructions?:
+    | { source: "legacy-definition"; sha256: string }
+    | {
+        source: "formation";
+        sha256: string;
+        agentId: string;
+        workspaceId: string;
+        formationGeneration: number;
+        formationGenerationSha256: string;
+      };
   evolution?: { version: number; digest: string };
   canonicalEvolution?: true;
   selectedMemory?: true;
@@ -60,6 +80,7 @@ export interface ComposedAgentBody {
 }
 
 const present = (value: string | undefined): string | undefined => value?.trim() ? value : undefined;
+const sha256 = (value: string): string => crypto.createHash("sha256").update(value).digest("hex");
 
 export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody {
   if (layers.evolution && present(layers.formationEvolution)) {
@@ -72,10 +93,16 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
   const sessionRecord = layers.sessionWorkRecord
     ? renderSessionWorkRecord({ ...layers.sessionWorkRecord, hasTaskBrief })
     : undefined;
+  const instructions = present(layers.instructions);
   const manifest: AgentPromptManifest = {
     soul: !!layers.soul,
     role: !!layers.role && layers.role !== "custom",
-    persistentInstructions: !!present(layers.instructions),
+    persistentInstructions: !!instructions,
+    ...(instructions ? {
+      instructions: layers.instructionsFormation
+        ? { ...layers.instructionsFormation, sha256: sha256(instructions) }
+        : { source: "legacy-definition" as const, sha256: sha256(instructions) },
+    } : {}),
     ...(layers.evolution ? { evolution: { version: layers.evolution.version, digest: layers.evolution.digest } } : {}),
     ...(present(layers.formationEvolution) ? { canonicalEvolution: true as const } : {}),
     ...(present(layers.selectedMemory) ? { selectedMemory: true as const } : {}),
@@ -107,7 +134,7 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
   const body = [
     identity,
     present(roleBody),
-    present(layers.instructions),
+    instructions,
     evolution,
     present(layers.formationEvolution),
     present(layers.selectedMemory),
