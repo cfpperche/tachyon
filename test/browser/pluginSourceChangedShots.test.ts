@@ -4,6 +4,7 @@ import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { openPreview } from "./support/preview";
 
 /**
  * t-4e5f11 — visual evidence for the Plugins card freshness states after the version+payload oracle.
@@ -68,17 +69,16 @@ describe("Plugins card — freshness states (t-4e5f11)", () => {
 
   async function shoot(name: string, fixture: string, waitText: string, { w, h }: { w: number; h: number }): Promise<void> {
     await page.setViewport({ width: w + 40, height: Math.min(h + 40, 4000), deviceScaleFactor: 2 });
-    const route = `?view=plugins&fixture=${fixture}&width=${w}&height=${h}`;
-    await page.goto(`${server.origin}/scripts/webview-preview/index.html${route}`, { waitUntil: "networkidle0" });
-    await page.waitForFunction(
-      (text) => document.body.innerText.toLowerCase().includes(text.toLowerCase()),
+    // t-b24282 — one number sizes the surface's own viewport; its DOM lives in the returned frame.
+    const surface = await openPreview(page, server.origin, { query: { view: "plugins", fixture }, width: w, height: h });
+    await surface.waitForFunction(
+      (text: string) => document.body.innerText.toLowerCase().includes(text.toLowerCase()),
       { timeout: 8000 },
       waitText,
     );
 
-    const measured = await page.evaluate(() => {
-      const frame = document.getElementById("frame")!;
-      const over = [...frame.querySelectorAll("*")]
+    const measured = await surface.evaluate(() => {
+      const over = [...document.querySelectorAll("*")]
         .filter((e) => e.scrollWidth > e.clientWidth + 1)
         .map((e) => `${(e.className || e.tagName).toString().slice(0, 60)} (${e.scrollWidth} > ${e.clientWidth})`);
       const cards = [...document.querySelectorAll(".ds-card")].map((c) => ({
@@ -114,13 +114,14 @@ describe("Plugins card — freshness states (t-4e5f11)", () => {
 
   it("source-changed card says still vX and offers Reapply, not Update", async () => {
     await page.setViewport({ width: WIDE.w + 40, height: WIDE.h + 40, deviceScaleFactor: 1 });
-    await page.goto(
-      `${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=source-changed&width=${WIDE.w}&height=${WIDE.h}`,
-      { waitUntil: "networkidle0" },
-    );
-    await page.waitForFunction(() => document.body.innerText.includes("source changed"), { timeout: 8000 });
+    const surface = await openPreview(page, server.origin, {
+      query: { view: "plugins", fixture: "source-changed" },
+      width: WIDE.w,
+      height: WIDE.h,
+    });
+    await surface.waitForFunction(() => document.body.innerText.includes("source changed"), { timeout: 8000 });
 
-    const card = await page.evaluate(() => {
+    const card = await surface.evaluate(() => {
       const el = [...document.querySelectorAll(".ds-card")].find((c) => c.querySelector(".pname")?.textContent === "secrets-guard");
       const text = (el as HTMLElement | undefined)?.innerText ?? "";
       const buttons = [...(el?.querySelectorAll("button") ?? [])].map((b) => b.textContent?.trim() ?? "");
@@ -135,13 +136,14 @@ describe("Plugins card — freshness states (t-4e5f11)", () => {
 
   it("update-available card still offers Update with a newer version label", async () => {
     await page.setViewport({ width: WIDE.w + 40, height: WIDE.h + 40, deviceScaleFactor: 1 });
-    await page.goto(
-      `${server.origin}/scripts/webview-preview/index.html?view=plugins&fixture=update-available&width=${WIDE.w}&height=${WIDE.h}`,
-      { waitUntil: "networkidle0" },
-    );
-    await page.waitForFunction(() => document.body.innerText.includes("update available"), { timeout: 8000 });
+    const surface = await openPreview(page, server.origin, {
+      query: { view: "plugins", fixture: "update-available" },
+      width: WIDE.w,
+      height: WIDE.h,
+    });
+    await surface.waitForFunction(() => document.body.innerText.includes("update available"), { timeout: 8000 });
 
-    const card = await page.evaluate(() => {
+    const card = await surface.evaluate(() => {
       const el = [...document.querySelectorAll(".ds-card")].find((c) => c.querySelector(".pname")?.textContent === "visual-qa");
       const text = (el as HTMLElement | undefined)?.innerText ?? "";
       const buttons = [...(el?.querySelectorAll("button") ?? [])].map((b) => b.textContent?.trim() ?? "");

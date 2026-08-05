@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
+import { openPreview } from "./support/preview";
 
 // t-2a49b2 — layout-first rewrite of the Runtime Ops browser suite.
 //
@@ -41,8 +42,6 @@ import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 //
 // `test:browser` still needs system Chrome; it is on the conditional verify gate (t-6e929b), not the
 // unconditional full path. That is deliberate.
-
-const PREVIEW_PATH = "/scripts/webview-preview/index.html?view=runtime-ops&fixture=";
 
 /** mixed fixture agent key — `workspaceKey:agentName` from `buildRuntimeOpsSnapshot`. */
 const MIXED_CLAUDE_KEY = "a1b2c3:claude";
@@ -125,36 +124,42 @@ const RICH_INSPECTION = {
   notExposed: [] as string[],
 };
 
-async function openRuntimeOpsFixture(page: Page, origin: string, fixture: string, viewport: Viewport): Promise<void> {
+/**
+ * t-b24282 — ONE size, passed to the harness. The frame is an iframe whose content box is the surface's
+ * viewport, so the `@media (max-width: 760px)` this file is about evaluates at the requested width; the
+ * browser viewport is set alongside only so an element screenshot would not be cropped. The hand-resize
+ * of `#frame` this helper used to do afterwards is gone with the div it patched around.
+ */
+async function openRuntimeOpsFixture(page: Page, origin: string, fixture: string, viewport: Viewport): Promise<Frame> {
   await page.setViewport(viewport);
-  await page.goto(`${origin}${PREVIEW_PATH}${fixture}`, { waitUntil: "networkidle0" });
-  await page.waitForFunction((name) => document.body.dataset.previewFixture === name, { timeout: 5000 }, fixture);
-  await page.waitForSelector(".runtime-ops", { visible: true, timeout: 5000 });
-  await page.evaluate((size) => {
-    const frame = document.getElementById("frame")!;
-    frame.style.width = `${size.width}px`;
-    frame.style.height = `${size.height}px`;
-  }, viewport);
+  const surface = await openPreview(page, origin, {
+    query: { view: "runtime-ops", fixture },
+    width: viewport.width,
+    height: viewport.height,
+    waitFor: ".runtime-ops",
+    timeout: 5000,
+  });
+  await surface.waitForFunction((name: string) => document.body.dataset.previewFixture === name, { timeout: 5000 }, fixture);
+  return surface;
 }
 
-async function hasNoHorizontalOverflow(page: Page): Promise<boolean> {
-  return page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && document.body.scrollWidth <= window.innerWidth);
+async function hasNoHorizontalOverflow(surface: Frame): Promise<boolean> {
+  return surface.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth && document.body.scrollWidth <= window.innerWidth);
 }
 
-async function hasNoCellOverflow(page: Page): Promise<boolean> {
-  return page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".runtime-ops-cell")]
+async function hasNoCellOverflow(surface: Frame): Promise<boolean> {
+  return surface.evaluate(() => [...document.querySelectorAll<HTMLElement>(".runtime-ops-cell")]
     .every((cell) => cell.scrollWidth <= cell.clientWidth + 1));
 }
 
-/** Session panel geometry: neither the panel nor its pre/grids may scroll sideways inside #frame. */
-async function sessionPanelContainedInFrame(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
-    const frame = document.getElementById("frame");
+/** Session panel geometry: neither the panel nor its pre/grids may scroll sideways inside the frame —
+ *  which IS this document's viewport now, so the frame's right edge is `window.innerWidth`. */
+async function sessionPanelContainedInFrame(surface: Frame): Promise<boolean> {
+  return surface.evaluate(() => {
     const panel = document.querySelector<HTMLElement>(".runtime-ops-session");
-    if (!frame || !panel) return false;
-    const fr = frame.getBoundingClientRect();
+    if (!panel) return false;
     const pr = panel.getBoundingClientRect();
-    if (pr.right > fr.right + 1) return false;
+    if (pr.right > window.innerWidth + 1) return false;
     const nodes = [
       panel,
       ...panel.querySelectorAll<HTMLElement>(
@@ -170,23 +175,23 @@ async function sessionPanelContainedInFrame(page: Page): Promise<boolean> {
  * The preview stub's `acquireVsCodeApi` swallows the inspect request (only re-posts READY), so the
  * test is the host: post `runtimeOpsSessionInspection` once the client has the row in loading state.
  */
-async function openSessionInspection(page: Page, inspection: typeof RICH_INSPECTION): Promise<void> {
-  await page.click(".runtime-ops-agents summary");
-  await page.waitForSelector(`[data-agent-key="${MIXED_CLAUDE_KEY}"] .runtime-ops-inspect-toggle`, {
+async function openSessionInspection(surface: Frame, inspection: typeof RICH_INSPECTION): Promise<void> {
+  await surface.click(".runtime-ops-agents summary");
+  await surface.waitForSelector(`[data-agent-key="${MIXED_CLAUDE_KEY}"] .runtime-ops-inspect-toggle`, {
     visible: true,
     timeout: 3000,
   });
-  await page.click(`[data-agent-key="${MIXED_CLAUDE_KEY}"] .runtime-ops-inspect-toggle`);
-  await page.waitForSelector(".runtime-ops-session[aria-busy='true']", { visible: true, timeout: 3000 });
+  await surface.click(`[data-agent-key="${MIXED_CLAUDE_KEY}"] .runtime-ops-inspect-toggle`);
+  await surface.waitForSelector(".runtime-ops-session[aria-busy='true']", { visible: true, timeout: 3000 });
 
-  await page.evaluate(
+  await surface.evaluate(
     (agentKey, payload) => {
       window.postMessage({ type: "runtimeOpsSessionInspection", agentKey, inspection: payload }, "*");
     },
     MIXED_CLAUDE_KEY,
     inspection,
   );
-  await page.waitForSelector(".runtime-ops-session-command", { visible: true, timeout: 3000 });
+  await surface.waitForSelector(".runtime-ops-session-command", { visible: true, timeout: 3000 });
 }
 
 describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
@@ -205,14 +210,14 @@ describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
 
   it("uses the wide table at 1100x360 with keyboard-operable agent details and visible focus", async () => {
     const page = await browser.newPage();
-    await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 1100, height: 360 });
+    const surface = await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 1100, height: 360 });
 
-    expect(await page.$eval(".runtime-ops-row", (el) => getComputedStyle(el).display)).toBe("grid");
-    expect(await hasNoHorizontalOverflow(page)).toBe(true);
-    expect(await hasNoCellOverflow(page)).toBe(true);
+    expect(await surface.$eval(".runtime-ops-row", (el) => getComputedStyle(el).display)).toBe("grid");
+    expect(await hasNoHorizontalOverflow(surface)).toBe(true);
+    expect(await hasNoCellOverflow(surface)).toBe(true);
 
-    await page.focus(".runtime-ops-agents summary");
-    const focus = await page.$eval(".runtime-ops-agents summary", (el) => ({
+    await surface.focus(".runtime-ops-agents summary");
+    const focus = await surface.$eval(".runtime-ops-agents summary", (el) => ({
       active: document.activeElement === el,
       outlineWidth: getComputedStyle(el).outlineWidth,
       outlineStyle: getComputedStyle(el).outlineStyle,
@@ -222,24 +227,24 @@ describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
     expect(focus.outlineStyle).toBe("solid");
 
     await page.keyboard.press("Space");
-    await page.waitForFunction(() => document.querySelector(".runtime-ops-agents")?.hasAttribute("open"), { timeout: HANG_TIMEOUT_MS });
-    expect(await page.$eval(".runtime-ops-agents", (el) => el.hasAttribute("open"))).toBe(true);
-    expect(await page.$eval(".runtime-ops-agents summary", (el) => document.activeElement === el)).toBe(true);
+    await surface.waitForFunction(() => document.querySelector(".runtime-ops-agents")?.hasAttribute("open"), { timeout: HANG_TIMEOUT_MS });
+    expect(await surface.$eval(".runtime-ops-agents", (el) => el.hasAttribute("open"))).toBe(true);
+    expect(await surface.$eval(".runtime-ops-agents summary", (el) => document.activeElement === el)).toBe(true);
     await page.close();
   });
 
   it("uses labeled rows at 340x760 without page or cell overflow, including long labels", async () => {
     const page = await browser.newPage();
-    await openRuntimeOpsFixture(page, server.origin, "long-label", { width: 340, height: 760 });
+    const surface = await openRuntimeOpsFixture(page, server.origin, "long-label", { width: 340, height: 760 });
 
-    expect(await page.$eval(".runtime-ops-row", (el) => getComputedStyle(el).display)).toBe("flex");
-    expect(await page.$eval(".runtime-ops-header", (el) => getComputedStyle(el).display)).toBe("none");
+    expect(await surface.$eval(".runtime-ops-row", (el) => getComputedStyle(el).display)).toBe("flex");
+    expect(await surface.$eval(".runtime-ops-header", (el) => getComputedStyle(el).display)).toBe("none");
     // Precondition that the long-label fixture landed (not a content matrix). Layout is the claim.
-    await page.click(".runtime-ops-agents summary");
-    expect(await page.$eval(".runtime-ops", (el) => el.textContent))
+    await surface.click(".runtime-ops-agents summary");
+    expect(await surface.$eval(".runtime-ops", (el) => el.textContent))
       .toContain("migration-coordinator-with-a-deliberately-long-operational-label");
-    expect(await hasNoHorizontalOverflow(page)).toBe(true);
-    expect(await hasNoCellOverflow(page)).toBe(true);
+    expect(await hasNoHorizontalOverflow(surface)).toBe(true);
+    expect(await hasNoCellOverflow(surface)).toBe(true);
     await page.close();
   });
 
@@ -248,22 +253,22 @@ describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
     // `runtimeOpsProviderProjection.test.ts` — not re-asserted here across eight fixtures.
     const page = await browser.newPage();
 
-    await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 1100, height: 760 });
-    expect(await page.$(".runtime-ops-provider-row")).not.toBeNull();
-    expect(await page.$eval(".runtime-ops-provider-row", (el) => getComputedStyle(el).display)).toBe("grid");
-    expect(await hasNoHorizontalOverflow(page)).toBe(true);
+    let surface = await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 1100, height: 760 });
+    expect(await surface.$(".runtime-ops-provider-row")).not.toBeNull();
+    expect(await surface.$eval(".runtime-ops-provider-row", (el) => getComputedStyle(el).display)).toBe("grid");
+    expect(await hasNoHorizontalOverflow(surface)).toBe(true);
 
-    await page.focus(".runtime-ops-provider-control button");
-    const controlFocus = await page.$eval(".runtime-ops-provider-control button", (element) => ({
+    await surface.focus(".runtime-ops-provider-control button");
+    const controlFocus = await surface.$eval(".runtime-ops-provider-control button", (element) => ({
       active: document.activeElement === element,
       outlineWidth: getComputedStyle(element).outlineWidth,
       outlineStyle: getComputedStyle(element).outlineStyle,
     }));
     expect(controlFocus).toEqual({ active: true, outlineWidth: "2px", outlineStyle: "solid" });
 
-    await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 340, height: 900 });
-    expect(await page.$eval(".runtime-ops-provider-row", (el) => getComputedStyle(el).display)).toBe("flex");
-    expect(await hasNoHorizontalOverflow(page)).toBe(true);
+    surface = await openRuntimeOpsFixture(page, server.origin, "provider-healthy", { width: 340, height: 900 });
+    expect(await surface.$eval(".runtime-ops-provider-row", (el) => getComputedStyle(el).display)).toBe("flex");
+    expect(await hasNoHorizontalOverflow(surface)).toBe(true);
     await page.close();
   });
 
@@ -276,11 +281,11 @@ describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
     // it fail while the panel rendered correctly — harness sees overflow, not a free pass. Then
     // restored the real claim (contained === true). Evidence: journal of t-2a49b2.
     const page = await browser.newPage();
-    await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 340, height: 1200 });
-    await openSessionInspection(page, RICH_INSPECTION);
+    let surface = await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 340, height: 1200 });
+    await openSessionInspection(surface, RICH_INSPECTION);
 
     // Narrow CSS (max-width: 760px on the viewport) collapses both grids to a single track.
-    const tracks = await page.evaluate(() => {
+    const tracks = await surface.evaluate(() => {
       const setting = document.querySelector<HTMLElement>(".runtime-ops-session-setting");
       const kv = document.querySelector<HTMLElement>(".runtime-ops-session-kv > div");
       const parseTracks = (el: HTMLElement | null): number => {
@@ -294,20 +299,20 @@ describe("Runtime Ops view (layout + session inspection — t-2a49b2)", () => {
     expect(tracks.settingTracks).toBe(1);
     expect(tracks.kvTracks).toBe(1);
 
-    expect(await hasNoHorizontalOverflow(page)).toBe(true);
-    expect(await sessionPanelContainedInFrame(page)).toBe(true);
+    expect(await hasNoHorizontalOverflow(surface)).toBe(true);
+    expect(await sessionPanelContainedInFrame(surface)).toBe(true);
 
     // Wide counterpart: multi-column settings grid returns, still no overflow.
-    await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 880, height: 900 });
-    await openSessionInspection(page, RICH_INSPECTION);
-    const wideTracks = await page.evaluate(() => {
+    surface = await openRuntimeOpsFixture(page, server.origin, "mixed", { width: 880, height: 900 });
+    await openSessionInspection(surface, RICH_INSPECTION);
+    const wideTracks = await surface.evaluate(() => {
       const setting = document.querySelector<HTMLElement>(".runtime-ops-session-setting");
       const raw = setting ? getComputedStyle(setting).gridTemplateColumns : "";
       return raw.split(" ").filter(Boolean).length;
     });
     expect(wideTracks).toBeGreaterThan(1);
-    expect(await hasNoHorizontalOverflow(page)).toBe(true);
-    expect(await sessionPanelContainedInFrame(page)).toBe(true);
+    expect(await hasNoHorizontalOverflow(surface)).toBe(true);
+    expect(await sessionPanelContainedInFrame(surface)).toBe(true);
 
     await page.close();
   });

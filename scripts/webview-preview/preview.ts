@@ -4,6 +4,11 @@
  * webview bundle, waits for the view's `{type:"ready"}` handshake, then injects the chosen fixture ONCE
  * (deterministic — no 10×-post race). Fails LOUD on every gap (unknown view/fixture, bundle that never
  * hydrates, a `ready` that never arrives) so a wrong preview can never pass as a clean screenshot.
+ *
+ * t-b24282 — this runs INSIDE the shell's sized iframe (`surface.html`, mounted by `shell.ts`), never as
+ * a top-level page. That is what makes the frame a real viewport: `@media` and container width move
+ * together from the one `?width=` the operator passed. Opened directly it would inherit the BROWSER's
+ * viewport instead, so it refuses to render at all — see `frameDefect` below.
  */
 
 import { ROUTES, type Route } from "./routes";
@@ -24,33 +29,56 @@ function addStylesheet(href: string): void {
 }
 
 /**
- * Size the surface. Two shapes, and the difference is the whole point of `route.pageFrame`:
+ * t-b24282 — the frame's SIZE is the shell's job now (the iframe this document lives in). What is left
+ * here is the difference `route.pageFrame` has always named — what `#root` may resolve a height against:
  *
- *  - default — `#frame` is a sized box the surface renders inside (a sidebar view, a studio panel);
- *  - page frame (t-32c872) — the surface IS the page, so `#frame` is collapsed out of the layout
- *    (`display: contents`) and the size goes on `<html>`, which is what a real webview's page frame is.
- *    `#root` then gets a height only if the surface's own stylesheet chain provides one — the same
- *    condition the product has, instead of a free definite height from a harness div that does not ship.
+ *  - default — the harness anchors the chain (`html, body { height: 100% }`), so a surface whose sheet
+ *    says `#root { height: 100% }` gets a definite frame height. That is what the old sized `#frame` div
+ *    handed it directly, and several views are laid out expecting it.
+ *  - page frame (t-32c872) — the surface IS the page, so the harness anchors NOTHING and `#root` gets a
+ *    height only if the surface's own stylesheet chain (`page-frame.css`) provides one — the same
+ *    condition the product has, instead of a free definite height from a harness box that does not ship.
  */
-function frameTo(frame: { w: number; h: number }, pageFrame: boolean): void {
-  const el = document.getElementById("frame");
-  if (!el) return;
-  if (pageFrame) {
-    el.style.display = "contents";
-    // inline, so a route sheet's own `html { height: 100% }` (page-frame.css) does not win over the
-    // measurement width/height — the frame is the stand-in for the editor tab's viewport.
-    document.documentElement.style.width = `${frame.w}px`;
-    document.documentElement.style.height = `${frame.h}px`;
-    return;
+function anchorRootChain(pageFrame: boolean): void {
+  if (pageFrame) return;
+  document.documentElement.style.height = "100%";
+  document.body.style.height = "100%";
+}
+
+/**
+ * t-b24282 — the measurement contract, checked from inside the frame. A width that does not match this
+ * document's own viewport means `@media` is being evaluated against something other than what was asked
+ * for, which is precisely the false green this harness exists to prevent — so it is a hard failure, not
+ * a warning. Returns the defect text, or undefined when the frame is honest.
+ */
+function frameDefect(params: URLSearchParams): string | undefined {
+  if (window.parent === window) {
+    return (
+      "the preview surface was opened directly.\n\n" +
+      "It must be loaded through /scripts/webview-preview/index.html, which sizes the iframe this document\n" +
+      "renders in. Opened on its own it inherits the BROWSER window's viewport, so every `@media` query\n" +
+      "evaluates against the window instead of the requested width — the exact defect t-b24282 closed."
+    );
   }
-  el.style.width = `${frame.w}px`;
-  el.style.height = `${frame.h}px`;
+  for (const [name, asked, actual] of [
+    ["width", params.get("width"), window.innerWidth],
+    ["height", params.get("height"), window.innerHeight],
+  ] as const) {
+    const n = Number(asked);
+    if (asked !== null && Number.isFinite(n) && n > 0 && n !== actual) {
+      return `frame ${name} mismatch: ?${name}=${n} but this surface's viewport is ${actual}px.\n\nThe shell did not size the frame as asked; a screenshot taken now would not be the width it claims.`;
+    }
+  }
+  return undefined;
 }
 
 function run(): void {
   const params = new URLSearchParams(location.search);
   const view = params.get("view") || "sidebar";
   const fixtureName = params.get("fixture") || "default";
+
+  const defect = frameDefect(params);
+  if (defect) return fail(defect);
 
   const route: Route | undefined = ROUTES[view];
   if (!route) return fail(`unknown view: ${view}`, `known views: ${Object.keys(ROUTES).join(", ")}`);
@@ -69,16 +97,12 @@ function run(): void {
     setState() { return undefined; },
   });
 
-  // link the real panel's stylesheet set, in order, then frame the surface.
+  // link the real panel's stylesheet set, in order, then anchor the surface in the frame the shell sized
+  // from `?width=`/`?height=` (or the route's own). `?height=` still matters for the same reason it
+  // always did — visual QA of a long form needs a taller frame — but it is no longer the ONLY way to
+  // reach content below the fold: the surface document scrolls now, where the old `#frame` div clipped.
   for (const href of route.cssLinks) addStylesheet(href);
-  // optional width override for responsive visual QA (?width=360). The height override (?height=…)
-  // exists because #frame is overflow:hidden with no scrollbar, so a surface taller than the route
-  // frame is simply clipped and unreachable — visual QA of a long form needs a taller frame.
-  const widthParam = params.get("width");
-  const heightParam = params.get("height");
-  const frameW = widthParam && Number(widthParam) > 0 ? Number(widthParam) : route.frame.w;
-  const frameH = heightParam && Number(heightParam) > 0 ? Number(heightParam) : route.frame.h;
-  frameTo({ w: frameW, h: frameH }, route.pageFrame === true);
+  anchorRootChain(route.pageFrame === true);
   if (params.get("showWidth") === "1") {
     const proof = document.createElement("output");
     proof.textContent = `window.innerWidth = ${window.innerWidth}`;

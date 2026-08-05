@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { openPreview } from "./support/preview";
 
 /**
  * t-fb216a — visual evidence for the Plugins card's runtime-coverage notice.
@@ -27,14 +28,14 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/fb216a-plugin-runtime-gap");
 
 /**
- * The harness sizes the SURFACE from `&width=`/`&height=`, not from the browser viewport: `#frame` is a
- * fixed-size, `overflow:hidden` box, and the cockpit route's own frame is 1100px wide. Setting only the
- * viewport (the first version of this test) left the surface at 1100 and merely CLIPPED it — every card
- * stayed 1067px at both widths, so "measured at two widths" would have been a fiction, and the overflow
- * check passed vacuously because `documentElement` reports the clip while `body` reports the real 1100.
- * Frame height is generous enough that the last card is inside the box rather than cut off by the clip.
+ * The harness sizes the SURFACE from `&width=`/`&height=`, not from the browser viewport: the route's own
+ * frame is 880px wide, and setting only the viewport (the first version of this test) left the surface at
+ * the route width and merely CLIPPED it — every card stayed 1067px at both widths, so "measured at two
+ * widths" would have been a fiction. t-b24282 made that frame an IFRAME, so `&width=` now also moves the
+ * viewport the surface's `@media (max-width: 720px)` evaluates against, and `documentElement` reports the
+ * surface's real overflow instead of a clip. Frame height is generous enough that the last card is inside
+ * the frame rather than below its fold.
  */
-const routeAt = (w: number, h: number) => `?view=plugins&fixture=runtime-gap&width=${w}&height=${h}`;
 const WIDE = { w: 880, h: 1200 };
 const NARROW = { w: 360, h: 1980 };
 
@@ -63,17 +64,28 @@ describe("Plugins card — runtime-coverage notice (t-fb216a)", () => {
     }
   });
 
+  /** Open the gap fixture at one frame size and return the surface frame (t-b24282: the DOM lives there). */
+  async function shootFrame(target: Page, w: number, h: number): Promise<Frame> {
+    return openPreview(target, server.origin, {
+      query: { view: "plugins", fixture: "runtime-gap" },
+      width: w,
+      height: h,
+      waitFor: ".pgap",
+      timeout: 5000,
+    });
+  }
+
   /** Load the gap fixture at one frame width, prove nothing inside the frame scrolls sideways, capture the shot. */
   async function shoot(name: string, { w, h }: { w: number; h: number }): Promise<void> {
     await page.setViewport({ width: w + 40, height: Math.min(h + 40, 4000), deviceScaleFactor: 2 });
-    await page.goto(`${server.origin}/scripts/webview-preview/index.html${routeAt(w, h)}`, { waitUntil: "networkidle0" });
-    await page.waitForSelector(".pgap", { visible: true, timeout: 5000 });
+    const surface = await shootFrame(page, w, h);
 
-    // the real check: no DESCENDANT of the frame overflows it. A reviewer scrolling a screenshot cannot
-    // see a card that scrolls sideways, and the notice is the widest prose on this surface.
-    const measured = await page.evaluate(() => {
-      const frame = document.getElementById("frame")!;
-      const over = [...frame.querySelectorAll("*")]
+    // the real check: nothing inside the frame overflows it. A reviewer scrolling a screenshot cannot
+    // see a card that scrolls sideways, and the notice is the widest prose on this surface. The frame is
+    // the surface's own document now, so the root element is part of what is checked rather than the
+    // clip box that used to make this pass vacuously.
+    const measured = await surface.evaluate(() => {
+      const over = [...document.querySelectorAll("*")]
         .filter((e) => e.scrollWidth > e.clientWidth + 1)
         .map((e) => `${(e.className || e.tagName).toString().slice(0, 60)} (${e.scrollWidth} > ${e.clientWidth})`);
       const cards = [...document.querySelectorAll(".ds-card")].map((c) => ({
@@ -81,7 +93,7 @@ describe("Plugins card — runtime-coverage notice (t-fb216a)", () => {
         width: Math.round(c.getBoundingClientRect().width),
         bottom: Math.round(c.getBoundingClientRect().bottom),
       }));
-      return { frameW: frame.clientWidth, over, cards };
+      return { frameW: document.documentElement.clientWidth, over, cards };
     });
     expect(measured.over, `${name}: content overflows the ${w}px frame`).toEqual([]);
     // proves the surface actually REFLOWED to this width instead of being clipped at the route's own frame
@@ -109,10 +121,9 @@ describe("Plugins card — runtime-coverage notice (t-fb216a)", () => {
    */
   it("names the gap on exactly the uncovered cards, and stays quiet on the covered one", async () => {
     await page.setViewport({ width: WIDE.w + 40, height: WIDE.h + 40, deviceScaleFactor: 1 });
-    await page.goto(`${server.origin}/scripts/webview-preview/index.html${routeAt(WIDE.w, WIDE.h)}`, { waitUntil: "networkidle0" });
-    await page.waitForSelector(".pgap", { visible: true, timeout: 5000 });
+    const surface = await shootFrame(page, WIDE.w, WIDE.h);
 
-    const perCard = await page.evaluate(() =>
+    const perCard = await surface.evaluate(() =>
       [...document.querySelectorAll(".ds-card")]
         .map((card) => ({
           name: card.querySelector(".pname")?.textContent ?? "",
@@ -140,10 +151,9 @@ describe("Plugins card — runtime-coverage notice (t-fb216a)", () => {
    */
   it("shows the up-to-date badge and the gap notice on the same card", async () => {
     await page.setViewport({ width: WIDE.w + 40, height: WIDE.h + 40, deviceScaleFactor: 1 });
-    await page.goto(`${server.origin}/scripts/webview-preview/index.html${routeAt(WIDE.w, WIDE.h)}`, { waitUntil: "networkidle0" });
-    await page.waitForSelector(".pgap", { visible: true, timeout: 5000 });
+    const surface = await shootFrame(page, WIDE.w, WIDE.h);
 
-    const card = await page.evaluate(() => {
+    const card = await surface.evaluate(() => {
       const el = [...document.querySelectorAll(".ds-card")].find((c) => c.querySelector(".pname")?.textContent === "secrets-guard");
       return { text: (el as HTMLElement).innerText, hasNotice: !!el?.querySelector(".pgap") };
     });

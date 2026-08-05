@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tachyon webview preview surface (spec 278)</title>
+<!-- the harness stand-in for VS Code's runtime theme; per-view stylesheets are linked by preview.js from
+     the route table (the same set the real panel links, in order). -->
+<link rel="stylesheet" href="/scripts/webview-preview/theme-dark.css">
+<style>
+  /* fail-loud: if the bundle never hydrates, this stays visible and a screenshot is obviously wrong */
+  #root:empty::after { content: "PREVIEW EMPTY — bundle did not render"; color: #f48771; padding: 16px; display: block; }
+  html, body { background: var(--vscode-sideBar-background); margin: 0; }
+  /* t-b24282 — this document's viewport IS the requested frame, so a classic root scrollbar would
+     silently steal ~15px from it and shift every `@media` boundary. Hidden at the ROOT only: the
+     surface's own scroll containers keep their real scrollbars, and the document still SCROLLS —
+     which is what makes content below the fold reachable at all. The frame this replaced was
+     `overflow: hidden`, so anything past the route height was simply unreachable. */
+  html { scrollbar-width: none; }
+  html::-webkit-scrollbar { width: 0; height: 0; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <!-- spec 278 — the dev-only harness glue (bundled): reads ?view=&fixture=, links the view's CSS, loads the
+       REAL webview bundle, waits for its ready handshake, injects the fixture once. Fails loud on any gap.
+       It runs HERE, inside the shell's sized iframe, never as a top-level page. -->
+  <script type="module" src="/dist/webview-preview/preview.js"></script>
+</body>
+</html>

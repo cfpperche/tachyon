@@ -36,6 +36,7 @@
  * Run: `node scripts/visual-qa/runtime-ops-app-widths.mjs [outDir]`
  */
 import puppeteer from "puppeteer-core";
+import { openPreview } from "./preview-surface.mjs";
 import { mkdirSync } from "node:fs";
 
 const outDir = process.argv[2] ?? ".vqa/485-d3";
@@ -81,13 +82,10 @@ for (const c of cases) {
     ran += 1;
     const page = await browser.newPage();
     await page.setViewport({ width: w, height: 900 });
-    await page.goto(
-      `http://localhost:5174/scripts/webview-preview/index.html?view=runtime-ops&fixture=${c.fixture}&width=${w}&height=900`,
-      { waitUntil: "networkidle0", timeout: 45000 },
-    );
-    await new Promise((r) => setTimeout(r, 700));
+    // t-b24282 — the width goes to the harness once; the surface's DOM lives in the returned frame.
+    const surface = await openPreview(page, { view: "runtime-ops", fixture: c.fixture, width: w, height: 900, settleMs: 700 });
 
-    const m = await page.evaluate(() => {
+    const m = await surface.evaluate(() => {
       const de = document.documentElement;
       const root = document.querySelector(".runtime-ops");
       const scrolls = (el) => {

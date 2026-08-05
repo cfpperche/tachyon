@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { openPreview } from "./support/preview";
 
 // t-6da5f0 — maintainer dogfood (screenshot, 0.55.14): the board header's search input, "All agents" select,
 // and +Task/Dropped buttons render at visibly different heights on the SAME row. kitLegacyParity.test.ts
@@ -16,11 +17,13 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 // SDD 485 C5 (2026-08-03): `dist/webview/mission-control.js` is back — the Board is a standalone app again —
 // so the harness route is the board's OWN route rather than Control with the board embedded. Same component,
 // same stylesheet set, same catalog VM; what changed is that the page measured is now the page that ships.
-const PREVIEW = "/scripts/webview-preview/index.html?view=mission-control&fixture=default&width=1100&height=760";
-
-async function loadMissionControl(page: Page, origin: string): Promise<void> {
-  await page.goto(`${origin}${PREVIEW}`, { waitUntil: "networkidle0" });
-  await page.waitForSelector(".mc-head", { visible: true, timeout: 15_000 });
+async function loadMissionControl(page: Page, origin: string): Promise<Frame> {
+  return openPreview(page, origin, {
+    query: { view: "mission-control", fixture: "default" },
+    width: 1100,
+    height: 760,
+    waitFor: ".mc-head",
+  });
 }
 
 describe("Board header: Kit vs legacy box-model parity on the real bundle (t-6da5f0)", () => {
@@ -39,10 +42,10 @@ describe("Board header: Kit vs legacy box-model parity on the real bundle (t-6da
 
   it("search box, agent-filter KitSelect, and the +Task/Dropped buttons all compute the same height + baseline", async () => {
     const page = await browser.newPage();
-    await loadMissionControl(page, server.origin);
+    const surface = await loadMissionControl(page, server.origin);
 
     const boxOf = (selector: string) =>
-      page.$eval(selector, (el) => {
+      surface.$eval(selector, (el) => {
         const r = el.getBoundingClientRect();
         return { height: Math.round(r.height), top: Math.round(r.top) };
       });
@@ -77,7 +80,7 @@ describe("Board header: Kit vs legacy box-model parity on the real bundle (t-6da
     // the nominal --ds-control-h is a DERIVED number that is supposed to describe the real box; assert
     // it against the box actually rendered, so the token cannot become decorative the way `.ds-btn`'s
     // old `min-height: 28px` did (it described no button on any screen).
-    const nominal = await page.evaluate(() =>
+    const nominal = await surface.evaluate(() =>
       getComputedStyle(document.documentElement).getPropertyValue("--ds-control-h").trim(),
     );
     expect(nominal).toBe(`${search.height}px`);
