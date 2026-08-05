@@ -2,21 +2,30 @@
  * Design Mode chat (single active agent) — one append-only JSONL per workspace.
  * Virtualization loads tails / older windows on demand (no full-file hydrate into the page).
  *
- * t-9b2741 (C-07): append is serialized per workspace via a mkdir lock so concurrent
- * multi-window writers cannot assign the same lineNo. Size is capped; corrupt vs empty
- * file states are distinguishable via inspectDmChatFile.
+ * t-9b2741 (C-07): append is serialized per workspace so concurrent multi-window writers cannot
+ * assign the same lineNo. Size is capped; corrupt vs empty file states are distinguishable via
+ * inspectDmChatFile. t-7843d0: that serialization is the shared `processLock` — orphan-recoverable,
+ * and awaited rather than blocking the extension host.
  */
 
 import fs from "node:fs";
 import path from "node:path";
+import { withProcessLock } from "../../locks/processLock.js";
 
 export const DM_CHAT_DIR = "design-mode-chat";
 export const DM_CHAT_FILE = "chat.jsonl";
-export const DM_CHAT_LOCK_DIR = "chat.jsonl.lock";
+export const DM_CHAT_LOCK_FILE = "chat.jsonl.lock";
 /** Hard ceiling for the durable log — refuse append past this (bytes of file + payload). */
 export const DM_CHAT_MAX_BYTES = 2 * 1024 * 1024;
 /** How long a writer waits for the workspace lock before failing. */
 export const DM_CHAT_LOCK_TIMEOUT_MS = 10_000;
+/**
+ * A holder older than this is orphaned even if its pid answers — the pid-reuse guard (t-7843d0).
+ * The real critical section is one read + one append of a capped file, so this is far above any
+ * legitimate hold and well under the timeout above: a wedged lock is recovered inside a single
+ * append rather than after the caller has already failed.
+ */
+export const DM_CHAT_MAX_HOLD_MS = 5_000;
 /** Markers must not appear on one prose line as "between START and END" — that extracted "and". */
 export const DM_CHAT_REPLY_START = "<<<DM_CHAT_REPLY>>>";
 export const DM_CHAT_REPLY_END = "<<<END_DM_CHAT_REPLY>>>";
@@ -89,50 +98,36 @@ export function designModeChatPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", DM_CHAT_DIR, DM_CHAT_FILE);
 }
 
-function designModeChatLockPath(workspaceRoot: string): string {
-  return path.join(workspaceRoot, ".tachyon", DM_CHAT_DIR, DM_CHAT_LOCK_DIR);
+/** Exported so a test can hold the REAL lock from another process (and then be killed). */
+export function designModeChatLockPath(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", DM_CHAT_DIR, DM_CHAT_LOCK_FILE);
 }
 
 function ensureDir(file: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
 }
 
-function sleepSync(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-}
-
 /**
  * Serialize writers for one workspace chat.jsonl (multi-window / multi-process).
- * Same shape as PinStore's mkdir lock: exclusive create of a lock directory.
+ *
+ * ASYNC on purpose (t-7843d0). Every caller of `appendDmChatEvent` runs on the extension host, via
+ * `manager.ts`, and the previous shape waited with `Atomics.wait` — which blocks the host thread for
+ * real, so the multi-window contention this lock exists to handle froze the VS Code UI for up to ten
+ * seconds. The wait is now a `setTimeout` poll: the host keeps painting and answering messages while
+ * another window finishes its append. All four call sites were already in `async` methods and already
+ * awaited their neighbours, so this cost nothing at the doors.
+ *
+ * Orphan recovery is `processLock`'s: a holder that died leaves a lock with a dead pid, and the next
+ * writer steals it instead of burning the timeout and then failing forever.
  */
-function withDmChatWriteLock<T>(workspaceRoot: string, fn: () => T): T {
+export function withDmChatWriteLock<T>(workspaceRoot: string, fn: () => T | Promise<T>): Promise<T> {
   const file = designModeChatPath(workspaceRoot);
   ensureDir(file);
-  const lock = designModeChatLockPath(workspaceRoot);
-  const start = Date.now();
-  while (true) {
-    try {
-      fs.mkdirSync(lock);
-      break;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-      if (Date.now() - start > DM_CHAT_LOCK_TIMEOUT_MS) {
-        throw new Error(
-          `timed out waiting for Design Mode chat write lock (${DM_CHAT_LOCK_DIR})`,
-        );
-      }
-      sleepSync(10);
-    }
-  }
-  try {
-    return fn();
-  } finally {
-    try {
-      fs.rmSync(lock, { recursive: true, force: true });
-    } catch {
-      /* best-effort lock cleanup */
-    }
-  }
+  return withProcessLock(designModeChatLockPath(workspaceRoot), fn, {
+    label: `Design Mode chat write lock (${DM_CHAT_LOCK_FILE})`,
+    timeoutMs: DM_CHAT_LOCK_TIMEOUT_MS,
+    maxHoldMs: DM_CHAT_MAX_HOLD_MS,
+  });
 }
 
 function parseLine(line: string, lineNo: number): DmChatEvent | null {
@@ -255,7 +250,7 @@ function nextLineNoFromText(text: string): number {
 }
 
 /** Append one event; assigns next lineNo under the workspace write lock. Returns the stored event. */
-export function appendDmChatEvent(workspaceRoot: string, event: DmChatEventInput): DmChatEvent {
+export function appendDmChatEvent(workspaceRoot: string, event: DmChatEventInput): Promise<DmChatEvent> {
   return withDmChatWriteLock(workspaceRoot, () => {
     const file = designModeChatPath(workspaceRoot);
     ensureDir(file);
