@@ -25,6 +25,15 @@ type DatabaseConstructor = new (location: string, options?: { timeout?: number }
 type SqlRow = Record<string, string | number | null>;
 
 const DEFAULT_LEASE_TTL_MS = 5 * 60 * 1000;
+/**
+ * SDD 490 — `formation_mutation_barriers.expected_generation_digest` and
+ * `formation_mutation_receipts.prior_generation_digest` are `NOT NULL`, but a bootstrap has no prior
+ * generation to name. Absence is stored as this value, which no sha256 digest can collide with
+ * (every digest this store writes is 64 hex characters). `replaceVector` already expressed the same
+ * CAS as `expectedGenerationSha256: undefined` meaning "there must be no current row"; the barrier
+ * now says it the same way, and the two are compared as the same value.
+ */
+const NO_PRIOR_GENERATION = "";
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS formation_metadata (
     key TEXT PRIMARY KEY,
@@ -203,7 +212,8 @@ export interface FormationMutationBarrier {
   caller: FormationCaller;
   workspaceId: string;
   agentId: string;
-  expectedGenerationSha256: string;
+  /** Absent means "there must be no prior generation" — the bootstrap CAS. See {@link NO_PRIOR_GENERATION}. */
+  expectedGenerationSha256?: string;
   phase: "prepared" | "source-published" | "authority-committed";
   intent: unknown;
   createdAt: string;
@@ -214,7 +224,8 @@ export interface FormationMutationReceipt {
   mutation: FormationVectorMutation;
   workspaceId: string;
   agentId: string;
-  priorGenerationSha256: string;
+  /** Absent for a bootstrap: generation 1 has no prior generation to name. */
+  priorGenerationSha256?: string;
   nextGenerationSha256?: string;
   outcome: "committed" | "rolled-back";
   completedAt: string;
@@ -782,16 +793,31 @@ export class FormationAuthorityStore {
     })) throw new FormationAuthorityStoreError("fresh formation is not authorized for this caller");
   }
 
+  /**
+   * Open the audited two-phase bracket around an authority mutation.
+   *
+   * `expectedGenerationSha256` is the CAS: a digest means "the current generation must be exactly
+   * this", and **absence means "there must be no current generation at all"** — which only a
+   * `bootstrap` may claim, and which only a `bootstrap` is allowed to leave open. That pairing is
+   * what lets moment zero produce the same durable who/when/outcome receipt every other mutation
+   * produces (`formation_mutation_receipts`), instead of a second audit format beside a table that
+   * has accepted `"bootstrap"` in {@link FormationAuthorityStore.parseMutationBarrier} all along.
+   */
   beginMutationBarrier(input: {
     operationId: string;
     mutation: FormationVectorMutation;
     caller: FormationCaller;
     workspaceId: string;
     agentId: string;
-    expectedGenerationSha256: string;
+    expectedGenerationSha256?: string;
     intent: unknown;
   }): FormationMutationBarrier {
     assertOperationId(input.operationId);
+    if ((input.mutation === "bootstrap") !== (input.expectedGenerationSha256 === undefined)) {
+      throw new FormationAuthorityStoreError(input.mutation === "bootstrap"
+        ? "formation bootstrap cannot name a prior generation"
+        : "only formation bootstrap may prepare a mutation with no prior generation");
+    }
     const serialized = JSON.stringify(input.intent);
     if (Buffer.byteLength(serialized, "utf8") > 4 * 1024 * 1024) throw new FormationAuthorityStoreError("formation mutation intent is too large");
     if (!this.options.authorizeMutation({ operation: input.mutation, caller: input.caller, workspaceId: input.workspaceId, agentId: input.agentId })) {
@@ -814,7 +840,11 @@ export class FormationAuthorityStore {
         return parsed;
       }
       const current = db.prepare("SELECT generation_digest FROM formation_generations WHERE agent_id = ?").get(input.agentId) as SqlRow | undefined;
-      if (!current || current.generation_digest !== input.expectedGenerationSha256) throw new FormationAuthorityStoreError("formation mutation barrier generation CAS mismatch");
+      if (input.expectedGenerationSha256 === undefined) {
+        if (current) throw new FormationAuthorityStoreError("formation bootstrap cannot replace an existing vector");
+      } else if (!current || current.generation_digest !== input.expectedGenerationSha256) {
+        throw new FormationAuthorityStoreError("formation mutation barrier generation CAS mismatch");
+      }
       const createdAt = this.now();
       for (const lease of db.prepare("SELECT * FROM formation_publication_leases").all() as SqlRow[]) {
         const manifest = parseManifestWithDigest(String(lease.manifest_json), String(lease.manifest_digest));
@@ -825,7 +855,7 @@ export class FormationAuthorityStore {
         (agent_id, operation_id, mutation, caller_principal, caller_kind, workspace_id, expected_generation_digest, phase, intent_json, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?)`)
         .run(input.agentId, input.operationId, input.mutation, input.caller.principal, input.caller.kind,
-          input.workspaceId, input.expectedGenerationSha256, serialized, createdAt);
+          input.workspaceId, input.expectedGenerationSha256 ?? NO_PRIOR_GENERATION, serialized, createdAt);
       return { ...input, phase: "prepared", createdAt };
     });
   }
@@ -853,7 +883,9 @@ export class FormationAuthorityStore {
         mutation: String(row.mutation) as FormationVectorMutation,
         workspaceId: String(row.workspace_id),
         agentId: String(row.agent_id),
-        priorGenerationSha256: String(row.prior_generation_digest),
+        ...(String(row.prior_generation_digest) === NO_PRIOR_GENERATION
+          ? {}
+          : { priorGenerationSha256: String(row.prior_generation_digest) }),
         ...(row.next_generation_digest ? { nextGenerationSha256: String(row.next_generation_digest) } : {}),
         outcome: String(row.outcome) as FormationMutationReceipt["outcome"],
         completedAt: String(row.completed_at),
@@ -909,7 +941,8 @@ export class FormationAuthorityStore {
         (operation_id, mutation, caller_principal, caller_kind, workspace_id, agent_id, prior_generation_digest, next_generation_digest, outcome, completed_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
         .run(current.operationId, current.mutation, current.caller.principal, current.caller.kind, current.workspaceId,
-          current.agentId, current.expectedGenerationSha256, input.nextGenerationSha256 ?? null, input.outcome, this.now());
+          current.agentId, current.expectedGenerationSha256 ?? NO_PRIOR_GENERATION, input.nextGenerationSha256 ?? null,
+          input.outcome, this.now());
       db.prepare("DELETE FROM formation_mutation_barriers WHERE operation_id = ?").run(input.operationId);
     });
   }
@@ -928,13 +961,17 @@ export class FormationAuthorityStore {
     if (phase !== "prepared" && phase !== "source-published" && phase !== "authority-committed") {
       throw new FormationAuthorityStoreError("formation mutation barrier phase is corrupt");
     }
+    const expected = String(row.expected_generation_digest);
+    if ((mutation === "bootstrap") !== (expected === NO_PRIOR_GENERATION)) {
+      throw new FormationAuthorityStoreError("formation mutation barrier prior generation is corrupt");
+    }
     return {
       operationId: String(row.operation_id),
       mutation,
       caller: { principal: String(row.caller_principal), kind },
       workspaceId: String(row.workspace_id),
       agentId: String(row.agent_id),
-      expectedGenerationSha256: String(row.expected_generation_digest),
+      ...(expected === NO_PRIOR_GENERATION ? {} : { expectedGenerationSha256: expected }),
       phase,
       intent,
       createdAt: String(row.created_at),

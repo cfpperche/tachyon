@@ -119,6 +119,8 @@ import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration } from "../resume/SessionLedger.js";
 import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.js";
+import { createFormationAdoptionHost, type FormationAdoptionHost } from "../agents/formation/adoptionHost.js";
+import type { FormationAdoptionRecord, FormationAdoptionState } from "../agents/formation/bootstrapTransaction.js";
 import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
 import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -624,6 +626,8 @@ export class Workspace {
   private authorityIntegrityKey: Buffer | undefined;
   /** t-50bbd4 — the formation lane's host port; undefined when the host key is unavailable. */
   private formationLifecycle: FormationLifecyclePort | undefined;
+  /** SDD 490 — the adoption (write) host; undefined when the host key is unavailable. */
+  private formationAdoption: FormationAdoptionHost | undefined;
 
   /**
    * t-50bbd4 — the canonical `agentId` for a declared agent, or undefined when it is not a profile
@@ -3034,6 +3038,13 @@ export class Workspace {
         // See src/runtime/nativeLaneSuppression.ts and docs/research/native-lane-suppression-sdd490-fatia-c.md.
         nativeSuppressionConfirmed: (adapter) => isNativeSuppressionConfirmed(adapter),
         runtimeTrustClassOf: (adapter) => adapter,
+      });
+      // SDD 490 Fatia A — moment zero's host, beside the read-only one and pointed at the same
+      // authority. The spawn host stays read-only; this one grants `bootstrap` and nothing else.
+      ws.formationAdoption = createFormationAdoptionHost({
+        hostKey: hmacKey,
+        hostRoot: path.join(workspaceRoot, ".tachyon", "formation-authority"),
+        workspaceId: ws.wsHash,
       });
       ws.authorityHeads = authorityHeads;
       ws.callerRegistry = new CallerIdentityRegistry(hmacKey, persisted);
@@ -6503,6 +6514,99 @@ export class Workspace {
       + "Soul for a canonical agent belongs to the formation lane (SDD 427), which is not yet wired to "
       + "the spawn path — see t-e50d4f (survey: t-50bbd4). This operation would have failed while writing the config.",
     );
+  }
+
+  /**
+   * SDD 490 Fatia A — **the** production door to `mutation: "bootstrap"`. Moment zero.
+   *
+   * It sits here, next to `assertSoulMutable`, because that refusal is where a maintainer meets the
+   * problem: "Soul for a canonical agent belongs to the formation lane, which is not yet wired". This
+   * is the wiring, and SDD 478 M6 made "a refusal must name the fix" contractual — the fix should be
+   * one file away from the refusal, not on some other surface.
+   *
+   * ## What this method is NOT, and must never become
+   *
+   * It is not an `ExtensionCommandV1` action, not a `vscode.commands` id, and not a member of
+   * `WorkspaceAgentStudioTarget`. Each of those is a door an agent can already reach:
+   * `extension.invoke` carries actions over the control socket whose nonce only proves same-uid; the
+   * shell's UI handler executes **any** command id the daemon names; and the studio target interface
+   * is what `ClientWorkspaceStudioTarget` implements by putting calls on that socket. Adoption is
+   * reachable only by in-process extension-host code acting on a human's gesture, and
+   * `test/unit/agentFormationBootstrap.test.ts` fails if any of the three routes appears.
+   *
+   * The residue is named rather than papered over: code executing inside the extension host is
+   * indistinguishable from the human. See `bootstrapTransaction.ts`.
+   */
+  async adoptFormationAuthority(agentName: string, expectedProfileSha256?: string): Promise<FormationAdoptionRecord> {
+    const host = this.requireFormationAdoptionHost();
+    const authority = this.agentProfileAuthorities.get(agentName);
+    if (!authority) {
+      throw new Error(`agent '${agentName}' has no host-custodied profile authority to adopt; refresh the profile first`);
+    }
+    const effectiveSha256 = this.effectiveProfileSha256Of(agentName);
+    if (!effectiveSha256) {
+      throw new Error(`agent '${agentName}' has no resolved effective profile digest; reload the workspace config and try again`);
+    }
+    return host.service.adopt({
+      operationId: `formation-adopt.${randomBytes(16).toString("hex")}`,
+      caller: this.formationHumanCaller(),
+      workspaceId: this.wsHash,
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      runtimeInspector: { ...authority.runtimeInspector },
+      effectiveSha256,
+      ...(expectedProfileSha256 === undefined ? {} : { expectedProfileSha256 }),
+    });
+  }
+
+  /**
+   * What Agent Studio needs so an unadopted agent reads as HONEST rather than broken: whether this
+   * agent has authority, and — when it does not — whether adoption would work and what blocks it.
+   * Read-only, and the same reachability rules apply as to the adoption door itself.
+   */
+  async inspectFormationAuthority(agentName: string): Promise<FormationAdoptionState> {
+    const host = this.requireFormationAdoptionHost();
+    return host.service.inspect({
+      workspaceRoot: this.workspaceRoot,
+      agentName,
+      caller: this.formationHumanCaller(),
+    });
+  }
+
+  /**
+   * Resolve an adoption interrupted between its barrier and its receipt. Adoption writes no workspace
+   * bytes, so "rolled-back" simply means generation 1 never landed and the agent stays unadopted.
+   */
+  async recoverFormationAdoption(agentId: string): Promise<"none" | "rolled-back" | "completed"> {
+    const host = this.requireFormationAdoptionHost();
+    return host.service.recover(agentId, this.formationHumanCaller());
+  }
+
+  /**
+   * The principal recorded in the durable receipt. It names the editor host, not a verified person:
+   * `kind: "human"` here asserts *which surface acted*, and this repository has no way to assert more
+   * than that. Writing a person's name in would claim a witness that does not exist.
+   */
+  private formationHumanCaller(): { principal: string; kind: "human" } {
+    return { principal: `editor.${this.wsHash}`, kind: "human" };
+  }
+
+  private requireFormationAdoptionHost(): FormationAdoptionHost {
+    if (!this.formationAdoption) {
+      throw new Error(
+        "formation authority custody is unavailable in this window, so adoption is closed; "
+        + "the machine-local host key could not be loaded and the spawn path has no formation port either",
+      );
+    }
+    return this.formationAdoption;
+  }
+
+  private effectiveProfileSha256Of(agentName: string): string | undefined {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: string; effectiveSha256?: string }>;
+    }) | undefined)?.agentSources;
+    const source = sources?.[agentName];
+    return source?.mode === "profile" ? source.effectiveSha256 : undefined;
   }
 
   async createSoulProfile(agentName: string): Promise<ProfileMutationResult> {
