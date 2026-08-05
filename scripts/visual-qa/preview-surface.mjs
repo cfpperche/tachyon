@@ -1,5 +1,5 @@
 /**
- * t-b24282 — the ONE door these ad-hoc visual-QA scripts use to reach the preview harness.
+ * t-b24282 — the ONE door the hand-run visual-QA scripts here use to reach the preview harness.
  *
  * The harness renders the surface inside a sized iframe, because an iframe's content box is a real
  * viewport: `?width=360` moves BOTH the box the surface lays out in and the viewport its
