@@ -18,9 +18,10 @@
  *   agreeing.
  *
  * Two harness rules this repo paid for, both applied here:
- *  - viewport AND `?width=` together (t-b24282): `?width=` alone narrows a div while `@media` still reads
- *    the 1280px browser viewport, so a breakpoint measured that way silently tests nothing. It matters on
- *    THIS surface for real — `plugins.css` carries a `@media (max-width: 720px)` block;
+ *  - the width goes to the HARNESS (t-b24282). It used to narrow a div while `@media` kept reading the
+ *    1280px browser window, so a breakpoint measured that way silently tested nothing; the frame is an
+ *    iframe now, so one `?width=` is the surface's own viewport. It matters on THIS surface for real —
+ *    `plugins.css` carries a `@media (max-width: 720px)` block;
  *  - measure the states the recent work created, on the fixtures that already exist (`update-available`,
  *    `source-changed`), rather than inventing a fiction to photograph.
  *
@@ -35,6 +36,7 @@
  */
 import puppeteer from "puppeteer-core";
 import { mkdirSync } from "node:fs";
+import { openPreview } from "./preview-surface.mjs";
 
 const outDir = process.argv[2] ?? ".vqa/485-d2";
 mkdirSync(outDir, { recursive: true });
@@ -60,13 +62,9 @@ for (const c of cases) {
     ran += 1;
     const page = await browser.newPage();
     await page.setViewport({ width: w, height: 900 });
-    await page.goto(
-      `http://localhost:5174/scripts/webview-preview/index.html?view=plugins&fixture=${c.fixture}&width=${w}&height=900`,
-      { waitUntil: "networkidle0", timeout: 45000 },
-    );
-    await new Promise((r) => setTimeout(r, 700));
+    const surface = await openPreview(page, { view: "plugins", fixture: c.fixture, width: w, height: 900, settleMs: 700 });
 
-    const m = await page.evaluate((expect) => {
+    const m = await surface.evaluate((expect) => {
       const de = document.documentElement;
       const root = document.querySelector(".ck-plugins-root");
       const scrolls = (el) => {

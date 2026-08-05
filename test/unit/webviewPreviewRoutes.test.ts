@@ -54,10 +54,12 @@ describe("preview route table", () => {
   });
 
   it("a route that links the page-frame sheet renders a REAL page frame (t-32c872)", () => {
-    // The harness's `#frame` div hands `#root` a definite height that a real webview's `body` only has when
-    // a stylesheet gives it one. That is why the Board previewed correctly for a whole commit while shipping
-    // broken: the harness was more generous than the product. `pageFrame` collapses the div (preview.ts), so
-    // a route linking `page-frame.css` and NOT declaring it would be back to previewing a page nobody ships.
+    // For an ordinary route the harness anchors the height chain (`html, body { height: 100% }` — t-b24282,
+    // where the sized `#frame` div became a sized iframe), so `#root { height: 100% }` resolves against the
+    // frame. A real webview's `body` only has that height when a stylesheet gives it one. That is why the
+    // Board previewed correctly for a whole commit while shipping broken: the harness was more generous
+    // than the product. `pageFrame` withholds the anchor (preview.ts), so a route linking `page-frame.css`
+    // and NOT declaring it would be back to previewing a page nobody ships.
     const violations = Object.entries(ROUTES)
       .filter(([, r]) => r.cssLinks.some((href) => href.endsWith("/page-frame.css")) && r.pageFrame !== true)
       .map(([view]) => `${view}: links page-frame.css but does not declare pageFrame — the harness would hand #root a height the product does not have`);
@@ -277,7 +279,9 @@ describe("preview references in the browser suite (t-fdfbd4)", () => {
     // desync it), so the standing proof is a differential: the same tokens must fall out of esbuild's
     // transform, which is the tokenizer this repo actually builds with.
     const tokens = (text: string): string[] =>
-      [...text.matchAll(/[?&]view=[A-Za-z0-9_-]+|dist\/webview\/[A-Za-z0-9_.-]+\.js/g)].map((m) => m[0]).sort();
+      [...text.matchAll(/[?&]view=[A-Za-z0-9_-]+|\bview:\s*"[A-Za-z0-9_-]+"|dist\/webview\/[A-Za-z0-9_.-]+\.js/g)]
+        .map((m) => m[0].replace(/\s+/g, " "))
+        .sort();
     for (const file of files) {
       const source = readFileSync(file, "utf8");
       const loader = /\.tsx?$/.test(file) ? ("ts" as const) : ("js" as const);

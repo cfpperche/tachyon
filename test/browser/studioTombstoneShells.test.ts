@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Frame } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 import { STUDIO_PROTOCOL_VERSION } from "../../src/webview/shared/studio/protocol";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
+import { openPreview } from "./support/preview";
 
 /**
  * t-b643ac — the tombstone reaches ALL FIVE single-mode studios, measured rather than assumed.
@@ -56,8 +57,8 @@ interface Surface {
   tombstoneText: string;
 }
 
-async function readSurface(page: Page): Promise<Surface> {
-  return page.evaluate(() => ({
+async function readSurface(surface: Frame): Promise<Surface> {
+  return surface.evaluate(() => ({
     hasForm: !!document.querySelector(".sf-region-fields"),
     hasTombstone: !!document.querySelector(".sf-tombstone-body"),
     buttonLabels: [...document.querySelectorAll("button")].map((b) => (b.textContent || "").trim()),
@@ -71,17 +72,17 @@ describe("t-b643ac — a removed entity dematerializes every single-mode studio"
       const page = await browser.newPage();
       try {
         await page.bringToFront();
-        await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=${shell.view}&fixture=dense-edit`, {
-          waitUntil: "networkidle0",
-        });
         // The state the bug report is about: a fully mounted editor for an entity that still existed.
-        await page.waitForSelector(".sf-region-fields", { visible: true, timeout: 15_000 });
-        const before = await readSurface(page);
+        const surface = await openPreview(page, server.origin, {
+          query: { view: shell.view, fixture: "dense-edit" },
+          waitFor: ".sf-region-fields",
+        });
+        const before = await readSurface(surface);
         expect(before.hasForm, `${shell.view}: fixture did not mount a form`).toBe(true);
         expect(before.buttonLabels).toContain("Save");
 
-        await page.evaluate(
-          (entityType, entityId, protocolVersion) => {
+        await surface.evaluate(
+          (entityType: string, entityId: string, protocolVersion: number) => {
             window.postMessage(
               {
                 type: "tombstone",
@@ -98,9 +99,9 @@ describe("t-b643ac — a removed entity dematerializes every single-mode studio"
           shell.id,
           STUDIO_PROTOCOL_VERSION,
         );
-        await page.waitForSelector(".sf-tombstone-body", { visible: true, timeout: 15_000 });
+        await surface.waitForSelector(".sf-tombstone-body", { visible: true, timeout: 15_000 });
 
-        const after = await readSurface(page);
+        const after = await readSurface(surface);
         // RED pre-fix: the decoder rejected an unknown type, so the form was still standing here.
         expect(after.hasForm, `${shell.view}: the form is still mounted over a removed entity`).toBe(false);
         expect(after.hasTombstone).toBe(true);
@@ -119,19 +120,19 @@ describe("t-b643ac — a removed entity dematerializes every single-mode studio"
     const page = await browser.newPage();
     try {
       await page.bringToFront();
-      await page.goto(`${server.origin}/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=dense-edit`, {
-        waitUntil: "networkidle0",
+      const surface = await openPreview(page, server.origin, {
+        query: { view: "agent-studio-shell", fixture: "dense-edit" },
+        waitFor: ".sf-region-fields",
       });
-      await page.waitForSelector(".sf-region-fields", { visible: true, timeout: 15_000 });
-      await page.evaluate((protocolVersion) => {
+      await surface.evaluate((protocolVersion: number) => {
         window.postMessage(
           { type: "tombstone", entityType: "agent", entityId: "grok", discardedDraft: true, studioProtocolVersion: protocolVersion },
           "*",
         );
       }, STUDIO_PROTOCOL_VERSION);
-      await page.waitForSelector(".sf-tombstone-draft", { visible: true, timeout: 15_000 });
+      await surface.waitForSelector(".sf-tombstone-draft", { visible: true, timeout: 15_000 });
 
-      const text = await page.evaluate(() => (document.querySelector(".sf-tombstone-draft")?.textContent || "").trim());
+      const text = await surface.evaluate(() => (document.querySelector(".sf-tombstone-draft")?.textContent || "").trim());
       expect(text).toContain("unsaved changes were discarded");
     } finally {
       await page.close();

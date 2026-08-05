@@ -1,27 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
+import { openPreview } from "./support/preview";
 
+// t-b24282 — `width` goes to the harness ONCE and lands on the surface's own viewport, so the 620px
+// `@media` in design-system.css that this file is about actually evaluates at 360.
 async function loadFixture(
   page: Page,
   origin: string,
   fixture: "fleet" | "mission",
   width: number,
-): Promise<void> {
+): Promise<Frame> {
   await page.setViewport({ width, height: 760 });
-  await page.goto(
-    `${origin}/scripts/webview-preview/index.html?view=${fixture === "fleet" ? "fleet" : "mission-control"}` +
-      `&fixture=default&width=${width}&height=760`,
-    { waitUntil: "networkidle0" },
-  );
-  await page.waitForSelector(
-    fixture === "fleet" ? "[data-testid=control-fleet]" : ".mc-head-tools",
-    {
-      visible: true,
-      timeout: 15_000,
-    },
-  );
+  return openPreview(page, origin, {
+    query: { view: fixture === "fleet" ? "fleet" : "mission-control", fixture: "default" },
+    width,
+    height: 760,
+    waitFor: fixture === "fleet" ? "[data-testid=control-fleet]" : ".mc-head-tools",
+  });
 }
 
 type ReflowBox = {
@@ -34,12 +31,12 @@ type ReflowBox = {
 };
 
 async function measure(
-  page: Page,
+  surface: Frame,
   container: string,
   main: string,
   actions: string,
 ): Promise<ReflowBox> {
-  return page.$eval(
+  return surface.$eval(
     container,
     (element, selectors) => {
       const box = (selector: string) =>
@@ -94,8 +91,8 @@ describe("t-ededdd — shared action regions reflow instead of leaving the viewp
     "puts $fixture actions below content and entirely inside the container at 360px",
     async ({ fixture, container, main, actions }) => {
       const page = await browser.newPage();
-      await loadFixture(page, server.origin, fixture, 360);
-      const result = await measure(page, container, main, actions);
+      const surface = await loadFixture(page, server.origin, fixture, 360);
+      const result = await measure(surface, container, main, actions);
 
       expect(result.actionsTop).toBeGreaterThanOrEqual(result.mainBottom);
       expect(result.actionsRight).toBeLessThanOrEqual(result.containerRight);
@@ -122,8 +119,8 @@ describe("t-ededdd — shared action regions reflow instead of leaving the viewp
     "keeps the established side-by-side $fixture composition at 880px",
     async ({ fixture, container, main, actions }) => {
       const page = await browser.newPage();
-      await loadFixture(page, server.origin, fixture, 880);
-      const result = await measure(page, container, main, actions);
+      const surface = await loadFixture(page, server.origin, fixture, 880);
+      const result = await measure(surface, container, main, actions);
 
       expect(result.actionsTop).toBeLessThan(result.mainBottom);
       expect(result.actionsRight).toBeLessThanOrEqual(result.containerRight);

@@ -83,14 +83,16 @@ export interface Route<VM = unknown> {
   globals?: Record<string, unknown>;
   /**
    * t-32c872 — this surface IS the page (an SDD 485 standalone app that links `page-frame.css`), so the
-   * harness must not interpose its own sized `#frame` box: `preview.ts` collapses it (`display: contents`)
-   * and puts the frame size on `<html>` instead, which is where a real webview's page frame lives.
+   * harness must not hand it a height it did not ask for. The frame is a sized iframe (t-b24282), i.e. a
+   * real page frame either way; what `pageFrame` controls is whether `preview.ts` anchors the height chain
+   * (`html, body { height: 100% }`) on top of it. A page-frame route gets NO anchor: its own
+   * `page-frame.css` is the only thing that may give `#root` something to resolve `height: 100%` against.
    *
    * Without this the harness is MORE generous than the product and cannot see a whole defect class. The
    * Board lost per-column scrolling standalone because `#root { height: 100% }` had no `body` height to
-   * resolve against — and the harness rendered it correctly the whole time, because `#frame` handed `#root`
-   * a definite height the real page never had. A harness that cannot reproduce the bug cannot witness the
-   * fix either.
+   * resolve against — and the harness rendered it correctly the whole time, because the frame handed
+   * `#root` a definite height the real page never had. A harness that cannot reproduce the bug cannot
+   * witness the fix either.
    */
   pageFrame?: boolean;
 }
@@ -314,7 +316,7 @@ export const ROUTES: Record<string, Route> = {
   // `init`/`model` envelopes now, not Control's namespaced `inspectorInit`/`inspectorModel`.
   //
   // No `pageFrame`: the inspector is a page-scrolling document (like the task detail), links no
-  // `page-frame.css`, and anchors `#root` to nothing — so the harness's own sized `#frame` is the right
+  // `page-frame.css`, and anchors `#root` to nothing — so the harness's own anchored frame is the right
   // model of what a real webview gives it.
   inspector: {
     bundle: "/dist/webview/inspector.js",
@@ -330,11 +332,11 @@ export const ROUTES: Record<string, Route> = {
   // stylesheet list `PluginsPanel.ts` links, rather than the same component embedded inside Control.
   //
   // No `pageFrame`: Plugins is a page-scrolling document (like the task detail and the inspector), links no
-  // `page-frame.css`, and anchors `#root` to nothing — so the harness's own sized `#frame` is the right
+  // `page-frame.css`, and anchors `#root` to nothing — so the harness's own anchored frame is the right
   // model of what a real webview gives it. 880 is this repo's wide measurement width; the height is
   // generous because the four card states are measured on a list, and `plugins.css`'s own
-  // `@media (max-width: 720px)` is what makes the 360 pass worth taking (it needs the BROWSER viewport
-  // set, not only `?width=` — t-b24282).
+  // `@media (max-width: 720px)` is what makes the 360 pass worth taking — `?width=360` reaches it now
+  // that the frame is a viewport rather than a div (t-b24282).
   plugins: {
     bundle: "/dist/webview/plugins.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/plugins.tailwind.css", "/dist/webview/plugins.css"],
@@ -357,11 +359,11 @@ export const ROUTES: Record<string, Route> = {
   // than repointed.
   //
   // No `pageFrame`: Runtime Ops is a page-scrolling document (like the task detail, the inspector and
-  // Plugins), links no `page-frame.css`, and anchors `#root` to nothing — so the harness's own sized
-  // `#frame` is the right model of what a real webview gives it. The height is generous because the
+  // Plugins), links no `page-frame.css`, and anchors `#root` to nothing — so the harness's own anchored
+  // frame is the right model of what a real webview gives it. The height is generous because the
   // provider-capacity block sits above a runtime table, and `runtime-ops.css`'s own
   // `@container (max-width: 720px)` / `@media (max-width: 760px)` blocks are what make the 360 pass worth
-  // taking (the media query needs the BROWSER viewport set, not only `?width=` — t-b24282).
+  // taking — `?width=360` reaches BOTH now that the frame is a viewport rather than a div (t-b24282).
   /**
    * SDD 485 D4 — the Human Inbox app. `list` and `item` are the app's TWO surfaces, and the route renders
    * whichever the fixture names, exactly as the real host does: this client picks its screen from the

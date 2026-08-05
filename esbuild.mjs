@@ -421,6 +421,15 @@ const preview = {
   format: "esm",
 };
 
+// t-b24282 — the harness SHELL: sizes the iframe the surface renders in (its content box is the surface's
+// viewport, so `?width=` moves the media-query viewport and the container together). Same dev-only output
+// directory as `preview`, excluded from the vsix (.vscodeignore); never shipped.
+const previewShell = {
+  ...preview,
+  entryPoints: ["scripts/webview-preview/shell.ts"],
+  outfile: "dist/webview-preview/shell.js",
+};
+
 // spec 342 — the ui-gate webview bundle: an isolated page for the Radix-under-compat compat gate (T3), built
 // with the SAME preact/compat aliases as excalidraw so the gate proves what production actually ships. Never
 // shipped in the vsix (dev/CI-only surface, same as `preview`).
@@ -547,7 +556,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, uiGate];
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

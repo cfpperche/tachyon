@@ -14,6 +14,7 @@
  * Run: `node scripts/visual-qa/card-template-options.mjs`
  */
 import puppeteer from "puppeteer-core";
+import { openPreview } from "./preview-surface.mjs";
 
 const browser = await puppeteer.launch({
   executablePath: "/usr/bin/google-chrome",
@@ -22,14 +23,12 @@ const browser = await puppeteer.launch({
 });
 
 const page = await browser.newPage();
-await page.setViewport({ width: 420, height: 900 }); // a real sidebar width, where wrapping matters
-await page.goto("http://localhost:5174/scripts/webview-preview/index.html?view=sidebar&fixture=card-template-options", {
-  waitUntil: "networkidle0",
-  timeout: 45000,
-});
-await new Promise((r) => setTimeout(r, 700));
+// a real sidebar width, where wrapping matters. t-b24282 — the width goes to the HARNESS, which is
+// what makes it the surface's own viewport rather than a browser window the card never sees.
+await page.setViewport({ width: 420, height: 900 });
+let surface = await openPreview(page, { view: "sidebar", fixture: "card-template-options", width: 420, height: 900, settleMs: 700 });
 
-const probe = await page.evaluate(() => {
+const probe = await surface.evaluate(() => {
   const rowFor = (name) =>
     [...document.querySelectorAll(".row")].find((el) => el.querySelector(".name")?.textContent?.startsWith(name));
   const read = (name) => {
@@ -56,12 +55,8 @@ const probe = await page.evaluate(() => {
  * the whole phase rests on. `sidebar.css` keys the multi-line rule off the custom property's presence,
  * so the property must be absent and the single-line `nowrap` must still be in force.
  */
-await page.goto("http://localhost:5174/scripts/webview-preview/index.html?view=sidebar&fixture=card-template-options-default", {
-  waitUntil: "networkidle0",
-  timeout: 45000,
-});
-await new Promise((r) => setTimeout(r, 500));
-const unconfigured = await page.evaluate(() => {
+surface = await openPreview(page, { view: "sidebar", fixture: "card-template-options-default", width: 420, height: 900, settleMs: 500 });
+const unconfigured = await surface.evaluate(() => {
   const focusText = document.querySelector(".row-focus .focus-text");
   const holder = document.querySelector(".row-focus");
   return {

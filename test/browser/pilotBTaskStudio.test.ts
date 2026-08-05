@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 import { STUDIO_PROTOCOL_VERSION } from "../../src/webview/shared/studio/protocol";
 import type { TaskDetailEntity } from "../../src/webview/task-studio/domain";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
+import { openPreview } from "./support/preview";
 
 // spec 342 T7 — Pilot B: Task Studio fields row (Kind/Priority/Assignee Kit migration).
 //
@@ -43,22 +44,29 @@ const ENTITY_EDIT: TaskDetailEntity = {
   expectUpdatedAt: "2026-07-03T00:00:00.000Z",
 };
 
-const PREVIEW = "/scripts/webview-preview/index.html?view=task-detail&fixture=edit";
-
 /** Open the studio route on the real bundle, then inject a TaskDetailEntity via the studio-shell
  *  `load` message — the entity the test wants, replacing the catalog fixture the route mounted with.
  *  Race-proof: re-post load until Root's message listener is mounted (ready may fire before the
  *  test installs a listener; late load is accepted once useEffect has registered). */
-async function loadTaskStudio(page: Page, origin: string, entity: TaskDetailEntity): Promise<void> {
+async function loadTaskStudio(
+  page: Page,
+  origin: string,
+  entity: TaskDetailEntity,
+  width?: number,
+): Promise<Frame> {
   // useEffect flushes via rAF — a background tab can stall the handshake under multi-browser load.
   await page.bringToFront();
-  await page.goto(`${origin}${PREVIEW}`, { waitUntil: "networkidle0" });
-  await page.waitForSelector(".ts-fields", { visible: true, timeout: 15_000 });
+  // t-b24282 — `width` reaches the surface's own viewport, so a narrow measurement is really narrow.
+  const surface = await openPreview(page, origin, {
+    query: { view: "task-detail", fixture: "edit" },
+    width,
+    waitFor: ".ts-fields",
+  });
 
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    await page.evaluate(
-      (ent, protocolVersion) => {
+    await surface.evaluate(
+      (ent: TaskDetailEntity, protocolVersion: number) => {
         window.postMessage(
           {
             type: "load",
@@ -75,12 +83,12 @@ async function loadTaskStudio(page: Page, origin: string, entity: TaskDetailEnti
     try {
       // The route already mounted SOME entity (the catalog fixture), so ".ts-fields exists" no longer
       // proves the injection landed — wait for the title field to carry THIS entity's title instead.
-      await page.waitForFunction(
-        (title) => document.querySelector<HTMLInputElement>("input.rd-title")?.value === title,
+      await surface.waitForFunction(
+        (title: string) => document.querySelector<HTMLInputElement>("input.rd-title")?.value === title,
         { timeout: 250 },
         entity.title,
       );
-      return;
+      return surface;
     } catch {
       // Root not listening yet — retry load.
     }
@@ -123,41 +131,41 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
 
   it("edit-mode gating: Assignee is disabled in 'new' mode, enabled in 'edit' mode (339 behavior preserved)", async () => {
     const pageNew = await browser.newPage();
-    await loadTaskStudio(pageNew, server.origin, ENTITY_NEW);
-    const disabledInNew = await pageNew.$eval(".ts-fields input[placeholder='assign during triage']", (el) => (el as HTMLInputElement).disabled);
+    const surfaceNew = await loadTaskStudio(pageNew, server.origin, ENTITY_NEW);
+    const disabledInNew = await surfaceNew.$eval(".ts-fields input[placeholder='assign during triage']", (el) => (el as HTMLInputElement).disabled);
     expect(disabledInNew).toBe(true);
     await pageNew.close();
 
     const pageEdit = await browser.newPage();
-    await loadTaskStudio(pageEdit, server.origin, ENTITY_EDIT);
-    const enabledInEdit = await pageEdit.$eval(".ts-fields input[placeholder='assignee']", (el) => (el as HTMLInputElement).disabled);
+    const surfaceEdit = await loadTaskStudio(pageEdit, server.origin, ENTITY_EDIT);
+    const enabledInEdit = await surfaceEdit.$eval(".ts-fields input[placeholder='assignee']", (el) => (el as HTMLInputElement).disabled);
     expect(enabledInEdit).toBe(false);
     await pageEdit.close();
   });
 
   it("KitSelect Priority: keyboard-selecting P2 updates the trigger AND can be cleared back to 'none'", async () => {
     const page = await browser.newPage();
-    await loadTaskStudio(page, server.origin, ENTITY_NEW);
-    await page.waitForSelector('[data-slot="select-trigger"]', { visible: true, timeout: 5000 });
+    const surface = await loadTaskStudio(page, server.origin, ENTITY_NEW);
+    await surface.waitForSelector('[data-slot="select-trigger"]', { visible: true, timeout: 5000 });
 
-    await page.click('[data-slot="select-trigger"]');
-    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
-    await page.evaluate(() => {
+    await surface.click('[data-slot="select-trigger"]');
+    await surface.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
+    await surface.evaluate(() => {
       const items = [...document.querySelectorAll('[data-slot="select-item"]')] as HTMLElement[];
       items.find((el) => el.textContent === "P2")?.click();
     });
-    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
-    let label = await page.$eval('[data-slot="select-trigger"]', (el) => el.textContent);
+    await surface.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
+    let label = await surface.$eval('[data-slot="select-trigger"]', (el) => el.textContent);
     expect(label).toContain("P2");
 
-    await page.click('[data-slot="select-trigger"]');
-    await page.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
-    await page.evaluate(() => {
+    await surface.click('[data-slot="select-trigger"]');
+    await surface.waitForSelector('[data-slot="select-content"]', { visible: true, timeout: HANG_TIMEOUT_MS });
+    await surface.evaluate(() => {
       const items = [...document.querySelectorAll('[data-slot="select-item"]')] as HTMLElement[];
       items.find((el) => el.textContent === "none")?.click();
     });
-    await page.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
-    label = await page.$eval('[data-slot="select-trigger"]', (el) => el.textContent);
+    await surface.waitForSelector('[data-slot="select-content"]', { hidden: true, timeout: HANG_TIMEOUT_MS });
+    label = await surface.$eval('[data-slot="select-trigger"]', (el) => el.textContent);
     expect(label).toContain("none");
     await page.close();
   });
@@ -165,10 +173,10 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
   // dogfood round 2 (#1) — parity of Priority KitSelect vs Kind in the REAL .ts-fields row.
   it("Priority KitSelect matches Kind's width/height and sits on the same row (dogfood round 2 #1)", async () => {
     const page = await browser.newPage();
-    await loadTaskStudio(page, server.origin, ENTITY_NEW);
+    const surface = await loadTaskStudio(page, server.origin, ENTITY_NEW);
 
     const boxOf = (selector: string) =>
-      page.$eval(selector, (el) => {
+      surface.$eval(selector, (el) => {
         const r = el.getBoundingClientRect();
         return { width: Math.round(r.width), height: Math.round(r.height), top: Math.round(r.top) };
       });
@@ -185,14 +193,14 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
   // dogfood round 2 (#2) — deps chip truncates long title; full text via title tooltip.
   it("a long dep title truncates to a single-line chip with the full text as a tooltip (dogfood round 2 #2)", async () => {
     const page = await browser.newPage();
-    await loadTaskStudio(page, server.origin, ENTITY_EDIT);
+    const surface = await loadTaskStudio(page, server.origin, ENTITY_EDIT);
 
-    const chip = await page.$eval(".ts-chip-field .chip-pill", (el) => ({
+    const chip = await surface.$eval(".ts-chip-field .chip-pill", (el) => ({
       title: el.getAttribute("title"),
       ariaLabel: el.getAttribute("aria-label"),
       height: Math.round(el.getBoundingClientRect().height),
     }));
-    const text = await page.$eval(".ts-chip-field .chip-pill-text", (el) => ({
+    const text = await surface.$eval(".ts-chip-field .chip-pill-text", (el) => ({
       scrollWidth: el.scrollWidth,
       clientWidth: el.clientWidth,
     }));
@@ -208,21 +216,22 @@ describe("Pilot B: Task Studio fields row (real bundle, minimal fixture VM)", ()
   it("t-dd22e8: long artifact paths truncate without overlapping sibling chips", async () => {
     const page = await browser.newPage();
     const longPath = "/mnt/c/Users/cfpp/Pictures/Screenshots/Screenshot 2026-07-12 210316.png";
-    await loadTaskStudio(page, server.origin, {
+    // A narrow FRAME forces the Artifacts column to share a tight width (repro-like). t-b24282: this
+    // used to be a `page.setViewport` after load, which moved the browser window and nothing else —
+    // the harness sized a fixed div, so the surface stayed at the route's own width and the "narrow"
+    // measurement was the wide one. The width now goes to the harness, where it reaches the surface.
+    const surface = await loadTaskStudio(page, server.origin, {
       ...ENTITY_EDIT,
       artifact_refs: [
         { type: "screenshot", ref: longPath },
         { type: "relation", ref: "t-f87651" },
         { type: "relation", ref: "docs/specs/370-runtime-launch-preflight" },
       ],
-    });
+    }, 720);
 
-    // Narrow viewport forces the Artifacts column to share a tight width (repro-like).
-    await page.setViewport({ width: 720, height: 900 });
-
-    const artifactsField = await page.$('[aria-label="Artifact refs"]');
+    const artifactsField = await surface.$('[aria-label="Artifact refs"]');
     expect(artifactsField).toBeTruthy();
-    const metrics = await page.$eval('[aria-label="Artifact refs"]', (field) => {
+    const metrics = await surface.$eval('[aria-label="Artifact refs"]', (field) => {
       const pills = [...field.querySelectorAll(".chip-pill")] as HTMLElement[];
       const fieldRect = field.getBoundingClientRect();
       const boxes = pills.map((el) => {

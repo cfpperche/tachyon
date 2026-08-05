@@ -4,21 +4,28 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Tachyon webview preview (spec 278)</title>
-<!-- the harness stand-in for VS Code's runtime theme; per-view stylesheets are linked by preview.js from
-     the route table (the same set the real panel links, in order). -->
+<!-- the harness stand-in for VS Code's runtime theme, for the SHELL's own chrome only; the surface links
+     its own copy inside the frame (per-view stylesheets come from the route table). -->
 <link rel="stylesheet" href="/scripts/webview-preview/theme-dark.css">
 <style>
-  /* fail-loud: if the bundle never hydrates, this stays visible and a screenshot is obviously wrong */
-  #root:empty::after { content: "PREVIEW EMPTY — bundle did not render"; color: #f48771; padding: 16px; display: block; }
   html, body { background: var(--vscode-sideBar-background); margin: 0; }
-  /* preview.js sizes #frame from the chosen view's route.frame */
-  #frame { width: 340px; height: 100vh; border-right: 1px solid var(--vscode-widget-border); overflow: hidden; }
+  /* t-b24282 — the frame is an IFRAME, not a div, and that is the whole measurement contract: an
+     iframe's content box IS a viewport, so one number (?width=, or the view's route.frame) moves the
+     box the surface lays out in AND the viewport its `@media` queries evaluate against. A sized div
+     moved only the first, which let a narrow screenshot show a layout the product never produces.
+     shell.js sets the size; the panel edge is drawn with a box-shadow rather than a border because a
+     shadow contributes no layout and no scrollable overflow — a border would make the shell 1px wider
+     than the frame and put a scrollbar on every capture taken at exactly the browser's width. -->
+  #frame { display: block; width: 340px; height: 100vh; border: 0; box-shadow: 1px 0 0 var(--vscode-widget-border); }
+  /* fail-loud: if shell.js never runs, this stays visible next to a blank frame */
+  #shell-error { color: #f48771; padding: 16px; font: 12px monospace; }
 </style>
 </head>
 <body>
-  <div id="frame"><div id="root"></div></div>
-  <!-- spec 278 — the dev-only harness glue (bundled): reads ?view=&fixture=, links the view's CSS, loads the
-       REAL webview bundle, waits for its ready handshake, injects the fixture once. Fails loud on any gap. -->
-  <script type="module" src="/dist/webview-preview/preview.js"></script>
+  <iframe id="frame" title="preview surface"></iframe>
+  <p id="shell-error">PREVIEW SHELL DID NOT MOUNT — dist/webview-preview/shell.js is missing or threw (run `npm run build`).</p>
+  <!-- spec 278 / t-b24282 — the dev-only harness SHELL (bundled): resolves the requested view's frame size
+       and points the sized iframe at surface.html, which runs the preview glue inside it. -->
+  <script type="module" src="/dist/webview-preview/shell.js"></script>
 </body>
 </html>

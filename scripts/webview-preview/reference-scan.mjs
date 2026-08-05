@@ -147,6 +147,15 @@ export function declaredWebviewBundles(esbuildSource = readFileSync("esbuild.mjs
 }
 
 const VIEW_RE = /[?&]view=([A-Za-z0-9_-]+)/g;
+/**
+ * t-b24282 — the SAME reference, written as a call argument instead of a URL. Callers used to hand-build
+ * `…index.html?view=plugins&fixture=default&width=360`; they now pass `{ view: "plugins", fixture: … }` to
+ * one shared opener (test/browser/support/preview.ts, scripts/visual-qa/preview-surface.mjs) because the
+ * harness's frame became an iframe and the surface's DOM moved out of the page's main frame. A scan that
+ * only knew the URL spelling would have gone quietly blind on the day that migration landed — the exact
+ * shape of rot this guard exists to prevent, so it reads both spellings and reports them identically.
+ */
+const VIEW_KEY_RE = /\bview:\s*"([A-Za-z0-9_-]+)"/g;
 const BUNDLE_RE = /dist\/webview\/([A-Za-z0-9_.-]+\.js)/g;
 /**
  * An in-file waiver, next to the dead reference it excuses, naming the task that owns the decision:
@@ -159,7 +168,8 @@ const WAIVER_RE = /preview-route-check:\s*allow\s+((?:view=[A-Za-z0-9_-]+)|(?:di
 /** Live (comment-stripped) references a caller file makes, with the line each sits on. */
 export function scanFile(file, source = readFileSync(file, "utf8")) {
   const code = blankComments(source);
-  const views = [...code.matchAll(VIEW_RE)].map((m) => ({ token: `view=${m[1]}`, view: m[1], file, line: lineAt(source, m.index) }));
+  const views = [...code.matchAll(VIEW_RE), ...code.matchAll(VIEW_KEY_RE)]
+    .map((m) => ({ token: `view=${m[1]}`, view: m[1], file, line: lineAt(source, m.index) }));
   const bundles = [...code.matchAll(BUNDLE_RE)].map((m) => ({ token: `dist/webview/${m[1]}`, bundle: m[1], file, line: lineAt(source, m.index) }));
   // waivers are read from the RAW source: they are comments by construction.
   const waivers = [...source.matchAll(WAIVER_RE)].map((m) => ({ token: m[1], task: m[2], file, line: lineAt(source, m.index) }));

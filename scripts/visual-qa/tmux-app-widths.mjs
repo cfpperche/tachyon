@@ -23,6 +23,7 @@
  * Run: `node scripts/visual-qa/tmux-app-widths.mjs [outDir]`
  */
 import puppeteer from "puppeteer-core";
+import { openPreview } from "./preview-surface.mjs";
 import { mkdirSync } from "node:fs";
 
 const outDir = process.argv[2] ?? ".vqa/485-d1";
@@ -39,13 +40,10 @@ let bad = 0;
 for (const w of widths) {
   const page = await browser.newPage();
   await page.setViewport({ width: w, height: 900 });
-  await page.goto(
-    `http://localhost:5174/scripts/webview-preview/index.html?view=inspector&fixture=${fixture}&width=${w}&height=900`,
-    { waitUntil: "networkidle0", timeout: 45000 },
-  );
-  await new Promise((r) => setTimeout(r, 700));
+  // t-b24282 — the width goes to the harness once; the surface's DOM lives in the returned frame.
+  const surface = await openPreview(page, { view: "inspector", fixture, width: w, height: 900, settleMs: 700 });
 
-  const m = await page.evaluate(() => {
+  const m = await surface.evaluate(() => {
     const de = document.documentElement;
     const root = document.querySelector(".insp-root");
     const scrolls = (el) => {
@@ -111,19 +109,15 @@ for (const w of widths) {
 for (const w of widths) {
   const page = await browser.newPage();
   await page.setViewport({ width: w, height: 900 });
-  await page.goto(
-    `http://localhost:5174/scripts/webview-preview/index.html?view=inspector&fixture=${fixture}&width=${w}&height=900`,
-    { waitUntil: "networkidle0", timeout: 45000 },
-  );
-  await new Promise((r) => setTimeout(r, 700));
-  await page.evaluate(() => {
+  const surface = await openPreview(page, { view: "inspector", fixture, width: w, height: 900, settleMs: 700 });
+  await surface.evaluate(() => {
     const tab = [...document.querySelectorAll(".ds-tabs button, .ds-tabs [role=tab]")].find(
       (b) => b.textContent.trim() === "Server",
     );
     tab?.click();
   });
   await new Promise((r) => setTimeout(r, 400));
-  const m = await page.evaluate(() => {
+  const m = await surface.evaluate(() => {
     const de = document.documentElement;
     const over = [...document.querySelectorAll(".server-panel *")].filter((e) => {
       for (let n = e; n && n !== document.body; n = n.parentElement) {
