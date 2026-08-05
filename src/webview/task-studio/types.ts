@@ -6,8 +6,8 @@ export type { TaskDetailEntity, TaskFields, TaskPatch, TaskStudioAnchor, TaskStu
 
 /**
  * spec 339/350 T2 — the SHARED host<->webview envelope for the Task Studio view, now riding the studio
- * shell's protocol: core lifecycle (load/error/restore/patch/dirty/save/cancel) + Task Studio's two
- * registered domain round trips (importImage/attachImage/storeSketch in, attachmentStored out).
+ * shell's protocol: core lifecycle (load/error/restore/patch/dirty/save/cancel) + Task Studio's
+ * registered domain round trips (importPrototype/attachImage/storeSketch in, attachmentStored out).
  */
 
 /** Host -> webview messages this surface actually receives (core + its registered domain messages). */
@@ -24,9 +24,8 @@ export type TaskStudioWebviewMessage =
   | { type: "dirty"; dirty: boolean; studioProtocolVersion: number }
   | { type: "save"; studioProtocolVersion: number }
   | { type: "cancel"; studioProtocolVersion: number }
-  | { type: "importImage"; studioProtocolVersion: number }
   | { type: "importPrototype"; studioProtocolVersion: number }
-  | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string; studioProtocolVersion: number }
+  | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop" | "import"; dataBase64: string; studioProtocolVersion: number }
   | {
       type: "storeSketch";
       attachmentId?: string;

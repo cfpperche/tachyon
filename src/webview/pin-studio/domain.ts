@@ -3,7 +3,7 @@ import { isEmptyPinDoc } from "../../pins/pinStudioModel.js";
 import { assertNoDomainNameCollision } from "../shared/studio/protocol.js";
 import type { PinStudioAttachmentVM, TiptapJSON } from "./types.js";
 
-export const PIN_STUDIO_DOMAIN_MESSAGE_NAMES = ["importImage", "attachImage", "storeSketch", "attachmentStored"] as const;
+export const PIN_STUDIO_DOMAIN_MESSAGE_NAMES = ["attachImage", "storeSketch", "attachmentStored"] as const;
 assertNoDomainNameCollision(PIN_STUDIO_DOMAIN_MESSAGE_NAMES);
 
 /** t-610705 (Phase D, D3) — the host->webview-only subset of the names above, browser-safe (no

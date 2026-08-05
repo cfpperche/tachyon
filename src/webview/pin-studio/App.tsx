@@ -11,10 +11,11 @@ import { createRichDocEditor } from "../rich-doc/tiptap";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../rich-doc/document";
 import { EditorToolbar, SlashMenu } from "../rich-doc/toolbar";
 import { SketchModal, VisualsPanel, uriToDataURL, type RichDocExcalidrawSaveResult, type SketchRequest } from "../rich-doc/VisualsPanel";
+import { ImageImportPicker } from "../rich-doc/ImageImportPicker";
 import { createPinStudioAdapter } from "../rich-doc/adapter";
 import type { PinStudioAssets, PinStudioAttachmentVM } from "./types";
 import { computePinDirty, pinStudioTitleFor, PIN_STUDIO_HOST_MESSAGE_NAMES, type PinDetailEntity, type PinFields } from "./domain";
-import { attachImageMessage, cancelMessage, dirtyMessage, importImageMessage, patchMessage, readyMessage, saveMessage, storeSketchMessage } from "./messages";
+import { attachImageMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage, storeSketchMessage } from "./messages";
 import type { PinStudioHostMessage } from "./types";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -93,6 +94,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
   const [error, setError] = useState<string | undefined>(undefined);
   const [slashOpen, setSlashOpen] = useState(false);
   const [sketch, setSketch] = useState<SketchRequest | null>(null);
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
 
   const isNew = entity !== undefined && entity.pinId === undefined;
 
@@ -271,7 +273,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
     if (hostError) setError(hostError.message);
   }, [hostError]);
 
-  const attachFile = async (file: File, source: "paste" | "drop") => {
+  const attachFile = async (file: File, source: "paste" | "drop" | "import") => {
     if (!ALLOWED_IMAGE_TYPES.has(file.type)) { setError(`Unsupported image type: ${file.type || "unknown"}`); return; }
     if (file.size > MAX_IMAGE_BYTES) { setError("Image exceeds the 10 MB limit"); return; }
     const dataBase64 = await fileToBase64(file);
@@ -452,7 +454,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
         // BOTTOM of the whole studio body (.sf-side-actions), nowhere near the header.
         headerActions={
           <>
-            <Button icon="file-media" onClick={() => post(importImageMessage())}>Import</Button>
+            <Button icon="file-media" onClick={() => setImagePickerOpen(true)}>Import</Button>
             <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
           </>
         }
@@ -491,7 +493,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
           previewVisual: (
             <VisualsPanel
               attachments={visibleAttachments}
-              onImport={() => post(importImageMessage())}
+              onImport={() => setImagePickerOpen(true)}
               onAnnotate={(a) => void openAnnotate(a)}
               onEditSketch={openExistingSketch}
             />
@@ -499,6 +501,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
         }}
       />
       {sketch && assets && <SketchModal assets={assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
+      {imagePickerOpen && <ImageImportPicker target="pin" onCancel={() => setImagePickerOpen(false)} onFile={async (file) => { await attachFile(file, "import"); setImagePickerOpen(false); }} />}
       {error && <div class="rd-err" role="alert">{error}</div>}
     </>
   );

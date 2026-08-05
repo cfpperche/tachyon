@@ -74,6 +74,8 @@
   .rd-sketch-host { min-height: 0; position: relative; }
   .rd-sketch-host > div { position: absolute; inset: 0; }
   .rd-sketch-fail { padding: var(--ds-4); color: var(--ds-danger); }
+  .rd-import-modal { position: fixed; inset: 0; z-index: var(--ds-z-dialog); background: color-mix(in srgb, var(--vscode-editor-background) 88%, transparent); display: grid; place-items: center; padding: var(--ds-4); }
+  .rd-import-picker { width: min(100%, 32rem); padding: var(--ds-5); border: 1px solid var(--ds-border); border-radius: var(--ds-radius-lg); background: var(--vscode-editor-background); box-shadow: var(--ds-shadow-2); }
   .rd-err { position: fixed; left: var(--ds-4); right: var(--ds-4); bottom: var(--ds-4); padding: 8px 10px; border: 1px solid var(--ds-danger); color: var(--ds-danger); background: var(--vscode-editorWidget-background, var(--vscode-editor-background)); border-radius: var(--ds-radius); box-shadow: 0 8px 24px rgba(0,0,0,.24); }
   /* t-61189b — was `.ds-degrade { margin-top: 20vh }`, which redefined a design-system class from a
      surface sheet and dropped every Control loading state 20vh once a Studio had been visited. The

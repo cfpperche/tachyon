@@ -1,19 +1,16 @@
 /**
  * t-610705 (SDD 410 Phase D, D3) — Pin Studio's domain-message handler, ported from the retired
- * PinStudioPanelManager.handleDomainMessage (+ its private importImage/attachImage/storeSketch
+ * PinStudioPanelManager.handleDomainMessage (+ its private attachImage/storeSketch
  * helpers) onto the generic StudioRegistryEntry.handleDomainMessage extension point
  * (studioRegistry.ts) — same pattern as taskStudioDomain.ts (D2), minus importPrototype (Pin has no
  * prototype concept). Kept in its own file for the same reason taskStudioDomain.ts is: real file-
- * picker/Buffer I/O per message, well beyond command/terminal's 3-line browse→cwd forward.
+ * Buffer I/O per message, well beyond command/terminal's 3-line browse→cwd forward.
  *
  * Every handler reads `ctx.entityId` rather than a per-panel tracked field (same structural swap
  * D1b's Agent Studio port made) — for Pin Studio this is `undefined` while drafting a brand-new pin
  * (studio-new is a real, reachable route for pin, unlike task) — every handler no-ops on `undefined`
  * exactly like the old panel's own guards.
  */
-import * as vscode from "vscode";
-import fs from "node:fs";
-import path from "node:path";
 import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
 import { attachmentStoredMessage } from "../webview/pin-studio/messages.js";
@@ -23,40 +20,12 @@ import type { StudioDomainContext } from "./studioRegistry.js";
 /** the webview -> host domain message shapes (mirrors pin-studio/types.ts's PinStudioWebviewMessage's
  *  domain members) — kept local since the dispatch's `message` param is only typed as `{ type: string }`. */
 type PinStudioDomainMessage =
-  | { type: "importImage" }
-  | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }
+  | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop" | "import"; dataBase64: string }
   | { type: "storeSketch"; attachmentId?: string; name?: string; source: "blank" | "annotate-image"; baseImageAttachmentId?: string; sceneJson: string; previewBase64: string };
 
 export function handlePinStudioDomainMessage(target: WorkspacePinStudioTarget, ctx: StudioDomainContext, message: { type: string }): void {
-  if (message.type === "importImage") { void importImage(target, ctx); return; }
   if (message.type === "attachImage") { void attachImage(target, ctx, message as Extract<PinStudioDomainMessage, { type: "attachImage" }>); return; }
   if (message.type === "storeSketch") { void storeSketch(target, ctx, message as Extract<PinStudioDomainMessage, { type: "storeSketch" }>); return; }
-}
-
-async function importImage(target: WorkspacePinStudioTarget, ctx: StudioDomainContext): Promise<void> {
-  const picked = await vscode.window.showOpenDialog({
-    canSelectFiles: true,
-    canSelectFolders: false,
-    canSelectMany: false,
-    filters: { Images: ["png", "jpg", "jpeg", "webp", "gif"] },
-    title: "Import image into pin",
-  });
-  const file = picked?.[0]?.fsPath;
-  if (!file) return;
-  const mediaType = mediaTypeFor(file);
-  if (!mediaType) { postDomainError(ctx, "Unsupported image type"); return; }
-  try {
-    const stored = await target.putPinStudioImage({
-      data: fs.readFileSync(file),
-      mediaType,
-      name: path.basename(file),
-      source: "import",
-    });
-    ctx.post(attachmentStoredMessage(stored.attachment));
-    if (stored.overSoftLimit) notifyImageSoftLimit();
-  } catch (error) {
-    postDomainError(ctx, error instanceof Error ? error.message : String(error));
-  }
 }
 
 async function attachImage(target: WorkspacePinStudioTarget, ctx: StudioDomainContext, m: Extract<PinStudioDomainMessage, { type: "attachImage" }>): Promise<void> {
@@ -108,13 +77,4 @@ function notifySketchSoftLimit(): void {
 function stripDataPrefix(value: string): string {
   const i = value.indexOf(",");
   return i >= 0 ? value.slice(i + 1) : value;
-}
-
-function mediaTypeFor(file: string): string | undefined {
-  const ext = path.extname(file).toLowerCase();
-  if (ext === ".png") return "image/png";
-  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
-  if (ext === ".webp") return "image/webp";
-  if (ext === ".gif") return "image/gif";
-  return undefined;
 }

@@ -170,47 +170,6 @@ describe("Task Studio domain dispatch (t-610705 Phase D, D2)", () => {
     expect(called).toBe(false);
   });
 
-  it("importImage no-ops when the user cancels the file picker", async () => {
-    __setOpenDialogResult(undefined);
-    const ctx = fakeCtx("t-abc123");
-    let called = false;
-    const t = target({ putTaskStudioImage: async () => { called = true; return fakeImageResult(); } });
-    handleTaskStudioDomainMessage(t, ctx, { type: "importImage" });
-    await flush();
-    expect(called).toBe(false);
-    expect(ctx.posted).toHaveLength(0);
-  });
-
-  it("importImage reads the picked file and posts attachmentStored", async () => {
-    const root = mkroot();
-    const file = path.join(root, "shot.png");
-    fs.writeFileSync(file, "pretend-png-bytes");
-    __setOpenDialogResult([Uri.file(file)]);
-    const ctx = fakeCtx("t-abc123");
-    let sourceSeen = "";
-    const t = target({ putTaskStudioImage: async (_id, input) => { sourceSeen = input.source; return fakeImageResult(); } });
-    handleTaskStudioDomainMessage(t, ctx, { type: "importImage" });
-    await flush();
-    expect(sourceSeen).toBe("import");
-    expect(findType(ctx.posted, "attachmentStored")).toHaveLength(1);
-  });
-
-  it("importImage rejects an unsupported file extension without calling the target", async () => {
-    const root = mkroot();
-    const file = path.join(root, "notes.txt");
-    fs.writeFileSync(file, "not an image");
-    __setOpenDialogResult([Uri.file(file)]);
-    const ctx = fakeCtx("t-abc123");
-    let called = false;
-    const t = target({ putTaskStudioImage: async () => { called = true; return fakeImageResult(); } });
-    handleTaskStudioDomainMessage(t, ctx, { type: "importImage" });
-    await flush();
-    expect(called).toBe(false);
-    const errors = findType(ctx.posted, "error") as Array<{ message: string }>;
-    expect(errors).toHaveLength(1);
-    expect(errors[0]!.message).toMatch(/Unsupported image type/);
-  });
-
   it("importPrototype no-ops when there is no current entityId", async () => {
     const root = mkroot();
     const file = path.join(root, "proto.html");
