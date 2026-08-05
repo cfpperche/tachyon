@@ -30,6 +30,11 @@ is wrong — a stuck agent is a symptom worth reading, not a rule to work around
   typecheck error pre-existed; its `pop` restored a DIFFERENT agent's work into its tree and left its
   own dangling. Recovered only because that agent noticed and pinned both under `refs/recovered/`. To
   set work aside, commit it (amend later) or copy files out — both are worktree-local.
+- Keep your continuity brief current with `set_continuity` as work proceeds — not merely when state
+  is about to be lost. Moved here from the Tachyon primer on 2026-08-05 (t-486f43): the product
+  states that continuity is durable; how often to checkpoint is this repository's decision, and the
+  maintainer's is "always". Report style and the focused-check working loop are already stated above
+  and below, and they came from the same separation.
 - Do not use the retired `agent-screen` or `agent-desktop` plugins.
 
 ## Who else can reach this?
