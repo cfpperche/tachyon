@@ -10,14 +10,16 @@ as its own editor tab, `Cockpit.ts` / `cockpit/main.tsx` / `cockpitSingleton.ts`
 through another door. Phases A, B, C and E complete; D delivered twenty migrations (D1–D20). Gate on
 delivery: 682 files / 7639 unit tests, 116 browser tests.
 
-`shipped-partial` rather than `shipped`, and the two gaps are named rather than rounded off:
+`shipped-partial` rather than `shipped`, and the remaining gap is named rather than rounded off:
 
 1. **"One broken app does not take the others" is measured FALSE.** E1 deleted
    `errorBoundary.test.ts` along with Control; restoring it turned the criterion from an assertion
    into a measurement, and 12 of 29 webview mounts carry no boundary — seven of them real product
-   surfaces. Ratcheted in that test, owned by t-cd01bb.
-2. **Reload restore was never exercised at this app count.** The headless Dev Host harness dies on
-   `Developer: Reload Window` (t-5fc17d), so it needs a human (D21).
+   surfaces. Ratcheted in that test, owned by t-cd01bb (also tracked as t-4a3333 family).
+2. ~~**Reload restore was never exercised at this app count.**~~ **Closed 2026-08-05 (t-a03fb6 /
+   D21).** The “harness dies on reload” reading was wrong (t-5fc17d: observer pid, not the window).
+   Exercise: 23 tabs / 22 keys / 24 groups pre and post reload; Q1–Q4 YES —
+   `evidence/t-a03fb6-restore-exercise-answers.md`.
 
 The **Phase C CHECKPOINT** was never struck; it was insurance against side-by-side not being what the
 use wanted, and the use answered by continuing.
@@ -236,9 +238,10 @@ contract will be worked around instead of used._
   - **Given** the sidebar Control tab (t-6e2952)
   - **When** the human activates a section tile
   - **Then** that section's app opens as its own editor tab, or is revealed if already open
-- [ ] **Scenario: reload restores what was open** — NOT verified, and deliberately left open: the
-      headless Dev Host harness dies on `Developer: Reload Window` (t-5fc17d), so half the restore
-      question is unreachable by an agent. Needs a human with apps open across editor groups (D21).
+- [x] **Scenario: reload restores what was open** — verified 2026-08-05 (t-a03fb6 / D21). The earlier
+      claim that the headless harness dies on reload was a wrong pid observation (t-5fc17d): the
+      window always crossed; evidence lists 23 tabs / 22 keys / 24 groups pre and post with matching
+      identities and viewColumns (`evidence/t-a03fb6-restore-exercise-answers.md`).
   - **Given** several section apps open across editor groups
   - **When** the window reloads
   - **Then** each returns to its tab and its state, using the restore machinery spec 361 established
