@@ -364,7 +364,7 @@ export class IdeBrowserBridgeManager {
       const from = this.designAgent;
       this.designAgent = name;
       this.onDesignModeChanged?.(this.designMode);
-      const ev = appendDmChatEvent(this.workspaceRoot, {
+      const ev = await appendDmChatEvent(this.workspaceRoot, {
         kind: "agent_switch",
         from,
         to: name,
@@ -476,7 +476,7 @@ export class IdeBrowserBridgeManager {
     try {
       // Submit first — engine agent.input probes composer (t-348c9a). Only then record chat UI.
       await ws.activity.sendAgentInput(this.designAgent, prompt, true);
-      const userEv = appendDmChatEvent(this.workspaceRoot, {
+      const userEv = await appendDmChatEvent(this.workspaceRoot, {
         kind: "message",
         role: "user",
         text: displayText,
@@ -666,7 +666,7 @@ export class IdeBrowserBridgeManager {
       : state === "idle"
         ? `${agent} finished the turn without a chat reply`
         : `${agent} is ${state}`;
-    const sys = appendDmChatEvent(this.workspaceRoot, {
+    const sys = await appendDmChatEvent(this.workspaceRoot, {
       kind: "system",
       text: `${detail}. Call design_mode_chat_reply({ text }) so the panel updates — or open the terminal.`,
       activeAgent: agent,
@@ -718,7 +718,7 @@ export class IdeBrowserBridgeManager {
     if (/^\s*\{[\s\S]*"tool_use"/.test(plain) || /^\s*tool_use\b/i.test(plain)) {
       return { ok: false, error: "reply looks like a tool payload — ignored" };
     }
-    const ev = appendDmChatEvent(this.workspaceRoot, {
+    const ev = await appendDmChatEvent(this.workspaceRoot, {
       kind: "message",
       role: "agent",
       agent: who,

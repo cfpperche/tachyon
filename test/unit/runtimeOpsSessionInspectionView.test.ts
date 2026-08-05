@@ -46,8 +46,8 @@ function session(overrides: Partial<InspectedSession> = {}): InspectedSession {
     state: "live",
     command: ["claude", "--resume", "abc", "--bridge-token", "•••"],
     hooks: [
-      { event: "SessionStart", command: "node session-owner-record.cjs", purpose: "records which agent owns this session", writes: ".tachyon/activity/session-owners.jsonl" },
-      { event: "PreToolUse", command: "bash /home/goat/my-own-hook.sh" },
+      { event: "SessionStart", command: "node session-owner-record.cjs", origin: "tachyon", purpose: "records which agent owns this session", writes: ".tachyon/activity/session-owners.jsonl" },
+      { event: "PreToolUse", command: "bash /home/goat/my-own-hook.sh", origin: "external" },
     ],
     settings: [
       { key: "permissions", value: "bypassPermissions", origin: "projected" },
@@ -58,10 +58,18 @@ function session(overrides: Partial<InspectedSession> = {}): InspectedSession {
     mcpServers: ["tachyon_bridge"],
     strictMcp: true,
     env: [{ key: "TACHYON_AGENT_NAME", value: "claude" }, { key: "TACHYON_BRIDGE_TOKEN", value: "•••" }],
+    gatesWithheld: [],
     notExposed: [],
     ...overrides,
   };
 }
+
+/** The hook that paid for t-141f61: the product's own gate, projected, with no purpose line. */
+const PROJECTED_GATE = {
+  event: "PreToolUse",
+  command: "bash '/ws/.tachyon/plugins/secrets-guard/claude/guard.sh'",
+  origin: "tachyon" as const,
+};
 
 /** Text a human would actually read: tags and attributes stripped, whitespace collapsed. */
 function visibleText(html: string): string {
@@ -102,6 +110,60 @@ describe("t-283149 — the expanded agent row shows what Tachyon handed the runt
     const text = visibleText(render({ status: "ready", inspection: session() }));
 
     expect(text).toContain("Not injected by Tachyon");
+  });
+
+  it("never calls a hook out of `.tachyon/` somebody else's, purpose or no purpose", () => {
+    // t-141f61's guard, on the surface that broke it. `secrets-guard`'s gate has no purpose line and
+    // is the product's own; the panel used to answer the authorship question from the purpose list and
+    // print "Not injected by Tachyon" over a credential gate — an operator's cue to remove it.
+    const html = render({ status: "ready", inspection: session({ hooks: [PROJECTED_GATE] }) });
+    const text = visibleText(html);
+
+    expect(text).not.toContain("Not injected by Tachyon");
+    expect(text).toContain("Injected by Tachyon");
+    expect(text).toContain("secrets-guard");
+    // The honest half survives: no purpose is invented for it.
+    expect(text).not.toContain("records which agent owns this session");
+    expect(text).toContain("Purpose not described here");
+  });
+
+  it("still says plainly when a hook is the person's own", () => {
+    // The other direction of the same guard: fixing the false negative must not claim everything.
+    const text = visibleText(render({
+      status: "ready",
+      inspection: session({ hooks: [{ event: "PreToolUse", command: "bash /home/goat/my-own-hook.sh", origin: "external" }] }),
+    }));
+
+    expect(text).toContain("Not injected by Tachyon");
+    expect(text).toContain("Authored outside Tachyon");
+  });
+
+  it("names the gate that did NOT reach this session, with the reason", () => {
+    // Defect 2. `planProjectedPluginHooks` has always produced this sentence and no webview read it,
+    // so a Grok agent with no credential gate showed a one-line hook list and nothing else — which is
+    // exactly the "read an empty result as safe" that projection module's comment set out to prevent.
+    const text = visibleText(render({
+      status: "ready",
+      inspection: session({
+        runtime: "grok",
+        hooks: [{ event: "SessionStart", command: "node '/ws/.tachyon/activity/session-owner-record.cjs'", origin: "tachyon", purpose: "records which agent owns this session" }],
+        gatesWithheld: [{
+          plugin: "secrets-guard",
+          reason: "installs no grok settings-hook — its manifest declares no grok block",
+        }],
+      }),
+    }));
+
+    expect(text).toContain("Gates NOT projected into this session");
+    expect(text).toContain("secrets-guard");
+    expect(text).toContain("its manifest declares no grok block");
+  });
+
+  it("says nothing about withheld gates when none were withheld", () => {
+    // A permanent banner would be the same defect wearing the other sign: a section that is always
+    // there stops meaning anything, and this one has to mean "you are not covered".
+    expect(visibleText(render({ status: "ready", inspection: session() })))
+      .not.toContain("Gates NOT projected");
   });
 
   it("surfaces a global key the allowlist does not carry as NOT delivered", () => {
