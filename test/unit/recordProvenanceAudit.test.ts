@@ -62,6 +62,10 @@ function writeZip(vsixPath: string, entries: Record<string, string | Buffer>): v
 function writeFakeVsix(root: string, name: string, provenance: object, payload: Record<string, string> = {}): string {
   const vsixPath = path.join(root, name);
   writeZip(vsixPath, {
+    // t-e0a0f5 — every real vsix carries a manifest; VS Code cannot install one without it, and the
+    // audit now reads it to check the files `contributes` names. A fixture omitting it would be
+    // asserting on a shape that cannot ship, which is the same objection the comment above records.
+    "extension/package.json": JSON.stringify({ name: "tachyon", publisher: "cfpperche", version: "0.0.0" }),
     "extension/provenance.json": `${JSON.stringify(provenance, null, 2)}\n`,
     ...payload,
   });
@@ -163,6 +167,7 @@ describe("record-provenance audit (t-86b1fa)", () => {
     // Zip without provenance.json → forces workspace-pre-verify path.
     const vsixName = `tachyon-${version}.vsix`;
     writeZip(path.join(root, vsixName), {
+      "extension/package.json": JSON.stringify({ name: "tachyon", publisher: "cfpperche", version }),
       "extension/readme.txt": "no provenance",
     });
 

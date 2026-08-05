@@ -208,7 +208,15 @@ function writeAudit() {
  *   -> node scripts/record-provenance.mjs embed   (dist/ exists now; vsix does not yet)
  *   -> vsce package                                (packs provenance.json into the vsix)
  *   -> node scripts/record-provenance.mjs audit [the-built.vsix]  (vsix exists now; hash it)
+ *   -> npm run smoke:vsix -- the-built.vsix        (t-e0a0f5: START the package before a human does)
  *   -> install -> verify hashes -> reload
+ *
+ * The smoke step is the last thing between the artifact and a person. The audit above proves the
+ * package CONTAINS what it should; the smoke proves it RUNS -- installed into a disposable editor,
+ * activated, one door per live surface. 0.57.0 is why: it passed every upstream check and could not
+ * start, and the only human who could have known was the maintainer installing it after publication.
+ * It is not in `verify:full` and cannot be: `assertStableBuildSource` refuses to build a package from
+ * a worktree or off `main`, so at gate time there is no artifact to smoke. Measured cost, warm: ~4s.
  *
  * Two phases because the embedded record must be written before the vsix exists (to be packed
  * into it) and the audit record's vsix sha256 can only be computed after it exists. Called with
