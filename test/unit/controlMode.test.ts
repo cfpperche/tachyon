@@ -8,6 +8,7 @@ import {
   lineSafe,
   parseDeadMap,
   parseActivityMap,
+  parseControlModeCommandNumber,
   DEADMAP_SUBSCRIPTION,
   ACTIVITY_SUBSCRIPTION,
 } from "../../src/tmux/ControlModeClient.js";
@@ -63,6 +64,15 @@ const tick = () => new Promise((r) => setTimeout(r, 5));
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe("parseControlModeCommandNumber", () => {
+  it("reads the server command number from a CONTROL MODE frame tag", () => {
+    expect(parseControlModeCommandNumber("1363006971 2 1")).toBe(2);
+    expect(parseControlModeCommandNumber("100 4 0")).toBe(4);
+    expect(parseControlModeCommandNumber("not-a-tag")).toBeNull();
+    expect(parseControlModeCommandNumber("100 x 0")).toBeNull();
+  });
 });
 
 describe("tmuxQuote / lineSafe", () => {
@@ -166,7 +176,7 @@ describe("ControlModeClient", () => {
     await expect(b).rejects.toThrow("no server running");
   });
 
-  it("t-72d4d3 — has-session never rides the control channel (occupancy probe is fail-closed)", async () => {
+  it("t-9610e8 — has-session rides the control channel once replies carry command identity", async () => {
     const { client, procs, fallbackCalls } = makeClient();
     await client.start();
     guard(procs[0]);
@@ -174,11 +184,71 @@ describe("ControlModeClient", () => {
     ackSubs(procs[0]);
 
     const exec = client.makeExecutor();
-    await expect(exec(["-L", "tachyon", "has-session", "-t", "=ghost"]))
-      .resolves.toEqual({ stdout: "fallback\n", stderr: "" });
-    // Channel traffic is only the two subscription bootstraps — no has-session line.
-    expect(procs[0].written).toHaveLength(2);
-    expect(fallbackCalls.some((args) => args.includes("has-session"))).toBe(true);
+    const probe = exec(["-L", "tachyon", "has-session", "-t", "=ghost"]);
+    await tick();
+    expect(procs[0].written.at(-1)).toBe("has-session -t =ghost");
+    expect(fallbackCalls.some((args) => args.includes("has-session"))).toBe(false);
+    procs[0].stdout.write("%begin 100 4 0\n%end 100 4 0\n");
+    await expect(probe).resolves.toEqual({ stdout: "", stderr: "" });
+  });
+
+  it("t-9610e8 — out-of-order frames within deadline match by command number, not FIFO position", async () => {
+    const { client, procs } = makeClient();
+    await client.start();
+    guard(procs[0]);
+    await tick();
+    ackSubs(procs[0]); // settles command numbers 2 and 3 → next expected is 4
+
+    const exec = client.makeExecutor();
+    const first = exec(["-L", "tachyon", "display-message", "-p", "first"]);
+    const second = exec(["-L", "tachyon", "display-message", "-p", "second"]);
+    await tick();
+    // Deliver the later command's frame first (higher number), then the earlier one.
+    // FIFO-by-position would give first←SECOND and second←FIRST.
+    procs[0].stdout.write("%begin 100 5 0\nSECOND\n%end 100 5 0\n");
+    await tick();
+    let firstSettled = false;
+    let secondSettled = false;
+    void first.then(() => { firstSettled = true; });
+    void second.then(() => { secondSettled = true; });
+    expect(firstSettled).toBe(false);
+    expect(secondSettled).toBe(false);
+    procs[0].stdout.write("%begin 100 4 0\nFIRST\n%end 100 4 0\n");
+    await expect(first).resolves.toEqual({ stdout: "FIRST\n", stderr: "" });
+    await expect(second).resolves.toEqual({ stdout: "SECOND\n", stderr: "" });
+  });
+
+  it("t-9610e8 — a gapped frame within deadline does not silently complete the wrong pending", async () => {
+    vi.useFakeTimers();
+    const fallback = vi.fn(async (): Promise<ExecResult> => ({ stdout: "fallback\n", stderr: "" }));
+    const { client, procs } = makeClient({ fallbackExec: fallback, backoffMs: [1] });
+    await client.start();
+    guard(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+    ackSubs(procs[0]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    const exec = client.makeExecutor();
+    const first = exec(["-L", "tachyon", "list-sessions", "-F", "#{session_name}"], {
+      timeoutMs: 100,
+      op: "list-sessions",
+    });
+    const second = exec(["-L", "tachyon", "display-message", "-p", "later"], {
+      timeoutMs: 100,
+      op: "display-message",
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // Only the second command's number arrives — missing 4. FIFO would resolve first with "later".
+    procs[0].stdout.write("%begin 100 5 0\nlater\n%end 100 5 0\n");
+    await vi.advanceTimersByTimeAsync(0);
+    let firstSettled = false;
+    void first.then(() => { firstSettled = true; }).catch(() => { firstSettled = true; });
+    expect(firstSettled).toBe(false);
+    // Timeout retires the generation; executor falls back. Never resolves with the alien body.
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(first).resolves.toEqual({ stdout: "fallback\n", stderr: "" });
+    await expect(second).resolves.toEqual({ stdout: "fallback\n", stderr: "" });
+    await client.dispose();
   });
 
   it("frame body may contain %-prefixed pane content (tag matching)", async () => {
