@@ -47,6 +47,7 @@ import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ensureDevHostTmuxLaunchEnv, readPointerWorkspaceArg } from "./pointer.mjs";
 import { devHostEnv } from "./launch-spec.mjs";
+import { pidAlive, resolveEdhPid } from "./edh-process.mjs";
 
 const SELF = "dev-host-interactive";
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -204,25 +205,52 @@ async function main() {
     })(),
     stdio: ["ignore", hostLog, hostLog],
   });
-  log(`EDH launched pid=${child.pid} cdp=${args.port}`);
+  log(`launcher pid=${child.pid} cdp=${args.port}`);
+
+  // t-5fc17d — `child` is the bin/code wrapper, which exits seconds after a SUCCESSFUL launch; the
+  // real Electron is spawned detached by cli.js. Killing `child` was therefore inert, and the EDH
+  // only ever died as collateral of Xvfb going away. Resolved for real once CDP answers.
+  let edhPid;
+
+  const result = { ok: false, scenario: args.scenario ?? null, startedAt: new Date().toISOString() };
+  const resultPath = path.join(outDir, "result.json");
+  const writeResult = () => {
+    result.finishedAt = new Date().toISOString();
+    try { fs.writeFileSync(resultPath, JSON.stringify(result, null, 2) + "\n"); } catch { /* best effort */ }
+  };
+
+  const killEdh = (signal) => {
+    if (edhPid !== undefined && pidAlive(edhPid)) {
+      try { process.kill(edhPid, signal); } catch { /* gone */ }
+    }
+    try { child.kill(signal); } catch { /* the wrapper is usually already gone */ }
+  };
 
   const hardDeadline = setTimeout(() => {
-    log(`TIMEOUT after ${args.timeout}s — killing EDH`);
-    try { child.kill("SIGKILL"); } catch { /* gone */ }
+    log(`TIMEOUT after ${args.timeout}s — killing EDH (pid=${edhPid ?? "unresolved"})`);
+    // A run that hangs used to exit with nothing written, so the only trace was a driver.log that
+    // stopped mid-scenario. Say so in result.json instead: silence is not an observation.
+    result.error = `timeout after ${args.timeout}s`;
+    result.timedOut = true;
+    writeResult();
+    killEdh("SIGKILL");
     try { xvfb.kill(); } catch { /* gone */ }
     process.exit(3);
   }, args.timeout * 1000);
 
   const cleanup = () => {
     clearTimeout(hardDeadline);
-    if (!args.keep) {
-      try { child.kill(); } catch { /* gone */ }
+    // --keep has to keep Xvfb too: the EDH dies with its X server, so tearing the display down
+    // defeated the flag entirely.
+    if (args.keep) {
+      log(`--keep: leaving EDH pid=${edhPid ?? "unresolved"} on ${args.display} (cdp ${args.port}); kill it yourself when done`);
+      return;
     }
+    killEdh("SIGTERM");
     try { xvfb.kill(); } catch { /* gone */ }
   };
   process.on("SIGINT", () => { cleanup(); process.exit(130); });
 
-  const result = { ok: false, scenario: args.scenario ?? null, startedAt: new Date().toISOString() };
   try {
     // ---- wait for CDP ----
     let version;
@@ -232,6 +260,10 @@ async function main() {
     }
     if (!version) throw new Error("CDP endpoint never came up — check host.log");
     log(`CDP up: ${version.Browser}`);
+
+    edhPid = await resolveEdhPid({ port: args.port, codeBin });
+    result.edhPid = edhPid ?? null;
+    log(`EDH main pid=${edhPid ?? "UNRESOLVED"} (launcher ${child.pid} alive=${pidAlive(child.pid)})`);
 
     const { default: puppeteer } = await import("puppeteer-core");
     const browser = await puppeteer.connect({
@@ -332,9 +364,8 @@ async function main() {
     result.error = String(err && err.stack ? err.stack : err);
     log(`ERROR: ${result.error}`);
   } finally {
-    result.finishedAt = new Date().toISOString();
-    fs.writeFileSync(path.join(outDir, "result.json"), JSON.stringify(result, null, 2) + "\n");
-    log(`result: ok=${result.ok} → ${path.join(outDir, "result.json")}`);
+    writeResult();
+    log(`result: ok=${result.ok} → ${resultPath}`);
     cleanup();
   }
   process.exit(result.ok ? 0 : 1);

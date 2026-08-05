@@ -44,6 +44,7 @@ import { devHostEnv, devHostArgs } from "./launch-spec.mjs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { ensureDevHostTmuxLaunchEnv, readPointerWorkspaceArg } from "./pointer.mjs";
+import { pidAlive, resolveEdhPid } from "./edh-process.mjs";
 
 const SELF = "dev-host-session";
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -155,9 +156,9 @@ async function resolveFrame(browser, frameArg) {
 async function up(opts) {
   const existing = readSession();
   if (existing && !opts.force) {
-    // is it actually alive?
-    try { process.kill(existing.edhPid, 0); die(`session already live (edhPid=${existing.edhPid}); use down first, or up --force`); }
-    catch { /* stale — fall through */ }
+    // is it actually alive? (t-5fc17d: this used to ask about the launcher wrapper, which is always
+    // dead, so a live session never looked live and `up` happily started a second one on the port)
+    if (pidAlive(existing.edhPid)) die(`session already live (edhPid=${existing.edhPid}); use down first, or up --force`);
   }
   const slotRoot = resolvePointerSlotRoot();
   const extensionDir = path.join(slotRoot, "extension");
@@ -242,29 +243,48 @@ async function up(opts) {
   }
   if (!version) die("CDP never came up — see session-out/host.log");
 
+  // t-5fc17d — `edh.pid` is the bin/code wrapper, which exits seconds after a SUCCESSFUL launch;
+  // recording it made `status` answer live:false about a healthy window and made `down` a no-op.
+  // The process that actually owns this CDP port is the EDH.
+  const edhPid = await resolveEdhPid({ port: opts.port, codeBin });
+  if (edhPid === undefined) {
+    // Recording a session we cannot name would put the old lie back in the file. Refuse — but do not
+    // leave the window we just started holding the port and the pointer's engine.
+    try { process.kill(xvfb.pid, "SIGKILL"); } catch { /* gone */ }
+    die(`CDP is up on ${opts.port} but no Electron main process owns it — refusing to record a session`);
+  }
+
   const session = {
     sessionId: randomUUID(),
-    display: opts.display, port: opts.port, edhPid: edh.pid, xvfbPid: xvfb.pid,
+    display: opts.display, port: opts.port, edhPid, launcherPid: edh.pid, xvfbPid: xvfb.pid,
     outDir: OUT_DIR, extension: extensionPath, pointerGeneration, startedAt: new Date().toISOString(),
   };
   fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2));
   // settle for extension activation
   await new Promise((r) => setTimeout(r, 8000));
-  out({ ok: true, up: true, browser: version.Browser, port: opts.port, edhPid: edh.pid, outDir: OUT_DIR });
+  out({ ok: true, up: true, browser: version.Browser, port: opts.port, edhPid, outDir: OUT_DIR });
 }
 
-function down() {
+async function down() {
   const s = readSession();
   if (!s) return out({ ok: true, down: true, note: "no session" });
-  for (const [name, pid] of [["edh", s.edhPid], ["xvfb", s.xvfbPid]]) {
+  // t-5fc17d — a session.json written before the pid fix records the launcher wrapper, and killing
+  // that is inert. If the recorded pid is already gone, ask the port who owns the EDH now; teardown
+  // must not depend on the file having been written by the current version.
+  let edhPid = s.edhPid;
+  if (!pidAlive(edhPid) && s.port) {
+    const rediscovered = await resolveEdhPid({ port: s.port, timeoutMs: 1000 });
+    if (rediscovered !== undefined) edhPid = rediscovered;
+  }
+  for (const pid of [edhPid, s.xvfbPid]) {
     try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
   }
   // hard kill after a beat
   setTimeout(() => {
-    for (const pid of [s.edhPid, s.xvfbPid]) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
+    for (const pid of [edhPid, s.xvfbPid]) { try { process.kill(pid, "SIGKILL"); } catch { /* gone */ } }
     const current = readSession();
     if (current?.sessionId === s.sessionId) fs.rmSync(SESSION_FILE, { force: true });
-    out({ ok: true, down: true, killed: { edhPid: s.edhPid, xvfbPid: s.xvfbPid } });
+    out({ ok: true, down: true, killed: { edhPid, xvfbPid: s.xvfbPid } });
   }, 1200);
 }
 
@@ -272,8 +292,7 @@ async function status() {
   const s = readSession();
   if (!s) return out({ ok: true, live: false });
   const currentGeneration = readPointerGeneration();
-  let alive = false;
-  try { process.kill(s.edhPid, 0); alive = true; } catch { /* dead */ }
+  const alive = pidAlive(s.edhPid);
   let targets;
   if (alive) {
     try {

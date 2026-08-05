@@ -297,6 +297,35 @@ state lives in `.tachyon/dev-host/session.json`; screenshots/logs in `.tachyon/d
 `up` refuses if a session is already live (`--force` overrides a stale one). **Always `down` when
 finished** — a detached EDH left running holds the CDP port and the pointer's engine.
 
+### Crossing `Developer: Reload Window` (restore verification)
+
+Restore is the only family of product behaviour that **requires** a reload to be observed, so the
+harness has to survive one. It does, on both doors: VS Code reloads the renderer's webContents in
+place, so the same puppeteer `Page` keeps working and **no reconnect is needed** — `evaluate`,
+`screenshot` and further palette commands all land on the far side.
+
+```bash
+node scripts/dev-host/headless-interactive.mjs \
+  --scenario scripts/dev-host/scenarios/t-5fc17d-reload-traversal.mjs
+```
+
+Assert the reload **actually happened** rather than that the page still answers: plant a marker on
+`window` before, and require it to be gone after. A handle that survived without a reload looks
+identical to one that crossed, right up until the restore assertions are meaningless.
+
+Budget for it. Editors and webviews come back lazily, so poll for the window to settle instead of
+guessing a single sleep — a loaded window took ~30s in measurement, and `--timeout` covers the whole
+run, not the step.
+
+> **`edhPid` is the app, not the launcher** (`t-5fc17d`). `bin/code` is a shell wrapper around
+> `cli.js`, which spawns the real Electron *detached* and exits — so the pid the harness spawns is
+> gone seconds after a **successful** launch. The harness used to record it, which made `status`
+> answer `{"live":false}` about a perfectly healthy window and made `down` inert (teardown only
+> worked because killing Xvfb takes the EDH with it). It now resolves the process that owns the CDP
+> port; `session.json` carries that as `edhPid` and keeps the wrapper as `launcherPid`. If you are
+> judging whether the EDH survived something, trust `status`/`edhPid` — and remember `host.log`
+> only ever captures the wrapper's own output, never the detached app's.
+
 ---
 
 ## Optional: GUI launch
