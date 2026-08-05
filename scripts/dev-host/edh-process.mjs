@@ -22,6 +22,24 @@
 import fs from "node:fs";
 import path from "node:path";
 
+/**
+ * Turn one /proc/<pid>/cmdline into a token list.
+ *
+ * Two shapes show up, and assuming only the first is how this went wrong once already: the shell
+ * wrapper and the cli.js shim have an ordinary NUL-separated argv, but Electron REWRITES its own
+ * process title, so the app and every `--type=` child report their whole command line as a SINGLE
+ * NUL-terminated blob. Measured 2026-08-05: the EDH's cmdline was one entry reading
+ * `…/code --extensionDevelopmentPath=… --remote-debugging-port=9407 …` with nothing after it.
+ *
+ * Splitting the blob on whitespace is safe for what we ask of it — we only ever look for flag
+ * tokens and the leading executable, never for a path that might itself contain a space.
+ */
+export function tokenizeCmdline(raw) {
+  const parts = raw.split("\0").filter((part) => part.length > 0);
+  if (parts.length === 1) return parts[0].split(/\s+/).filter(Boolean);
+  return parts;
+}
+
 /** argv of every live process, from /proc. Linux-only, which is where the headless harness runs. */
 export function readProcessTable(procRoot = "/proc") {
   const rows = [];
@@ -32,7 +50,7 @@ export function readProcessTable(procRoot = "/proc") {
     let raw;
     try { raw = fs.readFileSync(path.join(procRoot, entry, "cmdline"), "utf8"); } catch { continue; }
     if (!raw) continue;
-    const argv = raw.split("\0").filter((part) => part.length > 0);
+    const argv = tokenizeCmdline(raw);
     if (argv.length === 0) continue;
     rows.push({ pid: Number(entry), argv });
   }
