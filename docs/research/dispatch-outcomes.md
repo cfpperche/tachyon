@@ -161,6 +161,47 @@ O que dá para dizer sem esticar: nenhum dos dois em `high` produziu entrega rui
 
 Se for isso, o achado não é sobre runtime nenhum. É sobre o que o brief autoriza.
 
+## 2026-08-05, terceira onda — a primeira REVERSÃO
+
+| agente | task | kind | runtime | modelo/effort | desfecho | defeitos pegos | nota |
+|---|---|---|---|---|---|---|---|
+| fifoid | t-9610e8 | execução | grok | Grok 4.5 / high | **REVERTIDO** | **1, e só depois do merge** | medição excelente, entrega verde no módulo e vermelha no sistema — ver abaixo |
+| errsink | t-346be5 | execução | codex | gpt-5.6-sol / high | entregou | **1** — afirmou que o sink persiste sem medir | consertou no mesmo turno; foi MEDIR num EDH headless real e achou o marcador em disco |
+| hashdecision | t-65e80b | design+execução | claude | default | entregou | 0 | achou que `payloadHash` cobre só o payload POR DESIGN e propôs um segundo selo em vez de um hash maior; declarou o próprio limite de rebaixamento em teste |
+| consentgap | t-8c4433 | execução | codex | gpt-5.6-sol / high | entregou | 0 | **corrigiu a premissa do meu brief** (o drawer não calava, tinha divulgação parcial); mediu o alcance antes de escrever UI |
+| sidebarclean | t-01a425 | design+execução | grok | Grok 4.5 / high | entregou | 0 | **partiu a premissa do agente anterior ao meio**: resíduo é só PARCIALMENTE indistinguível de parada retomável |
+
+### A reversão, e a lição não é a que eu tinha tirado
+
+`fifoid` entregou com `controlMode` 23 e `tmux.real` 12 verdes. Mergeei. O gate da árvore
+combinada deu vermelho e eu medi com repetição: **0 de 6** com a mudança, **6 de 6** sem.
+
+Minha primeira leitura foi *"faltou rodar `engineService`, que é um consumidor real"*. Verdadeira e
+rasa. A causa real, achada pelo agente seguinte:
+
+> o servidor tmux **enquadra cada comando separado por `;` em um frame próprio**. `TmuxService.newSession`
+> manda `start-server ; set-option … ; new-session …` numa linha, e recebe três frames. A contabilidade
+> assumia um frame por LINHA, consumia um, e deixava dois sobrando para responder comandos seguintes com
+> corpo alheio.
+
+E o motivo de nenhum teste focado pegar: **o harness de unidade usa stdout falso e nunca produziu
+linha multi-frame.** O dublê não reproduzia a forma do original.
+
+Então a regra que eu quase escrevi — "exija um consumidor real no conjunto focado" — é boa mas
+insuficiente. A regra melhor é: **um dublê que não reproduz a forma do original transforma cobertura
+em teatro**, e nenhuma quantidade de testes contra ele revela isso. O que revelou foi escrever teste
+contra tmux de verdade.
+
+### O que este lote acrescenta ao padrão do arquivo
+
+Quatro das cinco entregas corrigiram uma premissa — do brief, do agente anterior, ou da própria
+entrega. A quinta foi revertida e a correção veio do agente seguinte.
+
+O padrão de "questionar em vez de obedecer" segue firme, e agora tem um contraexemplo útil: `fifoid`
+questionou o brief, mediu bem, e ainda assim entregou uma regressão. **Questionar o brief não
+substitui exercitar o sistema.** As duas coisas são independentes, e eu vinha tratando a primeira como
+se cobrisse a segunda.
+
 ### Uma instrução minha que dois agentes ignoraram, e a culpa é da instrução
 
 Em 2026-08-05 escrevi em dois briefs: *"NÃO rode `verify:full` — outro agente está trabalhando e a
