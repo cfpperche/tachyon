@@ -135,6 +135,32 @@ configuração. O experimento que falta não é maior — é **outro**.
    (`secretprobe`). Todas corretas, e todas contra uma hipótese do coordenador. Refutar não parece ser
    propriedade de runtime; parece ser propriedade de **pedir medição em vez de conserto**.
 
+## 2026-08-05, segunda metade — depois do teto de 3 e com effort registrado
+
+Todos com o `cmd` copiado NO DESPACHO, conforme o defeito registrado acima.
+
+| agente | task | kind | runtime | modelo/effort | desfecho | defeitos pegos | nota |
+|---|---|---|---|---|---|---|---|
+| hostbudget | t-3ad4af | medição+execução | claude | default | entregou | 0 | achou 3 itens na revisão, DOIS não pedidos; um deles era erro próprio (dimensionou browser pelo custo do worker de unidade) e ele mesmo achou e mediu |
+| crashnotice | t-01a425 | medição+execução | codex | gpt-5.6-sol / **high** | entregou | 0 | **refutou minha premissa** — morte com máquina viva já notifica o pai — e reduziu o escopo sozinho em vez de construir o que eu pedi |
+| locksplit | t-b457ce | execução | grok | Grok 4.5 / high | entregou | 0 | vermelho real (15 sobreposições); quando perguntei sobre resíduo, CONFIRMOU em vez de defender, e disse que o próprio teste verde não cobria o caminho |
+| sddworktree | t-34ea40 | execução | codex | gpt-5.6-sol / **high** | entregou | **1** — registry lida por task dentro de um laço, custo em caminho quente | mediu minha premissa (`managed-worktrees.json` é workspace-level) antes de construir; commit inicial sem corpo |
+| approvalgate | t-6edd70 | medição | claude | default | entregou | 0 | **derrubou metade da minha proposta**; achou invariante ESCRITA no arquivo com teste de fonte guardando o lado errado; declarou uma hipótese como não medida e abriu task em vez de construir |
+
+### Effort alto: primeira leitura, n=2, e não dá para concluir nada
+
+Dois despachos codex em `high` contra doze em `low`. Ambos entregaram, um com defeito pego na revisão. O `low` teve doze entregas com um defeito pego.
+
+**Isto não é comparação.** As tasks são diferentes, o revisor é o mesmo e sabe qual effort está olhando, e n=2 contra n=12. Registro para que a linha exista, não para que alguém leia um resultado nela.
+
+O que dá para dizer sem esticar: nenhum dos dois em `high` produziu entrega ruim, e um deles refutou uma premissa minha, que é o desfecho de maior valor da tabela do primeiro dia.
+
+### O desfecho que segue valendo mais, agora com n maior
+
+**Questionar o brief ou refutar o coordenador** aconteceu em 5 dos 5 despachos desta metade, contra 8 de 16 no primeiro dia. Não acho que os agentes tenham melhorado — acho que os briefs passaram a pedir isso explicitamente, com a frase sobre premissa não medida e o convite a responder com número de linha.
+
+Se for isso, o achado não é sobre runtime nenhum. É sobre o que o brief autoriza.
+
 ### Uma instrução minha que dois agentes ignoraram, e a culpa é da instrução
 
 Em 2026-08-05 escrevi em dois briefs: *"NÃO rode `verify:full` — outro agente está trabalhando e a
