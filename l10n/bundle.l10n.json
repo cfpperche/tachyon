@@ -213,5 +213,10 @@
   "This window cannot commit Saved Agent removals.": "This window cannot commit Saved Agent removals.",
   "No Tachyon workspace is attached in this window, so nothing is waiting on you here.": "No Tachyon workspace is attached in this window, so nothing is waiting on you here.",
   "This window cannot decide schedule proposals.": "This window cannot decide schedule proposals.",
-  "could not return task claim(s) held by unavailable agent '{0}' to triage: {1}": "could not return task claim(s) held by unavailable agent '{0}' to triage: {1}"
+  "could not return task claim(s) held by unavailable agent '{0}' to triage: {1}": "could not return task claim(s) held by unavailable agent '{0}' to triage: {1}",
+  "collected {0} temporary agent(s) with no session and no worktree claim (same end-of-life kill would have taken): {1}": "collected {0} temporary agent(s) with no session and no worktree claim (same end-of-life kill would have taken): {1}",
+  "{0} stopped temporary agent(s) remain listed with no tmux session: {1}. Resume keeps them; dismiss removes the ledger row and any claimed worktree.": "{0} stopped temporary agent(s) remain listed with no tmux session: {1}. Resume keeps them; dismiss removes the ledger row and any claimed worktree.",
+  "Dismiss all {0}": "Dismiss all {0}",
+  "dismissed {0} stopped temporary agent(s)": "dismissed {0} stopped temporary agent(s)",
+  "dismissed {0} stopped temporary agent(s); {1} error(s): {2}": "dismissed {0} stopped temporary agent(s); {1} error(s): {2}"
 }

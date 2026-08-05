@@ -1,5 +1,9 @@
 import path from "node:path";
 import { isTemporaryInstance, mayRestartInstance } from "../agents/agentInstancePolicy.js";
+import {
+  formatResidueNames,
+  partitionStoppedTemporaryResidue,
+} from "../agents/stoppedTemporaryResidue.js";
 import { ideBrowserRequest, isIdeBrowserBridgeAvailable } from "../ide-browser/client.js";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
@@ -5929,6 +5933,101 @@ export class Workspace {
       + "inspect Activity/list_agents, dismiss, resume, or re-delegate";
   }
 
+  /**
+   * t-01a425 — after a non-ambiguous startup inventory, reconcile Temporary ledger zombies.
+   *
+   * Kill-parity rows (no worktree claim, not fork, not clean-exited, no tmux session at all) are
+   * collected automatically: kill() already destroys that shape when a death is observed, and a crash
+   * only skips that door. Worktree-owned / fork / clean-exited rows stay listed — they are the
+   * legitimate Resume/postmortem surface — and the human gets one bulk dismiss action with the names
+   * visible, rather than N one-by-one Removes.
+   */
+  private async reconcileStoppedTemporaryResidueAtStartup(
+    presentSessions: ReadonlySet<string>,
+  ): Promise<void> {
+    const declaredNames = new Set(Object.keys(this.config?.agents ?? {}));
+    const { autoCollect, humanReview } = partitionStoppedTemporaryResidue(this.ledger.all(), {
+      declaredNames,
+      presentSessions,
+    });
+
+    for (const row of autoCollect) {
+      // A pending reload summary for an auto-collected parent can never be delivered: the Temporary
+      // def is gone and cannot rehydrate. Drop it rather than holding a line for a name that will not return.
+      this.pendingReloadSummaries.delete(row.name);
+      this.queuedReloadSummaries.delete(row.name);
+      this.manager.dismissTemporary(row.name);
+    }
+    if (autoCollect.length > 0) {
+      this.refreshAgentsViews();
+      this.host.notify(
+        this.t(
+          "collected {0} temporary agent(s) with no session and no worktree claim (same end-of-life kill would have taken): {1}",
+          autoCollect.length,
+          formatResidueNames(autoCollect.map((r) => r.name)),
+        ),
+      );
+    }
+
+    if (humanReview.length === 0) return;
+    const names = humanReview.map((r) => r.name);
+    const offered = [...names];
+    this.host.notify(
+      this.t(
+        "{0} stopped temporary agent(s) remain listed with no tmux session: {1}. Resume keeps them; dismiss removes the ledger row and any claimed worktree.",
+        offered.length,
+        formatResidueNames(offered),
+      ),
+      "warn",
+      [{
+        label: this.t("Dismiss all {0}", offered.length),
+        // Return the promise so a test (and any host that awaits actions) can wait for the cascade.
+        run: () => this.dismissStoppedTemporaryResidue(offered),
+      }],
+    );
+  }
+
+  /**
+   * Human bulk door for the residue notice above. Re-checks each name is still a Temporary ledger
+   * zombie before acting so a concurrent Resume cannot be raced into a dismiss. Uses the same
+   * worktree cascade as dismiss_agent / config.agent.delete.
+   */
+  private async dismissStoppedTemporaryResidue(names: readonly string[]): Promise<void> {
+    const declaredNames = new Set(Object.keys(this.config?.agents ?? {}));
+    const present = new Set((await this.manager.agentStates()).keys());
+    const errors: string[] = [];
+    let dismissed = 0;
+    for (const name of names) {
+      try {
+        const rec = this.ledger.get(name);
+        if (!rec?.def || declaredNames.has(name) || present.has(name) || !isTemporaryInstance(rec)) {
+          continue;
+        }
+        if (rec.worktree) await removeAgentWorktree(this, name, true);
+        this.manager.dismissTemporary(name);
+        dismissed += 1;
+      } catch (err) {
+        errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    this.refreshAgentsViews();
+    if (errors.length > 0) {
+      this.host.notify(
+        this.t(
+          "dismissed {0} stopped temporary agent(s); {1} error(s): {2}",
+          dismissed,
+          errors.length,
+          errors.slice(0, 3).join("; "),
+        ),
+        "warn",
+      );
+      return;
+    }
+    if (dismissed > 0) {
+      this.host.notify(this.t("dismissed {0} stopped temporary agent(s)", dismissed));
+    }
+  }
+
   private summarizeMissingChildrenAfterReload(liveAgents: ReadonlySet<string>): void {
     const acknowledged = this.reloadSummaryAcknowledged();
     let acknowledgementChanged = false;
@@ -6427,8 +6526,13 @@ export class Workspace {
     await this.manager.rehydrateFromLedger();
     if (runningAtStartup !== null) {
       const liveAtStartup = new Set(runningAtStartup);
+      // Present = any tmux session for the name (alive or dead pane). Strict running inventory
+      // already proved the read was non-ambiguous; `states` is the same inventory after that success.
+      const presentAtStartup = new Set(states.keys());
       await this.returnTaskClaimsMissingAtStartup(liveAtStartup);
       this.summarizeMissingChildrenAfterReload(liveAtStartup);
+      // After the parent summary so auto-collected names still appear in that one honest line.
+      await this.reconcileStoppedTemporaryResidueAtStartup(presentAtStartup);
     }
 
     // t-62f599 — reproject every registered worktree, BEFORE the configOk branch below returns early.
