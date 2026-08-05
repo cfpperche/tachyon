@@ -13,6 +13,11 @@ import { claudeSessionReader } from "./claudeSessionReader.js";
 import { codexSessionReader } from "./codexSessionReader.js";
 import { grokSessionReader } from "./grokSessionReader.js";
 import type { RuntimeSessionReader } from "./sessionSources.js";
+import {
+  planProjectedPluginHooks,
+  readHookProjectionCandidates,
+  type AgentHookProjectionPolicy,
+} from "../plugins/agentHookProjection.js";
 
 /**
  * t-283149 / t-0c963d — read what a live session was actually given, and hand it to the pure projection.
@@ -63,11 +68,45 @@ function renderSettingValue(key: string, value: unknown): string {
   return redactSettingValue(key, renderValue(value));
 }
 
+/**
+ * t-141f61 — which enforcement gates the workspace asked for and did NOT get here.
+ *
+ * Recomputed from the SAME pure planner every spawn door already calls (authority lockfile ×
+ * classification × runtime), never a second opinion parallel to it: the projection module's own
+ * header states the plan is a pure function of those three, so this panel is one more door onto it
+ * rather than a copy that can drift.
+ *
+ * Filtered to plugins the human CLASSIFIED, matching the spawn-time notice rule: an unclassified
+ * plugin is the default state, not a refusal, and thirteen of those rows would bury the one that
+ * means "this agent has no gate".
+ */
+function withheldGates(
+  workspaceRoot: string,
+  runtime: string,
+  policy: AgentHookProjectionPolicy | undefined,
+): { plugin: string; reason: string }[] {
+  if (!policy || Object.keys(policy).length === 0) return [];
+  const plan = planProjectedPluginHooks({
+    plugins: readHookProjectionCandidates(workspaceRoot),
+    runtime,
+    policy,
+  });
+  return plan.withheld
+    .filter((entry) => policy[entry.plugin] !== undefined)
+    .map((entry) => ({ plugin: entry.plugin, reason: entry.reason }));
+}
+
 export async function collectSessionInspection(input: {
   workspaceRoot: string;
   agent: string;
   runtime: string;
   ports: SessionInspectionPorts;
+  /**
+   * `settings.agentHookProjection` — the workspace's plugin classification. Absent means the caller
+   * has no policy to report against, which yields no withheld rows rather than a false all-clear:
+   * a workspace that classified nothing asked for nothing.
+   */
+  hookProjectionPolicy?: AgentHookProjectionPolicy;
 }): Promise<InspectedSession> {
   const { workspaceRoot, agent, runtime, ports } = input;
   const reader = RUNTIME_READERS[runtime];
@@ -119,6 +158,7 @@ export async function collectSessionInspection(input: {
     mcpServers: found?.mcpServers ?? [],
     strictMcp: (argv ?? []).includes("--strict-mcp-config"),
     env: inspectEnv(env ?? {}, config?.extraEnvKeys ?? []),
+    gatesWithheld: withheldGates(workspaceRoot, runtime, input.hookProjectionPolicy),
     notExposed: [
       ...(found?.notExposed ?? []),
       // Summarized, and SAID to be summarized. The full text is in .tachyon/briefs/spawn/<agent>.md

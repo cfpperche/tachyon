@@ -34,13 +34,40 @@ export interface InspectedSetting {
   wraps?: string;
 }
 
+/**
+ * t-141f61 — WHO put a hook in the session. A separate question from whether we can describe it.
+ *
+ * Fusing the two is the defect this type exists to make unspeakable: absence from a purpose list was
+ * being rendered as proof of foreign authorship, which told an operator that the product's own secrets
+ * gate was somebody else's hook.
+ */
+export type HookOrigin =
+  /** Tachyon injected it: the command runs out of `.tachyon/`, or it is one whose purpose we name. */
+  | "tachyon"
+  /** Authored outside Tachyon. The person's own hooks are theirs, and the panel says so plainly. */
+  | "external";
+
 export interface InspectedHook {
   event: string;
   command: string;
-  /** One line: what this hook is FOR. Absent when Tachyon did not author it. */
+  /** Decided by where the command POINTS — never by whether `purpose` is known. */
+  origin: HookOrigin;
+  /** One line: what this hook is FOR. Absent when this panel cannot describe it. */
   purpose?: string;
   /** The file it writes, when the hook is one Tachyon injected and we know its sink. */
   writes?: string;
+}
+
+/**
+ * t-141f61 — an enforcement gate the workspace ASKED for that did not reach this session, and why.
+ *
+ * Structurally the same as `plugins/agentHookProjection.ts`'s `WithheldHookSource` and deliberately
+ * re-declared: this module is pure domain and the webview imports its types, so it must not pull in a
+ * module that reads the filesystem.
+ */
+export interface WithheldGate {
+  plugin: string;
+  reason: string;
 }
 
 export interface InspectedSession {
@@ -56,6 +83,12 @@ export interface InspectedSession {
   /** True when the runtime was told to ignore ambient MCP config. */
   strictMcp: boolean;
   env: readonly { key: string; value: string }[];
+  /**
+   * t-141f61 — enforcement gates the workspace classified that did NOT reach this runtime, with the
+   * reason. Empty means "nothing was withheld"; it never means "we did not look". An agent whose gate
+   * is missing must hear it here rather than read a short hook list as safe.
+   */
+  gatesWithheld: readonly WithheldGate[];
   /** Things this runtime does not expose. Stated, never silently omitted — parity.md's rule. */
   notExposed: readonly string[];
 }
@@ -225,9 +258,12 @@ export function foldWrappedStatusLine(
 }
 
 /**
- * What each Tachyon-authored hook is for, keyed by the recorder script it runs. A hook we did not
- * author gets no purpose line rather than an invented one — the person's own hooks are theirs, and
+ * What each Tachyon-authored hook is for, keyed by the recorder script it runs. A hook we cannot
+ * describe gets no purpose line rather than an invented one — the person's own hooks are theirs, and
  * describing them would be guessing.
+ *
+ * This list answers ONE question: "can we say what this does". It is not, and must never again be, the
+ * answer to "did we put it there" — see `isTachyonAuthoredHookCommand`.
  */
 const HOOK_PURPOSE: ReadonlyArray<{ match: string; purpose: string; writes: string }> = [
   { match: "session-owner-record", purpose: "records which agent owns this session", writes: ".tachyon/activity/session-owners.jsonl" },
@@ -236,11 +272,34 @@ const HOOK_PURPOSE: ReadonlyArray<{ match: string; purpose: string; writes: stri
   { match: "persistence-stop-record", purpose: "marks the end of each turn", writes: ".tachyon/activity/persistence-stop.jsonl" },
 ];
 
+/**
+ * t-141f61 — authorship, decided by where the command POINTS.
+ *
+ * Everything Tachyon runs out of a session runs out of the workspace's `.tachyon/` tree: the lifecycle
+ * recorders under `.tachyon/activity/`, and a plugin gate under `.tachyon/plugins/<name>/<runtime>/`.
+ * The gate is the one that paid for this function. `secrets-guard`'s `PreToolUse` is projected by the
+ * product itself (`settings.agentHookProjection`), had no line in `HOOK_PURPOSE`, and was therefore
+ * rendered as "Not injected by Tachyon" on a SECURITY surface — an operator reading that could delete
+ * the product's own credential gate believing it was their own leftover.
+ *
+ * The boundary is a path SEGMENT, not a substring: `/home/x/mytachyon/run.sh` is the person's, and
+ * only a `.tachyon/` directory component makes a command ours. Separator-agnostic because a hook
+ * command is an opaque shell string; the leading class is what keeps `foo.tachyon/` out.
+ */
+const TACHYON_TREE_SEGMENT = /(?:^|[\s'"`=(,;:|&$/\\])\.tachyon[/\\]/;
+
+export function isTachyonAuthoredHookCommand(command: string): boolean {
+  return TACHYON_TREE_SEGMENT.test(command);
+}
+
 export function describeHook(event: string, command: string): InspectedHook {
   const known = HOOK_PURPOSE.find((entry) => command.includes(entry.match));
+  // Two independent questions, answered separately on purpose. A described hook is ours by
+  // definition; an undescribed one is still ours when it runs out of our tree.
+  const origin: HookOrigin = known || isTachyonAuthoredHookCommand(command) ? "tachyon" : "external";
   return known
-    ? { event, command, purpose: known.purpose, writes: known.writes }
-    : { event, command };
+    ? { event, command, origin, purpose: known.purpose, writes: known.writes }
+    : { event, command, origin };
 }
 
 /**
