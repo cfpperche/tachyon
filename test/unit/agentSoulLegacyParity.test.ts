@@ -60,6 +60,11 @@ describe("immutable BASE_SHA agent-soul legacy parity provenance", () => {
         .replaceAll(root, "<WORKSPACE_ROOT>")
         .replace(`(${Buffer.byteLength(longBody, "utf8")} UTF-8 bytes)`, `(${longBody.length} chars)`));
       expect(readFileSync(briefFilePath(root, "capture-long"), "utf8")).toBe(longBody);
+      const HISTORICAL_BRIDGE_GUIDANCE_EXCEPTIONS: Record<string, string> = {
+        "bridge-guidance": "t-f050af moved repository coordination methods out of product guidance",
+        "bound-delivery-task": "t-f050af moved repository coordination methods out of product guidance",
+        "pipeline-task": "t-f050af moved repository coordination methods out of product guidance",
+      };
       for (const item of fixture.cases) {
         expect(item.baseSha, item.name).toBe(BASE_SHA);
         expect(createHash("sha256").update(item.bytes).digest("hex"), item.name).toBe(item.sha256);
@@ -69,6 +74,15 @@ describe("immutable BASE_SHA agent-soul legacy parity provenance", () => {
           // focused startup-brief tests and must not rewrite historical provenance.
           expect(actual.get(item.name), item.name).not.toBe(item.bytes);
           expect(actual.get(item.name), item.name).toContain("Your full startup brief is long");
+          continue;
+        }
+        const supersessionReason = HISTORICAL_BRIDGE_GUIDANCE_EXCEPTIONS[item.name];
+        if (supersessionReason) {
+          // Named SDD 411-style exception: the immutable BASE bytes/hash above remain the oracle,
+          // while the live seam intentionally supersedes the repository convention it used to ship.
+          expect(supersessionReason, item.name).toContain("t-f050af");
+          expect(actual.get(item.name), item.name).not.toContain("A bug you find is a task");
+          expect(actual.get(item.name), item.name).not.toContain("declared verify gate");
           continue;
         }
         expect(actual.get(item.name), item.name).toBe(item.bytes);
