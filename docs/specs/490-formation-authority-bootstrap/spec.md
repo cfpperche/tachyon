@@ -85,32 +85,45 @@ publishers both require an already-active vector (`evolutionTransactions.ts:59-6
 
 ### Authority — deliverable on its own
 
-- [ ] **Scenario: a maintainer adopts an existing Saved Agent under authority**
+- [x] **Scenario: a maintainer adopts an existing Saved Agent under authority** — *port delivered
+      (Fatia A); the Agent Studio gesture that calls it is a follow-up, see below.*
   - **Given** a canonical Saved Agent whose `agent.yml` is on disk with no `FormationAuthorityVector`
   - **When** the maintainer performs the adoption action in the product
   - **Then** generation 1 is published atomically, bound to the exact current profile and lane digests,
     the workspace id and the agent identity, with a durable record of who, when, and from which bytes
 
-- [ ] **Scenario: the file still cannot activate itself**
+- [x] **Scenario: the file still cannot activate itself**
   - **Given** an unadopted agent whose `agent.yml` declares lane content by hand
   - **When** it is loaded and spawned
   - **Then** no vector is created and no lane content is delivered
 
-- [ ] **Scenario: an unadopted agent is honest, not broken**
+- [ ] **Scenario: an unadopted agent is honest, not broken** — *the state the fields need
+      (`Workspace.inspectFormationAuthority`: unadopted / adoptable / the blocking reason) is
+      delivered and tested; the fields themselves still read it.*
   - **Given** a Saved Agent nobody has adopted
   - **When** the maintainer opens Agent Studio
   - **Then** the lane fields state that this agent has no authority yet and name the adoption action —
     they are never present, inviting and inert
 
-- [ ] Exactly **one** production door reaches `mutation: "bootstrap"`, it authenticates a human actor
-      rather than trusting a caller-shaped payload, and a test fails if a second production path to
-      that mutation appears.
-- [ ] The Interface / Agent / Tachyon × create / restart / recovery matrix of callers is enumerated,
-      each with its expected refusal.
+- [x] Exactly **one** production door reaches `mutation: "bootstrap"`, and a test fails if a second
+      production path to that mutation appears — including a *dynamic* one that never names it.
+      **Amended at implementation:** the criterion said "authenticates a human actor". Measured, this
+      repository cannot: `controlPeerAuth.ts` proves same-uid (every spawned agent shares the uid) and
+      `resolveCaller` never mints `kind: "human"`. The property the door actually holds is
+      **unreachability** — not an `ExtensionCommandV1` action, not a `vscode.commands` id, not a
+      `WorkspaceAgentStudioTarget` member. It is described that way everywhere, and the residue is
+      named: code executing inside the extension host is indistinguishable from the human.
+- [x] The Interface / Agent / Tachyon × create / restart / recovery matrix of callers is enumerated,
+      each with its expected refusal. *(`agentFormationBootstrap.test.ts` — non-human callers at both
+      the door and the host, the spawn host's read-only store, the three agent-facing routes, the
+      dynamic pass-through, replay of one operation id, and crash recovery.)*
 - [ ] Adoption is ratified as **workspace × agent** — the model the code already enforces
       (`domain.ts:194-209` rejects cross-workspace heads; the store lives under the workspace root at
       `Workspace.ts:3020-3025`) — with named tests for: two windows on one root, the same agent
       identity in two workspace roots, concurrent adoption under CAS, and reopen/restart.
+      *Ratified and enforced (the adoption host refuses a foreign `workspaceId`; concurrent adoption
+      under CAS is tested). Two-windows-on-one-root and reopen/restart need a two-`Workspace` harness
+      Fatia A did not build — see `notes.md` open question 3.*
 
 ### Delivery — **prerequisite: measured native suppression for the runtime under test**
 
