@@ -58,7 +58,7 @@ afterEach(async () => {
 });
 
 describe("t-6edd70 — what a same-uid control-socket speaker can reach", () => {
-  it("DEFECT: resolves a pending approval it did not request, and the record credits 'vscode'", async () => {
+  it("DEFECT: resolves a pending approval it did not request — no human anywhere on the path", async () => {
     const daemon = await startDaemon();
     // Written the way the Bridge writes it: `requester` is the Bridge-resolved caller and cannot be
     // self-declared. That identity survives on the record — and is never consulted at resolve time.

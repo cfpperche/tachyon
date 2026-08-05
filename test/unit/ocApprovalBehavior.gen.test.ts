@@ -29,10 +29,12 @@ import {
  *       takes the resolved name positionally; there is no self-declared field on the record.
  *   (2) the human is shown the child's VERBATIM text, never a coordinator summary — the pin body
  *       reproduces every child-authored field byte-for-byte under a `VERBATIM` marker.
- *   (3) resolution is host-side only, never agent-reachable — `resolveApproval` takes an `inject`
- *       callback (no `Bridge`/`tmux` import) and is never wired to an MCP tool.
+ *   (3) resolution is host-side only, never agent-reachable — the INTENT. `resolveApproval` takes an
+ *       `inject` callback (no `Bridge`/`tmux` import) and is never wired to an MCP tool, and that part
+ *       holds. "Never agent-reachable" does NOT: three doors reach it with no human gesture, enumerated
+ *       once at approvalRequest.ts invariant (3) and open as t-5313dc (t-86e59a).
  *   (4) the injected response is a FIXED Tachyon string, never free-form — `composeFixedApprovalResponse`
- *       derives the text from the request id + decision; the human's click cannot add free-form bytes.
+ *       derives the text from the request id + decision + channel; no caller can add free-form bytes.
  */
 
 describe("container-generated delegation behavior", () => {
@@ -134,11 +136,27 @@ describe("container-generated delegation behavior", () => {
     expect(JSON.parse(ledger[0]).kind).toBe("requested");
 
     // (4) the injected response is a FIXED Tachyon string, never free-form — derived from the request
-    // id + decision only, single ASCII line, no caller-supplied bytes anywhere in it.
+    // id + decision + channel, single line, no caller-supplied bytes anywhere in it.
+    // t-86e59a — the line states the DECISION (true, and the agent needs it), names the channel, and
+    // refuses to claim a person acted. The word `human` survives only inside the denial. Called without
+    // a channel here, so the omission is stated rather than dropped.
     const approved = composeFixedApprovalResponse(request, "approved");
-    const denied = composeFixedApprovalResponse(request, "denied");
-    expect(approved).toBe(`[tachyon] human approved your approval request ${request.id} — you may proceed accordingly`);
-    expect(denied).toBe(`[tachyon] human denied your approval request ${request.id} — you may proceed accordingly`);
+    const denied = composeFixedApprovalResponse(request, "denied", APPROVAL_CHANNEL_VSCODE_COMMAND);
+    expect(approved).toBe(
+      `[tachyon] approval request ${request.id} is APPROVED — recorded with no channel declared. ` +
+      `Tachyon cannot prove a human made this decision: the channel is all it observed. ` +
+      `get_approval_status(${request.id}) proves only that this line is not a forgery typed into your pane; ` +
+      `it reads the same record and cannot tell you who decided.`,
+    );
+    expect(denied).toBe(
+      `[tachyon] approval request ${request.id} is DENIED — recorded via channel ${APPROVAL_CHANNEL_VSCODE_COMMAND}. ` +
+      `Tachyon cannot prove a human made this decision: the channel is all it observed. ` +
+      `get_approval_status(${request.id}) proves only that this line is not a forgery typed into your pane; ` +
+      `it reads the same record and cannot tell you who decided.`,
+    );
+    // The claim this line must never make again, on either decision.
+    expect(approved).not.toContain("[tachyon] human ");
+    expect(denied).not.toContain("[tachyon] human ");
   });
 
   it("resolveApproval is host-side only: marks the request resolved, injects the FIXED text, and appends an audit receipt", async () => {
@@ -175,7 +193,7 @@ describe("container-generated delegation behavior", () => {
     // (3)+(4): the injected text is the FIXED Tachyon string, never caller-supplied — the host callback
     // received the exact `composeFixedApprovalResponse` output, into the caller's OWN session.
     expect(injectedSession).toBe(request.session);
-    expect(injectedText).toBe(composeFixedApprovalResponse(request, "approved"));
+    expect(injectedText).toBe(composeFixedApprovalResponse(request, "approved", APPROVAL_CHANNEL_VSCODE_COMMAND));
     expect(result.injectedText).toBe(injectedText);
     expect(result.receipt).toBe("input submitted to 'child-agent' (receipt: answered-prompt)");
 
@@ -288,7 +306,11 @@ describe("container-generated delegation behavior", () => {
     // via write_input — but that never touches the on-disk record, so the authenticated read still shows
     // the true state: pending, unresolved.
     const forgedText = composeFixedApprovalResponse(request, "approved");
-    expect(forgedText).toBe(`[tachyon] human approved your approval request ${request.id} — you may proceed accordingly`);
+    // t-86e59a changed the bytes, never the property: every input is still publicly derivable (the
+    // channel is a closed set of constants), so the line is exactly as forgeable as it always was. That
+    // is precisely why it now says so itself instead of leaving the reader to find this test.
+    expect(forgedText).toContain(`approval request ${request.id} is APPROVED`);
+    expect(forgedText).toContain("cannot prove a human made this decision");
     expect(readOwnApprovalRequest(ws, request.id, "child-agent").status).toBe("pending");
 
     // only the real host-side resolveApproval flips the ground truth the authenticated read reports.

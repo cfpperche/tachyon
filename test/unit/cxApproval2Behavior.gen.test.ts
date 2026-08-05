@@ -5,6 +5,7 @@ import { __resetVscodeMock } from "../mocks/vscode.js";
 import {
   APPROVAL_CHANNEL_VSCODE_COMMAND,
   approvalRequestPath,
+  composeFixedApprovalResponse,
   buildApprovalRequest,
   readApprovalRequest,
   resolveApproval,
@@ -70,7 +71,14 @@ describe("container-generated delegation behavior", () => {
       },
     });
     expect(resolved.request.status).toBe("resolved");
-    expect(injected).toEqual([`[tachyon] human approved your approval request ${request.id} — you may proceed accordingly`]);
+    // t-86e59a — the injected line no longer opens by crediting a human for a decision no path can
+    // attribute. It carries the state, the channel, and the limit of the check it points at.
+    expect(injected).toEqual([
+      composeFixedApprovalResponse(request, "approved", APPROVAL_CHANNEL_VSCODE_COMMAND),
+    ]);
+    expect(injected[0]).toContain(`approval request ${request.id} is APPROVED`);
+    expect(injected[0]).toContain("Tachyon cannot prove a human made this decision");
+    expect(injected[0]).not.toContain("[tachyon] human ");
 
     const tampered = buildApprovalRequest({
       id: "a-bad999",

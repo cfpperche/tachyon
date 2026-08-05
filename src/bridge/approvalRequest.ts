@@ -41,11 +41,11 @@ import path from "node:path";
  *       through (`APPROVAL_RESOLUTION_CHANNELS` below), so the audit trail no longer credits an actor
  *       nobody proved. A fourth door would inherit the same rule: name the channel, claim no actor.
  *   (4) the injected response is a FIXED Tachyon string, never free-form — `composeFixedApprovalResponse`
- *       is the single source of what gets typed back; the human's click picks approve/deny, nothing more.
+ *       is the single source of what gets typed back; the resolving call picks approve/deny, nothing more.
  *
  * Threat model note (closes the adversarial re-review's CRITICAL finding, c3d74ac): the FIXED text from
- * (4) is, by construction, a deterministic function of two publicly-derivable values (the decision verb
- * and the request id), so it is NOT itself an unforgeable proof — any Bridge caller can reproduce it
+ * (4) is, by construction, a deterministic function of three publicly-derivable values (the decision, the
+ * request id, and the channel — a closed set of constants), so it is NOT itself an unforgeable proof — any Bridge caller can reproduce it
  * byte-for-byte and type it into the requester's pane via the pre-existing, general-purpose `write_input`
  * tool while the requester is idle waiting on the human. The injected text is therefore only a WAKE-UP
  * nudge, never trust-bearing on its own. `readOwnApprovalRequest` below is the actual trust anchor: it is
@@ -324,20 +324,48 @@ export function readApprovalWitnessEvents(workspaceRoot: string): ApprovalWitnes
 }
 
 /**
- * The FIXED Tachyon-generated response injected back into the child session on resolution. The human's
- * click picks `decision`; Tachyon composes the text — the child never sees free-form human input via
- * this path, so a hostile UI can't smuggle an arbitrary command into the pane. Tied to the request id so
- * a replayed/leaked injected line can be traced back to exactly the request it answered.
+ * The FIXED Tachyon-generated response injected back into the child session on resolution. The resolving
+ * call picks `decision`; Tachyon composes the text — the child never sees free-form input via this path,
+ * so a hostile UI can't smuggle an arbitrary command into the pane. Tied to the request id so a
+ * replayed/leaked injected line can be traced back to exactly the request it answered.
  *
- * Plain ASCII, single line — matches the envelope `notifyAgent.ts`'s sanitizer would produce, so it
- * survives the child pane's parser without any line-break/CRLF trickery.
+ * t-86e59a — this line used to open `[tachyon] human approved your approval request ...`, and that word
+ * was the worst instance of the defect this task fixed, for a reason that only showed up when the scope
+ * was measured: `resolvedBy` has NO reader in src/, so the audit field nobody reads was the cosmetic
+ * half. THIS line is the operative one. It is what the requesting agent CONSUMES to decide whether to
+ * proceed, which makes `human` not an audit trace but a SIGNAL — a machine-read claim that a person
+ * acted, on three doors where no person needs to. It now states the decision (that part is true and the
+ * agent needs it), names the channel, and says outright that the claim cannot be made.
  *
- * NOT unforgeable proof on its own (see threat-model note above) — a requester should treat this text as
- * a wake-up nudge and confirm via `get_approval_status`/`readOwnApprovalRequest` before acting on it.
+ * The closing sentence names the LIMIT of the check instead of offering a remedy, and that is
+ * deliberate. `get_approval_status` re-reads the same record, so on "who decided" it is a mirror and
+ * adds nothing. What it does add is a different question: this line is text in a pane, and any Bridge
+ * caller can type those bytes into an idle requester via `write_input` without resolving anything
+ * (c3d74ac). The tool reads the on-disk record over a per-agent-authenticated channel that pane-typing
+ * cannot forge, so it separates "a resolution was really recorded" from "text appeared in my terminal".
+ * Promising more than that would be the disease this task treats, in the shape of advice.
+ *
+ * Single line, no line breaks — matches the envelope `notifyAgent.ts`'s sanitizer would produce, so it
+ * survives the child pane's parser without any line-break/CRLF trickery. (The em dash is not ASCII; the
+ * old note here claimed "plain ASCII" while the line already carried one.)
+ *
+ * NOT unforgeable proof on its own (see threat-model note above): every input is publicly derivable, the
+ * channel included — it is a closed set of constants, not caller-supplied text, so invariant (4) holds.
  */
-export function composeFixedApprovalResponse(request: ApprovalRequest, decision: ApprovalDecision): string {
-  const verb = decision === "approved" ? "approved" : "denied";
-  return `[tachyon] human ${verb} your approval request ${request.id} — you may proceed accordingly`;
+export function composeFixedApprovalResponse(
+  request: ApprovalRequest,
+  decision: ApprovalDecision,
+  channel?: ApprovalResolutionChannel,
+): string {
+  const state = decision === "approved" ? "APPROVED" : "DENIED";
+  // An omitted channel is stated, never silently dropped: silence would read as "no doubt here".
+  const via = channel ? `recorded via channel ${channel}` : "recorded with no channel declared";
+  return (
+    `[tachyon] approval request ${request.id} is ${state} — ${via}. ` +
+    `Tachyon cannot prove a human made this decision: the channel is all it observed. ` +
+    `get_approval_status(${request.id}) proves only that this line is not a forgery typed into your pane; ` +
+    `it reads the same record and cannot tell you who decided.`
+  );
 }
 
 /**
@@ -427,7 +455,7 @@ export async function resolveApproval(input: {
       `approval request '${input.id}' refused: session '${request.session}' now belongs to '${currentOwner}', not original requester '${originalOwner}'`,
     );
   }
-  const injectedText = composeFixedApprovalResponse(request, input.decision);
+  const injectedText = composeFixedApprovalResponse(request, input.decision, input.resolvedBy);
   const resolvedAt = input.now ?? new Date().toISOString();
   let receipt: string | undefined;
   let injectError: string | undefined;

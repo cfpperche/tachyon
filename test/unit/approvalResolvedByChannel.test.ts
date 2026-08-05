@@ -35,6 +35,7 @@ import {
   APPROVAL_RESOLUTION_CHANNELS,
   APPROVALS_WITNESS_REL_PATH,
   buildApprovalRequest,
+  composeFixedApprovalResponse,
   readApprovalRequest,
   resolveApproval,
   writeApprovalRequest,
@@ -126,6 +127,37 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     }
   });
 
+  it("the injected line never asserts an actor, on any decision or channel — including none", () => {
+    const request = buildApprovalRequest({
+      requester: "requesteragent",
+      session: "tachyon-requesteragent",
+      reason: "r",
+      proposedAction: "a",
+      risk: "k",
+      exactPrompt: "p",
+      id: "a-eee555",
+      createdAt: "2026-08-05T00:00:00.000Z",
+    });
+    const channels = [...APPROVAL_RESOLUTION_CHANNELS, undefined] as const;
+    for (const decision of ["approved", "denied"] as const) {
+      for (const channel of channels) {
+        const line = composeFixedApprovalResponse(request, decision, channel);
+        // The claim that must never come back. `human` may appear ONLY inside the denial below.
+        expect(line).not.toContain("[tachyon] human ");
+        expect(line).not.toMatch(/\bhuman (approved|denied|resolved|closed)\b/);
+        // The state is real and the agent needs it — refusing to state it would be a different dishonesty.
+        expect(line).toContain(decision === "approved" ? "is APPROVED" : "is DENIED");
+        // The non-provability is stated outright, never softened into "possibly" or "unverified".
+        expect(line).toContain("Tachyon cannot prove a human made this decision");
+        expect(line).not.toMatch(/\b(possibly|probably|may have|likely)\b/i);
+        // An absent channel is declared absent rather than dropped, so silence never reads as certainty.
+        expect(line).toContain(channel ? `via channel ${channel}` : "with no channel declared");
+        // Single line — the pane parser and the sanitizer envelope both depend on it.
+        expect(line).not.toMatch(/[\r\n]/);
+      }
+    }
+  });
+
   it.each([
     ["door 1 — control-socket named action", APPROVAL_CHANNEL_VSCODE_COMMAND],
     ["door 2 — Companion HTTP", APPROVAL_CHANNEL_COMPANION_HTTP],
@@ -157,6 +189,14 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     for (const retired of RETIRED_ACTOR_CLAIMS) {
       expect(record.resolution?.resolvedBy).not.toBe(retired);
     }
+
+    // The line stored alongside it is the OPERATIVE claim — the requesting agent reads this one to
+    // decide whether to proceed, while `resolvedBy` has no reader in src/ at all. It gets the same rule.
+    const line = record.resolution?.injectedText ?? "";
+    expect(line).toContain(`approval request a-ddd444 is APPROVED`);
+    expect(line).toContain(channel);
+    expect(line).toContain("Tachyon cannot prove a human made this decision");
+    expect(line).not.toContain("[tachyon] human ");
 
     // The ledger is the second durable place, and it is why the old trail was false TWICE. It has to
     // carry the same value, and the assertion is on equality with the record rather than on the literal

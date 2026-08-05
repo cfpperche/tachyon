@@ -279,13 +279,26 @@ describe("legacyMissionControlTarget.closeValidation wakes the author once", () 
   });
 
   it("mirrors approval inject posture: FIXED host line, never free-form decision text", () => {
-    // Structural twin — approval and validation wakes share the [tachyon] human … shape.
+    // Structural twin, and t-86e59a DELIBERATELY BROKE HALF OF IT — recorded here rather than quietly
+    // re-pinned, because the divergence is the finding.
+    //
+    // Both lines are still FIXED host-composed text carrying their own id, and that is the property this
+    // test exists for. What they no longer share is the opening: the approval line stopped claiming
+    // `[tachyon] human ...`, because three measured doors resolve an approval with no human gesture and
+    // the word was a machine-read signal, not a flourish (approvalRequest.ts invariant (3)).
+    //
+    // The validation line still opens `[tachyon] human closed validation ...`. That was left alone ON
+    // PURPOSE: t-86e59a's scope is approvals, and whether validation close is reachable without a human
+    // has NOT been measured. Asserting it is a lie would be the same error in the other direction —
+    // claiming a fact nobody established. It is written up as its own task instead.
     const approvalLine = composeFixedApprovalResponse(
       { id: "a-d1d7d8" } as never,
       "approved",
     );
     const validationLine = composeFixedValidationClosedResponse({ id: "v-b5e168" }, "passed");
-    expect(approvalLine.startsWith("[tachyon] human ")).toBe(true);
+    expect(approvalLine.startsWith("[tachyon] ")).toBe(true);
+    expect(approvalLine).toContain("a-d1d7d8");
+    expect(approvalLine.startsWith("[tachyon] human ")).toBe(false);
     expect(validationLine.startsWith("[tachyon] human ")).toBe(true);
     expect(validationLine).toContain("v-b5e168");
     expect(validationLine).not.toContain("aprovado"); // human note stays on the durable record

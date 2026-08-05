@@ -79,7 +79,7 @@ interface PairCodeValue {
 }
 
 describe("t-de7df4 — a same-uid speaker pairs itself as a Companion device and resolves approval", () => {
-  it("DEFECT: self-mints a pair code, pairs over loopback, resolves an approval it never requested — credited 'companion'", async () => {
+  it("DEFECT: self-mints a pair code, pairs over loopback, resolves an approval it never requested", async () => {
     const daemon = await startDaemon();
 
     // A pending human approval, written the way the Bridge writes it: `requester` is the Bridge-
