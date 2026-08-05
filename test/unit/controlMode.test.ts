@@ -156,14 +156,29 @@ describe("ControlModeClient", () => {
 
     const exec = client.makeExecutor();
     const a = exec(["-L", "tachyon", "display-message", "-p", "one"]);
-    const b = exec(["-L", "tachyon", "has-session", "-t", "=ghost"]);
+    const b = exec(["-L", "tachyon", "list-sessions"]);
     await tick();
-    expect(procs[0].written.slice(2)).toEqual(["display-message -p one", "has-session -t =ghost"]);
+    expect(procs[0].written.slice(2)).toEqual(["display-message -p one", "list-sessions"]);
     procs[0].stdout.write("%begin 100 4 0\none\n%end 100 4 0\n");
-    procs[0].stdout.write("%begin 100 5 0\ncan't find session: ghost\n%error 100 5 0\n");
+    procs[0].stdout.write("%begin 100 5 0\nno server running on /tmp/tmux\n%error 100 5 0\n");
     expect((await a).stdout).toBe("one\n");
     await expect(b).rejects.toThrow(TmuxError);
-    await expect(b).rejects.toThrow("can't find session");
+    await expect(b).rejects.toThrow("no server running");
+  });
+
+  it("t-72d4d3 — has-session never rides the control channel (occupancy probe is fail-closed)", async () => {
+    const { client, procs, fallbackCalls } = makeClient();
+    await client.start();
+    guard(procs[0]);
+    await tick();
+    ackSubs(procs[0]);
+
+    const exec = client.makeExecutor();
+    await expect(exec(["-L", "tachyon", "has-session", "-t", "=ghost"]))
+      .resolves.toEqual({ stdout: "fallback\n", stderr: "" });
+    // Channel traffic is only the two subscription bootstraps — no has-session line.
+    expect(procs[0].written).toHaveLength(2);
+    expect(fallbackCalls.some((args) => args.includes("has-session"))).toBe(true);
   });
 
   it("frame body may contain %-prefixed pane content (tag matching)", async () => {

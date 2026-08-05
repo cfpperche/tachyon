@@ -259,11 +259,27 @@ export class ControlModeClient {
    * The TmuxService executor: control-mode first, subprocess fallback. Semantic
    * tmux errors (%error — e.g. "can't find session") reject like the subprocess
    * path would; only transport problems fall back.
+   *
+   * t-72d4d3 — `has-session` always takes the subprocess path. Occupancy probes are
+   * correctness-critical for spawn (`agent 'X' is already running` is thrown on a
+   * true hasSession with a non-dead state). Control-mode replies are FIFO without
+   * per-command identity; under load a desynced success frame can make a missing
+   * session look present. Measured on engineService: daemon reported already-running
+   * while the private socket's list-sessions showed only `tachyon-ctl-<hash>`. A
+   * false-positive has-session is worse than the extra subprocess, so this probe
+   * never rides the channel.
    */
   makeExecutor(): TmuxExecutor {
     return (args: string[], options: TmuxExecOptions = {}) => {
       const [flag, socket, ...cmd] = args;
-      if (!this.ready || flag !== "-L" || socket !== this.socket || !lineSafe(cmd) || cmd.length === 0) {
+      if (
+        !this.ready
+        || flag !== "-L"
+        || socket !== this.socket
+        || !lineSafe(cmd)
+        || cmd.length === 0
+        || cmd.includes("has-session")
+      ) {
         return this.fallback(args, options);
       }
       return this.exec(cmd, options).catch((err: unknown) => {
