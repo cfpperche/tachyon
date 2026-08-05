@@ -2224,6 +2224,95 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
   });
 
+  it("t-dbddeb warns and permits forget when tmux contradicts a provisional launch reservation", async () => {
+    const warnings: string[] = [];
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n", {
+      notify: (message) => warnings.push(message),
+    });
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+    // The pane disappears outside AgentManager.kill(), leaving the process-local launch reservation behind.
+    h.sessions.delete(sessionName(h.hash, "reviewer"));
+
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).resolves.toMatchObject({
+      ledgerSha256: expect.any(String),
+    });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("believed a launch was still in flight");
+    expect(warnings[0]).toContain("tmux measured no session");
+    expect(warnings[0]).toContain("stale in-process launch reservation");
+  });
+
+  it("t-dbddeb keeps blocking when tmux confirms a provisional launch reservation", async () => {
+    const warnings: string[] = [];
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n", {
+      notify: (message) => warnings.push(message),
+    });
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).rejects.toMatchObject({
+      code: "agent-profile/forget-agent-running",
+      message: expect.stringContaining("launch reservation is confirmed by tmux"),
+    });
+    expect(warnings).toEqual([]);
+  });
+
+  it("t-dbddeb keeps failing closed when tmux cannot measure a provisional launch reservation", async () => {
+    const warnings: string[] = [];
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n", {
+      notify: (message) => warnings.push(message),
+    });
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+    h.ambiguousInventory.current = true;
+
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).rejects.toThrow("occupancy unverifiable");
+    expect(warnings).toEqual([]);
+  });
+
+  it("t-dbddeb clears readiness markers when the lifecycle monitor dismisses a clean-exit pane", async () => {
+    const warnings: string[] = [];
+    const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n", {
+      notify: (message) => warnings.push(message),
+    });
+    asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+
+    await h.manager.spawn("reviewer");
+    vi.spyOn(h.manager, "agentStates").mockResolvedValue(new Map([
+      ["reviewer", { dead: true, exitCode: 0 }],
+    ]));
+    await expect(h.manager.dismissCleanExitPane("reviewer")).resolves.toBe(true);
+
+    await expect(h.manager.prepareAgentProfileForget("reviewer")).resolves.toMatchObject({
+      ledgerSha256: expect.any(String),
+    });
+    expect(warnings).toEqual([]);
+  });
+
   it("t-110aaa guard: canonical forget still refuses a running agent", async () => {
     const h = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n");
     asAgent(h.manager.defOf("reviewer"))!.profileLifecycle = {
