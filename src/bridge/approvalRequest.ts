@@ -32,9 +32,12 @@ import path from "node:path";
  *         door 2 (t-de7df4) — the same speaker mints its OWN Companion pair code over that socket, pairs
  *           over loopback, and resolves with the device token it just minted
  *           (`test/unit/companionPairApprovalReachability.test.ts`).
- *         door 3 (t-65e80b) — `payloadHash` covers only the child-authored payload, so `status` and
- *           `resolution` can be edited straight into the record's JSON and `readApprovalRequest` accepts
- *           it, with no resolver involved at all (`test/unit/namedActionHumanGateReachability.test.ts`).
+ *         door 3 (t-65e80b) — `status` and `resolution` are edited straight into the record's JSON, with
+ *           no resolver involved at all (`test/unit/namedActionHumanGateReachability.test.ts`). STILL
+ *           OPEN — the write is a plain file write and nothing stops it — but no longer SILENT: the
+ *           decision now carries its own seal (`decisionSeal` below), so `readApprovalRequest` refuses a
+ *           record whose decision bytes changed after they were written. Detecting is not preventing,
+ *           and the seal proves bytes, never an actor; read the seal block before extending that claim.
  *       CLOSING these doors is a capability fix (uid/sandbox isolation) and is deliberately NOT done
  *       here — it stays open as t-5313dc. t-86e59a did the honest half only: since the host cannot know
  *       WHO resolved, it stopped claiming to. `resolvedBy` now names the CHANNEL the resolution arrived
@@ -157,8 +160,10 @@ export interface ApprovalRequest {
   sessionOwnerAtRequest?: string;
   /** VERBATIM child-authored payload — shown to the human as-is, never a coordinator summary. */
   payload: ApprovalPayload;
-  /** SHA-256 over the canonicalized child-authored fields — tamper-evident receipt. The host-side
-   *  resolver re-validates this on load so a mutated file is rejected, never silently honored. */
+  /** SHA-256 over the canonicalized child-authored fields — the CREATION receipt. Covers the payload
+   *  and nothing else: it is computed once here, copied into the `requested` witness line, and carried
+   *  unchanged across every later write, which is what keeps that ledger line checkable. The DECISION
+   *  is sealed separately by `decisionSeal` (t-65e80b) — this field never covered it. */
   payloadHash: string;
   /** ISO timestamp the Bridge witnessed the request. */
   createdAt: string;
@@ -170,6 +175,12 @@ export interface ApprovalRequest {
   resolution?: ApprovalResolution;
   /** Set when `status === "cancelled"` (t-ae89d1). Absent on pre-cancel records. */
   cancellation?: ApprovalCancellation;
+  /** t-65e80b — seal format of `decisionSeal`. Absent on records written before the seal existed. */
+  decisionSealVersion?: number;
+  /** t-65e80b — SHA-256 over the DECISION fields (`status` + `resolution` + `cancellation`), bound to
+   *  the record's creation identity, recomputed at every write. See the seal block below for what it
+   *  proves and — at least as important — what it does not. */
+  decisionSeal?: string;
 }
 
 /** Witness-log event — one JSON line per append. */
@@ -207,6 +218,96 @@ export function payloadHashMatches(record: ApprovalRequest): boolean {
   return computePayloadHash(record.payload) === record.payloadHash;
 }
 
+/**
+ * t-65e80b — the DECISION seal.
+ *
+ * MEASURED FIRST, because the answer decides the shape of the fix. `payloadHash` covers only the four
+ * child-authored fields BY DESIGN, not by oversight: it is a CREATION receipt. It is computed once in
+ * `buildApprovalRequest`, copied verbatim into the `requested` line of the witness ledger, and carried
+ * unchanged through every later write — which is exactly what keeps that ledger line checkable against
+ * the record afterwards. Widening `canonicalizePayload` to swallow `status`/`resolution` would break
+ * both halves: every legitimate resolution would invalidate the stored hash unless it were recomputed,
+ * and a recomputed hash is no longer a receipt of anything that happened at creation.
+ *
+ * So the decision needs its OWN seal, written at the moment the decision is written. Two seals, two
+ * questions: `payloadHash` answers "is this still what the child asked?", `decisionSeal` answers "is
+ * this still the decision that was recorded?".
+ *
+ * WHAT THIS PROVES, exactly: the decision bytes on disk are the ones a writer produced through
+ * `writeApprovalRequest`, and nothing has edited them since.
+ *
+ * WHAT IT DOES NOT PROVE — and must never be written as if it did; t-86e59a removed one such claim
+ * from this file already:
+ *   - not WHO wrote them. The seal is unkeyed and this module is readable by the same uid that writes
+ *     the file, so anyone able to run this code can produce a valid seal over any decision they like.
+ *     DETECTING an edit is not PREVENTING a resolution; closing the door is a capability fix and stays
+ *     t-5313dc. Door 3 in invariant (3) above is still open — it is now noisy, not shut.
+ *   - not that a human decided. No path to this record observes a person.
+ *   - not that an unsealed record was tampered with. A record carrying neither seal field predates
+ *     this change and is read exactly as it always was — accusing it would be accusing legitimate
+ *     history.
+ *
+ * That last rule is also this seal's own DOWNGRADE limit, stated rather than hidden, and measured by a
+ * test: a rewrite that drops BOTH seal fields reads as a pre-seal record. Binding the seal era to the
+ * witness ledger (a second file the forger would then have to edit too) is t-f85a02.
+ */
+export const DECISION_SEAL_VERSION = 1;
+
+/**
+ * `unsealed` — no seal fields at all: written before this change. Read as-is, never accused.
+ * `intact`   — the seal matches the decision bytes it covers.
+ * `broken`   — seal missing on a sealed-era record, mismatched, or of a version this build cannot
+ *              check. An unrecognized version counts as broken on purpose: reading it as "legacy"
+ *              would hand a forger a one-field bypass around the whole seal.
+ */
+export type DecisionSealState = "unsealed" | "intact" | "broken";
+
+/** Canonicalized JSON for the decision seal — stable key order, `null` for every absent optional. */
+function canonicalizeDecision(record: ApprovalRequest): string {
+  const r = record.resolution;
+  const c = record.cancellation;
+  return JSON.stringify({
+    v: DECISION_SEAL_VERSION,
+    // Bound to the record's creation identity so a valid seal cannot be lifted off one record and
+    // pasted onto another: id + createdAt + requester + payloadHash pin it to this request.
+    id: record.id,
+    createdAt: record.createdAt,
+    requester: record.requester,
+    payloadHash: record.payloadHash,
+    status: record.status,
+    resolution: r
+      ? {
+          decision: r.decision,
+          resolvedAt: r.resolvedAt,
+          resolvedBy: r.resolvedBy ?? null,
+          injectedText: r.injectedText,
+          writeInputReceipt: r.writeInputReceipt ?? null,
+          note: r.note ?? null,
+        }
+      : null,
+    cancellation: c ? { cancelledAt: c.cancelledAt, cancelledBy: c.cancelledBy, reason: c.reason } : null,
+  });
+}
+
+/** SHA-256 of the canonicalized decision fields — recomputed at every write, checked on every read. */
+export function computeDecisionSeal(record: ApprovalRequest): string {
+  return crypto.createHash("sha256").update(canonicalizeDecision(record)).digest("hex");
+}
+
+/** Stamps the seal era and seals the record's CURRENT decision. Idempotent — the seal is not self-covering. */
+export function sealDecision(record: ApprovalRequest): ApprovalRequest {
+  const stamped: ApprovalRequest = { ...record, decisionSealVersion: DECISION_SEAL_VERSION };
+  return { ...stamped, decisionSeal: computeDecisionSeal(stamped) };
+}
+
+/** Pure predicate — the readers that must NOT throw (Control's pending list) use this directly. */
+export function decisionSealState(record: ApprovalRequest): DecisionSealState {
+  const { decisionSealVersion: version, decisionSeal: seal } = record;
+  if (version === undefined && seal === undefined) return "unsealed";
+  if (version !== DECISION_SEAL_VERSION || typeof seal !== "string") return "broken";
+  return seal === computeDecisionSeal(record) ? "intact" : "broken";
+}
+
 function normalizeChildField(value: string | undefined, field: string): string {
   const trimmed = (value ?? "").trim();
   if (trimmed.length === 0) throw new Error(`request_human_approval requires a non-empty ${field}`);
@@ -231,7 +332,10 @@ export function buildApprovalRequest(input: {
     exactPrompt: normalizeChildField(input.exactPrompt, "exact_prompt"),
   };
   const createdAt = input.createdAt ?? new Date().toISOString();
-  return {
+  // Sealed here too, not only at the write door, so the in-memory record the Bridge tool answers with
+  // is byte-identical to what lands on disk. `sealDecision` is idempotent, so the write reseal is a
+  // no-op over this one.
+  return sealDecision({
     id: input.id ?? newApprovalRequestId(),
     requester: input.requester,
     requesterKind: "agent",
@@ -241,14 +345,25 @@ export function buildApprovalRequest(input: {
     payloadHash: computePayloadHash(payload),
     createdAt,
     status: "pending",
-  };
+  });
 }
 
-/** Writes the request JSON under `.tachyon/approvals/<id>.json` and returns the absolute path. */
+/**
+ * Writes the request JSON under `.tachyon/approvals/<id>.json` and returns the absolute path.
+ *
+ * The seal is (re)computed HERE because this is the single write door every decision goes through —
+ * `resolveApproval`, `cancelOwnApprovalRequest` and the request tool all land in this function. Sealing
+ * at each of those call sites instead would mean a future fourth writer silently produces an unsealed
+ * (or stale-sealed) record; sealing here makes that impossible by construction rather than by comment.
+ * "Who else can reach this?" is the habit `docs/project-guidance.md` names, applied to the seal itself.
+ *
+ * The seal covers the bytes THIS call writes, which is the only thing it is allowed to claim. It says
+ * nothing about who called — see the seal block above.
+ */
 export function writeApprovalRequest(workspaceRoot: string, request: ApprovalRequest): string {
   const file = approvalRequestPath(workspaceRoot, request.id);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, `${JSON.stringify(request, null, 2)}\n`, "utf8");
+  fs.writeFileSync(file, `${JSON.stringify(sealDecision(request), null, 2)}\n`, "utf8");
   return file;
 }
 
@@ -258,6 +373,25 @@ export function readApprovalRequest(workspaceRoot: string, id: string): Approval
   if (parsed.id !== id) throw new Error(`approval record id mismatch: expected '${id}' but file holds '${parsed.id}'`);
   if (!payloadHashMatches(parsed)) {
     throw new Error(`approval record '${id}' is corrupt — payloadHash no longer matches the child-authored payload`);
+  }
+  // t-65e80b — REFUSE rather than MARK, and the reason is what this reader IS. Everything downstream of
+  // an approval reads the decision through here (`get_approval_status` via `readOwnApprovalRequest`, the
+  // resolver, Control's approval view). A mark would have to be looked at by every one of those callers
+  // to mean anything, and the caller that matters most is an agent deciding whether it may proceed — it
+  // reads `status`/`resolution` and acts. A record that answers "resolved/approved" while carrying a
+  // "possibly forged" flag is honoured by default, which is the defect wearing a label.
+  //
+  // Refusal is governed, not destructive, and that is what makes it affordable here: the bytes stay on
+  // disk untouched, and the surfaces a human uses to LOOK do not go through this throw — Control's
+  // pending list catches this throw and shows the record as tampered, carrying the message with it
+  // (t-d85857 built that path for `payloadHash`), so a broken record becomes MORE visible, not less.
+  // What a refusal costs is the requester's own read of a broken record; a new request is the recovery,
+  // and it needs no privileged repair door (the family t-0cbcbd's rule).
+  if (decisionSealState(parsed) === "broken") {
+    throw new Error(
+      `approval record '${id}' is corrupt — its decision (status/resolution) no longer matches the decision seal ` +
+        `written with it. This proves the bytes changed after they were sealed; it does not say who changed them.`,
+    );
   }
   return parsed;
 }
@@ -413,9 +547,9 @@ export function approvalPinTags(request: ApprovalRequest): string[] {
  * `inject` callback wired to the same `write_input(answering=true)` path the Bridge tool uses. Pure
  * otherwise — no `Bridge`/`AgentManager`/`tmux` imports here — so it stays table-testable.
  *
- * Re-validates the payloadHash on load (tamper-evident), refuses to resolve a non-pending request,
- * composes the FIXED injected text via `composeFixedApprovalResponse`, calls `inject`, then marks the
- * record resolved and appends a `resolved` witness event. An `inject` failure is RECORDED (so the human
+ * Re-validates the payloadHash AND the decision seal on load (tamper-evident), refuses to resolve a
+ * non-pending request, composes the FIXED injected text via `composeFixedApprovalResponse`, calls
+ * `inject`, then marks the record resolved and appends a `resolved` witness event. An `inject` failure is RECORDED (so the human
  * can intervene) but does NOT flip the request back to pending — the human's decision stands.
  */
 export async function resolveApproval(input: {
@@ -474,7 +608,9 @@ export async function resolveApproval(input: {
     ...(receipt ? { writeInputReceipt: receipt } : {}),
     ...(injectError ? { note: `inject error: ${injectError}` } : {}),
   };
-  const updated: ApprovalRequest = { ...request, status: "resolved", resolution };
+  // Sealed before the write so the record this function RETURNS is the record on disk (the write door
+  // seals too, and the seal is idempotent — this is about the returned value, not about the file).
+  const updated: ApprovalRequest = sealDecision({ ...request, status: "resolved", resolution });
   writeApprovalRequest(input.workspaceRoot, updated);
   appendApprovalWitnessEvent(input.workspaceRoot, {
     kind: "resolved",
@@ -544,7 +680,7 @@ export function cancelOwnApprovalRequest(input: {
     cancelledBy: input.requester,
     reason,
   };
-  const updated: ApprovalRequest = { ...request, status: "cancelled", cancellation };
+  const updated: ApprovalRequest = sealDecision({ ...request, status: "cancelled", cancellation });
   writeApprovalRequest(input.workspaceRoot, updated);
   appendApprovalWitnessEvent(input.workspaceRoot, {
     kind: "cancelled",

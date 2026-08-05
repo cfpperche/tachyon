@@ -192,14 +192,18 @@ describe("t-dd27f1 — named actions that produce a human-only effect", () => {
    * surface is not the only way to the effect. This test needs NO daemon and NO socket — it is a plain
    * file write, which every agent already has.
    *
-   * `ApprovalRequest.payloadHash` is documented as a "tamper-evident receipt … so a mutated file is
-   * rejected, never silently honored" (approvalRequest.ts:108-110). It is a SHA-256 over the
-   * child-authored `payload` ONLY (`computePayloadHash`, :149-156). `status` and `resolution` are
-   * outside it. So the sentence is true about the payload and false about the decision — the same
-   * shape as the `t-e73e54` case named in `docs/project-guidance.md`: a comment asserting a property
+   * `ApprovalRequest.payloadHash` was documented as a "tamper-evident receipt … so a mutated file is
+   * rejected, never silently honored" while covering the child-authored `payload` ONLY: `status` and
+   * `resolution` sat outside it, so the sentence was true about the request and false about the
+   * decision — the `t-e73e54` shape named in `docs/project-guidance.md`, a comment asserting a property
    * the check next to it does not cover.
+   *
+   * t-65e80b sealed the decision (`decisionSeal`), and this test says precisely which half changed. The
+   * DOOR is untouched and this test still measures it open: the write succeeds and the forged bytes sit
+   * on disk. What changed is that the production reader no longer hands them over as ground truth. The
+   * seal's own contract and limits live in `approvalDecisionSeal.test.ts`; closing the door is t-5313dc.
    */
-  it("DEFECT: the approval DECISION is outside the tamper-evident hash — a file write resolves it with no action at all", () => {
+  it("the approval DECISION is a plain file write — still writable, no longer honored by the reader", () => {
     const root = makeSocketTemp("tachyon-approval-file-door-");
     roots.push(root);
     const request = buildApprovalRequest({
@@ -226,18 +230,18 @@ describe("t-dd27f1 — named actions that produce a human-only effect", () => {
     };
     fs.writeFileSync(file, `${JSON.stringify(onDisk, null, 2)}\n`, "utf8");
 
-    // DEFECT: the PRODUCTION reader — the one `get_approval_status` and every downstream consumer of
-    // an approval goes through — accepts it, because the hash it re-validates never covered the
-    // decision. The `payloadHash` still matches: the payload was not touched.
-    const tampered = readApprovalRequest(root, "a-ccc333");
-    expect(tampered.status).toBe("resolved");
-    expect(tampered.resolution?.decision).toBe("approved");
-    // t-86e59a stopped the PRODUCT from asserting an actor, and this door shows the limit of that: it
-    // never calls the resolver, so nothing constrains what it writes. The forged value here is the
-    // retired `"vscode"` on purpose — a value no code path produces any more, and one this reader still
-    // hands to a human as ground truth. Only the capability fix (t-5313dc) reaches this; honesty in the
-    // writer cannot bind a writer that isn't ours.
-    expect(tampered.resolution?.resolvedBy).toBe("vscode");
+    // The door is OPEN and stays open: nothing refused the write, and the forged decision — including
+    // the retired `"vscode"` actor string that no code path produces any more — is on disk right now.
+    const forged = JSON.parse(fs.readFileSync(file, "utf8")) as { status: string; resolution?: { resolvedBy?: string } };
+    expect(forged.status).toBe("resolved");
+    expect(forged.resolution?.resolvedBy).toBe("vscode");
+
+    // t-65e80b: the PRODUCTION reader — the one `get_approval_status` and every downstream consumer of
+    // an approval goes through — now refuses it. `payloadHash` still matches (the payload was never
+    // touched); the DECISION seal is what fails, and it fails because these bytes are not the bytes any
+    // writer sealed. It proves the edit, not the editor: honesty in the writer cannot bind a writer that
+    // isn't ours, so this remains a detection, and only the capability fix (t-5313dc) shuts the door.
+    expect(() => readApprovalRequest(root, "a-ccc333")).toThrow(/decision seal/);
   });
 });
 
