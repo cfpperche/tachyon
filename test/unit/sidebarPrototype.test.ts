@@ -162,7 +162,7 @@ describe("SidebarPrototypeProvider", () => {
     expect(fleetMsgs[0].fleets[0]?.folder?.name).toBe("Demo");
   });
 
-  it("sets a passive native view badge to the total open attention count", async () => {
+  it("never puts a badge on the Activity Bar icon, however many attentions are open", async () => {
     const notices: NoticeVM[] = Array.from({ length: 7 }, (_, index) => ({
       id: `notice-${index}`,
       message: `Attention ${index}`,
@@ -181,7 +181,11 @@ describe("SidebarPrototypeProvider", () => {
     const { view } = fakeView();
     provider.resolveWebviewView(view);
     await flushPromises();
-    expect(view.badge).toEqual({ value: 7, tooltip: "7 open Tachyon attention items" });
+    // Seven unread attentions, and the workbench icon stays clean. Removed by the maintainer's
+    // decision on 2026-08-05: a count on the Activity Bar is a permanent interruption for something
+    // that is not urgent. The number itself is not lost — the sidebar's Attentions tab still shows
+    // it, on a surface the human opens on purpose.
+    expect(view.badge).toBeUndefined();
   });
 
   it("pushes an initial fleet even if the webview ready message is lost", async () => {

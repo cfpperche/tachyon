@@ -260,13 +260,11 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     this.lastFleets = fleets;
     const selected = this.resolveSelection(fleets);
     this.applyNativeTitle(view);
-    const openAttention = fleets.reduce(
-      (total, fleet) => total + (fleet.notices ?? []).filter((notice) => !notice.read).length,
-      0,
-    );
-    view.badge = openAttention > 0
-      ? { value: openAttention, tooltip: `${openAttention} open Tachyon attention item${openAttention === 1 ? "" : "s"}` }
-      : undefined;
+    // The Activity Bar icon carries NO badge. Removed by the maintainer's decision on 2026-08-05:
+    // an unread count on the workbench icon is a permanent interruption for something that is not
+    // urgent. The count is not lost — the sidebar's own Attentions tab still shows it (App.tsx),
+    // which is a surface the human opens on purpose instead of one that shouts from the rail.
+    view.badge = undefined;
     // spec 242 — prefs travel WITH the fleet so the first render is already in the saved order (D8 no flicker).
     // spec 278 — built via the shared envelope so a `fleet`-shape drift breaks the build, not the preview harness.
     // SDD 479 phase 5 — the personal layer is applied on the way OUT, not stored: `lastFleets` stays
