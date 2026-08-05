@@ -166,6 +166,91 @@ describe("ControlModeClient", () => {
     await expect(b).rejects.toThrow("no server running");
   });
 
+  /**
+   * t-9610e8 — measured on tmux 3.6: ONE written line carrying N `;`-separated commands answers
+   * with N `%begin`/`%end` frames, one per command, each with its own command number. The channel
+   * queues ONE pending per line, so every command after the first left a surplus frame behind.
+   */
+  it("t-9610e8 — a multi-command line answers with one frame PER COMMAND; stdout concatenates", async () => {
+    const { client, procs } = makeClient();
+    await client.start();
+    guard(procs[0]);
+    await tick();
+    ackSubs(procs[0]);
+
+    const exec = client.makeExecutor();
+    const reply = exec(["-L", "tachyon", "start-server", ";", "display-message", "-p", "hi"]);
+    await tick();
+    expect(procs[0].written.at(-1)).toBe("start-server ; display-message -p hi");
+    procs[0].stdout.write("%begin 100 4 0\n%end 100 4 0\n"); // start-server: no output
+    await tick();
+    procs[0].stdout.write("%begin 100 5 0\nhi\n%end 100 5 0\n"); // display-message
+    // The subprocess path returns the concatenation of both commands' stdout; so does the channel.
+    await expect(reply).resolves.toEqual({ stdout: "hi\n", stderr: "" });
+  });
+
+  /**
+   * t-9610e8 / t-72d4d3 — the surplus frame is the desync. It arrives while a LATER command is
+   * already queued and, under one-frame-per-line accounting, completes it with a foreign body: a
+   * successful `%end` from `new-session` makes a missing session answer like a present one, which
+   * is exactly the `agent 'X' is already running` false positive measured on engineService.
+   */
+  it("t-9610e8 — a surplus frame never completes a later command", async () => {
+    const { client, procs } = makeClient();
+    await client.start();
+    guard(procs[0]);
+    await tick();
+    ackSubs(procs[0]);
+
+    const exec = client.makeExecutor();
+    const create = exec(["-L", "tachyon", "start-server", ";", "new-session", "-d", "-s", "agent"]);
+    await tick();
+    procs[0].stdout.write("%begin 100 4 0\n%end 100 4 0\n"); // start-server
+    await tick();
+
+    // The occupancy probe is queued BEFORE new-session's frame lands.
+    let probeSettled: string | null = null;
+    const probe = exec(["-L", "tachyon", "list-sessions", "-F", "#{session_name}"]).then(
+      (r) => { probeSettled = `ok:${r.stdout}`; },
+      () => { probeSettled = "rejected"; },
+    );
+    await tick();
+    procs[0].stdout.write("%begin 100 5 0\n%end 100 5 0\n"); // new-session — belongs to `create`
+    await tick();
+    expect(probeSettled).toBe(null); // must NOT have been completed by the surplus frame
+
+    procs[0].stdout.write("%begin 100 6 0\nagent\n%end 100 6 0\n"); // the probe's own reply
+    await probe;
+    expect(probeSettled).toBe("ok:agent\n");
+    await expect(create).resolves.toEqual({ stdout: "", stderr: "" });
+  });
+
+  /**
+   * Measured on tmux 3.6: a failing command ABORTS the rest of its line — a 3-command line whose
+   * middle command fails answers with 2 frames and stops. Accounting must close the pending on the
+   * `%error` rather than wait for frames the server will never send.
+   */
+  it("t-9610e8 — %error ends the line early; the next command still gets its own frame", async () => {
+    const { client, procs } = makeClient();
+    await client.start();
+    guard(procs[0]);
+    await tick();
+    ackSubs(procs[0]);
+
+    const exec = client.makeExecutor();
+    const aborted = exec(["-L", "tachyon", "display-message", "-p", "first", ";", "kill-session", "-t", "=nope", ";", "display-message", "-p", "third"]);
+    await tick();
+    procs[0].stdout.write("%begin 100 4 0\nfirst\n%end 100 4 0\n");
+    await tick();
+    procs[0].stdout.write("%begin 100 5 0\ncan't find session: nope\n%error 100 5 0\n");
+    await expect(aborted).rejects.toThrow("can't find session: nope");
+
+    const after = exec(["-L", "tachyon", "display-message", "-p", "after"]);
+    await tick();
+    procs[0].stdout.write("%begin 100 6 0\nafter\n%end 100 6 0\n");
+    await expect(after).resolves.toEqual({ stdout: "after\n", stderr: "" });
+  });
+
   it("t-72d4d3 — has-session never rides the control channel (occupancy probe is fail-closed)", async () => {
     const { client, procs, fallbackCalls } = makeClient();
     await client.start();
