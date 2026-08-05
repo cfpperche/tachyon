@@ -701,5 +701,10 @@
   "Save": "Salvar",
   "This draft has unsaved changes. What would you like to do?": "Este rascunho tem alterações não salvas. O que você deseja fazer?",
   "This window cannot decide schedule proposals.": "Esta janela não pode decidir propostas de agendamento.",
-  "could not return task claim(s) held by unavailable agent '{0}' to triage: {1}": "não foi possível devolver à triagem os claims de task do agente indisponível '{0}': {1}"
+  "could not return task claim(s) held by unavailable agent '{0}' to triage: {1}": "não foi possível devolver à triagem os claims de task do agente indisponível '{0}': {1}",
+  "collected {0} temporary agent(s) with no session and no worktree claim (same end-of-life kill would have taken): {1}": "coletado(s) {0} agente(s) temporary sem sessão e sem claim de worktree (o mesmo fim de vida que kill teria feito): {1}",
+  "{0} stopped temporary agent(s) remain listed with no tmux session: {1}. Resume keeps them; dismiss removes the ledger row and any claimed worktree.": "{0} agente(s) temporary parados ainda listados sem sessão tmux: {1}. Resume os mantém; dismiss remove a linha do ledger e qualquer worktree reivindicado.",
+  "Dismiss all {0}": "Dispensar todos os {0}",
+  "dismissed {0} stopped temporary agent(s)": "dispensado(s) {0} agente(s) temporary parados",
+  "dismissed {0} stopped temporary agent(s); {1} error(s): {2}": "dispensado(s) {0} agente(s) temporary parados; {1} erro(s): {2}"
 }

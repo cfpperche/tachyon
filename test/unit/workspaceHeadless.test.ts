@@ -1650,7 +1650,15 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("compacts stale session-owner rows on start while keeping live, ledger, and declared agents", async () => {
     const { ws, sessions, sessionEnv } = await makeWorkspace();
-    ws.ledger.record("resumable", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, updatedAt: "t", instance: { lifetime: "temporary", resumePolicy: "restartable" } });
+    // clean-exited Temporary stays listed (postmortem/resume) and is NOT kill-parity auto-collected,
+    // so the session-owner row still has a durable ledger anchor after start.
+    ws.ledger.record("resumable", {
+      def: { cmd: "sh", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "t",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+      lifecycle: { state: "clean-exited", exitedAt: "2026-08-05T00:00:00.000Z" },
+    });
     // t-fab832 — the post-cut contract: a live agent session must ATTEST that this build created it,
     // and the proof lives on the session rather than in the ledger. This fixture adds the session
     // directly, so it seeds the attestation the way a real `new-session` would. The case this test
@@ -1729,8 +1737,10 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
   it("holds the reload summary until an absent parent starts, then delivers it once", async () => {
     const { ws, sent } = await makeWorkspace();
+    // fork survives kill-parity auto-collect (explicit Dismiss only) so a later spawn can rehydrate
+    // the Temporary def without needing a worktree ensure on a non-git test root.
     ws.ledger.record("coordinator", {
-      def: { cmd: "pi", kind: "agent" },
+      def: { cmd: "pi", kind: "agent", fork: true },
       cwd: ws.workspaceRoot,
       updatedAt: "before-reload",
       instance: { lifetime: "temporary", resumePolicy: "restartable" },
@@ -1825,6 +1835,86 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     await ws.start();
 
     expect(ws.taskStore.get("t-fa11ed")).toMatchObject({ status: "active", assignee: "unknownstate" });
+    ws.dispose();
+  });
+
+  it("t-01a425: auto-collects kill-parity Temporary residue after crash (no session, no worktree)", async () => {
+    const { ws, host } = await makeWorkspace();
+    ws.ledger.record("ghost", {
+      def: { cmd: "pi", kind: "agent", parent: "coord" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-crash",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+      resume: { runtime: "pi", sessionId: "ghost-sess" },
+    });
+    expect(ws.ledger.get("ghost")).toBeDefined();
+
+    await ws.start();
+
+    expect(ws.ledger.get("ghost")).toBeUndefined();
+    expect(host.notices.some((n) => n.message.includes("collected") && n.message.includes("'ghost'"))).toBe(true);
+    const listed = await ws.manager.list();
+    expect(listed.some((a) => a.name === "ghost")).toBe(false);
+    ws.dispose();
+  });
+
+  it("t-01a425: keeps a worktree-owned stopped Temporary listed (legitimate resume) and offers bulk dismiss", async () => {
+    const { ws, host } = await makeWorkspace();
+    // Real git root so removeAgentWorktree can prove absence (probeAbsence needs `git worktree list`).
+    execFileSync("git", ["init"], { cwd: ws.workspaceRoot, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "t@t.dev"], { cwd: ws.workspaceRoot, stdio: "ignore" });
+    execFileSync("git", ["config", "user.name", "t"], { cwd: ws.workspaceRoot, stdio: "ignore" });
+    fs.writeFileSync(path.join(ws.workspaceRoot, "README"), "x", "utf8");
+    execFileSync("git", ["add", "README"], { cwd: ws.workspaceRoot, stdio: "ignore" });
+    execFileSync("git", ["commit", "-m", "init"], { cwd: ws.workspaceRoot, stdio: "ignore" });
+    // Path is absent on purpose: the human-review class is the ledger CLAIM, not disk presence.
+    // removeAgentWorktree treats an already-absent checkout as success (t-05dff5), then dismiss finishes the row.
+    const wtPath = path.join(ws.workspaceRoot, ".cache", "wt-paused-missing");
+    ws.ledger.record("paused", {
+      def: { cmd: "pi", kind: "agent" },
+      cwd: wtPath,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+      resume: { runtime: "pi", sessionId: "paused-sess" },
+      worktree: {
+        path: wtPath,
+        branch: "tachyon/tmp.paused",
+        baseRef: "main",
+        createdAt: "before-reload",
+        tachyonCreatedBranch: true,
+      },
+    });
+
+    await ws.start();
+
+    // Legitimate resumable stop must survive auto-collect.
+    expect(ws.ledger.get("paused")).toBeDefined();
+    const listed = await ws.manager.list();
+    expect(listed.some((a) => a.name === "paused" && !a.running)).toBe(true);
+
+    const bulk = host.notices.find((n) => n.message.includes("stopped temporary") && n.message.includes("'paused'"));
+    expect(bulk).toBeDefined();
+    expect(bulk?.actions.some((a) => a.label.includes("Dismiss all"))).toBe(true);
+
+    // Human bulk action removes the row through the production dismiss door.
+    await bulk!.actions.find((a) => a.label.includes("Dismiss all"))!.run();
+    expect(ws.ledger.get("paused")).toBeUndefined();
+    ws.dispose();
+  });
+
+  it("t-01a425: does not auto-collect Temporary residue when the tmux inventory is ambiguous", async () => {
+    const { ws } = await makeWorkspace();
+    ws.ledger.record("maybe", {
+      def: { cmd: "pi", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    vi.spyOn(ws.manager, "runningAgentsStrict").mockResolvedValueOnce(null);
+
+    await ws.start();
+
+    expect(ws.ledger.get("maybe")).toBeDefined();
     ws.dispose();
   });
 
