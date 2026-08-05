@@ -57,27 +57,22 @@ function assertValidName(name: string): void {
   }
 }
 
-export function addAgent(
-  text: string | undefined,
-  name: string,
-  cmd: string,
-  kind?: "agent" | "terminal",
-  instructions?: string,
-): EditResult {
-  assertValidName(name);
-  if (!cmd || cmd.trim().length === 0) throw new Error("cmd must be a non-empty command");
-  const entry: Record<string, unknown> = { cmd };
-  if (kind) entry.kind = kind;
-  if (instructions && instructions.trim().length > 0) entry.instructions = instructions.trim();
-  if (text === undefined || text.trim().length === 0) {
-    // No tachyon.yml yet — create a minimal one.
-    return { text: stringify({ agents: { [name]: entry } }), warnings: [] };
-  }
-  const doc = load(text);
-  if (sectionOf(doc, name)) throw new Error(`agent '${name}' already exists`); // spec 215 — across BOTH blocks (one namespace)
-  doc.setIn(["agents", name], doc.createNode(entry));
-  return { text: String(doc), warnings: [] };
-}
+/*
+ * `t-c1ef82` — `addAgent` was REMOVED here, not simplified.
+ *
+ * It wrote `agents.<name>: { cmd, kind?, instructions? }` — always into `agents:`, whatever the kind
+ * said. The legacy agent format that shape belonged to was retired on 2026-07-25 (`b4930e2b`), and
+ * `agentProfileConfigLoader` now refuses every `agents:` entry without a `profile:` pointer. So this
+ * was not dead code: its one production caller (promotion, `extensionOperationService`) still ran, and
+ * writing a terminal through it produced a `tachyon.yml` the product's own reader rejects on the next
+ * load. Measured by composition rather than inspection — see `yamlEditor.test.ts`, which reads every
+ * writer's output back through the production parser.
+ *
+ * `upsertAgent(text, name, entry, undefined, "terminals")` is the replacement, and it is not a new
+ * writer: it is the one `Workspace.studioSubmit` already uses for the terminal tab. It refuses a
+ * duplicate across BOTH blocks, and `sanitizeForSection` strips the AI-only keys a terminal may not
+ * carry — including the `instructions` parameter that had no caller left.
+ */
 
 /**
  * Creates or replaces an agent entry with a full definition (the Agent Studio path).
