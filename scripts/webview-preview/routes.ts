@@ -164,6 +164,13 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 880, h: 700 },
     fixtures: { ...pinPreviewFixtures, edit: pinStudioFixtures.default } as Record<string, Fixture>,
     module: true,
+    // Mirrors PinDetailPanel's bootstrap for the edit fixture so the real shared SketchModal is
+    // exercisable in browser evidence instead of being suppressed by missing asset URLs.
+    globals: {
+      EXCALIDRAW_SCRIPT_URI: "/dist/webview/excalidraw.js",
+      EXCALIDRAW_CSS_URI: "/dist/webview/excalidraw.css",
+      EXCALIDRAW_ASSET_PATH: "/dist/webview/",
+    },
     makeMessage: (vm) => "entity" in (vm as object)
       ? [pinDocumentModeMessage("edit"), ...pinStudioMakeMessage(vm as never)]
       : pinPreviewMessage(vm as never),
