@@ -324,6 +324,66 @@ describe("TaskStore", () => {
     expect(store.next("codex")).toMatchObject({ task: { id: task.id }, attention: [{ code: "missing_sdd_spec" }] });
   });
 
+  it("does not report an agent-authored SDD in a registered isolation worktree as missing", async () => {
+    const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-worktree-"));
+    try {
+      fs.mkdirSync(path.join(isolatedRoot, "docs", "specs", "491-planner-time-axis-over-board"), { recursive: true });
+      fs.writeFileSync(
+        path.join(isolatedRoot, "docs", "specs", "491-planner-time-axis-over-board", "spec.md"),
+        "**Status:** in-progress\n",
+        "utf8",
+      );
+      fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+      fs.writeFileSync(path.join(root, ".tachyon", "managed-worktrees.json"), JSON.stringify({
+        schemaVersion: 1,
+        entries: [{
+          id: "mw-agent-author",
+          kind: "agent",
+          path: isolatedRoot,
+          branch: "tachyon/author",
+          baseRef: "deadbeef",
+          tachyonCreatedBranch: true,
+          agent: "author",
+          createdAt: "2026-08-05T00:00:00.000Z",
+          status: "active",
+        }],
+      }), "utf8");
+
+      const task = await store.create({
+        title: "agent-authored spec",
+        author: "author",
+        artifact_refs: [{ type: "sdd", ref: "491-planner-time-axis-over-board" }],
+      });
+      await store.update(task.id, { status: "triaged" });
+
+      expect(store.getView(task.id)).toMatchObject({
+        derived: { sdd: { ref: "491-planner-time-axis-over-board", status: "in-progress" } },
+      });
+      expect(store.getView(task.id).attention).toBeUndefined();
+      expect(store.next("codex")).toMatchObject({
+        task: { id: task.id },
+        derived: { sdd: { ref: "491-planner-time-axis-over-board", status: "in-progress" } },
+      });
+    } finally {
+      fs.rmSync(isolatedRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("loads the managed-worktree registry once while deriving a next-task batch", async () => {
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    const registryPath = path.join(root, ".tachyon", "managed-worktrees.json");
+    fs.writeFileSync(registryPath, JSON.stringify({ schemaVersion: 1, entries: [] }), "utf8");
+    for (const id of ["t-aaaaaa", "t-bbbbbb"]) {
+      await store.create({ id, title: id, author: "human", artifact_refs: [{ type: "sdd", ref: `${id.slice(2)}-missing` }] });
+      await store.update(id, { status: "triaged" });
+    }
+    store.listRaw();
+    const read = vi.spyOn(fs, "readFileSync");
+
+    expect(store.next("codex")).toMatchObject({ task: { id: "t-aaaaaa" } });
+    expect(read.mock.calls.filter(([file]) => path.resolve(String(file)) === registryPath)).toHaveLength(1);
+  });
+
   it("validates artifact refs and priority/rank/kind bounds", async () => {
     await expect(store.create({ title: "x", author: "human", artifact_refs: [{ type: "url", ref: "https://x" }, { type: "url", ref: "https://x" }] })).rejects.toThrow(/duplicate/);
     await expect(store.create({ title: "x", author: "human", priority: 9 as never })).rejects.toThrow(/priority/);
