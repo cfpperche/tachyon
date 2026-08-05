@@ -2700,6 +2700,7 @@ it("t-28bf8f: a kill refused by a live root process moves nothing, and the retry
     // 1. THE REFUSAL IS RIGHT, and stays right — this change never relaxes it.
     expect(refused.isError).toBe(true);
     expect(refused.content[0]?.text).toContain("still has a live root process");
+    expect(refused.content[0]?.text).toContain("wait for that process to exit, then retry kill_agent('filho')");
     // 2. AND NOTHING MOVED. Each of these was measured as moved-or-stranded in the field repro.
     expect(await listed()).toContain("filho");                                       // list_agents
     expect(ws.ledger.get("filho")?.worktree?.path).toBe(record.path);                // sessions.json
