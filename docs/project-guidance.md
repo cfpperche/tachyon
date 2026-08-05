@@ -16,6 +16,16 @@ is wrong — a stuck agent is a symptom worth reading, not a rule to work around
 
 ## Work
 
+- **A written Task is not an accepted Task.** Before implementing one, check that it still makes
+  sense: that its premise holds, that the files it names still exist, and that the defect was not
+  already fixed. Maintainer's rule, 2026-08-05. A task records what was true when someone wrote it,
+  and this repository moves fast enough that a week-old body can describe code that no longer exists
+  — SDD 485 phase E deleted whole hosts, and `t-e2c8a2` sat three releases in `triaged` after main
+  had already fixed it. Measuring the CAUSE of a defect is a different check and does not cover this
+  one: you can measure very well and still be building something nobody needs.
+  Verify at the point of use, never by text search — on 2026-08-05 a grep for `surface:` reported two
+  call sites as already done when both matches were unrelated parameters of the same name.
+  If the premise is gone, say so and stop; that closes the task honestly and is a real outcome.
 - Work from the checkout root. Run `npm ci` only when dependencies are absent.
 - Bugs and improvements are Tasks, not prose-only findings. Keep evidence and detailed reasoning in
   the task journal or its spec; `docs/` contains durable project documentation, not loose work
