@@ -18,6 +18,7 @@ import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.
 import { SoulError } from "../agents/soul.js";
 import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
 import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "../config/agentProfileRefusal.js";
+import { redactSecrets } from "../bridge/redact.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
 import {
   projectSoulProfileStatus,
@@ -422,16 +423,35 @@ async function runAgentProfileAction(
  * `kind: "refused"` values above. What reaches this function is a broken transaction, and one
  * neutral sentence is the correct thing to say about a stack, a path or an EIO.
  *
- * `_error` is kept, deliberately unread, so every call site still states at the throw what went
- * wrong for whoever reads the source or a future log sink — the panel just never repeats it.
+ * VS Code's session log is the diagnostic sink: the host routes extension console errors into its
+ * durable log tree (the concrete file varies between local and remote hosts). The panel never
+ * repeats the exception.
  */
-function postAgentProfileError(ctx: StudioDomainContext, agent: string, _error: unknown): void {
+function postAgentProfileError(ctx: StudioDomainContext, agent: string, error: unknown): void {
+  console.error(`[tachyon] Agent Studio lifecycle failed for '${agent}': ${lifecycleErrorDetail(error)}`);
   ctx.post(agentProfileErrorMessage(
     agent,
     "agent-profile/lifecycle-failed",
     "The profile lifecycle action could not be completed.",
     false,
   ));
+}
+
+const MAX_LIFECYCLE_ERROR_DETAIL = 2_000;
+const ENV_ASSIGNMENT_RE = /\b([A-Za-z_][A-Za-z0-9_]*)=(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;]+)/g;
+
+/** Keep the cause and stack useful without retaining environment values or recognized auth syntax. */
+function lifecycleErrorDetail(error: unknown): string {
+  let detail: string;
+  try {
+    detail = error instanceof Error ? error.stack ?? `${error.name}: ${error.message}` : String(error);
+  } catch {
+    detail = "[unprintable error]";
+  }
+  const redacted = redactSecrets(detail).replace(ENV_ASSIGNMENT_RE, "$1=[redacted]");
+  return redacted.length <= MAX_LIFECYCLE_ERROR_DETAIL
+    ? redacted
+    : `${redacted.slice(0, MAX_LIFECYCLE_ERROR_DETAIL - 1)}…`;
 }
 
 async function browse(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext): Promise<void> {
