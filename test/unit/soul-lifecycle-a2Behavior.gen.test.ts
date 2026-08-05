@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("agent soul lifecycle composition closure", () => {
@@ -35,6 +36,10 @@ describe("agent soul lifecycle composition closure", () => {
       soul: true,
       role: true,
       persistentInstructions: true,
+      instructions: {
+        source: "legacy-definition",
+        sha256: crypto.createHash("sha256").update("Persistent specialization.").digest("hex"),
+      },
       bridgeGuidance: true,
       task: { kind: "contract", completion: "done_when" },
     });
@@ -87,5 +92,35 @@ describe("agent soul lifecycle composition closure", () => {
       bridgeGuidance: false,
       task: { kind: "contract", completion: "deliverable" },
     });
+  });
+
+  it("binds canonical instructions to their formation authority and composed bytes", async () => {
+    const { composeAgentPrompt } = await import("../../src/agents/promptLayers.js");
+    const edited = "Edited through the governed formation lane.";
+    const authority = {
+      source: "formation" as const,
+      agentId: "123e4567-e89b-42d3-a456-426614174000",
+      workspaceId: "workspace-490",
+      formationGeneration: 7,
+      formationGenerationSha256: "a".repeat(64),
+    };
+
+    const canonical = composeAgentPrompt({
+      instructions: edited,
+      instructionsFormation: authority,
+      bridgeGuidance: false,
+    });
+    expect(canonical.manifest.instructions).toEqual({
+      ...authority,
+      sha256: crypto.createHash("sha256").update(edited).digest("hex"),
+    });
+
+    const unrelatedLegacy = composeAgentPrompt({
+      instructions: "Unrelated legacy definition instructions.",
+      bridgeGuidance: false,
+    });
+    expect(unrelatedLegacy.manifest.instructions).toMatchObject({ source: "legacy-definition" });
+    expect(unrelatedLegacy.manifest.instructions).not.toMatchObject(authority);
+    expect(unrelatedLegacy.manifest.instructions?.sha256).not.toBe(canonical.manifest.instructions?.sha256);
   });
 });

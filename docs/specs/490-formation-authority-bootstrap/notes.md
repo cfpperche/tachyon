@@ -99,6 +99,16 @@ against that digest.
 `validateVectorTransition` would permit initial heads for them at bootstrap. Adoption does not use
 that room: both lanes have their own promotion publishers, which presuppose an active vector, and
 handing generation 1 a lane those publishers never authored would be a second way to author them.
+### Fatia C (2026-08-05, agent f490c) — combined gate, not instructions alone
+
+The suppression receipt covers every enabled human lane. Measuring only `AGENTS.md`/`CLAUDE.md`
+and calling that `verified` would unlock a memory lane receipt without a verified memory disable
+(Codex). Combined evidence in `nativeLaneSuppression.ts` is `verified` only when instructions is
+verified **and** memory is verified or unsupported. Codex instructions verified + memory declared
+⇒ combined `declared`. Grok memory verified + instructions no control ⇒ combined `declared`.
+Only Claude is combined `verified` on this measurement.
+
+Evidence write-up: `docs/research/native-lane-suppression-sdd490-fatia-c.md`.
 
 ## Deviations
 
@@ -123,10 +133,23 @@ in-process, and must NOT add an `ExtensionCommandV1` action, a `vscode.commands`
 Recorded above under design decisions. The alternative considered and dropped was a JSON-lines
 adoption audit under the host root: a new format, a new integrity story, and a second place to look
 for "who adopted this", beside a table that already records exactly that for every other mutation.
+### Fatia C — did not invent verified for Grok rules or Codex memory
+
+Plan risk said: if a runtime cannot disable native rules/instructions, honest result is `declared`.
+Grok has no disable control (measured). Codex `project_doc_max_bytes=0` works for AGENTS.md but
+memory disable remains declared — combined stays declared rather than a partial green that would
+unblock dual memory delivery.
 
 ## Tradeoffs
 
 _Alternatives weighed mid-build. The chosen path + what was given up + why it was worth it._
+
+### Fatia C — Claude `--setting-sources user` vs `--bare`
+
+`--bare` also skips CLAUDE.md but refuses OAuth (`Not logged in` with a working credential
+symlink). Canonical Claude already launches with `--setting-sources user`; behavioral arms show
+that flag alone suppresses **project** CLAUDE.md while private-home user CLAUDE.md still loads
+(Tachyon owns that home). Chose the production argv as the verified control.
 
 ## Open questions
 
@@ -146,3 +169,8 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
    "two windows on one root" and "reopen/restart" cases named in the criterion are not covered by
    this slice's tests — the store's CAS is what makes them safe, and asserting it through two live
    `Workspace` instances needs a harness Fatia A did not build.
+- When Codex memory disable is behaviorally verified, re-open combined gate and decide whether
+  canonical launches must pin `project_doc_max_bytes=0` (or equivalent) so the control is not only
+  measured but applied.
+- Grok needs a real project-rules disable from the runtime vendor, or formation on Grok stays
+  refuse-high for soul/instructions while ambient inspectors require file absence.

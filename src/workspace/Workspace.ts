@@ -153,6 +153,7 @@ import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
 import { contextRenewalGesture, type ContextRenewalMode } from "../anchor/compaction.js";
 import { describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { isNativeSuppressionConfirmed } from "../runtime/nativeLaneSuppression.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { TemporaryBackstopMonitor, idleNotifyThresholdMs } from "./TemporaryBackstopMonitor.js";
 import {
@@ -3031,11 +3032,11 @@ export class Workspace {
           const def = ws.config?.agents?.[agentName];
           return def ? adapterFor(asAgent(def)?.cmd ?? "")?.runtime : undefined;
         },
-        // Suppression is confirmed per runtime by the adapter that actually disables native delivery.
-        // Nothing is measured for any adapter yet, so this is `false` everywhere and the lane refuses
-        // out loud instead of attesting a suppression that never happened. Each runtime turns true
-        // only once its native-lane disablement is measured — the same bar parity.md holds elsewhere.
-        nativeSuppressionConfirmed: () => false,
+        // Suppression is confirmed per runtime from the measured registry (SDD 490 Fatia C).
+        // `isNativeSuppressionConfirmed` returns true only when instructions+memory (when native)
+        // are both behaviorally verified for that adapter — never from hope or a hard-coded true.
+        // See src/runtime/nativeLaneSuppression.ts and docs/research/native-lane-suppression-sdd490-fatia-c.md.
+        nativeSuppressionConfirmed: (adapter) => isNativeSuppressionConfirmed(adapter),
         runtimeTrustClassOf: (adapter) => adapter,
       });
       // SDD 490 Fatia A — moment zero's host, beside the read-only one and pointed at the same
