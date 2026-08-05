@@ -847,9 +847,12 @@ export class Workspace {
       // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
       // SecretStorage, and AgentManager is constructed before that. A getter keeps the wiring honest
       // instead of capturing an undefined that would never fill in.
-      formation: { resolveSoul: (input) => this.formationLifecycle
-        ? this.formationLifecycle.resolveSoul(input)
-        : Promise.resolve({ state: "absent" as const }) },
+      formation: {
+        suppressionRequired: (agentName) => this.formationLifecycle?.suppressionRequired(agentName) ?? false,
+        resolveSoul: (input) => this.formationLifecycle
+          ? this.formationLifecycle.resolveSoul(input)
+          : Promise.resolve({ state: "absent" as const }),
+      },
       onFormationSoulRefused: (agent, reason) => {
         this.host.notify(this.t("agent '{0}': profile Soul was not applied — {1}", agent, reason), "warn");
       },

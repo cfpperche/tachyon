@@ -41,7 +41,13 @@ export type FormationSoulOutcome =
  * side would know.
  */
 export interface FormationLifecyclePort {
-  resolveSoul(input: { agentName: string; operationId: string }): Promise<FormationSoulOutcome>;
+  suppressionRequired(agentName: string): boolean;
+  resolveSoul(input: {
+    agentName: string;
+    operationId: string;
+    /** Set only by the launch adapter after it added the measured suppression controls. */
+    nativeSuppressionApplied?: boolean;
+  }): Promise<FormationSoulOutcome>;
 }
 
 /**

@@ -100,7 +100,13 @@ export function createFormationLifecycleHost(input: FormationLifecycleHostInput)
   });
 
   return {
-    async resolveSoul({ agentName, operationId }): Promise<FormationSoulOutcome> {
+    suppressionRequired(agentName): boolean {
+      const agentId = input.agentIdOf(agentName);
+      if (!agentId) return false;
+      const vector = store.currentVector(agentId);
+      return !!vector && Object.values(vector.profile.lanes).some((lane) => lane.mode === "profile");
+    },
+    async resolveSoul({ agentName, operationId, nativeSuppressionApplied }): Promise<FormationSoulOutcome> {
       const agentId = input.agentIdOf(agentName);
       if (!agentId) return { state: "absent" };
       const vector = store.currentVector(agentId);
@@ -116,6 +122,9 @@ export function createFormationLifecycleHost(input: FormationLifecycleHostInput)
       }
       if (!input.nativeSuppressionConfirmed(adapter)) {
         return { state: "refused", reason: `native lane delivery is not confirmed suppressed for runtime '${adapter}'` };
+      }
+      if (!nativeSuppressionApplied) {
+        return { state: "refused", reason: `native lane delivery was not suppressed for this '${adapter}' launch` };
       }
 
       const runtimeTrustClass = input.runtimeTrustClassOf(adapter);
