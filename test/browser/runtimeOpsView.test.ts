@@ -75,13 +75,26 @@ const RICH_INSPECTION = {
     {
       event: "SessionStart",
       command: "node session-owner-record.cjs",
+      origin: "tachyon" as const,
       purpose: "records which agent owns this session",
       writes: ".tachyon/activity/session-owners.jsonl",
     },
     {
+      // t-141f61 — ours, undescribed, long path: the row that used to claim foreign authorship, and
+      // the one whose origin line must wrap rather than push the panel sideways at 340.
+      event: "PreToolUse",
+      command: "bash '/home/goat/.cache/tachyon/worktrees/example/project/.tachyon/plugins/secrets-guard/claude/guard.sh'",
+      origin: "tachyon" as const,
+    },
+    {
       event: "PreToolUse",
       command: "bash /home/goat/my-own-hook-with-a-very-long-path/tools/guard.sh --strict",
+      origin: "external" as const,
     },
+  ],
+  // t-141f61 — a long single-token-free reason, so the withheld row has something real to overflow with.
+  gatesWithheld: [
+    { plugin: "secrets-guard", reason: "installs no grok settings-hook — its manifest declares no grok block" },
   ],
   settings: [
     { key: "permissions", value: "bypassPermissions", origin: "projected" as const },
@@ -150,7 +163,7 @@ async function sessionPanelContainedInFrame(surface: Frame): Promise<boolean> {
     const nodes = [
       panel,
       ...panel.querySelectorAll<HTMLElement>(
-        ".runtime-ops-session-command, .runtime-ops-session-setting, .runtime-ops-session-kv, .runtime-ops-session-hook, .runtime-ops-session-kv > div",
+        ".runtime-ops-session-command, .runtime-ops-session-setting, .runtime-ops-session-kv, .runtime-ops-session-hook, .runtime-ops-session-withheld, .runtime-ops-session-kv > div",
       ),
     ];
     return nodes.every((el) => el.scrollWidth <= el.clientWidth + 1);

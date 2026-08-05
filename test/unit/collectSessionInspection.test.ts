@@ -266,6 +266,119 @@ describe("t-a5d827 — collecting a Grok session with no secrets on the wire", (
 });
 
 /**
+ * t-141f61 — the session must carry the gate it did NOT get, and the reason.
+ *
+ * Driven through the collector with a real lockfile on disk because that is the authority every spawn
+ * door reads: a mock would prove the panel can render a sentence, not that it asks the same question
+ * the projector answers. The lie being closed is silence — a Grok agent with no `PreToolUse` gate and
+ * a hook list that looks merely short.
+ */
+describe("t-141f61 — a withheld enforcement gate reaches the session projection", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  /** `secrets-guard` as it was measured: claude and codex blocks, no grok block. */
+  function workspaceWithGate(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-inspect-gate-"));
+    dirs.push(root);
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    const lock = {
+      schemaVersion: 1,
+      plugins: {
+        // Installed and unclassified: proves the panel reports what the human ASKED for, not every
+        // plugin that happens not to project. Thirteen of these rows would bury the one that matters.
+        sdd: {
+          name: "sdd",
+          version: "1.7.1",
+          runtimes: ["claude"],
+          targets: [{ runtime: "claude", kind: "skill-dir", file: ".claude/skills/sdd" }],
+        },
+        "secrets-guard": {
+          name: "secrets-guard",
+          version: "2.0.4",
+          runtimes: ["claude", "codex"],
+          targets: [{
+            runtime: "claude",
+            kind: "settings-hook",
+            file: ".claude/settings.json",
+            ref: "PreToolUse",
+            removal: [{ matcher: "Bash", hooks: [{ type: "command", command: "bash guard.sh" }] }],
+          }],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(root, ".tachyon", "plugins.lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
+    return root;
+  }
+
+  const OFFLINE = { panePid: async () => undefined, processArgv: () => undefined, processEnv: () => undefined };
+
+  it("tells a grok session that the classified gate never reached it, and why", async () => {
+    const result = await collectSessionInspection({
+      workspaceRoot: workspaceWithGate(),
+      agent: "solo",
+      runtime: "grok",
+      ports: OFFLINE,
+      hookProjectionPolicy: { "secrets-guard": "enforcement" },
+    });
+
+    expect(result.gatesWithheld).toEqual([{
+      plugin: "secrets-guard",
+      reason: "installs no grok settings-hook — its manifest declares no grok block",
+    }]);
+  });
+
+  it("withholds nothing from the runtime the gate does reach", async () => {
+    // The other polarity, and the one that keeps the row meaningful: a false alarm on claude would
+    // train the reader to skip the section on grok.
+    const result = await collectSessionInspection({
+      workspaceRoot: workspaceWithGate(),
+      agent: "claude",
+      runtime: "claude",
+      ports: OFFLINE,
+      hookProjectionPolicy: { "secrets-guard": "enforcement" },
+    });
+
+    expect(result.gatesWithheld).toEqual([]);
+  });
+
+  it("reports only plugins the workspace classified", async () => {
+    const result = await collectSessionInspection({
+      workspaceRoot: workspaceWithGate(),
+      agent: "solo",
+      runtime: "grok",
+      ports: OFFLINE,
+      hookProjectionPolicy: { "secrets-guard": "enforcement" },
+    });
+
+    expect(result.gatesWithheld.map((gate) => gate.plugin)).not.toContain("sdd");
+  });
+
+  it("names a runtime with no channel at all rather than showing an empty list", async () => {
+    const result = await collectSessionInspection({
+      workspaceRoot: workspaceWithGate(),
+      agent: "hermes",
+      runtime: "hermes",
+      ports: OFFLINE,
+      hookProjectionPolicy: { "secrets-guard": "enforcement" },
+    });
+
+    expect(result.gatesWithheld).toHaveLength(1);
+    expect(result.gatesWithheld[0].reason).toContain("no Tachyon-owned per-spawn hook channel");
+  });
+
+  it("stays empty when the workspace classified nothing", async () => {
+    const result = await collectSessionInspection({
+      workspaceRoot: workspaceWithGate(), agent: "solo", runtime: "grok", ports: OFFLINE,
+    });
+
+    expect(result.gatesWithheld).toEqual([]);
+  });
+});
+
+/**
  * t-0c963d — the rules file must not learn where any runtime keeps its files.
  *
  * The split exists so a rule fixed once is fixed for every runtime. It survives only while

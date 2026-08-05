@@ -397,6 +397,25 @@
   border-left: 2px solid var(--ds-border);
 }
 
+/* t-141f61 — authorship is a colour a person can scan, and the two answers must not look alike. A
+   hook out of `.tachyon/` reads as the product's; anything else reads as the person's own. */
+.runtime-ops-session-hook.tachyon { border-left-color: var(--ds-link); }
+.runtime-ops-session-hook.tachyon .runtime-ops-session-origin { color: var(--ds-link); }
+.runtime-ops-session-hook.external .runtime-ops-session-origin { color: var(--ds-muted); }
+
+/* A gate the workspace asked for and did not get. Warn, not error: the refusal is usually correct —
+   what would be wrong is not saying it. */
+.runtime-ops-session-withheld {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-1);
+  padding: var(--ds-2);
+  border-left: 2px solid var(--ds-warn);
+}
+
+.runtime-ops-session-withheld strong { color: var(--ds-warn); }
+.runtime-ops-session-withheld span { overflow-wrap: anywhere; }
+
 .runtime-ops-session-hook code,
 .runtime-ops-session-setting code,
 .runtime-ops-session-kv code {
