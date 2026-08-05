@@ -5335,6 +5335,10 @@ export class Workspace {
       workspaceRoot: this.workspaceRoot,
       agent: agentName,
       runtime,
+      // t-141f61 — the same classification `projectedSessionHooks` spends at spawn. The panel is a
+      // second door onto that decision, so it reads the policy from the same place rather than
+      // inferring "protected" from a hook list that has no way to show a gate that never arrived.
+      hookProjectionPolicy: this.config?.settings.agentHookProjection,
       ports: {
         panePid: async () => {
           try { return await this.tmux.panePid(this.manager.session(agentName)); }

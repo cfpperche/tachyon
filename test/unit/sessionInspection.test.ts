@@ -7,6 +7,7 @@ import {
   foldWrappedStatusLine,
   inspectEnv,
   isSecretEnvKey,
+  isTachyonAuthoredHookCommand,
   redactCommand,
   type InspectedSetting,
 } from "../../src/runtimeOps/sessionInspection.js";
@@ -163,5 +164,58 @@ describe("t-283149 — hooks say what they are for, and only when we authored th
     expect(hook.purpose).toBeUndefined();
     expect(hook.writes).toBeUndefined();
     expect(hook.command).toBe("bash /home/goat/my-own-hook.sh");
+  });
+});
+
+/**
+ * t-141f61 — "we cannot describe it" and "it is not ours" are two answers, and one list of four
+ * substrings was giving the second when it only knew the first.
+ *
+ * The hook that paid for this is `secrets-guard`'s `PreToolUse`: projected by the product itself
+ * through `settings.agentHookProjection`, running out of `.tachyon/plugins/secrets-guard/`, and absent
+ * from `HOOK_PURPOSE` — so the panel told an operator that the credential gate was not Tachyon's.
+ * On a security surface that is an instruction to remove it.
+ */
+describe("t-141f61 — a hook's author is decided by where its command points", () => {
+  const GUARD = "if [ ! -f '/ws/.tachyon/plugins/secrets-guard/claude/guard.sh' ]; then exit 2; fi;"
+    + " bash '/ws/.tachyon/plugins/secrets-guard/claude/guard.sh'";
+
+  it("claims a projected plugin gate as Tachyon's even with no purpose line for it", () => {
+    const hook = describeHook("PreToolUse", GUARD);
+
+    expect(hook.origin).toBe("tachyon");
+    // The honest half of the old behaviour survives: we still do not invent a purpose.
+    expect(hook.purpose).toBeUndefined();
+  });
+
+  it("keeps the person's own hooks theirs", () => {
+    expect(describeHook("PreToolUse", "bash /home/goat/my-own-hook.sh").origin).toBe("external");
+  });
+
+  it("owns every hook it can already describe", () => {
+    expect(describeHook("Stop", "node '/ws/.tachyon/activity/persistence-stop-record.cjs'").origin).toBe("tachyon");
+  });
+
+  it("matches a directory component, not a substring", () => {
+    // `mytachyon` and `notes.tachyon.md` are the person's. Claiming them would be the same defect
+    // pointing the other way — the panel asserting authorship it does not have.
+    expect(describeHook("PreToolUse", "bash /home/goat/mytachyon/run.sh").origin).toBe("external");
+    expect(describeHook("PreToolUse", "cat /home/goat/notes.tachyon/x").origin).toBe("external");
+    expect(isTachyonAuthoredHookCommand("bash ~/.tachyon/plugins/x/guard.sh")).toBe(true);
+    expect(isTachyonAuthoredHookCommand('node "$WS/.tachyon/activity/x.cjs"')).toBe(true);
+  });
+
+  it("never reports a `.tachyon/` command as external, whatever the event", () => {
+    // The guard the task names, asserted as a rule rather than as three examples: absence from the
+    // purpose list can never again be spent as evidence of foreign authorship.
+    for (const event of ["PreToolUse", "SessionStart", "Stop", "UserPromptSubmit", "SomethingNew"]) {
+      for (const command of [
+        "bash '/ws/.tachyon/plugins/secrets-guard/codex/guard.sh'",
+        "node /ws/.tachyon/plugins/some-future-plugin/grok/hook.mjs --strict",
+        "sh -c 'exec /ws/.tachyon/bin/whatever'",
+      ]) {
+        expect(describeHook(event, command).origin).toBe("tachyon");
+      }
+    }
   });
 });

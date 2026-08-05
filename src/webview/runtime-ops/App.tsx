@@ -11,7 +11,7 @@ import type {
   RuntimeOpsValue,
 } from "../../runtimeOps/types";
 import type { ComponentChildren } from "preact";
-import type { InspectedHook, InspectedSetting, SettingsOrigin } from "../../runtimeOps/sessionInspection";
+import type { InspectedHook, InspectedSession, InspectedSetting, SettingsOrigin } from "../../runtimeOps/sessionInspection";
 import type { SessionInspectionState } from "./messages";
 import { Button, EmptyState, PageChrome } from "../shared/ui";
 
@@ -342,6 +342,8 @@ function SessionInspection({ id, agent, state }: { id: string; agent: string; st
         {session.hooks.map((hook, index) => <HookRow hook={hook} key={`${hook.event}-${index}`} />)}
       </SessionSection>
 
+      {session.gatesWithheld.length > 0 && <WithheldGates gates={session.gatesWithheld} />}
+
       <SessionSection title="Settings" count={session.settings.length} empty="No settings were resolved for this session.">
         {session.settings.map((setting, index) => <SettingRow setting={setting} key={`${setting.key}-${index}`} />)}
       </SessionSection>
@@ -406,16 +408,64 @@ function SessionSection({
   );
 }
 
+/**
+ * t-141f61 — authorship and purpose are two rows because they are two questions.
+ *
+ * They used to be one string, and one missing purpose line therefore claimed foreign authorship: the
+ * product's own `secrets-guard` gate read as "Not injected by Tachyon" on a security surface. Whether
+ * we can describe a hook says nothing about who put it there, and `hook.origin` is now the only thing
+ * that answers the second question.
+ */
 function HookRow({ hook }: { hook: InspectedHook }) {
   return (
-    <div class="runtime-ops-session-hook">
+    <div class={`runtime-ops-session-hook ${hook.origin}`}>
       <strong>{hook.event}</strong>
-      {/* A hook Tachyon did not author gets no purpose line rather than an invented one — the
-          person's own hooks are theirs, and describing them would be the panel guessing. */}
-      <span>{hook.purpose ?? "Not injected by Tachyon; purpose not described."}</span>
+      <span class="runtime-ops-session-origin">{hookOriginLabel(hook.origin)}</span>
+      <span>{hook.purpose ?? hookPurposeFallback(hook.origin)}</span>
       <code>{hook.command}</code>
       {hook.writes && <span class="runtime-ops-session-note">Writes {hook.writes}</span>}
     </div>
+  );
+}
+
+function hookOriginLabel(origin: InspectedHook["origin"]): string {
+  return origin === "tachyon" ? "Injected by Tachyon" : "Not injected by Tachyon";
+}
+
+function hookPurposeFallback(origin: InspectedHook["origin"]): string {
+  return origin === "tachyon"
+    // Ours, and undescribed. A plugin gate the workspace projected reaches here: the panel names no
+    // purpose for it, and that silence must not be read as the hook being someone else's. The origin
+    // line above already said whose it is, so this says only the half it actually knows.
+    ? "Purpose not described here — the command below is the authority."
+    // The person's own hooks are theirs, and inventing a purpose would be the panel guessing.
+    : "Authored outside Tachyon; purpose not described.";
+}
+
+/**
+ * t-141f61 — the gate that is NOT here, and why.
+ *
+ * `planProjectedPluginHooks` has always produced this reason ("installs no grok settings-hook — its
+ * manifest declares no grok block") and no webview read it. So a Grok agent with no credential gate
+ * showed `HOOKS (1)` and nothing else, which is precisely the "read an empty result as safe" the
+ * projection module's own comment set out to prevent. Silence is not how the product says
+ * "not protected here".
+ */
+function WithheldGates({ gates }: { gates: InspectedSession["gatesWithheld"] }) {
+  return (
+    <SessionSection title="Gates NOT projected into this session" count={gates.length} empty="">
+      <p class="runtime-ops-session-note">
+        Plugins this workspace classified whose gate hook did not reach this agent. Read from the
+        workspace's current plugin lockfile and classification — the same plan every spawn recomputes;
+        the Hooks list above is what this session was actually given.
+      </p>
+      {gates.map((gate) => (
+        <div class="runtime-ops-session-withheld" key={`${gate.plugin}-${gate.reason}`} role="status">
+          <strong>{gate.plugin}</strong>
+          <span>{gate.reason}</span>
+        </div>
+      ))}
+    </SessionSection>
   );
 }
 
