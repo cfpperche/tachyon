@@ -258,6 +258,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     }
     if (this.view !== view || generation !== this.pushGeneration) return;
     this.lastFleets = fleets;
+    const selected = this.resolveSelection(fleets);
     this.applyNativeTitle(view);
     const openAttention = fleets.reduce(
       (total, fleet) => total + (fleet.notices ?? []).filter((notice) => !notice.read).length,
@@ -272,8 +273,38 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     // the engine's own projection, so a settings change re-derives from it without a re-fetch, and
     // nothing persists a template that belongs to one person on one machine.
     void view.webview.postMessage(
-      fleetMessage(this.withPersonalCardTemplate(this.lastFleets), this.sortPrefs(), this.collapsedKeys(), this.appVersion, controlWorkspaceScope.current),
+      fleetMessage(this.withPersonalCardTemplate(this.lastFleets), this.sortPrefs(), this.collapsedKeys(), this.appVersion, selected),
     );
+  }
+
+  /**
+   * t-72ff5a — the window scope, resolved to a project that is actually attached.
+   *
+   * Seven sidebar tabs now render exactly this project, so the scope can no longer be allowed to sit
+   * on a value no folder answers to. Three states used to reach that: nothing chosen yet (the old
+   * default, which MEANT "all workspaces" and is gone with this change), a selection persisted from
+   * a session where that folder was open, and a folder closed while it was selected. All three land
+   * on the first attached project.
+   *
+   * It is a pure READ — it never writes the corrected value back, and that took a bug to get right.
+   * Writing looked appealing (one stored value, no unresolved state), but `set()` notifies every
+   * subscriber, each subscriber pushes, and each push resolves against ITS OWN workspaces: two
+   * providers over different folders then overwrite each other forever. Production has one provider
+   * per window so it never spun there, but a resolution step that mutates window state as a side
+   * effect of painting is the wrong shape regardless — it was found by a test suite hanging, which
+   * is the cheap version of finding it.
+   *
+   * Agreement with the rest of the window comes from the RULE being shared instead: an unresolvable
+   * scope resolves to the first attached project here, in `buildCockpitModel` (`workspaces[0]`), and
+   * at every `extension.ts` call site (`?? workspaces()[0]`). Same list, same order, same answer — so
+   * the sidebar and a Control panel opened from anywhere land on the same project without either one
+   * having to write to the other.
+   */
+  private resolveSelection(fleets: FleetVM[]): string | undefined {
+    const hashes = fleets.map((f) => f.folder?.hash).filter((hash): hash is string => !!hash);
+    if (hashes.length === 0) return undefined; // no workspace booted — nothing to be scoped to
+    const current = controlWorkspaceScope.current;
+    return current && hashes.includes(current) ? current : hashes[0]!;
   }
 
   private async handleMessage(m: SidebarMsg): Promise<void> {

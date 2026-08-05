@@ -24,24 +24,61 @@ function webviewSources(dir = WEBVIEW): string[] {
 
 const sidebarApp = readFileSync(path.join(WEBVIEW, "sidebar", "App.tsx"), "utf8");
 
-describe("the global workspace scope has exactly one control (SDD 485 C6)", () => {
-  it("only the sidebar renders it, in Control's sec-actions slot", () => {
-    const owners = webviewSources().filter((file) => readFileSync(file, "utf8").includes('data-testid="control-workspace-select"'));
+/**
+ * Source with its comments removed, for the guards that ask what a surface OFFERS.
+ *
+ * Measured, not anticipated: the "no All workspaces option" guard below first read raw source and
+ * went red on the comment that explains why the option is absent — the same shape as the 2026-08-03
+ * static guard that matched a `case` body as a substring of its own switch. A guard that reads prose
+ * is answering a different question from the one it claims to.
+ *
+ * The `[^:]` before `//` keeps a `https://` inside a string from swallowing the rest of its line.
+ */
+function code(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
+describe("the global workspace scope has exactly one control (SDD 485 C6, revised by t-72ff5a)", () => {
+  it("only the sidebar renders it, and in the chrome above the tabs — not inside a tab", () => {
+    const owners = webviewSources().filter((file) => readFileSync(file, "utf8").includes('data-testid="sidebar-workspace-select"'));
     expect(owners.map((f) => path.relative(WEBVIEW, f))).toEqual(["sidebar/App.tsx"]);
 
-    const controlHeader = /tab === "Control"[\s\S]*?<span class="sec-actions">[\s\S]*?<\/span>/.exec(sidebarApp)?.[0] ?? "";
-    expect(controlHeader).toContain('data-testid="control-workspace-select"');
+    // t-72ff5a — C6's "exactly one control" is unchanged; WHERE that one control lives is not. It
+    // used to sit in the Control tab's `.sec-actions` slot, which was fine while it only scoped the
+    // next Control panel to open. It now scopes seven of the nine TABS, and a control that governs
+    // seven tabs from inside an eighth is reachable only by leaving what it governs.
+    const chrome = /<div class="ws-chrome"[\s\S]*?<\/div>/.exec(sidebarApp)?.[0] ?? "";
+    expect(chrome).toContain('data-testid="sidebar-workspace-select"');
+    expect(chrome).toContain("<HandoffBtn"); // the handoff pill travels with it (owner, 2026-08-05)
+
+    // and it is genuinely OUTSIDE every tab's own header row
+    const secRow = /<div class="sec">[\s\S]*?\n      <\/div>/.exec(sidebarApp)?.[0] ?? "";
+    expect(secRow).not.toContain("workspace-select");
+    // the old testid is gone rather than renamed in place: it named a home this control no longer has
+    expect(sidebarApp).not.toContain("control-workspace-select");
   });
 
   it("stays on screen with a single project, carrying that one option", () => {
     // Maintainer, 2026-08-03, reversing the first delivery: the selector must be evident at all
     // times, inert rather than absent. A control that appears only once a second project shows up
     // teaches nobody it exists, and the human who needs it is the one who just added that project.
-    expect(sidebarApp).toMatch(/\{tab === "Control" && \(/);
-    expect(sidebarApp).not.toMatch(/tab === "Control" && fleets\.length > 1/);
-    // "All workspaces" is the one part that IS conditional: with a single workspace it would offer a
-    // choice between a set and its only member, so that branch renders the project itself instead.
-    expect(sidebarApp).toMatch(/fleets\.length > 1\s*\?[\s\S]*All workspaces[\s\S]*:\s*<option value="">\{fleets\[0\]\?\.folder\?\.name/);
+    // t-72ff5a keeps this verbatim — the chrome is unconditional, so one project still renders it.
+    expect(sidebarApp).not.toMatch(/fleets\.length > 1[\s\S]{0,200}ws-chrome/);
+    expect(sidebarApp).toMatch(/<div class="ws-chrome"/);
+    // Every option is a real project: one <option> per fleet, no branch, no sentinel.
+    expect(sidebarApp).toMatch(/\{fleets\.map\(\(f\) => <option key=\{f\.folder\?\.hash \?\? ""\} value=\{f\.folder\?\.hash \?\? ""\}>/);
+  });
+
+  it("offers no 'All workspaces' — that mode was removed, not hidden (owner, 2026-08-05)", () => {
+    // The aggregate is what let seven tabs stack every project under folder headers; keeping it as
+    // an option would restore the two-regime state this change exists to end. The legitimate need to
+    // watch every project at once belongs to the Attentions tab, which stays cross-project.
+    for (const file of webviewSources()) {
+      expect(code(readFileSync(file, "utf8")), path.relative(WEBVIEW, file)).not.toContain("All workspaces");
+    }
+    // …and the model no longer produces the state either: an unset scope resolves to a real project.
+    const model = readFileSync(path.resolve(WEBVIEW, "..", "cockpit", "model.ts"), "utf8");
+    expect(model).toContain("const selected = requested ?? workspaces[0]?.hash;");
   });
 
   it("no screen mirrors it — the Board's own workspace dropdown is gone", () => {

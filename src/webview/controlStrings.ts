@@ -191,7 +191,6 @@ export function cockpitStrings(): CockpitStrings {
     companionAllowedHostsSave: t("Save allowed hosts"),
     companionPaired: t("Paired"),
     companionNotPaired: t("Not paired"),
-    allWorkspaces: t("All workspaces"),
     companionPickWorkspace: t("Select a single workspace in Overview to manage Companion settings."),
     companionBaseUrl: t("Engine Base URL"),
     companionShowPairCode: t("Show pair code"),

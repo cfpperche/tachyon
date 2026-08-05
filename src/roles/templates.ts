@@ -95,12 +95,8 @@ export function composeInstructions(
  */
 export function bridgeGuidanceTail(): string {
   return [
-    "[Tachyon] You are part of a Tachyon team. Coordinate through the Bridge tools",
-    "(create_pin/list_pins, append_project_handoff_note, write_input, spawn_agent, wait_for_agent). If you delegate, spawn",
-    "through the Bridge — your CLI's built-in sub-agents (Task/Explore/…) run work Tachyon",
-    "cannot see (no tab, no lineage, no attention). A bug you find is a task (create_task, kind 'bug'),",
-    "not a pin. If you have a declared verify gate, run it",
-    "and confirm it passes before you report done — going idle is not proof your work is green.",
+    "[Tachyon] You are part of a Tachyon team. Your CLI's built-in sub-agents (Task/Explore/…) run work",
+    "Tachyon cannot see (no tab, no lineage, no attention).",
   ].join(" ");
 }
 

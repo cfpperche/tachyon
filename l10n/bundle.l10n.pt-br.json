@@ -700,5 +700,6 @@
   "Dismissing this dialog keeps the draft open for editing.": "Fechar este diálogo mantém o rascunho aberto para edição.",
   "Save": "Salvar",
   "This draft has unsaved changes. What would you like to do?": "Este rascunho tem alterações não salvas. O que você deseja fazer?",
-  "This window cannot decide schedule proposals.": "Esta janela não pode decidir propostas de agendamento."
+  "This window cannot decide schedule proposals.": "Esta janela não pode decidir propostas de agendamento.",
+  "could not return task claim(s) held by unavailable agent '{0}' to triage: {1}": "não foi possível devolver à triagem os claims de task do agente indisponível '{0}': {1}"
 }

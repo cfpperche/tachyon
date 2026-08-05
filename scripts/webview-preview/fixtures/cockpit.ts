@@ -231,7 +231,6 @@ export const strings: CockpitStrings & WorktreesStrings & ExecutionGraphStrings 
   workspaceSettingsHint: "Agent limit, memory cap, task notifications and worktree reveal live in tachyon.yml, so they travel with the repo and the whole team gets them.",
   companionPaired: "Paired",
   companionNotPaired: "Not paired",
-  allWorkspaces: "All workspaces",
   companionPickWorkspace: "Select a single workspace in Overview to manage Companion settings.",
   companionBaseUrl: "Engine Base URL",
   companionShowPairCode: "Show pair code",

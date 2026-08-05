@@ -87,13 +87,13 @@ describe("t-50bbd4 — the read path refuses before it renders", () => {
   it("reports `absent` for an agent with no canonical identity", async () => {
     // Most agents are not canonical profile agents; that is not an error and must not be noisy.
     const port = make({ agentIdOf: () => undefined })!;
-    expect(await port.resolveSoul({ agentName: "ada", operationId: "op-1" })).toEqual({ state: "absent" });
+    expect(await port.resolveSoul({ agentName: "ada", operationId: "op-1", nativeSuppressionApplied: true })).toEqual({ state: "absent" });
   });
 
   it("reports `absent` when there is no formation authority for the agent", async () => {
     // An agentId with no vector in the store: nothing has ever been published for it.
     const port = make({ agentIdOf: () => "agent-1" })!;
-    expect(await port.resolveSoul({ agentName: "ada", operationId: "op-2" })).toEqual({ state: "absent" });
+    expect(await port.resolveSoul({ agentName: "ada", operationId: "op-2", nativeSuppressionApplied: true })).toEqual({ state: "absent" });
   });
 });
 

@@ -10,14 +10,16 @@ as its own editor tab, `Cockpit.ts` / `cockpit/main.tsx` / `cockpitSingleton.ts`
 through another door. Phases A, B, C and E complete; D delivered twenty migrations (D1–D20). Gate on
 delivery: 682 files / 7639 unit tests, 116 browser tests.
 
-`shipped-partial` rather than `shipped`, and the two gaps are named rather than rounded off:
+`shipped-partial` rather than `shipped`, and the remaining gap is named rather than rounded off:
 
 1. **"One broken app does not take the others" is measured FALSE.** E1 deleted
    `errorBoundary.test.ts` along with Control; restoring it turned the criterion from an assertion
    into a measurement, and 12 of 29 webview mounts carry no boundary — seven of them real product
-   surfaces. Ratcheted in that test, owned by t-cd01bb.
-2. **Reload restore was never exercised at this app count.** The headless Dev Host harness dies on
-   `Developer: Reload Window` (t-5fc17d), so it needs a human (D21).
+   surfaces. Ratcheted in that test, owned by t-cd01bb (also tracked as t-4a3333 family).
+2. ~~**Reload restore was never exercised at this app count.**~~ **Closed 2026-08-05 (t-a03fb6 /
+   D21).** The “harness dies on reload” reading was wrong (t-5fc17d: observer pid, not the window).
+   Exercise: 23 tabs / 22 keys / 24 groups pre and post reload; Q1–Q4 YES —
+   `evidence/t-a03fb6-restore-exercise-answers.md`.
 
 The **Phase C CHECKPOINT** was never struck; it was insurance against side-by-side not being what the
 use wanted, and the use answered by continuing.
@@ -225,20 +227,24 @@ contract will be worked around instead of used._
   - **When** the human opens the Board and a terminal, or two task details, in a split editor
   - **Then** both are visible and live at the same time
 - [x] **Scenario: choosing the project does not rewrite an open document**
-  - **Given** a task detail opened from project A, and the sidebar's Control tab header offering the
-    project selector
+  - **Given** a task detail opened from project A, and the sidebar offering the project selector
   - **When** the human switches the selector to project B
   - **Then** the open task detail still shows project A's task — the switch changes what the next
     thing opens against, never what an open document *is*
-- [x] The project selector lives in the header row of the sidebar's Control tab, in the slot the
-      Agents tab already uses, and exists exactly once — no per-app copy, no mirror
+- [x] The project selector exists exactly once — no per-app copy, no mirror. It lived in the header
+      row of the sidebar's Control tab as delivered here; **t-72ff5a moved it up into the sidebar's
+      own chrome** (above the search bar, beside the Project Handoff pill) when the selection began
+      to scope seven of the sidebar's nine tabs rather than only the next Control panel. "Exactly
+      one control" is unchanged and is what both placements are protecting; see the superseded
+      decision below.
 - [x] **Scenario: the launcher opens apps**
   - **Given** the sidebar Control tab (t-6e2952)
   - **When** the human activates a section tile
   - **Then** that section's app opens as its own editor tab, or is revealed if already open
-- [ ] **Scenario: reload restores what was open** — NOT verified, and deliberately left open: the
-      headless Dev Host harness dies on `Developer: Reload Window` (t-5fc17d), so half the restore
-      question is unreachable by an agent. Needs a human with apps open across editor groups (D21).
+- [x] **Scenario: reload restores what was open** — verified 2026-08-05 (t-a03fb6 / D21). The earlier
+      claim that the headless harness dies on reload was a wrong pid observation (t-5fc17d): the
+      window always crossed; evidence lists 23 tabs / 22 keys / 24 groups pre and post with matching
+      identities and viewColumns (`evidence/t-a03fb6-restore-exercise-answers.md`).
   - **Given** several section apps open across editor groups
   - **When** the window reloads
   - **Then** each returns to its tab and its state, using the restore machinery spec 361 established
@@ -326,9 +332,33 @@ contract will be worked around instead of used._
 
   Accepted residue: the selector is only on screen while the sidebar is on the Control tab. Changing
   project is a rare action, and today it is worse — buried in a section the human may not have open.
+
+  **SUPERSEDED IN PART by t-72ff5a, 2026-08-05 (owner).** The residue stopped being acceptable when
+  the scope stopped being about Control. This decision was correct for what the selection did HERE:
+  it chose which project the next Control panel opened against, so living inside Control cost the
+  human nothing. t-72ff5a made that same selection govern the seven per-project sidebar tabs
+  (Agents, Terminals, Pipelines, Schedules, Commands, Runbooks, Pins), and a control that governs
+  seven tabs from inside an eighth can only be reached by leaving what it governs.
+
+  What changed: the selector moved out of Control's `.sec-actions` slot into fixed sidebar chrome
+  above the search bar, and the Project Handoff pill moved there with it (it had lived in the
+  per-folder header, which those seven tabs no longer have). What did NOT change: exactly one
+  control, the host as its single writer, and the identity rule below.
+
+  Also removed with it: the **"All workspaces"** option. It kept an aggregate mode in which the seven
+  tabs would stack every project under folder headers again, which is the two-regime state t-72ff5a
+  exists to end. An unresolved scope now resolves to the first attached project, in the sidebar, in
+  `buildCockpitModel` and at every `extension.ts` call site — one rule, applied everywhere, so no
+  surface has to write to another to agree with it. The legitimate need to watch every project at
+  once belongs to the sidebar's Attentions tab, which stays cross-project by decision (owner,
+  2026-08-05): a queue that hides the agent stuck in the project you are not looking at is the one
+  thing scoping must never do.
   - `controlWorkspaceScope.test.ts` anchors the selector's testid to `cockpit/App.tsx` and must move
     with it, in the same change. The test is right in spirit (one control, no mirrors) and wrong in
-    its anchor once the selector leaves Control.
+    its anchor once the selector leaves Control. (t-72ff5a re-anchored it a second time, for the same
+    reason, when the selector left Control's header for the sidebar chrome — and the testid was
+    renamed `control-workspace-select` → `sidebar-workspace-select`, because the old name asserted a
+    home the control no longer has.)
 - ~~**Does the migration keep both paths alive, or cut over?**~~ **RESOLVED, 2026-08-03** — atomic
   cutover, one surface per PR, mirroring the discipline 410 proved. In the same PR: the app lands,
   the launcher and commands point at it, old restore state and deep links become redirects, and that

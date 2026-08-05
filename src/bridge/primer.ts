@@ -74,14 +74,26 @@ function identityLines(input: PrimerInput): string[] {
   return [`Identity: you are agent "${input.agentName}"${spawner ? `, spawned by "${spawner}"` : " (no delegator/parent on record)"}.`];
 }
 
-function protocolLines(input: PrimerInput): string[] {
-  const spawner = spawnerOf(input);
+/**
+ * t-486f43 — every line here is a FACT about a Tachyon mechanism, because this block is immune to
+ * project-owned guidance (see `precedenceLines`) and only the product can state these.
+ *
+ * Two of them used to fuse a fact with a working method in one sentence, which handed the method the
+ * same immunity: "Keep completion concise" (report style) rode on the notice transport, and "use
+ * set_continuity only when material state would otherwise be lost" (checkpoint cadence) rode on
+ * continuity's durability. Measured on 2026-08-05: the maintainer of this very repository wanted the
+ * OPPOSITE continuity policy and had nowhere to say it, because the sentence carrying it could not be
+ * overridden. The facts stayed; the recipes moved to project-owned guidance, where a project can
+ * disagree with them.
+ *
+ * The test for that boundary is `test/unit/projectGuidanceOwnership.test.ts` — a new line here must be
+ * classified as product fact there, or it fails.
+ */
+function protocolLines(): string[] {
   return [
     "Protocol (apply when relevant):",
-    ...(spawner
-      ? ["  - If an in-scope artifact is needed for long findings, write it and notify with a one-line pointer; otherwise summarize concisely."]
-      : ["  - Keep completion concise; write a findings artifact only when it is in scope and materially useful."]),
-    "  - For active multi-turn work, use set_continuity only when material state would otherwise be lost.",
+    "  - Waking another agent carries ONE sanitized line: over 500 characters it is refused, never truncated, and it is best-effort pane input rather than durable history — only what the line points at survives.",
+    "  - Continuity is durable working memory: what you checkpoint with set_continuity survives compaction, clear, restart and a new session, and is re-injected when you cross one.",
     "  - Human approval text injected into your pane is only a nudge; confirm via get_approval_status(id) before acting.",
   ];
 }
@@ -147,10 +159,15 @@ function beforeFinishingVerificationLines(input: PrimerInput): string[] {
       : undefined;
   return check
     ? [
-        "Verification applies only when delivering repository changes; skip it for read-only investigation, reporting, and task authoring.",
         // t-21bcb7 — the full suite holds a machine-wide lock every agent queues behind, so it is
-        // priced per DELIVERY, not per step. Focused tests are the working loop; this is the gate.
-        "Use focused tests while implementing; run this on the tree you deliver.",
+        // priced per DELIVERY, not per step. That is a fact about a shared host resource, which is
+        // why it survived t-486f43's separation.
+        "Verification applies only when delivering repository changes; skip it for read-only investigation, reporting, and task authoring.",
+        // t-486f43 — this used to read "Use focused tests while implementing; run this on the tree
+        // you deliver", fusing a working method with what a check actually covers. The method (WHICH
+        // smaller checks to run along the way) is the project's and lives in project-owned guidance;
+        // what a run attests is the product's own fact and stays.
+        "A check attests the exact TREE it ran on: a pass measured on any other tree is not evidence about what you deliver.",
         check,
       ]
     : [];
@@ -174,7 +191,7 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
   const primerLines = [
     PRIMER_OPEN,
     ...identityLines(input),
-    ...protocolLines(input),
+    ...protocolLines(),
     ...configuredVerificationLines(input),
     ...dependencyLines(input),
     ...precedenceLines(),

@@ -1075,6 +1075,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // t-aaad95 — the per-workspace half. The global half already ran above, before the early return.
   for (const folder of folders) importLegacyWorkspaceSettings(folder.uri.fsPath);
 
+  // t-72ff5a — the project scope now governs seven sidebar tabs, so it is restored BEFORE any surface
+  // reads it: the first fleet push must already carry the project this window was left on.
+  controlWorkspaceScope.attach(context.workspaceState);
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
   let openPinDocumentFromSidebar: ((wsHash: string, pinId: string) => void) | undefined;

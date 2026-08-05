@@ -99,7 +99,14 @@ describe("cockpit model", () => {
     expect(m.companionNeedsWorkspacePick).toBeUndefined();
   });
 
-  it("marks companion settings as needing a workspace pick when All is selected with multi roots", () => {
+  /**
+   * t-72ff5a — this used to assert the "All workspaces" state, which no longer exists: with the
+   * aggregate gone, multi-root and no explicit selection resolve to the FIRST bundle, so companion
+   * settings have exactly one workspace and are answerable. The pick-needed branch is unreachable
+   * from a real model now, and it is asserted below to have stopped firing rather than deleted —
+   * that branch, not the state it once described, is what a regression would revive.
+   */
+  it("answers companion settings for the resolved workspace instead of asking which one", () => {
     const m = buildCockpitModel(
       [
         {
@@ -119,8 +126,11 @@ describe("cockpit model", () => {
       ],
       { section: "settings", nowIso: "now" },
     );
-    expect(m.companion).toBeUndefined();
-    expect(m.companionNeedsWorkspacePick).toBe(true);
+    expect(m.selectedWsHash).toBe("h1");
+    expect(m.companion?.wsHash).toBe("h1");
+    expect(m.companion?.tabTools).toBe(true);
+    // the field is only emitted when the branch fires, so "not asking" is its absence
+    expect(m.companionNeedsWorkspacePick).toBeUndefined();
   });
 
   // t-d16a39 — shell-level workspace scope
@@ -152,34 +162,40 @@ describe("cockpit model", () => {
     expect(scoped.overview.approvalsPending).toBe(1);
     expect(scoped.tmux).toEqual([{ folder: "beta", state: "healthy", version: undefined }]);
 
-    const all = buildCockpitModel(bundles, { section: "fleet", nowIso: "now" });
-    expect(all.selectedWsHash).toBeUndefined();
-    expect(all.fleet).toHaveLength(5);
+    // t-72ff5a — no selection resolves to the FIRST project, not to an aggregate. The seven scoped
+    // sidebar tabs render exactly one project, so a scope that could still mean "every project"
+    // would put Control in a mode the sidebar has no way to show.
+    const unset = buildCockpitModel(bundles, { section: "fleet", nowIso: "now" });
+    expect(unset.selectedWsHash).toBe("aaa");
+    expect(unset.fleet).toHaveLength(2);
+    // …and the full list is still every bundle, so the selector can still offer the other one.
+    expect(unset.workspaces).toHaveLength(2);
 
-    // a persisted hash whose folder was closed since falls back to All, never an empty Control
+    // a persisted hash whose folder was closed since falls back the same way — never an empty Control
     const stale = buildCockpitModel(bundles, { section: "fleet", wsHash: "gone", nowIso: "now" });
-    expect(stale.selectedWsHash).toBeUndefined();
-    expect(stale.fleet).toHaveLength(5);
+    expect(stale.selectedWsHash).toBe("aaa");
+    expect(stale.fleet).toHaveLength(2);
 
-    // t-4917e4 — the SELECTOR-RENDERS-EMPTY property, stated the way the UI actually binds it.
-    // Overview omits the "All workspaces" option when there is a single root, so a model that leaves
-    // the selection undefined there gives the control a value with no matching option: a blank
-    // button, which is the reported bug. Every valid loaded state must name an option that exists.
-    const optionValues = (m: ReturnType<typeof buildCockpitModel>): string[] => [
-      ...(m.workspaces.length > 1 ? ["__all__"] : []),
-      ...m.workspaces.map((w) => w.hash),
-    ];
+    // t-4917e4 — the SELECTOR-RENDERS-EMPTY property, stated the way the UI actually binds it: a
+    // model whose selection names no offered option renders as a blank button. t-72ff5a removed the
+    // "__all__" sentinel from the offer list, which is exactly why every state below must now name
+    // a real workspace — there is no longer a sentinel for an unresolved one to fall back on.
+    const optionValues = (m: ReturnType<typeof buildCockpitModel>): string[] => m.workspaces.map((w) => w.hash);
     for (const [label, m] of [
       ["single root, no persisted selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", nowIso: "now" })],
       ["single root, stale persisted selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", wsHash: "gone", nowIso: "now" })],
       ["single root, explicit selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", wsHash: "solo", nowIso: "now" })],
-      ["multi root, no selection", all],
+      ["multi root, no selection", unset],
       ["multi root, explicit selection", scoped],
       ["multi root, stale selection", stale],
     ] as const) {
-      const rendered = m.selectedWsHash ?? "__all__";
-      expect(optionValues(m), `${label}: selector value must be an offered option`).toContain(rendered);
+      expect(optionValues(m), `${label}: selector value must be an offered option`).toContain(m.selectedWsHash);
     }
+
+    // The window's project count is NOT scoped — it is the one number that says a second project
+    // exists, and reading it off the scoped bundle would pin it to 1 in every window.
+    expect(unset.overview.workspaceCount).toBe(2);
+    expect(scoped.overview.workspaceCount).toBe(2);
 
     // And the single-root selection is the root itself, not the aggregate sentinel.
     expect(buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", nowIso: "now" }).selectedWsHash)

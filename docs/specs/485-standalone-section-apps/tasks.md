@@ -481,8 +481,13 @@ work in parallel only if the second re-applies onto the first before delivery, n
       already linked all three sheets. A serializer is part of the renderer inventory even when no live
       command produces its route, and creation can be id-less at the domain boundary while still using a
       provisional document identity at the panel boundary.
-- [ ] D21. Exercise restore with all apps open across editor groups, then reload. Spec 361's
+- [x] D21. Exercise restore with all apps open across editor groups, then reload. Spec 361's
       machinery has never been tested at this count.
+      **Measured 2026-08-05 (t-a03fb6 / d16restore):** 23 tabs / 22 manager keys / 24 editor groups
+      pre and post `Developer: Reload Window`. Q1–Q4 all YES with listed keys and viewColumns;
+      evidence in `evidence/t-a03fb6-restore-exercise-answers.md`. Reload crossing reused
+      t-5fc17d technique (marker gone, CDP still drivable). Activity not in the open set (empty
+      roster). No product defect confirmed.
 
 ### Phase E — remove Control
 
@@ -563,8 +568,10 @@ _Each maps to a checkbox in `spec.md` § Acceptance criteria._
 - [x] Hidden apps do no refresh work; revealed apps are current, never stale (B1–B3).
 - [x] Board and a terminal, and two task details, are visible and live simultaneously (C4, C5).
 - [x] Switching the project selector does not rewrite an open document (C7).
-- [x] The selector exists exactly once, in the sidebar Control tab header (C6).
-- [ ] Reload restores every open app to its tab and state (D12). — needs a human (D21 / t-5fc17d).
+- [x] The selector exists exactly once, in the sidebar Control tab header (C6). _(t-72ff5a, 2026-08-05: still exactly once, now in the sidebar's chrome above the search bar — the header row was the right home while the selection only scoped Control.)_
+- [x] Reload restores every open app to its tab and state (D12). — measured t-a03fb6 / D21 (2026-08-05);
+      evidence `evidence/t-a03fb6-restore-exercise-answers.md`. (Earlier blocker was a wrong EDH pid
+      observation — t-5fc17d.)
 - [x] Every `tachyon.*` command and deep link lands on an app, with no dead redirect (C8, D1–D10).
 - [ ] One app failing to render leaves the others working (C2 — per-app error boundary). — MEASURED FALSE: 12 of 29 mounts have no boundary (t-cd01bb).
 - [x] Control's single-app machinery is gone (E1).

@@ -304,10 +304,23 @@ export interface CockpitModel {
   studioPersisted?: boolean;
   /** t-d16a39 — every configured workspace, for the shell-level workspace selector. */
   workspaces: Array<{ hash: string; folder: string }>;
-  /** t-d16a39 — the shell-selected workspace scoping every section; undefined = "All workspaces". */
+  /**
+   * t-d16a39 — the shell-selected workspace scoping every section.
+   *
+   * t-72ff5a — it names a real project whenever one is attached; it no longer falls back to an
+   * "All workspaces" aggregate, which was removed when the selection moved to the sidebar chrome and
+   * began to govern seven tabs. Undefined now means only "no workspace attached at all".
+   */
   selectedWsHash?: string;
   control: ControlInspectorModel;
   overview: {
+    /**
+     * How many projects this WINDOW has attached — deliberately not scoped by `selectedWsHash`.
+     *
+     * t-72ff5a — every other metric here describes the project in scope; this one describes the
+     * window around it, and scoping it would pin it to 1 forever and retire the only number that
+     * says a second project exists.
+     */
     workspaceCount: number;
     enginesAttached: number;
     enginesError: number;
@@ -333,8 +346,10 @@ export interface CockpitModel {
   approvals: CockpitApprovalRow[];
   tmux: Array<{ folder: string; state: string; version?: string }>;
   /**
-   * Companion settings for the scoped workspace (single selection, or sole workspace).
-   * Undefined when "All workspaces" with multiple roots — UI asks to pick one.
+   * Companion settings for the scoped workspace.
+   * t-72ff5a — with the aggregate scope gone, exactly one workspace is always in scope whenever any
+   * is attached, so this is undefined only when none is. `companionNeedsWorkspacePick` below is kept
+   * as the guard for that branch ever firing again, not as a state the model can still reach.
    */
   companion?: CockpitCompanionSettings;
   /** True when multiple workspaces are in scope and none is selected for Companion settings. */
@@ -385,29 +400,29 @@ export function buildCockpitModel(
     globalSettings?: CockpitGlobalSettingsState,
   },
 ): CockpitModel {
-  // t-d16a39 — the shell-level workspace scope: when a specific workspace is selected, every
-  // aggregate section (overview/engine/fleet/worktrees/tmux) narrows to that one
-  // bundle; "All workspaces" (wsHash undefined, or a hash that no longer exists — e.g. a folder
-  // was closed since the selection persisted) keeps today's aggregate behavior. The selector list
-  // itself always spans ALL bundles, never the filtered set.
+  // t-d16a39 — the shell-level workspace scope: every aggregate section (overview/engine/fleet/
+  // worktrees/tmux) narrows to the selected bundle. The selector list itself always spans ALL
+  // bundles, never the filtered set.
   const workspaces = bundles.map((b) => ({ hash: b.control.wsHash, folder: b.control.folderName }));
   const requested = opts?.wsHash && workspaces.some((w) => w.hash === opts.wsHash) ? opts.wsHash : undefined;
   /**
    * t-4917e4 — with exactly ONE root the effective selection IS that root, and saying so here is what
-   * keeps the selector from rendering blank.
+   * keeps the selector from rendering blank. The model is the one authority for scope; a UI-side
+   * default would be a second one the host's next authoritative model could silently contradict.
    *
-   * The Overview selector deliberately omits the "All workspaces" option when there is a single root
-   * (offering it and the root would be two labels for the same data). But the model left
-   * `selectedWsHash` undefined until someone chose explicitly, so the control bound the
-   * "All workspaces" sentinel to a list that did not contain it — a value with no option, which
-   * renders as an empty button. That is the reported bug, and it needed fixing HERE rather than by
-   * having the UI substitute a value: the model is the one authority for scope, and a UI-side default
-   * would be a second one that the host's next authoritative model could silently contradict.
+   * t-72ff5a — that rule now holds for ANY number of roots, and the "All workspaces" aggregate it
+   * used to fall back to is gone (owner, 2026-08-05). The selection moved into the sidebar chrome
+   * where it governs seven tabs, and those tabs show exactly one project; a scope that could still
+   * mean "every project" would put Control back into a mode the sidebar has no way to display, which
+   * is the two-regimes state the change removes. Every reason the old fallback existed is answered
+   * without it: nothing chosen yet, a hash from a window with different folders, and a folder closed
+   * while selected all resolve to the first bundle instead of silently widening to all of them.
    *
-   * Nothing about scoping changes: with one bundle, filtering to it and not filtering are the same
-   * set, so this names the state that already existed instead of altering it.
+   * The cross-project view is not lost, it is relocated: the sidebar's Attentions tab stays
+   * cross-project by decision, because a queue that hides the agent stuck in the project you are not
+   * looking at is the one thing scoping must never do.
    */
-  const selected = requested ?? (workspaces.length === 1 ? workspaces[0]!.hash : undefined);
+  const selected = requested ?? workspaces[0]?.hash;
   const scoped = selected ? bundles.filter((b) => b.control.wsHash === selected) : bundles;
 
   const controlInputs = scoped.map((b) => b.control);
@@ -488,7 +503,9 @@ export function buildCockpitModel(
     ...(selected ? { selectedWsHash: selected } : {}),
     control,
     overview: {
-      workspaceCount: control.summary.workspaceCount,
+      // t-72ff5a — the window's count, not the scoped one: `control.summary` is built from `scoped`,
+      // which is now always a single bundle, so reading it here would report 1 in every window.
+      workspaceCount: workspaces.length,
       enginesAttached: control.summary.attachedEngines,
       enginesError: control.summary.engineErrors,
       agentsRunning: control.summary.runningAgents,

@@ -4,6 +4,18 @@ _Created 2026-08-04._
 
 **Status:** draft
 
+**Ratification:** locked on 2026-08-05. The maintainer ratified the revised draft — the one that
+already carries the dispositions from `review-claude-opus.md` (three P0, all addressed). Ratified
+without amendment and **without scheduling**: the intent is agreed, the work is not queued.
+
+Author note: this spec was written by the `codex` agent, which the maintainer removed from the roster
+on 2026-08-05. Its only surviving work is this spec, brought to `main` by an isolated cherry-pick
+(`6c69d4d3`) so the discarded Design Mode prototype on the same branch could not ride in with it. It
+has no author to answer questions; the review and this ratification are what it has instead.
+
+**Unblocks:** `t-3b47ad` — `registerTools` is one 4064-line function with 101 inline MCP tools. That
+task was triaged as structural debt with no design behind it; this spec is the design.
+
 ## Intent
 
 Tachyon currently defines 113 tools in one `registerTools` function and presents most of them to every

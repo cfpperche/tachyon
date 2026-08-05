@@ -67,12 +67,7 @@ export function mintPinId(): string {
 
 export class PinStore {
   private static readonly lockTimeoutMs = 5_000;
-  /**
-   * A holder still older than this is orphaned even if its pid answers — the pid-reuse guard. The
-   * real critical section is a small JSON read-modify-write (milliseconds), so this is ~1000× the
-   * legitimate hold: the only holder it can take from is one that is no longer running.
-   */
-  private static readonly maxLockHoldMs = 2_500;
+  private static readonly lockPollMs = 10;
 
   constructor(private readonly workspaceRoot: string) {}
 
@@ -278,22 +273,21 @@ export class PinStore {
    *
    * The wait is SYNCHRONOUS and that is a known cost, registered rather than hidden (t-7843d0): this
    * class's whole API is synchronous and its largest consumer is `src/bridge/tools.ts`, so making it
-   * async is a separate change with a much wider blast radius. Two things make the residual cost
-   * small. Within one extension host these calls cannot contend at all — the thread that would wait
-   * is the thread that would release. And the wait is now bounded by a LIVE holder's actual critical
-   * section (a few milliseconds of JSON read-modify-write); the case that used to burn the whole five
-   * seconds and then throw forever — a holder that died and left its lock behind — is recovered by
-   * `withProcessLockSync` before the first retry.
+   * async is a separate change with a much wider blast radius. Within one extension host these calls
+   * cannot contend at all — the thread that would wait is the thread that would release.
+   *
+   * Uses the shared `withProcessLockSync` (t-b457ce reconvergence after t-099847's temporary
+   * pin-local lock). Deliberately omits `maxHoldMs`: a lost pin is worse than waiting out a live
+   * holder until `lockTimeoutMs`. Dead-pid orphan recovery stays on; age-steal stays off.
    */
   private mutatePins(update: (pins: Pin[]) => Pin[]): void {
     fs.mkdirSync(this.dir, { recursive: true });
     withProcessLockSync(this.lockPath, () => {
       this.write(update(this.readPins()));
     }, {
-      label: ".tachyon/pins.json mutation lock",
       timeoutMs: PinStore.lockTimeoutMs,
-      pollMs: 10,
-      maxHoldMs: PinStore.maxLockHoldMs,
+      pollMs: PinStore.lockPollMs,
+      label: ".tachyon/pins.json mutation lock",
     });
   }
 
@@ -326,6 +320,7 @@ export class PinStore {
   /**
    * The cross-process lock the mutation path takes. Public so a test can hold the REAL lock from
    * another process and then be killed — a hand-made lock file would only prove the test's own shape.
+   * Format is processLock's (file containing `${pid}\n`).
    */
   get lockPath(): string {
     return path.join(this.dir, "pins.json.lock");

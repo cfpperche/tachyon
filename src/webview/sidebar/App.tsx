@@ -615,10 +615,14 @@ function MoreBtn({ items }: { items: MenuItem[] }) {
 
 const Empty = () => <EmptyState kind="empty" message="(none)" />;
 
-/** spec 245/331 — a tiny folder-scoped Project Handoff affordance: a staleness badge → opens the panel.
- *  Lives in the folder header, which is now ALWAYS present (single-root is multi-root with N=1, pin
- *  p-cf707f). Text + glyph, never color alone; QUIET (glyph only, no label) when fresh with nothing
- *  pending — noise proportional to pending action. */
+/** spec 245/331 — a tiny project-scoped Project Handoff affordance: a staleness badge → opens the panel.
+ *  Text + glyph, never color alone; QUIET (glyph only, no label) when fresh with nothing pending —
+ *  noise proportional to pending action.
+ *
+ *  t-72ff5a — it used to live in the per-folder header, which the seven scoped tabs no longer have.
+ *  Its home is now the sidebar chrome beside the project selector: the handoff is a fact ABOUT the
+ *  project in focus, so it belongs next to the control that says which project that is, and it is
+ *  reachable from every tab instead of only from the ones that stacked folders. */
 function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types").HandoffVM; onOpen: () => void }) {
   // Map staleness → {glyph, label, tone} (mirrors handoffViewModel.stalenessLabel; kept inline so the sidebar
   // bundle doesn't import the panel module). A missing/cold handoff still offers Open (to create it).
@@ -854,10 +858,31 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
   </>;
 }
 
-function CmdK({ fleets, onClose, onPick }: { fleets: FleetVM[]; onClose: () => void; onPick: (it: SearchItem) => void }) {
+/**
+ * t-72ff5a — Ctrl+K stays GLOBAL while the seven list tabs are scoped to one project, and that is a
+ * decision rather than an oversight: search is how you reach something you cannot see, so scoping it
+ * to what is already on screen would leave a name in another root unreachable by the only mechanism
+ * built to find it.
+ *
+ * The price of a global index over a scoped screen is that a result can belong to a project the
+ * sidebar is not showing, so two things follow. It says so — the row carries that project's name.
+ * And opening it MOVES the selection there (`pick`), because navigating to a row the current scope
+ * would not render is the "selection exists and is ignored" state the task refuses.
+ *
+ * The label appears only on FOREIGN rows, and this is not the `fleets.length > 1` test the folder
+ * header used. That test asked "could there be another project?"; this one asks "will opening this
+ * move me?" — which is the fact the reader acts on. In a single-root window nothing is ever foreign,
+ * so nothing is ever labelled, and the chrome above already names the one project.
+ */
+function CmdK({ fleets, selectedHash, onClose, onPick }: { fleets: FleetVM[]; selectedHash?: string; onClose: () => void; onPick: (it: SearchItem) => void }) {
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
   const index = useMemo(() => fleets.flatMap(searchIndex), [fleets]);
+  /** The owning project's name, only when the row would move the selection. */
+  const foreignFolder = (wsHash?: string): string | undefined => {
+    if (!wsHash || wsHash === selectedHash) return undefined;
+    return fleets.find((f) => f.folder?.hash === wsHash)?.folder?.name;
+  };
   const matches = useMemo(() => {
     const t = q.trim().toLowerCase();
     const hit = t ? index.filter((x) => `${x.name} ${x.hint ?? ""} ${x.keywords ?? ""} ${x.rowKey ?? ""}`.toLowerCase().includes(t)) : index;
@@ -891,12 +916,15 @@ function CmdK({ fleets, onClose, onPick }: { fleets: FleetVM[]; onClose: () => v
           {matches.length === 0 && <div class="ci" style="opacity:.55;cursor:default">No matches</div>}
           {matches.map((m) => {
             i++; const flat = i; const header = m.tab !== cur ? (cur = m.tab) : null;
+            const foreign = foreignFolder(m.wsHash);
             return (
               <>
                 {header && <div class="ci-group" role="presentation">{header}</div>}
                 <div class={`ci${flat === sel ? " sel" : ""}`} role="option" id={`cmdk-opt-${flat}`} aria-selected={flat === sel}
+                  aria-label={foreign ? `${m.name} — in ${foreign}; opening switches to that project` : undefined}
                   onMouseEnter={() => setSel(flat)} onClick={() => onPick(m)}>
                   <Icon name={m.icon} /><span class="ci-name">{m.name}</span>{m.hint && <span class="ci-hint">{m.hint}</span>}
+                  {foreign && <span class="ci-ws" data-testid="cmdk-foreign-project" title={`In ${foreign} — opening switches the sidebar to that project`}>{foreign}</span>}
                 </div>
               </>
             );
@@ -1008,7 +1036,15 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
           <article class={`attention-card level-${n.level}`} role="listitem" key={`${hash ?? ""}:${n.id}`} data-testid="attention-card">
             <div class="attention-card-head">
               <span class={`notice-level l-${n.level}`}>{n.level}</span>
-              {folder && fleets.length > 1 ? <span class="attention-folder">{folder}</span> : null}
+              {/* t-72ff5a — ALWAYS, where it used to be `fleets.length > 1`. Attentions is now the
+                  one DECLARED cross-project surface (owner, 2026-08-05: scoping it would hide the
+                  agent that is stuck in the project you are not looking at), and every other tab
+                  shows exactly one project. A card that does not name its project would therefore be
+                  read against the selection in the chrome — which is the wrong project for any card
+                  that came from somewhere else. The old condition asked "is there more than one
+                  folder"; the card has to answer "which folder is THIS", and that question has an
+                  answer even when the count is one. */}
+              {folder ? <span class="attention-folder">{folder}</span> : null}
               <time class="attention-time" dateTime={n.at} title={new Date(n.at).toLocaleString()}>
                 {new Date(n.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </time>
@@ -1142,6 +1178,19 @@ export function App({
   const [activePinTag, setActivePinTag] = useState<string | null>(null);
   /** t-eddf90/t-a9d1f2 — session-local Agents status filter (like pin tags; not host-persisted). */
   const [agentFilter, setAgentFilter] = useState<AgentStatusFilter>("all");
+  /**
+   * t-72ff5a — the project in focus, chosen here and echoed by the host.
+   *
+   * The AUTHORITY is the host's window-level `ControlWorkspaceScope`: it is what opens panels and
+   * studios in the right project, and it outlives this webview. This override exists for the same
+   * reason `sortOverride` does — a choice made this session must win over a fleet snapshot that was
+   * already in flight when it was made, or the selection visibly bounces back.
+   *
+   * It is a wsHash and never a sentinel: "all workspaces" was removed with this change (owner,
+   * 2026-08-05), because a mode that stacks every project again is the second regime this task
+   * exists to end, wearing a different name.
+   */
+  const [wsOverride, setWsOverride] = useState<string | undefined>(undefined);
   // spec 242 — sort: the host's persisted pref seeds it; a user choice this session OVERRIDES (and persists),
   // so a stale fleet snapshot can never revert the user's pick (codex D9). Default name-asc.
   const [sortOverride, setSortOverride] = useState<{ agents?: SortMode; terminals?: SortMode }>({});
@@ -1150,6 +1199,28 @@ export function App({
   const changeSort = (section: "agents" | "terminals", mode: SortMode) => {
     setSortOverride((o) => ({ ...o, [section]: mode })); // optimistic + session-authoritative
     dispatch?.setSort?.(section, mode); // persist for next load
+  };
+  /**
+   * t-72ff5a — resolution, and it is the whole point of the change: ONE `FleetVM` is in focus, and
+   * every scoped surface below reads it instead of folding `fleets`.
+   *
+   * It resolves to a project that is actually attached, never to a hash: a stored selection whose
+   * folder was closed, a hash from another window, and a first-ever open with nothing stored all
+   * land on the first attached project rather than on an empty screen. The host applies the SAME
+   * rule before it echoes `selectedWsHash` back (SidebarPrototype.resolveSelection), so the two
+   * agree; doing it here as well is what keeps the first paint after a folder is removed correct
+   * instead of blank for one frame.
+   */
+  const selected: FleetVM | undefined = useMemo(() => {
+    const want = wsOverride ?? selectedWsHash;
+    return fleets.find((f) => f.folder?.hash === want) ?? fleets[0];
+  }, [fleets, wsOverride, selectedWsHash]);
+  const selectedHash = selected?.folder?.hash;
+  /** Move the whole sidebar to another project: optimistic locally, authoritative in the host. */
+  const selectWorkspace = (wsHash: string) => {
+    if (!wsHash || wsHash === selectedHash) return;
+    setWsOverride(wsHash);
+    dispatch?.switchWorkspace?.(wsHash);
   };
   const isMac = (navigator.platform || "").toLowerCase().includes("mac");
   const collapsedKeySig = collapsedKeys.join("\0");
@@ -1172,42 +1243,58 @@ export function App({
       return n;
     });
   };
+  /**
+   * t-72ff5a — every count below reads the SELECTED project, where each used to fold `fleets`.
+   *
+   * This is the half of the change that is not visible in a screenshot and is the reason the task
+   * refuses a render-time filter: a chip reading "running · 7" over a list of three, because four
+   * belong to a project that is no longer on screen, is worse than the stacked lists it replaced —
+   * it is wrong in a way that looks right.
+   */
   const setAllMetrics = (open: boolean) => {
     setMetricsOpen(() => {
       const n = new Set<string>();
-      if (open) {
-        for (const f of fleets) {
-          const scope = f.folder?.hash ?? "";
-          for (const a of f.agents) {
-            if (a.resources) n.add(`${scope}:m:${a.name}`);
-          }
+      if (open && selected) {
+        const scope = selected.folder?.hash ?? "";
+        for (const a of selected.agents) {
+          if (a.resources) n.add(`${scope}:m:${a.name}`);
         }
       }
       return n;
     });
   };
-  const pinTags = useMemo(() => [...new Set(fleets.flatMap((f) => f.pins.flatMap((p) => p.tags)))].sort((a, b) => a.localeCompare(b)), [fleets]);
+  const pinTags = useMemo(() => [...new Set((selected?.pins ?? []).flatMap((p) => p.tags))].sort((a, b) => a.localeCompare(b)), [selected]);
   const metricsCapable = useMemo(
-    () => fleets.reduce((n, f) => n + f.agents.filter((a) => a.resources).length, 0),
-    [fleets],
+    () => (selected?.agents ?? []).filter((a) => a.resources).length,
+    [selected],
   );
   const metricsOpenCount = metricsOpen.size;
-  /** t-eddf90 — chip counts from the full multi-root fleet (stable anchors, not the filtered subset). */
+  /** t-eddf90 — chip counts are stable anchors (not the filtered subset) within the selected project. */
   const agentFilterCounts = useMemo(
-    () => countAgentStatusFilters(fleets.flatMap((f) => f.agents)),
-    [fleets],
+    () => countAgentStatusFilters(selected?.agents ?? []),
+    [selected],
   );
   const totalAgents = agentFilterCounts.all;
-  /** t-37f554 — open attention count for the tab badge only; never forces a tab switch. */
+  /**
+   * t-37f554 — open attention count for the tab badge only; never forces a tab switch.
+   *
+   * t-72ff5a — deliberately STILL every project, unlike the counts above. Attentions is the one
+   * cross-project tab (owner, 2026-08-05), so its badge counts what its list shows; scoping the
+   * badge would be a count that disagrees with the panel one click away.
+   */
   const openAttentionCount = useMemo(() => attentionRows(fleets).length, [fleets]);
   /**
-   * t-aa2780 — any root whose engine log ring holds an error. Lights the Control TAB's icon (visible
-   * from every tab, so the signal outlives whichever list the human is reading) and the Engine tile
-   * inside it. Multi-root folds with `some`: one dot for the window, the same way `openAttentionCount`
-   * sums across roots — the tab strip is a window-level surface and has no folder to scope to.
+   * t-aa2780 — the engine log ring holds an error. Lights the Control TAB's icon (visible from every
+   * tab, so the signal outlives whichever list the human is reading) and the Engine tile inside it.
    * A folder whose projection never stated the field simply does not vote.
+   *
+   * t-72ff5a — this now reads the SELECTED project where it used to fold every root with `some`.
+   * The fold predates the selection: with no scope, a window-level dot was the only honest summary.
+   * Now the tile it lights opens Control on the selected project's Engine section, so a dot lit by
+   * ANOTHER project's ring would send the reader to a log with nothing wrong in it. The signal is
+   * not lost — switching project surfaces it, and it is a log-line report, never a health check.
    */
-  const engineHasError = useMemo(() => fleets.some((f) => f.engineLogHasError === true), [fleets]);
+  const engineHasError = selected?.engineLogHasError === true;
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setOpen((o) => !o); } };
@@ -1232,6 +1319,10 @@ export function App({
 
   const pick = (it: SearchItem) => {
     setOpen(false); setTab(it.tab);
+    // t-72ff5a — a global index over a scoped screen: opening a row from another project MOVES the
+    // selection there first, or the tab we just switched to would not contain the row we are about
+    // to scroll to and flash. Local state, so the re-render lands before the scroll below runs.
+    if (it.wsHash && it.wsHash !== selectedHash) selectWorkspace(it.wsHash);
     if (it.tab === "Pins") setActivePinTag(null);
     if (it.tab === "Agents") {
       const fleet = fleets.find((f) => (f.folder?.hash ?? undefined) === it.wsHash) ?? fleets[0];
@@ -1292,7 +1383,10 @@ export function App({
       </Button>
     </div>
   );
-  const renderFolder = (f: FleetVM) => (
+  // t-72ff5a — ONE project's lists, with no folder header above them. The `.ws-scope` wrapper stays:
+  // Ctrl+K resolves its scroll target inside it, and a stale `data-ws` is how a flash could land on
+  // the previous project's row during a switch.
+  const renderSelected = (f: FleetVM) => (
     <DispatchCtx.Provider value={ctxFor(f.folder?.hash)}>
       <div class="ws-scope" data-ws={f.folder?.hash ?? ""}>
         <Panel
@@ -1316,6 +1410,41 @@ export function App({
 
   return (
     <>
+      {/*
+        t-72ff5a — the sidebar's project chrome: which project everything below is about, and the
+        handoff for that project. Fixed above the search bar, so it belongs to the sidebar rather
+        than to any tab (owner, 2026-08-05).
+
+        This REVISES SDD 485 C6, which put the selector in the Control tab's header row. C6's reason
+        was that there must be exactly ONE control over a window-level concept, not twelve competing
+        ones — that reason is untouched and this is still the only one. What changed is what the
+        selection governs: C6 scoped the next Control panel to open, so living inside Control cost
+        nothing; it now scopes seven of the nine TABS, and a control that governs seven tabs from
+        inside an eighth is the trap the task names.
+
+        It stays present with a single project attached, and that part of C6 is kept verbatim
+        (maintainer, 2026-08-03): a control that appears only once a window happens to hold a second
+        project teaches nobody it exists, and the person who needs it is the one who just added that
+        project. With one option it is evident and inert.
+      */}
+      <div class="ws-chrome" data-testid="sidebar-workspace-chrome">
+        <Icon name="folder" />
+        <select
+          class="ws-select"
+          data-testid="sidebar-workspace-select"
+          value={selectedHash ?? ""}
+          title={`Project — ${selected?.folder?.name ?? "Workspace"}`}
+          aria-label="Project shown in the sidebar"
+          onChange={(e) => selectWorkspace((e.currentTarget as HTMLSelectElement).value)}
+        >
+          {/* No aggregate option here (owner, 2026-08-05): it would stack every project again
+              under folder headers, which is exactly the second regime this change removes. The
+              legitimate need to watch every project at once has an owner — the Attentions tab,
+              which stays cross-project on purpose. */}
+          {fleets.map((f) => <option key={f.folder?.hash ?? ""} value={f.folder?.hash ?? ""}>{f.folder?.name ?? "Workspace"}</option>)}
+        </select>
+        <HandoffBtn handoff={selected?.handoff} onOpen={() => dispatch?.global("openHandoff", selectedHash)} />
+      </div>
       <div class="kbar" id="kbar-trigger" role="button" tabindex={0} aria-label={`Search agents, commands, pins (${isMac ? "Cmd K" : "Ctrl K"})`}
         onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen(true); } }}>
         <Icon name="search" /><span class="kgrow">Search agents, commands, pins…</span><span class="kbd">{isMac ? "⌘K" : "Ctrl K"}</span>
@@ -1345,37 +1474,9 @@ export function App({
       </div>
       <div class="sec">
         <b>{tab}</b>
-        {/* SDD 485 C6 — ALWAYS rendered, including for a single workspace (maintainer, 2026-08-03).
-            It first hid itself below two fleets; a control that appears only once the window happens
-            to hold a second project teaches nobody it exists, and the human who needs it is exactly
-            the one who just added that project. With one workspace it is present and inert: the
-            dropdown carries the one option, so the scope is VISIBLE rather than merely defaulted. */}
-        {tab === "Control" && (
-          <span class="sec-actions">
-            <select
-              class="control-workspace-select"
-              data-testid="control-workspace-select"
-              value={selectedWsHash ?? ""}
-              title="Control workspace"
-              aria-label="Control workspace"
-              onChange={(e) => dispatch?.switchWorkspace?.((e.currentTarget as HTMLSelectElement).value)}
-            >
-              {/* One workspace: the single option IS the list, and "All workspaces" above it would be
-                  a choice between a set and its only member. Not `disabled` — a greyed control reads
-                  as broken, and the ask was for it to stay evident. With nothing else to pick it is
-                  already inert.
-                  It carries value="" on purpose: the stored scope for a fresh window is undefined
-                  ("all"), so an option keyed by the workspace hash would not match and the select
-                  would render EMPTY — measured, not theorised. Empty is worse than absent. */}
-              {fleets.length > 1
-                ? <>
-                    <option value="">All workspaces</option>
-                    {fleets.map((fleet) => <option value={fleet.folder?.hash ?? ""}>{fleet.folder?.name ?? "Workspace"}</option>)}
-                  </>
-                : <option value="">{fleets[0]?.folder?.name ?? "Workspace"}</option>}
-            </select>
-          </span>
-        )}
+        {/* t-72ff5a — the project selector used to live here, in Control's `.sec-actions` slot
+            (SDD 485 C6). It moved up into the sidebar chrome above the search bar once it began to
+            govern seven tabs instead of the next Control panel; see the comment there. */}
         {(tab === "Agents" || tab === "Terminals") && (() => {
           const section = tab === "Agents" ? "agents" : "terminals";
           const active = section === "agents" ? sortAgents : sortTerminals;
@@ -1457,24 +1558,21 @@ export function App({
         ) : tab === "Control" ? (
           // t-6e2952 — one grid for the window (Control is a singleton), so no folder header above it.
           <ControlGrid onOpen={(section) => dispatch?.global("openControl", undefined, section)} engineHasError={engineHasError} />
-        ) : fleets.map((f) => {
-          // spec 331 (pin p-cf707f) — the folder header is the workspace identity line, ALWAYS present:
-          // single-root is multi-root with N=1, one code path. It's where the Project Handoff chip lives.
-          const fkey = `folder:${f.folder?.hash}`;
-          const fcoll = collapsed.has(fkey);
-          return (
-            <>
-              <div class={`grp folder${fcoll ? " collapsed" : ""}`} role="button" tabindex={0}
-                onClick={() => toggle(fkey)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(fkey); } }}>
-                <span class="chev">▼</span><Icon name="folder" /><span>{f.folder?.name}</span>
-                <HandoffBtn handoff={f.handoff} onOpen={() => dispatch?.global("openHandoff", f.folder?.hash)} />
-              </div>
-              {!fcoll && <div class="folder-body">{renderFolder(f)}</div>}
-            </>
-          );
-        })}
+        ) : selected ? (
+          // t-72ff5a — the seven scoped tabs render exactly the selected project, with no folder
+          // header and no aggregation.
+          //
+          // What left with that header: spec 331 (pin p-cf707f) made it the workspace identity line
+          // and kept it at N=1 so single-root and multi-root were one code path. That reasoning
+          // survives the move — identity is still stated once, unconditionally, for every N — but
+          // the line that states it is now the chrome above, which is on screen from EVERY tab
+          // rather than only from the seven that stacked folders. The collapse toggle went with it:
+          // it existed to fold one project away while others stayed visible, and with one project on
+          // screen it could only have hidden the whole panel.
+          renderSelected(selected)
+        ) : null}
       </div>
-      {open && <CmdK fleets={fleets} onClose={closeK} onPick={pick} />}
+      {open && <CmdK fleets={fleets} selectedHash={selectedHash} onClose={closeK} onPick={pick} />}
       <MoreMenu menu={menu} onClose={() => setMenu(null)} />
     </>
   );
