@@ -13,7 +13,8 @@ import { cpus } from "node:os";
 
 const DEFAULT_MIN_AVAILABLE_MB = 2048;
 const DEFAULT_RESERVE_MB = 3072;
-const DEFAULT_WORKER_MB = 768;
+/** t-3ad4af — measured, not estimated: peak 289MB / marginal 215MB per pool worker. See the .ts twin. */
+const DEFAULT_WORKER_MB = 320;
 const HARD_CAP_WORKERS = 16;
 
 function envInt(name) {
