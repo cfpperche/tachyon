@@ -583,6 +583,12 @@ export class Workspace {
   private readonly runtimeConfigPending = new Map<string, { scope: "global" | "workspace"; revision: string }>();
   // t-fb1453 — the TTL was the one drop path that told nobody. It now reports like overflow does.
   private readonly noticeQueue = new NoticeQueue({ onExpired: (items) => this.reportExpiredNotices(items) });
+  /** t-01a425 — summaries waiting for a parent that did not itself survive the reload. Kept separate
+   *  from NoticeQueue because onSpawned deliberately clears that target's old-incarnation queue. */
+  private readonly pendingReloadSummaries = new Map<string, { children: string[]; line: string }>();
+  /** A reload summary already inside NoticeQueue, retained separately until submit is confirmed so a
+   *  fast parent restart cannot turn queue clearing into a durable false acknowledgement. */
+  private readonly queuedReloadSummaries = new Map<string, { children: string[]; line: string }>();
   readonly waiters: Waiters;
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
@@ -1177,6 +1183,13 @@ export class Workspace {
         this.recordSpawnIncarnation(name);
         this.clientRebind?.onNewIncarnation(name);
         this.noticeQueue.clear(name);
+        this.observeAgentLiveForReloadSummary(name);
+        const reloadSummary = this.pendingReloadSummaries.get(name) ?? this.queuedReloadSummaries.get(name);
+        if (reloadSummary) {
+          this.pendingReloadSummaries.delete(name);
+          this.queuedReloadSummaries.set(name, reloadSummary);
+          this.enqueueNotice(name, reloadSummary.line);
+        }
         this.temporaryBackstop.reset(name);
         this.completionHints.clear(name);
         const pending = this.runtimeConfigPending.get(name);
@@ -4535,7 +4548,10 @@ export class Workspace {
         // t-fb1453 makes the queue respect it. An unconfirmed line stays queued for the next idle
         // rather than being consumed on a guess. Both outcomes still wrote to the pane, so both
         // report true — the caller's question is "did I touch the pane this pass", not "did it land".
-        if (receipt.status !== "submit-unconfirmed") this.noticeQueue.dropFront(agent);
+        if (receipt.status !== "submit-unconfirmed") {
+          this.noticeQueue.dropFront(agent);
+          this.completeQueuedReloadSummary(agent, item.line);
+        }
         return true;
       } catch (err) {
         // A throw here is `submitNoticeLine`'s dead-session path (which already cleared the queue) or a
@@ -5840,6 +5856,114 @@ export class Workspace {
   }
 
   /**
+   * Reload cannot recover the missing lifecycle edge: an absent durable child might have exited while
+   * the host was down, or it might already have been stopped. It can still report the weaker fact it
+   * proves. One durable acknowledgement per missing interval prevents every subsequent reload from
+   * repeating the same inventory; observing the child live again clears that acknowledgement.
+   */
+  private reloadSummaryStateKey(): string {
+    return `tachyon.reload-missing-summary.v1.${this.wsHash}`;
+  }
+
+  private reloadSummaryAcknowledged(): Set<string> {
+    const stored = this.host.getState<unknown>(this.reloadSummaryStateKey());
+    if (!Array.isArray(stored)) return new Set();
+    return new Set(stored.filter((name): name is string => typeof name === "string"));
+  }
+
+  private writeReloadSummaryAcknowledged(names: ReadonlySet<string>): void {
+    this.host.setState(this.reloadSummaryStateKey(), [...names].sort());
+  }
+
+  private acknowledgeReloadSummary(children: readonly string[]): void {
+    const acknowledged = this.reloadSummaryAcknowledged();
+    let changed = false;
+    for (const child of children) {
+      if (acknowledged.has(child)) continue;
+      acknowledged.add(child);
+      changed = true;
+    }
+    if (changed) this.writeReloadSummaryAcknowledged(acknowledged);
+  }
+
+  private clearReloadSummaryAcknowledgement(agent: string): void {
+    const acknowledged = this.reloadSummaryAcknowledged();
+    if (!acknowledged.delete(agent)) return;
+    this.writeReloadSummaryAcknowledged(acknowledged);
+  }
+
+  private observeAgentLiveForReloadSummary(agent: string): void {
+    this.clearReloadSummaryAcknowledgement(agent);
+    // A parent may start after reload before its own parent does. Do not later report the now-live
+    // agent from a summary that was correctly derived, but has become stale while waiting.
+    for (const [parent, pending] of this.pendingReloadSummaries) {
+      if (!pending.children.includes(agent)) continue;
+      const children = pending.children.filter((child) => child !== agent);
+      if (children.length === 0) this.pendingReloadSummaries.delete(parent);
+      else this.pendingReloadSummaries.set(parent, { children, line: this.reloadSummaryLine(children) });
+    }
+  }
+
+  private completeQueuedReloadSummary(agent: string, line: string): void {
+    const queued = this.queuedReloadSummaries.get(agent);
+    if (!queued || queued.line !== line) return;
+    this.queuedReloadSummaries.delete(agent);
+    this.acknowledgeReloadSummary(queued.children);
+  }
+
+  private reloadSummaryLine(children: readonly string[]): string {
+    const named = children.slice(0, 4).map((child) => `'${child}'`).join(", ");
+    const remainder = children.length > 4 ? `, and ${children.length - 4} more` : "";
+    const subject = children.length === 1
+      ? `child ${named} is`
+      : `children ${named}${remainder} are`;
+    const uncertainty = children.length === 1
+      ? "it exited while the host was down or was already stopped"
+      : "they exited while the host was down or were already stopped";
+    return `[tachyon] after reload, ${subject} not running. `
+      + `Tachyon could not observe whether ${uncertainty} — `
+      + "inspect Activity/list_agents, dismiss, resume, or re-delegate";
+  }
+
+  private summarizeMissingChildrenAfterReload(liveAgents: ReadonlySet<string>): void {
+    const acknowledged = this.reloadSummaryAcknowledged();
+    let acknowledgementChanged = false;
+    for (const live of liveAgents) {
+      if (acknowledged.delete(live)) acknowledgementChanged = true;
+    }
+
+    const byParent = new Map<string, string[]>();
+    for (const [child, record] of this.ledger.all()) {
+      const parent = record.def?.parent;
+      if (
+        liveAgents.has(child)
+        || acknowledged.has(child)
+        || record.def?.kind !== "agent"
+        || !parent
+        || parent === child
+      ) continue;
+      const children = byParent.get(parent) ?? [];
+      children.push(child);
+      byParent.set(parent, children);
+    }
+
+    for (const [parent, unsorted] of byParent) {
+      const children = [...unsorted].sort();
+      const line = this.reloadSummaryLine(children);
+      if (!liveAgents.has(parent)) {
+        this.pendingReloadSummaries.set(parent, { children, line });
+        continue;
+      }
+      // Startup has not necessarily taken its first attention sample yet. Queue unconditionally so a
+      // survivor that is mid-turn is never interrupted by an unknown→assumed-idle read; the first
+      // idle observation uses the ordinary NoticeQueue flush path.
+      this.queuedReloadSummaries.set(parent, { children, line });
+      this.enqueueNotice(parent, line);
+    }
+    if (acknowledgementChanged) this.writeReloadSummaryAcknowledged(acknowledged);
+  }
+
+  /**
    * Grok token refresh under a private GROK_HOME replaces `auth.json` (symlink → regular file).
    * On stop/kill, harvest the freshest private credential into `~/.grok/auth.json` and re-symlink
    * every private home so resume / sibling agents do not hit a re-login wall with a revoked key.
@@ -5883,11 +6007,15 @@ export class Workspace {
     // already came from a real tmux read this tick, no recheck needed.
     const guard = confirmVanished ? this.tmux.hasSession(this.manager.session(agent)).catch(() => false) : Promise.resolve(false);
     void guard
-      .then((stillThere) => {
+      .then(async (stillThere) => {
         if (stillThere) return undefined; // false alarm — the child is actually still running
-        return this.tmux
-          .hasSession(parentSession)
-          .then((alive) => (alive ? this.deliverNotice(parent, line, this.sourceNoticeMetadata(agent, "host-poke")) : undefined));
+        const alive = await this.tmux.hasSession(parentSession);
+        if (!alive) return undefined;
+        const result = await this.deliverNotice(parent, line, this.sourceNoticeMetadata(agent, "host-poke"));
+        if (result.status === "notified") {
+          this.acknowledgeReloadSummary([agent]);
+        }
+        return result;
       })
       .catch(() => undefined); // best-effort poke — never let a delivery failure escape the lifecycle tick
   }
@@ -6294,7 +6422,9 @@ export class Workspace {
     // t-8354ae — also run when config is invalid so the sidebar can list ledger agents.
     await this.manager.rehydrateFromLedger();
     if (runningAtStartup !== null) {
-      await this.returnTaskClaimsMissingAtStartup(new Set(runningAtStartup));
+      const liveAtStartup = new Set(runningAtStartup);
+      await this.returnTaskClaimsMissingAtStartup(liveAtStartup);
+      this.summarizeMissingChildrenAfterReload(liveAtStartup);
     }
 
     // t-62f599 — reproject every registered worktree, BEFORE the configOk branch below returns early.

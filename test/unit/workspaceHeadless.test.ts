@@ -1693,6 +1693,101 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
+  it("summarizes children found not running after reload to their surviving parent", async () => {
+    const { ws, sessions, sessionEnv, sent } = await makeWorkspace();
+    ws.ledger.record("coordinator", {
+      def: { cmd: "pi", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    for (const child of ["alpha", "beta"]) {
+      ws.ledger.record(child, {
+        def: { cmd: "pi", kind: "agent", parent: "coordinator" },
+        cwd: ws.workspaceRoot,
+        updatedAt: "before-reload",
+        instance: { lifetime: "temporary", resumePolicy: "restartable" },
+      });
+    }
+    const parentSession = ws.manager.session("coordinator");
+    sessions.add(parentSession);
+    sessionEnv.set(`${parentSession}\u0000TACHYON_INSTANCE_CUT`, "agent-instance-v5");
+
+    await ws.start();
+    expect(sent.has(parentSession)).toBe(false); // startup never assumes unknown attention means idle
+    await (
+      ws as unknown as { recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> }
+    ).recoverOnIdle("coordinator", false);
+
+    expect(sent.get(parentSession)).toBe(
+      "[tachyon] after reload, children 'alpha', 'beta' are not running. "
+      + "Tachyon could not observe whether they exited while the host was down or were already stopped — "
+      + "inspect Activity/list_agents, dismiss, resume, or re-delegate",
+    );
+    ws.dispose();
+  });
+
+  it("holds the reload summary until an absent parent starts, then delivers it once", async () => {
+    const { ws, sent } = await makeWorkspace();
+    ws.ledger.record("coordinator", {
+      def: { cmd: "pi", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    ws.ledger.record("worker", {
+      def: { cmd: "pi", kind: "agent", parent: "coordinator" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+
+    await ws.start();
+    expect(sent.size).toBe(0);
+
+    await ws.manager.spawn("coordinator");
+    await (
+      ws as unknown as { recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> }
+    ).recoverOnIdle("coordinator", false);
+
+    const parentSession = ws.manager.session("coordinator");
+    expect(sent.get(parentSession)).toContain("after reload, child 'worker' is not running");
+
+    sent.delete(parentSession);
+    (
+      ws as unknown as { summarizeMissingChildrenAfterReload(live: ReadonlySet<string>): void }
+    ).summarizeMissingChildrenAfterReload(new Set(["coordinator"]));
+    await flush();
+    expect(sent.has(parentSession)).toBe(false);
+    ws.dispose();
+  });
+
+  it("does not summarize absence when the reload inventory is ambiguous", async () => {
+    const { ws, sessions, sessionEnv, sent } = await makeWorkspace();
+    ws.ledger.record("coordinator", {
+      def: { cmd: "pi", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    ws.ledger.record("worker", {
+      def: { cmd: "pi", kind: "agent", parent: "coordinator" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    const parentSession = ws.manager.session("coordinator");
+    sessions.add(parentSession);
+    sessionEnv.set(`${parentSession}\u0000TACHYON_INSTANCE_CUT`, "agent-instance-v5");
+    vi.spyOn(ws.manager, "runningAgentsStrict").mockResolvedValueOnce(null);
+
+    await ws.start();
+    await flush();
+
+    expect(sent.has(parentSession)).toBe(false);
+    ws.dispose();
+  });
+
   it("keeps an active claim on startup when that agent session survived", async () => {
     const { ws, sessions, sessionEnv } = await makeWorkspace();
     ws.ledger.record("survivor", {
