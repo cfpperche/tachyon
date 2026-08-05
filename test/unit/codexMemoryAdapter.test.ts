@@ -125,7 +125,8 @@ describe("what the measurement does and does NOT promote", () => {
     // `codex debug prompt-input` rendered BYTE-IDENTICAL output with memories off and on, while
     // `features list` proved the flag had flipped. Its silence is a fact about the tool, not the
     // feature — so it can neither confirm injection nor rule it out.
-    for (const axis of ["disable", "enable", "injection", "mutation"] as const) {
+    expect(capability.evidence.disable).toBe("verified");
+    for (const axis of ["enable", "injection", "mutation"] as const) {
       expect(capability.evidence[axis], `${axis} needs a live session`).toBe("declared");
     }
   });
@@ -136,7 +137,7 @@ describe("what the measurement does and does NOT promote", () => {
 
   it("pins the exact version the evidence describes", () => {
     expect(capability.runtimeVersion).toBe(CODEX_MEMORY_MEASURED_VERSION);
-    expect(CODEX_MEMORY_MEASURED_VERSION).toBe("0.145.0");
+    expect(CODEX_MEMORY_MEASURED_VERSION).toBe("0.146.0");
   });
 });
 
@@ -161,11 +162,11 @@ describe("the policy consequence, which is the task's stated default", () => {
     const outcome = resolveMemoryPolicy({
       adapter: "codex",
       requested: "disabled",
-      observedVersion: "0.146.0",
+      observedVersion: "0.147.0",
       capability,
     });
     expect(outcome.status).toBe("blocked");
-    expect(outcome.reasons[0]).toContain("measured on 0.145.0");
+    expect(outcome.reasons[0]).toContain("measured on 0.146.0");
   });
 });
 

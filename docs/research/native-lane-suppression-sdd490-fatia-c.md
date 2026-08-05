@@ -75,7 +75,7 @@ they hold.
 **`verified`** — instructions control measured; memory disable previously verified; canonical launch
 already carries `--setting-sources user` + private home + `autoMemoryEnabled: false`.
 
-## Codex 0.146.0 — instructions: **verified**; combined: **declared** {#codex-01460}
+## Codex 0.146.0 — instructions: **verified**; combined: **verified** {#codex-01460}
 
 ### Documented traps
 
@@ -96,16 +96,35 @@ Planted `AGENTS.md` with `MARKER_CODEX_LANE_SUPPRESS_ZZ9 TOKEN_X9F2Q`.
 **Finding.** `project_doc_max_bytes=0` suppresses AGENTS.md / project-doc delivery. `--ignore-rules`
 does **not**.
 
-### Memory companion
+### Memory companion: **verified disable** {#codex-memory-01460}
 
-`nativeMemory.ts`: every Codex memory axis remains **`declared`** at 0.145.0 (no behavioral disable
-proof). Combined gate therefore cannot be `verified` for the full lane set.
+Measured on 2026-08-05 against `codex-cli 0.146.0`, with a private `CODEX_HOME`, real `auth.json`
+linked into that home, `gpt-5.4-mini`, approval `never`, read-only sandbox, and no project
+`AGENTS.md`. The same synthetic store was present in both arms:
+`$CODEX_HOME/memories/memory_summary.md` contained
+`MARKER_CODEX_NATIVE_MEMORY_Q7V4 TOKEN_M8K2P`. `generate_memories=false` prevented the bench turn
+from adding memories. The prompt required an exact token or `NONE` and prohibited tool calls; neither
+arm called a tool. Crucially, neither launch set `project_doc_max_bytes=0`.
+
+| Arm | Exact relevant argv | Effective feature | Reply | Token usage | API-price equivalent |
+|-----|---------------------|-------------------|-------|-------------|----------------------|
+| positive oracle | `codex exec -C <repo> -m gpt-5.4-mini --json -o <positive> <prompt>` | `memories stable true` | `TOKEN_M8K2P` | 12,669 input (4,480 cached), 80 output | ~$0.00684 |
+| suppress | `codex exec --disable memories -C <repo> -m gpt-5.4-mini --json -o <negative> <prompt>` | `memories stable false` | `NONE` | 11,114 input (8,064 cached), 77 output | ~$0.00324 |
+
+Cost is the standard API-price equivalent recorded from the CLI token counts (GPT-5.4 mini:
+$0.75/M uncached input, $0.075/M cached input, $4.50/M output), about **$0.01008 total**; the Codex
+subscription itself reports quota rather than a dollar charge.
+
+**Finding.** `--disable memories` behaviorally suppresses native memory injection. The enabled arm
+establishes that the planted store and prompt form a working oracle; the disabled arm changes only
+the feature override and returns `NONE` while the marker remains on disk. This promotes only
+`evidence.disable`: enable/injection/mutation/isolation and lifecycle claims remain at their prior
+evidence levels because this two-arm test was scoped to the suppression property.
 
 ### Combined
 
-**`declared`** — instructions suppress is verified at 0.146.0 via `project_doc_max_bytes=0`, but
-native memory disable is not verified, so a formation receipt covering a profile memory lane would
-attest a suppression that was never measured for memory.
+**`verified`** — instructions suppression and memory disable are both behaviorally measured at
+0.146.0. The combined formation gate can now attest both required surfaces.
 
 ## Grok 0.2.118 — instructions: **declared** (no disable control); combined: **declared** {#grok-02118}
 
@@ -153,12 +172,12 @@ Implemented in `src/runtime/nativeLaneSuppression.ts`:
 | Adapter | instructions | memory (registry) | combined |
 |---------|--------------|-------------------|----------|
 | claude | verified (`--setting-sources user` @ 2.1.222) | verified | **verified** |
-| codex | verified (`project_doc_max_bytes=0` @ 0.146.0) | declared | **declared** |
+| codex | verified (`project_doc_max_bytes=0` @ 0.146.0) | verified (`--disable memories` @ 0.146.0) | **verified** |
 | grok | declared (no disable control @ 0.2.118) | verified | **declared** |
 
 ## What Fatia C does **not** do
 
 - Does not change formation lifecycle, bootstrap, or `promptLayers.ts`.
-- Does not start writing `project_doc_max_bytes=0` into Codex launches (that is a separate wiring
-  task once memory disable is also verified, or once the product accepts a narrower receipt).
-- Does not invent `verified` for Grok rules or Codex memory.
+- Does not start writing `project_doc_max_bytes=0` or `--disable memories` into Codex launches
+  (launch wiring is a separate task after measurement).
+- Does not invent `verified` for Grok rules or for unmeasured Codex memory axes.

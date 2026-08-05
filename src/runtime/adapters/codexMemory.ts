@@ -7,7 +7,7 @@
  * keep those two apart, because conflating them is how a registry full of `verified` stops meaning
  * anything.
  *
- * ## What was measured (2026-07-28, Codex CLI 0.145.0, sandboxed CODEX_HOME)
+ * ## What was measured (2026-07-28 at 0.145.0; disable re-measured 2026-08-05 at 0.146.0)
  *
  * 1. **The runtime self-reports effective memory state.** `codex features list` prints one row per
  *    feature with its stage and effective value, and at 0.145.0 the row reads:
@@ -59,7 +59,7 @@ import type { RuntimeNativeMemoryCapabilityV1 } from "../nativeMemory.js";
 import type { MemoryLifecycleOperation } from "../nativeMemory.js";
 
 /** The exact runtime this evidence describes. A different build is unmeasured until someone measures it. */
-export const CODEX_MEMORY_MEASURED_VERSION = "0.145.0";
+export const CODEX_MEMORY_MEASURED_VERSION = "0.146.0";
 
 /** The feature flag that gates the whole memories pipeline. */
 export const CODEX_MEMORIES_FEATURE = "memories";
@@ -139,7 +139,7 @@ export interface CodexVerificationPlan {
 export function codexMemoryVerificationPlan(): CodexVerificationPlan {
   return {
     withoutModelCall: [
-      "measured default — `codex features list` reports `memories stable false` at 0.145.0",
+      "measured control — `codex features list` reports the effective memories state; disable was behaviorally verified at 0.146.0",
       "control reachability — `--enable memories` and `[features] memories = true` in the private CODEX_HOME both flip the reported state to true",
       "Tachyon's emitted config — the canonical projection is a closed allowlist containing no memory key, asserted against live source",
       "store path — <CODEX_HOME>/memories is enumerable without reading any entry",

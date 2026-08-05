@@ -61,14 +61,13 @@ describe("native lane suppression registry", () => {
     }
   });
 
-  it("refuses overall verified when memory disable is only declared", () => {
-    // Codex instructions are verified; memory is not — the combined gate must stay declared.
+  it("confirms codex after both required surfaces were behaviorally verified", () => {
     const codex = nativeLaneSuppressionCapability("codex")!;
     expect(codex.surfaces.instructions.evidence).toBe("verified");
-    expect(nativeMemoryCapability("codex")?.evidence.disable).not.toBe("verified");
-    expect(codex.evidence).toBe("declared");
-    expect(codex.reason).toMatch(/memory=/);
-    expect(isNativeSuppressionConfirmed("codex")).toBe(false);
+    expect(nativeMemoryCapability("codex")?.evidence.disable).toBe("verified");
+    expect(codex.surfaces.memory.controlSpec).toBe("--disable memories");
+    expect(codex.evidence).toBe("verified");
+    expect(isNativeSuppressionConfirmed("codex")).toBe(true);
   });
 
   it("refuses overall verified when instructions have no disable control", () => {
