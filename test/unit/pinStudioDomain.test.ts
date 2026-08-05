@@ -1,9 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { Uri } from "vscode";
-import { __resetVscodeMock, __setOpenDialogResult } from "../mocks/vscode.js";
+import { describe, it, expect } from "vitest";
 import { handlePinStudioDomainMessage } from "../../src/cockpit/pinStudioDomain.js";
 import type { StudioDomainContext } from "../../src/cockpit/studioRegistry.js";
 import type { WorkspacePinStudioTarget, PinStudioAttachmentResult } from "../../src/shell/PinStudioTarget.js";
@@ -21,18 +16,6 @@ import type { WorkspacePinStudioTarget, PinStudioAttachmentResult } from "../../
  * `string | undefined` (a brand-new unsaved pin's sketch is a valid, real case) — the retired panel
  * never guarded on entityId for either, and this port doesn't add a guard that wasn't there.
  */
-
-const dirs: string[] = [];
-const mkroot = (): string => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pin-studio-domain-"));
-  dirs.push(dir);
-  return dir;
-};
-
-beforeEach(() => __resetVscodeMock());
-afterEach(() => {
-  for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
-});
 
 // t-610705 (Phase D, D3) — a default PARAMETER would silently ignore an explicit `fakeCtx(undefined)`
 // call (JS applies defaults on an explicit `undefined` argument too) — matches taskStudioDomain.test.ts's
@@ -180,47 +163,6 @@ describe("Pin Studio domain dispatch (t-610705 Phase D, D3)", () => {
     const errors = findType(ctx.posted, "error") as Array<{ message: string; blocking: boolean }>;
     expect(errors).toHaveLength(1);
     expect(errors[0]!.message).toBe("disk full");
-  });
-
-  it("importImage no-ops when the user cancels the file picker", async () => {
-    __setOpenDialogResult(undefined);
-    const ctx = fakeCtx("p-abc123");
-    let called = false;
-    const t = target({ putPinStudioImage: async () => { called = true; return fakeImageResult(); } });
-    handlePinStudioDomainMessage(t, ctx, { type: "importImage" });
-    await flush();
-    expect(called).toBe(false);
-    expect(ctx.posted).toHaveLength(0);
-  });
-
-  it("importImage reads the picked file and posts attachmentStored", async () => {
-    const root = mkroot();
-    const file = path.join(root, "shot.png");
-    fs.writeFileSync(file, "pretend-png-bytes");
-    __setOpenDialogResult([Uri.file(file)]);
-    const ctx = fakeCtx("p-abc123");
-    let sourceSeen = "";
-    const t = target({ putPinStudioImage: async (input) => { sourceSeen = input.source; return fakeImageResult(); } });
-    handlePinStudioDomainMessage(t, ctx, { type: "importImage" });
-    await flush();
-    expect(sourceSeen).toBe("import");
-    expect(findType(ctx.posted, "attachmentStored")).toHaveLength(1);
-  });
-
-  it("importImage rejects an unsupported file extension without calling the target", async () => {
-    const root = mkroot();
-    const file = path.join(root, "notes.txt");
-    fs.writeFileSync(file, "not an image");
-    __setOpenDialogResult([Uri.file(file)]);
-    const ctx = fakeCtx("p-abc123");
-    let called = false;
-    const t = target({ putPinStudioImage: async () => { called = true; return fakeImageResult(); } });
-    handlePinStudioDomainMessage(t, ctx, { type: "importImage" });
-    await flush();
-    expect(called).toBe(false);
-    const errors = findType(ctx.posted, "error") as Array<{ message: string }>;
-    expect(errors).toHaveLength(1);
-    expect(errors[0]!.message).toMatch(/Unsupported image type/);
   });
 
   it("ignores an unrecognized message type without throwing", () => {

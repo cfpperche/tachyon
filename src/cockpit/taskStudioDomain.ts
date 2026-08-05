@@ -1,9 +1,9 @@
 /**
  * t-610705 (SDD 410 Phase D, D2) — Task Studio's domain-message handler, ported from the retired
- * TaskStudioPanelManager.handleDomainMessage (+ its private importImage/importPrototype/attachImage/
+ * TaskStudioPanelManager.handleDomainMessage (+ its private importPrototype/attachImage/
  * storeSketch helpers) onto the generic StudioRegistryEntry.handleDomainMessage extension point
  * (studioRegistry.ts) — same pattern as agentStudioDomain.ts. Kept in its own file rather than inline
- * in studioRegistry.ts for the same reason: 4 message types, each doing real file-picker/Buffer I/O,
+ * in studioRegistry.ts for the same reason: each message does real file-picker/Buffer I/O,
  * well beyond command/terminal's 3-line browse→cwd forward.
  *
  * Every handler reads `ctx.entityId` rather than a per-panel tracked field (same structural swap
@@ -24,13 +24,11 @@ import type { StudioDomainContext } from "./studioRegistry.js";
 /** the webview -> host domain message shapes (mirrors task-studio/types.ts's TaskStudioWebviewMessage's
  *  domain members) — kept local since the dispatch's `message` param is only typed as `{ type: string }`. */
 type TaskStudioDomainMessage =
-  | { type: "importImage" }
   | { type: "importPrototype" }
-  | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }
+  | { type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop" | "import"; dataBase64: string }
   | { type: "storeSketch"; attachmentId?: string; name?: string; source: "blank" | "annotate-image"; baseImageAttachmentId?: string; sceneJson: string; previewBase64: string };
 
 export function handleTaskStudioDomainMessage(target: WorkspaceTaskStudioTarget, ctx: StudioDomainContext, message: { type: string }): void {
-  if (message.type === "importImage") { void importImage(target, ctx); return; }
   if (message.type === "importPrototype") { void importPrototype(target, ctx); return; }
   if (message.type === "attachImage") { void attachImage(target, ctx, message as Extract<TaskStudioDomainMessage, { type: "attachImage" }>); return; }
   if (message.type === "storeSketch") { void storeSketch(target, ctx, message as Extract<TaskStudioDomainMessage, { type: "storeSketch" }>); return; }
@@ -51,33 +49,6 @@ async function importPrototype(target: WorkspaceTaskStudioTarget, ctx: StudioDom
     if (stat.size > 512 * 1024) throw new Error("prototype HTML exceeds 524288 bytes");
     const html = fs.readFileSync(file, "utf8");
     await target.importTaskStudioPrototype(ctx.entityId, { html, title: path.basename(file) });
-  } catch (err) {
-    postDomainError(ctx, err instanceof Error ? err.message : String(err));
-  }
-}
-
-async function importImage(target: WorkspaceTaskStudioTarget, ctx: StudioDomainContext): Promise<void> {
-  const picked = await vscode.window.showOpenDialog({
-    canSelectFiles: true,
-    canSelectFolders: false,
-    canSelectMany: false,
-    filters: { Images: ["png", "jpg", "jpeg", "webp", "gif"] },
-    title: "Import image into task",
-  });
-  const file = picked?.[0]?.fsPath;
-  if (!file) return;
-  const mediaType = mediaTypeFor(file);
-  if (!mediaType) { postDomainError(ctx, "Unsupported image type"); return; }
-  try {
-    if (!ctx.entityId) return;
-    const stored = await target.putTaskStudioImage(ctx.entityId, {
-      data: fs.readFileSync(file),
-      mediaType,
-      name: path.basename(file),
-      source: "import",
-    });
-    ctx.post(attachmentStoredMessage(stored.attachment));
-    if (stored.overSoftLimit) notifyImageSoftLimit();
   } catch (err) {
     postDomainError(ctx, err instanceof Error ? err.message : String(err));
   }
@@ -134,13 +105,4 @@ function notifySketchSoftLimit(): void {
 function stripDataPrefix(value: string): string {
   const i = value.indexOf(",");
   return i >= 0 ? value.slice(i + 1) : value;
-}
-
-function mediaTypeFor(file: string): string | undefined {
-  const ext = path.extname(file).toLowerCase();
-  if (ext === ".png") return "image/png";
-  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
-  if (ext === ".webp") return "image/webp";
-  if (ext === ".gif") return "image/gif";
-  return undefined;
 }

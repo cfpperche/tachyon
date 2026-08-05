@@ -12,6 +12,7 @@ import { createRichDocEditor } from "../rich-doc/tiptap";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../rich-doc/document";
 import { EditorToolbar, SlashMenu } from "../rich-doc/toolbar";
 import { SketchModal, VisualsPanel, uriToDataURL, type RichDocExcalidrawSaveResult, type SketchRequest } from "../rich-doc/VisualsPanel";
+import { ImageImportPicker } from "../rich-doc/ImageImportPicker";
 import { createTaskStudioAdapter } from "../rich-doc/adapter";
 import type { RichDocAssets, RichDocAttachmentVM } from "../rich-doc/types";
 import type { ArtifactRef, TaskPriority } from "../../tasks/types";
@@ -21,7 +22,6 @@ import {
   attachImageMessage,
   cancelMessage,
   dirtyMessage,
-  importImageMessage,
   importPrototypeMessage,
   patchMessage,
   readyMessage,
@@ -143,6 +143,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
   const [freshFields, setFreshFields] = useState<string[]>([]);
   const [slashOpen, setSlashOpen] = useState(false);
   const [sketch, setSketch] = useState<SketchRequest | null>(null);
+  const [imagePickerOpen, setImagePickerOpen] = useState(false);
 
   const isNew = entity !== undefined && entity.expectUpdatedAt === undefined;
 
@@ -380,7 +381,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
     if (hostError) setError(hostError.message);
   }, [hostError]);
 
-  const attachFile = async (file: File, source: "paste" | "drop") => {
+  const attachFile = async (file: File, source: "paste" | "drop" | "import") => {
     if (!ALLOWED_IMAGE_TYPES.has(file.type)) { setError(`Unsupported image type: ${file.type || "unknown"}`); return; }
     if (file.size > MAX_IMAGE_BYTES) { setError("Image exceeds the 10 MB limit"); return; }
     const dataBase64 = await fileToBase64(file);
@@ -566,7 +567,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
         onCancel={() => post(cancelMessage())}
         headerActions={
           <>
-            <Button icon="file-media" onClick={() => post(importImageMessage())}>Import</Button>
+            <Button icon="file-media" onClick={() => setImagePickerOpen(true)}>Import</Button>
             <Button icon="preview" onClick={() => post(importPrototypeMessage())}>Import prototype</Button>
             <Button icon="edit" onClick={openBlankSketch}>Sketch</Button>
           </>
@@ -680,13 +681,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
           ),
           previewVisual: (
             <>
-              <VisualsPanel attachments={visibleAttachments} onImport={() => post(importImageMessage())} onAnnotate={(a) => void openAnnotate(a)} onEditSketch={openExistingSketch} />
+              <VisualsPanel attachments={visibleAttachments} onImport={() => setImagePickerOpen(true)} onAnnotate={(a) => void openAnnotate(a)} onEditSketch={openExistingSketch} />
               <PrototypePreview value={entity.prototypes ?? { readOnly: false, prototypes: [] }} />
             </>
           ),
         }}
       />
       {sketch && assets && <SketchModal assets={assets} request={sketch} onCancel={() => { pendingSketch.current = null; setSketch(null); }} onSave={storeSketch} onError={setError} />}
+      {imagePickerOpen && <ImageImportPicker target="task" onCancel={() => setImagePickerOpen(false)} onFile={async (file) => { await attachFile(file, "import"); setImagePickerOpen(false); }} />}
       {error && <div class="rd-err" role="alert">{error}</div>}
     </>
   );

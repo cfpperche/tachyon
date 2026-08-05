@@ -26,8 +26,7 @@ export type PinStudioHostMessage =
 
 export type PinStudioWebviewMessage =
   | StudioWebviewCoreMessage<PinPatch>
-  | StudioDomainMessage<{ type: "importImage" }>
-  | StudioDomainMessage<{ type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }>
+  | StudioDomainMessage<{ type: "attachImage"; mediaType: string; name?: string; source: "paste" | "drop" | "import"; dataBase64: string }>
   | StudioDomainMessage<{
       type: "storeSketch";
       attachmentId?: string;

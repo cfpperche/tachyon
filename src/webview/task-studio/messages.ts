@@ -19,9 +19,8 @@ export const dirtyMessage = (dirty: boolean) => envelope({ type: "dirty" as cons
 // fresh click-time patchMessage() immediately before a bare saveMessage() instead.
 export const saveMessage = () => envelope({ type: "save" as const });
 export const cancelMessage = () => envelope({ type: "cancel" as const });
-export const importImageMessage = () => envelope({ type: "importImage" as const });
 export const importPrototypeMessage = () => envelope({ type: "importPrototype" as const });
-export const attachImageMessage = (input: { mediaType: string; name?: string; source: "paste" | "drop"; dataBase64: string }) =>
+export const attachImageMessage = (input: { mediaType: string; name?: string; source: "paste" | "drop" | "import"; dataBase64: string }) =>
   envelope({ type: "attachImage" as const, ...input });
 export const storeSketchMessage = (input: {
   attachmentId?: string;
