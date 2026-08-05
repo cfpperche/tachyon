@@ -1438,6 +1438,7 @@ export class AgentManager {
     );
     if (observed?.state === "ready") {
       this.readyAgents.add(name);
+      this.provisionalAgents.delete(name);
       return true;
     }
     if (observed?.state === "rejected") await this.opts.tmux.killSession(this.session(name)).catch(() => undefined);
@@ -1483,6 +1484,10 @@ export class AgentManager {
       aliveAtDeadline: "pending",
     });
     if (readiness.state === "rejected") {
+      // The bounded launch observation has reached a terminal answer. tmux remains the authority for
+      // any pane that compensation fails to kill; keeping the process-local reservation cannot make
+      // that pane safer, and used to leave a sessionless rejected launch blocking Forget forever.
+      this.provisionalAgents.delete(name);
       // SDD 477 — an auth rejection is a HUMAN's problem, not a retryable fault. When the runtime
       // declared a measured signal, re-read the pane once to attach what the human must do, so the
       // failure names the runtime and the safe action instead of a bare code that invites a retry.
@@ -1516,7 +1521,10 @@ export class AgentManager {
       if (failures.length === 1) throw primary;
       throw new AggregateError(failures, `launch readiness rejection '${readiness.code}' had incomplete compensation`, { cause: primary });
     }
-    if (readiness.state === "ready") this.readyAgents.add(name);
+    if (readiness.state === "ready") {
+      this.readyAgents.add(name);
+      this.provisionalAgents.delete(name);
+    }
   }
 
   /** spec 332 — the lineage parent recorded for this agent (live projection first, durable ledger
@@ -1728,9 +1736,10 @@ export class AgentManager {
    * thing that was failing).
    *
    * So this never consults the cache. It reports what it MEASURED:
-   *  - `occupied` — an in-process reservation is held, or a fresh inventory / session probe found the
-   *    name. A dead remain-on-exit pane counts: it is still present in tmux and still has to be torn
-   *    down before forget can claim zero occupancy.
+   *  - `occupied` — a fresh inventory / session probe found the name. An in-process launch
+   *    reservation strengthens that measured positive, but cannot veto when tmux contradicts it. A
+   *    dead remain-on-exit pane counts: it is still present in tmux and still has to be torn down
+   *    before forget can claim zero occupancy.
    *  - `free` — a fresh inventory came back and the name was not in it.
    *  - `unknown` — tmux could not be inventoried. Neither alive nor dead; the caller must fail closed
    *    and say which of the two it could not establish.
@@ -1739,9 +1748,10 @@ export class AgentManager {
    * the cache the other readers depend on.
    */
   async probeAgentOccupancy(name: string): Promise<AgentOccupancyVerdict> {
-    // In-process facts first: they are free to read and cannot be stale — they live on this object,
-    // not in another process's tmux server.
-    if (this.provisionalAgents.has(name)) return { state: "occupied", detail: "a launch for this name is in flight" };
+    // A soul reservation is an authority lock held by the current lifecycle operation. A provisional
+    // launch marker is only a belief about tmux: it must be reconciled against the world below before
+    // it can veto removal (t-dbddeb).
+    const provisionalLaunch = this.provisionalAgents.has(name);
     if (this.soulReservations.has(name)) return { state: "occupied", detail: "a soul launch reservation is held for this name" };
 
     // Retry the fresh inventory before giving up: a transient `list-panes` failure (racing a
@@ -1761,6 +1771,12 @@ export class AgentManager {
     }
     const state = states.get(name);
     if (state) {
+      if (provisionalLaunch) {
+        return {
+          state: "occupied",
+          detail: `an in-process launch reservation is confirmed by tmux (${state.dead ? "a stopped pane is still present" : "the session is running"})`,
+        };
+      }
       return { state: "occupied", detail: state.dead ? "a stopped pane is still present in tmux" : "the session is running" };
     }
 
@@ -1769,10 +1785,25 @@ export class AgentManager {
     // and this catches the one thing `list-panes` cannot see: a session with no panes at all.
     try {
       if (await this.opts.tmux.hasSession(this.session(name))) {
-        return { state: "occupied", detail: "a tmux session with this name is still present" };
+        return {
+          state: "occupied",
+          detail: provisionalLaunch
+            ? "an in-process launch reservation is confirmed by tmux (a session with this name is still present)"
+            : "a tmux session with this name is still present",
+        };
       }
     } catch (error) {
       return { state: "unknown", detail: `the tmux session probe failed (${error instanceof Error ? error.message : String(error)})` };
+    }
+    if (provisionalLaunch) {
+      // Reconcile once: repeated removal phases must not re-warn about the same residue. This marker
+      // protected the launch race while it was unmeasured; after two fresh tmux negatives, preserving
+      // it would preserve only the leak, not a live process.
+      this.provisionalAgents.delete(name);
+      this.opts.notify?.(
+        `agent '${name}': Tachyon believed a launch was still in flight, but tmux measured no session '${this.session(name)}'; a stale in-process launch reservation remained after lifecycle cleanup and was cleared`,
+        "warn",
+      );
     }
     return { state: "free" };
   }
@@ -3697,6 +3728,11 @@ export class AgentManager {
     }
     await this.detachPaneTranscript(session);
     await this.opts.tmux.killSession(session);
+    // The lifecycle monitor is a second session-removal door beside kill(). Readiness belongs to the
+    // process instance it just collected; retaining either marker here makes a cleanly exited Saved
+    // Agent look resumable while a process-local launch belief blocks its eventual Forget.
+    this.readyAgents.delete(name);
+    this.provisionalAgents.delete(name);
     this.cleanExited.add(name);
     return true;
   }
