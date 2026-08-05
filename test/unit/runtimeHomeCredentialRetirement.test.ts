@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HarnessManager, bridgeGrokHome } from "../../src/harness/HarnessManager.js";
+import { RESUME_RUNTIMES, adapterForRuntime } from "../../src/resume/adapters.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 function fixture() {
@@ -14,6 +15,10 @@ function fixture() {
 }
 
 describe("t-14cf7c runtime-home credential retirement", () => {
+  it("covers every supported runtime that declares credential-bearing private homes", () => {
+    const credentialRuntimes = RESUME_RUNTIMES.filter((runtime) => (adapterForRuntime(runtime)?.harness?.authFiles.length ?? 0) > 0);
+    expect(credentialRuntimes.sort()).toEqual(["claude", "codex", "grok", "hermes", "opencode"].sort());
+  });
   it("removes authority but deliberately retains reinstall cache", () => {
     const f = fixture();
     f.manager.retireCredentials("ghost", { procRoot: path.join(f.workspace, "no-proc") });
@@ -36,6 +41,12 @@ describe("t-14cf7c runtime-home credential retirement", () => {
       procRoot: path.join(f.workspace, "no-proc"),
       beforeDelete: (credential) => fs.appendFileSync(credential, "changed"),
     })).toThrow(/dirty/);
+    expect(fs.existsSync(path.join(f.home, "auth.json"))).toBe(true);
+  });
+
+  it("discovers credential-bearing orphan candidates without deleting them", () => {
+    const f = fixture();
+    expect(f.manager.credentialHomeNames()).toEqual(["ghost"]);
     expect(fs.existsSync(path.join(f.home, "auth.json"))).toBe(true);
   });
 });

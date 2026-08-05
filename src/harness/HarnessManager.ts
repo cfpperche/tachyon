@@ -2959,6 +2959,26 @@ export class HarnessManager {
     }
   }
 
+  /** Names whose private runtime homes still contain credentials. Read-only reconciliation input. */
+  credentialHomeNames(): string[] {
+    const names = new Set<string>();
+    const collect = (root: string, decode: (entry: string) => string | undefined) => {
+      try {
+        for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const name = decode(entry.name);
+          if (name) names.add(name);
+        }
+      } catch { /* absent root */ }
+    };
+    collect(harnessRoot(this.workspaceRoot), (entry) => entry);
+    collect(bridgeMcpRoot(this.workspaceRoot), (entry) => entry.endsWith(".grok") ? entry.slice(0, -5) : entry.endsWith(".hermes") ? entry.slice(0, -7) : undefined);
+    return [...names].filter((name) => {
+      const roots = [this.home(name), bridgeGrokHome(this.workspaceRoot, name), bridgeHermesHome(this.workspaceRoot, name)];
+      return roots.some((root) => ["auth.json", path.join("data", "opencode", "auth.json")].some((rel) => fs.existsSync(path.join(root, rel))));
+    }).sort();
+  }
+
   /**
    * spec 236 — write the per-agent Bridge-only `--mcp-config` file for a NON-harness claude agent and
    * return its path. The Bearer token stays a literal `${TACHYON_BRIDGE_TOKEN}` ref (claude expands it

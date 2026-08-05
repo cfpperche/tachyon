@@ -98,7 +98,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // t-6f0377 — 71 → 72: renew_context, the agent's own compact/fresh verb.
   // t-afe120 — 72 → 75: propose/list/cancel_saved_agent_removal_proposal (governed Saved Agent retirement).
   // t-458497 — 75 → 76: runtime_condition, the two-axis read on what condition each runtime is in.
-  it("exposes exactly the 76 canonical tools, including the explicit Terminal operation", async () => {
+  // t-14cf7c — 76 → 77: explicit, name-scoped orphan runtime credential reconciliation.
+  it("exposes exactly the 77 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -150,6 +151,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "propose_schedule",
       "read_output",
       "reanchor_agent",
+      "reconcile_runtime_credentials",
       "reconcile_task",
       "reconcile_worktree_hygiene",
       "register_worktree",
