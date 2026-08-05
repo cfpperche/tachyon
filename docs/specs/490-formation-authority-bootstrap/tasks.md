@@ -16,6 +16,16 @@ _Generated from `plan.md` on 2026-08-04. Work top-to-bottom. Check boxes as task
 - [x] `Workspace.adoptFormationAuthority` / `inspectFormationAuthority` / `recoverFormationAdoption` —
       in-process only: no protocol action, no editor command, not on the studio target interface.
 
+### Prerequisite of routing `createSoulProfile` (delivered, `t-fb9087` item 1)
+
+- [x] Remove the seven `soul.profile.*` MUTATIONS from the control-socket surface — actions, schemas,
+      dispatch and the client's staging pair. Publishing formation lane content carries the same
+      unreachability as `bootstrap`; the socket authenticates the machine account, not the caller.
+      `soul.profile.status` stays, because reading is not publishing.
+- [ ] Route `createSoulProfile` for a canonical agent to `HumanLaneTransactionService.prepareProfileEdit`
+      through a write host granting `profile-edit` under that same policy. Now unblocked twice over:
+      the vector exists (bootstrap) and the socket route is shut.
+
 ### Fatia A — not done, and named rather than implied
 
 - [ ] The Agent Studio gesture that calls the door. Until it ships nobody can adopt through the

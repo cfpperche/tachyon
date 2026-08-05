@@ -66,6 +66,30 @@ So the door is a plain `Workspace` method, called in-process, and named as **unr
 than authentication everywhere it is described. `test/unit/agentFormationBootstrap.test.ts` fails if
 any of the three routes appears.
 
+### …and the door that was already open got closed (2026-08-05, second commit)
+
+Finding the above raised a question the slice could not leave alone: adoption is now unreachable, but
+the seven `soul.profile.*` MUTATIONS were still listed in `EXTENSION_COMMAND_ACTIONS`. Measured
+rather than assumed — `controlServer.ts:382` authenticates a request with `controlNonceMatches` and
+nothing else, so there is no caller identity to scope on. **Any agent could create, import, replace,
+adopt, enable, disable or delete any agent's Soul, with no proposal, no human, and no record of who.**
+
+The maintainer's decision — `profile-edit` carries the same unreachability as `bootstrap`, and an
+agent that needs an identity changed PROPOSES rather than holding a door — made the closure a
+prerequisite of routing `createSoulProfile`, not a follow-up to it. Routing first would have pointed
+the new lane publisher at a same-uid entry point.
+
+Removed: the seven actions, their schemas, the dispatch cases, `soulProfileMutation`, and the client's
+`invokeSoulProfile`/`invokeSoulPayload` staging pair. `soul.profile.status` stays — reading is not
+publishing. Three guards, each watched red first, including flipping
+`engineServiceProtocol.test.ts`'s assertion from "accepts `soul.profile.replace`" to "refuses it by
+action, including in its bare shape" so the refusal cannot be a payload-mismatch accident.
+
+**What it costs, stated plainly:** the remote studio client loses Soul mutations, and refuses naming
+where the capability lives. That is the intended effect, not collateral damage — but it is a real
+capability removal from a shipped surface, and whoever reads this later should see it as a decision
+rather than discover it as a regression.
+
 ### The guard is an AST walk, and it was watched red first
 
 `test/helpers/formationBootstrapScan.ts` parses every `src/**/*.ts` and classifies each
