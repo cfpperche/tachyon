@@ -58,6 +58,12 @@ export interface TaskListOptions {
   status?: TaskStatus;
 }
 
+export interface ReturnUnavailableAgentClaimsInput {
+  evidence: string;
+  actor?: string;
+  now?: string;
+}
+
 /** A committed update observation. Observers cannot change or fail the Task mutation result. */
 export interface TaskMutationEvent {
   before: Task;
@@ -327,6 +333,41 @@ export class TaskStore {
       this.writeTask(next);
       this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
       return next;
+    });
+  }
+
+  /**
+   * Return every active claim held by an agent that is no longer executing.
+   *
+   * This is a lifecycle reconciliation, not completion: process death proves only that nobody is
+   * working the claim now. The task goes back to triaged, its assignee is cleared, and the reason is
+   * journalled before the task write. Keeping this in the store gives crash observation, deliberate
+   * stop and startup recovery one serialized door instead of three hand-built field patches.
+   */
+  async returnUnavailableAgentClaims(agent: string, input: ReturnUnavailableAgentClaimsInput): Promise<Task[]> {
+    return this.withMutation(async () => {
+      const assignee = boundedString(agent, "assignee", 64);
+      const evidence = boundedString(input.evidence, "evidence", 2000);
+      const actor = boundedString(input.actor ?? "tachyon", "actor", 64);
+      const now = input.now ?? new Date().toISOString();
+      const current = this.listRaw().filter((task) => task.status === "active" && task.assignee === assignee);
+      const returned: Task[] = [];
+
+      for (const task of current) {
+        const next: Task = { ...task, status: "triaged", updatedAt: now };
+        delete next.assignee;
+        delete next.awaitingHuman;
+        delete next.evolutionCompletion;
+        this.journal.append(task.id, {
+          author: actor,
+          text: `claim returned active -> triaged; assignee '${assignee}' cleared: ${evidence}`,
+        });
+        this.writeTask(next);
+        this.emitMutation({ before: task, after: next, actor });
+        returned.push(next);
+      }
+
+      return returned;
     });
   }
 
