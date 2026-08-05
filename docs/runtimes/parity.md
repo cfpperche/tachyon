@@ -171,7 +171,8 @@ the measured subset and marks affected running agents pending.
 finds native mechanisms in Claude, Codex, Grok and Hermes. Per-axis evidence lives in
 `src/runtime/nativeMemory.ts`: Claude `disable`/`enable`/`isolation` **verified** at 2.1.220;
 Grok `disable` **verified** at 0.2.112 via `GROK_MEMORY=0` (flag `--no-memory` refuted headless);
-Codex every axis still **declared**. OpenCode and Pi have no built-in mechanism (`✗`);
+Codex `disable` **verified** at 0.146.0 via `--disable memories` (enabled marker → TOKEN; disabled
+marker → NONE), while its other consequence/lifecycle axes remain declared. OpenCode and Pi have no built-in mechanism (`✗`);
 plugins/extensions can still introduce uncontrolled memory. Hermes belongs under **Outros** until
 it has a canonical profile adapter and remains `✗` because copied config can reconnect native or
 external-provider memory. Human-approved selected memory is a separate Tachyon lane.
@@ -186,7 +187,7 @@ once, so memory disable alone is insufficient — native **rules/instructions** 
 | Runtime | Instructions surface | Control measured | Memory disable | Combined gate |
 |---------|----------------------|------------------|----------------|---------------|
 | Claude 2.1.222 | project `CLAUDE.md` | **✓** `--setting-sources user` (project marker → NONE; `user,project` → TOKEN); user-home CLAUDE.md still loads under private `CLAUDE_CONFIG_DIR` (Tachyon-owned). `--bare` also skips CLAUDE.md but refuses OAuth. | **✓** (registry) | **✓** `isNativeSuppressionConfirmed("claude")` |
-| Codex 0.146.0 | `AGENTS.md` / project doc | **✓** `project_doc_max_bytes=0` (marker → NONE); `--ignore-rules` does **not** suppress AGENTS.md | **declared** only | **~** combined stays `declared` until memory disable is verified |
+| Codex 0.146.0 | `AGENTS.md` / project doc | **✓** `project_doc_max_bytes=0` (marker → NONE); `--ignore-rules` does **not** suppress AGENTS.md | **✓** `--disable memories` (same planted store: enabled → TOKEN, disabled → NONE) | **✓** `isNativeSuppressionConfirmed("codex")` |
 | Grok 0.2.118 | `AGENTS.md` (+ CLAUDE.md aliases) | **✗** no argv/env/config disable; `inspect` always lists planted files; `--system-prompt-override` still returns marker; silence = file absence (ambient inspector), not a control | **✓** `GROK_MEMORY=0` | **~** combined `declared` — rules cannot be turned off |
 
 The comparative audit in
