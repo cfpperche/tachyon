@@ -84,32 +84,88 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
   });
 
   /**
-   * `t-21bcb7` — the two lines that carry the lean-verification guidance into every brief.
+   * `t-21bcb7`, re-cut by `t-486f43` — the two lines that qualify the configured check.
    *
    * Both are cheap to delete and expensive to lose: without them an agent runs the full suite after
-   * each step (the suite holds a machine-wide lock every other agent queues behind) and pastes long
-   * findings into a notify (best-effort pane input, so the findings do not survive).
+   * each step (the suite holds a machine-wide lock every other agent queues behind) and reports a
+   * pass that was measured on some other tree.
    *
    * The load-bearing half is the NEGATIVE one. Verification economy is Tachyon's policy about
    * Tachyon's suite; a consumer that configured no checks must not be told how often to run a suite
    * it never declared. That is the same ownership boundary the primer already keeps for the checks
-   * themselves — so the advice has to be bound to the check, not merely near it.
+   * themselves — so the qualifier has to be bound to the check, not merely near it.
+   *
+   * `t-486f43` removed the working method that used to ride in this line ("Use focused tests while
+   * implementing") and kept what only the product can state: what a run attests.
    */
-  const FOCUSED = "Use focused tests while implementing; run this on the tree you deliver.";
+  const ATTESTS = "A check attests the exact TREE it ran on: a pass measured on any other tree is not evidence about what you deliver.";
+  const FOCUSED = "Use focused tests while implementing";
 
   it("prices verification per delivery, and only where a check was actually configured", () => {
     const configured = renderPrimer(delegatedAdhoc).beforeFinishing.split("\n");
-    expect(configured).toContain(FOCUSED);
-    // Ordering is the meaning: the advice qualifies the check below it. Above the check it reads as
-    // a rule about the whole section; below it, as an afterthought about something already run.
-    expect(configured.indexOf(FOCUSED)).toBeLessThan(
+    expect(configured).toContain(ATTESTS);
+    // Ordering is the meaning: the qualifier describes the check below it. Above the check it reads
+    // as a rule about the whole section; below it, as an afterthought about something already run.
+    expect(configured.indexOf(ATTESTS)).toBeLessThan(
       configured.indexOf(`Run configured check (workspace config settings.verify.full): ${fullCheck}`),
     );
 
     for (const input of [declared, plainAdhoc]) {
       const { primer, beforeFinishing } = renderPrimer(input);
-      expect(`${primer}\n${beforeFinishing}`).not.toContain(FOCUSED);
+      expect(`${primer}\n${beforeFinishing}`).not.toContain(ATTESTS);
     }
+  });
+
+  /**
+   * t-486f43 — the three sentences that fused a product FACT with a working METHOD, separated.
+   *
+   * Deleting them outright would have lost facts nobody but the product can state (the notice
+   * transport's hard refusal, continuity's durability, what a check attests). Keeping them whole gave
+   * repository method the immunity `precedenceLines` grants protocol. Each assertion below therefore
+   * comes in a pair: the fact is still said, and the recipe that rode on it is gone.
+   */
+  describe("t-486f43 — product fact kept, working method released to the project", () => {
+    it("states the notice transport limit without prescribing a report style", () => {
+      for (const input of [delegatedAdhoc, plainAdhoc, declared]) {
+        const { primer } = renderPrimer(input);
+        expect(primer).toMatch(/over 500 characters it is refused, never truncated/);
+        expect(primer).toMatch(/only what the line points at survives/);
+
+        expect(primer).not.toContain("Keep completion concise");
+        expect(primer).not.toContain("otherwise summarize concisely");
+        expect(primer).not.toContain("materially useful");
+      }
+    });
+
+    it("states that continuity is durable without prescribing when to checkpoint", () => {
+      for (const input of [delegatedAdhoc, plainAdhoc, declared]) {
+        const { primer } = renderPrimer(input);
+        expect(primer).toMatch(/Continuity is durable working memory/);
+        expect(primer).toMatch(/survives compaction, clear, restart and a new session/);
+
+        // The exact policy this repository's maintainer wanted reversed on 2026-08-05.
+        expect(primer).not.toMatch(/only when material state/);
+        expect(primer).not.toMatch(/set_continuity only/);
+      }
+    });
+
+    it("states what a check attests without prescribing the working loop", () => {
+      const { primer, beforeFinishing } = renderPrimer(delegatedAdhoc);
+      expect(beforeFinishing).toContain(ATTESTS);
+      expect(`${primer}\n${beforeFinishing}`).not.toContain(FOCUSED);
+    });
+
+    /**
+     * The primer names no tool for the notice on purpose (`single source: both sections agree on the
+     * real doorbell target` above): a second doorbell instruction in the opening of the brief is a
+     * second thing to keep in sync with the one at the end. Stating the transport FACT must not
+     * reintroduce it.
+     */
+    it("carries the transport fact without adding a second doorbell instruction", () => {
+      for (const input of [delegatedAdhoc, plainAdhoc, declared]) {
+        expect(renderPrimer(input).primer).not.toContain("notify_agent");
+      }
+    });
   });
 
   it("points the doorbell at durable detail instead of carrying it", () => {
