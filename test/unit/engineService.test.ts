@@ -14,6 +14,7 @@ import { PinStore } from "../../src/pins/PinStore.js";
 import {
   TmuxService,
   isolatedArgs,
+  sessionName,
   utf8LocaleEnv,
   workspaceHash,
   type ExecResult,
@@ -689,8 +690,19 @@ describe("daemon engine service", () => {
       input: { action: "workspace.stop-all" },
     })).toMatchObject({ status: "ok", action: "workspace.stop-all", value: { stoppedAgents: expect.any(Number) } });
 
+    // t-72d4d3 — on failure dump private inventory + parent hasSession (disagreement evidence).
+    const workerSession = sessionName(identity.workspaceHash, "worker");
     const startCommand = { schemaVersion: 1 as const, method: "agent.start" as const, input: { agent: "worker" } };
     const started = await first.invoke("operation-engine-start-0001", startCommand);
+    if ((started as { status?: string }).status !== "ok") {
+      const inventory = await isolatedTmux.listSessions("tachyon-").catch((err) => [`list-failed:${String(err)}`]);
+      const parentHas = await isolatedTmux.hasSession(workerSession).catch((err) => `err:${String(err)}`);
+      const detail = started as { code?: string; message?: string };
+      throw new Error(
+        `agent.start failed: ${detail.code ?? "?"} — ${detail.message ?? "no message"}; ` +
+          `workerSession=${workerSession} parentHasSession=${parentHas} sessions=[${inventory.join(",")}]`,
+      );
+    }
     expectOk(started, "agent.start");
     expect(await first.invoke("operation-engine-start-0001", startCommand)).toEqual(started);
     await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
