@@ -48,7 +48,9 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
   // the richest canonical state — the real SAMPLE the production bundle ships.
   default: { provenance: "sample-derived", vm: SAMPLE },
 
-  /** SDD 485 C6 — two attached projects make the Control header's project selector meaningful. */
+  /** Two attached projects make the sidebar's project selector meaningful. SDD 485 C6 put that
+   *  selector in the Control tab header; t-72ff5a moved it to the sidebar chrome and scoped the
+   *  seven per-project tabs to it, so this fixture now exercises the whole sidebar, not one tab. */
   "multi-project": {
     provenance: "synthetic-edge",
     vm: [

@@ -45,12 +45,27 @@ describe("t-aa2780 — the engine log-error dot has a destination", () => {
     }
   });
 
-  it("multi-root folds with some(): one erroring folder lights the window's one strip", () => {
-    const html = renderStatic(SidebarApp({
-      fleets: [{ ...clean, folder: { hash: "a", name: "Alpha" } }, { ...erroring, folder: { hash: "b", name: "Beta" } }],
-      initialTab: "Attentions",
-    }));
-    expect(html).toContain('data-testid="tab-control-engine-dot"');
+  /**
+   * t-72ff5a — multi-root FOLLOWS THE SELECTION, where it used to fold every root with `some()`.
+   *
+   * The fold predates the selection: with no project in focus, a window-level dot was the only
+   * honest summary available. Now the tile this dot lights opens Control on the SELECTED project's
+   * Engine section, so a dot lit by another project's log ring would send the reader to a log with
+   * nothing wrong in it — an alarm whose address is wrong, which is what the tile exists to fix.
+   *
+   * Nothing is hidden that the reader cannot reach: switching project in the sidebar chrome lights
+   * it, and this has never been a health check — it reports that the ring holds error lines.
+   */
+  it("multi-root follows the selected project rather than folding every root", () => {
+    const fleets = [
+      { ...clean, folder: { hash: "a", name: "Alpha" } },
+      { ...erroring, folder: { hash: "b", name: "Beta" } },
+    ];
+    const onErroring = renderStatic(SidebarApp({ fleets, initialTab: "Attentions", selectedWsHash: "b" } as never));
+    expect(onErroring).toContain('data-testid="tab-control-engine-dot"');
+
+    const onClean = renderStatic(SidebarApp({ fleets, initialTab: "Attentions", selectedWsHash: "a" } as never));
+    expect(onClean).not.toContain('data-testid="tab-control-engine-dot"');
   });
 
   it("sidebar.css declares both dots", () => {

@@ -187,8 +187,6 @@ export interface CockpitStrings {
   companionAllowedHostsSave: string;
   companionPaired: string;
   companionNotPaired: string;
-  /** t-46eb4f — label of the ONE global scope option that means 'every attached root'. */
-  allWorkspaces: string;
   companionPickWorkspace: string;
   companionBaseUrl: string;
   /** SDD 414 — Control pair-code affordance (command palette still works). */
@@ -231,7 +229,8 @@ export type CockpitAction =
   | { type: "openPersonalCardTemplate" }
   | { type: "openDoctor" }
   | { type: "setSection"; section: CockpitSectionId }
-  /** t-d16a39 — shell-level workspace scope; "" selects "All workspaces". */
+  /** t-d16a39 — shell-level workspace scope. t-72ff5a — always a real wsHash: the "all workspaces"
+   *  aggregate was removed when the selection moved to the sidebar chrome and began to scope its tabs. */
   | { type: "switchControlWorkspace"; wsHash: string }
   | { type: "fleetStart"; name: string; wsHash?: string }
   | { type: "fleetStop"; name: string; wsHash?: string }

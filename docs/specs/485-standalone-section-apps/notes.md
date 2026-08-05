@@ -891,6 +891,12 @@ selects project B, then proves A remains A while the next task document opens ag
 The selector is omitted when only one project is attached. With multiple projects it occupies the existing
 `.sec-actions` slot and offers the aggregate plus each attached project.
 
+> **Both sentences were superseded.** The maintainer reversed the first on 2026-08-03 (the selector is
+> ALWAYS on screen, inert with one project, because a control that appears only once a second project
+> shows up teaches nobody it exists). t-72ff5a reversed the rest on 2026-08-05: the selector left
+> `.sec-actions` for the sidebar's own chrome above the search bar once it began to scope seven tabs,
+> and the aggregate option was removed outright — see the superseded-decision block in `spec.md`.
+
 **Evidence:** `ev-2026-08-03T16:27:20.800Z-0`; captures at `.vqa/visual-qa/control-{one,multi}-{880,360}.png`
 used viewport and `?width=` together.
 
