@@ -58,13 +58,16 @@ describe("role templates (spec 216)", () => {
   describe("bridge guidance (Part B)", () => {
     it("tail mentions the Bridge and the native-subagent caveat", () => {
       const t = bridgeGuidanceTail();
-      expect(t).toMatch(/Bridge/);
       expect(t).toMatch(/Task\/Explore/);
+      expect(t).toMatch(/no tab, no lineage, no attention/);
+      expect(t).not.toContain("create_task");
+      expect(t).not.toContain("verify gate");
+      expect(t).not.toContain("Coordinate through");
     });
-    it("tail nudges running the verify gate before reporting done (spec 248 path C)", () => {
+    it("tail does not ship the repository's verify-gate method", () => {
       const t = bridgeGuidanceTail();
-      expect(t).toMatch(/verify gate/);
-      expect(t).toMatch(/idle is not proof/);
+      expect(t).not.toMatch(/verify gate/);
+      expect(t).not.toMatch(/idle is not proof/);
     });
     it("appends to a body when enabled, passthrough when disabled", () => {
       expect(withBridgeGuidance("hi", false)).toBe("hi");

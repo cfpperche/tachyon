@@ -12,6 +12,7 @@ import {
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
 import { PRIMER_OPEN, renderPrimer, type PrimerInput } from "../../src/bridge/primer.js";
+import { bridgeGuidanceTail } from "../../src/roles/templates.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 
 // Promoted out of the Product Invariant registry on 2026-07-25 (maintainer decision: the ceremony
@@ -294,6 +295,20 @@ describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`,
 
     for (const source of TACHYON_PROJECT_GUIDANCE) {
       expect(rendered?.split(`Source: ${source}\n`)).toHaveLength(2);
+    }
+  });
+
+  it("t-f050af: delivered Bridge guidance contains the product fact, not this repository's methods", () => {
+    const tail = bridgeGuidanceTail();
+    expect(tail).toContain("no tab, no lineage, no attention");
+    for (const convention of [
+      "Coordinate through the Bridge",
+      "spawn through the Bridge",
+      "A bug you find is a task",
+      "declared verify gate",
+      "going idle is not proof",
+    ]) {
+      expect(tail, `repository convention leaked into consumer guidance: ${convention}`).not.toContain(convention);
     }
   });
 });
