@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { handleAgentStudioDomainMessage } from "../../src/cockpit/agentStudioDomain.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import { SoulError } from "../../src/agents/soul.js";
@@ -584,14 +584,17 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
    * `message.includes("revision")` classified "still owns a worktree; remove it explicitly before
    * canonical forget" as an internal failure and threw the only actionable text on the screen away.
    */
-  it("forwards a governed refusal verbatim and still flattens an internal failure", async () => {
+  it("forwards a governed refusal, flattens an internal failure in-panel, and retains its redacted diagnosis", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const refusal = "agent 'Ada' still owns a worktree; remove it explicitly before canonical forget";
+    const leakedToken = "do-not-retain-this-token";
+    const leakedEnvValue = "do-not-retain-this-env-value";
     const target = ws({
       commitAgentProfileStudioLifecycle: async (mutation) => {
         if (mutation.expectedRevision === "a".repeat(64)) {
           return { schemaVersion: 1, kind: "refused", code: "agent-profile/forget-worktree-owned", message: refusal };
         }
-        throw new Error("EIO writing /Users/ada/.tachyon/profiles/Ada/profile.yml");
+        throw new Error(`EIO writing /Users/ada/.tachyon/profiles/Ada/profile.yml TACHYON_AGENT_BRIDGE_TOKEN=${leakedToken} PLUGIN_STATE=${leakedEnvValue}`);
       },
       inspectAgentProfileStudio: async () => profileSnapshot("Ada", "b".repeat(64)),
     });
@@ -629,5 +632,13 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
       conflict: false,
     });
     expect(JSON.stringify(flattened)).not.toContain("/Users/ada");
+    const retained = errorLog.mock.calls.flat().join("\n");
+    expect(retained).toContain("Agent Studio lifecycle failed for 'Ada'");
+    expect(retained).toContain("EIO writing /Users/ada/.tachyon/profiles/Ada/profile.yml");
+    expect(retained).toContain("TACHYON_AGENT_BRIDGE_TOKEN=[redacted]");
+    expect(retained).toContain("PLUGIN_STATE=[redacted]");
+    expect(retained).not.toContain(leakedToken);
+    expect(retained).not.toContain(leakedEnvValue);
+    errorLog.mockRestore();
   });
 });
