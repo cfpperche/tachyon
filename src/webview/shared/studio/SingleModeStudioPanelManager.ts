@@ -12,6 +12,7 @@ import type { StudioHostAdapter } from "./adapter.js";
 import type { StudioPanelState } from "./StudioPanelManagerBase.js";
 import { decodeStudioMessage, envelope } from "./protocol.js";
 import { mapUnknownError } from "./errorTaxonomy.js";
+import { acceptsWhileVanished, isTombstone } from "./tombstone.js";
 import { READY } from "../ready.js";
 import {
   SingleModeStudioEditPolicy,
@@ -119,6 +120,19 @@ export class SingleModeStudioPanelManager {
         let entity: unknown;
         let referenceData: unknown;
         let saveInFlight = false;
+        /**
+         * t-b643ac — the last title a SUCCESSFUL load produced, and whether this panel's entity has
+         * since been proven gone. `lastGoodTitle` is how much of spec 335's "render the last known
+         * good projection" the shared layer can honestly carry (see StudioTombstone.tsx); it stays
+         * `undefined` for a panel revived onto an entity that was already removed, which is exactly
+         * `emptyTombstoneVm`'s "no last-known state at all" case.
+         *
+         * `discardedDraft` is remembered rather than recomputed because a remounted webview replays
+         * `ready`, and the second telling must not claim the human's work was still there to lose.
+         */
+        let lastGoodTitle: string | undefined;
+        let vanished = false;
+        let discardedDraft = false;
 
         const postError = (error: unknown) => {
           const mapped = mapUnknownError("transport", error);
@@ -132,6 +146,34 @@ export class SingleModeStudioPanelManager {
             }),
           );
         };
+        /**
+         * t-b643ac — the entity is gone. This is a DOCUMENT STATE, so it is posted as `tombstone`,
+         * not as an `error`: an error leaves the client believing the document still has a subject
+         * and its form still mounted from the previous load, which is the reported defect.
+         *
+         * Three things happen here, and the order matters. The draft is severed from the identity
+         * (decision 3 — `entityVanished` latches, so a `patch` already in flight cannot re-dirty it)
+         * AND evicted from the manager's retained-draft map, because that map is keyed by identity
+         * and a later entity created under the same name would otherwise inherit a dead one's edits.
+         * Then `vanished` latches, which is what makes Save impossible at the host (decision 4).
+         */
+        const postTombstone = () => {
+          if (!adapter) return;
+          if (!vanished) {
+            discardedDraft = policy.entityVanished();
+            this.drafts.delete(session.key);
+            vanished = true;
+          }
+          session.post(
+            envelope({
+              type: "tombstone",
+              entityType: adapter.entityType,
+              ...(entityId !== undefined ? { entityId } : {}),
+              ...(lastGoodTitle !== undefined ? { title: lastGoodTitle } : {}),
+              discardedDraft,
+            }),
+          );
+        };
         const load = async (referenceOnly = false) => {
           if (!adapter) {
             postError(new Error(`workspace ${project} is not attached`));
@@ -140,6 +182,10 @@ export class SingleModeStudioPanelManager {
           const result = await adapter.load(entityId, {
             asWebviewUri: (path) => session.asWebviewUri(path),
           });
+          if (isTombstone({ status: result.status, entityId })) {
+            postTombstone();
+            return;
+          }
           if (result.status !== "ok") {
             postError(
               new Error(
@@ -166,13 +212,12 @@ export class SingleModeStudioPanelManager {
                   expected: adapter.revisionOf?.(result.entity) ?? "",
                 }
               : { kind: "none" as const };
-          session.setTitle(
-            adapter.titleFor(
-              entityId === undefined ? "new" : "edit",
-              entityId,
-              result.entity,
-            ),
+          lastGoodTitle = adapter.titleFor(
+            entityId === undefined ? "new" : "edit",
+            entityId,
+            result.entity,
           );
+          session.setTitle(lastGoodTitle);
           session.post(
             envelope({
               type: "load",
@@ -204,7 +249,19 @@ export class SingleModeStudioPanelManager {
           }>(raw, adapter?.domainMessageNames ?? []);
           if (!decoded.ok || !decoded.message || !adapter || !workspace) return;
           const message = decoded.message;
+          /**
+           * t-b643ac, decision 4 — Save is IMPOSSIBLE on a vanished entity, not merely disabled.
+           *
+           * The client rendering `StudioTombstone` instead of `StudioFrame` removes the button from
+           * the DOM; this removes the door. It has to be here as well as there, because the button is
+           * not the only way a `save` arrives — a message posted before the tombstone landed, or any
+           * adapter domain action (Forget/Rename/Export/Clone on an agent that is already gone), reaches
+           * this handler with no button involved. `ready` and `cancel` stay open: a remounted webview
+           * must be re-told it is a tombstone, and closing the tab is the only action left.
+           */
+          if (vanished && !acceptsWhileVanished(message.type)) return;
           if (message.type === "ready") {
+            if (vanished) { postTombstone(); return; }
             await load();
             return;
           }

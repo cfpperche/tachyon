@@ -14,7 +14,7 @@ export const STUDIO_PROTOCOL_VERSION = 1;
 
 /** The reserved core message names — lifecycle, dirty tracking, validation/save/cancel/error. A domain union
  *  registering any of these is a spec violation, not a naming coincidence. */
-export const CORE_MESSAGE_TYPES = ["ready", "load", "patch", "save", "cancel", "error", "dirty", "restore", "referenceData"] as const;
+export const CORE_MESSAGE_TYPES = ["ready", "load", "patch", "save", "cancel", "error", "dirty", "restore", "referenceData", "tombstone"] as const;
 export type CoreMessageType = (typeof CORE_MESSAGE_TYPES)[number];
 
 const CORE_MESSAGE_TYPE_SET: ReadonlySet<string> = new Set(CORE_MESSAGE_TYPES);
@@ -69,6 +69,22 @@ export type StudioHostCoreMessage<TEntity, TEntityId, TPatch, TReferenceData = u
       saveInFlight?: boolean;
     } & StudioEnvelope)
   | ({ type: "referenceData"; referenceData?: TReferenceData } & StudioEnvelope)
+  /**
+   * t-b643ac — the entity this document edits NO LONGER EXISTS.
+   *
+   * Deliberately NOT an `error`: a request failing and the subject of the document being gone are
+   * different facts, and collapsing them is what left a removed agent's Studio showing a red line
+   * above a fully live form with Save clickable. `error` says "your load failed, the document is
+   * still about something"; `tombstone` says "there is nothing left to be about". A client that
+   * cannot tell them apart has no way to stop rendering an editor.
+   *
+   * Carries the LAST GOOD title rather than the entity: the shared layer owns `titleFor`, so this
+   * much of "the last good projection" (spec 335's tombstone contract, taskDetailVm.ts's
+   * `emptyTombstoneVm`) generalizes across every studio. The form itself does not — see the task's
+   * decision 2. `title` is absent when the panel never completed a load (a revived tab whose entity
+   * was removed while the window was closed — `emptyTombstoneVm`'s "no last-known state at all").
+   */
+  | ({ type: "tombstone"; entityType: string; entityId?: TEntityId; title?: string; discardedDraft: boolean } & StudioEnvelope)
   | ({ type: "error"; code: string; message: string; source?: "validation" | "persistence" | "transport"; blocking: boolean } & StudioEnvelope)
   | ({ type: "restore"; snapshot: StudioRestoreSnapshot<TEntityId, TPatch> | null } & StudioEnvelope)
   | ({ type: "save"; status: "ok" } & StudioEnvelope);

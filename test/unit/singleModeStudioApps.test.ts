@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { sectionPanelKey } from "../../src/webview/shared/SectionPanelManager.js";
 import { webviewApp } from "../../src/webview/webviewApps.js";
@@ -10,6 +10,20 @@ const studios = [
   "schedule",
   "agent",
 ] as const;
+
+/**
+ * t-b643ac — who ACTUALLY rides the shared single-mode host, derived from the tree rather than
+ * from the hand-written list above. The list is what the tombstone tests iterate; if a sixth studio
+ * is put on this host and only added there, every "all five behave" proof silently keeps covering
+ * five. Deriving it means a new studio either joins the list or fails right here.
+ */
+function studiosOnTheSharedHost(): string[] {
+  return readdirSync("src/webview")
+    .filter((f) => f.endsWith("StudioPanel.ts"))
+    .filter((f) => readFileSync(`src/webview/${f}`, "utf8").includes("extends SingleModeStudioPanelManager"))
+    .map((f) => f.replace(/StudioPanel\.ts$/, "").toLowerCase())
+    .sort();
+}
 
 describe("SDD 485 D13 — editing-only studio document apps", () => {
   it("declares all five as documents and keys reopening by entity identity", () => {
@@ -54,6 +68,20 @@ describe("SDD 485 D13 — editing-only studio document apps", () => {
     );
     expect(host).toMatch(/new SingleModeStudioEditPolicy<unknown>\(\s*"edit"/);
     expect(host).not.toContain('switchMode("read")');
+  });
+
+  it("carries the tombstone contract in every shell on the shared host, and knows about all of them", () => {
+    // t-b643ac — the host posts `tombstone` for ALL of these (one fix, five screens), so a shell that
+    // never learned to render it would keep an editor mounted over an entity that no longer exists —
+    // the exact defect, arriving through a studio nobody re-checked.
+    expect(studiosOnTheSharedHost()).toEqual([...studios].sort());
+    for (const studio of studios) {
+      const app = readFileSync(`src/webview/${studio}-studio-shell/App.tsx`, "utf8");
+      expect(app, `${studio}: no tombstone branch`).toContain('d.type === "tombstone"');
+      expect(app, `${studio}: does not render the shared tombstone`).toContain("<StudioTombstone");
+      // Rendered INSTEAD of the frame, not above it — this is what removes Save from the DOM.
+      expect(app.indexOf("<StudioTombstone")).toBeLessThan(app.indexOf("<StudioFrame"));
+    }
   });
 
   it("keeps every studio panel source line at or below 200 characters", () => {

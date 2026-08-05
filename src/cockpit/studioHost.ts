@@ -199,6 +199,10 @@ export async function sendStudioLoad(io: StudioHostIO): Promise<void> {
     const result = await b.adapter.load(b.entityId);
     if (!io.isCurrent() || binding !== b || binding.generation !== generation) return;
     if (result.status !== "ok") {
+      // t-b643ac — still error-shaped, measured: this module is imported by nothing but
+      // studioHostProvisionalCleanup.test.ts, so no human reaches this line. The tombstone contract
+      // lives in SingleModeStudioPanelManager, the host all five real studios actually run on. If
+      // Control-hosted studio routes are ever revived, this needs the same three moves that host made.
       b.loadFailed = true;
       const message = result.status === "not-found" ? "not found" : result.error;
       io.post(envelope(errorEnvelope(mapUnknownError("persistence", new Error(message), `persistence/${result.status}`))));

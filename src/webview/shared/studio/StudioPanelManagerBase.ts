@@ -267,6 +267,22 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
     }
   }
 
+  /**
+   * t-b643ac — the two `not-found` sites below (loadAndPost + loadAndPostReferenceData) deliberately
+   * still map a missing entity onto an `error`, and that is a measurement rather than an oversight.
+   *
+   * The tombstone contract landed in `SingleModeStudioPanelManager`, which is where all five real
+   * single-mode studios live (command/terminal/runbook/schedule/agent). THIS base has exactly one
+   * remaining consumer: `PipelineStudioPanel`, the spec-350 Phase 1 fake — `extension.ts` constructs
+   * it and registers its serializer, but no command, route or menu opens it, and `pipeline-studio/
+   * App.tsx` has no tombstone screen to post to. (The third site the task asked about,
+   * `studioHost.ts:203`, is further gone still: nothing outside a unit test imports that module.)
+   *
+   * So the fix belongs where a human can reach it. If a REAL studio is ever put back on this base,
+   * it needs the tombstone before it ships — copy the three moves from SingleModeStudioPanelManager:
+   * post `tombstone` instead of `error`, latch the draft through `policy.entityVanished()`, and gate
+   * inbound messages through `acceptsWhileVanished`.
+   */
   private async loadAndPost(entry: PanelEntry<TEntity, TPatch, TReferenceData>, restoreSnapshot: StudioRestoreSnapshot<string, TPatch> | null): Promise<void> {
     const result = await this.adapter.load(entry.entityId, {
       asWebviewUri: (fsPath: string) => entry.panel.webview.asWebviewUri(vscode.Uri.file(fsPath)).toString(),
