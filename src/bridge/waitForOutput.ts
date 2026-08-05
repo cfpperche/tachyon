@@ -6,6 +6,10 @@
  * max — see tools.ts's wait_for_agent registration).
  */
 
+// t-bec361 — one structural lineage port for every WHICH-TARGETS policy, so the wait scope and the
+// lifecycle scope cannot drift apart on what "lineage" reads from.
+import type { LineageSource } from "./lifecycleScope.js";
+
 export const WAIT_OUTPUT_DEFAULT_TIMEOUT_SEC = 45;
 export const WAIT_OUTPUT_MAX_TIMEOUT_SEC = 240;
 export const WAIT_OUTPUT_MAX_PATTERN_LENGTH = 300;
@@ -170,9 +174,7 @@ export function waitOutputConcurrencyRefusalMessage(cap: number): string {
   );
 }
 
-export interface LineageSource {
-  parentOf(name: string): string | undefined;
-}
+export type { LineageSource };
 
 /**
  * t-fe5dbe governance (the part herdr lacks): a caller may wait_for_output only on itself, an agent

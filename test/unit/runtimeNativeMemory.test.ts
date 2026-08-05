@@ -82,12 +82,12 @@ describe("the registry records what was measured, at the version it was measured
     }
   });
 
-  it("t-560797: records exactly the measured Claude promotions, and sources them", () => {
+  it("records exactly the behaviorally measured promotions", () => {
     const promoted = Object.entries(RUNTIME_NATIVE_MEMORY_REGISTRY)
       .flatMap(([adapter, capability]) => MEMORY_EVIDENCE_AXES
         .filter((axis) => capability.evidence[axis] === "verified")
         .map((axis) => `${adapter}.${axis}`));
-    expect(promoted).toEqual(["claude.disable", "claude.enable", "claude.isolation", "grok.disable"]);
+    expect(promoted).toEqual(["claude.disable", "claude.enable", "claude.isolation", "codex.disable", "grok.disable"]);
     expect(claude().evidence).toEqual({
       inventory: "declared",
       disable: "verified",
@@ -200,21 +200,16 @@ describe("resolution fails closed", () => {
     expect(drifted.reasons[0]).toContain("measured on 2.1.220");
   });
 
-  it("rule 1: `disabled` needs VERIFIED disable — authored bytes are not evidence", () => {
-    const outcome = resolveMemoryPolicy({ adapter: "codex", requested: "disabled", observedVersion: "0.145.0" });
-    expect(outcome.status).toBe("blocked");
-    expect(outcome.reasons[0]).toContain("only proves Tachyon authored bytes");
+  it("rule 1: `disabled` is allowed after the Codex disable control was behaviorally verified", () => {
+    const outcome = resolveMemoryPolicy({ adapter: "codex", requested: "disabled", observedVersion: "0.146.0" });
+    expect(outcome.status).toBe("allowed");
+    expect(outcome.reasons.join(" ")).toContain("memory disabled by verified control");
   });
 
   it("rule 4: memory ON by default plus unverifiable disable blocks readiness, loudly", () => {
     // The failure this prevents: rendering as `Ready` while nobody can say whether memory is off.
     const outcome = resolveMemoryPolicy({ adapter: "hermes", requested: "disabled", observedVersion: "0.18.2" });
     expect(outcome.reasons.join(" ")).toContain("blocked rather than Ready");
-    // Codex measured OFF by default, so it blocks WITHOUT that second sentence — the distinction is
-    // the point: both are unverified, only one is dangerous today.
-    const codex = resolveMemoryPolicy({ adapter: "codex", requested: "disabled", observedVersion: "0.145.0" });
-    expect(codex.status).toBe("blocked");
-    expect(codex.reasons.join(" ")).not.toContain("blocked rather than Ready");
   });
 
   it("allows `disabled` once disable is verified — and says the bytes are still there", () => {
@@ -308,8 +303,8 @@ describe("resolution fails closed", () => {
   it("blocks every native runtime whose disable axis nobody has observed", () => {
     // If this ever passes for a runtime, it is because someone ran the verifier and promoted evidence,
     // which is exactly the intended path. t-325794 walked that path for grok — the FIRST promotion —
-    // so grok is now listed below rather than here, and the guarantee for the rest is unchanged.
-    for (const adapter of ["codex", "hermes"]) {
+    // so grok and codex are now listed below rather than here, and the guarantee for the rest is unchanged.
+    for (const adapter of ["hermes"]) {
       const capability = nativeMemoryCapability(adapter)!;
       expect(capability.evidence.disable, `${adapter} is unverified`).not.toBe("verified");
       const outcome = resolveMemoryPolicy({ adapter, requested: "disabled", observedVersion: capability.runtimeVersion });

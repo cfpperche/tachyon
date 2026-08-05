@@ -215,28 +215,32 @@ export const RUNTIME_NATIVE_MEMORY_REGISTRY: Readonly<Record<string, RuntimeNati
   codex: {
     schemaVersion: 1,
     adapter: "codex",
-    runtimeVersion: "0.145.0",
+    runtimeVersion: "0.146.0",
     mechanism: "native",
     defaultState: "disabled",
     evidence: {
       inventory: "declared",
-      disable: "declared",
+      // Live matched arms on 2026-08-05 used the same private CODEX_HOME and planted
+      // memory_summary.md marker. With memories enabled the model returned TOKEN_M8K2P; adding
+      // `--disable memories` made the same prompt return NONE. No project-doc suppression was set.
+      disable: "verified",
       enable: "declared",
       injection: "declared",
       mutation: "declared",
       isolation: "declared",
     },
-    control: { detect: "config", disable: "config", enable: "config", purge: "api", export: "none" },
+    control: { detect: "config", disable: "argv", enable: "config", purge: "api", export: "none" },
     injection: { mode: "retrieval" },
     mutation: { modes: ["background-extraction"] },
     storage: { owner: "runtime", scope: "global", privateHomeBound: true, aliasesWorktrees: "unknown" },
     // Same CODEX_HOME retains state across fresh/restart/resume; native fork is unavailable.
     lifecycle: { fresh: "retain", restart: "retain", resume: "retain", fork: "unavailable" },
     sources: [
-      { kind: "runtime-doc", ref: "https://github.com/openai/codex/blob/main/codex-rs/core/src/memories/README.md" },
+      { kind: "runtime-doc", ref: "https://github.com/openai/codex/blob/main/codex-rs/memories/README.md" },
       { kind: "runtime-doc", ref: "https://github.com/openai/codex/blob/main/codex-rs/core/config.schema.json" },
       { kind: "installed-source", ref: "src/harness/HarnessManager.ts" },
       { kind: "installed-source", ref: RESEARCH },
+      { kind: "behavioral-test", ref: "docs/research/native-lane-suppression-sdd490-fatia-c.md#codex-memory-01460" },
     ],
   },
   grok: {

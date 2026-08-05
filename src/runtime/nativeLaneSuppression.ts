@@ -109,7 +109,7 @@ function memorySurfaceFromRegistry(adapter: string, fallbackVersion: string): La
         : adapter === "grok"
           ? "GROK_MEMORY=0"
           : adapter === "codex"
-            ? "memories config (declared only — not behaviorally verified)"
+            ? "--disable memories"
             : mem.control.disable,
     note:
       disable === "verified"
