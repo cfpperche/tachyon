@@ -305,6 +305,41 @@ describe.skipIf(!tmuxAvailable())("ControlModeClient against real tmux (F20 engi
     await expect(tmux.capturePane("cm-ghost")).rejects.toThrow(/can't find/);
   });
 
+  /**
+   * t-9610e8 — pins the measurement the unit harness only imitates: the REAL server frames each
+   * `;`-separated command in a line separately. TmuxService composes such lines (`newSession` sends
+   * `start-server ; set-option … ; new-session …`), so one-frame-per-line accounting left surplus
+   * frames that completed later commands with a foreign body.
+   */
+  it("t-9610e8 — a multi-command line answers one frame per command, matching the subprocess path", async () => {
+    const exec = client.makeExecutor();
+    const line = [
+      "-L", CM_SOCKET,
+      "display-message", "-p", "one",
+      ";", "display-message", "-p", "two",
+      ";", "display-message", "-p", "three",
+    ];
+    const viaChannel = await exec(line);
+    expect(viaChannel.stdout).toBe("one\ntwo\nthree\n");
+    expect(viaChannel.stdout).toBe((await realExecutor(line)).stdout);
+
+    // The surplus frames of the line above must not be sitting in the queue waiting to answer this.
+    expect((await exec(["-L", CM_SOCKET, "display-message", "-p", "after"])).stdout).toBe("after\n");
+  });
+
+  /** A failing command aborts the rest of its line: fewer frames arrive than the line owed. */
+  it("t-9610e8 — a failing command ends its line early without desyncing the queue", async () => {
+    const exec = client.makeExecutor();
+    await expect(exec([
+      "-L", CM_SOCKET,
+      "display-message", "-p", "first",
+      ";", "kill-session", "-t", "=cm-absent",
+      ";", "display-message", "-p", "third",
+    ])).rejects.toThrow(/can't find session/);
+
+    expect((await exec(["-L", CM_SOCKET, "display-message", "-p", "recovered"])).stdout).toBe("recovered\n");
+  });
+
   it("dead-map subscription fires on pane death with the exit code (~1s budget)", async () => {
     await tmux.newSession({ name: "cm-dier", cmd: "sh" });
     await sleep(400);

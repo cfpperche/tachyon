@@ -19,7 +19,10 @@ import { mintExecution } from "../executionGraph/executionIdentity.js";
  * Two roles:
  *  - command channel: tmux invocations ride the client's stdin/stdout as lines,
  *    replies framed by `%begin`/`%end`/`%error` tags (strictly FIFO per client —
- *    verified on a real socket). Zero subprocess churn in steady state.
+ *    verified on a real socket). One line may carry SEVERAL `;`-separated
+ *    commands, and tmux frames each of them separately, so a pending consumes
+ *    `commandGroupCount(args)` frames rather than one (t-9610e8). Zero
+ *    subprocess churn in steady state.
  *  - event source: `%sessions-changed` (kill/spawn) plus `refresh-client -B`
  *    subscriptions whose format loops (#{S:…}) encode SERVER-WIDE maps —
  *    dead-pane liveness (`tachyon-dead`) and last-activity timestamps
@@ -96,12 +99,35 @@ export function lineSafe(args: string[]): boolean {
   return args.every((a) => !/[\n\r]/.test(a));
 }
 
+/**
+ * t-9610e8 — how many reply frames ONE written line will produce.
+ *
+ * TmuxService composes multi-command invocations (`start-server ; set-option … ; new-session …`,
+ * `respawnPane`'s set-environment chain) using bare `;` args — the same predicate `tmuxQuote` uses
+ * to leave a separator unquoted. Measured on tmux 3.6: the server frames each command in the line
+ * on its own, with its own command number, so a three-command line answers with THREE
+ * `%begin`/`%end` pairs. Empty groups (a trailing or doubled `;`) produce no frame.
+ */
+export function commandGroupCount(args: string[]): number {
+  let groups = 0;
+  let inGroup = false;
+  for (const arg of args) {
+    if (arg === ";") { inGroup = false; continue; }
+    if (!inGroup) { groups++; inGroup = true; }
+  }
+  return groups;
+}
+
 interface Pending {
   resolve: (r: ExecResult) => void;
   reject: (e: Error) => void;
   args: string[];
   timer: ReturnType<typeof setTimeout> | undefined;
   bootstrap: boolean;
+  /** Frames this line still owes before it settles — one per `;`-separated command. */
+  expectedFrames: number;
+  /** Bodies collected so far; the subprocess path returns them concatenated. */
+  bodies: string[];
 }
 
 export interface ControlModeOptions {
@@ -268,6 +294,12 @@ export class ControlModeClient {
    * while the private socket's list-sessions showed only `tachyon-ctl-<hash>`. A
    * false-positive has-session is worse than the extra subprocess, so this probe
    * never rides the channel.
+   *
+   * t-9610e8 named that desync: `newSession` writes one line holding several `;`-separated
+   * commands, and each answered with its OWN frame, so `new-session`'s surplus `%end` completed
+   * whichever probe was queued next — a missing session answering like a present one. Frame
+   * accounting closes it, but the diversion stays: reconvergence is its own commit, so if the
+   * daemon regresses again we know which half did it.
    */
   makeExecutor(): TmuxExecutor {
     return (args: string[], options: TmuxExecOptions = {}) => {
@@ -278,6 +310,9 @@ export class ControlModeClient {
         || socket !== this.socket
         || !lineSafe(cmd)
         || cmd.length === 0
+        // Separators only: nothing would run, so no frame would ever come back and the pending
+        // would sit at the head of the queue absorbing the NEXT command's reply.
+        || commandGroupCount(cmd) === 0
         || cmd.includes("has-session")
       ) {
         return this.fallback(args, options);
@@ -297,7 +332,10 @@ export class ControlModeClient {
         reject(new TransportError("control client down"));
         return;
       }
-      const pending: Pending = { resolve, reject, args: cmd, timer: undefined, bootstrap };
+      const pending: Pending = {
+        resolve, reject, args: cmd, timer: undefined, bootstrap,
+        expectedFrames: commandGroupCount(cmd), bodies: [],
+      };
       if (options.timeoutMs !== undefined) {
         pending.timer = setTimeout(() => {
           if (proc !== this.proc || !this.pending.includes(pending)) return;
@@ -386,15 +424,30 @@ export class ControlModeClient {
       });
       return;
     }
-    const pending = this.pending.shift();
+    const pending = this.pending[0];
     if (!pending) return; // unsolicited frame (e.g. session switches) — ignore
+
+    // A failing command ABORTS the rest of its line — measured on tmux 3.6, a three-command line
+    // whose middle command fails answers with two frames and stops. So an %error closes the line
+    // now; waiting for the frames it still nominally owed would stall the queue forever. This is
+    // also the subprocess contract: tmux exits non-zero and discards the stdout already produced.
+    if (isError) {
+      this.pending.shift();
+      if (pending.timer) clearTimeout(pending.timer);
+      if (pending.bootstrap) this.settleBootstrapReply();
+      pending.reject(new TmuxError(body.trim() || "tmux command failed", pending.args));
+      return;
+    }
+
+    pending.bodies.push(body);
+    if (pending.bodies.length < pending.expectedFrames) return; // the line still owes frames
+
+    this.pending.shift();
     if (pending.timer) clearTimeout(pending.timer);
     if (pending.bootstrap) this.settleBootstrapReply();
-    if (isError) {
-      pending.reject(new TmuxError(body.trim() || "tmux command failed", pending.args));
-    } else {
-      pending.resolve({ stdout: body.length > 0 ? body + "\n" : "", stderr: "" });
-    }
+    // Match the subprocess path: one invocation's stdout is every command's output concatenated.
+    const stdout = pending.bodies.filter((b) => b.length > 0).join("\n");
+    pending.resolve({ stdout: stdout.length > 0 ? stdout + "\n" : "", stderr: "" });
   }
 
   private settleBootstrapReply(): void {
