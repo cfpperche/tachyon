@@ -8,10 +8,11 @@
  * unpacking the VSIX would have shown otherwise. The check was then done BY HAND on each release --
  * which is a habit, and habits are what this rule exists to replace.
  *
- * Three checks, all against bytes inside the zip:
+ * Four checks, all against bytes inside the zip:
  *   1. every `dist/` file the build CLAIMED (the embedded provenance record) is present, unchanged;
  *   2. every file the engine manifest promises is present, unchanged -- the 0.56.102 failure exactly;
- *   3. no source map ships inside the engine payload.
+ *   3. no source map ships inside the engine payload;
+ *   4. everything the packaged code loads, and everything its manifest names, is inside the package.
  *
  * Pure enough to test: it takes a path and the claims, returns problems, and never exits the process.
  */
@@ -21,10 +22,9 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { runtimeExternals, missingExternals } from "./runtime-externals.mjs";
+import { packageClosureViolations } from "./package-closure.mjs";
 
 const ENGINE_REL = "dist/engine";
-const EXTENSION_BUNDLE = "dist/extension.js";
 
 function sha256(file) {
   return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
@@ -91,19 +91,24 @@ export function checkPackagedArtifact(vsixPath, distClaims = {}) {
       if (rel.endsWith(".map")) problems.push(`source map inside the engine payload: ${ENGINE_REL}/${rel}`);
     }
 
-    // 4. t-09a462 — an `external` is a promise that the module is there at RUNTIME. Nothing verified
-    // it, so node-pty was declared, marked external, required, and never packaged: the agent pane
-    // could not attach in any installed build, and the build had no reason to fail. Read what the
-    // BUILT bundle emits rather than the esbuild config — the config is the claim, the bundle is the
-    // result.
-    const bundle = path.join(ext, EXTENSION_BUNDLE);
-    if (fs.existsSync(bundle)) {
-      const externals = runtimeExternals(bundle);
-      checked += externals.length;
-      for (const pkg of missingExternals(externals, ext)) {
-        problems.push(`the bundle requires '${pkg}' at runtime but the vsix does not contain it`);
-      }
-    }
+    // 4. t-09a462, then t-e0a0f5 — an `external` is a promise that the module is there at RUNTIME.
+    // Nothing verified it, so node-pty was declared, marked external, required, and never packaged:
+    // the agent pane could not attach in any installed build, and the build had no reason to fail.
+    //
+    // This check used to compare EVERY bare `require` in dist/extension.js against the package, and
+    // that was worse than useless — measured on both real release artifacts, it refused 0.57.0 AND
+    // 0.57.1 over `bufferutil` and `utf-8-validate`, which are ws's optional native speedups and
+    // belong in no VSIX. An audit that refuses every healthy release is an audit nobody runs, and
+    // `.tachyon/deploys/` proves it: no 0.57.x has a record. Meanwhile it missed the defect that
+    // actually shipped, because `ws` was reached through a dynamic `import(...)` and not a `require`.
+    //
+    // `package-closure.mjs` replaces it by attributing each import to the module that WROTE it: ours
+    // must resolve inside the package, a library's optional load is the library's business. It covers
+    // the original node-pty case, the dynamic-import case, and every other node bundle in the package
+    // rather than the extension entry point alone.
+    const closure = packageClosureViolations(ext);
+    checked += 1;
+    problems.push(...closure);
 
     return { ok: problems.length === 0, checked, problems };
   } finally {

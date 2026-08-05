@@ -44,6 +44,9 @@ async function makeVsix(opts: {
   const engine = opts.engineFiles ?? { "engine-daemon.cjs": "DAEMON" };
 
   const zip = new JSZip();
+  // Every real vsix carries one; VS Code cannot install a package without it, and t-e0a0f5's manifest
+  // check reads it. Omitting it here would have the fixtures assert on a shape that cannot ship.
+  zip.file("extension/package.json", JSON.stringify({ name: "tachyon", publisher: "cfpperche", version: "0.0.0" }));
   for (const [rel, body] of Object.entries(dist)) zip.file(`extension/${rel}`, body);
   for (const [rel, body] of Object.entries(engine)) zip.file(`extension/dist/engine/${rel}`, body);
   if (!opts.omitManifest) {
@@ -140,12 +143,14 @@ describe.skipIf(!unzipOk())("packaged artifact audit (t-1f425c)", () => {
 
   // t-09a462 — an `external` require is a promise about runtime. node-pty was declared, marked
   // external, required and never packaged; the audit above could not see it, because a node_module is
-  // in neither the dist claims nor the engine manifest.
+  // in neither the dist claims nor the engine manifest. t-e0a0f5 rewrote HOW that is decided
+  // (`scripts/package-closure.mjs`, tested in packageClosure.test.ts); what matters here is that the
+  // release audit still reaches it — this is the door `record-provenance audit` walks through.
   it("REFUSES a bundle that requires a package the vsix does not contain", async () => {
     const { vsix, claims } = await makeVsix({ distFiles: { "dist/extension.js": `require("node-pty");` } });
     const r = checkPackagedArtifact(vsix, claims);
     expect(r.ok).toBe(false);
-    expect(r.problems.join("\n")).toMatch(/requires 'node-pty' at runtime but the vsix does not contain it/);
+    expect(r.problems.join("\n")).toMatch(/loads 'node-pty'[\s\S]*no node_modules\/node-pty/);
   });
 
   it("accepts the same bundle once the package ships with it", async () => {

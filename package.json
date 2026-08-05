@@ -965,7 +965,8 @@
     "test:integration": "vscode-test",
     "vscode:prepublish": "npm run build:stable && npm run package:prepare",
     "package:prepare": "node scripts/prepare-package.mjs",
-    "package": "vsce package"
+    "package": "vsce package",
+    "smoke:vsix": "node scripts/vsix-smoke.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.17.6",

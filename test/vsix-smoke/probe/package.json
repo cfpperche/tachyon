@@ -1,0 +1,10 @@
+{
+  "name": "tachyon-vsix-smoke-probe",
+  "displayName": "Tachyon VSIX smoke probe",
+  "description": "Opens one door per live surface of the INSTALLED Tachyon package. Never packaged, never published.",
+  "version": "0.0.0",
+  "publisher": "tachyon-smoke",
+  "private": true,
+  "engines": { "vscode": "^1.96.0" },
+  "main": "./extension.js"
+}
