@@ -49,6 +49,15 @@ function gitOutput(args, cwd = process.cwd()) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 }
 
+/** `gitOutput` for a query whose ABSENCE is an answer — returns null instead of throwing (t-d858f5). */
+function tryGitOutput(args, cwd = process.cwd()) {
+  try {
+    return gitOutput(args, cwd);
+  } catch {
+    return null;
+  }
+}
+
 /** The suite's own definition — true whatever it happens to import. */
 const BROWSER_SUITE_OWN = Object.freeze(["test/browser/", "vitest.browser.config.ts"]);
 
@@ -100,9 +109,26 @@ export function browserGateDecision({ cwd = process.cwd() } = {}) {
   try {
     const head = gitOutput(["rev-parse", "HEAD"], cwd);
     const branch = gitOutput(["branch", "--show-current"], cwd);
+    // t-d858f5 — on `main` the base is what has NOT been pushed, not the last merge.
+    //
+    // This used to be `HEAD^`, which on a merge commit is the first parent: only the diff the LAST
+    // merge introduced. Land two merges before running the gate and the first one is invisible to
+    // this decision. That is not hypothetical — cutting 0.60.0, a merge touching `src/agents/`
+    // (a browser root) was skipped because a later merge landed on top of it, and the suite ran
+    // only because the coordinator checked by hand.
+    //
+    // `origin/main..HEAD` is the set the release actually carries. A stale `origin/main` widens the
+    // set rather than narrowing it, which errs slow instead of blind, and no fetch happens here —
+    // the gate stays offline. With no `origin/main` (fresh clone, no remote) we fall back to the
+    // previous commit, which is the old behaviour and still better than skipping the decision.
+    // The fallback is a THROW path, not an empty string: `gitOutput` runs `execFileSync`, which
+    // throws on a non-zero exit, and `rev-parse --verify` exits non-zero when the ref is absent. A
+    // bare `a || b` would never reach `b` — it would land in the outer catch and silently return
+    // `run: false`, which is the one outcome this decision must never produce by accident.
     let base;
     if (branch === "main") {
-      base = gitOutput(["rev-parse", "HEAD^"], cwd);
+      base = tryGitOutput(["rev-parse", "--verify", "origin/main"], cwd)
+        ?? gitOutput(["rev-parse", "HEAD^"], cwd);
     } else {
       base = gitOutput(["merge-base", "HEAD", "main"], cwd);
     }
