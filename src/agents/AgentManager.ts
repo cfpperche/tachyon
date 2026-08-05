@@ -891,6 +891,20 @@ function temporaryDefinitionFrom(def: NonNullable<SessionRecord["def"]>, worktre
   };
 }
 
+export function applyNativeLaneSuppressionCommand(cmd: string): { cmd: string; applied: boolean } {
+  const runtime = binaryOf(cmd);
+  if (runtime === "claude") {
+    if (!/(^|\s)--setting-sources(?:=|\s+)user(?:\s|$)/.test(cmd)) cmd += " --setting-sources user";
+    return { cmd, applied: true };
+  }
+  if (runtime === "codex") {
+    if (!/(^|\s)(?:-c|--config)\s+project_doc_max_bytes=0(?:\s|$)/.test(cmd)) cmd = codexConfigCmd(cmd, "project_doc_max_bytes=0");
+    if (!/(^|\s)--disable\s+memories(?:\s|$)/.test(cmd)) cmd += " --disable memories";
+    return { cmd, applied: true };
+  }
+  return { cmd, applied: false };
+}
+
 export class AgentManager {
   private readonly soulReservations = new Map<string, string>();
 
@@ -1367,7 +1381,7 @@ export class AgentManager {
   }
 
   /** Resolve the current canonical identity at an explicit lifecycle boundary. */
-  async resolveSoulForLifecycle(name: string): Promise<ResolvedSoul | undefined> {
+  async resolveSoulForLifecycle(name: string, nativeSuppressionApplied = false): Promise<ResolvedSoul | undefined> {
     const def = this.agentDefinitionOf(name);
     const principal = this.soulPrincipal(name);
     const declared = def?.soul
@@ -1380,7 +1394,11 @@ export class AgentManager {
     let formation: FormationSoulOutcome | undefined;
     if (!declared && this.opts.formation) {
       try {
-        formation = await this.opts.formation.resolveSoul({ agentName: name, operationId: `soul-${name}-${Date.now()}` });
+        formation = await this.opts.formation.resolveSoul({
+          agentName: name,
+          operationId: `soul-${name}-${Date.now()}`,
+          nativeSuppressionApplied,
+        });
       } catch (err) {
         // A lane that throws is a refusal, not an absence. Identity is never guessed.
         formation = { state: "refused", reason: err instanceof Error ? err.message : String(err) };
@@ -2125,6 +2143,13 @@ export class AgentManager {
     });
   }
 
+  /** t-e3d14c — suppress native identity inputs only for launches whose formation vector replaces them. */
+  private applyFormationNativeSuppression(name: string, def: AgentDef): { def: AgentDef; applied: boolean } {
+    if (!this.opts.formation?.suppressionRequired(name)) return { def, applied: false };
+    const applied = applyNativeLaneSuppressionCommand(def.cmd);
+    return { def: { ...def, cmd: applied.cmd }, applied: applied.applied };
+  }
+
   /**
    * Hermes has no interactive positional prompt — the modern TUI reads HERMES_TUI_QUERY as
    * STARTUP_QUERY. The classic CLI is Hermes' default, so every pushed brief must also select the
@@ -2569,7 +2594,11 @@ export class AgentManager {
 
     // Identity preflight remains before dead-pane replacement. Runtime preflight moves below cwd/private-home
     // preparation so its probe sees the exact prospective environment and owns explicit compensation.
-    const resolvedSoul = (asAgent(def)?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined);
+    const suppression = this.applyFormationNativeSuppression(name, def);
+    def = suppression.def;
+    const resolvedSoul = asAgent(def)?.soul
+      ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def)
+      : await this.resolveSoulForLifecycle(name, suppression.applied);
     const resolvedEvolution = await this.evolutionForFreshSession(name, def);
 
     const session = this.session(name);
@@ -4283,7 +4312,11 @@ export class AgentManager {
     // Project guidance is part of the replacement command. Load it before even transient restart
     // state changes so an invalid configured source leaves the live pane and its status untouched.
     const projectGuidance = this.projectGuidanceFor(def);
-    const resolvedSoul = asAgent(def)?.soul ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def) : undefined;
+    const suppression = this.applyFormationNativeSuppression(name, def);
+    def = suppression.def;
+    const resolvedSoul = asAgent(def)?.soul
+      ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def)
+      : await this.resolveSoulForLifecycle(name, suppression.applied);
     const resolvedEvolution = await this.evolutionForFreshSession(name, def);
     const session = this.session(name);
     let worktree: WorktreeRecord | undefined;

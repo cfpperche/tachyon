@@ -272,7 +272,7 @@ describe("formation authority bootstrap — the file still cannot activate itsel
     // Suppression confirmed, so nothing but the missing authority can be the reason for the refusal.
     const port = lifecycleHost(hostRoot, workspace.root, true);
 
-    expect(await port.resolveSoul({ agentName: "codex", operationId: "spawn-unadopted" })).toEqual({ state: "absent" });
+    expect(await port.resolveSoul({ agentName: "codex", operationId: "spawn-unadopted", nativeSuppressionApplied: true })).toEqual({ state: "absent" });
     // And the spawn path created nothing by looking.
     expect(adoptionHost(hostRoot).store.currentVector(AGENT_ID)).toBeUndefined();
   });
@@ -281,16 +281,28 @@ describe("formation authority bootstrap — the file still cannot activate itsel
     const workspace = unadoptedWorkspace();
     const hostRoot = temporaryRoot("tachyon-490-host-");
 
-    expect(await lifecycleHost(hostRoot, workspace.root, true).resolveSoul({ agentName: "codex", operationId: "before-adoption" }))
+    expect(await lifecycleHost(hostRoot, workspace.root, true).resolveSoul({ agentName: "codex", operationId: "before-adoption", nativeSuppressionApplied: true }))
       .toEqual({ state: "absent" });
 
     await adoptionHost(hostRoot).service.adopt(adoptInput(workspace.root));
 
-    const resolved = await lifecycleHost(hostRoot, workspace.root, true).resolveSoul({ agentName: "codex", operationId: "after-adoption" });
+    const resolved = await lifecycleHost(hostRoot, workspace.root, true).resolveSoul({ agentName: "codex", operationId: "after-adoption", nativeSuppressionApplied: true });
     expect(resolved.state).toBe("resolved");
     if (resolved.state !== "resolved") throw new Error("unreachable");
     expect(resolved.soul.sha256).toBe(workspace.soulSha256);
     expect(resolved.soul.body).toContain("Steady, precise, and candid.");
+  });
+
+  it("refuses to issue a receipt when the launch adapter did not apply suppression", async () => {
+    const workspace = unadoptedWorkspace();
+    const hostRoot = temporaryRoot("tachyon-490-host-");
+    await adoptionHost(hostRoot).service.adopt(adoptInput(workspace.root));
+
+    const outcome = await lifecycleHost(hostRoot, workspace.root, true).resolveSoul({
+      agentName: "codex",
+      operationId: "flag-not-applied",
+    });
+    expect(outcome).toMatchObject({ state: "refused", reason: expect.stringContaining("was not suppressed") });
   });
 
   it("still refuses out loud after adoption while native suppression is unmeasured", async () => {
@@ -300,7 +312,7 @@ describe("formation authority bootstrap — the file still cannot activate itsel
 
     // Production hard-codes `nativeSuppressionConfirmed` false for every adapter today. Adoption must
     // not paper over that: the refusal names the remaining prerequisite instead of delivering.
-    const outcome = await lifecycleHost(hostRoot, workspace.root, false).resolveSoul({ agentName: "codex", operationId: "unsuppressed" });
+    const outcome = await lifecycleHost(hostRoot, workspace.root, false).resolveSoul({ agentName: "codex", operationId: "unsuppressed", nativeSuppressionApplied: true });
     expect(outcome).toMatchObject({ state: "refused" });
     if (outcome.state !== "refused") throw new Error("unreachable");
     expect(outcome.reason).toContain("not confirmed suppressed");
@@ -388,7 +400,7 @@ describe("formation authority bootstrap — one door, and the ones that are shut
     })).toThrow("not authorized for this caller");
 
     // The spawn path's port answers exactly one question and offers no publication surface at all.
-    expect(Object.keys(lifecycleHost(hostRoot, workspace.root, true))).toEqual(["resolveSoul"]);
+    expect(Object.keys(lifecycleHost(hostRoot, workspace.root, true))).toEqual(["suppressionRequired", "resolveSoul"]);
   });
 
   it("closes the dynamic pass-through: a human-lane commit cannot be steered into a bootstrap", async () => {
