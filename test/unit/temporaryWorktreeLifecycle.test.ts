@@ -18,8 +18,10 @@ import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
  * so these tests drive the REAL cascade through fake ports: what they assert is that the ledger, the
  * registry and the occupancy gates all moved, not that one function called another.
  *
- * PROMOTION was measured to be safe by accident. It writes `addAgent(text, agent, cmd, "terminal")` —
- * cmd and kind only — and a terminal entry may not declare `worktree` at all, so it cannot carry
+ * PROMOTION was measured to be safe by accident. It writes
+ * `upsertAgent(text, agent, { cmd }, undefined, "terminals")` (t-c1ef82 — it used to write into
+ * `agents:`, a shape the reader refuses) — cmd only — and a terminal entry may not declare
+ * `worktree` at all, so it cannot carry
  * isolation; it is protected today only because it separately refuses every instance that is not a
  * terminal, and a worktree is an Agent capability. That is an incidental exclusion holding up an
  * acceptance criterion, which is exactly the shape that breaks silently later.
@@ -381,7 +383,10 @@ describe("t-d06da3 — promotion does not orphan a checkout by omission", () => 
 
     const written = writes.find((w) => w.startsWith("config:"))!;
     expect(written).toContain("cmd: codex");
-    expect(written).toContain("kind: terminal");
+    // t-c1ef82 — the BLOCK carries the kind now, and that is the point rather than a detail: a
+    // terminal written into `agents:` with `kind: terminal` beside it is the retired inline form the
+    // loader refuses. Asserting the block is what proves the entry is readable at all.
+    expect(written).toMatch(/terminals:[\s\S]*helper:/);
     expect(written).not.toContain("worktree");
   });
 

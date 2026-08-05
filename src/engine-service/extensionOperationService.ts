@@ -17,7 +17,7 @@ import { degradedRosterExtras } from "../config/configFailure.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 import { projectAgentProfileStudioSnapshot } from "../config/agentProfileStudio.js";
 import {
-  addAgent,
+  upsertAgent,
   cloneAgent,
   deleteAgent,
   deleteCommand,
@@ -989,8 +989,8 @@ async function promoteAgent(
   if (!definition) throw new Error(`'${agent}' has no stored definition to save`);
   // t-d06da3 — promotion may not strand a checkout by OMISSION. Measured, in this order:
   //
-  //  1. This door writes the profile with `addAgent(text, agent, definition.cmd, "terminal")` — cmd and
-  //     kind, nothing else. There is no parameter for `worktree` and adding one would not help: config
+  //  1. This door writes the profile with `upsertAgent(text, agent, { cmd }, undefined, "terminals")` —
+  //     cmd, nothing else. There is no parameter for `worktree` and adding one would not help: config
   //     validation refuses `worktree` on a terminal entry outright ("this entry is a terminal — it gets
   //     no git worktree", loadConfig.ts). So this promotion CANNOT carry isolation. That is the measured
   //     reason the spec's "carry the flag" outcome is not what this door does.
@@ -1018,7 +1018,11 @@ async function promoteAgent(
   }
   if (workspace.config?.agents[agent] !== undefined) throw new Error(`'${agent}' is already declared in tachyon.yml`);
   const changed = workspace.mutateConfig(
-    (text) => addAgent(text ?? "", agent, definition.cmd, "terminal"),
+    // t-c1ef82 — the `terminals:` block, because that is where a terminal entry is READABLE. The
+    // former `addAgent` wrote into `agents:` regardless of kind, which the profile-aware loader now
+    // refuses outright ("inline agent definitions are no longer supported"), so promotion used to
+    // save a config that failed on the very next load.
+    (text) => upsertAgent(text ?? "", agent, { cmd: definition.cmd }, undefined, "terminals"),
     () => onViewsChanged("agents"),
   );
   if (!changed) throw new Error(`could not save '${agent}' to tachyon.yml`);

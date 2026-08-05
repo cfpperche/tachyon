@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  addAgent,
   cloneAgent,
   deleteAgent,
   renameAgent,
@@ -16,7 +15,18 @@ import {
   replaceAgentStanzaValue,
 } from "../../src/config/YamlConfigEditor.js";
 import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
+import { parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
 import schema from "../../src/config/tachyon.schema.json";
+
+/**
+ * t-c1ef82 — the EXACT call promotion makes (`extensionOperationService.promoteAgent`).
+ *
+ * Spelled once here so these tests exercise the production door rather than a lookalike: if that call
+ * site changes shape, this helper is what has to change with it, and the composition guard below then
+ * measures the new shape instead of quietly still measuring the old one.
+ */
+const promote = (text: string | undefined, name: string, cmd: string) =>
+  upsertAgent(text ?? "", name, { cmd }, undefined, "terminals");
 
 /** A realistic file: user comments everywhere — they must survive every mutation. */
 const YML = `# Tachyon config — meu projeto
@@ -64,31 +74,77 @@ describe("YamlConfigEditor", () => {
     expect(() => agentStanzaSourceSlice("base: &base\n  cmd: codex\nagents:\n  codex:\n    <<: *base\n", "codex")).toThrow("merge keys");
   });
 
-  it("addAgent appends without touching comments elsewhere", () => {
-    const { text } = addAgent(YML, "backend", "claude");
+  it("promotion appends a terminal without touching comments elsewhere", () => {
+    const { text } = promote(YML, "backend", "claude");
     const config = expectValid(text);
     expect(config.agents.backend.cmd).toBe("claude");
+    expect(config.agents.backend.kind).toBe("terminal");
     // every user comment survived
     for (const comment of ["meu projeto", "o agente principal", "roda o Claude Code", "restart quando mudar", "lado a lado", "guardrail"]) {
       expect(text).toContain(comment);
     }
   });
 
-  it("addAgent creates a minimal file when none exists, and validates input", () => {
-    const { text } = addAgent(undefined, "solo", "codex");
+  it("promotion creates a minimal file when none exists, and validates input", () => {
+    const { text } = promote(undefined, "solo", "codex");
     expect(expectValid(text).agents.solo.cmd).toBe("codex");
-    expect(() => addAgent(YML, "frontend", "x")).toThrow("already exists");
-    expect(() => addAgent(YML, "1bad", "x")).toThrow("invalid agent name");
-    expect(() => addAgent(YML, "ok", "  ")).toThrow("non-empty command");
+    expect(() => promote(YML, "frontend", "x")).toThrow("already exists");
+    expect(() => promote(YML, "1bad", "x")).toThrow("invalid agent name");
+    expect(() => promote(YML, "ok", "  ")).toThrow("non-empty command");
   });
 
-  it("addAgent writes kind + instructions when given (spec 211 promote)", () => {
-    const cfg = expectValid(addAgent(undefined, "rev", "claude", "agent", "review PRs carefully").text);
-    expect(cfg.agents.rev).toMatchObject({ cmd: "claude", instructions: "review PRs carefully" });
-    // empty instructions are omitted, not written as a blank key
-    const cfg2 = expectValid(addAgent(undefined, "t", "sh", "terminal", "   ").text);
-    expect(asAgent(cfg2.agents.t)?.instructions).toBeUndefined();
-    expect(cfg2.agents.t.kind).toBe("terminal");
+  /**
+   * t-c1ef82 — the guard, and it must be read BY COMPOSITION.
+   *
+   * The retired `addAgent` passed its own unit tests for a year while emitting a config the product
+   * refuses, because those tests read the result back through `parseConfig` — a different door from
+   * the one production loads with. `parseProfileAwareConfigSyntax` is the door that runs on every real
+   * load, and it is the only one that can prove a writer and the reader still agree.
+   *
+   * Add a writer, add it here. A writer whose output this refuses is a writer that corrupts the file.
+   */
+  it("no product writer emits a tachyon.yml the product reader refuses", () => {
+    // A base the reader already accepts: a Saved Agent pointer plus a declared terminal. The `YML`
+    // fixture above CANNOT serve here — it still spells the retired inline-agent form, so every case
+    // built on it would fail on the fixture's own bytes and say nothing about the writer under test.
+    // (Measured: aiming this guard at `YML` first is exactly what it reported.)
+    const base = `# Tachyon config — meu projeto
+agents:
+  saved:
+    profile: .tachyon/agents/saved/agent.yml
+
+terminals:
+  dev:
+    cmd: npm run dev   # restart quando mudar
+
+settings:
+  maxAgents: 6
+`;
+    expect(parseProfileAwareConfigSyntax(base).errors, "the base fixture must itself be readable").toEqual([]);
+
+    const written: Array<{ what: string; text: string }> = [
+      { what: "promote onto an empty workspace", text: promote(undefined, "rev", "claude").text },
+      { what: "promote alongside a Saved Agent", text: promote(base, "rev", "claude").text },
+      { what: "studio terminal create", text: upsertAgent(base, "shell", { cmd: "bash" }, undefined, "terminals").text },
+      { what: "studio terminal edit", text: upsertAgent(base, "dev", { cmd: "npm start" }, "dev", "terminals").text },
+      { what: "studio terminal rename", text: upsertAgent(base, "devserver", { cmd: "npm run dev" }, "dev", "terminals").text },
+      { what: "clone a terminal", text: cloneAgent(base, "dev", "dev-2").text },
+      { what: "delete a terminal", text: deleteAgent(base, "dev").text },
+      { what: "rename a terminal", text: renameAgent(base, "dev", "devserver").text },
+    ];
+    for (const { what, text } of written) {
+      expect(parseProfileAwareConfigSyntax(text).errors, `${what} produced config the reader refuses:\n${text}`).toEqual([]);
+    }
+  });
+
+  it("promotion cannot write the retired inline-agent shape", () => {
+    // The shape the removed `addAgent` produced, spelled out so the refusal it now earns is visible.
+    const retired = "agents:\n  rev:\n    cmd: claude\n    kind: terminal\n";
+    expect(parseProfileAwareConfigSyntax(retired).errors).toEqual([
+      "agents.rev: inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio",
+    ]);
+    // What promotion writes instead lands in `terminals:`, where a terminal is readable.
+    expect(promote(undefined, "rev", "claude").text).toContain("terminals:");
   });
 
   it("spec 352 — upsertAgent round-trips only the parent-side subagents field", () => {
@@ -157,7 +213,7 @@ describe("YamlConfigEditor", () => {
   });
 
   it("the '2 claude, 5 codex' flow: clone clone clone stays valid", () => {
-    let text = addAgent(YML, "review", "codex").text;
+    let text = upsertAgent(YML, "review", { cmd: "codex" }).text;
     for (let i = 2; i <= 5; i++) {
       text = cloneAgent(text, "review", `review-${i}`).text;
     }
@@ -302,8 +358,8 @@ terminals:
     expect(agentEntryLine(MIX, "dev")).toBeGreaterThan(0);
   });
 
-  it("addAgent refuses a name already taken in terminals: (one namespace — #2 review fix)", () => {
-    expect(() => addAgent(MIX, "dev", "claude")).toThrow("already exists");
+  it("promotion refuses a name already taken in terminals: (one namespace — #2 review fix)", () => {
+    expect(() => promote(MIX, "dev", "claude")).toThrow("already exists");
   });
 
   it("deleting the last entry of a block drops the now-empty block", () => {
