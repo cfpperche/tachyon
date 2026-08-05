@@ -1203,6 +1203,7 @@ export class Workspace {
         this.completionHints.clear(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
         // termination, never a completion signal; consumed by the next observed death edge.
+        await this.returnTaskClaimsForUnavailableAgent(name, `agent '${name}' was stopped`);
         // spec 364 — user stop while suspect/queued cancels rebind (never resume).
         this.clientRebind?.onAgentStopped(name);
         // spec 230 — a pipeline node's session ended → tell the executor (a signal node that dies
@@ -1553,6 +1554,10 @@ export class Workspace {
           this.waiters.notifyDead(agent, exitCode);
           void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' exited before submitting the review`);
           this.noticeQueue.clear(agent);
+          void this.returnTaskClaimsForUnavailableAgent(
+            agent,
+            `agent '${agent}' exited (${exitCode !== undefined ? exitCode : "unknown code"})`,
+          );
           this.pokeParentOnDeath(agent, exitCode !== undefined ? String(exitCode) : "killed");
           // spec 230 — a pipeline node's process died: feed the exit to the executor (an exit-based node
           // fails on the non-zero code; a signal-based node fails closed). No crash popup — the run shows it.
@@ -1577,6 +1582,7 @@ export class Workspace {
           this.waiters.notifyDead(agent, 0);
           void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' exited before submitting the review`);
           this.noticeQueue.clear(agent);
+          void this.returnTaskClaimsForUnavailableAgent(agent, `agent '${agent}' exited (0)`);
           this.pokeParentOnDeath(agent, "0");
           // spec 230 — a pipeline `cmd:` one-shot exited cleanly: complete its node by exit code.
           const plNode = this.pipelineNodeOf.get(agent);
@@ -1595,6 +1601,9 @@ export class Workspace {
           this.waiters.notifyGone(agent);
           void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' stopped before submitting the review`);
           this.noticeQueue.clear(agent);
+          if (!this.expectedDeath.has(agent)) {
+            void this.returnTaskClaimsForUnavailableAgent(agent, `agent '${agent}' disappeared`);
+          }
           this.pokeParentOnDeath(agent, "killed", true);
         },
         onGiveUp: (agent, attempts) => {
@@ -5791,6 +5800,46 @@ export class Workspace {
   }
 
   /**
+   * Process loss cannot prove delivery, so it never completes work. It only removes the stale claim
+   * that says this agent is still executing it. TaskStore owns the serialized state+journal write;
+   * this wrapper keeps lifecycle delivery best-effort without turning a board-write failure into an
+   * unhandled heartbeat rejection.
+   */
+  private async returnTaskClaimsForUnavailableAgent(agent: string, evidence: string): Promise<void> {
+    try {
+      const returned = await this.taskStore.returnUnavailableAgentClaims(agent, { evidence, actor: "tachyon" });
+      if (returned.length > 0) this.deps.onViewsChanged("tasks");
+    } catch (err) {
+      this.host.notify(
+        this.t("could not return task claim(s) held by unavailable agent '{0}' to triage: {1}", agent, err instanceof Error ? err.message : String(err)),
+        "error",
+      );
+    }
+  }
+
+  /**
+   * Reload has no process-local before-snapshot, but it does have both durable sides of the claim:
+   * known agent definitions in config/ledger and active task assignees. A strict tmux inventory is
+   * supplied by the caller; unknown/human assignees are deliberately outside this reconciliation.
+   */
+  private async returnTaskClaimsMissingAtStartup(liveAgents: ReadonlySet<string>): Promise<void> {
+    const unavailable = new Set(
+      this.taskStore.listRaw()
+        .filter((task) => {
+          if (task.status !== "active" || !task.assignee || liveAgents.has(task.assignee)) return false;
+          return this.manager.defOf(task.assignee)?.kind === "agent";
+        })
+        .map((task) => task.assignee!),
+    );
+    for (const agent of unavailable) {
+      await this.returnTaskClaimsForUnavailableAgent(
+        agent,
+        `agent '${agent}' was not running when the workspace started`,
+      );
+    }
+  }
+
+  /**
    * Grok token refresh under a private GROK_HOME replaces `auth.json` (symlink → regular file).
    * On stop/kill, harvest the freshest private credential into `~/.grok/auth.json` and re-symlink
    * every private home so resume / sibling agents do not hit a re-login wall with a revoked key.
@@ -6228,6 +6277,10 @@ export class Workspace {
 
     // Resume-on-activation (spec 209): classify ledger agents, auto-resume declared
     // autostart ones whose session is gone, stash the rest as a human-offered set.
+    // The strict read is the authority for claim recovery: an ambiguous tmux failure must never be
+    // interpreted as a machine-wide death. `agentStates()` keeps its last-known-good fallback for the
+    // existing presentation/resume path below.
+    const runningAtStartup = await this.manager.runningAgentsStrict();
     const states = await this.manager.agentStates();
     const liveSessions = new Set([...states].filter(([, s]) => !s.dead).map(([name]) => name));
     // t-572cef: a session that survived a reload never goes through onSpawned, so it would otherwise
@@ -6240,6 +6293,9 @@ export class Workspace {
     // so a re-discovered Temporary instance is restartable and re-nests under its parent.
     // t-8354ae — also run when config is invalid so the sidebar can list ledger agents.
     await this.manager.rehydrateFromLedger();
+    if (runningAtStartup !== null) {
+      await this.returnTaskClaimsMissingAtStartup(new Set(runningAtStartup));
+    }
 
     // t-62f599 — reproject every registered worktree, BEFORE the configOk branch below returns early.
     // Withdrawing inherited config is a policy decision, and a policy that only reaches agents somebody

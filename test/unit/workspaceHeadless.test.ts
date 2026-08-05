@@ -1673,6 +1673,66 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
+  it("returns an active claim to triage on startup when its known agent session was lost", async () => {
+    const { ws } = await makeWorkspace();
+    ws.ledger.record("crashchild", {
+      def: { cmd: "sh", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-crash",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    await ws.taskStore.create({ id: "t-dead01", title: "claimed before crash", author: "human" });
+    await ws.taskStore.update("t-dead01", { status: "triaged", actor: "human" });
+    await ws.taskStore.update("t-dead01", { status: "active", assignee: "crashchild", actor: "human" });
+
+    await ws.start();
+
+    expect(ws.taskStore.get("t-dead01")).toMatchObject({ status: "triaged" });
+    expect(ws.taskStore.get("t-dead01").assignee).toBeUndefined();
+    expect(ws.taskStore.journal.read("t-dead01").at(-1)?.text).toContain("agent 'crashchild' was not running when the workspace started");
+    ws.dispose();
+  });
+
+  it("keeps an active claim on startup when that agent session survived", async () => {
+    const { ws, sessions, sessionEnv } = await makeWorkspace();
+    ws.ledger.record("survivor", {
+      def: { cmd: "sh", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    const session = ws.manager.session("survivor");
+    sessions.add(session);
+    sessionEnv.set(`${session}\u0000TACHYON_INSTANCE_CUT`, "agent-instance-v5");
+    await ws.taskStore.create({ id: "t-a11ce0", title: "surviving claim", author: "human" });
+    await ws.taskStore.update("t-a11ce0", { status: "triaged", actor: "human" });
+    await ws.taskStore.update("t-a11ce0", { status: "active", assignee: "survivor", actor: "human" });
+
+    await ws.start();
+
+    expect(ws.taskStore.get("t-a11ce0")).toMatchObject({ status: "active", assignee: "survivor" });
+    ws.dispose();
+  });
+
+  it("keeps active claims when startup cannot inventory tmux conclusively", async () => {
+    const { ws } = await makeWorkspace();
+    ws.ledger.record("unknownstate", {
+      def: { cmd: "pi", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-reload",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    await ws.taskStore.create({ id: "t-fa11ed", title: "claim under ambiguous inventory", author: "human" });
+    await ws.taskStore.update("t-fa11ed", { status: "triaged", actor: "human" });
+    await ws.taskStore.update("t-fa11ed", { status: "active", assignee: "unknownstate", actor: "human" });
+    vi.spyOn(ws.manager, "runningAgentsStrict").mockResolvedValueOnce(null);
+
+    await ws.start();
+
+    expect(ws.taskStore.get("t-fa11ed")).toMatchObject({ status: "active", assignee: "unknownstate" });
+    ws.dispose();
+  });
+
   it("restores persisted terminal tabs from Workspace.start after surviving tmux sessions are ready", async () => {
     const root = mkdir();
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
@@ -1704,6 +1764,30 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 });
 
 describe("Workspace — death-poke wiring (spec 332)", () => {
+  it("returns the dead agent's active board claim to triage", async () => {
+    const { ws, sessions, dead } = await makeWorkspace();
+    ws.ledger.record("claimchild", {
+      def: { cmd: "pi", kind: "agent" },
+      cwd: ws.workspaceRoot,
+      updatedAt: "before-crash",
+      instance: { lifetime: "temporary", resumePolicy: "restartable" },
+    });
+    sessions.add(ws.manager.session("claimchild"));
+    await ws.taskStore.create({ id: "t-c1a1ed", title: "claimed work", author: "human" });
+    await ws.taskStore.update("t-c1a1ed", { status: "triaged", actor: "human" });
+    await ws.taskStore.update("t-c1a1ed", { status: "active", assignee: "claimchild", actor: "human" });
+    await ws.tick(); // establish the live lifecycle baseline
+
+    dead.set(ws.manager.session("claimchild"), 137);
+    await ws.tick();
+    await flush();
+
+    expect(ws.taskStore.get("t-c1a1ed")).toMatchObject({ status: "triaged" });
+    expect(ws.taskStore.get("t-c1a1ed").assignee).toBeUndefined();
+    expect(ws.taskStore.journal.read("t-c1a1ed").at(-1)?.text).toContain("agent 'claimchild' exited (137)");
+    ws.dispose();
+  });
+
   it("an unexpected crash pokes the live parent with the death envelope", async () => {
     const { ws, dead, sent } = await makeWorkspace();
     await ws.manager.spawn("b"); // the parent, running
