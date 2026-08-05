@@ -126,6 +126,81 @@ describe("processLock", () => {
       held.release();
     }
   });
+
+  /**
+   * t-b457ce — under multi-process contention, processLock must not admit two critical sections
+   * at once. pinlock3 measured dual holders even with isHolderAlive:()=>true and no maxHoldMs;
+   * steals were logged as reason=absent (force-rm of a lock that vanished between EEXIST and stat
+   * deleted a *new* holder's lock published in the gap). This harness is the commit gap that
+   * measurement left open.
+   *
+   * What this does NOT cover: `isHolderAlive: () => true` (and no maxHoldMs) never takes the
+   * orphan-recovery branch, so the post-orphan path-rm never runs. A green result here proves the
+   * absent path only — not residual dual-holder risk between last identity read and rmSync when a
+   * real holder dies under multi-waiter load.
+   */
+  it("does not admit dual holders under multi-process contention (t-b457ce)", async () => {
+    const repoRoot = process.cwd();
+    const scratch = tempRoot("tachyon-lock-contend-");
+    const lock = path.join(scratch, "contend.lock");
+    const holdProbe = path.join(scratch, "hold.probe");
+    const counterPath = path.join(scratch, "counter");
+    const overlapPath = path.join(scratch, "overlaps.jsonl");
+    fs.writeFileSync(counterPath, "0\n", "utf8");
+    fs.writeFileSync(overlapPath, "", "utf8");
+
+    const workerCount = 6;
+    const iters = 40;
+    const workerPath = path.join(scratch, "contender.ts");
+    const lockUrl = pathToFileURL(path.join(repoRoot, "src/locks/processLock.ts")).href;
+    fs.writeFileSync(workerPath, `
+      import fs from "node:fs";
+      import { withProcessLockSync } from ${JSON.stringify(lockUrl)};
+      const lock = process.argv[2]!;
+      const holdProbe = process.argv[3]!;
+      const counterPath = process.argv[4]!;
+      const overlapPath = process.argv[5]!;
+      const iters = Number(process.argv[6]!);
+      // Age-steal and dead-pid steal both disabled: only the absent-path race remains.
+      const opts = { timeoutMs: 30_000, pollMs: 1, isHolderAlive: () => true };
+      for (let i = 0; i < iters; i++) {
+        withProcessLockSync(lock, () => {
+          if (fs.existsSync(holdProbe)) {
+            const other = fs.readFileSync(holdProbe, "utf8").trim();
+            fs.appendFileSync(overlapPath, JSON.stringify({
+              pid: process.pid, other, i, t: Date.now(),
+            }) + "\\n");
+          }
+          fs.writeFileSync(holdProbe, String(process.pid) + "\\n");
+          // Widen the critical section enough that a stolen lock is observable.
+          const start = Date.now();
+          while (Date.now() - start < 2) { /* spin */ }
+          const n = Number.parseInt(fs.readFileSync(counterPath, "utf8").trim(), 10);
+          fs.writeFileSync(counterPath, String(n + 1) + "\\n");
+          try { fs.unlinkSync(holdProbe); } catch { /* foreign cleared it — dual holder */ }
+        }, opts);
+      }
+    `, "utf8");
+
+    const viteNode = path.join(repoRoot, "node_modules", ".bin", "vite-node");
+    await Promise.all(Array.from({ length: workerCount }, (_, w) => new Promise<void>((resolve, reject) => {
+      const child = spawn(viteNode, [
+        "--root", repoRoot, workerPath, lock, holdProbe, counterPath, overlapPath, String(iters),
+      ], { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] });
+      let stderr = "";
+      child.stderr.on("data", (c: Buffer) => { stderr += c.toString("utf8"); });
+      child.on("error", reject);
+      child.on("exit", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`contender ${w} exited ${code}: ${stderr}`));
+      });
+    })));
+
+    const overlaps = fs.readFileSync(overlapPath, "utf8").split("\n").filter((l) => l.trim());
+    const total = Number.parseInt(fs.readFileSync(counterPath, "utf8").trim(), 10);
+    expect(overlaps, `dual holders observed: ${overlaps.slice(0, 5).join(" | ")}`).toEqual([]);
+    expect(total).toBe(workerCount * iters);
+  }, 120_000);
 });
 
 /**

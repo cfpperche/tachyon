@@ -28,10 +28,11 @@ import path from "node:path";
  * | actor × trigger                          | outcome                                              |
  * |------------------------------------------|------------------------------------------------------|
  * | holder releases normally                 | `release` unlinks the file it created                |
- * | holder dies (crash / kill / window close)| next arrival reads a dead pid and steals it once     |
+ * | holder dies (crash / kill / window close)| next arrival may steal; residual path-rm TOCTOU (↓)  |
  * | holder is alive and working              | arrival waits, then times out naming the path        |
  * | holder's pid was REUSED by another proc  | age exceeds `maxHoldMs` → stolen (see below)         |
  * | holder is mid-create, pid not stamped yet| grace window protects it; older than that is a crash |
+ * | lock vanished between EEXIST and stat    | busy → retry publish; never force-rm (t-b457ce)      |
  * | our lock was stolen from us mid-body     | `release` sees a foreign lock and leaves it alone    |
  * | a legacy `mkdir` lock DIRECTORY is there | unreadable → aged out → removed recursively          |
  *
@@ -120,7 +121,8 @@ function readHolder(lock: string): LockHolder | null {
   try {
     stampedAtMs = fs.statSync(lock).mtimeMs;
   } catch {
-    // It vanished between the failed create and this read — whoever held it is done with it.
+    // Vanished between EEXIST and this read — releaser won the race. Callers must retry publish
+    // (busy), not force-rm: another holder may land in that gap (t-b457ce dual writers).
     return null;
   }
   let raw = "";
@@ -133,9 +135,13 @@ function readHolder(lock: string): LockHolder | null {
   return { pid: Number.isInteger(pid) && pid > 0 ? pid : null, stampedAtMs };
 }
 
-function holderIsAlive(lock: string, options: ProcessLockOptions): boolean {
-  const holder = readHolder(lock);
-  if (!holder) return false;
+/**
+ * Whether a holder we already read is still protecting the lock.
+ * Callers must NOT treat "lock file vanished" as orphan-stealable — that is a separate case
+ * (t-b457ce): the releaser won the race, and force-removing after an absent read is a TOCTOU
+ * that can delete a *new* holder's lock published in the gap.
+ */
+function holderIsAlive(holder: LockHolder, options: ProcessLockOptions): boolean {
   const now = (options.now ?? Date.now)();
   if (holder.pid === null) return now - holder.stampedAtMs < UNSTAMPED_LOCK_GRACE_MS;
   if (!(options.isHolderAlive ?? defaultIsHolderAlive)(holder.pid)) return false;
@@ -223,17 +229,40 @@ function acquireOnce(lock: string, options: ProcessLockOptions, stolen: boolean)
     return { path: lock, release: () => release(lock, ino) };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    if (!stolen && !holderIsAlive(lock, options)) {
+
+    // EEXIST means the path was occupied at publish time. Re-read before deciding anything.
+    const holder = readHolder(lock);
+    if (!holder) {
+      // Released between EEXIST and this stat — the free path is open for a clean retry.
+      // Do NOT force-rm here (t-b457ce): between "absent" and rmSync another process can publish
+      // a new lock; force-removing it admits dual critical sections under multi-process load.
+      // Callers that wait (withProcessLock / withProcessLockSync) re-enter acquireProcessLock.
+      throw new ProcessLockBusyError(lock, null);
+    }
+
+    if (!stolen && !holderIsAlive(holder, options)) {
       try {
-        // `rm -r` rather than `unlink` so a legacy mkdir lock DIRECTORY at this path is also
-        // recoverable — otherwise the migration itself would be a permanent wedge.
-        fs.rmSync(lock, { recursive: true, force: true });
+        // Only remove when the same orphan we judged is still at the path. A re-read that finds
+        // a different live stamp means a new holder won in the gap — leave it alone.
+        const still = readHolder(lock);
+        if (still
+          && still.pid === holder.pid
+          && still.stampedAtMs === holder.stampedAtMs
+          && !holderIsAlive(still, options)) {
+          // Residual TOCTOU (t-b457ce follow-up): between this last identity read and rmSync,
+          // another waiter can clear the same orphan and a *new* holder can publish; path-based
+          // rm then deletes the new lock. Same family as the absent steal, but a much smaller
+          // window, and only after someone was already judged orphan. Not closed here: conditional
+          // unlink-by-inode is not atomic on POSIX. `rm -r` (not plain unlink) also recovers a
+          // legacy mkdir lock DIRECTORY at this path — otherwise migration itself is a permanent wedge.
+          fs.rmSync(lock, { recursive: true, force: true });
+        }
       } catch {
         /* another waiter cleared the same orphan first — the retry below settles it */
       }
       return acquireOnce(lock, options, true);
     }
-    throw new ProcessLockBusyError(lock, readHolder(lock)?.pid ?? null);
+    throw new ProcessLockBusyError(lock, holder.pid);
   }
 }
 
