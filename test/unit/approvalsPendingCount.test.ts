@@ -50,6 +50,13 @@ describe("Overview's pending-approval counter (t-d85857)", () => {
     const root = workspace();
     writeApprovalRequest(root, request("a-000001", "ada"));
     writeApprovalRequest(root, request("a-000002", "bea"));
+    // t-86e59a — this `injectedText` is PRE-CHANGE ON PURPOSE, and it is not being superseded.
+    //
+    // The bytes here are DATA, not an assertion: what this test asserts is a count, and the record is
+    // its input. They are also historically accurate — a request resolved before t-86e59a holds exactly
+    // this line, because `injectedText` is written once at decision time and never rewritten. Updating
+    // them would rewrite history and would throw away the only place in the suite proving today's reader
+    // still parses what yesterday wrote. Read a `human ... approved` line here as a date stamp.
     writeApprovalRequest(root, {
       ...request("a-000003", "cid"),
       status: "resolved",
@@ -93,6 +100,7 @@ describe("Overview's pending-approval counter (t-d85857)", () => {
     expect(buildCockpitModel([bundle(pendingApprovalRows(empty))], { section: "overview" }).overview.approvalsPending).toBe(0);
 
     const resolvedOnly = workspace();
+    // Pre-change bytes, kept deliberately — same reasoning as the record in the first case above.
     writeApprovalRequest(resolvedOnly, {
       ...request("a-000006", "ada"),
       status: "resolved",

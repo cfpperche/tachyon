@@ -4,11 +4,15 @@ import type { NoticeDeliveryResult } from "./tools.js";
  * t-a77fe6 — the ports an approval resolution needs, built once.
  *
  * `resolveApproval` was wired twice with the same closures: the editor path
- * (`extensionOperationService`, `resolvedBy: "vscode"`) and the Companion path (`Workspace`,
- * `resolvedBy: "companion"`). `currentSessionOwner` and `inject` were byte-identical in both.
+ * (`extensionOperationService`, `APPROVAL_CHANNEL_VSCODE_COMMAND`) and the Companion path (`Workspace`,
+ * `APPROVAL_CHANNEL_COMPANION_HTTP`). `currentSessionOwner` and `inject` were byte-identical in both.
  *
- * `resolvedBy` deliberately stays a per-caller argument. "vscode" and "companion" are different facts
- * about who resolved an approval, and collapsing them would trade a duplication for a lie.
+ * `resolvedBy` deliberately stays a per-caller argument, and t-86e59a corrected WHY. This note used to
+ * say `"vscode"` and `"companion"` were "different facts about who resolved an approval". They are
+ * different CHANNELS, and they never carried a fact about the actor: three doors reach resolution with
+ * no human gesture (approvalRequest.ts, invariant (3)), so both values were server-side constants
+ * asserting something the host cannot observe. The argument stays per-caller because the CHANNEL really
+ * does differ between the two call sites — that is the one thing each of them knows about itself.
  *
  * `completePin` is also left to the caller, and NOT because it varies harmlessly: the two callers
  * disagree today about whether a failing pin completion is fatal — the editor path lets it throw, the

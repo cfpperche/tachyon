@@ -15,8 +15,15 @@
  *      anything at all (t-93ac7f asked the same question and left it unmeasured).
  *
  * These are CHARACTERIZATION tests: they pin what the product does today, including the defect. When
- * the defect is fixed, the two assertions marked DEFECT below must be inverted, and their failure at
- * that moment is the point — a silent pass would mean the fix changed nothing on this door.
+ * the defect is fixed, the assertions marked DEFECT below must be inverted, and their failure at that
+ * moment is the point — a silent pass would mean the fix changed nothing on this door.
+ *
+ * t-86e59a did exactly that to half of question (a), and the half it did NOT touch matters more. The
+ * record no longer credits `"vscode"` for a resolution nobody in VS Code performed; it names the CHANNEL
+ * instead. The DOOR is untouched — a same-uid speaker still resolves an approval it does not own, with
+ * no human anywhere on the path. That is the capability fix (uid/sandbox isolation, t-5313dc) and it is
+ * open. Read the DEFECT marks below as "this door is still measured open", not as "this is unfixed
+ * prose": the day t-5313dc lands, the reachability assertions go red and this file is the proof.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -32,7 +39,12 @@ import {
   type EngineShellHelloV1,
 } from "../../src/engine-service/protocol.js";
 import { EXTENSION_COMMAND_ACTIONS } from "../../src/runtime-api/extensionOperations.js";
-import { buildApprovalRequest, readApprovalRequest, writeApprovalRequest } from "../../src/bridge/approvalRequest.js";
+import {
+  APPROVAL_CHANNEL_VSCODE_COMMAND,
+  buildApprovalRequest,
+  readApprovalRequest,
+  writeApprovalRequest,
+} from "../../src/bridge/approvalRequest.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
@@ -46,7 +58,7 @@ afterEach(async () => {
 });
 
 describe("t-6edd70 — what a same-uid control-socket speaker can reach", () => {
-  it("DEFECT: resolves a pending approval it did not request, and the record credits 'vscode'", async () => {
+  it("DEFECT: resolves a pending approval it did not request — no human anywhere on the path", async () => {
     const daemon = await startDaemon();
     // Written the way the Bridge writes it: `requester` is the Bridge-resolved caller and cannot be
     // self-declared. That identity survives on the record — and is never consulted at resolve time.
@@ -77,15 +89,24 @@ describe("t-6edd70 — what a same-uid control-socket speaker can reach", () => 
     const resolved = readApprovalRequest(daemon.workspaceRoot, "a-aaa111");
     expect(resolved.status).toBe("resolved");
     expect(resolved.resolution?.decision).toBe("approved");
-    // DEFECT (a), the aggravating half: `resolvedBy` is a server-side CONSTANT
-    // (`extensionOperationService.ts:306`), so a resolution nobody in VS Code performed is recorded
-    // as if the editor had performed it. A human auditing this record reads their own name.
-    expect(resolved.resolution?.resolvedBy).toBe("vscode");
+    // DEFECT (a) IS STILL OPEN — this door resolves, and nothing here required a human. What changed
+    // (t-86e59a) is only the AGGRAVATING half. `resolvedBy` used to be the server-side constant
+    // `"vscode"`, so a resolution nobody in VS Code performed was recorded as if the editor had
+    // performed it and a human auditing this record read their own name. It now names the CHANNEL the
+    // resolution came through, which is the one thing this call site actually knows about itself.
+    //
+    // The DEFECT mark stays because the capability did not change: closing this door is t-5313dc, and
+    // the assertion above — an approval resolved by a speaker holding nothing but same-uid — is what
+    // keeps that open finding measured rather than remembered.
+    expect(resolved.resolution?.resolvedBy).toBe(APPROVAL_CHANNEL_VSCODE_COMMAND);
+    expect(resolved.resolution?.resolvedBy).not.toBe("vscode");
 
-    // The witness ledger repeats the same claim, so the false trail is durable in two places.
+    // The witness ledger repeats the value, so whatever is recorded is durable in two places — that is
+    // what made the false trail false twice, and it is why both had to change together.
     const witness = fs.readFileSync(path.join(daemon.workspaceRoot, ".tachyon", "approvals.jsonl"), "utf8");
     expect(witness).toContain('"kind":"resolved"');
-    expect(witness).toContain('"by":"vscode"');
+    expect(witness).toContain(`"by":"${APPROVAL_CHANNEL_VSCODE_COMMAND}"`);
+    expect(witness).not.toContain('"by":"vscode"');
   }, 120_000);
 
   it("the wire surface is the NAMED-ACTION surface — an unlisted method or action is refused by name", async () => {
