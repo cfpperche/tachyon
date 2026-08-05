@@ -183,9 +183,18 @@ export class IdeBrowserCdpSession {
     this.resetSocketOnly();
     this.debugSession = session;
     this.state = "connecting";
-    // ws ships without types in this monorepo; structural cast is enough for the proto.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = await (Function('return import("ws")')() as Promise<{ default?: WsCtor } & WsCtor>);
+    // t-ws-bundle — a REAL dynamic import, not `Function('return import("ws")')()`.
+    //
+    // The runtime-constructed form hid this dependency from esbuild, which bundles by reading import
+    // expressions: `dist/extension.js` shipped with zero references to `ws`, so the packaged VSIX
+    // resolved it at runtime and failed with "Cannot find package 'ws'" (0.57.0). It worked in the Dev
+    // Host only because `ws` happens to be installed as a TRANSITIVE of puppeteer-core, a
+    // devDependency — an accident of the dev tree, absent from a release install.
+    //
+    // The trick was written for TYPES (`ws` ships none and `@types/ws` is not installed), not for lazy
+    // loading, so the cost it dodged is one suppression and the cost it caused was a broken feature.
+    // @ts-expect-error — `ws` ships no type declarations; the structural cast below is the contract.
+    const mod = (await import("ws")) as { default?: WsCtor } & WsCtor;
     this.WebSocket = (mod.default ?? mod) as WsCtor;
     log(`requestCDPProxy on session ${session.name} (${session.id})`);
     const proxy = (await Promise.race([

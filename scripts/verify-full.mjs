@@ -161,6 +161,47 @@ export function acquireVerifyFullLock(lockPath = VERIFY_FULL_LOCK_PATH) {
   }
 }
 
+/**
+ * t-fb7025 — WAIT for the gate instead of refusing it.
+ *
+ * The mutex is not the problem and must not be widened: t-6a9bc4 bought it with a proven outage
+ * (concurrent gates drove ~20GB of swap, the Bridge's own transport began blocking, MCP stopped
+ * answering and an agent DIED). Measured across 141 runs, the gate is idle ~90% of the day and no two
+ * runs ever overlapped — so contention is not the cost either.
+ *
+ * The cost is BURSTS: 41% of runs start within two minutes of the previous one, and 20 started within
+ * fifteen seconds — the signature of callers queueing. Refusing hands that queue to every caller to
+ * re-implement, which is why this repo grew a monitor-and-retry ritual around a 78s median command.
+ *
+ * So the fix is ergonomic, not architectural: same one-at-a-time limit, but the second caller waits in
+ * line rather than being told to come back. `acquireVerifyFullLock` keeps refusing — it is the
+ * primitive, and `verifyFullLock.test.ts` proves that contract — while the CLI queues on top of it.
+ */
+export async function awaitVerifyFullLock(
+  lockPath = VERIFY_FULL_LOCK_PATH,
+  { timeoutMs = 45 * 60_000, pollMs = 2_000, onWait } = {},
+) {
+  const started = Date.now();
+  const deadline = started + timeoutMs;
+  let announced = false;
+  for (;;) {
+    try {
+      const lock = acquireVerifyFullLock(lockPath);
+      return { ...lock, waitedMs: Date.now() - started };
+    } catch (error) {
+      const busy = error && typeof error === "object" && error.code === "VERIFY_FULL_BUSY";
+      // A hard deadline, not an infinite wait: a lock whose holder hangs must still surface as a
+      // failure someone can read, rather than a command that never returns.
+      if (!busy || Date.now() >= deadline) throw error;
+      if (!announced) {
+        announced = true;
+        onWait?.(error.message);
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+  }
+}
+
 function truncateBytes(value, limit) {
   const bytes = Buffer.from(String(value));
   if (bytes.length <= limit) return String(value);
@@ -322,7 +363,12 @@ export async function main() {
   }
   let lock;
   try {
-    lock = acquireVerifyFullLock();
+    lock = await awaitVerifyFullLock(VERIFY_FULL_LOCK_PATH, {
+      onWait: () => process.stdout.write("verify:full queued: another gate holds the lock — waiting for it\n"),
+    });
+    if (lock.waitedMs > 1_000) {
+      process.stdout.write(`verify:full waited ${Math.round(lock.waitedMs / 1000)}s for the gate\n`);
+    }
   } catch (error) {
     if (error && typeof error === "object" && error.code === "VERIFY_FULL_BUSY") {
       process.stderr.write(`${error.message}\n`);

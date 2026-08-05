@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
-import { acquireVerifyFullLock, resolveHeavyGate } from "../../scripts/verify-full.mjs";
+import { acquireVerifyFullLock, awaitVerifyFullLock, resolveHeavyGate } from "../../scripts/verify-full.mjs";
 
 /**
  * t-0b7aa7 — these used to read `VITEST_MAX_WORKERS`, a bare number resolved at import time from
@@ -127,5 +127,61 @@ describe("verify-full control-plane protection (t-6a9bc4 slice-1)", () => {
     expect(fs.existsSync(lockPath)).toBe(true);
     stolen.release();
     expect(fs.existsSync(lockPath)).toBe(false);
+  });
+});
+
+describe("the gate QUEUES instead of refusing (t-fb7025)", () => {
+  const locks: string[] = [];
+  afterEach(() => {
+    for (const lock of locks.splice(0)) {
+      try { fs.unlinkSync(lock); } catch { /* released by the test */ }
+    }
+  });
+
+  /**
+   * Measured before changing anything: across 141 runs the gate never overlapped and sat idle ~90% of
+   * the day, so contention is not the cost. What hurts is BURSTS — 41% of runs start within two
+   * minutes of the previous, 20 within fifteen seconds. Refusing pushed that queue onto every caller,
+   * which is how a 78s command grew a monitor-and-retry ritual around it.
+   *
+   * The one-at-a-time limit is untouched, and must stay: t-6a9bc4 bought it with a proven outage.
+   * `acquireVerifyFullLock` still refuses — these assert the WAITER built on top of it.
+   */
+  it("waits for a live holder and acquires when it releases, rather than failing", async () => {
+    const lockPath = path.join(os.tmpdir(), `tachyon-verify-full-wait-${process.pid}-${Date.now()}.lock`);
+    locks.push(lockPath);
+    const held = acquireVerifyFullLock(lockPath);
+    let announced = 0;
+
+    const pending = awaitVerifyFullLock(lockPath, { pollMs: 5, timeoutMs: 5_000, onWait: () => { announced += 1; } });
+    setTimeout(() => held.release(), 40);
+    const acquired = await pending;
+
+    expect(acquired.waitedMs, "acquired without ever waiting — the holder was still live").toBeGreaterThan(0);
+    expect(announced, "the wait must be announced exactly once, not once per poll").toBe(1);
+    acquired.release();
+  });
+
+  it("gives up at a deadline instead of hanging forever on a stuck holder", async () => {
+    // A wait with no bound turns a hung gate into a command that never returns, which is worse than
+    // the refusal it replaced: nobody can read a process that is simply gone quiet.
+    const lockPath = path.join(os.tmpdir(), `tachyon-verify-full-deadline-${process.pid}-${Date.now()}.lock`);
+    locks.push(lockPath);
+    const held = acquireVerifyFullLock(lockPath);
+
+    await expect(awaitVerifyFullLock(lockPath, { pollMs: 5, timeoutMs: 30 }))
+      .rejects.toThrow(/already running/);
+    held.release();
+  });
+
+  it("takes a free lock immediately, with no wait announced", async () => {
+    const lockPath = path.join(os.tmpdir(), `tachyon-verify-full-free-${process.pid}-${Date.now()}.lock`);
+    locks.push(lockPath);
+    let announced = 0;
+
+    const acquired = await awaitVerifyFullLock(lockPath, { pollMs: 5, onWait: () => { announced += 1; } });
+
+    expect(announced, "announced a queue that never happened").toBe(0);
+    acquired.release();
   });
 });
