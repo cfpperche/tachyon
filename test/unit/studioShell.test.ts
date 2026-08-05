@@ -15,8 +15,11 @@ import { decideRestore } from "../../src/webview/shared/studio/restoreDecisions.
 // error taxonomy (unknown = blocking), save gating, and restore decisions. DOM-free by design (dueto F1/F2).
 
 describe("protocol: versioned envelope + fail-closed decoding", () => {
-  it("core message names are exactly the nine reserved lifecycle names", () => {
-    expect([...CORE_MESSAGE_TYPES].sort()).toEqual(["cancel", "dirty", "error", "load", "patch", "ready", "referenceData", "restore", "save"]);
+  // t-b643ac added the tenth: `tombstone`. It is core rather than a domain message BECAUSE the
+  // decoder fails closed — a name only some adapters register would be rejected by the shells that
+  // did not, which is how "the entity is gone" would silently go back to being undeliverable.
+  it("core message names are exactly the ten reserved lifecycle names", () => {
+    expect([...CORE_MESSAGE_TYPES].sort()).toEqual(["cancel", "dirty", "error", "load", "patch", "ready", "referenceData", "restore", "save", "tombstone"]);
     expect(isCoreMessageType("save")).toBe(true);
     expect(isCoreMessageType("frobnicate")).toBe(false);
   });

@@ -34,6 +34,19 @@
    to .sf-body only (not the header/banners — Cancel/Save are disabled via their own `disabled` prop,
    not pointer-events, so their focus/hover states still read correctly to a screen reader). */
 .sf-shell.sf-frozen .sf-body { pointer-events: none; opacity: 0.55; transition: opacity 120ms ease; }
+/* t-b643ac — the tombstone screen (StudioTombstone.tsx), shown INSTEAD of the frame body when the
+   entity no longer exists. Reuses .sf-shell/.sf-header so the tab does not visibly jump between an
+   editor and a dead document; the body is a single centred column because there is nothing to lay
+   out — no regions, no side actions, and deliberately no Save. Muted rather than alarming: nothing
+   went wrong here, the subject is simply gone. */
+.sf-tombstone-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--ds-2); max-width: 46rem; width: 100%; margin: 0 auto; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); box-sizing: border-box; text-align: center; }
+.sf-tombstone-mark { font-size: 28px; line-height: 1; color: var(--ds-fg-muted, var(--vscode-descriptionForeground)); opacity: 0.7; }
+.sf-tombstone-mark .codicon { font-size: 28px; }
+.sf-tombstone-headline { font: var(--tachyon-weight-semibold) var(--ds-title) / 1.3 var(--tachyon-font-sans, inherit); color: var(--vscode-editor-foreground); }
+.sf-tombstone-detail { font-size: var(--ds-small); color: var(--vscode-descriptionForeground); max-width: 34rem; }
+.sf-tombstone-detail .ref { font-family: var(--tachyon-font-mono); color: var(--vscode-editor-foreground); }
+/* The one thing here a human might act on knowing: work that existed and no longer does. */
+.sf-tombstone-draft { margin-top: var(--ds-2); padding: var(--ds-2) var(--ds-3); border-radius: var(--ds-radius, 4px); background: color-mix(in srgb, var(--ds-warn) 14%, transparent); color: var(--vscode-editor-foreground); font-size: var(--ds-small); }
 /* t-e085bc — narrow-panel collapse, previously provided by rich-doc.css's bare `main {}` media rule
    (which matched main.sf-body only by ELEMENT and leaked everywhere else; see header comment). */
 @media (max-width: 820px) {

@@ -2,6 +2,8 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
+import { StudioTombstone } from "../shared/studio/StudioTombstone";
+import { readTombstoneMessage, type StudioTombstoneInfo } from "../shared/studio/tombstone";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
@@ -35,6 +37,11 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Sche
   const [fields, setFields] = useState<ScheduleStudioFields>(blankScheduleFields());
   const [hostError, setHostError] = useState<StudioError | undefined>(undefined);
   const [loadFailed, setLoadFailed] = useState(false);
+  // t-b643ac — "the entity this document edits no longer exists" is a DOCUMENT STATE, held apart
+  // from `hostError` because they are different facts: an error is something the form recovers
+  // from, this is the form having no subject left. Conflating them is what kept a removed agent's
+  // whole editor mounted under a red line, with Save one keystroke from clickable.
+  const [tombstone, setTombstone] = useState<StudioTombstoneInfo | undefined>(undefined);
   const [ready, setReady] = useState(false);
   const entityRef = useRef<ScheduleStudioEntity | undefined>(undefined);
   const fieldsRef = useRef(fields);
@@ -63,6 +70,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Sche
     setFields(fieldsRef.current);
     setHostError(undefined);
     setLoadFailed(false);
+    setTombstone(undefined);
     setReady(false);
     dispatch.post(readyMessage({ routeKey, mountNonce }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -97,6 +105,11 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Sche
       setReady(true);
     } else if (d.type === "referenceData") {
       setReferenceData(d.referenceData ?? emptyReferenceData());
+    } else if (d.type === "tombstone") {
+      setTombstone(readTombstoneMessage(d));
+      setHostError(undefined);
+      setLoadFailed(false);
+      setReady(true);
     } else if (d.type === "error") {
       setHostError({ code: d.code, message: d.message, source: d.source ?? "persistence", blocking: d.blocking });
       if (!entityRef.current) setLoadFailed(true);
@@ -112,12 +125,20 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Sche
   }, [incoming?.seq]);
 
   useEffect(() => {
-    if (!ready || frozen) return;
+    if (!ready || frozen || tombstone) return;
     editRevisionRef.current += 1;
     post(dirtyMessage(dirty));
     post(patchMessage(fields, editRevisionRef.current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, dirty, fields, frozen]);
+
+  // t-b643ac — decision 4, client half: the tombstone REPLACES the frame rather than banner-ing
+  // above it, so Save/Cancel and every adapter action are ABSENT from the DOM instead of disabled
+  // in it. Ahead of the loading check on purpose — a tab revived onto an entity that was removed
+  // while the window was closed never receives an `entity`, and would otherwise load forever.
+  if (tombstone) {
+    return <StudioTombstone info={tombstone} backLink={backLink} onClose={() => post(cancelMessage())} />;
+  }
 
   if (!ready || !entity) {
     return (
