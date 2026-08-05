@@ -38,10 +38,19 @@ const POOL_MB = HOST.memTotalMb - RESERVE_MB;
 const temporaries: string[] = [];
 const spawned: ReturnType<typeof spawn>[] = [];
 
-function ledgerFile(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vitest-budget-test-"));
+function tempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   temporaries.push(dir);
-  return path.join(dir, "budget.json");
+  return dir;
+}
+
+function ledgerFile(): string {
+  return path.join(tempDir("tachyon-vitest-budget-test-"), "budget.json");
+}
+
+/** A ledger path that is a DIRECTORY, so writing it fails the way a broken ledger does. */
+function brokenLedgerPath(): string {
+  return tempDir("tachyon-vitest-budget-broken-");
 }
 
 afterEach(() => {
@@ -277,8 +286,7 @@ describe("vitest host budget (t-3ad4af)", () => {
     // interpreter, so it proves the arithmetic and nothing about the cross-process lock — and a lost
     // update there looks exactly like the defect: two sizers each writing a ledger that never saw
     // the other. So this one bundles the real module and runs real, concurrent `node` processes.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vitest-budget-race-"));
-    temporaries.push(dir);
+    const dir = tempDir("tachyon-vitest-budget-race-");
     const bundle = path.join(dir, "budget.mjs");
     const esbuild = await import("esbuild");
     await esbuild.build({
@@ -293,6 +301,13 @@ describe("vitest host budget (t-3ad4af)", () => {
     const runner = path.join(dir, "runner.mjs");
     fs.writeFileSync(runner, `
       import { admitVitestRun } from ${JSON.stringify(bundle)};
+      // Spin to a shared wall-clock barrier before touching the ledger. Node startup jitter is tens
+      // of milliseconds and the critical section is about one, so without this the racers mostly
+      // MISS each other: measured, an unlocked ledger only lost an update in 2 of 6 runs. That is a
+      // lottery, not a detector. The barrier tests the same code — it only makes the concurrency
+      // this test claims to create actually happen.
+      const startAt = Number(process.argv[3]);
+      while (Date.now() < startAt) { /* spin */ }
       const decision = admitVitestRun({
         memory: ${JSON.stringify(HOST)},
         cpuCount: 8,
@@ -310,8 +325,9 @@ describe("vitest host budget (t-3ad4af)", () => {
       setTimeout(() => {}, 120000);
     `);
 
-    const racers = Array.from({ length: 6 }, (_, index) => {
-      const child = spawn(process.execPath, [runner, `racer${index}`], { stdio: ["ignore", "pipe", "pipe"] });
+    const startAt = Date.now() + 750; // enough for every child to be spun up and waiting
+    const racers = Array.from({ length: 8 }, (_, index) => {
+      const child = spawn(process.execPath, [runner, `racer${index}`, String(startAt)], { stdio: ["ignore", "pipe", "pipe"] });
       spawned.push(child);
       return new Promise<{ ok: boolean; costMb?: number }>((resolve, reject) => {
         let out = "";
@@ -351,8 +367,10 @@ describe("vitest host budget (t-3ad4af)", () => {
         memory: HOST,
         cpuCount: 24,
         label: "broken-ledger",
-        // A directory where a file must be: the ledger write throws, not the budget.
-        ledgerPath: fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vitest-budget-broken-")),
+        // A directory where a file must be: the ledger write throws, not the budget. Registered for
+        // cleanup like every other temp here — an unregistered mkdtemp leaks one directory per gate
+        // run, on every machine that runs the suite.
+        ledgerPath: brokenLedgerPath(),
         pid: liveProcess(),
         measure: () => undefined,
       },
