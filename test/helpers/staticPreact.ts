@@ -157,7 +157,18 @@ export function renderStatic(node: unknown): string {
       if ("fallback" in props) return renderStatic(props.fallback);
       throw new Error("renderStatic: class components are not supported (none exist in the sidebar)");
     }
-    return renderStatic((type as (p: unknown) => unknown)(props));
+    /**
+     * t-72ff5a — invoked with an object as `this`, which a plain function component never reads and
+     * a context PROVIDER requires.
+     *
+     * `createContext().Provider` is a function component in Preact, but it assigns
+     * `this.getChildContext` before returning `props.children`; called bare it dies on `undefined`.
+     * That went unnoticed while the sidebar's only static renders were the Control tab, which mounts
+     * outside `DispatchCtx.Provider` — the seven scoped tabs mount inside it. Nothing about context
+     * VALUES changes here: `preactHooksStub`'s `useContext` still answers every read, so what the
+     * serializer walks is the provider's children, which is what the DOM would hold.
+     */
+    return renderStatic((type as (this: unknown, p: unknown) => unknown).call({}, props));
   }
   if (typeof type !== "string") throw new Error(`renderStatic: unsupported vnode type ${String(type)}`);
 

@@ -204,7 +204,16 @@ export interface ConfigErrorVM {
 }
 
 export interface FleetVM {
-  /** the workspace this fleet belongs to (set when >1 root, so the UI can group + route by folder) */
+  /**
+   * The workspace this fleet belongs to.
+   *
+   * t-72ff5a — both production projections have always set it for EVERY root including a lone one
+   * (`sidebarFleetService.ts`, `WorkspacePresentation.ts`); the old "set when >1 root" note
+   * described an intent the code did not follow. It matters now: `folder.name` is what the sidebar's
+   * project chrome paints, and `folder.hash` is what the selection resolves against, so a fleet
+   * without one cannot be selected or named. Still optional on the type because fixtures and
+   * plugin-facing projections may omit it, and every reader falls back rather than throwing.
+   */
   folder?: WorkspaceRef;
   bridge: BridgeVM;
   agents: AgentVM[];

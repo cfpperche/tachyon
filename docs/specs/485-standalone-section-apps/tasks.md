@@ -568,7 +568,7 @@ _Each maps to a checkbox in `spec.md` § Acceptance criteria._
 - [x] Hidden apps do no refresh work; revealed apps are current, never stale (B1–B3).
 - [x] Board and a terminal, and two task details, are visible and live simultaneously (C4, C5).
 - [x] Switching the project selector does not rewrite an open document (C7).
-- [x] The selector exists exactly once, in the sidebar Control tab header (C6).
+- [x] The selector exists exactly once, in the sidebar Control tab header (C6). _(t-72ff5a, 2026-08-05: still exactly once, now in the sidebar's chrome above the search bar — the header row was the right home while the selection only scoped Control.)_
 - [x] Reload restores every open app to its tab and state (D12). — measured t-a03fb6 / D21 (2026-08-05);
       evidence `evidence/t-a03fb6-restore-exercise-answers.md`. (Earlier blocker was a wrong EDH pid
       observation — t-5fc17d.)
