@@ -42,6 +42,15 @@ export interface ConsentCommand {
   command: string;
 }
 
+/** A settings-hook block this plugin registers in one runtime. This is an install disclosure, not a
+ * per-agent grant: projection into managed agent sessions remains workspace policy. */
+export interface ConsentSettingsHook {
+  runtime: Runtime;
+  event: string;
+  /** Exact runtime matchers. Empty means the hook block did not declare a matcher. */
+  matchers: string[];
+}
+
 /** A file/dir Tachyon will write. */
 export interface ConsentWrite {
   file: string;
@@ -181,6 +190,9 @@ export interface ConsentVM {
   runtimes?: ConsentRuntime[];
   /** ③ permission summary — every shell command that will run on agent events (install/update only). */
   wiredCommands?: ConsentCommand[];
+  /** Runtime settings-hooks this package registers. Informational: managed-agent projection is controlled
+   * workspace-wide by `settings.agentHookProjection`, never by a per-agent capability grant. */
+  settingsHooks?: ConsentSettingsHook[];
   /** ④ file writes preview (install/update only). */
   writes?: ConsentWrite[];
   /** update conflicts (the user edited installed hooks / a new group would duplicate). */
@@ -259,6 +271,14 @@ function runtimesFrom(install: InstallPreview, present: ReadonlySet<Runtime>): C
 
 function wiredFrom(install: InstallPreview): ConsentCommand[] {
   return install.steps.flatMap((s) => s.wiredCommands.map((command) => ({ runtime: s.runtime, command })));
+}
+
+function settingsHooksFrom(install: InstallPreview): ConsentSettingsHook[] {
+  return install.steps.flatMap((step) => Object.entries(step.owned).map(([event, groups]) => ({
+    runtime: step.runtime,
+    event,
+    matchers: [...new Set(groups.flatMap((group) => group.matcher === undefined ? [] : [group.matcher]))],
+  })));
 }
 
 function writesFrom(install: InstallPreview, pluginName: string): ConsentWrite[] {
@@ -393,6 +413,7 @@ export function buildInstallConsent(preview: InstallPreview, provenance?: Instal
     provenance: provenanceRows(provenance),
     ...(preview.requires.length > 0 ? { requires: preview.requires } : {}),
     runtimes: runtimesFrom(preview, present),
+    ...(preview.steps.length > 0 ? { settingsHooks: settingsHooksFrom(preview) } : {}),
     wiredCommands: wiredFrom(preview),
     writes: writesFrom(preview, pluginName),
     ...(skills.length > 0 ? { skills } : {}),
@@ -464,6 +485,7 @@ export function buildUpdateConsent(preview: UpdatePreview, provenance: InstallPr
   };
   if (preview.install) {
     vm.runtimes = runtimesFrom(preview.install, present);
+    if (preview.install.steps.length > 0) vm.settingsHooks = settingsHooksFrom(preview.install);
     vm.wiredCommands = wiredFrom(preview.install);
     vm.writes = writesFrom(preview.install, pluginName);
     const { skills, collisions } = skillsFrom(preview.install);

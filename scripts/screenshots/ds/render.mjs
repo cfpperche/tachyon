@@ -3,7 +3,8 @@
 // (b) badges/buttons/cards/inputs are identical across panels, and (c) NO hardcoded color breaks the light
 // theme (D4). It mounts the panel's REAL Preact <App> with a representative fixture (harness/<panel>.tsx),
 // inlines the shared design-system.css + the panel's own <style> deltas (extracted from its host .ts), wraps
-// it in a chosen theme's `--vscode-*` token block, and screenshots it with headless Chrome.
+// it in a chosen theme's `--vscode-*` token block, and screenshots it with headless Chrome. A migrated
+// panel whose CSS already lives in its own file points at that file directly.
 //
 //   node scripts/screenshots/ds/render.mjs [panel...]   # default: all known panels, both themes
 //
@@ -21,12 +22,12 @@ const ROOT = join(HERE, "..", "..", "..");
 const OUT = join(HERE, "out");
 const DS_CSS = join(ROOT, "src/webview/shared/design-system.css");
 
-// Each entry pairs the host .ts whose <style> deltas we reuse with EITHER a Preact harness (`harness`: a tsx
+// Each entry pairs the panel stylesheet (an extracted host <style> or a direct CSS file) with EITHER a Preact harness (`harness`: a tsx
 // that mounts <App> with a fixture) OR a static body fragment (`body`: an .html file of representative markup)
 // for the vanilla-JS panels whose DOM is built host-side via postMessage and can't be mounted standalone.
 const PANELS = {
   plugins: { harness: "harness/plugins.tsx", styleFrom: "src/webview/PluginsPanel.ts" },
-  "plugins-consent": { harness: "harness/plugins-consent.tsx", styleFrom: "src/webview/PluginsPanel.ts", width: 1000 },
+  "plugins-consent": { harness: "harness/plugins-consent.tsx", styleFile: "src/webview/plugins/plugins.css", width: 880 },
   handoff: { harness: "harness/handoff.tsx", styleFrom: "src/webview/HandoffPanel.ts" },
   inspector: { body: "harness/inspector.body.html", styleFrom: "src/webview/ServerInspector.ts" },
   studio: { body: "harness/studio.body.html", styleFrom: "src/webview/AgentStudioPanel.ts" },
@@ -51,6 +52,8 @@ async function bundleHarness(rel) {
     target: "es2020",
     jsx: "automatic",
     jsxImportSource: "preact",
+    // Match the production webview build: Tachyon Kit's React peers must resolve to the one Preact runtime.
+    alias: { react: "preact/compat", "react-dom": "preact/compat", "react-dom/client": "preact/compat" },
     logLevel: "warning",
   });
   return r.outputFiles[0].text;
@@ -99,7 +102,7 @@ async function main() {
       try { const bundle = await bundleHarness(def.harness); scriptFile = `${name}.bundle.js`; writeFileSync(join(OUT, scriptFile), bundle); }
       catch (e) { console.error(`✗ ${name}: harness not buildable yet (${e.message.split("\n")[0]})`); continue; }
     }
-    const panelCss = extractStyle(def.styleFrom);
+    const panelCss = def.styleFile ? readFileSync(join(ROOT, def.styleFile), "utf8") : extractStyle(def.styleFrom);
     for (const theme of ["dark", "light"]) {
       const htmlPath = join(OUT, `${name}-${theme}.html`);
       const pngPath = join(OUT, `${name}-${theme}.png`);
