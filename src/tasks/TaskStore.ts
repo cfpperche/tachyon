@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { loadManagedWorktreeStore, managedWorktreeStorePath } from "../worktree/managedWorktree.js";
 import { sliceJournal, TaskJournalStore } from "./TaskJournalStore.js";
 import { compareTasksForListing } from "./listOrder.js";
 import { nextTask } from "./nextTask.js";
@@ -80,6 +81,10 @@ export interface TaskMutationEvent {
 export interface TaskStoreOptions {
   onMutation?: (event: TaskMutationEvent) => void | Promise<void>;
   evolutionCompletionFor?: (event: TaskMutationEvent) => Task["evolutionCompletion"];
+}
+
+interface TaskDerivationBatch {
+  managedSddWorkspaceRoots?: string[];
 }
 
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
@@ -277,7 +282,8 @@ export class TaskStore {
     const tasks = this.listRaw();
     const filtered = options.status ? tasks.filter((task) => task.status === options.status) : tasks;
     const offset = clampOffset(options.offset);
-    return filtered.slice(offset, offset + clampLimit(limit)).map((task) => this.viewFor(task, tasks));
+    const derivationBatch: TaskDerivationBatch = {};
+    return filtered.slice(offset, offset + clampLimit(limit)).map((task) => this.viewFor(task, tasks, {}, derivationBatch));
   }
 
   /** The store's true total, independent of any `listViews` limit/offset, so callers can page honestly. */
@@ -451,13 +457,14 @@ export class TaskStore {
   next(agent: string): NextTaskResult {
     const tasks = this.listRaw();
     const derived: Record<string, TaskDerived> = {};
+    const derivationBatch: TaskDerivationBatch = {};
     for (const task of tasks) {
-      const d = this.derive(task);
+      const d = this.derive(task, derivationBatch);
       if (d) derived[task.id] = d;
     }
     const result = nextTask({ tasks, agent, derived });
     if ("task" in result) {
-      const view = this.viewFor(result.task, tasks);
+      const view = this.viewFor(result.task, tasks, {}, derivationBatch);
       return { task: result.task, ...(view.derived ? { derived: view.derived } : {}), ...(view.attention?.length ? { attention: view.attention } : {}) };
     }
     return result;
@@ -520,8 +527,8 @@ export class TaskStore {
     }
   }
 
-  private viewFor(task: Task, allTasks: Task[], options: TaskViewOptions = {}): TaskView {
-    const derived = this.derive(task);
+  private viewFor(task: Task, allTasks: Task[], options: TaskViewOptions = {}, derivationBatch?: TaskDerivationBatch): TaskView {
+    const derived = this.derive(task, derivationBatch);
     const attention = attentionFor(task, allTasks, derived);
     const wantsJournal = options.includeJournal || options.journalWindow !== undefined;
     // Read once: count and window come from the same materialization, so a concurrent append
@@ -539,27 +546,35 @@ export class TaskStore {
     };
   }
 
-  private derive(task: Task): TaskDerived | undefined {
+  private derive(task: Task, derivationBatch?: TaskDerivationBatch): TaskDerived | undefined {
     const sddRef = task.artifact_refs?.find((ref) => ref.type === "sdd" && artifactRefRole(ref) === "deliverable");
     if (!sddRef) return undefined;
-    const specPath = this.resolveSddSpec(sddRef.ref);
+    const specPath = this.resolveSddSpec(sddRef.ref, derivationBatch);
     if (!specPath) return { sdd: { type: "sdd", ref: sddRef.ref, missing: true } };
     const status = readSddStatus(specPath);
     return { sdd: { type: "sdd", ref: sddRef.ref, ...(status ? { status } : {}) } };
   }
 
-  private resolveSddSpec(ref: string): string | null {
+  private managedSddWorkspaceRoots(): string[] {
+    try {
+      const registry = loadManagedWorktreeStore(managedWorktreeStorePath(this.workspaceRoot));
+      return registry.entries.map((entry) => entry.path);
+    } catch {
+      // A missing or unreadable registry cannot prove that a spec exists outside this checkout.
+      return [];
+    }
+  }
+
+  private resolveSddSpec(ref: string, derivationBatch?: TaskDerivationBatch): string | null {
     const clean = ref.trim().replace(/^docs\/specs\//, "").replace(/\/spec\.md$/, "").replace(/\/$/, "");
-    const specsDir = path.join(this.workspaceRoot, "docs", "specs");
-    const exact = path.join(specsDir, clean, "spec.md");
-    if (fs.existsSync(exact)) return exact;
-    if (/^[0-9]{3}$/.test(clean)) {
-      try {
-        const match = fs.readdirSync(specsDir).find((name) => name.startsWith(`${clean}-`) && fs.existsSync(path.join(specsDir, name, "spec.md")));
-        return match ? path.join(specsDir, match, "spec.md") : null;
-      } catch {
-        return null;
-      }
+    const primary = resolveSddSpecInWorkspace(this.workspaceRoot, clean);
+    if (primary) return primary;
+    const managedRoots = derivationBatch
+      ? (derivationBatch.managedSddWorkspaceRoots ??= this.managedSddWorkspaceRoots())
+      : this.managedSddWorkspaceRoots();
+    for (const workspaceRoot of managedRoots) {
+      const specPath = resolveSddSpecInWorkspace(workspaceRoot, clean);
+      if (specPath) return specPath;
     }
     return null;
   }
@@ -899,6 +914,23 @@ function attentionFor(task: Task, allTasks: Task[], derived?: TaskDerived): Task
     attention.push({ code: "sdd_needs_retriage", message: `SDD artifact '${sdd.ref}' is ${sdd.status}; retriage the task`, ref: sdd.ref });
   }
   return attention;
+}
+
+function resolveSddSpecInWorkspace(workspaceRoot: string, cleanRef: string): string | null {
+  const specsDir = path.join(workspaceRoot, "docs", "specs");
+  const exact = path.join(specsDir, cleanRef, "spec.md");
+  if (fs.existsSync(exact)) return exact;
+  if (/^[0-9]{3}$/.test(cleanRef)) {
+    try {
+      const match = fs.readdirSync(specsDir).find(
+        (name) => name.startsWith(`${cleanRef}-`) && fs.existsSync(path.join(specsDir, name, "spec.md")),
+      );
+      return match ? path.join(specsDir, match, "spec.md") : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function readSddStatus(specPath: string): SddStatus | undefined {
