@@ -14,7 +14,7 @@ import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget
 import { composeFixedApprovalResponse } from "../../src/bridge/approvalRequest.js";
 
 /**
- * t-c6c4ad — human Validation close must wake the author the same way Approval resolve injects.
+ * t-c6c4ad / t-ebde5f — Validation close must wake the author without inventing an actor.
  *
  * Fail-before: closeRound alone never typed into any session (see MissionControlTarget /
  * engineService pre-patch). Pass-after: pure compose is FIXED, recipients skip humans, live
@@ -35,13 +35,13 @@ describe("composeFixedValidationClosedResponse", () => {
     const failed = composeFixedValidationClosedResponse(sample(), "failed");
     const skipped = composeFixedValidationClosedResponse(sample(), "skipped");
     expect(passed).toBe(
-      "[tachyon] human closed validation v-b5e168 as passed — you may proceed accordingly",
+      "[tachyon] validation v-b5e168 closed as passed — you may proceed accordingly",
     );
     expect(failed).toBe(
-      "[tachyon] human closed validation v-b5e168 as failed — you may proceed accordingly",
+      "[tachyon] validation v-b5e168 closed as failed — you may proceed accordingly",
     );
     expect(skipped).toBe(
-      "[tachyon] human closed validation v-b5e168 as skipped — you may proceed accordingly",
+      "[tachyon] validation v-b5e168 closed as skipped — you may proceed accordingly",
     );
     // No caller-supplied prose can leak into the inject (approval twin).
     expect(passed).not.toMatch(/\n|\r/);
@@ -278,19 +278,10 @@ describe("legacyMissionControlTarget.closeValidation wakes the author once", () 
     expect(sendSubmittedLine).not.toHaveBeenCalled();
   });
 
-  it("mirrors approval inject posture: FIXED host line, never free-form decision text", () => {
-    // Structural twin, and t-86e59a DELIBERATELY BROKE HALF OF IT — recorded here rather than quietly
-    // re-pinned, because the divergence is the finding.
-    //
-    // Both lines are still FIXED host-composed text carrying their own id, and that is the property this
-    // test exists for. What they no longer share is the opening: the approval line stopped claiming
-    // `[tachyon] human ...`, because three measured doors resolve an approval with no human gesture and
-    // the word was a machine-read signal, not a flourish (approvalRequest.ts invariant (3)).
-    //
-    // The validation line still opens `[tachyon] human closed validation ...`. That was left alone ON
-    // PURPOSE: t-86e59a's scope is approvals, and whether validation close is reachable without a human
-    // has NOT been measured. Asserting it is a lie would be the same error in the other direction —
-    // claiming a fact nobody established. It is written up as its own task instead.
+  it("matches approval inject posture: FIXED host line, no invented actor or free-form text", () => {
+    // t-ebde5f reproduced the missing fact: a nonce-only control-socket speaker can close a
+    // validation without a human gesture. Both host lines therefore carry the durable result without
+    // claiming an actor their respective doors cannot prove.
     const approvalLine = composeFixedApprovalResponse(
       { id: "a-d1d7d8" } as never,
       "approved",
@@ -299,8 +290,9 @@ describe("legacyMissionControlTarget.closeValidation wakes the author once", () 
     expect(approvalLine.startsWith("[tachyon] ")).toBe(true);
     expect(approvalLine).toContain("a-d1d7d8");
     expect(approvalLine.startsWith("[tachyon] human ")).toBe(false);
-    expect(validationLine.startsWith("[tachyon] human ")).toBe(true);
+    expect(validationLine.startsWith("[tachyon] human ")).toBe(false);
+    expect(validationLine.startsWith("[tachyon] validation ")).toBe(true);
     expect(validationLine).toContain("v-b5e168");
-    expect(validationLine).not.toContain("aprovado"); // human note stays on the durable record
+    expect(validationLine).not.toContain("aprovado"); // caller note stays on the durable record
   });
 });

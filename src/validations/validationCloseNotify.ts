@@ -1,8 +1,8 @@
 /**
- * t-c6c4ad — wake the validation author (and live assignee) when a human closes a Validation.
+ * t-c6c4ad / t-ebde5f — wake the validation author (and live assignee) when a Validation closes.
  *
- * Symmetric to approval resolve inject (`composeFixedApprovalResponse` / `resolveApproval`):
- * the human's decision is already durable on the Validation record; this module only delivers a
+ * Symmetric to approval resolve inject (`composeFixedApprovalResponse` / `resolveApproval`): the
+ * close is already durable on the Validation record; this module only delivers a
  * bounded, FIXED host-owned line into any live agent session that cares. Offline agents lose
  * nothing — the closed round stays on disk and they can re-read it on resume.
  *
@@ -42,11 +42,11 @@ export function composeFixedValidationClosedResponse(
   validation: Pick<Validation, "id">,
   outcome: ValidationOutcome,
 ): string {
-  return `[tachyon] human closed validation ${validation.id} as ${outcome} — you may proceed accordingly`;
+  return `[tachyon] validation ${validation.id} closed as ${outcome} — you may proceed accordingly`;
 }
 
 /**
- * Who should be woken on a human close: the author and (if different) the assignee, when each
+ * Who should be woken on a close: the author and (if different) the assignee, when each
  * looks like an agent name. Dedupe preserves author-first order. "human"/host surfaces never wake.
  */
 export function validationCloseWakeRecipients(
@@ -80,7 +80,7 @@ export interface ValidationCloseWakeDelivery {
 }
 
 /**
- * After a human closeRound succeeds: best-effort wake of each recipient's live agent session.
+ * After closeRound succeeds: best-effort wake of each recipient's live agent session.
  * Never throws for offline agents or inject failures — the durable close is already committed.
  */
 export async function wakeValidationClosedAuthors(input: {

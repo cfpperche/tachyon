@@ -802,7 +802,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     });
     expect(closed.isError).toBeFalsy();
     const closedParsed = JSON.parse((closed.content as Array<{ text: string }>)[0].text);
-    expect(closedParsed).toMatchObject({ id: validation.id, status: "closed", rounds: [{ n: 1, outcome: "failed" }] });
+    expect(closedParsed).toMatchObject({
+      id: validation.id,
+      status: "closed",
+      rounds: [{ n: 1, outcome: "failed", closedBy: { kind: "legacy" } }],
+    });
 
     const full = await client.callTool({ name: "get_validation", arguments: { id: validation.id } });
     expect(JSON.parse((full.content as Array<{ text: string }>)[0].text).rounds[0].result_note).toContain("Image output");

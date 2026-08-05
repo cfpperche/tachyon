@@ -9,7 +9,7 @@ import {
   startAgentWithActivity,
 } from "../activity/ActivityLogManager.js";
 import { readLinuxProcessIdentity } from "../runtime/processIdentity.js";
-import { EDITOR_HUMAN_ACTOR } from "../validations/types.js";
+import { EDITOR_HUMAN_ACTOR, ENGINE_CONTROL_VALIDATION_ACTOR } from "../validations/types.js";
 import { wakeValidationClosedAuthors } from "../validations/validationCloseNotify.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
 import type { ViewKind } from "../workspace/EngineHost.js";
@@ -605,10 +605,10 @@ async function executeWorkspaceCommand(
     return workspaceCommandSuccessV1(command);
   }
   if (command.method === "validation.close") {
-    // t-98256c — this command only ever arrives from an attached editor shell, so the actor is the
-    // human at the keyboard. Stamped here, never carried on the wire.
+    // t-ebde5f — this command is also reachable by a raw same-uid control-socket speaker. The attach
+    // hello is self-asserted, so the daemon can prove the channel but no human or other actor behind it.
     const closed = await workspace.validationStore.closeRound(command.input.id, {
-      actor: EDITOR_HUMAN_ACTOR,
+      actor: ENGINE_CONTROL_VALIDATION_ACTOR,
       outcome: command.input.outcome,
       result_note: command.input.result_note,
     });

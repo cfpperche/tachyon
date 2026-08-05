@@ -9,19 +9,21 @@ export type ValidationExecutor = (typeof VALIDATION_EXECUTORS)[number];
 export const VALIDATION_OUTCOMES = ["passed", "failed", "skipped"] as const;
 export type ValidationOutcome = (typeof VALIDATION_OUTCOMES)[number];
 
-/** The Bridge's own caller kinds — a validation actor is never self-declared, so this mirrors them. */
-export const VALIDATION_ACTOR_KINDS = ["agent", "human", "master", "legacy", "external"] as const;
+/** Bridge-resolved caller kinds, plus an explicit kind for a door that proves only its channel. */
+export const VALIDATION_ACTOR_KINDS = ["agent", "human", "master", "legacy", "external", "unattributed"] as const;
 export type ValidationActorKind = (typeof VALIDATION_ACTOR_KINDS)[number];
 
 /**
- * t-98256c — who acted on a validation. For a Bridge call this is the resolved caller (the same
- * identity `request_human_approval` refuses to take as a parameter); for a close from the editor the
- * host stamps its own surface, exactly as an approval records `resolvedBy`. It is an argument rather
- * than a tool field precisely so a caller cannot claim to be someone else.
+ * t-98256c / t-ebde5f — provenance for an action on a validation. For a Bridge call this is the
+ * resolved caller (the same identity `request_human_approval` refuses to take as a parameter). The
+ * engine control socket proves no actor: its hello is self-asserted and its nonce is available to
+ * every same-uid process, so that door records `kind: "unattributed"` plus a host-owned channel name.
+ * This differs deliberately from approvals' string `resolvedBy`: the structured kind carries the
+ * "unattributed" warning here instead of encoding it as a value prefix.
  */
 export interface ValidationActor {
   kind: ValidationActorKind;
-  /** the resolved agent name for kind "agent"; the host surface (e.g. "vscode") for a human close. */
+  /** Resolved principal name when known; host-owned channel name when kind is "unattributed". */
   name?: string;
 }
 
@@ -31,6 +33,12 @@ export interface ValidationActor {
  */
 export const EDITOR_HUMAN_ACTOR: ValidationActor = { kind: "human", name: "vscode" };
 
+/** The daemon's validation command proves this channel, but no human or other actor behind it. */
+export const ENGINE_CONTROL_VALIDATION_ACTOR: ValidationActor = {
+  kind: "unattributed",
+  name: "engine-control",
+};
+
 export interface ValidationRound {
   n: number;
   startedAt?: string;
@@ -39,7 +47,7 @@ export interface ValidationRound {
   outcome?: ValidationOutcome;
   evidence_refs?: ArtifactRef[];
   result_note?: string;
-  /** Provenance of the closure — absent on rounds recorded before t-98256c. */
+  /** Closure provenance — absent on rounds recorded before t-98256c; may name only a channel. */
   closedBy?: ValidationActor;
 }
 
@@ -93,7 +101,7 @@ export interface ValidationUpdateInput {
 }
 
 export interface ValidationCloseInput {
-  /** Who is closing. Required so no path can close without saying who acted (t-98256c). */
+  /** Resolved actor or explicitly unattributed channel; never infer an actor from the entry point. */
   actor: ValidationActor;
   outcome: ValidationOutcome;
   result_note?: string;
