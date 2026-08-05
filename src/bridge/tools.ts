@@ -45,6 +45,7 @@ import {
   WaitOutputConcurrencyGate,
   waitOutputConcurrencyRefusalMessage,
 } from "./waitForOutput.js";
+import { inLifecycleScope, lifecycleScopeRefusal, type LifecycleTool } from "./lifecycleScope.js";
 import type { BackstopAcknowledgement } from "../workspace/TemporaryBackstopMonitor.js";
 import { NO_QUOTA_CHANNEL, type RuntimeConditionReportV1 } from "../runtimeOps/runtimeCondition.js";
 import type { CommandRunner } from "../commands/CommandRunner.js";
@@ -552,6 +553,26 @@ function resolveDeclaredActor(deps: Pick<BridgeDeps, "caller" | "callerRegistry"
     registry: deps.callerRegistry,
     scope: deps.callerScope ?? { workspaceId: "", instanceId: "" },
   });
+}
+
+/**
+ * t-bec361 — the WHICH-TARGETS gate for the three by-name lifecycle/input doors. Returns the refusal
+ * text when the call is out of scope, `undefined` when it may proceed.
+ *
+ * Scoped to a caller the Bridge resolved as an AGENT, and to nothing else. A missing `deps.caller`
+ * (registerTools called directly, bypassing Bridge.ts) and every non-agent kind — master, external,
+ * legacy, human — pass through untouched: those are the human's operation tokens, and the sidebar's
+ * own Kill must not be narrowed by a rule written for agent-to-agent calls.
+ */
+function lifecycleScopeGuard(
+  deps: Pick<BridgeDeps, "caller" | "manager">,
+  tool: LifecycleTool,
+  target: string,
+): string | undefined {
+  const caller = deps.caller;
+  if (caller?.kind !== "agent" || !caller.name) return undefined;
+  if (inLifecycleScope(caller.name, target, deps.manager)) return undefined;
+  return lifecycleScopeRefusal(tool, caller.name, target, deps.manager);
 }
 
 /** The verify-gate view exposed over MCP — the validated-handoff payload a parent gates on. */
@@ -1895,11 +1916,20 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   mcp.registerTool(
     "kill_agent",
     {
-      description: "Compatibility name: stop a running managed entry (kills its tmux session).",
+      description:
+        "Compatibility name: stop a running managed entry (kills its tmux session). GOVERNANCE (t-bec361): " +
+        "as an agent you may stop only yourself or an agent below you in your own lineage — never a sibling, a " +
+        "parent, or an unrelated fleet member. An out-of-scope target is refused with a structured error naming " +
+        "the target's owner. For a Temporary that owns a checkout this call also removes its worktree and branch, " +
+        "which is why the scope is narrower than read-only tools'.",
       inputSchema: { name: AGENT_NAME },
     },
     async ({ name }) => {
       try {
+        // Ahead of every side effect, including the worktree cascade below: an out-of-scope caller
+        // must not be able to reach the teardown, and must not learn from a refusal whether it ran.
+        const denied = lifecycleScopeGuard(deps, "kill_agent", name);
+        if (denied) return fail(new Error(denied));
         const info = await managedEntry(deps, name);
         // t-a76aed — for a running Temporary that owns a checkout, kill IS the reachable end-of-life
         // door: it is the call a coordinator makes on a finished child, and the documented follow-up
@@ -2061,7 +2091,9 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Restart a managed entry (spec 389). stop=graceful|force (default graceful) × session=resume|new (default resume; falls back to new when resume is unavailable). " +
         "Graceful asks the CLI to exit, waits, then force-kills the tmux session only if still alive (never dismisses a Temporary instance). " +
-        "Force replaces the process immediately. Crash/watch auto-restarts use force+new internally.",
+        "Force replaces the process immediately. Crash/watch auto-restarts use force+new internally. " +
+        "GOVERNANCE (t-bec361): as an agent you may restart only yourself or an agent below you in your own " +
+        "lineage; an out-of-scope target is refused with a structured error naming the target's owner.",
       inputSchema: {
         name: AGENT_NAME,
         stop: z.enum(["graceful", "force"]).optional().describe("how to stop a live pane; default graceful"),
@@ -2070,6 +2102,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, stop, session }) => {
       try {
+        const denied = lifecycleScopeGuard(deps, "restart_agent", name);
+        if (denied) return fail(new Error(denied));
         // Product defaults: graceful + resume (AgentManager applies the same when omitted).
         const result = await deps.manager.restart(name, {
           stop: stop ?? "graceful",
@@ -4166,7 +4200,10 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         "and answering it is write_input's most legitimate use — set answering=true to document that intent and " +
         "get a receipt: answered-prompt back. submit=false only types the text with no Enter — raw, unsubmitted " +
         "keystrokes can land in or concatenate with whatever the recipient's composer already holds, so the " +
-        "caller should know the recipient's state.",
+        "caller should know the recipient's state. " +
+        "GOVERNANCE (t-bec361): as an agent you may type into only yourself or an agent below you in your own " +
+        "lineage — typing into someone else's terminal is a command gesture, not a message. To reach a sibling, " +
+        "a parent or any other agent, use notify_agent, which is not lineage-scoped.",
       inputSchema: {
         name: AGENT_NAME,
         text: z.string().describe("text to type into the agent's terminal"),
@@ -4179,6 +4216,8 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ name, text, submit, answering }) => {
       try {
+        const denied = lifecycleScopeGuard(deps, "write_input", name);
+        if (denied) return fail(new Error(denied));
         const session = deps.manager.session(name);
         if (!(await deps.tmux.hasSession(session))) {
           return fail(new Error(`agent '${name}' is not running`));
@@ -4285,9 +4324,17 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
             + "delivered line and stored with the notice, so the recipient can open it from Attention/Activity "
             + "instead of reading your pane.",
         ),
+        // t-bec361 — this used to say, unconditionally, that the name is "self-declared, NOT verified by
+        // the Bridge (auth is one shared token; the Bridge cannot tell callers apart)". That describes ONE
+        // configuration (settings.auth: false, where there is no bearer to resolve at all); with auth on —
+        // the default — spec 351 mints a per-agent token and resolves it before any fallback. Stated as
+        // fact, the old sentence talked a reader out of checking, and did exactly that to the agent that
+        // wrote this task.
         agent: AGENT_NAME.describe(
-          "YOUR agent name — self-declared, NOT verified by the Bridge (auth is one shared token; the Bridge cannot tell callers apart). " +
-            "It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
+          "YOUR agent name — resolved against the Bridge-authenticated caller, not trusted verbatim: with auth ON " +
+            "(the default) your own per-agent token identifies you, and declaring a different agent's name is refused " +
+            "as caller_mismatch. Only on a workspace running settings.auth: false is there no identity to resolve, and " +
+            "there the name passes through unverified. It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
         ),
       },
     },

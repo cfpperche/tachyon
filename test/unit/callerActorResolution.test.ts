@@ -179,8 +179,12 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
     expect(explicit.isError).toBe(true);
     expect(JSON.stringify(explicit.content)).toContain("parent is only valid for a Temporary delegated agent");
 
-    await claudeClient.callTool({ name: "kill_agent", arguments: { name: "saved" } });
-    await claudeClient.callTool({ name: "kill_agent", arguments: { name: "owned" } });
+    // t-bec361 — cleanup goes through the human-operation token, not `claude`. Activating a Saved
+    // Agent deliberately creates NO runtime lineage (the assertions above are exactly that), so
+    // `claude` is not these two entries' owner and kill_agent now refuses it. `declaredOwner` is
+    // durable roster metadata, not lineage, and the lifecycle scope reads lineage only.
+    await client.callTool({ name: "kill_agent", arguments: { name: "saved" } });
+    await client.callTool({ name: "kill_agent", arguments: { name: "owned" } });
   });
 
   it("notify_agent: sender is the resolved caller, not whatever the call declares", async () => {
