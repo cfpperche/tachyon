@@ -18,12 +18,8 @@ import { mintExecution } from "../executionGraph/executionIdentity.js";
  *
  * Two roles:
  *  - command channel: tmux invocations ride the client's stdin/stdout as lines,
- *    replies framed by `%begin`/`%end`/`%error` tags. The tag carries
- *    `<time> <command_number> <flags>` (tmux CONTROL MODE); the client matches
- *    completed frames to pending work by that server-assigned command number in
- *    order, not by bare FIFO position — so a gapped or reordered frame cannot
- *    silently complete the wrong command (t-9610e8). Zero subprocess churn in
- *    steady state.
+ *    replies framed by `%begin`/`%end`/`%error` tags (strictly FIFO per client —
+ *    verified on a real socket). Zero subprocess churn in steady state.
  *  - event source: `%sessions-changed` (kill/spawn) plus `refresh-client -B`
  *    subscriptions whose format loops (#{S:…}) encode SERVER-WIDE maps —
  *    dead-pane liveness (`tachyon-dead`) and last-activity timestamps
@@ -43,19 +39,6 @@ import { mintExecution } from "../executionGraph/executionIdentity.js";
  * similarly falls back to full capture-pane polling when the activity
  * subscription is unavailable.
  */
-
-/**
- * tmux CONTROL MODE: `%begin`/`%end`/`%error` share three arguments —
- * integer time (epoch seconds), command number, flags. The command number is
- * assigned by the server when it runs the line; the client learns it only when
- * the frame opens. Returns null if the tag is not parseable.
- */
-export function parseControlModeCommandNumber(frameTag: string): number | null {
-  const parts = frameTag.trim().split(/\s+/);
-  if (parts.length < 2) return null;
-  const n = Number(parts[1]);
-  return Number.isInteger(n) ? n : null;
-}
 
 export const DEADMAP_SUBSCRIPTION = "tachyon-dead";
 /** sessions -> windows -> panes; A=alive, D<code>=dead. Spiked: fires in ~0.5s with the code. */
@@ -161,15 +144,6 @@ export class ControlModeClient {
   private frameTag: string | null = null;
   private frameBody: string[] = [];
   private pending: Pending[] = [];
-  /**
-   * Next server command number we will release to `pending[0]`. Null until the
-   * first non-guard frame of this generation establishes the baseline (the
-   * attach guard's number is not contiguous with later commands — measured on
-   * tmux 3.6: guard 276 then first line-command 281).
-   */
-  private nextCommandNumber: number | null = null;
-  /** Completed frames held until their command number is next to release. */
-  private heldFrames = new Map<number, { isError: boolean; body: string }>();
   private reconnectAttempt = 0;
   private reconnectTimer: NodeJS.Timeout | undefined;
   private readonly socket: string;
@@ -274,9 +248,6 @@ export class ControlModeClient {
       this.bootstrapReplies = 0;
       this.buffer = "";
       this.frameTag = null;
-      this.frameBody = [];
-      this.nextCommandNumber = null;
-      this.heldFrames.clear();
 
       proc.stdout.on("data", (chunk: Buffer | string) => this.feed(proc, chunk.toString()));
       proc.on("exit", () => this.onClientDown(proc));
@@ -289,9 +260,14 @@ export class ControlModeClient {
    * tmux errors (%error — e.g. "can't find session") reject like the subprocess
    * path would; only transport problems fall back.
    *
-   * t-9610e8 reconverges `has-session` onto the channel: frames settle by the
-   * server command number in `%begin`/`%end`/`%error`, so a gapped success body
-   * can no longer complete a different occupancy probe (the t-72d4d3 desync).
+   * t-72d4d3 — `has-session` always takes the subprocess path. Occupancy probes are
+   * correctness-critical for spawn (`agent 'X' is already running` is thrown on a
+   * true hasSession with a non-dead state). Control-mode replies are FIFO without
+   * per-command identity; under load a desynced success frame can make a missing
+   * session look present. Measured on engineService: daemon reported already-running
+   * while the private socket's list-sessions showed only `tachyon-ctl-<hash>`. A
+   * false-positive has-session is worse than the extra subprocess, so this probe
+   * never rides the channel.
    */
   makeExecutor(): TmuxExecutor {
     return (args: string[], options: TmuxExecOptions = {}) => {
@@ -302,6 +278,7 @@ export class ControlModeClient {
         || socket !== this.socket
         || !lineSafe(cmd)
         || cmd.length === 0
+        || cmd.includes("has-session")
       ) {
         return this.fallback(args, options);
       }
@@ -327,10 +304,9 @@ export class ControlModeClient {
           const error = new TransportError(
             `tmux ${options.op ?? "control operation"} timed out after ${options.timeoutMs}ms; reconnecting control client`,
           );
-          // A missing frame leaves later numbers held, not assigned to the wrong
-      // pending (t-9610e8). Retire the whole generation anyway: one gap means
-      // the wire may still deliver the late body after we would have moved on,
-      // and a single-entry drop would re-open silent mis-assignment.
+          // Replies are FIFO and carry no command identity. Once one frame is
+          // missing, removing only that entry would let its late reply complete
+          // the next command. Retire the whole client generation instead.
           this.onClientDown(proc, error);
           proc.kill();
         }, options.timeoutMs);
@@ -360,22 +336,9 @@ export class ControlModeClient {
       if (line === `%end ${this.frameTag}` || line === `%error ${this.frameTag}`) {
         const isError = line.startsWith("%error");
         const body = this.frameBody.join("\n");
-        const frameTag = this.frameTag;
         this.frameTag = null;
         this.frameBody = [];
-        const commandNumber = parseControlModeCommandNumber(frameTag);
-        if (commandNumber === null) {
-          const proc = this.proc;
-          if (proc) {
-            this.onClientDown(
-              proc,
-              new TransportError(`control-mode frame tag not parseable: ${frameTag}`),
-            );
-            proc.kill();
-          }
-          return;
-        }
-        this.settleFrame(isError, body, commandNumber);
+        this.settleFrame(isError, body);
       } else {
         this.frameBody.push(line);
       }
@@ -405,13 +368,11 @@ export class ControlModeClient {
     // %exit announces the server is letting go — the process exit handler reconnects.
   }
 
-  private settleFrame(isError: boolean, body: string, commandNumber: number): void {
+  private settleFrame(isError: boolean, body: string): void {
     if (this.awaitingGuard) {
       // The implicit attach reply makes the internal channel usable. External
       // work remains on the subprocess fallback until both subscription
-      // replies have left this generation's queue. Do NOT seed
-      // nextCommandNumber from the guard: on real tmux 3.6 its number is not
-      // contiguous with the first line-command that follows.
+      // replies have left this generation's FIFO.
       this.awaitingGuard = false;
       this.up = true;
       this.ready = false;
@@ -425,44 +386,15 @@ export class ControlModeClient {
       });
       return;
     }
-
-    if (this.nextCommandNumber !== null && commandNumber < this.nextCommandNumber) {
-      // Duplicate or already-released number — the stream is not trustworthy.
-      const proc = this.proc;
-      if (proc) {
-        this.onClientDown(
-          proc,
-          new TransportError(
-            `control-mode command number ${commandNumber} already released (next ${this.nextCommandNumber})`,
-          ),
-        );
-        proc.kill();
-      }
-      return;
+    const pending = this.pending.shift();
+    if (!pending) return; // unsolicited frame (e.g. session switches) — ignore
+    if (pending.timer) clearTimeout(pending.timer);
+    if (pending.bootstrap) this.settleBootstrapReply();
+    if (isError) {
+      pending.reject(new TmuxError(body.trim() || "tmux command failed", pending.args));
+    } else {
+      pending.resolve({ stdout: body.length > 0 ? body + "\n" : "", stderr: "" });
     }
-
-    this.heldFrames.set(commandNumber, { isError, body });
-    if (this.nextCommandNumber === null) {
-      this.nextCommandNumber = commandNumber;
-    }
-
-    while (this.pending.length > 0 && this.nextCommandNumber !== null && this.heldFrames.has(this.nextCommandNumber)) {
-      const frame = this.heldFrames.get(this.nextCommandNumber)!;
-      this.heldFrames.delete(this.nextCommandNumber);
-      this.nextCommandNumber++;
-      const pending = this.pending.shift()!;
-      if (pending.timer) clearTimeout(pending.timer);
-      if (pending.bootstrap) this.settleBootstrapReply();
-      if (frame.isError) {
-        pending.reject(new TmuxError(frame.body.trim() || "tmux command failed", pending.args));
-      } else {
-        pending.resolve({ stdout: frame.body.length > 0 ? frame.body + "\n" : "", stderr: "" });
-      }
-    }
-    // Gapped higher numbers stay in heldFrames until the missing number arrives
-    // or a timeout retires the generation. Unsolicited frames with no pending
-    // waiter are left held and cleared on client down — never shifted onto a
-    // later command.
   }
 
   private settleBootstrapReply(): void {
@@ -484,8 +416,6 @@ export class ControlModeClient {
     this.buffer = "";
     this.frameTag = null;
     this.frameBody = [];
-    this.nextCommandNumber = null;
-    this.heldFrames.clear();
     for (const p of this.pending.splice(0)) {
       if (p.timer) clearTimeout(p.timer);
       p.reject(error);
@@ -526,8 +456,6 @@ export class ControlModeClient {
     this.buffer = "";
     this.frameTag = null;
     this.frameBody = [];
-    this.nextCommandNumber = null;
-    this.heldFrames.clear();
     const error = new ControlModeDisposedError("control client disposed");
     for (const pending of this.pending.splice(0)) {
       if (pending.timer) clearTimeout(pending.timer);
