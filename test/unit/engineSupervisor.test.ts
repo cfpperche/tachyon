@@ -759,15 +759,61 @@ function spawnWorker(encodedOptions: string): ChildProcessWithoutNullStreams {
   return child;
 }
 
+/**
+ * t-95dedc — two budgets, because the single 5_000 they replace was covering two unrelated things.
+ *
+ * A duplicate daemon has to BOOT before it can refuse anything, and in-tree that boot is `vite-node`
+ * transforming daemonMain's whole import graph. Measured on this host: 2.4s idle — of which `node`
+ * itself is 22ms and the vite-node harness 167ms, so ~93% is the graph — 4.2s under 16 spinning
+ * CPUs, and 7-8s inside the real 16-worker gate (read off the sibling tests here, which spawn 1-3 of
+ * these workers each and cost 7.2s / 9.3s / 16.6s / 22.1s). So 5_000 was under the cost of the thing
+ * it was waiting for whenever the suite was busy: measured at n=6 per tree, the whole gate went red
+ * on this 2/6 at 3e5c8fd9 and 5/6 at fbd29ad1 — the same on both sides of t-9610e8, which is how we
+ * know that change did not cause it. It has been below cost since 5c83dfc0 introduced it.
+ *
+ * PRODUCTION NEVER PAYS THAT BOOT: it launches the bundled engine-daemon.cjs with a staged runtime,
+ * and the supervisor allows that start DEFAULT_START_TIMEOUT_MS = 10_000 — the same 10_000 this file
+ * already passes as `startTimeoutMs`. The boot budget below is that number, for literally the same
+ * boot, rather than a fresh one chosen to make today's red go away.
+ *
+ * What the test actually asserts is the refusal and the EXIT, so that keeps a tight budget of its
+ * own, counted from the moment the child first speaks. The failure worth catching here is a leaked
+ * handle, which hangs forever and still trips it. And whichever budget lapses now NAMES itself: the
+ * old message read `child exit timed out:` with an empty stderr whether the child had died mid-boot
+ * or refused correctly and then hung — opposite defects, one indistinguishable message.
+ */
+const CHILD_BOOT_BUDGET_MS = 10_000;
+const CHILD_EXIT_BUDGET_MS = 2_000;
+
 function waitForClose(child: ChildProcessWithoutNullStreams): Promise<{ code: number | null; stderr: string }> {
   return new Promise((resolve, reject) => {
     let stderr = "";
-    const timer = setTimeout(() => {
+    let settled = false;
+    const fail = (reason: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       child.kill("SIGKILL");
-      reject(new Error(`child exit timed out: ${stderr}`));
-    }, 5_000);
-    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+      reject(new Error(`${reason}; stderr so far: ${JSON.stringify(stderr)}`));
+    };
+    let timer = setTimeout(
+      () => fail(`child wrote nothing within the ${CHILD_BOOT_BUDGET_MS}ms boot budget — still starting up`),
+      CHILD_BOOT_BUDGET_MS,
+    );
+    child.stderr.on("data", (chunk: Buffer) => {
+      const firstOutput = stderr.length === 0;
+      stderr += chunk.toString("utf8");
+      if (!firstOutput) return;
+      // It has reached its own error path, so the boot is no longer what is being measured.
+      clearTimeout(timer);
+      timer = setTimeout(
+        () => fail(`child refused but did not exit within ${CHILD_EXIT_BUDGET_MS}ms — leaked handle`),
+        CHILD_EXIT_BUDGET_MS,
+      );
+    });
     child.once("close", (code) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       resolve({ code, stderr });
     });
