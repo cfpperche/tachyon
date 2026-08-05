@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { withProcessLockSync } from "../locks/processLock.js";
 import { PinAttachmentStore, type PinAttachment, type ResolvedPinAttachment } from "./PinAttachmentStore.js";
 import type { TiptapJSON } from "./types.js";
 
@@ -275,22 +276,19 @@ export class PinStore {
    * async is a separate change with a much wider blast radius. Within one extension host these calls
    * cannot contend at all — the thread that would wait is the thread that would release.
    *
-   * ## Why this does not use `withProcessLockSync` (t-099847)
-   *
-   * Measured on 2026-08-05: PinStore critical-section work is sub-ms to ~4 ms even on a 2000-pin
-   * file under CPU burners. The prior consumer chose `maxHoldMs = 2500` on processLock; under
-   * multi-gate load a concurrent create was lost (99/100). Removing age-steal alone did NOT stop
-   * the loss — processLock still allowed dual holders under multi-process contention (measured:
-   * overlapping critical sections + missing creates with workers exiting 0). Pure `linkSync`
-   * exclusivity with dead-pid recovery only, and **retry-on-absent** (never treat a just-released
-   * lock as an orphan to force-remove), preserves all creates. Age-steal stays off: a lost pin is
-   * worse than waiting out a live holder until `lockTimeoutMs`.
+   * Uses the shared `withProcessLockSync` (t-b457ce reconvergence after t-099847's temporary
+   * pin-local lock). Deliberately omits `maxHoldMs`: a lost pin is worse than waiting out a live
+   * holder until `lockTimeoutMs`. Dead-pid orphan recovery stays on; age-steal stays off.
    */
   private mutatePins(update: (pins: Pin[]) => Pin[]): void {
     fs.mkdirSync(this.dir, { recursive: true });
-    withPinMutationLock(this.lockPath, () => {
+    withProcessLockSync(this.lockPath, () => {
       this.write(update(this.readPins()));
-    }, PinStore.lockTimeoutMs, PinStore.lockPollMs);
+    }, {
+      timeoutMs: PinStore.lockTimeoutMs,
+      pollMs: PinStore.lockPollMs,
+      label: ".tachyon/pins.json mutation lock",
+    });
   }
 
   private write(pins: Pin[]): void {
@@ -322,123 +320,11 @@ export class PinStore {
   /**
    * The cross-process lock the mutation path takes. Public so a test can hold the REAL lock from
    * another process and then be killed — a hand-made lock file would only prove the test's own shape.
-   * Format matches processLock (file containing `${pid}\n`) so orphan tests can seed either way.
+   * Format is processLock's (file containing `${pid}\n`).
    */
   get lockPath(): string {
     return path.join(this.dir, "pins.json.lock");
   }
-}
-
-/** Incomplete lock stamps older than this are treated as crash residue, not live holders. */
-const PIN_LOCK_UNSTAMPED_GRACE_MS = 2_000;
-
-/**
- * Exclusive cross-process lock for pin mutations (t-099847).
- *
- * - Acquire: atomic `link` of a pre-stamped temp (same exclusivity primitive as processLock publish).
- * - Live holder: wait/poll until timeout.
- * - Dead pid (file exists, kill(pid,0) fails): unlink once and retry.
- * - Absent after EEXIST: the releaser won the race — retry publish; do NOT force-remove (that path
- *   under processLock was measured to admit dual holders under contention).
- * - No age-based steal of a live stamped holder: a lost pin is worse than waiting.
- */
-function withPinMutationLock(lockPath: string, body: () => void, timeoutMs: number, pollMs: number): void {
-  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (Date.now() >= deadline) {
-      const holder = readPinLockPid(lockPath);
-      throw new Error(
-        `timed out after ${timeoutMs}ms waiting for .tachyon/pins.json mutation lock`
-        + (holder === null ? "" : ` (held by pid ${holder})`)
-        + `. A holder that died is recovered automatically; if this persists, the holder is alive and stuck.`
-        + ` Lock file: ${lockPath}`,
-      );
-    }
-
-    const temporary = `${lockPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-    fs.writeFileSync(temporary, `${process.pid}\n`, { mode: 0o600 });
-    let acquired = false;
-    try {
-      try {
-        fs.linkSync(temporary, lockPath);
-        acquired = true;
-      } catch (error) {
-        const code = (error as NodeJS.ErrnoException).code;
-        if (code !== "EEXIST") throw error;
-
-        let st: fs.Stats;
-        try {
-          st = fs.statSync(lockPath);
-        } catch {
-          // Released between EEXIST and now — retry publish; never force-rm a race.
-          sleepSyncMs(pollMs);
-          continue;
-        }
-
-        // Legacy mkdir lock directory from pre-processLock PinStore.
-        if (st.isDirectory()) {
-          fs.rmSync(lockPath, { recursive: true, force: true });
-          continue;
-        }
-
-        const holderPid = readPinLockPid(lockPath);
-        if (holderPid !== null) {
-          if (!isPidAlive(holderPid)) {
-            try { fs.unlinkSync(lockPath); } catch { /* another waiter recovered it */ }
-            continue;
-          }
-          sleepSyncMs(pollMs);
-          continue;
-        }
-
-        // File exists but has no readable pid (incomplete stamp). Recover only when past grace.
-        if (Date.now() - st.mtimeMs > PIN_LOCK_UNSTAMPED_GRACE_MS) {
-          try { fs.unlinkSync(lockPath); } catch { /* raced */ }
-          continue;
-        }
-        sleepSyncMs(pollMs);
-        continue;
-      }
-    } finally {
-      try { fs.unlinkSync(temporary); } catch { /* linked into place, or never created */ }
-    }
-
-    if (!acquired) continue;
-
-    try {
-      body();
-      return;
-    } finally {
-      try {
-        if (readPinLockPid(lockPath) === process.pid) fs.unlinkSync(lockPath);
-      } catch { /* already released or foreign — leave it alone */ }
-    }
-  }
-}
-
-function readPinLockPid(lockPath: string): number | null {
-  let raw: string;
-  try {
-    raw = fs.readFileSync(lockPath, "utf8");
-  } catch {
-    return null;
-  }
-  const pid = Number.parseInt(raw.trim(), 10);
-  return Number.isInteger(pid) && pid > 0 ? pid : null;
-}
-
-function isPidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-function sleepSyncMs(ms: number): void {
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
 export function normalizePinTags(input: unknown, authoring = true): string[] {
