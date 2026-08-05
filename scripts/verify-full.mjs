@@ -383,7 +383,6 @@ export async function main() {
     lock?.release();
     return 75;
   }
-  const workers = gate.workers;
   process.stderr.write(`[verify:full] ${gate.reason}\n`);
 
   const root = mkdtempSync(path.join(tmpdir(), "tachyon-verify-full-"));
@@ -421,8 +420,13 @@ export async function main() {
       return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : build.code || 1;
     }
     const vitestEntry = path.resolve("node_modules/vitest/vitest.mjs");
+    // t-3ad4af — no `--maxWorkers` here any more. A CLI flag OVERRIDES the config, so passing one
+    // meant this script's per-process arithmetic silently won over the host-wide budget that
+    // `vitest.config.ts` takes for every other vitest invocation — the gate would have been the one
+    // run exempt from the ledger, and the one that runs the whole suite. The gate above still refuses
+    // under memory pressure and still reports what it saw; the sizing itself now has one owner.
     const tests = await runChild(process.execPath,
-      [vitestEntry, "run", `--maxWorkers=${workers}`, "--reporter=json", `--outputFile=${reportFile}`, "--silent=passed-only"], testLog, active);
+      [vitestEntry, "run", "--reporter=json", `--outputFile=${reportFile}`, "--silent=passed-only"], testLog, active);
     let report;
     try { report = JSON.parse(readFileSync(reportFile, "utf8")); } catch { report = undefined; }
     const reportSummary = report ? summarizeReport(report) : undefined;
