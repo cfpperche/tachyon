@@ -82,6 +82,10 @@ function dismissWorld(opts: {
   const manager = {
     list: async () => [{ name: "child", lifetime: "temporary", running: false, dead: opts.dead === true }],
     liveDescendants: async () => opts.descendants ?? [],
+    // t-bec361 — the caller below is 'ada', and a Temporary child that owns a checkout got that
+    // checkout by being SPAWNED by someone. Saying so is what makes this fake faithful to the
+    // production shape the cascade runs in: the coordinator stopping its own finished child.
+    parentOf: (agent: string) => (agent === "child" ? "ada" : undefined),
     probeAgentOccupancy: async () => {
       events.push("probe");
       return verdicts[Math.min(probe++, verdicts.length - 1)]!;

@@ -73,6 +73,14 @@ export class PinDetailPanelManager {
       app,
       styleFiles: ["codicon.css", "design-system.css", "vscode-theme.css", "rich-doc.css", "studio-frame.css", "pin-studio.css", "pin-preview.css"],
       csp: { frameSrc: "self", imgBlob: true, connectSrc: true, workerSrc: "blob" },
+      // Pin Studio renders the same shared SketchModal as Task Studio. Keep its static Excalidraw
+      // bootstrap on the document host too: without these URLs the app accepts the Sketch click but
+      // deliberately renders no modal (`sketch && assets`), leaving every Sketch entry point dead.
+      bootstrapGlobals: (_target, uri) => ({
+        EXCALIDRAW_SCRIPT_URI: uri("excalidraw.js"),
+        EXCALIDRAW_CSS_URI: uri("excalidraw.css"),
+        EXCALIDRAW_ASSET_PATH: uri("").replace(/\/?$/, "/"),
+      }),
       title: (target) => `Pin — ${target.identity ?? ""}`,
       iconName: "eye",
       refreshKindFor: (message) => (message as { type?: unknown } | undefined)?.type === READY ? "pin" : undefined,

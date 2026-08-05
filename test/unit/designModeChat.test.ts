@@ -26,14 +26,14 @@ describe("designModeChat JSONL store", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("appends to a single workspace chat.jsonl with growing lineNo", () => {
-    const a = appendDmChatEvent(root, {
+  it("appends to a single workspace chat.jsonl with growing lineNo", async () => {
+    const a = await appendDmChatEvent(root, {
       kind: "message",
       role: "user",
       text: "hello",
       activeAgent: "grok",
     });
-    const b = appendDmChatEvent(root, {
+    const b = await appendDmChatEvent(root, {
       kind: "message",
       role: "agent",
       agent: "grok",
@@ -49,9 +49,9 @@ describe("designModeChat JSONL store", () => {
     expect(tail.hasMoreBefore).toBe(false);
   });
 
-  it("tail and loadBefore support on-demand windows", () => {
+  it("tail and loadBefore support on-demand windows", async () => {
     for (let i = 0; i < 25; i++) {
-      appendDmChatEvent(root, {
+      await appendDmChatEvent(root, {
         kind: "message",
         role: "user",
         text: `m${i}`,
@@ -122,7 +122,7 @@ describe("designModeChat JSONL store", () => {
     expect(p).toMatch(/design_mode_chat_reply/);
   });
 
-  it("distinguishes missing, empty, ok, and corrupt chat files (t-9b2741)", () => {
+  it("distinguishes missing, empty, ok, and corrupt chat files (t-9b2741)", async () => {
     expect(inspectDmChatFile(root).status).toBe("missing");
 
     const file = designModeChatPath(root);
@@ -138,7 +138,7 @@ describe("designModeChat JSONL store", () => {
     fs.writeFileSync(file, "   \n\n", "utf8");
     expect(inspectDmChatFile(root).status).toBe("empty");
 
-    appendDmChatEvent(root, {
+    await appendDmChatEvent(root, {
       kind: "message",
       role: "user",
       text: "ok",
@@ -161,20 +161,20 @@ describe("designModeChat JSONL store", () => {
     expect(corrupt.status).not.toBe("empty");
   });
 
-  it("refuses append past DM_CHAT_MAX_BYTES (t-9b2741)", () => {
+  it("refuses append past DM_CHAT_MAX_BYTES (t-9b2741)", async () => {
     const file = designModeChatPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     // Leave room for a small header so the next real append exceeds the cap.
     const pad = "x".repeat(DM_CHAT_MAX_BYTES - 32);
     fs.writeFileSync(file, `${pad}\n`, "utf8");
-    expect(() =>
+    await expect(
       appendDmChatEvent(root, {
         kind: "message",
         role: "user",
         text: "overflow",
         activeAgent: "grok",
       }),
-    ).toThrow(/exceeds .* bytes/);
+    ).rejects.toThrow(/exceeds .* bytes/);
   });
 });
 
@@ -199,7 +199,7 @@ describe("designModeChat concurrent writers (t-9b2741 C-07)", () => {
       const writer = process.argv[3]!;
       const count = Number(process.argv[4]!);
       for (let i = 0; i < count; i++) {
-        appendDmChatEvent(workspaceRoot, {
+        await appendDmChatEvent(workspaceRoot, {
           kind: "message",
           role: "user",
           text: writer + "-" + i,
