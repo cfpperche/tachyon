@@ -23,9 +23,33 @@ Mitigação: registrar **defeito objetivo** — chegou a main? o teste pegou? o 
 
 ## Mecanismo
 
-- Agente temporário: `spawn_agent` com `cmd` livre. `claude --model sonnet-5`, `codex -m gpt-5.6-luna`, etc.
+- Agente temporário: `spawn_agent` com `cmd` livre. `claude --model claude-sonnet-5`, `codex -m gpt-5.6-luna`, `codex -c model_reasoning_effort=high`, etc.
 - Saved Agent: `model:` e `reasoningEffort:` no perfil canônico.
-- **Até 2026-08-05 todos os despachos usaram o default.** Nenhuma variação de modelo ou effort foi testada.
+
+## "Default" não era uma coisa só — medido em 2026-08-05
+
+Escrevi "default" em 25 linhas deste arquivo como se fosse um valor comum. Não é. Fui ler a
+configuração de cada runtime:
+
+| runtime | default real | onde |
+|---|---|---|
+| codex | **`model_reasoning_effort = "low"`**, modelo `gpt-5.6-sol` | `~/.codex/config.toml` |
+| grok | **high** | observado na barra do pane: `Grok 4.5 (high)` |
+| claude | não medido | — |
+
+**Consequência: a coluna do codex neste registro é uma coluna de effort BAIXO.** Doze despachos codex
+foram comparados com grok em effort alto e com claude em effort desconhecido, e eu li a diferença como
+propriedade de runtime. Não era comparação — era três configurações diferentes na mesma tabela.
+
+Isto não invalida os desfechos registrados. Invalida qualquer leitura de "runtime X é melhor em Y",
+que é justamente o que este arquivo existe para impedir. Vale como o exemplo mais claro até agora de
+por que o registro precisa da configuração ao lado do resultado.
+
+Nota sobre o codex em effort baixo, que é o dado interessante: **doze entregas, um defeito pego na
+revisão, uma refutação correta de hipótese minha.** Se effort baixo entrega isso, a pergunta "effort
+alto entrega mais?" deixa de ser retórica e passa a valer o experimento.
+
+- Primeiro despacho com effort escolhido: `crashnotice`, `codex -c model_reasoning_effort=high`, t-01a425.
 
 ---
 
@@ -61,6 +85,8 @@ Todos com **modelo e effort default**. Registrado retroativamente, então o camp
 | lanewire | t-e3d14c | execução | codex | default | entregou | 0 | respondeu a pergunta de medição: condicional, não sempre |
 | d16restore | t-a03fb6 | medição | grok | default | entregou | 0 | 4 respostas com evidência bruta (23 abas, 24 grupos, 1666 linhas JSON); nenhum defeito |
 | guidancesplit | t-f050af | refatoração | codex | **gpt-5.6-luna** | entregou | 0 | primeiro despacho com modelo escolhido; ritual de supersessão em 3 casos, bytes históricos intactos |
+| childexit2 | t-349678 | execução | codex | gpt-5.6-sol / low | entregou, **metade revertida** | **1** — mensagem afirmava expiração de poke que não existe | implementou fielmente contra premissa falsa MINHA; corrigiu em um turno quando recebeu a medição |
+| pinlock3 | t-099847 | medição+execução | grok | Grok 4.5 / **high** | entregou | 0 | **refutou minha hipótese** (age-steal não era a causa); achou defeito maior no lock compartilhado e abriu t-b457ce em vez de calar |
 
 ### Onda que morreu no crash de RAM (2026-08-05, ~15h–18h)
 
@@ -108,6 +134,22 @@ configuração. O experimento que falta não é maior — é **outro**.
 3. **Três refutações vieram dos três runtimes** — grok (`workername`), claude (`reloadcross`) e codex
    (`secretprobe`). Todas corretas, e todas contra uma hipótese do coordenador. Refutar não parece ser
    propriedade de runtime; parece ser propriedade de **pedir medição em vez de conserto**.
+
+### Uma instrução minha que dois agentes ignoraram, e a culpa é da instrução
+
+Em 2026-08-05 escrevi em dois briefs: *"NÃO rode `verify:full` — outro agente está trabalhando e a
+máquina do dono travou por RAM hoje."* `childexit2` rodou duas vezes. `pinlock3` rodou duas vezes,
+pegou um flake de tmux sob carga, e rodou de novo.
+
+Não trato isso como desobediência. A convenção permanente do repositório é entregar com o gate verde
+e a árvore atestada, e ela está no `project-guidance` e no ritual de entrega. Uma instrução de turno
+que contradiz uma convenção permanente perde — e deveria perder, porque a convenção é o que impede
+entrega não verificada.
+
+Correção do lado do coordenador, não do agente: se o gate não pode rodar, o brief tem de dizer **o que
+fazer em lugar dele** e quem roda depois. *"Entregue com focados verdes; EU rodo o gate no fim, com a
+frota parada, e a atestação da árvore é minha responsabilidade, não sua."* Uma proibição sem
+substituto deixa o agente escolher entre duas regras minhas.
 
 ### O que medir a seguir
 
