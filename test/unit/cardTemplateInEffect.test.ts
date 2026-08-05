@@ -54,15 +54,17 @@ describe("the model reports both homes", () => {
     expect(model.cardTemplate?.personalErrors?.[0]).toContain("unknown component 'cpu-graph'");
   });
 
-  it("reports each scoped workspace separately — two folders can legitimately disagree", () => {
-    const model = buildCockpitModel(
-      [bundle("alpha", { configured: true, refused: false }), bundle("beta", { configured: false, refused: true })],
-      { nowIso: "now" },
-    );
-    expect(model.cardTemplate?.projects).toEqual([
-      { folder: "alpha", configured: true, refused: false },
-      { folder: "beta", configured: false, refused: true },
-    ]);
+  it("reports each workspace on its own terms — two folders can legitimately disagree", () => {
+    // t-72ff5a — this used to be read off the unscoped aggregate, which no longer exists: with no
+    // selection the model resolves to the first attached project (the sidebar renders exactly one,
+    // so an "every project" scope would be a state it cannot display). The property the test is
+    // about is untouched and is what is asserted now — a project's card layout comes from ITS OWN
+    // tachyon.yml, so the answer changes with the project rather than being folded across them.
+    const bundles = [bundle("alpha", { configured: true, refused: false }), bundle("beta", { configured: false, refused: true })];
+    expect(buildCockpitModel(bundles, { nowIso: "now" }).cardTemplate?.projects)
+      .toEqual([{ folder: "alpha", configured: true, refused: false }]);
+    expect(buildCockpitModel(bundles, { nowIso: "now", wsHash: "beta" }).cardTemplate?.projects)
+      .toEqual([{ folder: "beta", configured: false, refused: true }]);
   });
 
   it("narrows to the selected workspace, like every other scoped section", () => {
