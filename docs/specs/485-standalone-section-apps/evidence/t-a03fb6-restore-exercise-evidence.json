@@ -1,0 +1,1666 @@
+{
+  "startedAt": "2026-08-05T16:48:03.003Z",
+  "preDom": {
+    "workbench": true,
+    "groups": 24,
+    "tabs": 23,
+    "rows": [
+      {
+        "group": 1,
+        "index": 0,
+        "label": "Overview, Editor Group 2",
+        "active": true
+      },
+      {
+        "group": 2,
+        "index": 0,
+        "label": "Engine, Editor Group 3",
+        "active": true
+      },
+      {
+        "group": 3,
+        "index": 0,
+        "label": "Fleet, Editor Group 4",
+        "active": true
+      },
+      {
+        "group": 4,
+        "index": 0,
+        "label": "Human Inbox, Editor Group 5",
+        "active": true
+      },
+      {
+        "group": 5,
+        "index": 0,
+        "label": "Board, Editor Group 6",
+        "active": true
+      },
+      {
+        "group": 6,
+        "index": 0,
+        "label": "Worktrees, Editor Group 7",
+        "active": true
+      },
+      {
+        "group": 7,
+        "index": 0,
+        "label": "Execution, Editor Group 8",
+        "active": true
+      },
+      {
+        "group": 8,
+        "index": 0,
+        "label": "Runtime Ops, Editor Group 9",
+        "active": true
+      },
+      {
+        "group": 9,
+        "index": 0,
+        "label": "Runtime Config, Editor Group 10",
+        "active": true
+      },
+      {
+        "group": 10,
+        "index": 0,
+        "label": "tmux, Editor Group 11",
+        "active": true
+      },
+      {
+        "group": 11,
+        "index": 0,
+        "label": "Plugins, Editor Group 12",
+        "active": true
+      },
+      {
+        "group": 12,
+        "index": 0,
+        "label": "Settings, Editor Group 13",
+        "active": true
+      },
+      {
+        "group": 13,
+        "index": 0,
+        "label": "Task t-restore-a, Editor Group 14",
+        "active": true
+      },
+      {
+        "group": 14,
+        "index": 0,
+        "label": "Task t-restore-b, Editor Group 15",
+        "active": true
+      },
+      {
+        "group": 15,
+        "index": 0,
+        "label": "Pin — p-restore-a, Editor Group 16",
+        "active": true
+      },
+      {
+        "group": 16,
+        "index": 0,
+        "label": "Pin — p-restore-b, Editor Group 17",
+        "active": true
+      },
+      {
+        "group": 17,
+        "index": 0,
+        "label": "New Agent, Editor Group 18",
+        "active": true
+      },
+      {
+        "group": 18,
+        "index": 0,
+        "label": "New Command, Editor Group 19",
+        "active": true
+      },
+      {
+        "group": 19,
+        "index": 0,
+        "label": "New Terminal, Editor Group 20",
+        "active": true
+      },
+      {
+        "group": 20,
+        "index": 0,
+        "label": "New Runbook, Editor Group 21",
+        "active": true
+      },
+      {
+        "group": 21,
+        "index": 0,
+        "label": "New Schedule, Editor Group 22",
+        "active": true
+      },
+      {
+        "group": 22,
+        "index": 0,
+        "label": "Project Handoff, Editor Group 23",
+        "active": true
+      },
+      {
+        "group": 23,
+        "index": 0,
+        "label": "Captured Probes, Editor Group 24",
+        "active": true
+      }
+    ]
+  },
+  "postDom": {
+    "workbench": true,
+    "groups": 24,
+    "tabs": 23,
+    "rows": [
+      {
+        "group": 1,
+        "index": 0,
+        "label": "Overview, Editor Group 2",
+        "active": true
+      },
+      {
+        "group": 2,
+        "index": 0,
+        "label": "Engine, Editor Group 3",
+        "active": true
+      },
+      {
+        "group": 3,
+        "index": 0,
+        "label": "Fleet, Editor Group 4",
+        "active": true
+      },
+      {
+        "group": 4,
+        "index": 0,
+        "label": "Human Inbox, Editor Group 5",
+        "active": true
+      },
+      {
+        "group": 5,
+        "index": 0,
+        "label": "Board, Editor Group 6",
+        "active": true
+      },
+      {
+        "group": 6,
+        "index": 0,
+        "label": "Worktrees, Editor Group 7",
+        "active": true
+      },
+      {
+        "group": 7,
+        "index": 0,
+        "label": "Execution, Editor Group 8",
+        "active": true
+      },
+      {
+        "group": 8,
+        "index": 0,
+        "label": "Runtime Ops, Editor Group 9",
+        "active": true
+      },
+      {
+        "group": 9,
+        "index": 0,
+        "label": "Runtime Config, Editor Group 10",
+        "active": true
+      },
+      {
+        "group": 10,
+        "index": 0,
+        "label": "tmux, Editor Group 11",
+        "active": true
+      },
+      {
+        "group": 11,
+        "index": 0,
+        "label": "Plugins, Editor Group 12",
+        "active": true
+      },
+      {
+        "group": 12,
+        "index": 0,
+        "label": "Settings, Editor Group 13",
+        "active": true
+      },
+      {
+        "group": 13,
+        "index": 0,
+        "label": "Task t-restore-a, Editor Group 14",
+        "active": true
+      },
+      {
+        "group": 14,
+        "index": 0,
+        "label": "Task t-restore-b, Editor Group 15",
+        "active": true
+      },
+      {
+        "group": 15,
+        "index": 0,
+        "label": "Pin — p-restore-a, Editor Group 16",
+        "active": true
+      },
+      {
+        "group": 16,
+        "index": 0,
+        "label": "Pin — p-restore-b, Editor Group 17",
+        "active": true
+      },
+      {
+        "group": 17,
+        "index": 0,
+        "label": "agent — new, Editor Group 18",
+        "active": true
+      },
+      {
+        "group": 18,
+        "index": 0,
+        "label": "command — new, Editor Group 19",
+        "active": true
+      },
+      {
+        "group": 19,
+        "index": 0,
+        "label": "terminal — new, Editor Group 20",
+        "active": true
+      },
+      {
+        "group": 20,
+        "index": 0,
+        "label": "runbook — new, Editor Group 21",
+        "active": true
+      },
+      {
+        "group": 21,
+        "index": 0,
+        "label": "schedule — new, Editor Group 22",
+        "active": true
+      },
+      {
+        "group": 22,
+        "index": 0,
+        "label": "Project Handoff, Editor Group 23",
+        "active": true
+      },
+      {
+        "group": 23,
+        "index": 0,
+        "label": "Captured Probes, Editor Group 24",
+        "active": true
+      }
+    ]
+  },
+  "preDump": {
+    "phase": "pre-open",
+    "at": "2026-08-05T16:48:22.789Z",
+    "project": "c9344e51",
+    "opened": [
+      "overview",
+      "engine",
+      "fleet",
+      "inbox",
+      "board",
+      "worktrees",
+      "execution-graph",
+      "runtime-ops",
+      "runtime-config",
+      "tmux",
+      "plugins",
+      "settings",
+      "task:t-restore-a",
+      "task:t-restore-b",
+      "pin:p-restore-a",
+      "pin:p-restore-b",
+      "studio:agent:new",
+      "studio:command:new",
+      "studio:terminal:new",
+      "studio:runbook:new",
+      "studio:schedule:new",
+      "handoff",
+      "probes"
+    ],
+    "activityOpened": null,
+    "openKeys": {
+      "overview": [
+        "tachyonOverview|c9344e51"
+      ],
+      "engine": [],
+      "fleet": [
+        "tachyonFleet|c9344e51"
+      ],
+      "humanInbox": [
+        "tachyonHumanInbox|c9344e51"
+      ],
+      "board": [
+        "tachyonBoard|c9344e51"
+      ],
+      "worktrees": [
+        "tachyonWorktrees|c9344e51"
+      ],
+      "executionGraph": [
+        "tachyonExecutionGraph|c9344e51"
+      ],
+      "runtimeOps": [
+        "tachyonRuntimeOps"
+      ],
+      "runtimeConfig": [
+        "tachyonRuntimeConfig|c9344e51"
+      ],
+      "tmux": [
+        "tachyonServerInspector"
+      ],
+      "plugins": [
+        "tachyonPlugins|c9344e51"
+      ],
+      "settings": [
+        "tachyonSettings|c9344e51"
+      ],
+      "taskDetail": [
+        "tachyonTaskDetail|c9344e51|t-restore-a",
+        "tachyonTaskDetail|c9344e51|t-restore-b"
+      ],
+      "pinDetail": [
+        "tachyonPinPreview|c9344e51|p-restore-a",
+        "tachyonPinPreview|c9344e51|p-restore-b"
+      ],
+      "agentStudio": [
+        "tachyonAgentStudioShell|c9344e51|new"
+      ],
+      "commandStudio": [
+        "tachyonCommandStudioShell|c9344e51|new"
+      ],
+      "terminalStudio": [
+        "tachyonTerminalStudioShell|c9344e51|new"
+      ],
+      "runbookStudio": [
+        "tachyonRunbookStudioShell|c9344e51|new"
+      ],
+      "scheduleStudio": [
+        "tachyonScheduleStudioShell|c9344e51|new"
+      ],
+      "handoff": [
+        "tachyonHandoff|c9344e51"
+      ],
+      "probes": [
+        "tachyonProbes|c9344e51|workspace"
+      ],
+      "activity": []
+    },
+    "tabGroups": [
+      {
+        "groupIndex": 0,
+        "viewColumn": 1,
+        "tabs": []
+      },
+      {
+        "groupIndex": 1,
+        "viewColumn": 2,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Overview",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonOverview"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 2,
+        "viewColumn": 3,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Engine",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonEngine"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 3,
+        "viewColumn": 4,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Fleet",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonFleet"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 4,
+        "viewColumn": 5,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Human Inbox",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonHumanInbox"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 5,
+        "viewColumn": 6,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Board",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonBoard"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 6,
+        "viewColumn": 7,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Worktrees",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonWorktrees"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 7,
+        "viewColumn": 8,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Execution",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonExecutionGraph"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 8,
+        "viewColumn": 9,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Runtime Ops",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonRuntimeOps"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 9,
+        "viewColumn": 10,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Runtime Config",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonRuntimeConfig"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 10,
+        "viewColumn": 11,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "tmux",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonServerInspector"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 11,
+        "viewColumn": 12,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Plugins",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonPlugins"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 12,
+        "viewColumn": 13,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Settings",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonSettings"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 13,
+        "viewColumn": 14,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Task t-restore-a",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonTaskDetail"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 14,
+        "viewColumn": 15,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Task t-restore-b",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonTaskDetail"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 15,
+        "viewColumn": 16,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Pin — p-restore-a",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonPinPreview"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 16,
+        "viewColumn": 17,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Pin — p-restore-b",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonPinPreview"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 17,
+        "viewColumn": 18,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "New Agent",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonAgentStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 18,
+        "viewColumn": 19,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "New Command",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonCommandStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 19,
+        "viewColumn": 20,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "New Terminal",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonTerminalStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 20,
+        "viewColumn": 21,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "New Runbook",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonRunbookStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 21,
+        "viewColumn": 22,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "New Schedule",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonScheduleStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 22,
+        "viewColumn": 23,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Project Handoff",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonHandoff"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 23,
+        "viewColumn": 24,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Captured Probes",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonProbes"
+            }
+          }
+        ]
+      }
+    ],
+    "tabCount": 23,
+    "groupCount": 24
+  },
+  "postDump": {
+    "phase": "dump",
+    "at": "2026-08-05T16:49:24.424Z",
+    "project": "c9344e51",
+    "opened": [],
+    "activityOpened": null,
+    "openKeys": {
+      "overview": [
+        "tachyonOverview|c9344e51"
+      ],
+      "engine": [],
+      "fleet": [
+        "tachyonFleet|c9344e51"
+      ],
+      "humanInbox": [
+        "tachyonHumanInbox|c9344e51"
+      ],
+      "board": [
+        "tachyonBoard|c9344e51"
+      ],
+      "worktrees": [
+        "tachyonWorktrees|c9344e51"
+      ],
+      "executionGraph": [
+        "tachyonExecutionGraph|c9344e51"
+      ],
+      "runtimeOps": [
+        "tachyonRuntimeOps"
+      ],
+      "runtimeConfig": [
+        "tachyonRuntimeConfig|c9344e51"
+      ],
+      "tmux": [
+        "tachyonServerInspector"
+      ],
+      "plugins": [
+        "tachyonPlugins|c9344e51"
+      ],
+      "settings": [
+        "tachyonSettings|c9344e51"
+      ],
+      "taskDetail": [
+        "tachyonTaskDetail|c9344e51|t-restore-a",
+        "tachyonTaskDetail|c9344e51|t-restore-b"
+      ],
+      "pinDetail": [
+        "tachyonPinPreview|c9344e51|p-restore-a",
+        "tachyonPinPreview|c9344e51|p-restore-b"
+      ],
+      "agentStudio": [
+        "tachyonAgentStudioShell|c9344e51|new"
+      ],
+      "commandStudio": [
+        "tachyonCommandStudioShell|c9344e51|new"
+      ],
+      "terminalStudio": [
+        "tachyonTerminalStudioShell|c9344e51|new"
+      ],
+      "runbookStudio": [
+        "tachyonRunbookStudioShell|c9344e51|new"
+      ],
+      "scheduleStudio": [
+        "tachyonScheduleStudioShell|c9344e51|new"
+      ],
+      "handoff": [
+        "tachyonHandoff|c9344e51"
+      ],
+      "probes": [
+        "tachyonProbes|c9344e51|workspace"
+      ],
+      "activity": []
+    },
+    "tabGroups": [
+      {
+        "groupIndex": 0,
+        "viewColumn": 1,
+        "tabs": []
+      },
+      {
+        "groupIndex": 1,
+        "viewColumn": 2,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Overview",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonOverview"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 2,
+        "viewColumn": 3,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Engine",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonEngine"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 3,
+        "viewColumn": 4,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Fleet",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonFleet"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 4,
+        "viewColumn": 5,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Human Inbox",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonHumanInbox"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 5,
+        "viewColumn": 6,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Board",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonBoard"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 6,
+        "viewColumn": 7,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Worktrees",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonWorktrees"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 7,
+        "viewColumn": 8,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Execution",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonExecutionGraph"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 8,
+        "viewColumn": 9,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Runtime Ops",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonRuntimeOps"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 9,
+        "viewColumn": 10,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Runtime Config",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonRuntimeConfig"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 10,
+        "viewColumn": 11,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "tmux",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonServerInspector"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 11,
+        "viewColumn": 12,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Plugins",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonPlugins"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 12,
+        "viewColumn": 13,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Settings",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonSettings"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 13,
+        "viewColumn": 14,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Task t-restore-a",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonTaskDetail"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 14,
+        "viewColumn": 15,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Task t-restore-b",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonTaskDetail"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 15,
+        "viewColumn": 16,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Pin — p-restore-a",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonPinPreview"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 16,
+        "viewColumn": 17,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Pin — p-restore-b",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonPinPreview"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 17,
+        "viewColumn": 18,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "agent — new",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonAgentStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 18,
+        "viewColumn": 19,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "command — new",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonCommandStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 19,
+        "viewColumn": 20,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "terminal — new",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonTerminalStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 20,
+        "viewColumn": 21,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "runbook — new",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonRunbookStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 21,
+        "viewColumn": 22,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "schedule — new",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonScheduleStudioShell"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 22,
+        "viewColumn": 23,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Project Handoff",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonHandoff"
+            }
+          }
+        ]
+      },
+      {
+        "groupIndex": 23,
+        "viewColumn": 24,
+        "tabs": [
+          {
+            "tabIndex": 0,
+            "label": "Captured Probes",
+            "input": {
+              "viewType": "mainThreadWebview-tachyonProbes"
+            }
+          }
+        ]
+      }
+    ],
+    "tabCount": 23,
+    "groupCount": 24
+  },
+  "analysis": {
+    "q1": {
+      "question": "Do all apps return after reload?",
+      "preTabsDom": 23,
+      "postTabsDom": 23,
+      "preGroupsDom": 24,
+      "postGroupsDom": 24,
+      "preTabCountDump": 23,
+      "postTabCountDump": 23,
+      "preOpenKeys": {
+        "overview": [
+          "tachyonOverview|c9344e51"
+        ],
+        "engine": [],
+        "fleet": [
+          "tachyonFleet|c9344e51"
+        ],
+        "humanInbox": [
+          "tachyonHumanInbox|c9344e51"
+        ],
+        "board": [
+          "tachyonBoard|c9344e51"
+        ],
+        "worktrees": [
+          "tachyonWorktrees|c9344e51"
+        ],
+        "executionGraph": [
+          "tachyonExecutionGraph|c9344e51"
+        ],
+        "runtimeOps": [
+          "tachyonRuntimeOps"
+        ],
+        "runtimeConfig": [
+          "tachyonRuntimeConfig|c9344e51"
+        ],
+        "tmux": [
+          "tachyonServerInspector"
+        ],
+        "plugins": [
+          "tachyonPlugins|c9344e51"
+        ],
+        "settings": [
+          "tachyonSettings|c9344e51"
+        ],
+        "taskDetail": [
+          "tachyonTaskDetail|c9344e51|t-restore-a",
+          "tachyonTaskDetail|c9344e51|t-restore-b"
+        ],
+        "pinDetail": [
+          "tachyonPinPreview|c9344e51|p-restore-a",
+          "tachyonPinPreview|c9344e51|p-restore-b"
+        ],
+        "agentStudio": [
+          "tachyonAgentStudioShell|c9344e51|new"
+        ],
+        "commandStudio": [
+          "tachyonCommandStudioShell|c9344e51|new"
+        ],
+        "terminalStudio": [
+          "tachyonTerminalStudioShell|c9344e51|new"
+        ],
+        "runbookStudio": [
+          "tachyonRunbookStudioShell|c9344e51|new"
+        ],
+        "scheduleStudio": [
+          "tachyonScheduleStudioShell|c9344e51|new"
+        ],
+        "handoff": [
+          "tachyonHandoff|c9344e51"
+        ],
+        "probes": [
+          "tachyonProbes|c9344e51|workspace"
+        ],
+        "activity": []
+      },
+      "postOpenKeys": {
+        "overview": [
+          "tachyonOverview|c9344e51"
+        ],
+        "engine": [],
+        "fleet": [
+          "tachyonFleet|c9344e51"
+        ],
+        "humanInbox": [
+          "tachyonHumanInbox|c9344e51"
+        ],
+        "board": [
+          "tachyonBoard|c9344e51"
+        ],
+        "worktrees": [
+          "tachyonWorktrees|c9344e51"
+        ],
+        "executionGraph": [
+          "tachyonExecutionGraph|c9344e51"
+        ],
+        "runtimeOps": [
+          "tachyonRuntimeOps"
+        ],
+        "runtimeConfig": [
+          "tachyonRuntimeConfig|c9344e51"
+        ],
+        "tmux": [
+          "tachyonServerInspector"
+        ],
+        "plugins": [
+          "tachyonPlugins|c9344e51"
+        ],
+        "settings": [
+          "tachyonSettings|c9344e51"
+        ],
+        "taskDetail": [
+          "tachyonTaskDetail|c9344e51|t-restore-a",
+          "tachyonTaskDetail|c9344e51|t-restore-b"
+        ],
+        "pinDetail": [
+          "tachyonPinPreview|c9344e51|p-restore-a",
+          "tachyonPinPreview|c9344e51|p-restore-b"
+        ],
+        "agentStudio": [
+          "tachyonAgentStudioShell|c9344e51|new"
+        ],
+        "commandStudio": [
+          "tachyonCommandStudioShell|c9344e51|new"
+        ],
+        "terminalStudio": [
+          "tachyonTerminalStudioShell|c9344e51|new"
+        ],
+        "runbookStudio": [
+          "tachyonRunbookStudioShell|c9344e51|new"
+        ],
+        "scheduleStudio": [
+          "tachyonScheduleStudioShell|c9344e51|new"
+        ],
+        "handoff": [
+          "tachyonHandoff|c9344e51"
+        ],
+        "probes": [
+          "tachyonProbes|c9344e51|workspace"
+        ],
+        "activity": []
+      },
+      "preFlatKeys": [
+        "agentStudio::tachyonAgentStudioShell|c9344e51|new",
+        "board::tachyonBoard|c9344e51",
+        "commandStudio::tachyonCommandStudioShell|c9344e51|new",
+        "executionGraph::tachyonExecutionGraph|c9344e51",
+        "fleet::tachyonFleet|c9344e51",
+        "handoff::tachyonHandoff|c9344e51",
+        "humanInbox::tachyonHumanInbox|c9344e51",
+        "overview::tachyonOverview|c9344e51",
+        "pinDetail::tachyonPinPreview|c9344e51|p-restore-a",
+        "pinDetail::tachyonPinPreview|c9344e51|p-restore-b",
+        "plugins::tachyonPlugins|c9344e51",
+        "probes::tachyonProbes|c9344e51|workspace",
+        "runbookStudio::tachyonRunbookStudioShell|c9344e51|new",
+        "runtimeConfig::tachyonRuntimeConfig|c9344e51",
+        "runtimeOps::tachyonRuntimeOps",
+        "scheduleStudio::tachyonScheduleStudioShell|c9344e51|new",
+        "settings::tachyonSettings|c9344e51",
+        "taskDetail::tachyonTaskDetail|c9344e51|t-restore-a",
+        "taskDetail::tachyonTaskDetail|c9344e51|t-restore-b",
+        "terminalStudio::tachyonTerminalStudioShell|c9344e51|new",
+        "tmux::tachyonServerInspector",
+        "worktrees::tachyonWorktrees|c9344e51"
+      ],
+      "postFlatKeys": [
+        "agentStudio::tachyonAgentStudioShell|c9344e51|new",
+        "board::tachyonBoard|c9344e51",
+        "commandStudio::tachyonCommandStudioShell|c9344e51|new",
+        "executionGraph::tachyonExecutionGraph|c9344e51",
+        "fleet::tachyonFleet|c9344e51",
+        "handoff::tachyonHandoff|c9344e51",
+        "humanInbox::tachyonHumanInbox|c9344e51",
+        "overview::tachyonOverview|c9344e51",
+        "pinDetail::tachyonPinPreview|c9344e51|p-restore-a",
+        "pinDetail::tachyonPinPreview|c9344e51|p-restore-b",
+        "plugins::tachyonPlugins|c9344e51",
+        "probes::tachyonProbes|c9344e51|workspace",
+        "runbookStudio::tachyonRunbookStudioShell|c9344e51|new",
+        "runtimeConfig::tachyonRuntimeConfig|c9344e51",
+        "runtimeOps::tachyonRuntimeOps",
+        "scheduleStudio::tachyonScheduleStudioShell|c9344e51|new",
+        "settings::tachyonSettings|c9344e51",
+        "taskDetail::tachyonTaskDetail|c9344e51|t-restore-a",
+        "taskDetail::tachyonTaskDetail|c9344e51|t-restore-b",
+        "terminalStudio::tachyonTerminalStudioShell|c9344e51|new",
+        "tmux::tachyonServerInspector",
+        "worktrees::tachyonWorktrees|c9344e51"
+      ],
+      "missingKeys": [],
+      "extraKeys": [],
+      "preLabels": [
+        "Overview, Editor Group 2",
+        "Engine, Editor Group 3",
+        "Fleet, Editor Group 4",
+        "Human Inbox, Editor Group 5",
+        "Board, Editor Group 6",
+        "Worktrees, Editor Group 7",
+        "Execution, Editor Group 8",
+        "Runtime Ops, Editor Group 9",
+        "Runtime Config, Editor Group 10",
+        "tmux, Editor Group 11",
+        "Plugins, Editor Group 12",
+        "Settings, Editor Group 13",
+        "Task t-restore-a, Editor Group 14",
+        "Task t-restore-b, Editor Group 15",
+        "Pin — p-restore-a, Editor Group 16",
+        "Pin — p-restore-b, Editor Group 17",
+        "New Agent, Editor Group 18",
+        "New Command, Editor Group 19",
+        "New Terminal, Editor Group 20",
+        "New Runbook, Editor Group 21",
+        "New Schedule, Editor Group 22",
+        "Project Handoff, Editor Group 23",
+        "Captured Probes, Editor Group 24"
+      ],
+      "postLabels": [
+        "Overview, Editor Group 2",
+        "Engine, Editor Group 3",
+        "Fleet, Editor Group 4",
+        "Human Inbox, Editor Group 5",
+        "Board, Editor Group 6",
+        "Worktrees, Editor Group 7",
+        "Execution, Editor Group 8",
+        "Runtime Ops, Editor Group 9",
+        "Runtime Config, Editor Group 10",
+        "tmux, Editor Group 11",
+        "Plugins, Editor Group 12",
+        "Settings, Editor Group 13",
+        "Task t-restore-a, Editor Group 14",
+        "Task t-restore-b, Editor Group 15",
+        "Pin — p-restore-a, Editor Group 16",
+        "Pin — p-restore-b, Editor Group 17",
+        "agent — new, Editor Group 18",
+        "command — new, Editor Group 19",
+        "terminal — new, Editor Group 20",
+        "runbook — new, Editor Group 21",
+        "schedule — new, Editor Group 22",
+        "Project Handoff, Editor Group 23",
+        "Captured Probes, Editor Group 24"
+      ],
+      "answer": "YES (observed — every pre-open key present post-reload)"
+    },
+    "q2": {
+      "question": "Do documents return to the SAME entity?",
+      "entities": [
+        {
+          "id": "t-restore-a",
+          "preKey": true,
+          "postKey": true,
+          "preDom": [
+            "Task t-restore-a, Editor Group 14"
+          ],
+          "postDom": [
+            "Task t-restore-a, Editor Group 14"
+          ],
+          "sameEntityReturned": true
+        },
+        {
+          "id": "t-restore-b",
+          "preKey": true,
+          "postKey": true,
+          "preDom": [
+            "Task t-restore-b, Editor Group 15"
+          ],
+          "postDom": [
+            "Task t-restore-b, Editor Group 15"
+          ],
+          "sameEntityReturned": true
+        },
+        {
+          "id": "p-restore-a",
+          "preKey": true,
+          "postKey": true,
+          "preDom": [
+            "Pin — p-restore-a, Editor Group 16"
+          ],
+          "postDom": [
+            "Pin — p-restore-a, Editor Group 16"
+          ],
+          "sameEntityReturned": true
+        },
+        {
+          "id": "p-restore-b",
+          "preKey": true,
+          "postKey": true,
+          "preDom": [
+            "Pin — p-restore-b, Editor Group 17"
+          ],
+          "postDom": [
+            "Pin — p-restore-b, Editor Group 17"
+          ],
+          "sameEntityReturned": true
+        }
+      ],
+      "answer": "YES (observed — each seeded task/pin identity key present pre and post)"
+    },
+    "q3": {
+      "question": "Does cardinality survive restore?",
+      "managerCounts": {
+        "overview": {
+          "pre": 1,
+          "post": 1
+        },
+        "engine": {
+          "pre": 0,
+          "post": 0
+        },
+        "fleet": {
+          "pre": 1,
+          "post": 1
+        },
+        "humanInbox": {
+          "pre": 1,
+          "post": 1
+        },
+        "board": {
+          "pre": 1,
+          "post": 1
+        },
+        "worktrees": {
+          "pre": 1,
+          "post": 1
+        },
+        "executionGraph": {
+          "pre": 1,
+          "post": 1
+        },
+        "runtimeOps": {
+          "pre": 1,
+          "post": 1
+        },
+        "runtimeConfig": {
+          "pre": 1,
+          "post": 1
+        },
+        "tmux": {
+          "pre": 1,
+          "post": 1
+        },
+        "plugins": {
+          "pre": 1,
+          "post": 1
+        },
+        "settings": {
+          "pre": 1,
+          "post": 1
+        },
+        "taskDetail": {
+          "pre": 2,
+          "post": 2
+        },
+        "pinDetail": {
+          "pre": 2,
+          "post": 2
+        },
+        "agentStudio": {
+          "pre": 1,
+          "post": 1
+        },
+        "commandStudio": {
+          "pre": 1,
+          "post": 1
+        },
+        "terminalStudio": {
+          "pre": 1,
+          "post": 1
+        },
+        "runbookStudio": {
+          "pre": 1,
+          "post": 1
+        },
+        "scheduleStudio": {
+          "pre": 1,
+          "post": 1
+        },
+        "handoff": {
+          "pre": 1,
+          "post": 1
+        },
+        "probes": {
+          "pre": 1,
+          "post": 1
+        },
+        "activity": {
+          "pre": 0,
+          "post": 0
+        }
+      },
+      "windowManagersPost": {
+        "tmux": [
+          "tachyonServerInspector"
+        ],
+        "runtimeOps": [
+          "tachyonRuntimeOps"
+        ]
+      },
+      "documentIdentityCountsPost": {
+        "t-restore-a": 1,
+        "t-restore-b": 1,
+        "p-restore-a": 1,
+        "p-restore-b": 1
+      },
+      "multiPanelManagersPost": [],
+      "answer": "YES (observed — dashboards ≤1, windows ≤1, document ids ≤1)"
+    },
+    "q4": {
+      "question": "Does position across editor groups survive?",
+      "preGroupCount": 24,
+      "postGroupCount": 24,
+      "groupMap": [
+        {
+          "frag": "Board",
+          "pre": [
+            {
+              "groupIndex": 5,
+              "viewColumn": 6,
+              "label": "Board"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 5,
+              "viewColumn": 6,
+              "label": "Board"
+            }
+          ],
+          "preserved": true
+        },
+        {
+          "frag": "Fleet",
+          "pre": [
+            {
+              "groupIndex": 3,
+              "viewColumn": 4,
+              "label": "Fleet"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 3,
+              "viewColumn": 4,
+              "label": "Fleet"
+            }
+          ],
+          "preserved": true
+        },
+        {
+          "frag": "Engine",
+          "pre": [
+            {
+              "groupIndex": 2,
+              "viewColumn": 3,
+              "label": "Engine"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 2,
+              "viewColumn": 3,
+              "label": "Engine"
+            }
+          ],
+          "preserved": true
+        },
+        {
+          "frag": "tmux",
+          "pre": [
+            {
+              "groupIndex": 10,
+              "viewColumn": 11,
+              "label": "tmux"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 10,
+              "viewColumn": 11,
+              "label": "tmux"
+            }
+          ],
+          "preserved": true
+        },
+        {
+          "frag": "Plugins",
+          "pre": [
+            {
+              "groupIndex": 11,
+              "viewColumn": 12,
+              "label": "Plugins"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 11,
+              "viewColumn": 12,
+              "label": "Plugins"
+            }
+          ],
+          "preserved": true
+        },
+        {
+          "frag": "Task t-restore-a",
+          "pre": [
+            {
+              "groupIndex": 13,
+              "viewColumn": 14,
+              "label": "Task t-restore-a"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 13,
+              "viewColumn": 14,
+              "label": "Task t-restore-a"
+            }
+          ],
+          "preserved": true
+        },
+        {
+          "frag": "Task t-restore-b",
+          "pre": [
+            {
+              "groupIndex": 14,
+              "viewColumn": 15,
+              "label": "Task t-restore-b"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 14,
+              "viewColumn": 15,
+              "label": "Task t-restore-b"
+            }
+          ],
+          "preserved": true
+        },
+        {
+          "frag": "Pin — p-restore-a",
+          "pre": [
+            {
+              "groupIndex": 15,
+              "viewColumn": 16,
+              "label": "Pin — p-restore-a"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 15,
+              "viewColumn": 16,
+              "label": "Pin — p-restore-a"
+            }
+          ],
+          "preserved": true
+        },
+        {
+          "frag": "Pin — p-restore-b",
+          "pre": [
+            {
+              "groupIndex": 16,
+              "viewColumn": 17,
+              "label": "Pin — p-restore-b"
+            }
+          ],
+          "post": [
+            {
+              "groupIndex": 16,
+              "viewColumn": 17,
+              "label": "Pin — p-restore-b"
+            }
+          ],
+          "preserved": true
+        }
+      ],
+      "answer": "YES (observed — viewColumns of key tabs match pre/post)"
+    }
+  },
+  "reload": {
+    "issued": {
+      "ok": true
+    },
+    "markerAfter": {
+      "ok": true,
+      "value": "<gone>"
+    }
+  },
+  "finishedAt": "2026-08-05T16:49:30.667Z"
+}
