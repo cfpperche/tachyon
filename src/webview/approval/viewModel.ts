@@ -1,6 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import { APPROVALS_REL_DIR, APPROVAL_ID_PREFIX, readApprovalRequest, type ApprovalPayload } from "../../bridge/approvalRequest.js";
+import {
+  APPROVALS_REL_DIR,
+  APPROVAL_ID_PREFIX,
+  decisionSealState,
+  readApprovalRequest,
+  type ApprovalPayload,
+  type ApprovalRequest,
+} from "../../bridge/approvalRequest.js";
 import type { CockpitApprovalRow } from "../../cockpit/model.js";
 
 export interface ApprovalViewItem {
@@ -33,8 +40,9 @@ export function buildApprovalViewModel(input: { workspaceRoot: string; folder: s
  * reads zero is worse than no counter, so the two now cannot disagree by construction.
  *
  * Pending is what a human still owes an answer to: resolved and cancelled records are skipped, and
- * a record whose payloadHash no longer matches (or that will not parse at all) is still listed —
- * tampering is a reason to look at it, never a reason to drop it from the count.
+ * a record whose payloadHash no longer matches, whose decision seal is broken (t-65e80b), or that
+ * will not parse at all is still listed — tampering is a reason to look at it, never a reason to drop
+ * it from the count.
  */
 export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalViewItem[] {
   const approvals: ApprovalViewItem[] = [];
@@ -57,7 +65,13 @@ export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalVie
     } catch (err) {
       try {
         const raw = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")) as Partial<ApprovalViewItem> & { payload?: Partial<ApprovalPayload>; status?: string };
-        if (raw.status && raw.status !== "pending") continue;
+        // t-65e80b — a record whose DECISION seal is broken does not get to retire itself. `status` is
+        // the field the seal covers, so trusting it here to skip the record would let the one edit this
+        // read exists to catch also delete the evidence from the human's queue. A broken seal means the
+        // decision bytes are not what was written, so what is on disk cannot say a human is done with
+        // it — it stays listed, tampered, with the reader's message attached.
+        const sealed = decisionSealState(raw as ApprovalRequest) !== "broken";
+        if (sealed && raw.status && raw.status !== "pending") continue;
         approvals.push({
           id: typeof raw.id === "string" ? raw.id : id,
           requester: typeof raw.requester === "string" ? raw.requester : "(unknown)",

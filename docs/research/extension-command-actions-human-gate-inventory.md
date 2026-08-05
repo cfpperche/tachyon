@@ -198,6 +198,15 @@ o `payloadHash` continua batendo, porque o payload não foi tocado.
 É a forma exata que `docs/project-guidance.md` descreve em `t-e73e54`: um comentário afirmando uma
 propriedade que a checagem ao lado não cobre. Aberto como task separada.
 
+**Atualização 2026-08-05 (t-65e80b), sobre a metade do LEITOR — a medição acima fica como está.** A
+decisão passou a ter selo próprio (`decisionSeal`, sobre `status`/`resolution`/`cancellation`,
+recalculado na porta única de escrita) e `readApprovalRequest` recusa um registro cujos bytes de
+decisão mudaram depois de selados. **A porta continua aberta**: a escrita não é impedida, e o teste 4
+segue medindo o arquivo forjado em disco — o que mudou é que o leitor de produção não o entrega mais
+como verdade. O selo prova bytes, nunca autor, e um registro sem selo é anterior à mudança, não
+adulterado. Fechar a porta continua sendo t-5313dc; rebaixar o selo apagando seus dois campos é o
+limite medido em t-f85a02.
+
 ### 4. A superfície do fio é maior que estas 68 ações
 
 A t-6edd70 mediu que o daemon só decodifica os 19 métodos de `WorkspaceCommandMethodV1` e os nomes de
