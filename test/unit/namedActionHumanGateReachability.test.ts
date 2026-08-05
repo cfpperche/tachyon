@@ -232,6 +232,11 @@ describe("t-dd27f1 — named actions that produce a human-only effect", () => {
     const tampered = readApprovalRequest(root, "a-ccc333");
     expect(tampered.status).toBe("resolved");
     expect(tampered.resolution?.decision).toBe("approved");
+    // t-86e59a stopped the PRODUCT from asserting an actor, and this door shows the limit of that: it
+    // never calls the resolver, so nothing constrains what it writes. The forged value here is the
+    // retired `"vscode"` on purpose — a value no code path produces any more, and one this reader still
+    // hands to a human as ground truth. Only the capability fix (t-5313dc) reaches this; honesty in the
+    // writer cannot bind a writer that isn't ours.
     expect(tampered.resolution?.resolvedBy).toBe("vscode");
   });
 });

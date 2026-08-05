@@ -186,6 +186,7 @@ import type { CompanionPairBlockReason } from "../companion/CompanionPairingServ
 import { resolveCompanionMobileDist } from "../companion/mobileAppStatic.js";
 import { TabRefCache } from "../companion/tabRefCache.js";
 import {
+  APPROVAL_CHANNEL_COMPANION_HTTP,
   listPendingApprovalRequests,
   resolveApproval,
   type ApprovalDecision,
@@ -3405,7 +3406,10 @@ export class Workspace {
         workspaceRoot: this.workspaceRoot,
         id,
         decision,
-        resolvedBy: "companion",
+        // t-86e59a — the CHANNEL, not an actor. The pairing that authorizes this door is a code the
+        // caller can mint for itself over the control socket (door 2, t-de7df4), so "a human on a paired
+        // device" is not a fact this site has either.
+        resolvedBy: APPROVAL_CHANNEL_COMPANION_HTTP,
         ...approvalResolutionPorts({
           listEntries: () => this.manager.list(),
           // t-d79534 — queue-aware delivery. A requester waiting on its own escalation is busy by

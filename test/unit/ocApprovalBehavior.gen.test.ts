@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  APPROVAL_CHANNEL_VSCODE_COMMAND,
   appendApprovalWitnessEvent,
   buildApprovalRequest,
   approvalRequestPath,
@@ -162,7 +163,7 @@ describe("container-generated delegation behavior", () => {
       workspaceRoot: ws,
       id: request.id,
       decision: "approved",
-      resolvedBy: "vscode-user",
+      resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND,
       now: "2026-07-08T01:05:00.000Z",
       inject: async (session, text) => {
         injectedSession = session;
@@ -183,7 +184,10 @@ describe("container-generated delegation behavior", () => {
     expect(resolved.status).toBe("resolved");
     expect(resolved.resolution?.decision).toBe("approved");
     expect(resolved.resolution?.resolvedAt).toBe("2026-07-08T01:05:00.000Z");
-    expect(resolved.resolution?.resolvedBy).toBe("vscode-user");
+    // t-86e59a — the audit receipt records the CHANNEL, never an actor: no door to this resolver can
+    // observe who acted, so `"vscode-user"` (what this test used to round-trip) was a claim the product
+    // had no way to make.
+    expect(resolved.resolution?.resolvedBy).toBe(APPROVAL_CHANNEL_VSCODE_COMMAND);
     expect(resolved.resolution?.writeInputReceipt).toContain("answered-prompt");
 
     // re-resolution is rejected — the human's decision stands; no double-inject.
@@ -199,7 +203,14 @@ describe("container-generated delegation behavior", () => {
     // the witness ledger gained a `resolved` line after the request line.
     const ledger = fs.readFileSync(path.join(ws, ".tachyon", "approvals.jsonl"), "utf8").trim().split("\n");
     expect(ledger).toHaveLength(2);
-    expect(JSON.parse(ledger[1])).toMatchObject({ kind: "resolved", id: request.id, decision: "approved", by: "vscode-user" });
+    // t-86e59a — the ledger is the SECOND durable place and carries the same value as the record, which
+    // is why the old actor claim was false twice and why both had to change in one step.
+    expect(JSON.parse(ledger[1])).toMatchObject({
+      kind: "resolved",
+      id: request.id,
+      decision: "approved",
+      by: APPROVAL_CHANNEL_VSCODE_COMMAND,
+    });
 
     // pending list no longer surfaces the resolved request.
     expect(listPendingApprovalRequests(ws)).toHaveLength(0);

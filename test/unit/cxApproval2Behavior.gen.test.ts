@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 import {
+  APPROVAL_CHANNEL_VSCODE_COMMAND,
   approvalRequestPath,
   buildApprovalRequest,
   readApprovalRequest,
@@ -61,7 +62,7 @@ describe("container-generated delegation behavior", () => {
       workspaceRoot: ws,
       id: request.id,
       decision: "approved",
-      resolvedBy: "vscode",
+      resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND,
       currentSessionOwner: () => "child",
       inject: async (_session, text) => {
         injected.push(text);

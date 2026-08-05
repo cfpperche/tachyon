@@ -9,8 +9,10 @@ import path from "node:path";
  * the SOURCE tree (tamper-resistant like `doorbell.ts` and canonical Delivery authority — a gated agent cannot
  * rewrite a file it never checks out), and surfaces it to the human through Control → Approvals + host
  * notification with the child's VERBATIM payload + provenance (checklist pins are not used for approvals).
- * Resolution is HOST-SIDE ONLY (never a Bridge tool — that would let a
+ * Resolution is HOST-SIDE BY DESIGN (never a Bridge tool — that would let a
  * coordinator resolve its own escalation, which is exactly the laundering the adversarial dueto killed).
+ * That INTENT is worth keeping stated, and it is NOT what the product enforces today: three doors reach
+ * resolution with no human gesture, each reproduced by a test. They are enumerated under invariant (3).
  *
  * Load-bearing design invariants (preserved here, enforced at every seam):
  *   (1) requester identity is the Bridge-resolved caller, NEVER self-declared — `recordApprovalRequest`
@@ -19,9 +21,25 @@ import path from "node:path";
  *   (2) the human is shown the child's VERBATIM text, never a coordinator summary — Approvals UI
  *       renders the four child-authored fields verbatim + provenance only (`composeApprovalPinDetail`
  *       remains the shared text builder for that payload; optional legacy pinId on old records only).
- *   (3) resolution is host-side only, never agent-reachable — `resolveApproval` lives in this module
- *       (pure, with an `inject` callback) and is wired ONLY by the extension host's Phase 2 UI; there is
- *       no `resolve_approval` Bridge tool and `tools.ts` never imports the resolver.
+ *   (3) resolution is host-side only, never agent-reachable — the INTENT of this design, and MEASURED
+ *       FALSE on 2026-08-05. What still holds: `resolveApproval` lives in this module (pure, with an
+ *       `inject` callback), there is no `resolve_approval` Bridge tool, and `tools.ts` never imports the
+ *       resolver. What does not hold: three doors reach resolution with no human gesture, each
+ *       REPRODUCED by a test rather than argued from reading —
+ *         door 1 (t-6edd70) — a same-uid control-socket speaker invokes the named action
+ *           `approval.resolve`; the nonce alone carries it and no caller identity is consulted anywhere
+ *           on the path (`test/unit/approvalResolveSocketReachability.test.ts`).
+ *         door 2 (t-de7df4) — the same speaker mints its OWN Companion pair code over that socket, pairs
+ *           over loopback, and resolves with the device token it just minted
+ *           (`test/unit/companionPairApprovalReachability.test.ts`).
+ *         door 3 (t-65e80b) — `payloadHash` covers only the child-authored payload, so `status` and
+ *           `resolution` can be edited straight into the record's JSON and `readApprovalRequest` accepts
+ *           it, with no resolver involved at all (`test/unit/namedActionHumanGateReachability.test.ts`).
+ *       CLOSING these doors is a capability fix (uid/sandbox isolation) and is deliberately NOT done
+ *       here — it stays open as t-5313dc. t-86e59a did the honest half only: since the host cannot know
+ *       WHO resolved, it stopped claiming to. `resolvedBy` now names the CHANNEL the resolution arrived
+ *       through (`APPROVAL_RESOLUTION_CHANNELS` below), so the audit trail no longer credits an actor
+ *       nobody proved. A fourth door would inherit the same rule: name the channel, claim no actor.
  *   (4) the injected response is a FIXED Tachyon string, never free-form — `composeFixedApprovalResponse`
  *       is the single source of what gets typed back; the human's click picks approve/deny, nothing more.
  *
@@ -47,6 +65,35 @@ export const APPROVALS_WITNESS_REL_PATH = path.join(".tachyon", "approvals.jsonl
 /** Id shape mirrors pin `p-<6hex>` / validation `v-<6hex>` / task `t-<6hex>` — `a-` for approval. */
 export const APPROVAL_ID_PREFIX = "a-";
 
+/**
+ * t-86e59a — what `resolvedBy` is allowed to say.
+ *
+ * It used to say `"vscode"` or `"companion"`: server-side constants asserting an ACTOR the server has
+ * no way to observe. Three doors (invariant (3) above) resolve an approval with no human gesture, and
+ * every one of them wrote a name a human auditor would read as themselves. That made the record worse
+ * than empty, because it looked informative.
+ *
+ * A channel is the one thing the host actually knows: which entry point the resolution arrived through.
+ * The `unattributed:` prefix is load-bearing and not decoration — it is what stops the value from being
+ * read as an actor at a glance, given that the FIELD is still called `resolvedBy`. It also keeps the old
+ * records legible as exactly what they are: written before we knew.
+ *
+ * Deliberately NOT derived from the caller. The control socket has no trustworthy identity (self-asserted
+ * hello, shared nonce — t-93ac7f), so deriving provenance from a declaration would swap a false trail for
+ * one that LOOKS proven, which is worse than today. A channel constant claims only what its own call site
+ * guarantees: that the resolution came through this door.
+ */
+export const APPROVAL_CHANNEL_VSCODE_COMMAND = "unattributed:vscode-command";
+export const APPROVAL_CHANNEL_COMPANION_HTTP = "unattributed:companion-http";
+
+/** Every value a resolution path may record. The guard test enumerates call sites against this. */
+export const APPROVAL_RESOLUTION_CHANNELS = [
+  APPROVAL_CHANNEL_VSCODE_COMMAND,
+  APPROVAL_CHANNEL_COMPANION_HTTP,
+] as const;
+
+export type ApprovalResolutionChannel = (typeof APPROVAL_RESOLUTION_CHANNELS)[number];
+
 export type ApprovalDecision = "approved" | "denied";
 
 /** Lifecycle: pending → resolved (host Accept/Deny) | cancelled (requester withdraw). Never both. */
@@ -69,7 +116,12 @@ export interface ApprovalResolution {
   decision: ApprovalDecision;
   /** ISO timestamp of the human's resolve action. */
   resolvedAt: string;
-  /** Best-effort identity of the VS Code user who clicked (filled by the host). */
+  /**
+   * The CHANNEL the resolution arrived through — never an actor (t-86e59a). One of
+   * `APPROVAL_RESOLUTION_CHANNELS`. This used to read "best-effort identity of the VS Code user who
+   * clicked", which the host cannot observe on any of its three doors. Records written before that was
+   * measured still hold the old `"vscode"` / `"companion"`; they are history and are never rewritten.
+   */
   resolvedBy?: string;
   /** The FIXED Tachyon-generated text injected back into the child session (never free-form). */
   injectedText: string;
@@ -342,7 +394,10 @@ export async function resolveApproval(input: {
   workspaceRoot: string;
   id: string;
   decision: ApprovalDecision;
-  resolvedBy?: string;
+  /** The CHANNEL this resolution arrived through — an `APPROVAL_RESOLUTION_CHANNELS` member, never an
+   *  actor name and never anything derived from the caller (t-86e59a). Recorded verbatim in BOTH durable
+   *  places below: the request record and the witness ledger. */
+  resolvedBy?: ApprovalResolutionChannel;
   now?: string;
   /** Host-side write_input(answering=true) — typed text is the FIXED Tachyon string, never caller-supplied. */
   inject: (session: string, text: string) => Promise<{ receipt?: string; error?: string }>;

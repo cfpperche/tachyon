@@ -23,10 +23,15 @@
  *     witness both credit `"companion"`.
  *
  * These are CHARACTERIZATION tests: they pin what the product does today, including the defect. The
- * two assertions marked DEFECT are door 2 standing open — `resolvedBy: "companion"` is exactly as
- * unproven as `"vscode"`, and any fix that closes only door 1 leaves this one open. When door 2 is
- * closed (pairing gated on a real out-of-uid secret or a human gesture), the DEFECT assertions must be
- * inverted, and their failure at that moment is the point.
+ * assertions marked DEFECT are door 2 standing open — `"companion"` was exactly as unproven as
+ * `"vscode"`, and any fix that closes only door 1 leaves this one open. When door 2 is closed (pairing
+ * gated on a real out-of-uid secret or a human gesture), the DEFECT assertions must be inverted, and
+ * their failure at that moment is the point.
+ *
+ * t-86e59a touched the RECORD, not the door. `resolvedBy` names the CHANNEL now, because the host
+ * cannot observe who acted on any of the three doors — so the audit trail stopped crediting a device
+ * and a human that were never there. The chain above still runs, start to finish, with no human and no
+ * secret from outside the uid. Closing it is t-5313dc, and it is open.
  *
  * ISOLATION / what this test CREATES: like the model test, the daemon runs on a throwaway temp
  * workspace under `isolatedDaemonChildEnv` + `assertNoFleetLeak`, and is killed in `afterEach`. The
@@ -48,7 +53,12 @@ import {
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
 } from "../../src/engine-service/protocol.js";
-import { buildApprovalRequest, readApprovalRequest, writeApprovalRequest } from "../../src/bridge/approvalRequest.js";
+import {
+  APPROVAL_CHANNEL_COMPANION_HTTP,
+  buildApprovalRequest,
+  readApprovalRequest,
+  writeApprovalRequest,
+} from "../../src/bridge/approvalRequest.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
@@ -131,17 +141,23 @@ describe("t-de7df4 — a same-uid speaker pairs itself as a Companion device and
     const record = readApprovalRequest(daemon.workspaceRoot, "a-bbb222");
     expect(record.status).toBe("resolved");
     expect(record.resolution?.decision).toBe("approved");
-    // DEFECT: door 2 was the candidate for the missing authenticated channel — "a human on a paired
-    // device outside the box". It authenticated only the pair code, and the caller minted that code
-    // for itself over the same-uid socket. The durable record credits "companion" for a resolution no
-    // device and no human performed.
-    expect(record.resolution?.resolvedBy).toBe("companion");
+    // DEFECT: door 2 IS STILL OPEN. It was the candidate for the missing authenticated channel — "a
+    // human on a paired device outside the box" — and it authenticated only the pair code, which the
+    // caller minted for itself over the same-uid socket. Everything above still happens.
+    //
+    // What t-86e59a changed is only what the record CLAIMS about it. The durable record used to credit
+    // `"companion"` for a resolution no device and no human performed; it now names the CHANNEL, which
+    // is all this call site knows. The capability is untouched and stays open as t-5313dc — the mark
+    // above measures that, and inverting it is t-5313dc's job, not this one's.
+    expect(record.resolution?.resolvedBy).toBe(APPROVAL_CHANNEL_COMPANION_HTTP);
+    expect(record.resolution?.resolvedBy).not.toBe("companion");
 
-    // The witness ledger repeats the same claim, so the false trail is durable in two places — the
-    // exact shape door 1 leaves behind, only crediting "companion" instead of "vscode".
+    // The witness ledger repeats the value, durable in two places — the exact shape door 1 leaves
+    // behind, and the reason both had to stop asserting an actor in the same change.
     const witness = fs.readFileSync(path.join(daemon.workspaceRoot, ".tachyon", "approvals.jsonl"), "utf8");
     expect(witness).toContain('"kind":"resolved"');
-    expect(witness).toContain('"by":"companion"');
+    expect(witness).toContain(`"by":"${APPROVAL_CHANNEL_COMPANION_HTTP}"`);
+    expect(witness).not.toContain('"by":"companion"');
   }, 120_000);
 
   it("the pair code IS the whole gate — a wrong code is refused, so minting it is the entire exploit", async () => {

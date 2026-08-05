@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../helpers/tempDir.js";
 import {
+  APPROVAL_CHANNEL_COMPANION_HTTP,
+  APPROVAL_CHANNEL_VSCODE_COMMAND,
   buildApprovalRequest,
   readApprovalRequest,
   resolveApproval,
@@ -42,7 +44,7 @@ describe("t-7a306a — a failing pin completion never undoes the approval, and n
       workspaceRoot,
       id: "a-abc123",
       decision: "approved",
-      resolvedBy: "vscode",
+      resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND,
       inject,
       completePin: () => { throw new Error("pin store is read-only"); },
     });
@@ -61,7 +63,7 @@ describe("t-7a306a — a failing pin completion never undoes the approval, and n
       workspaceRoot,
       id: "a-abc123",
       decision: "denied",
-      resolvedBy: "companion",
+      resolvedBy: APPROVAL_CHANNEL_COMPANION_HTTP,
       inject,
       completePin: () => { throw new Error("pin store is read-only"); },
     });
@@ -76,7 +78,7 @@ describe("t-7a306a — a failing pin completion never undoes the approval, and n
     const completePin = vi.fn();
 
     const result = await resolveApproval({
-      workspaceRoot, id: "a-abc123", decision: "approved", resolvedBy: "vscode", inject, completePin,
+      workspaceRoot, id: "a-abc123", decision: "approved", resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND, inject, completePin,
     });
 
     expect(completePin).toHaveBeenCalledWith("p-abc123", "approved");
@@ -90,7 +92,7 @@ describe("t-7a306a — a failing pin completion never undoes the approval, and n
     const completePin = vi.fn(() => { throw new Error("never reached"); });
 
     const result = await resolveApproval({
-      workspaceRoot, id: "a-abc123", decision: "approved", resolvedBy: "vscode", inject, completePin,
+      workspaceRoot, id: "a-abc123", decision: "approved", resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND, inject, completePin,
     });
 
     expect(completePin).not.toHaveBeenCalled();
@@ -107,7 +109,7 @@ describe("t-7a306a — a failing pin completion never undoes the approval, and n
       workspaceRoot,
       id: "a-abc123",
       decision: "approved",
-      resolvedBy: "vscode",
+      resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND,
       inject: async () => { throw new Error("session is gone"); },
       completePin: () => { throw new Error("pin store is read-only"); },
     });

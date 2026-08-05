@@ -12,7 +12,7 @@ import { SoulError, SOUL_MAX_BYTES, type SoulProfileStatus } from "../agents/sou
 import type { ProfileMutationResult } from "../agents/soulProfileTransactions.js";
 import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
 import { executeWait, type BridgeDeps } from "../bridge/tools.js";
-import { resolveApproval } from "../bridge/approvalRequest.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND, resolveApproval } from "../bridge/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 import { projectAgentProfileStudioSnapshot } from "../config/agentProfileStudio.js";
@@ -303,7 +303,9 @@ export async function executeExtensionCommand(
         workspaceRoot: workspace.workspaceRoot,
         id: command.id,
         decision: command.decision,
-        resolvedBy: "vscode",
+        // t-86e59a — the CHANNEL, not an actor. This action is reachable by anything that can speak the
+        // control socket (door 1, t-6edd70), so "a human clicked in VS Code" is not a fact this site has.
+        resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND,
         ...approvalResolutionPorts({
           listEntries: () => workspace.manager.list(),
           // t-d79534 — queue-aware delivery; see the twin note in Workspace.ts.
