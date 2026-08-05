@@ -1,31 +1,38 @@
 # 490 — formation-authority-bootstrap — plan
 
-_Drafted from `spec.md` on 2026-08-04. The approach, not the steps (those go in `tasks.md`)._
+_Drafted 2026-08-05, after ratification._
 
 ## Approach
 
-_How the spec gets built, end to end. The shape of the solution._
+Três fatias independentes, uma por runtime, em paralelo. Cada uma entrega sozinha.
+
+| # | Fatia | Runtime | Arquivos | Entrega |
+|---|---|---|---|---|
+| A | Porta de bootstrap (C2 do review) | claude | `src/agents/formation/*`, `src/workspace/Workspace.ts` | uma porta de produção para `mutation: "bootstrap"`, com ator humano e auditoria |
+| B | Manifesto sem falso verde (C3) | codex | `src/agents/promptLayers.ts` + testes | manifesto atesta agentId, workspaceId, geração+digest, fonte da lane, digest do que foi composto |
+| C | Supressão medida nos 3 runtimes (paridade) | grok | `src/runtime/*`, `docs/runtimes/parity.md` | evidência behavioral por adapter para claude, codex e grok |
 
 ## Key decisions
 
-_Each decision + why this option over the alternatives considered. Record rejected alternatives — they explain the design as much as the chosen path does._
-
-- **{{decision}}** — chosen because {{reason}}; rejected {{alternative}} because {{reason}}.
+- **Split por fatia e não por runtime-do-alvo** — cada agente entrega uma peça inteira, em vez de
+  três agentes medindo três runtimes e ninguém construindo a porta. Rejeitado o split por runtime
+  porque as três medições colidem no mesmo registry e nenhuma delas destrava sozinha.
+- **C é dono de `Workspace.ts:3034`** (`nativeSuppressionConfirmed`). A não toca essa linha.
+- **Ordem de merge: B → C → A.** B é isolado; C dá a evidência que A precisa para o primeiro verde
+  ponta a ponta.
 
 ## Files touched
 
-_The modules/files this will create or change, with a one-line note on each._
+Na tabela acima. Fora dela, nada — cada agente abre task nova se achar defeito adjacente.
 
 ## Risks & unknowns
 
-_What could go wrong, what's not yet proven, what to verify early._
-
-## Visual impact
-
-_Optional for UI/interface/rendered-output work: what visible surface changes, what could look wrong, and what proof will be captured._
-
-_Prototypes and durable evidence are opt-in. When this spec needs them, keep them inside `docs/specs/490-formation-authority-bootstrap/` (for example `prototypes/` or `evidence/`) unless a non-empty `**Artifact-Location-Opt-Out:** <reason>` documents why the artifact has a different owner._
+- A supressão cobre as quatro lanes de uma vez (`humanLanes.ts:57-62`), não só memória. C pode
+  descobrir que um runtime não tem como desligar entrega nativa de rules/instructions — nesse caso o
+  honesto é `declared` e a lane recusa alto, não um `verified` inventado.
+- A precisa de uma decisão de autenticação de ator humano que o repo ainda não tem em nenhum lugar.
 
 ## Sources consulted
 
-_Docs, code references, prior specs that informed this plan. Read the repo before proposing._
+`review-codex.md`, `src/agents/formation/humanLanes.ts`, `lifecycleHost.ts`, `authorityStore.ts`,
+`src/runtime/nativeMemory.ts`, `docs/runtimes/parity.md`, `docs/specs/427-agent-identity-state`.

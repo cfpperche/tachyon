@@ -4,9 +4,22 @@ _Created 2026-08-04._
 
 **Status:** draft
 
-**Ratification:** PENDING. Drafted from the maintainer's decision on 2026-08-04 ("abre a spec"),
-which chose route (1) of the three recorded in `t-d48775` j-9948625daec2. Revised on 2026-08-05
-against `review-codex.md` (2 P0, 3 P1 — all dispositions applied below).
+**Ratification:** locked on 2026-08-05. The maintainer approved the revised draft and authorized
+implementation ("pode tocar"), adding one binding amendment: **parity with codex and grok, not just
+claude**. Route (1) of the three recorded in `t-d48775` j-9948625daec2. Revised the same day against
+`review-codex.md` (2 P0, 3 P1 — all dispositions applied below).
+
+**Decisions taken at ratification** (each was an open question in the draft):
+
+1. **Adoption lives in Agent Studio**, beside the lane fields that are inert today. SDD 478 M6 made
+   "a refusal must name the fix" contractual; the fix belongs one click from the refusal, not on
+   another surface.
+2. **This EXTENDS SDD 427, it does not amend it.** 427 says workspace bytes cannot activate
+   themselves. Adoption is the human act 427 always presupposed and never specified — nothing in it
+   is contradicted. Calling this an amendment would claim a rule changed when only a gap was filled,
+   and would weaken 427 for whoever reads it next.
+3. **`claude` is measured first** — three verified axes at 2.1.220 against zero for codex — but see
+   the parity amendment below: first is not only.
 
 **Planning task:** `t-fb9087` (p0) · **Blocked by this:** `t-d48775` (p0), `t-c1ef82` residues 2–3
 
@@ -128,8 +141,20 @@ delivered** while every spawn refuses.
 
 ## Non-goals
 
-- **Measuring native suppression for every runtime.** One measured runtime is enough to deliver this
-  spec; the rest is `t-fb9087` item (2). What is no longer a non-goal is the *dependency* — see above.
+- ~~**Measuring native suppression for every runtime.**~~ **REMOVED at ratification.** The first
+  draft said one measured runtime was enough. The maintainer amended this: **parity across `claude`,
+  `codex` and `grok`** — the three runtimes that carry `savedAgentProfile: true`, and therefore the
+  three that can hold an adopted vector at all. A spec that adopts an agent under authority and then
+  delivers on only one of the three runtimes it supports would move the refusal rather than remove
+  it, for anyone whose Saved Agent is not `claude`.
+
+  Scope note, measured: the suppression receipt covers **every enabled human lane at once** — it is
+  rejected unless its lane set exactly equals the vector's `mode: "profile"` lanes
+  (`humanLanes.ts:57-62`). So this is not the memory registry's `disable` axis alone. On that axis
+  `claude` and `grok` are already `verified` and `codex` is only `declared`
+  (`src/runtime/nativeMemory.ts`), but native *rules/instructions* delivery (`CLAUDE.md`,
+  `AGENTS.md`, and each runtime's equivalent) has to be measured too before a receipt can honestly
+  be issued.
 - **Bulk adoption UI.** Legitimately out of scope; per-agent adoption is the contract.
 - **Merging soul and instructions into one lane.** Measured 2026-08-04 and rejected: `soul.ts` is 950
   lines against 104 in `persistentInstructions.ts`, and `promptLayers.ts:100-103` deliberately declaws
