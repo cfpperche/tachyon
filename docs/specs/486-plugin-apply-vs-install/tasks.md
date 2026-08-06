@@ -23,18 +23,18 @@ no longer renders.
 
 ### Phase A — applied-state exists, and install stops materializing
 
-- [ ] A1. Measure first, and write the answer in `notes.md`: what does each runtime do when a skill
+- [x] A1. Measure first, and write the answer in `notes.md`: what does each runtime do when a skill
       directory disappears **mid-session**? Un-applying while an agent runs is a real sequence and no
       runtime's behaviour there has been measured. If a runtime crashes or wedges rather than losing
       one skill, that changes what A5's switch may offer — so this comes before the switch exists,
       not after.
-- [ ] A1b. The same measurement for a HOOK, which is sharper in two ways the skill question does not
+- [x] A1b. The same measurement for a HOOK, which is sharper in two ways the skill question does not
       cover. (i) The entry lives in a settings file a runtime may have read ONCE at startup, so removal
       may not take effect until restart — and a switch that promises "disarmed" while the hook still
       fires is worse than no switch. (ii) A hook may be MID-EXECUTION when its entry is removed;
       "stops firing next time" and "the running one is killed" are different products. Measure per
       runtime, and let the answer constrain what A5 is allowed to say.
-- [ ] A2. Add the applied record, LOCAL by decision (`spec.md` — Tachyon state does not travel in the
+- [x] A2. Add the applied record, LOCAL by decision (`spec.md` — Tachyon state does not travel in the
       repo; the exceptions are re-opened by name). Its own store, not a field on `plugins.lock.json`:
       that file records what was FETCHED, and its `integrity.payload` deliberately drifts once a human
       edits (spec 270). One file must not answer two questions with two lifetimes.
