@@ -3,8 +3,9 @@ import { setStudioFreezeListener, type StudioFreezeBusMessage } from "./studioFr
 
 /**
  * t-610705 (SDD 410 Phase D, D0, round-3/4/5 fixes) — the client half of the navigation-transaction
- * FSM (studioHost.ts's module doc has the full design; studioFreezeBus.ts explains why this is
- * bus-driven instead of state/effect-driven). Pure mechanism, no domain knowledge.
+ * FSM (design originated on the retired Control host studioHost.ts, deleted in t-337cdf;
+ * studioFreezeBus.ts explains why this is bus-driven instead of state/effect-driven). Pure
+ * mechanism, no domain knowledge.
  *
  * `frozenRef.current` is the ENFORCEMENT primitive — the caller's own field-update function
  * (e.g. `set()`) MUST check it and no-op while true; that check is synchronous and happens in the
@@ -19,16 +20,17 @@ import { setStudioFreezeListener, type StudioFreezeBusMessage } from "./studioFr
  * the save was never what froze the client. `navFrozenRef`/`saveFrozenRef` are tracked separately;
  * `frozenRef` (and the `frozen` state) is always their OR, recomputed on every source transition —
  * so releasing ONE source can never release the other. Each is a plain boolean, not a counter — that
- * is only safe because studioHost.ts's own invariants (txnLock spanning the whole nav transaction;
- * save/nav mutual exclusion) guarantee at most ONE in-flight operation per source at a time. If a
- * future change ever allowed overlapping begin/end pairs from the SAME source, the first end would
- * incorrectly clear a still-needed hold — replace with a counter if that invariant ever changes.
+ * is only safe because host invariants (txnLock spanning the whole nav transaction; save/nav mutual
+ * exclusion under the retired Control host; single-flight save on the standalone path) guarantee at
+ * most ONE in-flight operation per source at a time. If a future change ever allowed overlapping
+ * begin/end pairs from the SAME source, the first end would incorrectly clear a still-needed hold —
+ * replace with a counter if that invariant ever changes.
  *
  * ROUND-6 FIX — `useLayoutEffect`, not `useEffect`, for listener registration: `useEffect` callbacks
  * are scheduled AFTER the browser paints, leaving a real (if narrow) window after this component
  * mounts where a `studioNavCheckpoint` arriving on the synchronous freeze bus would find no listener
- * registered yet and be silently dropped (recovered only by the host's 3s checkpoint timeout — see
- * studioHost.ts's requestCheckpoint — never a permanent hang, but an avoidable stall).
+ * registered yet and be silently dropped (recovered only by a host-side checkpoint timeout — never a
+ * permanent hang, but an avoidable stall).
  * `useLayoutEffect` runs synchronously right after Preact commits the DOM mutation, before paint —
  * registering the listener there closes the window down to "before this component's DOM exists at
  * all," which would require a checkpoint to be dispatched from OUTSIDE any render cycle Preact

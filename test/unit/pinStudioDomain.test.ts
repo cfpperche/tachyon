@@ -8,10 +8,10 @@ import type { WorkspacePinStudioTarget, PinStudioAttachmentResult } from "../../
  * logic ported from the retired PinStudioPanelManager.handleDomainMessage into pinStudioDomain.ts
  * (generic StudioRegistryEntry.handleDomainMessage extension point), same split
  * taskStudioDomain.test.ts (D2) established: the generic StudioPanelManagerBase-replacement
- * LIFECYCLE (load/save/cancel/persisted-cleanup) is covered generically by cockpitStudio.test.ts and
- * studioHostProvisionalCleanup.test.ts; this file covers the PIN-SPECIFIC domain dispatch directly,
- * calling the ported function in isolation rather than through the full Cockpit.ts/studioHost.ts
- * stack. Unlike taskStudioDomain.test.ts, there is no "no entityId" case for attachImage/storeSketch:
+ * LIFECYCLE (load/save/cancel/persisted-cleanup) is covered generically elsewhere (panel-base /
+ * cancel tests); this file covers the PIN-SPECIFIC domain dispatch directly, calling the ported
+ * function in isolation rather than through the full Cockpit/panel stack. Unlike
+ * taskStudioDomain.test.ts, there is no "no entityId" case for attachImage/storeSketch:
  * Pin images are workspace-scoped (not per-pin), and putPinStudioSketch's `pinId` is a genuine
  * `string | undefined` (a brand-new unsaved pin's sketch is a valid, real case) — the retired panel
  * never guarded on entityId for either, and this port doesn't add a guard that wasn't there.

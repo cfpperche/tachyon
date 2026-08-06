@@ -106,13 +106,14 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Term
       setLoadFailed(false);
       setReady(true);
     } else if (d.type === "referenceData") {
-      // t-610705 (Phase D, D1a code-review finding) — refreshStudioReferenceData (studioHost.ts) is
-      // generic over every StudioId, not gated to Runbook/Schedule specifically: an external
-      // tachyon.yml change while a Terminal Studio route is active pushes this here too. Without this
-      // branch it fell through to a silent no-op, leaving flagMap/defaultCwd/verifyCandidates stale
-      // until the next full load — never a crash, but a real staleness regression vs the retired
-      // TerminalStudioPanelManager (which had no live-refresh trigger of its own, but also never lost
-      // one once Runbook/Schedule started sharing the same generic host fan-out).
+      // t-610705 (Phase D, D1a code-review finding) — reference-data refresh is generic over every
+      // StudioId, not gated to Runbook/Schedule specifically (the retired Control host's
+      // refreshStudioReferenceData fan-out; standalone panels use refreshReferenceData). An external
+      // tachyon.yml change while a Terminal Studio is open pushes this here too. Without this branch
+      // it fell through to a silent no-op, leaving flagMap/defaultCwd/verifyCandidates stale until
+      // the next full load — never a crash, but a real staleness regression vs the prior panel host
+      // (which had no live-refresh trigger of its own, but also never lost one once Runbook/Schedule
+      // started sharing the same generic fan-out).
       setReferenceData(d.referenceData ?? emptyReferenceData());
     } else if (d.type === "tombstone") {
       setTombstone(readTombstoneMessage(d));

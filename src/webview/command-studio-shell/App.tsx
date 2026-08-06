@@ -16,9 +16,10 @@ import type { CommandStudioEntity, CommandStudioFields, CommandStudioHostMessage
  * t-610705 (SDD 410 Phase D, D0) — Control-hosted now: props-driven (cockpit/main.tsx's single
  * message listener forwards studio-envelope messages down), same split as every other migrated
  * surface (Activity/TaskDetail/Handoff/...). The "ready" mount handshake needs the CURRENT binding's
- * identity (studioHost.ts's round-2 F3 fix) — `routeKey`/`mountNonce` change whenever the host
- * starts a fresh binding (a different command, or a same-route re-entry after a navigate-away);
- * this component re-sends "ready" whenever that identity changes.
+ * identity (the retired Control host's round-2 F3 fix; studioHost.ts deleted in t-337cdf) —
+ * `routeKey`/`mountNonce` change whenever the host starts a fresh binding (a different command, or
+ * a same-route re-entry after a navigate-away); this component re-sends "ready" whenever that
+ * identity changes.
  *
  * `dispatch: StudioDispatch` (D1a) — was a locally-declared `CommandStudioDispatch` with the same
  * one-line shape; every studio's dispatch is IDENTICAL (`{post(msg: unknown): void}` wrapping
@@ -65,17 +66,17 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Comm
   dirtyRef.current = dirty;
 
   // t-610705 (Phase D, D0, round-5 blocker) — EVERY message this mount posts carries its CURRENT
-  // routeKey/mountNonce, not just "ready" — studioHost.ts now validates identity on every
-  // binding-scoped message, so a message this component sent for an OLDER binding (queued, still in
-  // flight when the route changed) is recognizably stale and silently ignored host-side instead of
-  // mutating whatever binding replaced it.
+  // routeKey/mountNonce, not just "ready". The retired Control host (studioHost.ts, deleted in
+  // t-337cdf) validated identity on every binding-scoped message so a message queued for an OLDER
+  // binding (still in flight when the route changed) was recognizably stale and ignored host-side.
+  // The stamp remains on the wire; dropping the fields is t-5a0c1c.
   const post = (msg: object): void => dispatch.post({ ...msg, routeKey, mountNonce });
 
-  // t-610705 (Phase D, D0, round-3) — the navigation-transaction checkpoint freeze (studioHost.ts's
-  // module doc / useStudioFreeze.ts / studioFreezeBus.ts). `getSnapshot` reads the SAME refs the
-  // dirty/patch effect below writes, so a checkpoint arriving between renders still reports the
-  // truly-latest committed fields — and `frozenRef` (checked by `set()` below) blocks any FURTHER
-  // edit synchronously, before this component even re-renders.
+  // t-610705 (Phase D, D0, round-3) — the navigation-transaction checkpoint freeze
+  // (useStudioFreeze.ts / studioFreezeBus.ts; design originated on the retired Control host).
+  // `getSnapshot` reads the SAME refs the dirty/patch effect below writes, so a checkpoint arriving
+  // between renders still reports the truly-latest committed fields — and `frozenRef` (checked by
+  // `set()` below) blocks any FURTHER edit synchronously, before this component even re-renders.
   const { frozen, saving, frozenRef, freezeForSave } = useStudioFreeze({
     post: dispatch.post,
     getSnapshot: () => ({ dirty: dirtyRef.current, editRevision: editRevisionRef.current, patch: dirtyRef.current ? fieldsRef.current : undefined }),
