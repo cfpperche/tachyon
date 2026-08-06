@@ -507,12 +507,12 @@ export class AttentionMonitor {
           if (!snap.composerOccupied) snap.composerDraftNotified = false;
           const draftNeedsHuman = snap.composerOccupied && snap.state === "idle" && !snap.composerDraftNotified;
           if (draftNeedsHuman) snap.composerDraftNotified = true;
-          this.onChange?.(
-            agent,
-            this.toAttention(agent, snap),
-            draftNeedsHuman,
-            draftNeedsHuman ? "composer-draft" : undefined,
-          );
+          // t-dd130a — `notify` stays false here for the same reason as in transition(): it means
+          // "this transition earns a one-shot notification" and consumers read it combined with
+          // other snapshot fields. The draft warning travels as `cause`, which is the channel the
+          // Workspace consumer switches on. This is the SECOND of the two emitters that carried the
+          // draft; fixing only the other one left the defect alive, which the gate caught.
+          this.onChange?.(agent, this.toAttention(agent, snap), false, draftNeedsHuman ? "composer-draft" : undefined);
         }
         continue;
       }
@@ -710,8 +710,16 @@ export class AttentionMonitor {
       snap.authSince = null;
       snap.authKey = null;
     }
-    let notify = state === "idle" && snap.composerOccupied && !snap.composerDraftNotified;
-    if (notify) snap.composerDraftNotified = true;
+    // t-dd130a — the unsent-draft warning rides its own channel, NOT `notify`. `notify` already
+    // means "this transition earns a one-shot notification", and consumers filter on it combined
+    // with other snapshot fields: snHandbackBehavior counts `notify && awaitingHuman` to prove the
+    // awaiting-human one-shot fires exactly twice. Folding the draft warning into the same boolean
+    // made a draft typed during an awaiting-human episode read as a THIRD awaiting-human
+    // notification. One flag, one meaning: the draft travels as `cause` instead, which is what the
+    // Workspace consumer switches on.
+    const draftNeedsHuman = state === "idle" && snap.composerOccupied && !snap.composerDraftNotified;
+    if (draftNeedsHuman) snap.composerDraftNotified = true;
+    let notify = false;
     if (state === "needs-input") {
       // One notification per episode; the episode key is when this content appeared. Unlike the
       // throttled anti-spam gate below transition()'s call site, this one-shot is NOT vulnerable
@@ -728,7 +736,7 @@ export class AttentionMonitor {
       agent,
       this.toAttention(agent, snap),
       notify,
-      notify && state === "idle" && snap.composerOccupied ? "composer-draft" : undefined,
+      draftNeedsHuman ? "composer-draft" : undefined,
     );
   }
 
