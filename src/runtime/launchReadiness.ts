@@ -1,5 +1,26 @@
 import type { AuthRequiredEvidence } from "./authRequired.js";
 
+/**
+ * t-d501fc — each runtime refuses an unrecognized model in its OWN words; this is not one shared
+ * phrase, it is every measured phrase OR'd together. Never validate against a Tachyon-held model
+ * list here — the runtime's catalog changes without telling us and a stale copy errs in both
+ * directions (refusing a new model, accepting a dead one). The signal has to come from the CLI's
+ * own refusal text, so this pattern grows only from a phrase actually run and captured, never guessed:
+ *  - Claude Code 2.1.223 (`claude --model sonnet-5`): "There's an issue with the selected model
+ *    (sonnet-5). It may not exist or you may not have access to it." — matched by "issue with the
+ *    selected model" alone; the rest of the sentence names the bad id and is not stable text.
+ *  - Codex 0.146.0 (`codex exec --model bogus-model-xyz`): an `invalid_request_error` naming
+ *    "'<model>' model is not supported when using Codex with a ChatGPT account." — matched by
+ *    "model" followed within 80 chars by "not supported" (also covers the pre-existing "unsupported").
+ *  - Grok 0.2.118 (`grok --model grok-bogus-9 -p hi`): `Couldn't set model '<model>': Invalid
+ *    params: "unknown model id".` — already matched by the pre-existing "unknown model" alternative;
+ *    kept here as the reason the other two additions were needed rather than a rewrite.
+ * Before this fix, none of the first two matched: the CLI settles at its ordinary empty composer
+ * right after printing the refusal, so the pane-readiness composer check won on both — the exact
+ * defect measured in t-d501fc (`spawn_agent` answered "ready" for a runtime that had refused).
+ */
+export const MODEL_REJECTED_RE = /\b(?:issue with the selected model|model .{0,80}(?:not found|unavailable|not available|unsupported|not supported|does not exist)|unknown model|invalid model)\b/i;
+
 /** Bounded post-launch observation. This deliberately inspects only terminal state,
  * never sends a prompt or makes an inference request. */
 export type RuntimeLaunchReadiness =
@@ -95,7 +116,7 @@ export class GenericLaunchReadiness implements RuntimeLaunchReadinessAdapter {
     if (/\b(?:unauthorized|authentication (?:failed|required)|not logged in|api key (?:is )?(?:invalid|missing)|access denied)\b/i.test(output)) {
       return { state: "rejected", code: "runtime_auth_rejected" };
     }
-    if (/\b(?:model .{0,80}(?:not found|unavailable|not available|unsupported)|unknown model|invalid model)\b/i.test(output)) {
+    if (MODEL_REJECTED_RE.test(output)) {
       return { state: "rejected", code: "runtime_model_rejected" };
     }
     if (/\b(?:invalid (?:configuration|config)|configuration (?:error|failed)|failed to (?:load|parse) (?:configuration|config))\b/i.test(output)) {

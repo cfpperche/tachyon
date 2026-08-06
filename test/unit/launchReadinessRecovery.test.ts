@@ -5,6 +5,7 @@ import {
   matchCodexBootstrapInput,
 } from "../../src/runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness } from "../../src/runtime/launchReadiness.js";
+import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
 
 describe("CodexLaunchReadiness", () => {
   it("rejects an unclassified runtime that exits during the bounded window", async () => {
@@ -78,6 +79,39 @@ describe("CodexLaunchReadiness", () => {
     ].join("\n"))).toEqual({ state: "ready" });
     expect(adapter.classify("› transcript text\n  not-a-footer default words")).toBeUndefined();
     expect(adapter.classify("› transcript text\n  status default · ready")).toBeUndefined();
+  });
+});
+
+describe("t-d501fc: per-runtime model-rejection shape must be caught by classify(), not just the composer", () => {
+  // Measured 2026-08-05 by running each CLI directly (`<cli> --model <bogus> -p "hi"`), the same
+  // direction the task prescribed: run the runtime, don't guess its refusal text. Each CLI refuses in
+  // its own words, so the fix is per-adapter, not one shared phrase.
+
+  it("Claude Code 2.1.223 refuses with 'issue with the selected model', not any previously-matched phrase", () => {
+    const adapter = new GenericLaunchReadiness(runtimeProfile("claude")!.composer);
+    const rejection = [
+      "There's an issue with the selected model (sonnet-5). It may not exist or you may not have",
+      "access to it. Run /model to pick a different model.",
+    ].join("\n");
+    // The bug: the CLI does not exit. It settles at its ordinary empty composer right below the
+    // refusal, and that composer prompt line is what used to win — classify() must catch the
+    // rejection BEFORE it ever reaches the composer check, on the full pane including the prompt.
+    const paneAfterRefusal = `${rejection}\n\n❯ `;
+    expect(adapter.classify(paneAfterRefusal)).toEqual({ state: "rejected", code: "runtime_model_rejected" });
+  });
+
+  it("Codex 0.146.0 refuses with '<model> model is not supported', a different shape than Claude's", () => {
+    const adapter = new CodexLaunchReadiness();
+    const rejection = 'ERROR: {"type":"error","status":400,"error":{"type":"invalid_request_error",'
+      + '"message":"The \'bogus-model-xyz\' model is not supported when using Codex with a ChatGPT account."}}';
+    expect(adapter.classify(rejection)).toEqual({ state: "rejected", code: "runtime_model_rejected" });
+  });
+
+  it("Grok 0.2.118 already refuses with 'unknown model id', matched before this fix", () => {
+    const adapter = new GenericLaunchReadiness(runtimeProfile("grok")!.composer);
+    const rejection = "Couldn't set model 'grok-bogus-9': Invalid params: \"unknown model id\". "
+      + "Run 'grok models' to see available models.";
+    expect(adapter.classify(rejection)).toEqual({ state: "rejected", code: "runtime_model_rejected" });
   });
 });
 

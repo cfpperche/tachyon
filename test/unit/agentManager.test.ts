@@ -6822,6 +6822,29 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect(h.ledger.get("claude-child")).toBeUndefined();
   });
 
+  it("t-d501fc: the REAL classify pipeline rejects a spawn against Claude's measured refusal pane, not a stubbed one", async () => {
+    // The test above stubs `launchReadiness.wait` and so proves nothing about whether the actual
+    // classify() regex recognizes a real Claude pane — that stub is the exact gap the incident fell
+    // into. This one runs the production `GenericLaunchReadiness` against the real Claude composer
+    // profile and a pane captured verbatim from the incident: the CLI never exits, it settles at its
+    // ordinary empty `❯ ` composer right under the refusal, which is what made "ready" look plausible.
+    const fake = fakeTmux();
+    const h = harness("agents:\n  boss:\n    cmd: claude\n", { tmux: fake.tmux });
+    const session = sessionName(workspaceHash(h.ws), "claude-child");
+    fake.panes.set(session, [
+      "There's an issue with the selected model (sonnet-5). It may not exist or you may not have",
+      "access to it. Run /model to pick a different model.",
+      "",
+      "❯ ",
+    ].join("\n"));
+
+    await expect(h.manager.spawn("claude-child", { cmd: "claude --model sonnet-5" })).rejects.toMatchObject({
+      code: "runtime_model_rejected",
+    });
+    expect(fake.sessions.has(session)).toBe(false);
+    expect(h.ledger.get("claude-child")).toBeUndefined();
+  });
+
   it("SDD 370 probes the materialized private CODEX_HOME and exact cwd, then compensates a new home on rejection", async () => {
     let expectedHome = "";
     let observed: { home?: string; cwd?: string } = {};
