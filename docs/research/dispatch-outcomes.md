@@ -424,3 +424,61 @@ enquanto a de um codex sobrevive — assimetria que ninguém declarou e na qual 
 2. A regra 14 precisa ser reescrita com o caminho certo e com a assimetria por runtime declarada.
 3. Reconciliar a task ANTES de dispensar o agente ganha uma segunda razão: depois do dismiss, para
    grok, não sobra de onde reconstruir.
+
+---
+
+## Onda R (2026-08-06 ~15h30): teto sobe para 4, e o `cmd` foi copiado NO DESPACHO
+
+O dono pediu 4 subagentes e deixou runtime, modelo e effort comigo. O teto de 3 vinha de um
+crash de RAM; medi antes de aceitar em vez de confiar na folga.
+
+    Mem: 15990 MB total | 9454 MB disponíveis | 24 cores
+
+O que torna 4 seguro não é a folga: é o orçamento de memória do vitest (t-019dac), que
+dimensiona workers pela RAM livre, CONTA os irmãos rodando e recusa `verify:full` sob
+pressão. O risco nunca foram 4 agentes ociosos — são 4 gates cheios simultâneos, e esse
+guarda já existe.
+
+| agente | task | kind | runtime | `cmd` no despacho | desfecho |
+|---|---|---|---|---|---|
+| enginedoor | t-a8e1f7 | chore (p1) | claude | `claude` | — |
+| driftwatch | t-1322b5 | bug (p1) | grok | `grok` | — |
+| briefstrip | t-fe9fca | bug | codex | `codex -c model_reasoning_effort=medium` | — |
+| claimplural | t-66c4d7 | bug | codex | `codex -c model_reasoning_effort=medium` | — |
+
+### Por que o quarto slot foi codex `medium`
+
+Escolha minha, com razão registrada em vez de gosto. `medium` é a única configuração com
+amostra real neste arquivo — n=4 antes desta onda, todas entregas limpas. Grok segue sem
+eixo de effort confirmado, e chutar flag é o defeito que a t-d501fc registrou. Claude ficou
+no trabalho que precisava de mais cuidado: o `enginedoor` PROVA outra entrega, e o brief
+dele proíbe tocar no código que está provando.
+
+### O que esta onda já mediu, antes de qualquer entrega
+
+**Irmãos negociaram superfície entre si, sem passar por mim.** Às 15:33 o `briefstrip`
+tocou a campainha do `claimplural`: "I will edit coordination-continuity.ts and its focused
+tests for t-fe9fca. Please flag any overlap before I start." Um minuto depois o
+`claimplural` respondeu nomeando o próprio escopo (`src/bridge/tools.ts`) e confirmando que
+não colidem.
+
+Isso é a instrução "no brief, nomeie o que os outros agentes tocam" (regra 10) produzindo
+coordenação direta em vez de arbitragem pelo coordenador. Primeira ocorrência observada. Os
+dois vizinhos estavam em `src/bridge/tools.ts` e `src/bridge/tools/` — arquivos diferentes,
+diretório próximo, que é exatamente o caso em que a regra 26 diz que arquivos disjuntos não
+são superfícies disjuntas.
+
+**Um agente refutou o escopo da MINHA task, e o achado era maior.** Abri a t-fe9fca só sobre
+a seção derivada do continuity. O `briefstrip` mediu o ciclo completo e viu o corpo crescer
+303→445 bytes mesmo com o sufixo removido: o envelope de metadados também é emitido pelo
+produto e também volta como narrativa. Ao responder, enumerei e achei QUATRO emissores, não
+dois — o pior deles é o prefixo `STALE:`, que persistido faz um brief recém-escrito afirmar
+para sempre que está atrasado.
+
+Sexta correção de agente sobre mim nas ondas J–R.
+
+### A entrega da 0.63.0 verificada em produção nesta onda
+
+Os quatro doorbells desta onda carregam `summary` e `pointer`. Antes do reload eram 0 de
+2091. O conserto da t-167b5c (spec 493) está vivo, e a evidência é a coordenação acima:
+sem o texto no registro, aquelas duas mensagens teriam sido só "alguém tocou a campainha".
