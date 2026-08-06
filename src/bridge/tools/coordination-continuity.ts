@@ -1,7 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import type { ContinuityMeta } from "../../continuity/ContinuityStore.js";
 import { listPendingApprovalRequests } from "../approvalRequest.js";
-import { removedContinuityReferences, renderContinuity, renderDerivedOpenWork } from "../../continuity/presentation.js";
+import {
+  decomposeContinuityRead,
+  removedContinuityReferences,
+  renderContinuity,
+  renderMissingContinuity,
+} from "../../continuity/presentation.js";
 import { type BridgeDeps, AGENT_NAME, contextRenewalRequestRefusal, fail, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void {
@@ -27,8 +33,7 @@ export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void 
         if (!selfActor.name) return fail(new Error("get_continuity requires a resolvable agent identity"));
         const brief = deps.continuity.read(selfActor.name);
         if (!brief) {
-          const openWork = renderDerivedOpenWork(selfActor.name, deps.tasks.listRaw(), deps.pins.list());
-          return ok(`(no continuity brief yet — create one with set_continuity once your goal/state are clear)\n\n${openWork}`);
+          return ok(renderMissingContinuity(selfActor.name, deps.tasks.listRaw(), deps.pins.list()));
         }
         return ok(renderContinuity({
           agent: selfActor.name,
@@ -68,13 +73,17 @@ export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void 
         if (!selfActor.name) return fail(new Error("set_continuity requires a resolvable agent identity"));
         const self = selfActor.name;
         let previousBody = "";
+        let previousMeta: ContinuityMeta | undefined;
         try {
-          previousBody = deps.continuity.read(self)?.body ?? "";
+          const previousBrief = deps.continuity.read(self);
+          previousBody = previousBrief?.body ?? "";
+          previousMeta = previousBrief?.meta;
         } catch {
           // Drop detection is advisory. A malformed old brief must not prevent ContinuityStore.write recovery.
         }
-        const removed = removedContinuityReferences(previousBody, content);
-        const res = deps.continuity.write(self, content, {
+        const authoredContent = decomposeContinuityRead(content, previousMeta);
+        const removed = removedContinuityReferences(previousBody, authoredContent);
+        const res = deps.continuity.write(self, authoredContent, {
           updatedBy: "agent",
           status,
           sourceActivitySeq: source_activity_seq ?? deps.currentActivitySeq?.(self),
