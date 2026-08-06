@@ -9,12 +9,12 @@ via real production usage acceptance, not a written A/B (maintainer decision, se
 
 
 - [x] STYLEGUIDE: two-app rule + link spec 410; no new editor `main.tsx` without `WEBVIEW_SURFACES` entry.
-- [x] Extend `WebviewSurface` in `src/webview/surfaces.ts` (editorHome / cockpitSectionId / retiredInFavorOf as needed) + update `webviewConvention.test.ts` — **no parallel inventory test file**.
+- [x] Extend `WebviewSurface` in `src/webview/surfaces.ts` (hostKind / cockpitSectionId / retiredInFavorOf as needed) + update `webviewConvention.test.ts` — **no parallel inventory test file**.
 - [x] Section module interface + shell wrapper (`PageChrome` + page pad).
 - [x] **Implement lazy section `import()` loader in Phase A** (required before Phase B).
 - [x] Document/enforce eager `cockpit.js` **≤ 350 KB** through Phase B (assert or PR size note + fail policy). Enforced by `cockpitBundleBudget.test.ts`.
 - [x] Harden section restore: exact S; unknown → `overview` + unit test.
-- [x] Map commands → `openCockpit({ section })` for native; leave standalone while `editorHome=standalone`.
+- [x] Map commands → `openCockpit({ section })` for native; leave standalone while `hostKind=standalone`.
 - [x] **Pilot = Approvals:** in-tree section body; single open path; drop dual `ApprovalPanel` route when ready; stop always-on approval.css co-load when section inactive.
 - [x] Pilot updates `WEBVIEW_SURFACES` (+ serializers) in the same PR.
 - [x] Visual QA pilot vs Fleet; Evidence/Verdict in `notes.md`. Closed 2026-07-22 via production-usage acceptance (no formal A/B recorded) — see notes.md's "Phase E close-out".

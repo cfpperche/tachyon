@@ -54,7 +54,7 @@ Approvals — dual `tachyon.openApprovals` vs cockpit section is the proof targe
 
 ## Phase A implementation (2026-07-19)
 
-- `WEBVIEW_SURFACES.editorHome` + `cockpitSectionId` (Approvals = legacy-redirect → approvals).
+- `WEBVIEW_SURFACES.hostKind` + `cockpitSectionId` (Approvals = legacy-redirect → approvals).
 - Multi-instance tagged `standalone-multi` (activity/handoff/probes/task-detail).
 - `resolveCockpitSection` + unit tests; unknown → overview.
 - Cockpit build: ESM + splitting (`dist/webview/cockpit.js` ~22KB eager; section chunks under `dist/webview/chunks/`).
@@ -71,7 +71,7 @@ Approvals — dual `tachyon.openApprovals` vs cockpit section is the proof targe
 - Audited Phase A/E/Verification checkboxes against actual code state after D3 (the last studio)
   landed: foundation, lazy loader, bundle budget, dead-bundle cleanup, and every convention/kit/
   pattern test were already shipped/green — only the checkboxes were stale bookkeeping.
-- Found and fixed one real drift during the audit: `WebviewEditorHome`'s `"standalone-multi"` (the
+- Found and fixed one real drift during the audit: `WebviewHostKind`'s `"standalone-multi"` (the
   multi-instance thin-host exception for task detail/handoff/probes) had been dead since Phase C
   closed it, but the type union and `docs/STYLEGUIDE.md` still described it as available. Removed
   the union member (the invariant is compiler-enforced now) and corrected STYLEGUIDE.md. Landed `43164ebb`.
@@ -99,7 +99,7 @@ Approvals — dual `tachyon.openApprovals` vs cockpit section is the proof targe
   target, `main.tsx`, `WEBVIEW_SURFACES` row, and dev-harness route all kept existing/building
   regardless — the exact "dead bundle" class Phase E's own task line was supposed to catch. Retired
   all four, matching every other panel's shape; also dropped `legacy-redirect` + the paired
-  `cockpitSectionId` field (Approvals was the only user) from `WebviewEditorHome`/`WebviewSurface`.
+  `cockpitSectionId` field (Approvals was the only user) from `WebviewHostKind`/`WebviewSurface`.
   Landed `70c7524f`.
 - **Cookbook:** added `cookbook.md` (the section/studio recipe, distilled from 7 real applications —
   Approvals + 6 studios). Landed `c973b8fc`.

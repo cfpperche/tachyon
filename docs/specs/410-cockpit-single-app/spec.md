@@ -14,7 +14,7 @@ What SURVIVES, because 485 kept it rather than inherited it:
 
 - **The sidebar is still the other app**, and still not absorbed. That half of "two apps" was never
   the contested half.
-- **`WEBVIEW_SURFACES` as the manifest** (spec 279 + this spec's `editorHome`) is not only intact,
+- **`WEBVIEW_SURFACES` as the manifest** (spec 279 + this spec's `hostKind`) is not only intact,
   it carries more: 485 added `posture` (`conform`/`extend`/`replace`), so a surface must now DECLARE
   its relationship to the shared shell and an undeclared departure fails the build.
 - **The CSS co-load pattern and its parity guards** kept working through all twenty migrations and
@@ -36,7 +36,7 @@ inventory built from the manifest ever listed them, and 485 discovered them only
 that into a test rather than a paragraph.
 
 **Closure:** 2026-07-24 — Phases B–E complete (`tasks.md`): foundation guard extends `WEBVIEW_SURFACES`
-(`editorHome` field) rather than a parallel manifest; every Phase B/C/D surface (Approvals, Runtime
+(`hostKind` field) rather than a parallel manifest; every Phase B/C/D surface (Approvals, Runtime
 Ops, Validations, Plugins, tmux inspector, Board, task detail/handoff/probes as subroutes, 7
 studios) migrated to one host path with the old panel retired or dropped from the manifest; sidebar
 stayed a separate bundle throughout; `cockpitBundleBudget.test.ts` and `webviewConvention.test.ts`

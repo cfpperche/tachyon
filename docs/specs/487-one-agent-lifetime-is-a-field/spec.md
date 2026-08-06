@@ -58,8 +58,9 @@ Nothing states that invariant — the structure makes it unrepresentable.
 
 Unifying converts a structural guarantee into a declared one, and this repository has repeatedly
 found declared guarantees unenforced: triage that calls itself a "human decision" any agent can make
-(`t-f33480`), a refusal that names a `confirmDirty` parameter no tool accepts (`t-eb25ba`), an
-`editorHome` field that names the host and was twice read as the destination (`t-198615`). Structural
+(`t-f33480`), a refusal that names a `confirmDirty` parameter no tool accepts (`t-eb25ba`), and the
+ownership field now named `hostKind`, whose former name was twice read as the destination
+(`t-198615`). Structural
 beats declared, every time, and this spec is proposing to give one up.
 
 So the boundary is not a detail to preserve — it is the deliverable. It must come back as something

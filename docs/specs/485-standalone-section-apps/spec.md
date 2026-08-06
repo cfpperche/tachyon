@@ -150,16 +150,16 @@ Two limits on this rule, both deliberate:
   detail and edit, keyed by pin id; the **list stays in the sidebar**, which is what a sidebar is for.
 
   This corrects a claim made a paragraph earlier in this spec's own history. Pin was first excluded
-  on the grounds that its detail is a sidebar surface, read off `editorHome: "sidebar"` in
-  `WEBVIEW_SURFACES`. That field names the surface's HOST FILE, not where the panel opens:
+  on the grounds that its detail is a sidebar surface, read off the then-named ownership field's
+  `"sidebar"` value in `WEBVIEW_SURFACES`. That field classifies the surface's HOST, not where the panel opens:
   `SidebarPrototype.ts:439` calls `createWebviewPanel(PIN_PREVIEW_VIEW_TYPE, …, ViewColumn.Active)`.
   A pin detail is **already an editor tab**. So unifying detail and edit moves nothing about where a
   human reads a pin — it is the same consolidation task gets, not a larger one.
 
   Two consequences ride along. `studio-edit(pin)` currently returns to `returnRoute ?? overview`
   because it had no detail route to return to; under one app that return target becomes the app's own
-  read mode. And the manifest's `editorHome` is proven ambiguous — a field read twice in this session
-  as "where it opens" when it means "who hosts it". Worth a rename, filed separately.
+  read mode. And the manifest's former field name was proven ambiguous — read twice in this session
+  as "where it opens" when it meant "who hosts it". It is now named `hostKind`.
 
 Also correcting the record: this spec's Open questions claim "the only live standalone editor panel
 is `AgentPanePanel`". There are more — `SidebarPrototype.ts:439` (pin preview), `plugins/ui/host.ts`

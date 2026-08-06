@@ -21,10 +21,10 @@ describe("resolveCockpitSection (spec 410)", () => {
   });
 });
 
-describe("WEBVIEW_SURFACES editorHome (spec 410 / 279)", () => {
-  it("every surface declares editorHome", () => {
-    const missing = WEBVIEW_SURFACES.filter((s) => !s.editorHome).map((s) => s.viewId);
-    expect(missing, `missing editorHome: ${missing.join(", ")}`).toEqual([]);
+describe("WEBVIEW_SURFACES hostKind (spec 410 / 279)", () => {
+  it("every surface declares hostKind", () => {
+    const missing = WEBVIEW_SURFACES.filter((s) => !s.hostKind).map((s) => s.viewId);
+    expect(missing, `missing hostKind: ${missing.join(", ")}`).toEqual([]);
   });
 
   // t-610705 (Phase E cleanup, 2026-07-22) — two tests that used to live here are gone, not just
@@ -33,7 +33,7 @@ describe("WEBVIEW_SURFACES editorHome (spec 410 / 279)", () => {
   // "Approvals is legacy-redirect into cockpit approvals" (Approvals' manager is a pure redirect stub
   // with no createWebviewPanel call left — same shape as every other retired panel, it just hadn't
   // dropped out of WEBVIEW_SURFACES yet). Both `standalone-multi` and `legacy-redirect` (+ the
-  // `cockpitSectionId` field it paired with) were removed from `WebviewEditorHome`/`WebviewSurface`
+  // `cockpitSectionId` field it paired with) were removed from `WebviewHostKind`/`WebviewSurface`
   // itself, so both invariants are compiler-enforced now — a stronger guarantee than a runtime
   // filter/lookup assertion.
 });
