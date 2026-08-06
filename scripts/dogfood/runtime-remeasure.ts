@@ -77,11 +77,6 @@ function have(cmd: string, args: string[]): boolean {
   try { execFileSync(cmd, args, { stdio: "pipe", timeout: 15_000 }); return true; } catch { return false; }
 }
 
-function skip(reason: string): never {
-  console.log(`DOGFOOD SKIP — ${reason}`);
-  process.exit(2);
-}
-
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -352,8 +347,50 @@ function print(results: DimensionResult[], installed: string): void {
   console.log("This command never blocks. A CHANGED line is a fact for a human to act on.");
 }
 
+function unavailableResults(reason: string): DimensionResult[] {
+  const unavailable = (result: Omit<DimensionResult, "observed" | "verdict" | "reason">): DimensionResult => ({
+    ...result,
+    observed: "not measured",
+    verdict: "not-measured",
+    reason,
+  });
+  return [
+    unavailable({
+      id: "codex-config-enums",
+      title: "codex config rejection enums",
+      anchor: "src/config/codexNativeConfigProjection.ts:294",
+      recordedVersion: CODEX_MEASURED_CLI_VERSION,
+      recorded: `approval_policy values: ${CODEX_APPROVAL_POLICIES.join(", ")}; sandbox_mode values: ${CODEX_SANDBOX_MODES.join(", ")}`,
+    }),
+    unavailable({
+      id: "codex-full-auto",
+      title: "codex refuses --full-auto",
+      anchor: "src/webview/formLogic.ts:65",
+      recordedVersion: "codex-cli 0.146.0",
+      recorded: "rejected; the chip list omits it",
+    }),
+    unavailable({
+      id: "codex-directory-trust",
+      title: "codex directory trust is exact-path",
+      anchor: "src/harness/HarnessManager.ts:2291",
+      recordedVersion: "codex-cli 0.146.0",
+      recorded: "a child of a trusted directory still asks; argv `-c` cannot grant trust",
+    }),
+    unavailable({
+      id: "codex-memory",
+      title: "codex native memory suppression",
+      anchor: "src/runtime/adapters/codexMemory.ts",
+      recordedVersion: `codex-cli ${CODEX_MEMORY_MEASURED_VERSION}`,
+      recorded: "--disable memories suppresses an otherwise injected planted marker",
+    }),
+  ];
+}
+
 async function main(): Promise<number> {
-  if (!have("codex", ["--version"])) skip("codex is not installed on this host, so nothing was measured.");
+  if (!have("codex", ["--version"])) {
+    print(unavailableResults("the codex binary is unavailable on PATH."), "unavailable");
+    return 0;
+  }
   const installed = normalizeCliVersion(
     spawnSync("codex", ["--version"], { encoding: "utf8", timeout: 15_000 }).stdout ?? "",
   ) ?? "unknown";
@@ -372,8 +409,8 @@ async function main(): Promise<number> {
   try {
     results.push(measureConfigEnums(probeHome, installed));
     results.push(measureFullAuto(probeHome));
-    results.push(measureMemory(base));
     results.push(await measureTrust(base));
+    results.push(measureMemory(base));
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

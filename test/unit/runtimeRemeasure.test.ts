@@ -184,5 +184,22 @@ describe("summarize", () => {
     ]);
     expect(totals).toEqual({ holds: 1, changed: 1, "not-measured": 1 });
   });
-});
 
+  it("keeps the requested four-dimension report explicit", () => {
+    const row = (id: string, verdict: "holds" | "not-measured") => ({
+      id,
+      title: id,
+      anchor: id,
+      recordedVersion: "v",
+      recorded: "r",
+      observed: "o",
+      verdict,
+    });
+    expect(summarize([
+      row("config", "holds"),
+      row("full-auto", "holds"),
+      row("trust", "holds"),
+      row("memory", "not-measured"),
+    ])).toEqual({ holds: 3, changed: 0, "not-measured": 1 });
+  });
+});
