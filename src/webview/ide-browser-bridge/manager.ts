@@ -27,6 +27,12 @@ import {
   tailDmChat,
   type DmChatEvent,
 } from "./designModeChat.js";
+import {
+  matchDmChatReplyToWait,
+  mintDmChatTurnId,
+  waitPollAgent,
+  type DmChatTurnWait,
+} from "./designModeChatTurn.js";
 
 export type DesignModeState = {
   on: boolean;
@@ -49,9 +55,12 @@ export class IdeBrowserBridgeManager {
   private pickHandling = false;
   private onDesignModeChanged: ((state: DesignModeState) => void) | null = null;
   private sessionEndSub: vscode.Disposable | null = null;
-  private chatPending = false;
-  /** Agent observed as busy (working/throttled/needs-input) at least once this wait. */
-  private chatSawBusy = false;
+  /**
+   * Outstanding human-send → agent-reply wait (t-181925 / C-06).
+   * Identity is turnId + target agent at send time — not the current UI selection.
+   * A single slot is fine; clearing it on any reply was the defect.
+   */
+  private chatWait: DmChatTurnWait | null = null;
   private chatReplyTimer: ReturnType<typeof setTimeout> | null = null;
   private chatPollTimer: ReturnType<typeof setInterval> | null = null;
   private chatIdleGraceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -465,43 +474,48 @@ export class IdeBrowserBridgeManager {
       ? formatDesignModePickForAgent(pick, { agent: this.designAgent })
       : undefined;
 
+    // Freeze target agent + mint turn id before send so a UI agent switch cannot retarget
+    // the in-flight wait, and late replies cannot clear a later turn's wait (t-181925).
+    const targetAgent = this.designAgent;
+    const turnId = mintDmChatTurnId();
     // Single wire format for free-text and pick+ask turns.
     const prompt = formatDmChatPrompt({
-      agent: this.designAgent,
+      agent: targetAgent,
       text,
       pageUrl: this.cdp.url,
       workspaceRoot: this.workspaceRoot,
       pickContext,
+      turnId,
     });
     try {
       // Submit first — engine agent.input probes composer (t-348c9a). Only then record chat UI.
-      await ws.activity.sendAgentInput(this.designAgent, prompt, true);
+      await ws.activity.sendAgentInput(targetAgent, prompt, true);
       const userEv = await appendDmChatEvent(this.workspaceRoot, {
         kind: "message",
         role: "user",
         text: displayText,
-        activeAgent: this.designAgent,
+        activeAgent: targetAgent,
       });
       await this.cdp.pushDesignModeChat({ type: "message", event: userEv });
-      await this.pushTyping(true, this.designAgent, "sent");
+      await this.pushTyping(true, targetAgent, "sent");
       this.log.appendLine(
-        `[design-mode] chat → ${this.designAgent}${pick ? " +selection" : ""}: ${text.slice(0, 80)}`,
+        `[design-mode] chat → ${targetAgent} turn=${turnId}${pick ? " +selection" : ""}: ${text.slice(0, 80)}`,
       );
       // Consume attach after a successful send so the next message is clean unless they re-pick.
       if (pick) {
         this.lastPick = null;
         await this.cdp.pushDesignModeChat({ type: "selection", clear: true, consumed: true });
       }
-      this.beginChatReplyWait();
+      this.beginChatReplyWait(targetAgent, turnId);
     } catch (err) {
       this.clearChatReplyWait();
       const msg = err instanceof Error ? err.message : String(err);
-      await this.pushTyping(false, this.designAgent);
+      await this.pushTyping(false, targetAgent);
       const draftish = /refused-composer|composer draft/i.test(msg);
       await this.cdp.pushDesignModeChat({
         type: "error",
         text: draftish
-          ? `${this.designAgent} has a draft in the terminal — clear or submit it, then retry Design Mode chat.`
+          ? `${targetAgent} has a draft in the terminal — clear or submit it, then retry Design Mode chat.`
           : `Send failed: ${msg}`,
       });
     }
@@ -583,10 +597,9 @@ export class IdeBrowserBridgeManager {
     });
   }
 
-  private beginChatReplyWait(): void {
+  private beginChatReplyWait(agent: string, turnId: string): void {
     this.clearChatReplyWait();
-    this.chatPending = true;
-    this.chatSawBusy = false;
+    this.chatWait = { turnId, agent, sawBusy: false };
     // Poll real agent attention — never assume "stopped" while still working.
     this.chatPollTimer = setInterval(() => {
       void this.pollChatAgentState();
@@ -595,8 +608,7 @@ export class IdeBrowserBridgeManager {
   }
 
   private clearChatReplyWait(): void {
-    this.chatPending = false;
-    this.chatSawBusy = false;
+    this.chatWait = null;
     if (this.chatReplyTimer) {
       clearTimeout(this.chatReplyTimer);
       this.chatReplyTimer = null;
@@ -612,13 +624,18 @@ export class IdeBrowserBridgeManager {
   }
 
   private async pollChatAgentState(): Promise<void> {
-    if (!this.chatPending) return;
-    const agent = this.designAgent;
+    const wait = this.chatWait;
+    if (!wait) return;
+    // Poll the agent this turn was sent to — not this.designAgent (agent switch must not retarget).
+    const agent = waitPollAgent(wait, this.designAgent) ?? wait.agent;
+    const turnId = wait.turnId;
     const { state, running } = await this.readAgentAttention(agent);
+    // Wait may have been cleared or superseded while we awaited attention.
+    if (!this.chatWait || this.chatWait.turnId !== turnId) return;
     const busy = running && (state === "working" || state === "throttled" || state === "needs-input");
 
     if (busy) {
-      this.chatSawBusy = true;
+      this.chatWait.sawBusy = true;
       if (this.chatIdleGraceTimer) {
         clearTimeout(this.chatIdleGraceTimer);
         this.chatIdleGraceTimer = null;
@@ -632,7 +649,7 @@ export class IdeBrowserBridgeManager {
     }
 
     // Still waiting for the agent to pick up the turn (not busy yet).
-    if (!this.chatSawBusy) {
+    if (!this.chatWait.sawBusy) {
       await this.pushTyping(true, agent, "sent");
       return;
     }
@@ -643,20 +660,23 @@ export class IdeBrowserBridgeManager {
       await this.pushTyping(true, agent, "working"); // brief grace still shows typing
       this.chatIdleGraceTimer = setTimeout(() => {
         this.chatIdleGraceTimer = null;
-        void this.onChatTurnEndedWithoutReply(agent, state, running);
+        void this.onChatTurnEndedWithoutReply(turnId, agent, state, running);
       }, 4_000);
     }
   }
 
   private async onChatTurnEndedWithoutReply(
+    turnId: string,
     agent: string,
     state: string,
     running: boolean,
   ): Promise<void> {
-    if (!this.chatPending) return;
+    // Same turn only — a newer send or a matching reply must not get an honest-timeout lie.
+    if (!this.chatWait || this.chatWait.turnId !== turnId) return;
     const now = await this.readAgentAttention(agent);
+    if (!this.chatWait || this.chatWait.turnId !== turnId) return;
     if (now.running && (now.state === "working" || now.state === "throttled" || now.state === "needs-input")) {
-      this.chatSawBusy = true;
+      this.chatWait.sawBusy = true;
       await this.pushTyping(true, agent, now.state === "needs-input" ? "needs-input" : "working");
       return;
     }
@@ -668,7 +688,7 @@ export class IdeBrowserBridgeManager {
         : `${agent} is ${state}`;
     const sys = await appendDmChatEvent(this.workspaceRoot, {
       kind: "system",
-      text: `${detail}. Call design_mode_chat_reply({ text }) so the panel updates — or open the terminal.`,
+      text: `${detail}. Call design_mode_chat_reply({ text, turnId: "${turnId}" }) so the panel updates — or open the terminal.`,
       activeAgent: agent,
     });
     await this.pushTyping(false, agent, "idle");
@@ -678,23 +698,33 @@ export class IdeBrowserBridgeManager {
   /**
    * Ingest a plain agent reply from Bridge tool `design_mode_chat_reply`.
    * Happy path is tool-only; marker unwrap is not the product path.
+   * Bound to the outstanding wait by host turn id (t-181925 / C-06).
    */
   async ingestChatReply(
     text: string,
     source: "tool" | "markers" | "activity" = "tool",
     agent?: string,
+    turnId?: string,
   ): Promise<{ ok: true; event: DmChatEvent } | { ok: false; error: string }> {
     const body = text.trim();
     if (!body) return { ok: false, error: "empty reply" };
-    // Prefer active Design Mode agent; optional name only when it matches a known running peer
-    // (ignore spoof / stale names from the tool param).
-    let who = this.designAgent.trim() || "agent";
+
+    const pending = this.chatWait;
+    const match = matchDmChatReplyToWait(pending, { turnId, agent });
+    if (!match.ok) {
+      this.log.appendLine(`[design-mode] chat reply rejected: ${match.error}`);
+      return { ok: false, error: match.error };
+    }
+
+    // Speaker: wait's agent when resolving a turn; otherwise active Design Mode agent.
+    // Optional name only when it matches that bound speaker (ignore spoof / stale names).
+    let who = (match.resolvesWait && pending ? pending.agent : this.designAgent).trim() || "agent";
     const claimed = agent?.trim();
     if (claimed && claimed === who) {
       who = claimed;
     } else if (claimed && claimed !== who) {
       this.log.appendLine(
-        `[design-mode] chat reply speaker '${claimed}' ignored — using active '${who}'`,
+        `[design-mode] chat reply speaker '${claimed}' ignored — using bound '${who}'`,
       );
     }
     // Tool path: plain body. Only unwrap if the entire payload is a clean marker wrap (legacy).
@@ -718,15 +748,18 @@ export class IdeBrowserBridgeManager {
     if (/^\s*\{[\s\S]*"tool_use"/.test(plain) || /^\s*tool_use\b/i.test(plain)) {
       return { ok: false, error: "reply looks like a tool payload — ignored" };
     }
+    const activeAgent = match.resolvesWait && pending ? pending.agent : this.designAgent;
     const ev = await appendDmChatEvent(this.workspaceRoot, {
       kind: "message",
       role: "agent",
       agent: who,
       text: plain.slice(0, 12_000),
-      activeAgent: this.designAgent,
+      activeAgent,
       source: effectiveSource,
     });
-    this.clearChatReplyWait();
+    if (match.resolvesWait) {
+      this.clearChatReplyWait();
+    }
     try {
       await this.pushTyping(false, who, "idle");
       await this.cdp.pushDesignModeChat({ type: "message", event: ev });
@@ -735,7 +768,9 @@ export class IdeBrowserBridgeManager {
         `[design-mode] push chat reply failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    this.log.appendLine(`[design-mode] chat reply ← ${who} (${effectiveSource})`);
+    this.log.appendLine(
+      `[design-mode] chat reply ← ${who} (${effectiveSource})${turnId ? ` turn=${turnId}` : ""}`,
+    );
     return { ok: true, event: ev };
   }
 
@@ -878,7 +913,8 @@ export class IdeBrowserBridgeManager {
         const body = await readJson(req);
         const text = typeof body.text === "string" ? body.text : "";
         const agent = typeof body.agent === "string" ? body.agent : undefined;
-        const result = await this.ingestChatReply(text, "tool", agent);
+        const turnId = typeof body.turnId === "string" ? body.turnId : undefined;
+        const result = await this.ingestChatReply(text, "tool", agent, turnId);
         if (!result.ok) {
           json(400, { ok: false, error: result.error });
           return;

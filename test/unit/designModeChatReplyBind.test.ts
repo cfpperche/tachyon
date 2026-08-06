@@ -1,0 +1,117 @@
+/**
+ * t-181925 / C-06 — manager wires turn binding into ingestChatReply.
+ *
+ * Pre-fix defect: any reply cleared the single global wait (late reply after a
+ * new send, or after an agent switch, could resolve the wrong turn). These tests
+ * exercise the production door on IdeBrowserBridgeManager.
+ */
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import * as vscode from "vscode";
+import { IdeBrowserBridgeManager } from "../../src/webview/ide-browser-bridge/manager.js";
+import { tailDmChat } from "../../src/webview/ide-browser-bridge/designModeChat.js";
+
+/** Private fields/methods reached only from these binding tests (t-181925). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MgrHarness = any;
+
+function fakeLog(): vscode.OutputChannel {
+  return {
+    appendLine: () => {},
+    append: () => {},
+    clear: () => {},
+    show: () => {},
+    hide: () => {},
+    dispose: () => {},
+    name: "test",
+    replace: () => {},
+  } as unknown as vscode.OutputChannel;
+}
+
+describe("designMode chat reply turn binding (manager, t-181925)", () => {
+  let root: string;
+  let mgr: MgrHarness;
+
+  beforeEach(() => {
+    // Constructor subscribes to debug session end; unit mock has no debug export.
+    (vscode as unknown as { debug: unknown }).debug = {
+      onDidTerminateDebugSession: () => ({ dispose() {} }),
+      onDidStartDebugSession: () => ({ dispose() {} }),
+      activeDebugSession: undefined,
+      startDebugging: async () => false,
+      stopDebugging: async () => {},
+    };
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "dm-turn-mgr-"));
+    mgr = new IdeBrowserBridgeManager(root, fakeLog());
+  });
+
+  afterEach(async () => {
+    try {
+      await mgr.stop();
+    } catch {
+      /* ignore */
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it("late reply for a prior turn does not resolve the current wait", async () => {
+    // Human sent turn-1, then turn-2 — wait is for turn-2.
+    mgr.beginChatReplyWait("alice", "dm-turn-2");
+    expect(mgr.chatWait?.turnId).toBe("dm-turn-2");
+
+    const late = await mgr.ingestChatReply(
+      "answer that belonged to turn 1",
+      "tool",
+      "alice",
+      "dm-turn-1",
+    );
+    expect(late.ok).toBe(false);
+    if (!late.ok) expect(late.error).toMatch(/does not match pending turn 'dm-turn-2'/);
+    // Wait still outstanding — this is the whole fix.
+    expect(mgr.chatWait?.turnId).toBe("dm-turn-2");
+    expect(tailDmChat(root, 10).items).toHaveLength(0);
+
+    const ok = await mgr.ingestChatReply("answer for turn 2", "tool", "alice", "dm-turn-2");
+    expect(ok.ok).toBe(true);
+    expect(mgr.chatWait).toBeNull();
+    const tail = tailDmChat(root, 10);
+    expect(tail.items).toHaveLength(1);
+    expect(tail.items[0]).toMatchObject({ role: "agent", text: "answer for turn 2", agent: "alice" });
+  });
+
+  it("reply without turnId is rejected while a wait is outstanding", async () => {
+    mgr.beginChatReplyWait("alice", "dm-turn-9");
+    const bare = await mgr.ingestChatReply("orphan body", "tool", "alice");
+    expect(bare.ok).toBe(false);
+    if (!bare.ok) expect(bare.error).toMatch(/turnId required/i);
+    expect(mgr.chatWait?.turnId).toBe("dm-turn-9");
+  });
+
+  it("agent switch does not retarget the in-flight wait poll target", async () => {
+    mgr.beginChatReplyWait("alice", "dm-turn-5");
+    mgr.designAgent = "bob"; // UI switch mid-flight
+    const seen: string[] = [];
+    mgr.readAgentAttention = async (agent: string) => {
+      seen.push(agent);
+      return { state: "working", running: true };
+    };
+    await mgr.pollChatAgentState();
+    expect(seen).toEqual(["alice"]);
+    expect(mgr.chatWait).toMatchObject({ turnId: "dm-turn-5", agent: "alice", sawBusy: true });
+  });
+
+  it("matching reply clears wait; subsequent orphan reply does not invent a second resolve", async () => {
+    mgr.beginChatReplyWait("alice", "dm-turn-4");
+    const first = await mgr.ingestChatReply("done", "tool", "alice", "dm-turn-4");
+    expect(first.ok).toBe(true);
+    expect(mgr.chatWait).toBeNull();
+
+    const second = await mgr.ingestChatReply("extra", "tool", "alice", "dm-turn-4");
+    expect(second.ok).toBe(true);
+    // Still no wait — orphan records but does not clear anything that is not there.
+    expect(mgr.chatWait).toBeNull();
+    expect(tailDmChat(root, 10).items).toHaveLength(2);
+  });
+});

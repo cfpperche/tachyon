@@ -168,18 +168,27 @@ export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void 
           IDE_BROWSER_SCOPE +
           "Post a plain-language reply into the Design Mode chat panel. " +
           "Required when the human messaged you from Design Mode — the panel only updates via this tool. " +
+          "Pass turnId from the Design Mode prompt so the reply binds to that send (not a later one). " +
           "Plain answer only: no tool narration, no JSON dumps, no terminal-only reply.",
         inputSchema: {
           text: z.string().min(1).max(12_000).describe("Plain answer for the human chat panel"),
+          turnId: z
+            .string()
+            .min(1)
+            .max(120)
+            .optional()
+            .describe(
+              "Host turn id from the Design Mode prompt (Turn id: dm-turn-…). Required while a chat wait is outstanding so a late reply cannot clear another turn",
+            ),
           agent: z
             .string()
             .min(1)
             .max(120)
             .optional()
-            .describe("Ignored if it does not match the Design Mode active agent; speaker defaults to that agent"),
+            .describe("Ignored if it does not match the bound turn agent / Design Mode active agent; speaker defaults to that agent"),
         },
       },
-      async ({ text, agent }) => {
+      async ({ text, agent, turnId }) => {
         try {
           // Prefer authenticated caller name when available (ignore spoofed speaker).
           const callerName =
@@ -188,6 +197,7 @@ export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void 
           const result = await ideReq("/design-mode/chat-reply", {
             text,
             ...(speaker ? { agent: speaker } : {}),
+            ...(turnId ? { turnId } : {}),
           });
           if (!result.ok) return fail(new Error(result.error || "design_mode_chat_reply failed"));
           return ok(JSON.stringify(result.data, null, 2));
