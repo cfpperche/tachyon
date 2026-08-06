@@ -806,6 +806,9 @@ async function confirmAndRemoveWorktree(
     rec.tachyonCreatedBranch
       ? vscode.l10n.t("Branch: {0} (created by Tachyon)", rec.branch)
       : vscode.l10n.t("Branch: {0} (pre-existing — will be kept)", rec.branch),
+    vscode.l10n.t(
+      "Tachyon activity and pane transcripts are deleted. Runtime-native caches may remain and are not a uniform archive.",
+    ),
   ];
   if (dirty > 0) lines.push(vscode.l10n.t("⚠ {0} uncommitted change(s) will be lost", dirty));
   if (st.aheadOfBase > 0) lines.push(vscode.l10n.t("⚠ {0} commit(s) ahead of base, {1} unpushed — the branch is kept unless you confirm again", st.aheadOfBase, st.unpushed));
@@ -3520,10 +3523,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (outcome === "kept") return; // declined or failed worktree removal: destroy nothing else
         }
       } else if (!forceArg) {
+        const retention = vscode.l10n.t(
+          "Tachyon activity and pane transcripts are deleted. Runtime-native caches may remain and are not a uniform archive.",
+        );
         const effects = temporary
           ? (hasSession
-            ? vscode.l10n.t("This kills its tmux session and deletes its saved state.")
-            : vscode.l10n.t("This deletes its saved state."))
+            ? vscode.l10n.t("This kills its tmux session and deletes its saved state. {0}", retention)
+            : vscode.l10n.t("This deletes its saved state. {0}", retention))
           : (hasSession
             ? vscode.l10n.t("This removes it from tachyon.yml, kills its tmux session, and deletes its saved state.")
             : vscode.l10n.t("This removes it from tachyon.yml and deletes its saved state."));

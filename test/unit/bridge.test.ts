@@ -104,7 +104,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // t-75e9c7 — 76 → 77: agent_touched_files, the worktree-diff read that replaces the coordinator's
   // hand-written "who's touching what" list.
   // t-167b5c — 77 → 78: read_notices, the durable read door onto .tachyon/doorbells.jsonl (spec 493).
-  it("exposes exactly the 78 canonical tools, including the explicit Terminal operation", async () => {
+  // t-1926ce — 78 → 79: read-only orphan process reporting for deleted managed worktrees.
+  it("exposes exactly the 79 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -183,9 +184,14 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "wait_for_agent",
       "wait_for_output",
       "worktree_hygiene",
+      "worktree_process_hygiene",
       "write_input",
       "write_tachyon_config",
     ]);
+    const description = (name: string) => tools.find((tool) => tool.name === name)?.description ?? "";
+    expect(description("kill_agent")).toContain("Runtime-native caches may remain");
+    expect(description("dismiss_agent")).toContain("Tachyon activity and pane transcripts are deleted");
+    expect(description("worktree_process_hygiene")).toContain("does not terminate reported processes automatically");
   });
 
   // Legacy generated guard: it("exposes exactly the 60 tools (17 agent ...")

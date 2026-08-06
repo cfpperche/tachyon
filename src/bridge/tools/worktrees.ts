@@ -86,6 +86,24 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
+    "worktree_process_hygiene",
+    {
+      description:
+        "List processes whose cwd points into a deleted Tachyon worktree for this workspace. " +
+        "This report is read-only. Tachyon does not terminate reported processes automatically.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        if (!deps.managedWorktrees) return fail(new Error("managed worktrees are not available on this Bridge"));
+        return ok(JSON.stringify(deps.managedWorktrees.processHygiene(), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
     "get_worktree",
     {
       description: "Get one managed worktree by id or absolute path.",

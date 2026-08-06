@@ -49,6 +49,7 @@ import {
   type ManagedWorktreeKind,
   upsertManagedEntry,
 } from "./managedWorktree.js";
+import { scanOrphanedWorktreeProcesses, type OrphanProcessHygieneReport } from "./orphanProcessHygiene.js";
 
 export interface ManagedWorktreeServiceOpts {
   workspaceRoot: string;
@@ -132,6 +133,12 @@ export class ManagedWorktreeService {
 
   private storePath(): string {
     return managedWorktreeStorePath(this.opts.workspaceRoot);
+  }
+
+  /** Read-only process residue report for this workspace's managed worktree namespace. */
+  processHygiene(procRoot = "/proc"): OrphanProcessHygieneReport {
+    const root = path.join(resolveBase(this.opts.getSettings()), this.opts.wsHash);
+    return scanOrphanedWorktreeProcesses(root, procRoot);
   }
 
   private load() {
