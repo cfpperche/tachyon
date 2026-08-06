@@ -712,5 +712,6 @@
   "unattested — the roster and the host authority disagree. {0}": "unattested — o roster e a autoridade do host discordam. {0}",
   "unprojectable — the profile and the runtime configuration disagree. {0}": "unprojectable — o perfil e a configuração do runtime discordam. {0}",
   "unlisted-profile — a profile is on disk and the roster does not list it. {0}": "unlisted-profile — há um perfil em disco e o roster não o lista. {0}",
-  "stranded-authority — a host authority is left and the agent is gone. {0}": "stranded-authority — sobrou uma autoridade do host e o agente não existe mais. {0}"
+  "stranded-authority — a host authority is left and the agent is gone. {0}": "stranded-authority — sobrou uma autoridade do host e o agente não existe mais. {0}",
+  "{0} — full detail in Output → {1}": "{0} — detalhe completo em Output → {1}"
 }

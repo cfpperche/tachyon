@@ -18,7 +18,14 @@ cd "$(dirname "$0")/.."
 # directory (including route/resolveSection/model/missionVm/taskDetailVm/activityFeed/studioIds) are pure
 # logic and must STAY vscode-free. A directory-wide allow would let them acquire a vscode import in
 # silence, which is the regression this guard exists to catch.
-SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runtimeOps/openRuntimeOps\.ts|workspace/(VsCodeHost|notify|legacyVsCodeSettings)\.ts|cockpit/(studioRegistry|taskStudioDomain|pinStudioDomain|agentStudioDomain)\.ts)'
+#
+# t-74274c added `workspace/shellDiagnosticLog.ts`, the shell's durable failure log. It is shell for the
+# same reason `notify.ts` beside it in this list is: both ARE the notification surface rather than users
+# of one. An `OutputChannel` has no engine-side existence to hide behind a port — it is a VS Code Output
+# panel entry, created by `vscode.window`, and a port over it would be a port with exactly one possible
+# implementation and no second caller. The engine already has its own way to report; this is where the
+# shell writes what a toast cannot hold.
+SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runtimeOps/openRuntimeOps\.ts|workspace/(VsCodeHost|notify|legacyVsCodeSettings|shellDiagnosticLog)\.ts|cockpit/(studioRegistry|taskStudioDomain|pinStudioDomain|agentStudioDomain)\.ts)'
 
 # Match every way to pull in vscode: static import (either quote style), require, and dynamic import().
 VSCODE_IMPORT='from ['"'"'"]vscode['"'"'"]|require\(['"'"'"]vscode['"'"'"]\)|import\(['"'"'"]vscode['"'"'"]\)'
