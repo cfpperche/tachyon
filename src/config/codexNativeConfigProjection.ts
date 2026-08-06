@@ -287,9 +287,13 @@ function parseSource(family: ScalarFamily, source: SourceName, text: string | un
  * `granular` appears in the parser's list but is a newtype variant (a TOML table, not a scalar), so
  * it can never arrive here as a string — `typedValue` already rejects a table as "must be string".
  */
-const CODEX_MEASURED_CLI_VERSION = "codex-cli 0.145.0";
-const CODEX_APPROVAL_POLICIES = ["untrusted", "on-failure", "on-request", "never"] as const;
-const CODEX_SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
+/*
+ * Export the embedded record so runtime re-measurement compares against the values the projector
+ * actually enforces. Copying them into the probe would create a second record that can drift.
+ */
+export const CODEX_MEASURED_CLI_VERSION = "codex-cli 0.145.0";
+export const CODEX_APPROVAL_POLICIES = ["untrusted", "on-failure", "on-request", "never"] as const;
+export const CODEX_SANDBOX_MODES = ["read-only", "workspace-write", "danger-full-access"] as const;
 
 /**
  * Values that hand a canonical agent real authority, each gated behind the profile authorization

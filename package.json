@@ -952,6 +952,7 @@
     "verify:full:quiet": "node scripts/verify-full.mjs",
     "verify:prepare": "npm ci --ignore-scripts --prefer-offline --no-audit --no-fund && npm run build",
     "dogfood": "node scripts/dogfood/run.mjs",
+    "runtime:remeasure": "npm run dogfood -- runtime-remeasure",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "test:integration": "vscode-test",
     "vscode:prepublish": "npm run package:assert",
