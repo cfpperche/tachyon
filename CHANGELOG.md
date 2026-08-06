@@ -6,6 +6,41 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.63.0 — The engine starts on a local extension host
+
+### Fixed
+- **A packaged stable build now starts its engine on a local (non-remote) extension
+  host** (`t-d11d57`). `process.execPath` there is the VS Code binary, which is Electron,
+  and Electron does not start once copied out of its installation — activation died with
+  `EngineSupervisorError` after 12.8s, taking Board, Fleet and Activity with it. Tachyon
+  now detects Electron and resolves a real Node from `PATH`, validating each candidate by
+  running it: the probe requires `versions.node`, a null `versions.electron`, and the
+  candidate's own `process.execPath` to match, so a shim that execs something else is
+  rejected by behaviour rather than by name. Remote hosts already had a real Node and are
+  unchanged. When no Node is on `PATH` the failure is now a named
+  `NODE_RUNTIME_NOT_FOUND` with instructions instead of a timeout.
+- **The session panel no longer reports "nothing withheld" to a session that predates a
+  gate** (`t-d848e4`). It recomputed from today's lockfile, which answers what the next
+  spawn will do — not what this live session received. Sessions born before an install
+  now say so, with `restart it to receive the gate`.
+- A test asserted 32 unique draws from a 16-bit entropy budget, a ~0.76% false red per
+  run (`t-ad8d95`).
+
+### Added
+- **`settings.ideBrowser.enabled`** gates the Integrated Browser's human surface and
+  call-time execution, with first-use tips (`t-48ff4a`). Off by default. Tool
+  registration is deliberately NOT gated: MCP freezes the catalog at connect, so agents
+  born before the feature was enabled would otherwise never see the tools.
+- **`read_notices`** — a durable read door for `notify_agent` doorbells, so a busy
+  recipient can read what it missed instead of depending on having been idle when the
+  pane flushed (`t-167b5c`, spec 493).
+- `get_continuity` now derives your open tasks and pins at read time instead of asking
+  you to hand-copy them, and a stale brief leads with its lag (`t-c35335`).
+
+### Changed
+- `role: custom` in a canonical profile is refused instead of accepted and delivered
+  empty (`t-7d8744`). It promised instructions that canonical profiles cannot declare.
+
 ## 0.56.36 — Memory-aware heavy gates (t-019dac)
 
 ### Added
