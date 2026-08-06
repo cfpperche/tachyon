@@ -201,6 +201,13 @@ export const strings: CockpitStrings & WorktreesStrings & ExecutionGraphStrings 
     "One host or glob per line (example.com, *.herokuapp.com). Empty = all hosts. Writes settings.companion.allowedHosts in tachyon.yml.",
   companionAllowedHostsPlaceholder: "example.com\n*.herokuapp.com",
   companionAllowedHostsSave: "Save allowed hosts",
+  ideBrowserTitle: "Integrated Browser",
+  ideBrowserHint: "VS Code editor browser and Design Mode. Opt in before the status-bar controls appear.",
+  ideBrowserBody:
+    "When enabled, the globe and Design Mode icons show on the status bar. Agents always see ide_browser_* tools; calls fail until you enable this and open the bridge.",
+  ideBrowserEnabled: "Enable Integrated Browser",
+  ideBrowserEnabledHelp:
+    "Writes settings.ideBrowser.enabled in tachyon.yml. Does not remove tools from the Bridge catalog.",
   idleNotifyTitle: "Idle agent notifications",
   idleNotifyHelp:
     "How long a child agent may sit idle before Tachyon notifies its parent. 1-10080 minutes (7 days). Writes settings.agentNotifications.idleAfterMinutes in tachyon.yml and applies on the next check — no restart.",

@@ -48,6 +48,7 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "config.notifications.idleAfterMinutes", "config.agent.rename", "config.agent.delete", "config.agent.promote", "config.command.delete", "config.runbook.delete",
   "config.companion.tabTools",
   "config.companion.allowedHosts",
+  "config.ideBrowser.enabled",
   "agent.fork", "agent.continue-task", "worktree.remove", "worktree.delete-branch", "worktree.forget-record", "worktree.remove-managed", "agent.verify", "agent.reanchor",
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
@@ -203,6 +204,8 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     action: z.literal("config.companion.allowedHosts"),
     hosts: z.array(z.string().max(253)).max(64),
   }).strict(),
+  /** SDD 488 F4 — human GA gate for Integrated Browser surface + call-time (tools stay listed). */
+  z.object({ action: z.literal("config.ideBrowser.enabled"), enabled: z.boolean() }).strict(),
   /**
    * t-585d5c — the idle-notification window, written from Control → Settings.
    *

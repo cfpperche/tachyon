@@ -9,6 +9,7 @@ import {
   deleteRunbook,
   runbookEntryLine,
   setCompanionTabTools,
+  setIdeBrowserEnabled,
   setCompanionLanAccess,
   setCompanionAllowedHosts,
   agentStanzaSourceSlice,
@@ -381,6 +382,20 @@ describe("setCompanionTabTools (SDD 414)", () => {
 
   it("refuses empty yml", () => {
     expect(() => setCompanionTabTools(undefined, true)).toThrow("existing tachyon.yml");
+  });
+});
+
+describe("setIdeBrowserEnabled (SDD 488 F4)", () => {
+  it("writes settings.ideBrowser.enabled true/false and stays loadable", () => {
+    const on = setIdeBrowserEnabled(YML, true).text;
+    expect(expectValid(on).settings.ideBrowser?.enabled).toBe(true);
+    expect(on).toMatch(/ideBrowser:[\s\S]*enabled:\s*true/);
+    const off = setIdeBrowserEnabled(on, false).text;
+    expect(expectValid(off).settings.ideBrowser?.enabled).toBe(false);
+  });
+
+  it("refuses empty yml", () => {
+    expect(() => setIdeBrowserEnabled(undefined, true)).toThrow("existing tachyon.yml");
   });
 });
 

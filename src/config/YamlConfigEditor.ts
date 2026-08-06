@@ -247,6 +247,20 @@ export function setCompanionTabTools(text: string | undefined, enabled: boolean)
 }
 
 /**
+ * SDD 488 F4 — set settings.ideBrowser.enabled (human Control / GA gate).
+ * Gates the human surface and call-time execution; does not remove ide_browser_* from the tool list.
+ * Requires an existing tachyon.yml. Persists explicit true/false so the opt-in is visible in the file.
+ */
+export function setIdeBrowserEnabled(text: string | undefined, enabled: boolean): EditResult {
+  if (text === undefined || text.trim().length === 0) {
+    throw new Error("create an agent first — Integrated Browser settings need an existing tachyon.yml");
+  }
+  const doc = load(text);
+  doc.setIn(["settings", "ideBrowser", "enabled"], enabled);
+  return { text: String(doc), warnings: [] };
+}
+
+/**
  * SDD 422 — set settings.companion.lanAccess (mobile Companion via Tailscale).
  * Persists explicit true/false so the opt-in is visible in tachyon.yml.
  */

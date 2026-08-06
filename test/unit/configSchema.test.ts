@@ -68,6 +68,22 @@ describe("tachyon.schema.json — settings.companion", () => {
   });
 });
 
+describe("tachyon.schema.json — settings.ideBrowser (SDD 488 F4)", () => {
+  it("publishes enabled + homeUrl; tools stay listed when disabled", () => {
+    const settings = schema.properties?.settings;
+    const ideBrowser = settings?.properties?.ideBrowser;
+    const enabled = ideBrowser?.properties?.enabled;
+    const homeUrl = ideBrowser?.properties?.homeUrl;
+
+    expect(ideBrowser).toMatchObject({ type: "object", additionalProperties: false });
+    expect(ideBrowser?.description).toMatch(/Integrated Browser/i);
+    expect(enabled).toMatchObject({ type: "boolean", default: false });
+    expect(enabled?.description).toMatch(/always remain registered|always remain listed|always listed|Tools always/i);
+    expect(homeUrl).toMatchObject({ type: "string", minLength: 1 });
+    expect(Object.keys(ideBrowser?.properties ?? {}).sort()).toEqual(["enabled", "homeUrl"]);
+  });
+});
+
 describe("tachyon.schema.json — settings.projectGuidance", () => {
   it("publishes the closed opt-in file-list contract without an implicit default", () => {
     const settings = schema.properties?.settings;

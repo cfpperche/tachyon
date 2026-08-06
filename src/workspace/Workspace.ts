@@ -5,6 +5,11 @@ import {
   partitionStoppedTemporaryResidue,
 } from "../agents/stoppedTemporaryResidue.js";
 import { ideBrowserRequest, isIdeBrowserBridgeAvailable } from "../ide-browser/client.js";
+import {
+  IDE_BROWSER_DISABLED_CODE,
+  IDE_BROWSER_DISABLED_ERROR,
+  isIdeBrowserEnabled,
+} from "../ide-browser/settings.js";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
@@ -1861,9 +1866,19 @@ export class Workspace {
         // Listed when settings.companion.tabTools is true; execution still requires a paired device.
         companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
         // Prototype: Integrated Browser (shell HTTP+CDP). Always wire request so tools stay listed;
-        // offline/instance-missing fails at call time. ideBrowserToolsEnabled kept for status probes.
+        // offline/instance-missing and settings.ideBrowser.enabled=false fail at call time (t-3cab05 / F4).
+        // Never gate registration on enabled or live instance — MCP freezes the catalog at connect.
         ideBrowserToolsEnabled: () => isIdeBrowserBridgeAvailable(this.workspaceRoot),
-        ideBrowserRequest: (route, body) => ideBrowserRequest(this.workspaceRoot, route, body),
+        ideBrowserRequest: (route, body) => {
+          if (!isIdeBrowserEnabled(this.config?.settings)) {
+            return Promise.resolve({
+              ok: false as const,
+              code: IDE_BROWSER_DISABLED_CODE,
+              error: IDE_BROWSER_DISABLED_ERROR,
+            });
+          }
+          return ideBrowserRequest(this.workspaceRoot, route, body);
+        },
         // Tab tools require a browser companion session (not mobile-only pair).
         companionBrowserPaired: () => this.companion.hasPairedKind("browser"),
         companionRefHints: (tabId, ref) => this.companionTabRefs.hintsFor(tabId, ref),

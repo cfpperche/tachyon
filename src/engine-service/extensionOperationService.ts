@@ -24,6 +24,7 @@ import {
   deleteRunbook,
   setCompanionTabTools,
   setCompanionAllowedHosts,
+  setIdeBrowserEnabled,
   setIdleAfterMinutes,
 } from "../config/YamlConfigEditor.js";
 import { isResumable } from "../resume/SessionLedger.js";
@@ -133,6 +134,8 @@ export async function executeExtensionQuery(
         baseUrl: workspace.companionBaseUrl(),
         baseUrls: workspace.companionBaseUrlCandidates(),
         lanAccess: workspace.config?.settings.companion?.lanAccess === true,
+        /** SDD 488 F4 — piggybacked so Settings can show the Integrated Browser gate without a second query. */
+        ideBrowserEnabled: workspace.config?.settings.ideBrowser?.enabled === true,
         engineLabel: path.basename(workspace.workspaceRoot) || "tachyon",
         devices,
       });
@@ -465,6 +468,12 @@ export async function executeExtensionCommand(
       // SDD 420 — optional host allowlist for user_browser_* (Control Settings).
       return configMutation(workspace, () => workspace.mutateConfig(
         (text) => setCompanionAllowedHosts(text, command.hosts),
+        () => onViewsChanged("agents"),
+      ));
+    case "config.ideBrowser.enabled":
+      // SDD 488 F4 — human surface + call-time gate; does not drop ide_browser_* from the catalog.
+      return configMutation(workspace, () => workspace.mutateConfig(
+        (text) => setIdeBrowserEnabled(text, command.enabled),
         () => onViewsChanged("agents"),
       ));
     case "config.notifications.idleAfterMinutes":

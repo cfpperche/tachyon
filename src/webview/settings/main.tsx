@@ -426,8 +426,9 @@ function CompanionPairOfferCard({
 
 export interface SettingsAppProps { model: CockpitModel; strings: CockpitStrings; pairOffer?: CompanionPairOffer; post: (action: CockpitAction | SettingsAction) => void; }
 export function SettingsApp({ model: m, strings: s, pairOffer, post }: SettingsAppProps) {
-  const p = { onOpenDoctor: () => post({type:"openDoctor"}), onOpenSettings: () => post({type:"openGlobalSettingsFile"}), onOpenConfigFile: (wsHash?: string) => post({type:"openConfigFile",wsHash}), onPost: post, onSetIdleAfterMinutes: (wsHash:string,minutes?:number|"never") => post({type:"setIdleAfterMinutes",wsHash,minutes}), onSetCompanionTabTools:(wsHash:string,enabled:boolean)=>post({type:"setCompanionTabTools",wsHash,enabled}), onSetCompanionAllowedHosts:(wsHash:string,hosts:string[])=>post({type:"setCompanionAllowedHosts",wsHash,hosts}), onIssueCompanionPairCode:(wsHash:string)=>post({type:"issueCompanionPairCode",wsHash}), onCopyText:(text:string)=>post({type:"copyText",text}), onUnpairCompanionDevice:(wsHash:string,deviceId:string)=>post({type:"unpairCompanionDevice",wsHash,deviceId}), companionPairOffer: pairOffer };
+  const p = { onOpenDoctor: () => post({type:"openDoctor"}), onOpenSettings: () => post({type:"openGlobalSettingsFile"}), onOpenConfigFile: (wsHash?: string) => post({type:"openConfigFile",wsHash}), onPost: post, onSetIdleAfterMinutes: (wsHash:string,minutes?:number|"never") => post({type:"setIdleAfterMinutes",wsHash,minutes}), onSetCompanionTabTools:(wsHash:string,enabled:boolean)=>post({type:"setCompanionTabTools",wsHash,enabled}), onSetIdeBrowserEnabled:(wsHash:string,enabled:boolean)=>post({type:"setIdeBrowserEnabled",wsHash,enabled}), onSetCompanionAllowedHosts:(wsHash:string,hosts:string[])=>post({type:"setCompanionAllowedHosts",wsHash,hosts}), onIssueCompanionPairCode:(wsHash:string)=>post({type:"issueCompanionPairCode",wsHash}), onCopyText:(text:string)=>post({type:"copyText",text}), onUnpairCompanionDevice:(wsHash:string,deviceId:string)=>post({type:"unpairCompanionDevice",wsHash,deviceId}), companionPairOffer: pairOffer };
     const companion = m.companion;
+    const ideBrowser = m.ideBrowser;
     const settingsWsHash = companion?.wsHash ?? m.control.workspaces[0]?.wsHash;
     const settingsWorkspace = m.control.workspaces.find((w) => w.wsHash === settingsWsHash) ?? m.control.workspaces[0];
     // Display path only — openConfigFile still resolves the live file through the host.
@@ -490,6 +491,52 @@ export function SettingsApp({ model: m, strings: s, pairOffer, post }: SettingsA
             * hint. Two cards for one authority taught the reader to check whether they differed. Its
             * one unique sentence — which knobs live in the yml — moved into the scope card's hint. */}
           {m.idleNotify ? <IdleNotifyField s={s} idle={m.idleNotify} onSave={p.onSetIdleAfterMinutes} /> : null}
+
+          {/* SDD 488 F4 — Integrated Browser human surface gate (tools stay always-registered). */}
+          <div class="ck-settings-block" data-testid="control-settings-ide-browser">
+            <h3 class="ck-settings-block-title">{s.ideBrowserTitle}</h3>
+            <WritesTo s={s} file="workspace" />
+            <p class="ck-settings-block-hint">{s.ideBrowserHint}</p>
+            {m.companionNeedsWorkspacePick ? (
+              <p class="ck-settings-block-body dim">{s.companionPickWorkspace}</p>
+            ) : ideBrowser ? (
+              <>
+                <p class="ck-settings-block-body">{s.ideBrowserBody}</p>
+                <label class="ck-settings-toggle">
+                  <input
+                    type="checkbox"
+                    checked={ideBrowser.enabled}
+                    data-testid="ide-browser-enabled-toggle"
+                    onChange={(e) =>
+                      p.onSetIdeBrowserEnabled(ideBrowser.wsHash, (e.target as HTMLInputElement).checked)
+                    }
+                  />
+                  <span>
+                    <strong>{s.ideBrowserEnabled}</strong>
+                    <span class="ck-settings-toggle-help">{s.ideBrowserEnabledHelp}</span>
+                  </span>
+                </label>
+              </>
+            ) : settingsWsHash ? (
+              <>
+                <p class="ck-settings-block-body">{s.ideBrowserBody}</p>
+                <label class="ck-settings-toggle">
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    data-testid="ide-browser-enabled-toggle"
+                    onChange={(e) =>
+                      p.onSetIdeBrowserEnabled(settingsWsHash, (e.target as HTMLInputElement).checked)
+                    }
+                  />
+                  <span>
+                    <strong>{s.ideBrowserEnabled}</strong>
+                    <span class="ck-settings-toggle-help">{s.ideBrowserEnabledHelp}</span>
+                  </span>
+                </label>
+              </>
+            ) : null}
+          </div>
 
           <div class="ck-settings-block" data-testid="control-settings-companion">
             <h3 class="ck-settings-block-title">{s.companionTitle}</h3>
