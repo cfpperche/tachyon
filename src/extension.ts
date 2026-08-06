@@ -1080,12 +1080,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // spec 237 — the Preact webview sidebar is THE Tachyon view (the native tree was retired). refreshAll
   // pushes the live fleet to it on every state change; it's registered below.
   let openPinDocumentFromSidebar: ((wsHash: string, pinId: string) => void) | undefined;
+  // t-41117e — continueFleetTask is defined later; wire through a late-bound ref like pin open.
+  let continueTaskFromSidebar: ((fromName: string, toName: string, wsHash: string) => Promise<void>) | undefined;
   const sidebarProto = new SidebarPrototypeProvider(
     context.extensionUri,
     () => workspaces().map((ws) => ws.sidebar),
     context.globalState,
     (context.extension.packageJSON as { version?: string }).version,
     (wsHash, pinId) => openPinDocumentFromSidebar?.(wsHash, pinId),
+    (fromName, toName, wsHash) => {
+      if (!continueTaskFromSidebar) return Promise.reject(new Error("continue task is not ready"));
+      return continueTaskFromSidebar(fromName, toName, wsHash);
+    },
   );
   context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
@@ -1642,7 +1648,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     return result.forgotten === true ? undefined : `record not found or refused: ${id}`;
   };
-  // SDD 485 D7 — the Continue picker moved with Fleet; this remains the authoritative host action.
+  // SDD 485 D7 / t-41117e — Continue picker is webview-local; this remains the authoritative host action
+  // for both the Fleet tab and the sidebar Agents roster.
   const continueFleetTask = async (fromName: string, toName: string, wsHash: string): Promise<void> => {
     const ws = byHash(wsHash);
     if (!ws) throw new Error("no Tachyon workspace for that hash");
@@ -1663,6 +1670,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       ? vscode.l10n.t("Continued {0} → {1} ({2})", fromName, toName, handoff)
       : vscode.l10n.t("Continued {0} → {1}", fromName, toName));
   };
+  continueTaskFromSidebar = continueFleetTask;
   const runtimeConfigDeps: RuntimeConfigDeps = {
     buildSnapshot: (wsHash) => {
       const ws = byHash(wsHash);
@@ -2407,17 +2415,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     overviewPanels.open(ws.wsHash); return true;
   };
 
-  // SDD 485 D7 — Fleet is one dashboard per immutable project. Its source is the same scoped
-  // buildCockpitModel slice Control used; every action receives the panel project, never a row fallback.
+  // SDD 485 D7 / t-41117e — Fleet is one dashboard per immutable project. Source is the same
+  // FleetVM as the sidebar Agents tab (nine statuses). Actions use the panel project, never a row fallback.
   const fleetPanels = new FleetPanelManager(context.extensionUri, {
-    collect: engineHost.collect,
+    loadFleet: async (project) => {
+      const ws = byHash(project);
+      if (!ws) throw new Error(`workspace ${project} is not attached`);
+      return ws.sidebar.loadSidebar();
+    },
     openBoard: (project) => openBoard(project),
-    start: async (name, project) => { await vscode.commands.executeCommand("tachyon.spawnAgentItem", { agentName: name, workspaceHash: project }); },
-    stop: async (name, project) => { await vscode.commands.executeCommand("tachyon.stopAgentItem", { agentName: name, workspaceHash: project }); },
-    terminal: async (name, project) => { await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, project); },
-    activity: async (name, project) => { await vscode.commands.executeCommand("tachyon.openAgentActivity", name, project); },
-    probes: async (name, project) => { await vscode.commands.executeCommand("tachyon.openProbes", project, name); },
-    edit: async (name, project) => { await vscode.commands.executeCommand("tachyon.editAgentStudioItem", { agentName: name, workspaceHash: project }); },
+    runAction: async (id, name, project, contextValue) => {
+      const ws = byHash(project);
+      if (!ws) throw new Error(`workspace ${project} is not attached`);
+      if (id === "inspect") {
+        await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, project);
+        return;
+      }
+      if (id === "openPane") {
+        await vscode.commands.executeCommand("tachyon.openAgentPaneItem", name, project);
+        return;
+      }
+      if (id === "activity") {
+        await vscode.commands.executeCommand("tachyon.openAgentActivity", name, project);
+        return;
+      }
+      if (id === "probes") {
+        await vscode.commands.executeCommand("tachyon.openProbes", project, name);
+        return;
+      }
+      const ACTION_CMD: Partial<Record<string, string>> = {
+        stop: "tachyon.stopAgentItem",
+        kill: "tachyon.killAgentItem",
+        restart: "tachyon.restartAgentItem",
+        restartNew: "tachyon.restartAgentNewItem",
+        restartForceNew: "tachyon.restartAgentForceNewItem",
+        spawn: "tachyon.spawnAgentItem",
+        resume: "tachyon.resumeAgentItem",
+        fork: "tachyon.forkAgentItem",
+        verify: "tachyon.verifyAgentItem",
+        reanchor: "tachyon.reanchorAgentItem",
+        reinjectContinuity: "tachyon.reinjectContinuityItem",
+        injectPrompt: "tachyon.injectPromptTemplateItem",
+        promote: "tachyon.promoteAgentItem",
+        reviewWorktree: "tachyon.reviewWorktreeItem",
+        createPr: "tachyon.createWorktreePrItem",
+        edit: "tachyon.editAgentStudioItem",
+        editYaml: "tachyon.editAgentItem",
+        clone: "tachyon.cloneAgentItem",
+        remove: "tachyon.deleteAgentItem",
+      };
+      const cmd = ACTION_CMD[id];
+      if (!cmd) return;
+      await vscode.commands.executeCommand(
+        cmd,
+        ...ws.sidebar.shellCommandArgs({ kind: "agent", agentName: name, contextValue }),
+      );
+    },
     continueTask: continueFleetTask,
   }, undefined, controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => fleetPanels.dispose() });

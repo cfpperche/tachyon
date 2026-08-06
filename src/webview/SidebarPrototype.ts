@@ -41,7 +41,7 @@ export interface PinPreviewPanelState {
 
 /** Messages the webview posts to the host. */
 type SidebarMsg = {
-  type?: "ready" | "action" | "section" | "global" | "pipeline" | "setSort" | "setCollapsed" | "switchControlWorkspace";
+  type?: "ready" | "action" | "section" | "global" | "pipeline" | "setSort" | "setCollapsed" | "switchControlWorkspace" | "continueTask";
   id?: string;
   agent?: string;
   op?: string;
@@ -55,6 +55,9 @@ type SidebarMsg = {
   sectionId?: string; // global openControl: the Control section a launcher tile targets (t-6e2952)
   mode?: string; // setSort: a SortMode
   keys?: unknown; // setCollapsed: full collapsed key list
+  /** t-41117e — Continue task picker result (fromName → toName). */
+  fromName?: string;
+  toName?: string;
 };
 
 /** spec 242 — persisted sidebar sort prefs (global per user, per section). */
@@ -65,7 +68,7 @@ const COLLAPSED_KEYS_KEY = "tachyon.sidebar.collapsed";
 /** Maps a webview action id → the existing VS Code command (which takes a duck-typed {ws, agentName,
  *  contextValue} item — the handlers only read those fields). `inspect` is special (it takes (agent, hash),
  *  not an item). */
-const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "openPane" | "activity" | "probes">, string> = {
+const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "openPane" | "activity" | "probes" | "continueTask">, string> = {
   stop: "tachyon.stopAgentItem",
   kill: "tachyon.killAgentItem",
   restart: "tachyon.restartAgentItem",
@@ -107,6 +110,8 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     /** t-38c2a1 — extension package version shown in the sidebar header. */
     private readonly appVersion?: string,
     private readonly openPinDocument?: (wsHash: string, pinId: string) => void,
+    /** t-41117e — same host continue path the Fleet tab uses (picker is webview-local). */
+    private readonly continueTask?: (fromName: string, toName: string, wsHash: string) => Promise<void>,
   ) {
     this.scopeSubscription = controlWorkspaceScope.onDidChange(() => void this.push());
   }
@@ -326,6 +331,14 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       return void this.push();
     }
     if (m?.type === "action" && m.id && m.agent) return this.runAction(m.id as ActionId, m.agent, m.hash);
+    // t-41117e — webview ContinuePicker already filtered candidates; host runs the same continue path as Fleet.
+    if (m?.type === "continueTask" && m.fromName && m.toName) {
+      const ws = this.wsFor(m.hash);
+      if (!ws || !this.continueTask) return;
+      return void this.continueTask(m.fromName, m.toName, ws.wsHash).then(undefined, (err) => {
+        notify(err instanceof Error ? err.message : String(err), "error");
+      });
+    }
     if (m?.type === "global") {
       // The "new …" studios pick the target folder themselves (pickFolderForCreate) → no ws/hash needed.
       const STUDIO: Record<string, string> = {
@@ -510,10 +523,13 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     if (id === "openPane") { void vscode.commands.executeCommand("tachyon.openAgentPaneItem", agent, ws.wsHash); return; }
     if (id === "activity") { void vscode.commands.executeCommand("tachyon.openAgentActivity", agent, ws.wsHash); return; } // spec 238
     if (id === "probes") { void vscode.commands.executeCommand("tachyon.openProbes", ws.wsHash, agent); return; } // spec 322 — this agent's probes only
+    // t-41117e — picker is webview-local; host only accepts continueTask via the continueTask message.
+    if (id === "continueTask") return;
     const fleet = this.lastFleets.find((f) => f.folder?.hash === ws.wsHash);
     const vm = fleet?.agents.find((x) => x.name === agent) ?? fleet?.terminals.find((x) => x.name === agent);
+    const cmd = ACTION_CMD[id];
     void vscode.commands.executeCommand(
-      ACTION_CMD[id],
+      cmd,
       ...ws.shellCommandArgs({ kind: "agent", agentName: agent, contextValue: vm ? ctxOf(vm) : "agent-running" }),
     ).then(undefined, (err) => {
       console.log(`[tachyon] sidebar command failed id=${id} agent=${agent}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);

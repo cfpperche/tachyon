@@ -427,13 +427,22 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => worktreesModelMessage(vm as never),
   },
-  // SDD 485 D7 — Fleet keeps the same fixture, now delivered through its own app envelope. Both
-  // linked shared sheets are production parity: ck-card-list and ck-mono respectively.
+  // SDD 485 D7 / t-41117e — Fleet reuses the sidebar AgentsRoster (nine statuses). Fixture is a FleetVM
+  // (agent-states), not CockpitModel.fleet. CSS matches production: sidebar.css paints AgentRow.
   fleet: {
     bundle: "/dist/webview/fleet.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css"],
+    cssLinks: [
+      CODICON,
+      DESIGN_SYSTEM,
+      "/dist/webview/control-typography.css",
+      "/dist/webview/sidebar.css",
+      "/dist/webview/engine-workspace.css",
+    ],
     frame: { w: 880, h: 900 },
-    fixtures: { default: cockpitFixtures.fleet },
+    fixtures: {
+      default: sidebarFixtures["agent-states"],
+      "agent-states": sidebarFixtures["agent-states"],
+    },
     module: true,
     makeMessage: (vm) => fleetModelMessage(vm as never),
   },

@@ -26,6 +26,7 @@ import {
   filterAgentsByStatus,
   type AgentStatusFilter,
 } from "./agentStatusFilter";
+import { ContinuePicker, defaultContinuePickerStrings } from "../shared/agents/ContinuePicker";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -55,6 +56,8 @@ export interface Dispatch {
    *  passes it to `tachyon.openControl`, which opens OR navigates the one Control panel. */
   global: (op: GlobalOp, wsHash?: string, sectionId?: string) => void;
   pipeline: (op: string, name: string, nodeId?: string, wsHash?: string) => void;
+  /** t-41117e — Continue task after the webview picker chose a stopped Saved Agent destination. */
+  continueTask?: (fromName: string, toName: string, wsHash?: string) => void;
   /** spec 242 — persist the chosen sort for a status list (global per-user, per-section). */
   setSort?: (section: "agents" | "terminals", mode: SortMode) => void;
   /** Persist all collapsed sidebar group keys. Keys include workspace hashes when workspace-scoped. */
@@ -77,7 +80,8 @@ interface SidebarCtx {
   openMore: (items: MenuItem[], x: number, y: number) => void;
 }
 const NOOP_CTX: SidebarCtx = { action: () => {}, section: () => {}, global: () => {}, pipeline: () => {}, openMore: () => {} };
-const DispatchCtx = createContext<SidebarCtx>(NOOP_CTX);
+/** Exported so the Fleet tab reuses the same row dispatch context (t-41117e). */
+export const DispatchCtx = createContext<SidebarCtx>(NOOP_CTX);
 
 /** Contextual "new …" studio per tab (opens the existing Studio command; it picks the folder itself). */
 const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
@@ -640,48 +644,64 @@ function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types
   );
 }
 
-function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort, activePinTag, onPinTag, metricsOpen, onToggleMetrics, agentFilter = "all" }: {
-  tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null; agentSort: SortMode; terminalSort: SortMode; activePinTag: string | null; onPinTag: (tag: string | null) => void;
-  /** spec 386 — scoped keys `${scope}:m:${agent}` that currently show resource detail lanes. */
+/**
+ * t-41117e — ONE agents roster implementation. Sidebar Agents tab and the Fleet editor tab both render this.
+ * Nine statuses come from AgentVM.status + AgentRow; never a running boolean.
+ */
+export function AgentsRoster({
+  fleet,
+  scope,
+  collapsed,
+  toggle,
+  flashName,
+  agentSort,
+  metricsOpen,
+  onToggleMetrics,
+  agentFilter = "all",
+}: {
+  fleet: FleetVM;
+  scope: string;
+  collapsed: Set<string>;
+  toggle: (k: string) => void;
+  flashName: string | null;
+  agentSort: SortMode;
   metricsOpen: Set<string>;
   onToggleMetrics: (agentName: string) => void;
-  /** t-eddf90 — session-local status bucket filter (Agents tab only). */
   agentFilter?: AgentStatusFilter;
 }) {
-  const d = useContext(DispatchCtx);
   // Collapse keys are scoped to the folder so multi-root groups with the same name don't collapse together.
   const k = (suffix: string) => `${scope}:${suffix}`;
-  if (tab === "Agents") {
-    // t-8354ae — while config is invalid, never show the empty-fleet placeholder as the sole signal
-    // (banner + ledger/LKG rows replace the "destroyed fleet" illusion).
-    // SDD 479 — a refused card template is reported HERE, beside the config banner, because this is
-    // where the consequence is: the cards below are the default layout, not the one that was written.
-    const banner = (
-      <>
-        {fleet.configError ? <ConfigErrorBanner err={fleet.configError} /> : null}
-        {fleet.cardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.cardTemplateRefusal} /> : null}
-        {fleet.personalCardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.personalCardTemplateRefusal} personal /> : null}
-      </>
-    );
-    // spec 242 — a flat, human-sorted list (default name-asc is stable: a status change only recolors the dot
-    // in place, no reflow). The dot + the header count-chips carry status; no status group headers.
-    if (!fleet.agents.length) {
-      return <>{banner}{fleet.configError ? <div class="empty">No agents in ledger or last-known-good snapshot</div> : <div class="empty">(no agents)</div>}</>;
-    }
-    // t-eddf90 — filter BEFORE sort/group so hierarchy rebuilds on the visible subset only (v1: no dimmed parents).
-    const visible = filterAgentsByStatus(fleet.agents, agentFilter);
-    if (!visible.length) {
-      return <>{banner}<div class="empty">No agents in this filter</div></>;
-    }
-    const sorted = sortRows(visible, agentSort, (a) => a.name);
-    // spec 304 — group a spawned agent's row next to its parent's; sortRows itself stays parent-unaware.
-    // spec 352/t-4eb8bf — declared ownership also nests visually, but runtime parent wins when both exist.
-    // spec 362/t-1b6ab0 — gated top-level delegations nest by delegator before declared owner.
-    const grouped = groupByParent(sorted, (a) => a.name, agentGroupParent);
-    const collapsedAgents = new Set([...collapsed].filter((key) => key.startsWith(k("a:"))).map((key) => key.slice(k("a:").length)));
-    const rows = agentHierarchyRows(grouped, collapsedAgents);
-    return <>
-      {banner}
+  // t-8354ae — while config is invalid, never show the empty-fleet placeholder as the sole signal
+  // (banner + ledger/LKG rows replace the "destroyed fleet" illusion).
+  // SDD 479 — a refused card template is reported HERE, beside the config banner, because this is
+  // where the consequence is: the cards below are the default layout, not the one that was written.
+  const banner = (
+    <>
+      {fleet.configError ? <ConfigErrorBanner err={fleet.configError} /> : null}
+      {fleet.cardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.cardTemplateRefusal} /> : null}
+      {fleet.personalCardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.personalCardTemplateRefusal} personal /> : null}
+    </>
+  );
+  // spec 242 — a flat, human-sorted list (default name-asc is stable: a status change only recolors the dot
+  // in place, no reflow). The dot + the header count-chips carry status; no status group headers.
+  if (!fleet.agents.length) {
+    return <>{banner}{fleet.configError ? <div class="empty">No agents in ledger or last-known-good snapshot</div> : <div class="empty">(no agents)</div>}</>;
+  }
+  // t-eddf90 — filter BEFORE sort/group so hierarchy rebuilds on the visible subset only (v1: no dimmed parents).
+  const visible = filterAgentsByStatus(fleet.agents, agentFilter);
+  if (!visible.length) {
+    return <>{banner}<div class="empty">No agents in this filter</div></>;
+  }
+  const sorted = sortRows(visible, agentSort, (a) => a.name);
+  // spec 304 — group a spawned agent's row next to its parent's; sortRows itself stays parent-unaware.
+  // spec 352/t-4eb8bf — declared ownership also nests visually, but runtime parent wins when both exist.
+  // spec 362/t-1b6ab0 — gated top-level delegations nest by delegator before declared owner.
+  const grouped = groupByParent(sorted, (a) => a.name, agentGroupParent);
+  const collapsedAgents = new Set([...collapsed].filter((key) => key.startsWith(k("a:"))).map((key) => key.slice(k("a:").length)));
+  const rows = agentHierarchyRows(grouped, collapsedAgents);
+  return <>
+    {banner}
+    <div class="agents-roster" data-testid="agents-roster">
       {rows.map((r) => (
         <AgentRow
           key={r.agent.name}
@@ -698,7 +718,35 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
           cardTemplate={fleet.cardTemplate}
         />
       ))}
-    </>;
+    </div>
+  </>;
+}
+
+function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, terminalSort, activePinTag, onPinTag, metricsOpen, onToggleMetrics, agentFilter = "all" }: {
+  tab: TabId; fleet: FleetVM; scope: string; collapsed: Set<string>; toggle: (k: string) => void; flashName: string | null; agentSort: SortMode; terminalSort: SortMode; activePinTag: string | null; onPinTag: (tag: string | null) => void;
+  /** spec 386 — scoped keys `${scope}:m:${agent}` that currently show resource detail lanes. */
+  metricsOpen: Set<string>;
+  onToggleMetrics: (agentName: string) => void;
+  /** t-eddf90 — session-local status bucket filter (Agents tab only). */
+  agentFilter?: AgentStatusFilter;
+}) {
+  const d = useContext(DispatchCtx);
+  // Collapse keys are scoped to the folder so multi-root groups with the same name don't collapse together.
+  const k = (suffix: string) => `${scope}:${suffix}`;
+  if (tab === "Agents") {
+    return (
+      <AgentsRoster
+        fleet={fleet}
+        scope={scope}
+        collapsed={collapsed}
+        toggle={toggle}
+        flashName={flashName}
+        agentSort={agentSort}
+        metricsOpen={metricsOpen}
+        onToggleMetrics={onToggleMetrics}
+        agentFilter={agentFilter}
+      />
+    );
   }
   if (tab === "Terminals") {
     // spec 242 — flat human-sorted list (same machinery as Agents); terminals are managed entries with ai:false.
@@ -937,7 +985,8 @@ function CmdK({ fleets, selectedHash, onClose, onPick }: { fleets: FleetVM[]; se
 }
 
 interface MenuState { items: MenuItem[]; x: number; y: number }
-function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
+/** Exported for the Fleet tab shell (t-41117e) so overflow actions share one menu implementation. */
+export function MoreMenu({ menu, onClose }: { menu: MenuState | null; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const estimate = menu
     ? placeMoreMenu({
@@ -1178,6 +1227,8 @@ export function App({
   const [activePinTag, setActivePinTag] = useState<string | null>(null);
   /** t-eddf90/t-a9d1f2 — session-local Agents status filter (like pin tags; not host-persisted). */
   const [agentFilter, setAgentFilter] = useState<AgentStatusFilter>("all");
+  /** t-41117e — Continue task picker (webview-local; host only receives the chosen destination). */
+  const [continuePick, setContinuePick] = useState<string | null>(null);
   /**
    * t-72ff5a — the project in focus, chosen here and echoed by the host.
    *
@@ -1366,7 +1417,14 @@ export function App({
 
   // One curried bridge per folder — rows dispatch without knowing their wsHash; the closure routes it.
   const ctxFor = (hash?: string): SidebarCtx => ({
-    action: (id, agent) => dispatch?.action(id, agent, hash),
+    action: (id, agent) => {
+      // t-41117e — open the shared picker in-webview; do not post continueTask as a host command.
+      if (id === "continueTask") {
+        setContinuePick(agent);
+        return;
+      }
+      dispatch?.action(id, agent, hash);
+    },
     section: (op, id, extra) => dispatch?.section(op, id, extra, hash),
     global: (op) => dispatch?.global(op, hash),
     pipeline: (op, name, nodeId) => dispatch?.pipeline(op, name, nodeId, hash),
@@ -1518,6 +1576,18 @@ export function App({
                 </button>
               )}
               <button type="button" class="act" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
+              {tab === "Agents" && (
+                <button
+                  type="button"
+                  class="act"
+                  title="Open agents as editor tab"
+                  aria-label="Open agents as editor tab"
+                  data-testid="open-agents-tab"
+                  onClick={() => dispatch?.global("openControl", selectedHash, "fleet")}
+                >
+                  <Icon name="link-external" />
+                </button>
+              )}
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
             </span>
           </>;
@@ -1574,6 +1644,19 @@ export function App({
       </div>
       {open && <CmdK fleets={fleets} selectedHash={selectedHash} onClose={closeK} onPick={pick} />}
       <MoreMenu menu={menu} onClose={() => setMenu(null)} />
+      {continuePick && selected ? (
+        <ContinuePicker
+          agents={selected.agents}
+          fromName={continuePick}
+          strings={defaultContinuePickerStrings}
+          onClose={() => setContinuePick(null)}
+          onSelect={(toName) => {
+            const from = continuePick;
+            setContinuePick(null);
+            dispatch?.continueTask?.(from, toName, selectedHash);
+          }}
+        />
+      ) : null}
     </>
   );
 }
