@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   admitVitestRun,
   admitOrFallback,
+  previewVitestShare,
   sizeFromShare,
   vitestPoolMb,
   measureTreePssMb,
@@ -279,6 +280,86 @@ describe("vitest host budget (t-3ad4af)", () => {
     // agent over RAM nobody was ever going to touch.
     expect(sizeFromShare({ shareMb: POOL_MB, cpuCount: 24, workerMb: WORKER_MB, invocationMb: INVOCATION_MB, maxUsefulWorkers: 1 })).toBe(1);
     expect(sizeFromShare({ shareMb: POOL_MB, cpuCount: 24, workerMb: WORKER_MB, invocationMb: INVOCATION_MB })).toBe(16);
+  });
+
+  describe("previewVitestShare (t-7f9809 — display without claim)", () => {
+    const base = {
+      memory: HOST,
+      cpuCount: 24,
+      reserveMb: RESERVE_MB,
+      invocationMb: INVOCATION_MB,
+      workerMb: WORKER_MB,
+      measure: () => undefined as number | undefined,
+    };
+
+    it("matches what the next admit would receive, and never writes the ledger", () => {
+      const file = ledgerFile();
+      // One 16-worker claim leaves a reduced but still positive share for the next arrival.
+      const holder = admitVitestRun({
+        ...base,
+        label: "holder",
+        ledgerPath: file,
+        pid: liveProcess(),
+      });
+      expect(holder.ok).toBe(true);
+      if (holder.ok) expect(holder.workers).toBe(16);
+      const before = fs.readFileSync(file, "utf8");
+
+      const preview = previewVitestShare({ ...base, ledgerPath: file });
+      // HARD: consult must not claim.
+      expect(fs.readFileSync(file, "utf8")).toBe(before);
+
+      const next = admitVitestRun({
+        ...base,
+        label: "next",
+        ledgerPath: file,
+        pid: liveProcess(),
+      });
+
+      // THE GUARD: the number a display would show is the number a real run would get.
+      expect(preview.ok).toBe(next.ok);
+      expect(preview.workers).toBe(next.ok ? next.workers : 0);
+      expect(preview.siblingCount).toBe(1);
+      expect(preview.usedMb).toBeGreaterThan(0);
+      // Alone-sizing would still show 16; the sibling must have moved the needle.
+      expect(preview.workers).toBeLessThan(16);
+    });
+
+    it("reports workers=0 when the budget is spent (yes/no, not only magnitude)", () => {
+      const file = ledgerFile();
+      // Fill the pool with concurrent claims the same way a real multi-agent host does.
+      for (let i = 0; i < 10; i++) {
+        admitVitestRun({
+          ...base,
+          cpuCount: 8,
+          label: `fill${i}`,
+          ledgerPath: file,
+          pid: liveProcess(),
+        });
+      }
+      const before = fs.readFileSync(file, "utf8");
+      const preview = previewVitestShare({ ...base, ledgerPath: file });
+      expect(preview.ok).toBe(false);
+      expect(preview.workers).toBe(0);
+      expect(preview.siblingCount).toBeGreaterThan(0);
+      // HARD: preview must not claim.
+      expect(fs.readFileSync(file, "utf8")).toBe(before);
+      const refused = admitVitestRun({
+        ...base,
+        label: "too-late",
+        ledgerPath: file,
+        pid: liveProcess(),
+      });
+      expect(refused.ok).toBe(false);
+    });
+
+    it("alone on an empty ledger still yields the hard-cap machine share", () => {
+      const file = ledgerFile();
+      const preview = previewVitestShare({ ...base, ledgerPath: file });
+      expect(preview).toMatchObject({ ok: true, workers: 16, siblingCount: 0, usedMb: 0 });
+      // No ledger file is created by a pure consult against an empty path.
+      expect(fs.existsSync(file)).toBe(false);
+    });
   });
 
   it("holds the budget when SEPARATE PROCESSES size at the same moment", async () => {
