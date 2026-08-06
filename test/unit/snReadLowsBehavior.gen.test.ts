@@ -72,9 +72,10 @@ describe("container-generated delegation behavior", () => {
       // TaskStore's internal read sort and the list_tasks tool's listing sort. Assert both former
       // call sites now import the same exported comparator instead of each keeping their own copy.
       const taskStoreSrc = fs.readFileSync(path.join(__dirname, "../../src/tasks/TaskStore.ts"), "utf8");
-      const toolsSrc = fs.readFileSync(path.join(__dirname, "../../src/bridge/tools.ts"), "utf8");
+      // t-3b47ad — list_tasks lives in the tasks capability module.
+      const toolsSrc = fs.readFileSync(path.join(__dirname, "../../src/bridge/tools/tasks.ts"), "utf8");
       expect(taskStoreSrc).toMatch(/import\s*\{[^}]*compareTasksForListing[^}]*\}\s*from\s*["']\.\/listOrder\.js["']/);
-      expect(toolsSrc).toMatch(/import\s*\{[^}]*orderTaskViewsForListing[^}]*\}\s*from\s*["']\.\.\/tasks\/listOrder\.js["']/);
+      expect(toolsSrc).toMatch(/import\s*\{[^}]*orderTaskViewsForListing[^}]*\}\s*from\s*["']\.\.\/\.\.\/tasks\/listOrder\.js["']/);
       expect(taskStoreSrc).not.toMatch(/TASK_READ_STATUS_ORDER|compareTasksForRead\b/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

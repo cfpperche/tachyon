@@ -53,7 +53,12 @@ describe("container-generated delegation behavior", () => {
     const serviceSource = fs.readFileSync(path.join(process.cwd(), "src/engine-service/extensionOperationService.ts"), "utf8");
     expect(serviceSource).toContain('case "approval.resolve"');
     expect(serviceSource).toContain("await resolveApproval({");
-    const toolsSource = fs.readFileSync(path.join(process.cwd(), "src/bridge/tools.ts"), "utf8");
+    // t-3b47ad — approval tools live under tools/human-approvals.ts; absence of a resolve tool is a whole-surface check.
+    const toolsDir = path.join(process.cwd(), "src/bridge/tools");
+    const toolsSource = [
+      fs.readFileSync(path.join(process.cwd(), "src/bridge/tools.ts"), "utf8"),
+      ...fs.readdirSync(toolsDir).filter((f) => f.endsWith(".ts")).map((f) => fs.readFileSync(path.join(toolsDir, f), "utf8")),
+    ].join("\n");
     expect(toolsSource).toContain('"list_pending_approvals"');
     expect(toolsSource).not.toMatch(/registerTool\(\s*["'](?:resolve|approve|deny|decide)_?approval/i);
     expect(toolsSource).not.toMatch(/import\s*{[^}]*resolveApproval/);

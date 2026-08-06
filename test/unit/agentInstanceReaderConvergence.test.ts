@@ -34,7 +34,8 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
    * appearing beside them, which is exactly how the first three drifted apart from Fleet's answer.
    */
   it("the Bridge dismiss family asks the roster's resolved lifetime, and nothing beside it asks `declared`", () => {
-    const src = SOURCE("src/bridge/tools.ts");
+    // t-3b47ad — capability helpers live in tools/shared.ts; dismiss/kill handlers in tools/fleet.ts.
+    const src = SOURCE("src/bridge/tools/shared.ts") + "\n" + SOURCE("src/bridge/tools/fleet.ts");
     expect(src).toMatch(/const canDismiss = info\.lifetime === "temporary" && !info\.running;/);
     // t-28bf8f narrowed this hint with a further conjunct (it must not answer a worktree-release
     // refusal with "use dismiss_agent"), so the pin stops at the reader it is actually about. What it
@@ -56,7 +57,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
    * refusal was removed.
    */
   it("renames the refusal to the ratified vocabulary while keeping the old term findable", () => {
-    const source = SOURCE("src/bridge/tools.ts");
+    const source = SOURCE("src/bridge/tools/fleet.ts");
     expect(source).toContain("is a Saved Agent (declared in tachyon.yml)");
   });
 

@@ -521,7 +521,14 @@ describe("denying a Saved Agent proposal (SDD 482 phase 4C)", () => {
  */
 describe("approval is unreachable from the Bridge (SDD 482 phase 4C)", () => {
   it("no Bridge tool references the commit path", () => {
-    const tools = fs.readFileSync(path.resolve(__dirname, "../../src/bridge/tools.ts"), "utf8");
+    // t-3b47ad — scan the tools surface (orchestrator + capability modules), not only tools.ts.
+    const root = path.resolve(__dirname, "../../src/bridge");
+    const tools = [
+      fs.readFileSync(path.join(root, "tools.ts"), "utf8"),
+      ...fs.readdirSync(path.join(root, "tools")).filter((f) => f.endsWith(".ts")).map((f) =>
+        fs.readFileSync(path.join(root, "tools", f), "utf8"),
+      ),
+    ].join("\n");
     expect(tools).not.toContain("approveSavedAgentProposal");
     expect(tools).not.toContain("savedAgentProposalCommit");
     expect(tools).not.toContain("denySavedAgentProposal");
