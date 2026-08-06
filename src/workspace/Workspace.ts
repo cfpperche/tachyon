@@ -853,6 +853,9 @@ export class Workspace {
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
+      // t-8168a7 — list() carries Attention's real-turn latch. The manager is constructed before the
+      // monitor, but this thunk is first read after construction, when the monitor exists.
+      hasStartedTurn: (name) => this.monitor?.hasStartedTurn(name) ?? false,
       // SDD 480 — the seam that genuinely carries the id into the child's environment.
       ...(deps.recordExecution ? { recordExecution: deps.recordExecution } : {}),
       // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
@@ -1226,6 +1229,7 @@ export class Workspace {
         this.noticeQueue.clear(name);
         this.temporaryBackstop.reset(name);
         this.completionHints.clear(name);
+        this.monitor?.reset(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
         // termination, never a completion signal; consumed by the next observed death edge.
         await this.returnTaskClaimsForUnavailableAgent(name, `agent '${name}' was stopped`);
@@ -1248,6 +1252,7 @@ export class Workspace {
         this.terminals.close(name);
         this.temporaryBackstop.reset(name);
         this.completionHints.clear(name);
+        this.monitor?.reset(name);
       },
       // spec 210 — worktree isolation: resolve the cwd a session is born in.
       // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);

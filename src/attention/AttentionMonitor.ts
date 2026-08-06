@@ -164,6 +164,12 @@ interface Snapshot {
   authKey: string | null;
   /** t-a39c7d — finished turn not yet viewed by human (done = idle + unseen). */
   unseen: boolean;
+  /**
+   * t-8168a7 — latched once this pane produces non-composer output after its first observation,
+   * or already carries a measured in-flight activity signal on that observation. Unlike launch
+   * readiness, this answers whether a turn actually ran; it stays true across later idle periods.
+   */
+  hasStartedTurn: boolean;
   /** t-64f501 — epoch ms since the CURRENT matched pattern has been continuously recognized (near
    *  the bottom of) the tail, independent of contentSince: unrelated pane churn (e.g. a parallel
    *  tool still streaming output) must not reset this, or a genuine modal prompt would never
@@ -240,6 +246,17 @@ export class AttentionMonitor {
   /** t-47bfe8 — true once continuous inactivity has crossed STALL_AFTER_MS, cleared on new output. */
   isStalled(agent: string): boolean {
     return this.snaps.get(agent)?.stalled ?? false;
+  }
+
+  /** t-8168a7 — whether this tracked agent has produced evidence of a real turn. */
+  hasStartedTurn(agent: string): boolean {
+    return this.snaps.get(agent)?.hasStartedTurn ?? false;
+  }
+
+  /** A lifecycle boundary makes every pane-derived latch belong to the old incarnation. */
+  reset(agent: string): void {
+    this.snaps.delete(agent);
+    this.lastMatch.delete(agent);
   }
 
   /** t-47bfe8 — agents currently latched into the stalled flag (genuinely stuck: idle past the
@@ -408,6 +425,7 @@ export class AttentionMonitor {
 
       if (!snap) {
         const initialMatch = this.classifyForPrecedence(agent, content, settings.patterns);
+        const initialComposer = await this.composerSnapshot(agent, content);
         snap = {
           content,
           contentSince: now,
@@ -428,11 +446,18 @@ export class AttentionMonitor {
           authSince: null,
           authKey: null,
           unseen: false,
+          // A first capture can land mid-turn. Runtime activity chrome is positive evidence of work;
+          // the synthetic initial `working` state is not. A quiet empty prompt therefore remains false.
+          hasStartedTurn: this.hasActivitySignal(
+            agent,
+            content,
+            initialComposer.composerOccupied && initialComposer.composerEvidence,
+          ),
           matchSince: initialMatch ? now : null,
           matchKey: initialMatch ? initialMatch.pattern : null,
           lastWindowActivity: activityAt,
           lastCaptureAt: now,
-          ...await this.composerSnapshot(agent, content),
+          ...initialComposer,
         };
         this.snaps.set(agent, snap);
         continue;
@@ -481,6 +506,9 @@ export class AttentionMonitor {
         snap.lastTicksAt = null;
         snap.stalled = false;
         snap.stallNotified = false;
+        // Composer-only changes returned above: typing a draft is not starting a turn. Every other
+        // pane-output change is the production observation that work reached the runtime.
+        snap.hasStartedTurn = true;
         const composer = await this.composerSnapshot(agent, content);
         snap.composerOccupied = composer.composerOccupied;
         snap.composerEvidence = composer.composerEvidence;
@@ -638,7 +666,7 @@ export class AttentionMonitor {
     const prev = snap.state;
     const isNewTurnEdge = prev !== "working" && state === "working";
     // t-a39c7d — working→idle means a finished turn awaiting eyes; new working clears it.
-    if (prev === "working" && state === "idle") snap.unseen = true;
+    if (prev === "working" && state === "idle" && snap.hasStartedTurn) snap.unseen = true;
     if (state === "working") snap.unseen = false;
     snap.state = state;
     snap.stateSince = now;
