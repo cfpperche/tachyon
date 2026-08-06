@@ -740,7 +740,22 @@ export function prefersBracketedPaste(text: string): boolean {
 }
 
 /** Load-bearing — pane_dead_status (crash/exit detection) depends on it; not user-overridable. */
-const TMUX_RESERVED: Record<string, string> = { "remain-on-exit": "on" };
+/**
+ * Server options Tachyon owns outright — a workspace cannot override these, because both encode a
+ * promise the fleet depends on.
+ *
+ * `remain-on-exit: on` keeps a dead pane readable instead of collapsing the window, which is what
+ * makes a crashed agent inspectable after the fact.
+ *
+ * `exit-empty: off` (t-9713ff) keeps THIS server alive with zero sessions. tmux defaults it to `on`,
+ * and on 2026-08-06 the whole fleet plus the coordinator vanished between 13:19 and 13:26 — no OOM in
+ * `dmesg`, no systemd scope event, no engine restart, and the socket simply gone and remade. Six
+ * suspects were measured and none survived, so the CAUSE is still open (`t-9713ff`). This does not
+ * claim to be that cause: with `remain-on-exit on` a dead pane keeps its session, so a server holding
+ * sessions should never reach zero. It removes the class anyway. A single server hosting every agent
+ * must not be able to end itself as a side effect of arithmetic nobody watches.
+ */
+const TMUX_RESERVED: Record<string, string> = { "remain-on-exit": "on", "exit-empty": "off" };
 
 export class TmuxService {
   /** Effective server options ensured before every new-session (idempotent). */

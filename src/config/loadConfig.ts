@@ -1526,6 +1526,14 @@ export function parseConfig(yamlText: string): ParseResult {
               errors.push("settings.tmux: 'remain-on-exit' is reserved by Tachyon (crash detection depends on it)");
               continue;
             }
+            // t-9713ff — tmux defaults `exit-empty` to `on`, which lets a server end itself the moment
+            // it holds no sessions. One server hosts the whole fleet here, so that arithmetic must not
+            // be reachable from a workspace file. Reserved for the same reason as the line above: the
+            // option is not a preference, it is a promise other code depends on.
+            if (k === "exit-empty") {
+              errors.push("settings.tmux: 'exit-empty' is reserved by Tachyon (the fleet server must not end itself when idle)");
+              continue;
+            }
             // YAML on/off/true/false -> tmux on/off; numbers -> string; strings literal.
             const s = typeof v === "boolean" ? (v ? "on" : "off") : typeof v === "number" ? String(v) : v;
             if (typeof s !== "string") {

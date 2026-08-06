@@ -260,6 +260,14 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  tmux:\n    remain-on-exit: off\n`).errors[0]).toContain("reserved");
   });
 
+  // t-9713ff — a workspace file must not be able to let the fleet's server end itself when idle.
+  it("rejects the reserved exit-empty", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    const errs = parseConfig(`${base}settings:\n  tmux:\n    exit-empty: on\n`).errors[0];
+    expect(errs).toContain("reserved");
+    expect(errs).toContain("exit-empty");
+  });
+
   it("validates settings.bridgePort", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     expect(parseConfig(`${base}settings:\n  bridgePort: 45123\n`).config?.settings.bridgePort).toBe(45123);
