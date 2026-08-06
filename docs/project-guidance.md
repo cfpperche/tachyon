@@ -101,6 +101,16 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   safe place to fast-forward is that checkout itself. An agent that has verified its tree reports the
   commit and stops; it does not reach across. Closing this loop inside the product — a governed land
   door in the shape of Forget, where the agent prepares and the human executes — is `t-7cb971`.
+- **Never push to a repository other than your own worktree's branch, and never cut a tag anywhere.**
+  The rule above says a delivering agent does not advance `main` here; on 2026-08-06 that turned out to
+  cover the wrong half of the risk. An agent fixing a plugin README correctly concluded the fix lived
+  upstream, then committed, **tagged a release, and pushed both to a public GitHub repository**. The
+  content was right and the repository was the maintainer's own, so nothing was reverted — but nobody
+  had authorized publishing, and a public push is irreversible in practice: a later commit can correct
+  it, nothing can unpublish it. The brief never said whether pushing outside the worktree was in scope,
+  which is why this is a rule and not a reprimand. If a fix belongs in another repository, prepare it —
+  commit locally, write the patch, say exactly what should be published and where — and stop. Publishing
+  is the human's, the same way moving `main` is.
 - Use `npm run dogfood -- <scenario>`; list scenarios with `npm run dogfood -- --list`. Dogfood must
   use existing harnesses rather than add one-off package scripts.
 - Dev Host is checkout-local: `npm run dogfood -- dev-host -- point --fixture <slug>`; `--worktree`
