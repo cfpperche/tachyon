@@ -88,7 +88,10 @@ export interface RuntimeOpsProjectionInput {
   agents: RuntimeOpsAgentInput[];
   /** Cached host observation state only. Projection must never invoke a provider collector. */
   providerObservations?: unknown;
-  /** t-019dac — optional host memory facts (filled by host-only snapshotService). */
+  /**
+   * t-019dac / t-7f9809 — optional host memory facts (filled by host-only snapshotService).
+   * recommendedVitestWorkers is the host-wide budget preview (siblings discounted), not alone-sizing.
+   */
   hostMemory?: {
     hostMemAvailableMb?: number;
     hostMemTotalMb?: number;

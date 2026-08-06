@@ -1,8 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LoggedEvent } from "../../src/activity/logStore.js";
 import type { SessionRecord } from "../../src/resume/SessionLedger.js";
 import type { RuntimeOpsProviderObservationSnapshotInput } from "../../src/runtimeOps/providerProjection.js";
 import { RuntimeOpsSnapshotService } from "../../src/runtimeOps/snapshotService.js";
+import { admitVitestRun } from "../../src/host/vitestBudget.js";
+import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "../../src/host/hostResources.js";
 
 describe("RuntimeOpsSnapshotService", () => {
   it("preserves cumulative and delta semantics while observing activity timestamps and versions", async () => {
@@ -440,6 +446,107 @@ describe("RuntimeOpsSnapshotService — spec 378 observed model latch", () => {
     expect(agent.model).toMatchObject({ value: "Codex default" }); // declared/profile column stays declared-only
     expect(agent.modelObserved).toMatchObject({ value: "GPT-5.6 Sol" });
     expect(agent.modelDivergence).toBe(true);
+  });
+});
+
+/**
+ * t-7f9809 — recommendedVitestWorkers must come from the host-wide budget (siblings discounted),
+ * not from decideHeavyGate alone-sizing. Snapshot must not claim the ledger.
+ */
+describe("RuntimeOpsSnapshotService — hostMemory.recommendedVitestWorkers (t-7f9809)", () => {
+  const temps: string[] = [];
+  const children: ReturnType<typeof spawn>[] = [];
+  const envKeys = ["TACHYON_VERIFY_MEMINFO_PATH", "TACHYON_VITEST_BUDGET_PATH"] as const;
+  const savedEnv: Record<string, string | undefined> = {};
+
+  afterEach(() => {
+    for (const key of envKeys) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+      delete savedEnv[key];
+    }
+    for (const child of children.splice(0)) {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    }
+    for (const dir of temps.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function pinEnv(key: (typeof envKeys)[number], value: string): void {
+    if (!(key in savedEnv)) savedEnv[key] = process.env[key];
+    process.env[key] = value;
+  }
+
+  function meminfoFile(totalMb: number, availableMb: number): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-snap-meminfo-"));
+    temps.push(dir);
+    const file = path.join(dir, "meminfo");
+    fs.writeFileSync(file, [
+      `MemTotal:       ${totalMb * 1024} kB`,
+      `MemAvailable:   ${availableMb * 1024} kB`,
+      `SwapTotal:      0 kB`,
+      `SwapFree:       0 kB`,
+      "",
+    ].join("\n"));
+    return file;
+  }
+
+  function livePid(): number {
+    const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 120000)"], { stdio: "ignore" });
+    children.push(child);
+    return child.pid!;
+  }
+
+  it("reports the sibling-discounted share, not the alone-process sizer, and does not claim", async () => {
+    const host: HostMemorySnapshot = {
+      memTotalMb: 15_990,
+      memAvailableMb: 15_990,
+      swapTotalMb: 0,
+      swapFreeMb: 0,
+      source: "proc-meminfo",
+    };
+    pinEnv("TACHYON_VERIFY_MEMINFO_PATH", meminfoFile(host.memTotalMb, host.memAvailableMb));
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-snap-budget-"));
+    temps.push(dir);
+    const ledger = path.join(dir, "budget.json");
+    pinEnv("TACHYON_VITEST_BUDGET_PATH", ledger);
+
+    // Alone-process sizer (the old snapshot source) still sees the full machine.
+    const alone = recommendVitestMaxWorkers({ memory: host, cpuCount: 24, reserveMb: 3072, workerMb: 320 });
+    expect(alone).toBeGreaterThan(8);
+
+    // One real claim holds most of the budget — a second run would get far less (or zero).
+    const holder = admitVitestRun({
+      memory: host,
+      cpuCount: 16,
+      label: "sibling",
+      ledgerPath: ledger,
+      pid: livePid(),
+      reserveMb: 3072,
+      invocationMb: 2048,
+      workerMb: 320,
+      measure: () => undefined,
+    });
+    expect(holder.ok).toBe(true);
+    const before = fs.readFileSync(ledger, "utf8");
+
+    const service = new RuntimeOpsSnapshotService(() => [], {
+      detect: async () => [],
+      activityLog: () => staticActivityLog([]),
+    });
+    const snapshot = await service.snapshot();
+
+    expect(snapshot.summary.hostMemAvailableMb).toBe(host.memAvailableMb);
+    expect(snapshot.summary.hostMemTotalMb).toBe(host.memTotalMb);
+    // THE GUARD: display is below alone-sizing because the sibling is discounted.
+    expect(snapshot.summary.recommendedVitestWorkers).toBeDefined();
+    expect(snapshot.summary.recommendedVitestWorkers!).toBeLessThan(alone);
+    // Snapshot is a consult — ledger bytes unchanged.
+    expect(fs.readFileSync(ledger, "utf8")).toBe(before);
   });
 });
 
