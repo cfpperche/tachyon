@@ -15,6 +15,7 @@ import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
 import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
+import type { ChangedFile } from "../../src/worktree/review.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
 import { projectRuntimeCondition, NO_QUOTA_CHANNEL } from "../../src/runtimeOps/runtimeCondition.js";
 import type { NoticeSourceMetadata } from "../../src/bridge/tools.js";
@@ -100,10 +101,13 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // t-458497 — 75 → 76: runtime_condition, the two-axis read on what condition each runtime is in.
   // t-14cf7c — 76 → 77: explicit, name-scoped orphan runtime credential reconciliation.
   // t-a4ac02 — 77 → 76: next_task Bridge tool removed (function nextTask() still powers MC spotlight).
-  it("exposes exactly the 76 canonical tools, including the explicit Terminal operation", async () => {
+  // t-75e9c7 — 76 → 77: agent_touched_files, the worktree-diff read that replaces the coordinator's
+  // hand-written "who's touching what" list.
+  it("exposes exactly the 77 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
+      "agent_touched_files",
       "append_project_handoff_note",
       "append_task_note",
       "attach_evidence",
@@ -227,6 +231,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // to exercise write_input's refusal path without disturbing those other tests.
   let claudeAttention: "working" | "idle" | "needs-input" | "throttled" = "needs-input";
   let claudeComposerOccupied = false;
+  // t-75e9c7 — agent_touched_files' git port, keyed by worktree cwd; empty by default (no fixture
+  // wires deps.agentWorktrees here, so every live agent hits the honest "no isolated worktree"
+  // branch — the real diff-vs-baseRef behaviour is proven with real git in worktree.integration.test.ts).
+  const touchedFilesByCwd: Record<string, ChangedFile[]> = {};
   // t-a53dd9 — the SAME question answered from the pane instead of from the poll. Independent of
   // `claudeComposerOccupied` on purpose: the incident is exactly the case where the two disagree.
   let claudeComposerDraftNow: boolean | undefined = undefined;
@@ -276,6 +284,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
             evidence: evLedger.getEvidence(agent).length ? summarizeEvidence(evLedger.getEvidence(agent), EV_HEAD) : undefined,
           }
         : undefined,
+    // t-75e9c7 — agent_touched_files' worktree-diff read; no deps.agentWorktrees ledger is wired in
+    // this harness, so every live agent falls into the honest no-worktree branch.
+    touchedFiles: async (cwd) => touchedFilesByCwd[cwd] ?? [],
     // spec 273 — the evidence channel deps (mirror Workspace.attachEvidence/listEvidence; fixed HEAD for git).
     attachEvidence: async (input) => {
       if (!evLedger.get(input.targetAgent)?.worktree) return { ok: false, reason: "no worktree" };
@@ -1582,6 +1593,41 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const result = await client.callTool({ name: "list_agents", arguments: {} });
     const list = JSON.parse((result.content as Array<{ text: string }>)[0].text) as Array<{ name: string; verify?: { passed: boolean; atCommit: string; stale: boolean } }>;
     expect(list.find((a) => a.name === "claude")?.verify).toMatchObject({ passed: true, atCommit: "abc123", stale: true });
+  });
+
+  it("agent_touched_files reports one row per LIVE agent, and never folds a missing worktree into an empty file list (t-75e9c7)", async () => {
+    const result = await client.callTool({ name: "agent_touched_files", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    const report = JSON.parse((result.content as Array<{ text: string }>)[0].text) as Array<
+      { agent: string; worktree: boolean; files: unknown[]; note?: string }
+    >;
+    const claude = report.find((r) => r.agent === "claude");
+    expect(claude).toMatchObject({ worktree: false, files: [] });
+    expect(claude?.note).toMatch(/no isolated worktree/);
+    // claude-cowntdown is a declared Saved Agent that is not running — not live, not reported.
+    expect(report.some((r) => r.agent === "claude-cowntdown")).toBe(false);
+  });
+
+  it("agent_touched_files refuses cleanly when the Bridge has no worktree-diff port", async () => {
+    const bareManager = new AgentManager({
+      tmux,
+      wsHash: HASH,
+      workspaceRoot: WS,
+      ledger: new SessionLedger(WS),
+      getConfig: () => config,
+    });
+    const bareBridge = new Bridge({ workspaceRoot: pinsRoot, manager: bareManager, tmux, pins, tasks, validations, notify: () => {} });
+    await bareBridge.start();
+    try {
+      const bareClient = new Client({ name: "test", version: "0.0.0" });
+      await bareClient.connect(new StreamableHTTPClientTransport(new URL(bareBridge.url!)));
+      const result = await bareClient.callTool({ name: "agent_touched_files", arguments: {} });
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.content)).toContain("not available on this Bridge");
+      await bareClient.close();
+    } finally {
+      await bareBridge.dispose();
+    }
   });
 
   it("verify_agent runs the gate and returns the result", async () => {

@@ -2132,6 +2132,10 @@ export class Workspace {
         // bundle (manager + ledger + worktrees + registry), which is exactly how the operation service
         // already calls `removeAgentWorktree(workspace, …)`.
         agentWorktrees: this,
+        // t-75e9c7 — the diff-vs-baseRef read `agent_touched_files` needs (spec 213's `changedFiles`,
+        // already used by evidence/inspect). Separate from `agentWorktrees` because it is a plain
+        // read, not part of the removal cascade.
+        touchedFiles: (cwd, baseRef) => this.worktrees.changedFiles(cwd, baseRef),
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
         knownSecrets: () => [this.token, this.externalToken].filter((s): s is string => !!s),

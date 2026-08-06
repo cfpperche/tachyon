@@ -11,6 +11,7 @@ import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance,
 import type { SpawnContract } from "../spawnContract.js";
 import { decideSpawnTaskClaim } from "../spawnTaskClaim.js";
 import type { SpawnTaskClaimDecision } from "../spawnTaskClaim.js";
+import { collectAgentTouchedFiles } from "../../worktree/agentTouchedFiles.js";
 import { admitAgentRuntimeCommand, SUPPORTED_AGENT_RUNTIME_NAMES } from "../../agents/agentRuntimeAdmission.js";
 import { type BridgeDeps, AGENT_NAME, TASK_ID, dismissOwnedWorktree, dismissReceipt, emitTaskNotification, fail, lifecycleScopeGuard, managedEntry, ok, outputCapabilities, releaseSpawnClaim, resolveDeclaredActor, taskNotificationActor } from "./shared.js";
 
@@ -911,6 +912,38 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           }),
         );
         return ok(JSON.stringify(enriched, null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "agent_touched_files",
+    {
+      description:
+        "t-75e9c7 — which files has each LIVE agent already touched, read from its OWN worktree diff " +
+        "(baseRef vs working tree, spec 213) instead of anyone declaring it. Replaces the coordinator " +
+        "writing that list from memory into every brief: this is a FACT observed during the work, not a " +
+        "promise made before it. Includes UNCOMMITTED changes on purpose — an agent with zero commits " +
+        "yet is not reported as having 'touched nothing', because that would be exactly the lie this " +
+        "tool exists to kill. Cheap: two `git` calls per live agent, run on demand (no cache to go " +
+        "stale). Read-only and ADVISORY — this is not a file lock (worktrees already isolate writes); " +
+        "it only tells you where two agents' work will collide at MERGE. An agent with no isolated " +
+        "worktree (a shared-checkout agent) is reported by name with worktree:false and a note, never " +
+        "silently folded into an empty file list.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        if (!deps.touchedFiles) return fail(new Error("agent_touched_files is not available on this Bridge (no worktree diff port)"));
+        const rows = await deps.manager.list();
+        const report = await collectAgentTouchedFiles(
+          rows,
+          (name) => deps.agentWorktrees?.ledger.get(name)?.worktree,
+          { changedFiles: deps.touchedFiles },
+        );
+        return ok(JSON.stringify(report, null, 2));
       } catch (err) {
         return fail(err);
       }
