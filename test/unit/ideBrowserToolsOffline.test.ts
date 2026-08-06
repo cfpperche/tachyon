@@ -123,7 +123,10 @@ describe("t-3cab05 — ide_browser tools always-register + offline fail-closed",
       "/tmp/tachyon-no-such-workspace-ide-browser-offlineenv",
       "/status",
     );
-    expect(env.ok).toBe(false);
+    // `IdeBrowserEnvelope` is a discriminated union; narrow on `ok` before reading the failure
+    // fields, or `code`/`error` do not exist on the success arm. `expect(env.ok).toBe(false)` is a
+    // runtime assertion and narrows nothing for tsc — vitest passing is not a typecheck.
+    if (env.ok) throw new Error("expected the offline envelope to be a failure");
     expect(env.code).toBe("bridge_offline");
     expect(env.error).toBe(CLIENT_OFFLINE_ERROR);
     // Tool layer prefixes with `error: ` via fail() — that concatenation is what F3 streams captured.
