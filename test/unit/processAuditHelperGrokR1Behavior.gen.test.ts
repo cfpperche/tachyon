@@ -22,6 +22,32 @@ const REPO = process.cwd();
 const SRC = join(REPO, ".tachyon/studies/368-process-audit-helper.c");
 const REPORT = join(REPO, ".tachyon/studies/368-process-audit-helper-spike.md");
 
+/**
+ * t-9713ff — bound every helper run in this file to THIS worker's subtree.
+ *
+ * The helper answers "which process holds this directory", so in production it
+ * must look at every process. Here it must not: each case builds a target under
+ * the temp dir and spawns its own writers, so only descendants of this worker
+ * can ever match. Scanning the rest of the developer's machine adds no coverage.
+ *
+ * It also stops costing something. For a same-UID process whose `/proc/<pid>/fd`
+ * readdir is refused, the helper falls back to `pidfd_getfd`, which asks the
+ * kernel for PTRACE_MODE_ATTACH permission — and Yama logs every such request as
+ *
+ *     ptrace attach of "<victim>" was attempted by "process-audit-helper-test"
+ *
+ * naming the session bus and the editor's own server. The requests are denied
+ * and harmless. The log lines are not: on 2026-08-06 they were the loudest thing
+ * in `dmesg` after the fleet died, and they sent the incident investigation down
+ * a wrong path until measurement cleared them. A unit test should not leave that
+ * behind.
+ *
+ * Both spawn sites below inherit `process.env`, so setting it once covers the
+ * file. The filter reads ppid only, which needs no permission over the target,
+ * so an out-of-subtree process is skipped BEFORE anything asks the kernel about it.
+ */
+process.env.TACHYON_PROC_AUDIT_PID_ROOT = String(process.pid);
+
 const HARDEN_CFLAGS = [
   "-O2",
   "-pipe",
@@ -265,6 +291,32 @@ describe("container-generated delegation behavior", () => {
       const testHelper = compileHelper(buildDir, "process-audit-helper-test", [
         "-DTEST_ONLY",
       ]);
+
+      // t-9713ff — an inspection-refusing process this test OWNS.
+      //
+      // Two runs below assert the fail-closed path for a same-UID process whose
+      // `/proc/<pid>/fd` readdir is refused: `unknown reason=pidfd_getfd_eperm`
+      // and the `eaccess|pidfd_*` family. That condition was being borrowed from
+      // whatever the developer's machine happened to be running — the session bus
+      // and the editor's own server — which made the assertions depend on the host
+      // and left `ptrace attach of "<victim>" was attempted by` lines in `dmesg`
+      // after every gate. Those requests are denied and harmless; the log lines
+      // are not, and on 2026-08-06 they misdirected an incident investigation.
+      //
+      // `PR_SET_DUMPABLE=0` makes a process's own `/proc/<pid>/fd` unreadable to
+      // its own user, which is exactly the refusal the fallback exists for.
+      // Measured on this host: readdir on such a child raises EACCES. So the path
+      // is now exercised by a descendant of this worker, deterministically,
+      // instead of by whichever stranger happens to be nondumpable today.
+      const refuser = spawn(
+        "python3",
+        ["-c", "import ctypes,time; ctypes.CDLL(None).prctl(4,0,0,0,0); time.sleep(600)"],
+        { stdio: "ignore" },
+      );
+      children.push(refuser);
+      // The scan must be able to SEE it before the runs below assert on it.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(refuser.pid, "the refusing child must exist for the EPERM path").toBeGreaterThan(0);
 
       const srcHash = sha256File(SRC);
       const binHash = sha256File(helper);

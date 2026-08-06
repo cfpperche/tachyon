@@ -64,6 +64,9 @@
 #define MAX_MATCH_REPORT 256
 #define MAX_FIXED_POINT 8
 #define MAX_PIDS 65536
+/* t-9713ff — ppid walk bound for TACHYON_PROC_AUDIT_PID_ROOT. Deeper than any
+ * real spawn chain, finite so a racing or corrupted /proc cannot spin. */
+#define MAX_PID_ANCESTRY_STEPS 64
 /*
  * R5 (j-de678ede82c3): complete FD enumeration via pidfd_getfd is bounded by
  * the kernel per-process fdtable capacity FDSize from /proc/<pid>/status —
@@ -1456,7 +1459,101 @@ static bool scan_one_pid(struct audit *a, pid_t pid, bool *vanished) {
   return true;
 }
 
+/*
+ * t-9713ff — read the parent of `pid` from /proc/<pid>/stat.
+ *
+ * Field 4 is ppid, and field 2 is the comm in parentheses, which may itself
+ * contain spaces and parentheses. Parse after the LAST ')' so a process named
+ * ")( evil" cannot shift the field index.
+ *
+ * Returns -1 when the parent cannot be read. World-readable: this needs no
+ * ptrace-mode permission, unlike the fd inspection further down.
+ */
+static pid_t read_ppid(pid_t pid) {
+  char path[64];
+  if (snprintf(path, sizeof(path), "/proc/%d/stat", (int)pid) <= 0)
+    return -1;
+  FILE *f = fopen(path, "re");
+  if (!f)
+    return -1;
+  char buf[4096];
+  size_t got = fread(buf, 1, sizeof(buf) - 1, f);
+  fclose(f);
+  if (got == 0)
+    return -1;
+  buf[got] = '\0';
+  char *close_paren = strrchr(buf, ')');
+  if (!close_paren)
+    return -1;
+  int state = 0;
+  long ppid = -1;
+  if (sscanf(close_paren + 1, " %c %ld", (char *)&state, &ppid) != 2)
+    return -1;
+  return ppid > 0 && ppid <= INT_MAX ? (pid_t)ppid : -1;
+}
+
+/*
+ * t-9713ff — is `pid` `root` or a descendant of it?
+ *
+ * Walks up by ppid with a hard step bound, so a corrupted or racing /proc
+ * cannot spin here. A pid that gets reparented to init mid-walk simply stops
+ * matching, which is the safe direction: it drops OUT of the scan.
+ */
+static bool pid_within_root(pid_t pid, pid_t root, int max_steps) {
+  for (int step = 0; step < max_steps; step++) {
+    if (pid == root)
+      return true;
+    if (pid <= 1)
+      return false;
+    pid_t parent = read_ppid(pid);
+    if (parent < 0 || parent == pid)
+      return false;
+    pid = parent;
+  }
+  return false;
+}
+
+/*
+ * Enumerate the processes this audit may inspect.
+ *
+ * DEFAULT IS STILL EVERY PROCESS, and it has to be: "which process holds this
+ * directory" cannot be answered without looking at all of them, and that is
+ * the tool's job in production.
+ *
+ * A UNIT TEST is a different situation, and t-9713ff is the record of what it
+ * cost. The test builds a target under /tmp and spawns its own writers, so only
+ * its own descendants can ever match — yet the scan still reached every process
+ * on the developer's machine. For a same-UID process whose `/proc/<pid>/fd`
+ * readdir is refused, the `pidfd_getfd` fallback then asks the kernel for
+ * PTRACE_MODE_ATTACH permission. Those requests are DENIED and change nothing,
+ * but Yama logs each one as
+ *
+ *     ptrace attach of "<victim>" was attempted by "process-audit-helper-test"
+ *
+ * naming the session bus and the editor's own server. On 2026-08-06 three
+ * agents ran the gate at once, the fleet died for an unrelated reason, and
+ * those lines were the loudest thing in `dmesg` — they sent the incident
+ * investigation down a wrong path before measurement cleared them.
+ *
+ * So a caller may bound the scan to one process subtree via
+ * TACHYON_PROC_AUDIT_PID_ROOT. Tests set it to their own pid; production sets
+ * nothing and scans everything. The filter uses ppid only, which is
+ * world-readable, so a process outside the subtree is skipped BEFORE anything
+ * asks the kernel for permission over it.
+ */
 static int collect_pids(pid_t *pids, int maxn) {
+  pid_t root = 0;
+  const char *root_env = getenv("TACHYON_PROC_AUDIT_PID_ROOT");
+  if (root_env && *root_env) {
+    errno = 0;
+    long parsed = strtol(root_env, NULL, 10);
+    if (errno != 0 || parsed <= 0 || parsed > INT_MAX) {
+      fprintf(stderr, "error=bad_pid_root\n");
+      return -1;
+    }
+    root = (pid_t)parsed;
+  }
+
   DIR *d = opendir("/proc");
   if (!d)
     return -1;
@@ -1465,14 +1562,17 @@ static int collect_pids(pid_t *pids, int maxn) {
   while ((ent = readdir(d)) != NULL) {
     if (!is_all_digits(ent->d_name))
       continue;
-    if (n >= maxn) {
-      closedir(d);
-      return -2; /* truncation of pid enumeration */
-    }
     errno = 0;
     long v = strtol(ent->d_name, NULL, 10);
     if (errno != 0 || v <= 0 || v > INT_MAX)
       continue;
+    /* Skip before the cap, so an out-of-subtree pid cannot cause truncation. */
+    if (root != 0 && !pid_within_root((pid_t)v, root, MAX_PID_ANCESTRY_STEPS))
+      continue;
+    if (n >= maxn) {
+      closedir(d);
+      return -2; /* truncation of pid enumeration */
+    }
     pids[n++] = (pid_t)v;
   }
   closedir(d);

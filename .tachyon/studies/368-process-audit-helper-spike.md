@@ -80,8 +80,8 @@ Helper requirements exercised:
 | Artifact | Path / value |
 |---|---|
 | Source | `.tachyon/studies/368-process-audit-helper.c` |
-| Source SHA-256 | `e60d1cc8acc51bc811fd7a7c5f2a4c3c6a4068d07c57e6a95a077339a1b85014` |
-| Binary SHA-256 (hardened, seam-free) | `856b0b78aecca1540a2eaee701032e9df436e709e100b0ea3f3944f542a36185` |
+| Source SHA-256 | `6f41c3325faaf8d73b3801d3987cadb94aef6fcf35699e8ec071ad11e2358cc8` |
+| Binary SHA-256 (hardened, seam-free) | `a75fe4762411494f9b79dfdb06d66968df237e6709cf42eaf44de35519ea28a4` |
 | TEST_ONLY binary | built only in the generated gate (`-DTEST_ONLY`); **not** capability candidate; different hash |
 | Disposable build root | `/tmp/tachyon-368-audit-build-*` (removed after experiments) |
 | Disposable targets | `/tmp/tachyon-368-audit-target-*` (removed after experiments) |
@@ -120,8 +120,8 @@ Observed:
 
 ```text
 compile_ok
-e60d1cc8acc51bc811fd7a7c5f2a4c3c6a4068d07c57e6a95a077339a1b85014  .tachyon/studies/368-process-audit-helper.c
-856b0b78aecca1540a2eaee701032e9df436e709e100b0ea3f3944f542a36185  .../process-audit-helper
+6f41c3325faaf8d73b3801d3987cadb94aef6fcf35699e8ec071ad11e2358cc8  .tachyon/studies/368-process-audit-helper.c
+a75fe4762411494f9b79dfdb06d66968df237e6709cf42eaf44de35519ea28a4  .../process-audit-helper
 ELF 64-bit LSB pie executable, x86-64, dynamically linked
 readelf: FLAGS BIND_NOW; FLAGS_1 NOW PIE
 hardened strings: no PAH_TEST_SEAM_DIR / PAH_TEST_FORCE_PIDFD / PAH_TEST_SPAWN_HIGH_FD / PAH_TEST_FDSIZE / PAH_TEST_NR_OPEN
@@ -318,7 +318,7 @@ No password was solicited, captured, cached, or bypassed. **Capability-enabled s
 
 ### One minimal human residual (not run in R5)
 
-After rebuilding the **hardened** binary and verifying SHA-256 `856b0b78aecca1540a2eaee701032e9df436e709e100b0ea3f3944f542a36185`, a human with credentials could install `cap_sys_ptrace=ep` on that exact binary (on a non-`nosuid` filesystem) for a privileged recheck of whether `pidfd_getfd` over FDSize-bounded probes closes the `(sd-pam)` residual (FDSize=128). That capped empirical run is **required** before any host-complete claim. It is **out of band**, was **not** performed in this R5 worker round, and still does **not** erase the irreducible move+restore residual or authorize production rollout.
+After rebuilding the **hardened** binary and verifying SHA-256 `a75fe4762411494f9b79dfdb06d66968df237e6709cf42eaf44de35519ea28a4`, a human with credentials could install `cap_sys_ptrace=ep` on that exact binary (on a non-`nosuid` filesystem) for a privileged recheck of whether `pidfd_getfd` over FDSize-bounded probes closes the `(sd-pam)` residual (FDSize=128). That capped empirical run is **required** before any host-complete claim. It is **out of band**, was **not** performed in this R5 worker round, and still does **not** erase the irreducible move+restore residual or authorize production rollout.
 
 ## Experiment 8 — R5 high-FD=5000 above lowered soft limit (TEST_ONLY)
 
@@ -438,3 +438,33 @@ No file capabilities were successfully installed, so no `setcap -r` was required
 11. noninteractive setcap unavailable => BLOCKED feasibility; no setcap performed in R5
 12. /tmp tachyon-368-audit-* build/target trees and pah-test-soft-*/pah-test-fdsize-* removed
 ```
+
+## Amendment — 2026-08-06 (`t-9713ff`): pid-root filter, and why the numbers above still stand
+
+The pinned hashes moved because the source gained ONE opt-in filter:
+`TACHYON_PROC_AUDIT_PID_ROOT`. When it is unset — which is every production path —
+`collect_pids` enumerates `/proc` exactly as it did when this spike was measured, so every
+state, seam and budget recorded above was re-measured against the same behaviour, not
+re-derived from a changed one.
+
+When it IS set, the scan is bounded to that pid's subtree, filtered by ppid alone. That read
+is world-readable, so an out-of-subtree process is dropped BEFORE the FD inspection asks the
+kernel for `PTRACE_MODE_ATTACH` over it.
+
+WHY IT EXISTS. The unit test needs a same-UID process whose `/proc/<pid>/fd` readdir is
+refused, to reach the `pidfd_getfd` fail-closed path. It had been borrowing that condition
+from whatever the developer's machine was running — the session bus and the editor's own
+server. The requests are DENIED and change nothing, but Yama logs each one as
+`ptrace attach of "<victim>" was attempted by "process-audit-helper-test"`. On 2026-08-06,
+after the agent fleet died for an unrelated reason, those lines were the loudest thing in
+`dmesg` and sent the incident investigation down a wrong path before measurement cleared them.
+
+The test now spawns its OWN `PR_SET_DUMPABLE=0` child and bounds the scan to its subtree, so
+the refusal path is exercised deterministically by a process the test created. Coverage did
+not shrink: the assertion is the same one, and it stopped depending on what the host happens
+to be running.
+
+| Artifact | Old (pre-amendment) | Current |
+|---|---|---|
+| Source SHA-256 | `e60d1cc8acc51bc811fd7a7c5f2a4c3c6a4068d07c57e6a95a077339a1b85014` | `6f41c3325faaf8d73b3801d3987cadb94aef6fcf35699e8ec071ad11e2358cc8` |
+| Binary SHA-256 | `856b0b78aecca1540a2eaee701032e9df436e709e100b0ea3f3944f542a36185` | `a75fe4762411494f9b79dfdb06d66968df237e6709cf42eaf44de35519ea28a4` |
