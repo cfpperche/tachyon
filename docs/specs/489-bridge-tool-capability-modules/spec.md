@@ -57,7 +57,7 @@ not prefix inference, owns the exact tool-to-module mapping.
 | `fleet` | Create, restart, stop, dismiss, acknowledge, and inspect agents/runtimes | `spawn_agent`, `spawn_terminal`, `kill_agent`, `restart_agent`, `acknowledge_agent`, saved-agent proposals, `runtime_condition`, `probe_agent`, `read_probe_result` |
 | `worktrees` | Create, register, inspect, reconcile, or remove managed worktrees | all managed-worktree tools, including `worktree_hygiene` |
 | `runtime-security` | Inspect and retire orphaned runtime credentials | `reconcile_runtime_credentials` |
-| `tasks` | Read and mutate Tasks and their prototypes | `create_task`, `get_task`, `update_task`, `reconcile_task`, `append_task_note`, `list_tasks`, `next_task`, `attach_task_prototype`, `continue_task` |
+| `tasks` | Read and mutate Tasks and their prototypes | `create_task`, `get_task`, `update_task`, `reconcile_task`, `append_task_note`, `list_tasks`, `attach_task_prototype`, `continue_task` |
 | `coordination` | Pins, handoff, continuity, and context-renewal records | pin, continuity, and project-handoff tools; `renew_context` |
 | `human` | Human attention, notification, and approval workflows | `notify`, `flag_for_human`, `request_human_attention`, `request_human_approval`, approval-list/status/cancel tools |
 | `verification` | Verification, evidence, validations, re-anchoring, pipeline completion | `verify_agent`, `attach_evidence`, `*_validation*`, `complete_node`, `reanchor_agent` |

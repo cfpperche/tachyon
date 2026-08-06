@@ -381,7 +381,7 @@ export function App({ vm, lastError, dispatch, pendingTaskId }: {
 
       {model.spotlight?.emptyReason && (
         <div class="mc-spotlight-banner">
-          <Icon name="info" /> next_task({model.spotlight.agent}): {model.spotlight.emptyReason}
+          <Icon name="info" /> up next ({model.spotlight.agent}): {model.spotlight.emptyReason}
         </div>
       )}
 
@@ -530,7 +530,7 @@ function Card({ card, session, pending, onDragStart, onDragEnd, onCardDragOver, 
     // (App.tsx) no-ops these for any card outside the dragged card's status/priority lane, so they never
     // interfere with the existing column-level status-drop affordance.
     <div class={cls} data-card-id={card.id} aria-busy={pending ? "true" : undefined} draggable tabIndex={0} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragOver={onCardDragOver} onDrop={onCardDrop} onContextMenu={onContextMenu} onClick={onOpen}>
-      {card.isSpotlight && <span class="next-tag">▶ next_task</span>}
+      {card.isSpotlight && <span class="next-tag">▶ up next</span>}
       <div class="card-header">
         <span class="card-author" title={`created by ${card.author}`}>{card.author}</span>
         <span class="card-badges">

@@ -99,7 +99,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // t-afe120 — 72 → 75: propose/list/cancel_saved_agent_removal_proposal (governed Saved Agent retirement).
   // t-458497 — 75 → 76: runtime_condition, the two-axis read on what condition each runtime is in.
   // t-14cf7c — 76 → 77: explicit, name-scoped orphan runtime credential reconciliation.
-  it("exposes exactly the 77 canonical tools, including the explicit Terminal operation", async () => {
+  // t-a4ac02 — 77 → 76: next_task Bridge tool removed (function nextTask() still powers MC spotlight).
+  it("exposes exactly the 76 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -142,7 +143,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "list_tasks",
       "list_validations",
       "list_worktrees",
-      "next_task",
       "next_validation",
       "notify",
       "notify_agent",
@@ -575,7 +575,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(missing.isError).toBe(true);
   });
 
-  it("task tools round-trip through MCP with bounded list, next_task, and CAS claim", async () => {
+  it("task tools round-trip through MCP with bounded list and CAS claim", async () => {
     const created = await client.callTool({
       name: "create_task",
       arguments: {
@@ -600,10 +600,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(summaries[0]).toMatchObject({ id: task.id, priority: 1, rank: "a" });
     expect(summaries[0].body).toBeUndefined();
 
-    const next = await client.callTool({ name: "next_task", arguments: { agent: "codex" } });
-    const candidate = JSON.parse((next.content as Array<{ text: string }>)[0].text);
-    expect(candidate).toMatchObject({ task: { id: task.id } });
-
+    // t-a4ac02 — next_task tool removed; CAS claim is the agent-facing claim path (or spawn_agent claim_task:).
     const claimed = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "codex", expect: { assignee: null } } });
     expect(claimed.isError).toBeFalsy();
 
