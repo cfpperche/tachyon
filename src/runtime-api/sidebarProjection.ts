@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { CARD_COMPONENT_IDS, CARD_TEMPLATE_VERSION, type CardComponentId } from "../sidebar/cardTemplate.js";
 import type { FleetVM, HandoffVM, PinVM, ProposalVM, WorkspaceRef } from "../sidebar/types.js";
+import { fitSidebarWireText, SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "../sidebar/wireText.js";
+import { AGENT_NAME_PATTERN } from "../config/nameValidation.js";
 import {
   buildSidebarFleet,
   type SidebarFleetServiceOptions,
@@ -24,6 +26,9 @@ export interface SidebarViewV1 {
 }
 
 const text = (max: number, min = 0) => z.string().min(min).max(max);
+const displayText = (max: number, min = 0, marker = "…") => z.string().min(min)
+  .transform((value) => fitSidebarWireText(value, max, marker))
+  .pipe(z.string().min(min).max(max));
 /** SDD 479 — the wire may only carry ids the catalog actually implements. */
 const cardComponentId = z.enum(CARD_COMPONENT_IDS as unknown as [CardComponentId, ...CardComponentId[]]);
 /** One complete card template. Shared by the project's base and by every resolved runtime override. */
@@ -33,7 +38,10 @@ const cardTemplate = z.object({
   meta: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
   footer: z.array(cardComponentId).max(CARD_COMPONENT_IDS.length),
 }).strict();
-const name = text(128, 1).regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);
+// Agent/config names are identities, not display prose: truncating them could redirect an action to
+// a different entity. The authoring doors already require this alphabet; the reader therefore keeps
+// the full identity instead of imposing a second, contradictory size rule (t-a11ac5).
+const name = z.string().min(1).regex(AGENT_NAME_PATTERN);
 const count = z.number().int().nonnegative().max(1_000_000);
 const agentStatus = z.enum(["running", "needs", "throttled", "done", "idle", "stopping", "stop-failed", "stopped", "crashed"]);
 const evidence = z.object({
@@ -51,7 +59,7 @@ const externalToolItem = z.object({
   id: text(256, 1),
   kind: text(64, 1),
   tool: text(128, 1),
-  title: text(512, 1).optional(),
+  title: displayText(512, 1).optional(),
   pid: z.number().int().positive().max(2_147_483_647).optional(),
   windowId: text(256, 1).optional(),
   startedAt: text(64, 1),
@@ -72,14 +80,14 @@ const externalTools = z.object({
 
 const persistenceHooks = z.object({
   state: z.enum(["active", "skipped", "failed", "unknown"]),
-  reason: text(1_000, 1).optional(),
-  path: text(4_096, 1).optional(),
+  reason: displayText(1_000, 1).optional(),
+  path: displayText(4_096, 1).optional(),
   updatedAt: text(64, 1).optional(),
 }).strict();
 
 const agent = z.object({
   name,
-  model: text(256, 1).optional(),
+  model: displayText(256, 1).optional(),
   modelSource: z.enum(["observed", "declared", "profile"]).optional(),
   modelObservedAt: text(64, 1).optional(),
   modelStale: z.boolean().optional(),
@@ -87,15 +95,15 @@ const agent = z.object({
   /** SDD 479 phase 3 — the runtime this row runs on; selects a per-runtime card template. */
   runtime: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/).optional(),
   status: agentStatus,
-  attention: text(256, 1).optional(),
+  attention: displayText(256, 1).optional(),
   parent: name.optional(),
   delegator: name.optional(),
   declaredOwner: name.optional(),
-  sub: text(2_000, 1).optional(),
-  worktree: text(512, 1).optional(),
-  liveBranch: text(512, 1).optional(),
+  sub: displayText(2_000, 1).optional(),
+  worktree: displayText(512, 1).optional(),
+  liveBranch: displayText(512, 1).optional(),
   branchDrift: z.boolean().optional(),
-  worktreePath: text(4_096, 1).optional(),
+  worktreePath: displayText(4_096, 1).optional(),
   resources: z.object({
     cpuPct: z.number().finite().min(0).max(999).optional(),
     memMb: count,
@@ -109,19 +117,19 @@ const agent = z.object({
   forked: z.boolean().optional(),
   continuity: z.enum(["fresh", "stale", "missing"]).optional(),
   focus: z.object({
-    text: text(128, 1),
+    text: displayText(128, 1),
     source: z.enum(["task", "brief", "continuity"]),
     taskId: z.string().regex(/^t-[0-9a-f]{6}$/).optional(),
-    full: text(2_000, 1),
+    full: displayText(SIDEBAR_FOCUS_FULL_MAX, 1, "… — open the agent for the full brief"),
   }).strict().optional(),
   persistenceHooks: persistenceHooks.optional(),
   evidence: evidence.optional(),
   externalTools: externalTools.optional(),
-  awaitingHuman: z.object({ reason: text(2_000) }).strict().optional(),
+  awaitingHuman: z.object({ reason: displayText(2_000) }).strict().optional(),
   configInvalid: z.boolean().optional(),
   // t-0ad300 — the refusal reason for a declared agent this load would not project. Bounded like
   // every other free text on the wire; the full reason also lives in the config banner.
-  refused: text(500).optional(),
+  refused: displayText(500).optional(),
   // SDD 478 M5 — the managed-entry arm, required because every row has one. This schema is
   // `.strict()`, so it is the wire contract: a row carrying an arm it does not declare is REJECTED,
   // not silently trimmed. That is why removing `ai` had to land here in the same change.
@@ -146,15 +154,15 @@ const agent = z.object({
 });
 
 const pipelineNode = z.object({
-  id: text(128, 1),
+  id: name,
   status: agentStatus,
-  label: text(128, 1),
-  reason: text(2_000, 1).optional(),
-  agentName: text(256, 1).optional(),
+  label: displayText(128, 1),
+  reason: displayText(2_000, 1).optional(),
+  agentName: name.optional(),
 }).strict();
 
 const fleet = z.object({
-  folder: z.object({ hash: text(128, 1), name: text(256, 1) }).strict(),
+  folder: z.object({ hash: text(128, 1), name: displayText(256, 1) }).strict(),
   bridge: z.object({ port: text(16, 1), connected: z.boolean() }).strict(),
   agents: z.array(agent).max(SIDEBAR_ROW_LIMIT),
   terminals: z.array(agent).max(SIDEBAR_ROW_LIMIT),
@@ -163,43 +171,43 @@ const fleet = z.object({
     status: z.enum(["idle", "running", "paused", "failed"]),
     nodes: z.array(pipelineNode).max(SIDEBAR_ROW_LIMIT),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
-  schedules: z.array(z.object({ name, when: text(512, 1), next: text(256, 1), paused: z.boolean() }).strict()).max(SIDEBAR_ROW_LIMIT),
+  schedules: z.array(z.object({ name, when: displayText(512, 1), next: displayText(256, 1), paused: z.boolean() }).strict()).max(SIDEBAR_ROW_LIMIT),
   commands: z.array(z.object({
     name,
-    cmd: text(8_192),
+    cmd: displayText(8_192),
     state: z.enum(["running", "passed", "failed", "idle"]),
-    detail: text(256, 1),
+    detail: displayText(256, 1),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
   runbooks: z.array(z.object({
     name,
     running: z.boolean(),
     failed: z.boolean(),
-    detail: text(256, 1),
+    detail: displayText(256, 1),
     steps: z.array(z.object({
       n: z.number().int().positive().max(SIDEBAR_ROW_LIMIT),
-      label: text(8_192, 1),
+      label: displayText(8_192, 1),
       state: z.enum(["running", "passed", "failed", "skipped"]),
-      detail: text(256, 1).optional(),
+      detail: displayText(256, 1).optional(),
     }).strict()).max(SIDEBAR_ROW_LIMIT),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
   pins: z.array(z.object({
     id: z.string().regex(/^p-[0-9a-f]{6}$/),
-    text: text(2_000, 1),
+    text: displayText(SIDEBAR_PIN_TEXT_MAX, 1, "… — open the pin for full detail"),
     done: z.boolean(),
-    by: text(128, 1).optional(),
+    by: displayText(128, 1).optional(),
     tags: z.array(z.string().min(1)),
     detail: z.boolean().optional(),
     attachmentCount: count.optional(),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
   notices: z.array(z.object({
     id: z.string().uuid(),
-    message: text(512, 1),
+    message: displayText(512, 1),
     level: z.enum(["info", "warn", "error"]),
     at: text(64, 1),
     collapsedCount: z.number().int().positive().max(10_000),
     actions: z.array(z.object({
       id: z.string().uuid(),
-      label: text(128, 1),
+      label: displayText(128, 1),
     }).strict()).max(12),
     read: z.boolean(),
     actionsLive: z.boolean(),
@@ -207,9 +215,9 @@ const fleet = z.object({
   proposals: z.array(z.object({
     id: z.string().regex(/^[a-f0-9]{12}$/),
     name,
-    by: text(128, 1).optional(),
-    reason: text(2_000, 1).optional(),
-    when: text(512, 1).optional(),
+    by: displayText(128, 1).optional(),
+    reason: displayText(2_000, 1).optional(),
+    when: displayText(512, 1).optional(),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
   handoff: z.object({
     exists: z.boolean(),
@@ -217,10 +225,10 @@ const fleet = z.object({
     pendingCount: count,
   }).strict(),
   configError: z.object({
-    file: text(256, 1),
-    path: text(4_096, 1),
-    errors: z.array(text(2_000, 1)).min(1).max(100),
-    summary: text(2_000, 1),
+    file: displayText(256, 1),
+    path: displayText(4_096, 1),
+    errors: z.array(displayText(2_000, 1)).min(1).max(100),
+    summary: displayText(2_000, 1),
   }).strict().optional(),
   // t-aa2780 — the engine's own report that its daemon log ring holds an error line. Declared here or
   // this STRICT object rejects the whole fleet (SDD 478 M5). OPTIONAL on purpose: a projection built
@@ -239,8 +247,8 @@ const fleet = z.object({
     runtimes: z.record(z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/), cardTemplate).optional(),
   }).strict().optional(),
   cardTemplateRefusal: z.object({
-    file: text(256, 1),
-    errors: z.array(text(2_000, 1)).min(1).max(100),
+    file: displayText(256, 1),
+    errors: z.array(displayText(2_000, 1)).min(1).max(100),
   }).strict().optional(),
 }).strict().superRefine((value, context) => {
   const agentNames = [...value.agents, ...value.terminals].map((row) => row.name);

@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { type BridgeDeps, AGENT_NAME, fail, normalizeCreatePinInput, ok, plainTextDoc, resolveDeclaredActor } from "./shared.js";
+import { SIDEBAR_PIN_TEXT_MAX } from "../../sidebar/wireText.js";
 
 export function registerPinTools(mcp: McpServer, deps: BridgeDeps): void {
 
@@ -98,7 +99,7 @@ export function registerPinTools(mcp: McpServer, deps: BridgeDeps): void {
       description: "Edit a pin's text and/or tags. Preserves its id, author, created time, and done state.",
       inputSchema: {
         id: z.string().regex(/^p-[0-9a-f]{6}$/).describe("pin id from list_pins"),
-        text: z.string().min(1).optional().describe("the new text; omit to retag without changing title"),
+        text: z.string().min(1).max(SIDEBAR_PIN_TEXT_MAX).optional().describe("the new Sidebar title; omit to retag without changing it"),
         tags: z.array(z.string()).max(12).optional().describe("new complete tag list; [] clears all tags"),
       },
     },
