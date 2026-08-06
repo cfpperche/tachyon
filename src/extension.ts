@@ -54,7 +54,6 @@ import { COMMAND_STUDIO_SHELL_VIEW_TYPE, CommandStudioPanelManager, type Command
 import { RUNBOOK_STUDIO_SHELL_VIEW_TYPE, RunbookStudioPanelManager, type RunbookStudioPanelState } from "./webview/RunbookStudioPanel.js";
 import { SCHEDULE_STUDIO_SHELL_VIEW_TYPE, ScheduleStudioPanelManager, type ScheduleStudioPanelState } from "./webview/ScheduleStudioPanel.js";
 import { PipelineStudioPanelManager, PIPELINE_STUDIO_VIEW_TYPE, type PipelineStudioPanelState } from "./webview/PipelineStudioPanel.js";
-import { registerIdeBrowserProto } from "./webview/ide-browser-proto/register.js";
 import { registerIdeBrowserBridge } from "./webview/ide-browser-bridge/register.js";
 import { registerTachyonChatBridge } from "./webview/chat-bridge/register.js";
 import { normalizeAgentRows } from "./webview/chat-bridge/ops.js";
@@ -3948,9 +3947,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
   );
-
-  // Option A prototype — external Chrome/CDP + stream panel. Dev Host only (see register.ts).
-  registerIdeBrowserProto(context);
 
   // Thimo-style Integrated Browser bridge (HTTP + editor-browser CDP) → Bridge ide_browser_* tools.
   // Fixture ide-browser-dogfood: agents claude/codex/grok only (no auto-boot, no shell-as-agent).

@@ -378,11 +378,6 @@
         "icon": "$(dashboard)"
       },
       {
-        "command": "tachyon.ideBrowserProto.open",
-        "title": "Tachyon: IDE Browser (prototype — Dev Host)",
-        "icon": "$(browser)"
-      },
-      {
         "command": "tachyon.inspectEngine",
         "title": "%command.inspectEngine%",
         "icon": "$(debug-console)"
@@ -536,10 +531,6 @@
     },
     "menus": {
       "commandPalette": [
-        {
-          "command": "tachyon.ideBrowserProto.open",
-          "when": "tachyon.ideBrowserProto.enabled"
-        },
         {
           "command": "tachyon.openProbes",
           "when": "false"
