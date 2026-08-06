@@ -6,8 +6,15 @@ export { READY } from "../shared/ready.js";
 export type { TaskStudioHostMessage, TaskStudioWebviewMessage } from "./types.js";
 
 // t-610705 (Phase D, D2) — routeKey/mountNonce identify WHICH Control-hosted binding this ready is
-// for (studioHost.ts's mount handshake) — same shape every other migrated shell's messages.ts
-// declares; the shared shared/ready.ts helper predates the mount handshake and doesn't carry it.
+// for (the retired studioHost.ts mount handshake) — same shape every other migrated shell's
+// messages.ts declares; the shared shared/ready.ts helper predates the mount handshake and
+// doesn't carry it.
+//
+// t-337cdf — the Control host is DELETED. The standalone path (`mountSingleModeStudio`) still sends
+// these, but with the constants `"standalone-studio"` / `"single-mode"`, so today they never
+// discriminate anything. Left in place rather than removed here: this is a wire-protocol field with
+// a reader on the other side, and dropping it belongs with dissolving the remaining Control-era
+// model contract (t-5a0c1c), not with deleting the host.
 export const readyMessage = (mount?: { routeKey: string; mountNonce: string }) =>
   envelope({ type: "ready" as const, ...(mount ? { routeKey: mount.routeKey, mountNonce: mount.mountNonce } : {}) });
 export const patchMessage = (patch: TaskPatch, editRevision?: number) =>

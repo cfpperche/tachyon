@@ -51,23 +51,24 @@ describe("persistent workspace presentation boundary", () => {
       // Cockpit.ts, which was born on WorkspaceHandoffTarget.
       // CommandStudioPanel.ts left this list on t-610705 Phase D D0 for the same reason: the panel
       // host was retired (it's the pilot Control route now — studios-routes-design.md) and the file
-      // is types-only (VIEW_TYPE + PanelState only) — Command Studio is hosted by studioHost.ts /
-      // Cockpit.ts, which resolve WorkspaceStudioTarget through CockpitDeps.studios, not this file.
+      // is types-only (VIEW_TYPE + PanelState only) — Command Studio is hosted by
+      // CommandStudioPanelManager (SingleModeStudioPanelManager; Control-route studioHost.ts retired
+      // in t-337cdf), which resolves WorkspaceStudioTarget through STUDIO_REGISTRY, not this file.
       // TerminalStudioPanel.ts/RunbookStudioPanel.ts/ScheduleStudioPanel.ts left this list on
       // t-610705 Phase D D1a for the same reason as CommandStudioPanel.ts above.
       // AgentStudioPanel.ts left this list on t-610705 Phase D D1b for the same reason — the panel
-      // host was retired and the file is types-only now; Agent Studio is hosted by studioHost.ts /
-      // Cockpit.ts / agentStudioDomain.ts. AgentStudioAdapter.ts stays in this list (unchanged —
-      // still legitimately typed against WorkspaceAgentStudioTarget).
+      // host was retired and the file is types-only now; Agent Studio is hosted by
+      // AgentStudioPanelManager / agentStudioDomain.ts. AgentStudioAdapter.ts stays in this list
+      // (unchanged — still legitimately typed against WorkspaceAgentStudioTarget).
       // TaskStudioPanel.ts left this list on t-610705 Phase D D2 for the same reason as
       // CommandStudioPanel.ts above — the panel host was retired and the file is types-only now
-      // (VIEW_TYPE + PanelState only); Task Studio is hosted by studioHost.ts / Cockpit.ts /
-      // taskStudioDomain.ts. TaskStudioAdapter.ts stays in this list (unchanged — still legitimately
-      // typed against WorkspaceTaskStudioTarget).
+      // (VIEW_TYPE + PanelState only); Task Studio domain lives in taskStudioDomain.ts /
+      // STUDIO_REGISTRY (Control-route host studioHost.ts retired in t-337cdf). TaskStudioAdapter.ts
+      // stays in this list (unchanged — still legitimately typed against WorkspaceTaskStudioTarget).
       // PinStudioPanel.ts left this list on t-610705 Phase D D3 for the same reason as
       // CommandStudioPanel.ts above — the panel host was retired and the file is types-only now
-      // (VIEW_TYPE + PanelState only); Pin Studio is hosted by studioHost.ts / Cockpit.ts /
-      // pinStudioDomain.ts. PinStudioAdapter.ts stays in this list (unchanged — still legitimately
+      // (VIEW_TYPE + PanelState only); Pin Studio domain lives in pinStudioDomain.ts /
+      // STUDIO_REGISTRY. PinStudioAdapter.ts stays in this list (unchanged — still legitimately
       // typed against WorkspacePinStudioTarget).
       "src/webview/TaskStudioAdapter.ts",
       "src/webview/PinStudioAdapter.ts",

@@ -37,9 +37,11 @@ export type StudioLoadResult<TEntity, TReferenceData = unknown> =
    *  "ok" result stays correct with zero changes). Set it to `false` ONLY when `entityId` was
    *  provided but the entity does NOT actually exist in durable storage yet — a pre-minted-but-
    *  never-saved id (Task Studio's staged-create pattern: the id is reserved for the attachment
-   *  namespace before the entity is created, see mintTaskId()'s doc comment). Drives
-   *  `Binding.persisted` (studioHost.ts), which gates whether `adapter.onCancel` fires on abandonment
-   *  — see `abandonProvisionalIfNeeded`'s doc comment for why this can't be inferred from `mode`. */
+   *  namespace before the entity is created, see mintTaskId()'s doc comment). The retired Control host
+   *  (studioHost.ts) stored this as `Binding.persisted` to gate `adapter.onCancel` on abandonment;
+   *  the live consumer today is Cockpit model's `studioPersisted` (parent-route selection for staged
+   *  creates — model.ts). Cannot be inferred from `mode` alone (a pre-minted edit-shaped id is still
+   *  unsaved). */
   | { status: "ok"; entity: TEntity; referenceData?: TReferenceData; persisted?: boolean }
   | { status: "not-found" }
   | { status: "error"; error: string };
@@ -48,8 +50,7 @@ export type StudioSaveResult =
   /** t-610705 (Phase D, D1d) — `entityId` is set ONLY when this save just PERSISTED A NEW entity
    *  (the adapter was called with `entityId: undefined`) — it's the id the host should now bind to,
    *  so a `studio-new` route stops being permanently stuck in "new" mode after its first successful
-   *  save (see studioHost.ts's beginStudioSave doc comment for the full gap this closes). Absent for
-   *  an edit-mode save (nothing about the bound entity's id changed). */
+   *  save. Absent for an edit-mode save (nothing about the bound entity's id changed). */
   | { status: "ok"; entityId?: string }
   | { status: "error"; error: { code: string; message: string; source: StudioErrorSource } }
   | { status: "conflict"; error: { code: string; message: string } };

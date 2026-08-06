@@ -47,8 +47,9 @@ function nestedTarget<K extends keyof NestedStudioTargets>(ws: WorkspaceStudioTa
 
 export interface StudioDomainContext {
   post: (message: unknown) => void;
-  /** t-610705 (Phase D, D1b) — the current binding's own entity id (undefined for studio-new) —
-   *  see studioHost.ts's `StudioMessageHooks.handleDomainMessage` doc comment for why. */
+  /** t-610705 (Phase D, D1b) — the current binding's own entity id (undefined for studio-new).
+   *  Domain handlers use it to reject messages whose entity/agent field does not match the bound
+   *  subject (see agentStudioDomain.ts and other handleDomainMessage call sites). */
   entityId: string | undefined;
 }
 
@@ -148,7 +149,8 @@ export interface CockpitStudios {
 }
 
 /** Resolves an adapter for `(studio, wsHash)` — undefined when the workspace isn't attached
- *  (revive/deep-link into a detached folder). `studioHost.ts`'s `StudioAdapterFactory` shape. */
+ *  (revive/deep-link into a detached folder). Same factory shape the retired Control host
+ *  (studioHost.ts, deleted in t-337cdf) used. */
 export function makeStudioAdapterFactory(deps: CockpitStudios): (route: { studio: StudioId; wsHash: string }) => Adapter | undefined {
   return (route) => {
     const ws = deps.getWorkspaces().find((w) => w.wsHash === route.wsHash);
@@ -158,7 +160,7 @@ export function makeStudioAdapterFactory(deps: CockpitStudios): (route: { studio
 }
 
 /** Domain-message pass-through for the current binding's studio, resolving the SAME workspace
- *  instance the adapter was built from (by wsHash) — studioHost.ts stays adapter-generic and never
+ *  instance the adapter was built from (by wsHash) — the dispatcher stays adapter-generic and never
  *  needs to know which studio-specific browse/import/etc. hooks exist. */
 export function makeStudioDomainDispatch(deps: CockpitStudios): (route: { studio: StudioId; wsHash: string }, ctx: StudioDomainContext, message: { type: string }) => void {
   return (route, ctx, message) => {

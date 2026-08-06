@@ -505,9 +505,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
   };
 
   // t-610705 (Phase D, D2) — re-requesting "ready" makes the host resend a fresh `load` for the
-  // current binding (studioHost.ts's `case "ready": await sendStudioLoad(io);`) — the actual fix for
-  // what the standalone panel's "Reload latest" button used to do (re-apply whatever `entity` state
-  // was already held locally, which a CAS-conflict error never actually refreshed).
+  // current binding (SingleModeStudioPanelManager treats "ready" as load(); the retired Control host
+  // did the same via sendStudioLoad) — the actual fix for what the standalone panel's "Reload latest"
+  // button used to do (re-apply whatever `entity` state was already held locally, which a CAS-conflict
+  // error never actually refreshed).
   const reloadLatest = () => {
     post(readyMessage({ routeKey, mountNonce }));
   };
