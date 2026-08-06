@@ -157,6 +157,19 @@ describe("sidebar action matrix (spec 237)", () => {
   it("management actions always present", () => {
     expect(actionsFor(A({ status: "running" }))).toEqual(expect.arrayContaining(["edit", "clone"]));
   });
+  /**
+   * t-41117e — Continue task in… is a Saved-Agent-only more-menu action.
+   * The webview opens the destination picker; the host never sees continueTask as a command id.
+   */
+  it("continueTask is offered for saved AI rows, not temporary or terminals", () => {
+    expect(actionsFor(A({ status: "running" }))).toContain("continueTask");
+    expect(actionsFor(A({ status: "stopped" }))).toContain("continueTask");
+    expect(moreActions(A({ status: "running" }))).toContain("continueTask");
+    expect(primaryActions(A({ status: "running" }))).not.toContain("continueTask");
+    expect(actionsFor(A({ status: "running", adhoc: true }))).not.toContain("continueTask");
+    expect(actionsFor(A({ status: "stopped", kind: "terminal" }))).not.toContain("continueTask");
+    expect(ACTION_META.continueTask.label).toMatch(/Continue task/i);
+  });
   it("ad-hoc agent rows omit declared-only edit actions", () => {
     const actions = actionsFor(A({ status: "running", adhoc: true }));
     expect(actions).toEqual(expect.arrayContaining(["promote", "remove"]));

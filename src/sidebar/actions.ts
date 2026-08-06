@@ -10,6 +10,8 @@ export type ActionId =
   | "activity" | "probes" | "inspect" | "openPane" | "stop" | "kill"
   | "restart" | "restartNew" | "restartForceNew"
   | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity" | "injectPrompt"
+  // t-41117e — Continue task in… (webview opens destination picker; host only runs agent.continue-task).
+  | "continueTask"
   // t-4662e9 — no `rename`. Renaming a canonical agent is the Agent Form's operation (it carries the
   // profile lifecycle: authority re-signing, digest, retirement of the old name). The sidebar's action
   // called a different one, `config.agent.rename`, which only rewrites the tachyon.yml entry — a second,
@@ -41,6 +43,7 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   reanchor: { icon: "compass", label: "Re-anchor to role" },
   reinjectContinuity: { icon: "history", label: "Re-inject continuity" },
   injectPrompt: { icon: "symbol-snippet", label: "Inject prompt template" },
+  continueTask: { icon: "debug-step-over", label: "Continue task in…" },
   promote: { icon: "save", label: "Save to tachyon.yml" },
   reviewWorktree: { icon: "git-compare", label: "Review worktree changes" },
   createPr: { icon: "git-pull-request", label: "Create PR" },
@@ -102,6 +105,8 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (a.verifiable) out.push("verify");
   // spec 381 — injectPrompt joins reanchor/reinject as mid-session operator ops on live AI panes
   if (isRunning(a) && isAgentRow(a)) out.push("reanchor", "reinjectContinuity", "injectPrompt");
+  // t-41117e — Saved Agent only (not Temporary, not terminal). Webview opens the destination picker.
+  if (isAgentRow(a) && !a.adhoc) out.push("continueTask");
   if (a.worktree) out.push("reviewWorktree", "createPr");
   if (a.adhoc) out.push("promote");
   if (!a.adhoc) out.push("edit", "editYaml", "clone");

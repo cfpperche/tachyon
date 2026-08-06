@@ -75,11 +75,14 @@ describe("t-ededdd — shared action regions reflow instead of leaving the viewp
   });
 
   it.each([
+    // t-41117e — Fleet no longer paints ListRow boolean rows. Its action-bearing shared region is
+    // PageChrome (Open Board). The reflow claim is unchanged: @media max-width 620 on shared
+    // primitives. ListRow remains covered wherever a surface still uses it; Fleet's subject moved.
     {
       fixture: "fleet" as const,
-      container: ".ds-list-row",
-      main: ".ds-list-row-main",
-      actions: ".ds-list-row-actions",
+      container: ".ds-page-chrome",
+      main: ".ds-page-chrome-text",
+      actions: ".ds-page-chrome-actions",
     },
     {
       fixture: "mission" as const,
@@ -105,9 +108,9 @@ describe("t-ededdd — shared action regions reflow instead of leaving the viewp
   it.each([
     {
       fixture: "fleet" as const,
-      container: ".ds-list-row",
-      main: ".ds-list-row-main",
-      actions: ".ds-list-row-actions",
+      container: ".ds-page-chrome",
+      main: ".ds-page-chrome-text",
+      actions: ".ds-page-chrome-actions",
     },
     {
       fixture: "mission" as const,

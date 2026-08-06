@@ -77,6 +77,9 @@ function Root() {
     // other global op leaves it undefined and the host ignores it.
     global: (op: GlobalOp, hash?: string, sectionId?: string) => vscode?.postMessage({ type: "global", op, hash, sectionId }),
     pipeline: (op: string, name: string, nodeId?: string, hash?: string) => vscode?.postMessage({ type: "pipeline", op, name, nodeId, hash }),
+    // t-41117e — destination already chosen in the shared ContinuePicker.
+    continueTask: (fromName: string, toName: string, hash?: string) =>
+      vscode?.postMessage({ type: "continueTask", fromName, toName, hash }),
     setSort: (section: "agents" | "terminals", mode: string) => vscode?.postMessage({ type: "setSort", section, mode }),
     setCollapsedKeys: (keys: string[]) => vscode?.postMessage({ type: "setCollapsed", keys }),
     switchWorkspace: (wsHash: string) => vscode?.postMessage({ type: "switchControlWorkspace", hash: wsHash }),
