@@ -197,6 +197,17 @@ export interface CockpitCompanionSettings {
 }
 
 /**
+ * SDD 488 F4 — Integrated Browser GA gate for Control Settings.
+ * Human surface + call-time; ide_browser_* stay listed on the Bridge.
+ */
+export interface CockpitIdeBrowserSettings {
+  wsHash: string;
+  folderName: string;
+  /** settings.ideBrowser.enabled — status bar + bridge start + call-time execution. */
+  enabled: boolean;
+}
+
+/**
  * t-af3eef — which expensive slices a collect is being asked for.
  *
  * `worktrees.classified` is real engine work — it walks every managed checkout, of which this repo
@@ -254,6 +265,8 @@ export interface CockpitWorkspaceBundle {
   cardTemplate?: { configured: boolean; refused: boolean };
   tmux?: { state: string; version?: string };
   companion?: Omit<CockpitCompanionSettings, "wsHash" | "folderName">;
+  /** SDD 488 F4 — settings.ideBrowser.enabled for Control Settings (absent on older engines). */
+  ideBrowser?: { enabled: boolean };
   /**
    * t-585d5c — this folder's `settings.agentNotifications.idleAfterMinutes`, exactly as written.
    *
@@ -354,6 +367,11 @@ export interface CockpitModel {
   companion?: CockpitCompanionSettings;
   /** True when multiple workspaces are in scope and none is selected for Companion settings. */
   companionNeedsWorkspacePick?: boolean;
+  /**
+   * SDD 488 F4 — Integrated Browser enable gate for the scoped workspace (Control → Settings).
+   * Same single-workspace scoping as companion.
+   */
+  ideBrowser?: CockpitIdeBrowserSettings;
   /**
    * t-585d5c — the idle-notification threshold for the scoped workspace (Control -> Settings).
    * Scoped exactly like `companion`: the setting is per folder, so with several roots in view there
@@ -458,6 +476,7 @@ export function buildCockpitModel(
   // Companion tabTools UI needs exactly one workspace in scope.
   let companion: CockpitCompanionSettings | undefined;
   let companionNeedsWorkspacePick = false;
+  let ideBrowser: CockpitIdeBrowserSettings | undefined;
   if (scoped.length === 1) {
     const b = scoped[0]!;
     companion = {
@@ -469,6 +488,11 @@ export function buildCockpitModel(
       baseUrl: b.companion?.baseUrl,
       engineLabel: b.companion?.engineLabel,
       devices: Array.isArray(b.companion?.devices) ? b.companion!.devices! : [],
+    };
+    ideBrowser = {
+      wsHash: b.control.wsHash,
+      folderName: b.control.folderName,
+      enabled: b.ideBrowser?.enabled === true,
     };
   } else if (scoped.length > 1) {
     companionNeedsWorkspacePick = true;
@@ -528,6 +552,7 @@ export function buildCockpitModel(
     tmux,
     ...(companion ? { companion } : {}),
     ...(companionNeedsWorkspacePick ? { companionNeedsWorkspacePick: true } : {}),
+    ...(ideBrowser ? { ideBrowser } : {}),
     ...(idleNotify ? { idleNotify } : {}),
     cardTemplate,
     ...(opts?.globalSettings ? { globalSettings: opts.globalSettings } : {}),

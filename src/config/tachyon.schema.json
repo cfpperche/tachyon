@@ -544,9 +544,14 @@
         },
         "ideBrowser": {
           "type": "object",
-          "description": "VS Code Integrated Browser (Tachyon Design Mode / ide_browser_* tools). Workspace-owned defaults for the human globe control.",
+          "description": "VS Code Integrated Browser (Tachyon Design Mode / ide_browser_* tools). Workspace-owned GA gate and defaults for the human surface.",
           "additionalProperties": false,
           "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "When true, show Integrated Browser status-bar controls and allow the bridge to start. When false (default), hide the human surface and fail ide_browser_* / design_mode_chat_reply at call time with a clear disabled error. Tools always remain registered on the Bridge when the engine wires them (MCP catalogs freeze at connect)."
+            },
             "homeUrl": {
               "type": "string",
               "minLength": 1,

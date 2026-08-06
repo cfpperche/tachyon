@@ -221,6 +221,21 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  companion:\n    nope: true\n`).errors[0]).toContain("unknown key");
   });
 
+  it("parses settings.ideBrowser.enabled + homeUrl (SDD 488 F4 GA gate)", () => {
+    const base = `agents:\n  a:\n    cmd: x\n`;
+    const on = parseConfig(`${base}settings:\n  ideBrowser:\n    enabled: true\n    homeUrl: https://app.local\n`);
+    expect(on.errors).toEqual([]);
+    expect(on.config?.settings.ideBrowser?.enabled).toBe(true);
+    expect(on.config?.settings.ideBrowser?.homeUrl).toBe("https://app.local");
+    const off = parseConfig(`${base}settings:\n  ideBrowser:\n    enabled: false\n`);
+    expect(off.errors).toEqual([]);
+    expect(off.config?.settings.ideBrowser?.enabled).toBe(false);
+    const absent = parseConfig(`${base}settings:\n  maxAgents: 2\n`);
+    expect(absent.config?.settings.ideBrowser).toBeUndefined();
+    expect(parseConfig(`${base}settings:\n  ideBrowser:\n    enabled: yes\n`).errors[0]).toContain("enabled");
+    expect(parseConfig(`${base}settings:\n  ideBrowser:\n    nope: true\n`).errors[0]).toContain("unknown key");
+  });
+
   it("parses settings.companion.lanAccess (SDD 422 phone LAN reachability)", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     const on = parseConfig(`${base}settings:\n  companion:\n    lanAccess: true\n`);

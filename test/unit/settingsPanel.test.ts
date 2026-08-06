@@ -12,7 +12,7 @@ describe("SDD 485 D10 — standalone Settings dashboard", () => {
     const noop = async () => undefined;
     const manager = new SettingsPanelManager(Uri.file("/ext"), {
       collect: async (value) => { needs.push(value); return []; }, openDoctor: () => undefined,
-      openConfigFile: noop, setCompanionTabTools: noop, setIdleAfterMinutes: noop,
+      openConfigFile: noop, setCompanionTabTools: noop, setIdeBrowserEnabled: noop, setIdleAfterMinutes: noop,
       setCompanionAllowedHosts: noop, unpairCompanionDevice: noop,
       issueCompanionPairCode: async () => ({ ok: false, reason: "test" }),
     });

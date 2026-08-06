@@ -1811,6 +1811,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
 
         let companion: CockpitWorkspaceBundle["companion"];
+        // SDD 488 F4 — shell config is the authority when engine is offline; companion.status may piggyback the bit.
+        let ideBrowser: CockpitWorkspaceBundle["ideBrowser"] = {
+          enabled: ws.config?.settings?.ideBrowser?.enabled === true,
+        };
         try {
           const st = jsonObject(await extensionQuery(ws, { action: "companion.status" }), "companion.status");
           const devicesRaw = Array.isArray(st.devices) ? st.devices : [];
@@ -1841,8 +1845,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             engineLabel: typeof st.engineLabel === "string" ? st.engineLabel : undefined,
             devices,
           };
+          if (typeof st.ideBrowserEnabled === "boolean") {
+            ideBrowser = { enabled: st.ideBrowserEnabled === true };
+          }
         } catch {
-          /* engine without companion.status (older) or offline */
+          /* engine without companion.status (older) or offline — ideBrowser falls back to shell config */
         }
 
         // spec 444 — the classified engine read is the ONE source for the Worktrees tab. Engine
@@ -1931,6 +1938,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           })(),
           tmux,
           ...(companion ? { companion } : {}),
+          ...(ideBrowser ? { ideBrowser } : {}),
         });
       }
       return bundles;
@@ -1963,6 +1971,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = byHash(wsHash);
       if (!ws) throw new Error("no Tachyon workspace for that hash");
       await extensionInvoke(ws, { action: "config.companion.tabTools", enabled });
+    },
+    setIdeBrowserEnabled: async (wsHash: string, enabled: boolean) => {
+      const ws = byHash(wsHash);
+      if (!ws) throw new Error("no Tachyon workspace for that hash");
+      await extensionInvoke(ws, { action: "config.ideBrowser.enabled", enabled });
     },
     setCompanionAllowedHosts: async (wsHash: string, hosts: string[]) => {
       const ws = byHash(wsHash);
@@ -2363,6 +2376,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     openDoctor: engineHost.openDoctor,
     openConfigFile: engineHost.openConfigFile,
     setCompanionTabTools: engineHost.setCompanionTabTools,
+    setIdeBrowserEnabled: engineHost.setIdeBrowserEnabled,
     setIdleAfterMinutes: engineHost.setIdleAfterMinutes,
     setCompanionAllowedHosts: engineHost.setCompanionAllowedHosts,
     unpairCompanionDevice: engineHost.unpairCompanionDevice,
