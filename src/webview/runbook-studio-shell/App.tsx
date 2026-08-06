@@ -15,9 +15,10 @@ import type { RunbookStudioEntity, RunbookStudioFields, RunbookStudioHostMessage
 /**
  * t-610705 (SDD 410 Phase D, D1a) — Control-hosted, same props-driven split as Command/Terminal
  * Studio (command-studio-shell/App.tsx's doc comment has the full rationale). Runbook additionally
- * handles the "referenceData" core message on its own — pushed independently of a full `load` by
- * `refreshCockpitStudioReferenceData` (studioHost.ts) after an external command-catalog change, so
- * the step-resolution chips stay current without disturbing the in-progress edit.
+ * handles the "referenceData" core message on its own — pushed independently of a full `load` after
+ * an external command-catalog change (standalone `refreshReferenceData()`; the retired Control host
+ * called this `refreshCockpitStudioReferenceData` in studioHost.ts), so the step-resolution chips
+ * stay current without disturbing the in-progress edit.
  */
 export interface RunbookStudioAppProps {
   dispatch: StudioDispatch;

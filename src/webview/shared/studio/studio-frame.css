@@ -29,10 +29,11 @@
 .sf-region-fields, .sf-region-richdoc { min-width: 0; display: grid; gap: var(--ds-3); align-content: start; }
 .sf-region-preview { border-left: 1px solid var(--ds-border); padding-left: var(--ds-4); min-width: 0; }
 .sf-side-actions { max-width: 1180px; width: 100%; margin: 0 auto; box-sizing: border-box; padding: var(--ds-3) var(--ds-4); border-top: 1px solid var(--ds-border); }
-/* t-610705 (Phase D, D0) — the navigation-transaction checkpoint freeze (studioHost.ts's module
-   doc): a brief, dimmed read-only state while the host decides where a nav intent commits. Applies
-   to .sf-body only (not the header/banners — Cancel/Save are disabled via their own `disabled` prop,
-   not pointer-events, so their focus/hover states still read correctly to a screen reader). */
+/* t-610705 (Phase D, D0) — the navigation-transaction checkpoint freeze (useStudioFreeze.ts /
+   studioFreezeBus.ts; design originated on the retired Control host): a brief, dimmed read-only
+   state while the host decides where a nav intent commits. Applies to .sf-body only (not the
+   header/banners — Cancel/Save are disabled via their own `disabled` prop, not pointer-events, so
+   their focus/hover states still read correctly to a screen reader). */
 .sf-shell.sf-frozen .sf-body { pointer-events: none; opacity: 0.55; transition: opacity 120ms ease; }
 /* t-b643ac — the tombstone screen (StudioTombstone.tsx), shown INSTEAD of the frame body when the
    entity no longer exists. Reuses .sf-shell/.sf-header so the tab does not visibly jump between an

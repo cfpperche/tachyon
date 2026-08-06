@@ -11,12 +11,12 @@ import type { AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfile
  * logic ported from the retired AgentStudioPanelManager.handleDomainMessage into agentStudioDomain.ts
  * (generic StudioRegistryEntry.handleDomainMessage extension point). The retired
  * `agentStudioPanel.test.ts` conflated two things: the generic StudioPanelManagerBase LIFECYCLE
- * (load/save/cancel/refreshAll/restore/reveal/malformed-message) — now covered generically by
- * cockpitStudio.test.ts's D0 FSM tests, which apply to every StudioId including "agent" once wired,
- * same as terminal/runbook/schedule lost their own copies of that coverage in D1a — and the
- * AGENT-SPECIFIC domain dispatch this file re-covers directly, calling the ported function in
- * isolation rather than through the full Cockpit.ts/studioHost.ts stack (simpler to drive, and the
- * exact same logic either way — this function has no dependency on binding/txnLock state at all).
+ * (load/save/cancel/refreshAll/restore/reveal/malformed-message) — covered generically by panel-base
+ * / cancel tests (the Control-route FSM suite that used to live beside studioHost.ts is gone with
+ * that host) — and the AGENT-SPECIFIC domain dispatch this file re-covers directly, calling the
+ * ported function in isolation rather than through the full Cockpit/panel stack (simpler to drive,
+ * and the exact same logic either way — this function has no dependency on binding/txnLock state at
+ * all).
  */
 
 function flush(): Promise<void> {

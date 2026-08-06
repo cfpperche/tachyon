@@ -13,9 +13,9 @@ import type { WorkspaceTaskStudioTarget, TaskStudioAttachmentResult } from "../.
  * logic ported from the retired TaskStudioPanelManager.handleDomainMessage into taskStudioDomain.ts
  * (generic StudioRegistryEntry.handleDomainMessage extension point), same split
  * agentStudioDomain.test.ts already established for D1b: the generic StudioPanelManagerBase-replacement
- * LIFECYCLE (load/save/cancel/persisted-cleanup) is covered generically by cockpitStudio.test.ts and
- * studioHostProvisionalCleanup.test.ts; this file covers the TASK-SPECIFIC domain dispatch directly,
- * calling the ported function in isolation rather than through the full Cockpit.ts/studioHost.ts stack.
+ * LIFECYCLE (load/save/cancel/persisted-cleanup) is covered generically elsewhere (panel-base /
+ * cancel tests); this file covers the TASK-SPECIFIC domain dispatch directly, calling the ported
+ * function in isolation rather than through the full Cockpit/panel stack.
  */
 
 const dirs: string[] = [];

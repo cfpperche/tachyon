@@ -95,9 +95,10 @@ import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandi
  * (command-studio-shell/App.tsx's doc comment has the full rationale for routeKey/mountNonce/useStudioFreeze/
  * eager ref updates). The soul-profile/evolution message handling below is otherwise UNCHANGED from the
  * standalone-panel version — those messages already carry their own `agent` field and are host-validated
- * against the CURRENT binding's entityId (studioHost.ts's `StudioMessageHooks.handleDomainMessage`, D1b
- * addition — see agentStudioDomain.ts), so no client-side identity work was needed there beyond routing
- * every message (including soul/evolution ones) through the same identity-stamping `post` wrapper.
+ * against the CURRENT binding's entityId (agentStudioDomain.ts via StudioRegistryEntry.handleDomainMessage,
+ * D1b — the retired Control host wired the same check in studioHost.ts), so no client-side identity
+ * work was needed there beyond routing every message (including soul/evolution ones) through the same
+ * identity-stamping `post` wrapper.
  */
 export interface AgentStudioAppProps {
   dispatch: StudioDispatch;

@@ -18,12 +18,13 @@
  * ## The rule about drafts
  *
  * `decideVanishedDraft` is the whole of decision 3, and it is not new policy: `restoreDecisions.ts`
- * already says "when in doubt, restore LESS", and studioHost.ts already discards a draft whose
- * fingerprint no longer matches the loaded entity ("edits computed against content that no longer
- * exists"). An entity that has been REMOVED is the strongest form of that mismatch, so the draft is
- * dropped — and, critically, dropped from the manager's retained-draft cache too, because that cache
- * is keyed by identity: keeping it would restore a dead agent's unsaved edits onto a LATER agent
- * created under the same name. The human is told, rather than the loss being silent.
+ * already says "when in doubt, restore LESS", and the retired Control host (studioHost.ts, deleted
+ * in t-337cdf) discarded a draft whose fingerprint no longer matched the loaded entity ("edits
+ * computed against content that no longer exists"). An entity that has been REMOVED is the strongest
+ * form of that mismatch, so the draft is dropped — and, critically, dropped from the manager's
+ * retained-draft cache too, because that cache is keyed by identity: keeping it would restore a dead
+ * agent's unsaved edits onto a LATER agent created under the same name. The human is told, rather
+ * than the loss being silent.
  */
 
 /** Which `adapter.load()` outcomes mean the document's subject no longer exists. */

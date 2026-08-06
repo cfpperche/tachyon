@@ -172,13 +172,13 @@ function hydrateProjection(
 }
 
 /** t-610705 (Phase D, D3) — ported from TaskStudioTarget.ts's D2 fix: a Control-hosted studio route
- *  is never handed a live `webview.asWebviewUri` (no per-panel `StudioLoadContext` reaches `load()`
- *  through studioHost.ts — see route.ts/studioHost.ts's `adapter.load(entityId)` call, no context
- *  arg). The OLD standalone-panel `context?.asWebviewUri(...) ?? store.blobPath(...)` fallback would
- *  silently leak a bare filesystem path as `uri` in the Control-hosted path (unusable by the webview,
- *  no scheme, no local-resource-root grant). Embedding the bytes as a `data:` URI instead needs no
- *  per-route `localResourceRoots` grant at all — this is what D2's `imgBlob`/`connectSrc`/
- *  `workerSrc:"blob"` CSP grants (Cockpit.ts) exist to support client-side.
+ *  was never handed a live `webview.asWebviewUri` (the retired studioHost.ts called
+ *  `adapter.load(entityId)` with no StudioLoadContext). The OLD standalone-panel
+ *  `context?.asWebviewUri(...) ?? store.blobPath(...)` fallback would silently leak a bare
+ *  filesystem path as `uri` on that path (unusable by the webview, no scheme, no local-resource-root
+ *  grant). Embedding the bytes as a `data:` URI instead needs no per-route `localResourceRoots`
+ *  grant at all — this is what D2's `imgBlob`/`connectSrc`/`workerSrc:"blob"` CSP grants
+ *  (Cockpit.ts) exist to support client-side.
  */
 function hydrateAttachment(
   workspaceRoot: string,

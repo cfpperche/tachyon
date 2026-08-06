@@ -30,8 +30,9 @@ export class TaskDocumentEditPolicy<TPatch> {
    * cleared and put it straight back into the cache.
    *
    * Discarding rather than preserving is the rule this repo already applies one notch weaker:
-   * `restoreDecisions.ts` ("when in doubt, restore LESS") and studioHost.ts's fingerprint check
-   * ("edits computed against content that no longer exists"). Removal is that mismatch at its limit.
+   * `restoreDecisions.ts` ("when in doubt, restore LESS") and the retired Control host's fingerprint
+   * check ("edits computed against content that no longer exists"; studioHost.ts, deleted in
+   * t-337cdf). Removal is that mismatch at its limit.
    */
   private vanished = false;
 
