@@ -100,6 +100,36 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
   },
 
   /**
+   * SDD 494 Part 4 — the refusal string now opens with the disagreement state and the two owners
+   * that disagree, which makes the longest line in the sidebar longer still.
+   *
+   * The rows are the three states that keep a roster row, because only those reach the sidebar. The
+   * healthy `claude` is the neighbour the change must not regress: the refusal rides a `title`
+   * tooltip, so the row's geometry must be identical to the row above it.
+   */
+  "disagreement-state": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: [
+        { name: "claude", model: "Opus 5", status: "idle", kind: "agent" },
+        {
+          name: "claude23", status: "stopped", kind: "agent",
+          refused: "unprojectable — the profile and the runtime configuration disagree. profile: profile/native-config-value: Claude global key 'permissions.defaultMode' value 'bypassPermissions' is not projectable (supported: acceptEdits, auto, manual, dontAsk, plan); authorize it explicitly for this agent, set the Permissions family to Exclude, or change the global value",
+        },
+        {
+          name: "deleted-by-hand", status: "stopped", kind: "agent",
+          refused: "orphan-locator — the roster and the profile on disk disagree. profile: canonical profile is missing",
+        },
+        {
+          name: "copied-roster", status: "stopped", kind: "agent",
+          refused: "unattested — the roster and the host authority disagree. profile: host profile authority is missing",
+        },
+      ],
+    } as FleetVM,
+  },
+
+  /**
    * t-aa2780 — the engine log-error signal at its new home, which is the only place it now has.
    *
    * Control's Engine TAB used to carry this dot; the tab strip is gone, so it lives on the sidebar's

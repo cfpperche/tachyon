@@ -373,6 +373,51 @@ async function refusedSavedAgentWorkspace() {
 }
 
 /**
+ * SDD 494 Part 4 — the same `claude23` shape, with ONE owner's record withheld.
+ *
+ * Each variant is a row of the resolution table in `spec.md`, built through the real loader rather
+ * than by handing the derivation a literal. `refused` is the shape the live workspace is in today:
+ * every record present, the runtime projection refused by spec 471.
+ */
+async function savedAgentStateWorkspace(
+  withheld: "refused" | "roster-row" | "profile" | "authority" | "roster-row-and-profile",
+): Promise<{ root: string; ws: Workspace }> {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+  fs.writeFileSync(
+    path.join(homeDir, ".claude", "settings.json"),
+    JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }, null, 2),
+  );
+  const permissions = {
+    source: "global",
+    treatment: "overlay",
+    refresh: "every-launch",
+    lifecycle: ["fresh", "restart", "resume", "fork"],
+  };
+  const fixtures = [
+    writeSavedAgent(root, "claude", {
+      runtime: "claude",
+      extra: { nativeConfig: { permissions: { ...permissions, authorize: ["bypassPermissions"] } } },
+    }),
+    writeSavedAgent(root, "claude23", { runtime: "claude", extra: { nativeConfig: { permissions } } }),
+  ];
+  const withoutSubject = fixtures.filter((entry) => entry.name !== "claude23");
+  const rosterHidden = withheld === "roster-row" || withheld === "roster-row-and-profile";
+  const profileHidden = withheld === "profile" || withheld === "roster-row-and-profile";
+  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(rosterHidden ? withoutSubject : fixtures), "utf8");
+  if (profileHidden) fs.rmSync(path.join(root, ".tachyon", "agents", "claude23"), { recursive: true, force: true });
+  const secrets = savedAgentSecrets(root, withheld === "authority" ? withoutSubject : fixtures);
+  const host = new SharedSecretHost(mkdir(), secrets, {});
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  return { root, ws };
+}
+
+/**
  * SDD 478 M7 — a workspace whose canonical agents have Evolution ENABLED.
  *
  * The projection pins the Evolution selector to a profileId, and only the store mints one, so the
@@ -1068,6 +1113,135 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
       fs.writeFileSync(file, text.replace(/  claude23:\n    profile: .tachyon\/agents\/claude23\/agent.yml\n/u, ""));
       expect(fs.readFileSync(file, "utf8")).not.toContain("claude23:");
       expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+});
+
+/**
+ * SDD 494 Part 4 — the disagreement, named where a reader already looks.
+ *
+ * Each case names the row of `spec.md`'s resolution table it measures, and each one is built through
+ * the real loader. The `unprojectable` case is the live `claude23`: the workspace agent is NOT
+ * touched by this suite, and its own case asserts that reconciliation removed nothing.
+ */
+describe("SDD 494 Part 4 — the five disagreement states", () => {
+  const doorOf = (report: Awaited<ReturnType<Workspace["reconcileSavedAgentRoster"]>>, agent: string) =>
+    report.agents.find((row) => row.agent === agent)!;
+
+  it("unprojectable: classifies claude23's exact shape, names the door, and removes nothing", async () => {
+    const { root, ws } = await savedAgentStateWorkspace("refused");
+    try {
+      const report = await ws.reconcileSavedAgentRoster();
+      const row = doorOf(report, "claude23");
+      expect(row.state).toBe("unprojectable");
+      expect(row.member).toBe(true);
+      expect(row.facts).toEqual({ rosterRow: true, profileOnDisk: true, authorityRecord: true, projection: false });
+      expect(row.removal.door).toBe("Agent Studio -> Forget (Bridge: propose_saved_agent_removal)");
+      expect(row.refusal).toContain("'bypassPermissions' is not projectable");
+      // The healthy neighbour is reported as consistent, so the state is a measurement rather than a
+      // label every refused workspace gets.
+      expect(doorOf(report, "claude").state).toBe("consistent");
+      // Read-only: the fixture is the acceptance fixture, and the tool must never be a removal door.
+      expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);
+      expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("claude23:");
+      expect(ws.isSavedAgentMember("claude23")).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("the sidebar row's refusal string names the state and keeps the reason", async () => {
+    const { ws } = await savedAgentStateWorkspace("refused");
+    try {
+      const line = ws.refusedAgents().claude23;
+      expect(line.startsWith("unprojectable — the profile and the runtime configuration disagree. ")).toBe(true);
+      expect(line).toContain("'bypassPermissions' is not projectable");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("orphan-locator: a roster row whose profile directory is gone stays a member with a door", async () => {
+    const { ws } = await savedAgentStateWorkspace("profile");
+    try {
+      const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
+      expect(row.state).toBe("orphan-locator");
+      expect(row.member).toBe(true);
+      expect(row.facts.profileOnDisk).toBe(false);
+      expect(row.removal.door).toContain("Forget");
+      expect(ws.refusedAgents().claude23).toContain("orphan-locator");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("unattested: a roster row and a profile with no host authority stays a member with a door", async () => {
+    const { ws } = await savedAgentStateWorkspace("authority");
+    try {
+      const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
+      expect(row.state).toBe("unattested");
+      expect(row.member).toBe(true);
+      expect(row.facts).toEqual({ rosterRow: true, profileOnDisk: true, authorityRecord: false, projection: false });
+      expect(row.removal.door).toContain("Forget");
+      expect(row.refusal).toContain("host profile authority is missing");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /**
+   * The third open question of `spec.md`, measured rather than argued: the state IS reachable. The
+   * text-editor door above produces exactly this shape, so its handling stays "report it, keep the
+   * profile" instead of becoming a defensive branch nobody reaches.
+   */
+  it("unlisted-profile: a profile with no roster row is not a member and has no door", async () => {
+    const { root, ws } = await savedAgentStateWorkspace("roster-row");
+    try {
+      const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
+      expect(row.state).toBe("unlisted-profile");
+      expect(row.member).toBe(false);
+      expect(row.removal.door).toBeNull();
+      expect(row.removal.reason).toContain("never deletes it automatically");
+      expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("stranded-authority: an authority with no roster row and no profile is not a member and has no door", async () => {
+    const { ws } = await savedAgentStateWorkspace("roster-row-and-profile");
+    try {
+      const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
+      expect(row.state).toBe("stranded-authority");
+      expect(row.member).toBe(false);
+      expect(row.facts).toEqual({ rosterRow: false, profileOnDisk: false, authorityRecord: true, projection: false });
+      expect(row.removal.door).toBeNull();
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("Agent, Bridge x reconcile_roster answers with the same report", async () => {
+    const { root, ws } = await savedAgentStateWorkspace("refused");
+    const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
+    registerTools(
+      { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
+      {
+        workspaceRoot: root,
+        caller: { kind: "agent", name: "claude" },
+        manager: ws.manager,
+        savedAgentRosterReconciliation: () => ws.reconcileSavedAgentRoster(),
+      } as never,
+    );
+    try {
+      const result = await tools.get("reconcile_roster")!({});
+      expect(result.isError).toBeFalsy();
+      const report = JSON.parse(result.content[0]!.text) as Awaited<ReturnType<Workspace["reconcileSavedAgentRoster"]>>;
+      const row = doorOf(report, "claude23");
+      expect(row.state).toBe("unprojectable");
+      expect(row.removal.door).toBe("Agent Studio -> Forget (Bridge: propose_saved_agent_removal)");
     } finally {
       ws.dispose();
     }

@@ -84,3 +84,33 @@ use membership. The focused suite passes all six cases.
 
 The acceptance fixture uses the name `claude23` in a temporary workspace. It reproduces the
 spec 471 refusal from a private fake home. The live `claude23` remains unchanged.
+
+## Part 4 implementation
+
+Parts 2 and 3 did not run. The owner shrank their motivation after the measurement showed
+`tachyon.yml` is already machine-local, so `.tachyon/roster.json` does not exist and the roster
+row fact still reads the `tachyon.yml` pointer through `agentSources`. The derivation names the
+FACT, not the file, so a later Part 2 changes one line in `savedAgentPresenceFacts`.
+
+The five states are `src/config/savedAgentState.ts`, a total function over four booleans. The
+presence facts decide before the projection does, which matters because the projection's input is
+a host file no Tachyon record owns; a projection that somehow succeeded while a record was missing
+must not report `consistent`.
+
+The truth table is written out in the test, all sixteen rows. A table generated from the
+implementation would agree with any implementation, including a wrong one.
+
+The state rides `Workspace.refusedAgents()`, which is the ONE place the refusal string is built.
+The sidebar row and `list_agents` therefore carry the same line without a second code path.
+
+The third open question is answered by enumeration in `spec.md`: six doors, three of them durable.
+The `Human, text editor x edit tachyon.yml` case from Part 0 was already an `unlisted-profile`
+before the state had a name. The handling is unchanged.
+
+Visual QA measured what `plan.md` predicted would be a length risk, and the risk does not exist:
+the refusal is a `title` tooltip, so the longer string has no geometry. The finding worth the
+owner's judgment is the other side of that — the state reaches a human only on hover.
+
+The five-state forget DOGFOOD in the Dogfood section stayed open. It forgets an agent in each
+state, which is the acceptance run's work and needs the live `claude23`; Part 4 was scoped to name
+the disagreement without removing anything.

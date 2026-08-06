@@ -964,4 +964,33 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
       }
     },
   );
+
+  // ── SDD 494 Part 4 — the roster reconciliation, beside reconcile_worktree_hygiene ────────────
+  mcp.registerTool(
+    "reconcile_roster",
+    {
+      description:
+        "SDD 494 Part 4 — confront the four records that hold a Saved Agent's presence and report, per " +
+        "agent: membership, the four owner facts (roster row, profile on disk, host authority, runtime " +
+        "projection), the derived disagreement state, and THE DOOR THAT WOULD REMOVE IT. Read-only: " +
+        "nothing is written, and the state is derived on every call because three of the four facts live " +
+        "outside Tachyon's records. Ask it when an agent looks broken and you do not know where to take " +
+        "it out. The five states are orphan-locator (roster row, no profile), unlisted-profile (profile, " +
+        "no roster row), unattested (no host authority), unprojectable (all three records agree and the " +
+        "runtime projection fails), and stranded-authority (authority only); `consistent` means the " +
+        "records agree. A member is removable through Agent Studio Forget or " +
+        "propose_saved_agent_removal even when it cannot run — removal reads membership, never " +
+        "runnability. A state with no roster row reports no door and is never cleaned up automatically, " +
+        "because the residue may be a profile that holds work.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        if (!deps.savedAgentRosterReconciliation) return fail(new Error("roster reconciliation is not available on this Bridge"));
+        return ok(JSON.stringify(await deps.savedAgentRosterReconciliation(), null, 2));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
 }

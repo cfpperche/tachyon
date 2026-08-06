@@ -28,6 +28,14 @@ import {
   type AgentProfileAuthorityRecord,
 } from "../config/agentProfileAuthority.js";
 import {
+  deriveSavedAgentState,
+  isSavedAgentStateMember,
+  savedAgentRemovalDoor,
+  type SavedAgentPresenceFacts,
+  type SavedAgentRemovalDoor,
+  type SavedAgentState,
+} from "../config/savedAgentState.js";
+import {
   readAgentProfileConfigText,
   replaceAgentProfileConfigIfDigest,
   type AgentProfileAuthorityPort,
@@ -2173,6 +2181,9 @@ export class Workspace {
         runHostAction: (input) => this.runHostAction(input),
         managedWorktrees: this.managedWorktrees,
         runtimeCredentialHygiene: (input) => this.reconcileRuntimeCredentials(input),
+        // SDD 494 Part 4 — the read door onto "which owners disagree about this agent, and which door
+        // removes it". Read-only by construction: it measures the four presence facts and derives.
+        savedAgentRosterReconciliation: () => this.reconcileSavedAgentRoster(),
         // t-d06da3 — the ports of the shared agent-removal cascade, so `dismiss_agent` takes an owned
         // checkout down through the SAME code `config.agent.delete` uses. The Workspace IS the port
         // bundle (manager + ledger + worktrees + registry), which is exactly how the operation service
@@ -4116,6 +4127,92 @@ export class Workspace {
   }
 
   /**
+   * SDD 494 Part 4 — the four presence facts for ONE name, each read from the record that owns it.
+   *
+   * The authority names are passed in rather than read here so a caller listing the whole fleet reads
+   * the host secret once instead of once per agent, and so the sync sidebar path and the async tool
+   * path measure the same four facts through the same function.
+   */
+  private savedAgentPresenceFacts(name: string, authorityNames: ReadonlySet<string>): SavedAgentPresenceFacts {
+    const source = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: "terminal" | "profile" | "refused" }>;
+    }) | undefined)?.agentSources?.[name];
+    return {
+      rosterRow: source?.mode === "profile" || source?.mode === "refused",
+      profileOnDisk: fs.existsSync(path.join(this.workspaceRoot, ".tachyon", "agents", name, "agent.yml")),
+      authorityRecord: authorityNames.has(name),
+      projection: source?.mode === "profile",
+    };
+  }
+
+  /** The authority names as the host holds them NOW; the cached map is a load-time snapshot. */
+  private async savedAgentAuthorityNames(): Promise<Set<string>> {
+    await this.agentProfileAuthorityTail;
+    const records = parseAgentProfileAuthorityRegistry(
+      await this.host.getSecret(agentProfileAuthoritiesSecretKey(this.wsHash)),
+    );
+    this.agentProfileAuthorities = records;
+    return new Set(records.keys());
+  }
+
+  /** Every name any of the four owners knows about, so a disagreement cannot hide by being absent from one. */
+  private savedAgentSubjects(authorityNames: ReadonlySet<string>): string[] {
+    const sources = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: "terminal" | "profile" | "refused" }>;
+    }) | undefined)?.agentSources ?? {};
+    const names = new Set<string>();
+    for (const [name, source] of Object.entries(sources)) {
+      if (source.mode === "profile" || source.mode === "refused") names.add(name);
+    }
+    for (const name of authorityNames) names.add(name);
+    try {
+      for (const entry of fs.readdirSync(path.join(this.workspaceRoot, ".tachyon", "agents"), { withFileTypes: true })) {
+        if (entry.isDirectory()) names.add(entry.name);
+      }
+    } catch {
+      // No profile directory at all is a fact about a workspace with no Saved Agents, not a failure.
+    }
+    return [...names].sort();
+  }
+
+  /**
+   * SDD 494 Part 4 — the on-demand roster reconciliation, read-only and computed on every call.
+   *
+   * `reconcile_worktree_hygiene` and `reconcile_task` answer "what is residue?" and "what happened?".
+   * Nothing answered "these records disagree about this agent, and here is the door that removes it",
+   * which is the question `claude23` forced a human to answer by reading five sources.
+   */
+  async reconcileSavedAgentRoster(): Promise<{
+    workspaceRoot: string;
+    agents: Array<{
+      agent: string;
+      member: boolean;
+      facts: SavedAgentPresenceFacts;
+      state: SavedAgentState;
+      removal: SavedAgentRemovalDoor;
+      refusal?: string;
+    }>;
+  }> {
+    const authorityNames = await this.savedAgentAuthorityNames();
+    const refusals = this.refusedAgentReasons();
+    return {
+      workspaceRoot: this.workspaceRoot,
+      agents: this.savedAgentSubjects(authorityNames).map((agent) => {
+        const facts = this.savedAgentPresenceFacts(agent, authorityNames);
+        const state = deriveSavedAgentState(facts);
+        return {
+          agent,
+          member: isSavedAgentStateMember(facts),
+          facts,
+          state,
+          removal: savedAgentRemovalDoor(state),
+          ...(refusals[agent] !== undefined ? { refusal: refusals[agent] } : {}),
+        };
+      }),
+    };
+  }
+
+  /**
    * t-e722ce — the read-only projection of what a forget would do, computed before the human is
    * asked to approve anything.
    *
@@ -5261,6 +5358,18 @@ export class Workspace {
    * roster reader downstream goes through `config.agents`.
    */
   refusedAgents(): Record<string, string> {
+    // The load-time snapshot, not a fresh secret read: this runs on every `list()`, and the sidebar
+    // must not make a host secret call per refresh. The tool below reads the live registry.
+    const authorityNames = new Set(this.agentProfileAuthorities.keys());
+    const out: Record<string, string> = {};
+    for (const [name, reason] of Object.entries(this.refusedAgentReasons())) {
+      out[name] = this.savedAgentDisagreementLine(deriveSavedAgentState(this.savedAgentPresenceFacts(name, authorityNames)), reason);
+    }
+    return out;
+  }
+
+  /** The raw refusal reasons, with no disagreement state on them. The tool reports the two apart. */
+  private refusedAgentReasons(): Record<string, string> {
     const sources = (this.config as (TachyonConfig & {
       agentSources?: Record<string, { mode: string; reason?: string }>;
     }) | undefined)?.agentSources;
@@ -5269,6 +5378,34 @@ export class Workspace {
       if (source.mode === "refused" && source.reason) out[name] = source.reason;
     }
     return out;
+  }
+
+  /**
+   * SDD 494 Part 4 — the sidebar row's existing `refused` string, now naming WHICH owners disagree.
+   *
+   * It gets no surface of its own. The row is already rendered for a refused agent and a human
+   * already reads it, so the state rides the string that is already there. The measured refusal is
+   * around 260 characters, which is why each prefix is one short sentence and names the two owners
+   * rather than explaining the state.
+   */
+  private savedAgentDisagreementLine(state: SavedAgentState, reason: string): string {
+    switch (state) {
+      case "orphan-locator":
+        return this.t("orphan-locator — the roster and the profile on disk disagree. {0}", reason);
+      case "unattested":
+        return this.t("unattested — the roster and the host authority disagree. {0}", reason);
+      case "unprojectable":
+        return this.t("unprojectable — the profile and the runtime configuration disagree. {0}", reason);
+      case "unlisted-profile":
+        return this.t("unlisted-profile — a profile is on disk and the roster does not list it. {0}", reason);
+      case "stranded-authority":
+        return this.t("stranded-authority — a host authority is left and the agent is gone. {0}", reason);
+      // A refusal with no disagreement behind it keeps the string it always had. Adding a state name
+      // here would tell the reader that owners disagree when the measurement says they do not.
+      case "consistent":
+      case "absent":
+        return reason;
+    }
   }
 
   async inspectAgentProfileLifecycle(agentName: string): Promise<AgentProfileLifecycleSnapshot> {
