@@ -31,8 +31,8 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "structured brief — task + context + constraints + (deliverable OR done_when) — or the call is rejected. " +
         "The contract is delivered to the child as its opening brief, so fill it with real substance. " +
         "Pass skip_contract_reason=<why, ≥10 chars> ONLY for a genuinely trivial spawn (recorded, surfaced to the human). " +
-        "BOARD CLAIM: pass claim_task=<t-xxxxxx> to launch the agent FOR a triaged board task — the task moves to " +
-        "active with this agent as assignee in the same operation, so the brief you write and the work the agent " +
+        "BOARD CLAIM: pass claim_task=<t-xxxxxx> or claim_task=[<t-xxxxxx>, ...] to launch the agent FOR triaged board tasks. " +
+        "Every task moves to active with this agent as assignee before launch, so the brief you write and the work the agent " +
         "reads off the board are one fact instead of two that can disagree. A task this agent cannot hold (still in " +
         "inbox, closed, or assigned to someone else) is refused HERE, naming the reason, instead of launching an " +
         "agent that discovers it a turn later. Triage stays a SEPARATE, DELIBERATE decision — not a human-only one: " +
@@ -91,11 +91,10 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           .describe("bypass the contract gate for a trivial spawn — ≥10 chars explaining why; recorded + surfaced to the human"),
         // t-48f504 — the board claim. Deliberately a task ID and not another prose slot: `task` above is
         // the directive and can say anything, which is exactly why it could never bind a spawn to the board.
-        claim_task: TASK_ID.optional().describe(
-          "board task this agent is launched FOR — moved to active with this agent as assignee in the same "
-          + "operation, so the spawn contract and the agent's work-on-record cannot disagree. Must already be "
-          + "triaged (or already active and held by this same agent); inbox is refused because triage is a human "
-          + "decision, and a closed or someone-else's task is refused by name.",
+        claim_task: z.union([TASK_ID, z.array(TASK_ID).min(1)]).optional().describe(
+          "board task or tasks this agent is launched FOR. A string preserves the singular format. An array claims "
+          + "every task before launch. Each task must be triaged or already active under this agent. Any invalid "
+          + "item refuses the entire spawn by task id and reason, so the contract and work-on-record stay complete.",
         ),
       },
     },
@@ -151,25 +150,27 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           const admission = admitAgentRuntimeCommand(cmd);
           if (!admission.ok) return fail(new Error(`spawn_agent refused: ${admission.reason}`));
         }
-        // t-48f504 — DECIDE the board claim here, APPLY it just before the launch (below).
+        // t-48f504 / t-66c4d7 — DECIDE every board claim here. APPLY them before launch.
         //
         // Splitting the two is the whole point of the measured incident: the spawn SUCCEEDED three
         // times at work the child could not hold, so the refusal arrived a launch and a 13KB brief
         // later, from the child. Deciding at the entry makes an unreachable contract cost a tool call.
-        // Applying late means a spawn refused for any other reason (contract gate, manager) leaves the
-        // board untouched — a claim written for an agent that never started would be a fresh instance
-        // of exactly the two-records-disagree defect this parameter removes.
-        let claimPlan: { prior: Task; decision: SpawnTaskClaimDecision } | undefined;
-        if (claim_task !== undefined) {
+        // Validation finishes before any write. One invalid item refuses the complete dispatch.
+        // A partial spawn would recreate the disagreement this parameter removes.
+        const claimTaskIds = claim_task === undefined
+          ? []
+          : [...new Set(Array.isArray(claim_task) ? claim_task : [claim_task])];
+        const claimPlans: Array<{ id: string; prior: Task; decision: SpawnTaskClaimDecision }> = [];
+        for (const claimTaskId of claimTaskIds) {
           let boardTask: Task;
           try {
-            boardTask = deps.tasks.get(claim_task);
+            boardTask = deps.tasks.get(claimTaskId);
           } catch (error) {
-            return fail(new Error(`spawn_agent cannot claim '${claim_task}': ${(error as Error).message}`));
+            return fail(new Error(`spawn_agent cannot claim '${claimTaskId}': ${(error as Error).message}`));
           }
           const decision = decideSpawnTaskClaim(boardTask, name);
           if (decision.kind === "refuse") return fail(new Error(decision.reason));
-          claimPlan = { prior: boardTask, decision };
+          claimPlans.push({ id: claimTaskId, prior: boardTask, decision });
         }
         // t-d06da3 — a `isTemporaryAiAgent && worktree === true` refusal used to stand here, and it is
         // gone. Two measured reasons, both recorded in spec 484:
@@ -249,29 +250,35 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
             brief = composeSpawnContractBrief(name, contract, instructions, parent);
           }
         }
-        // t-48f504 — the claim, in ONE store transaction: `triaged -> active` and `assignee` move
-        // together, which `assertTransition` accepts as a unit ("active tasks require assignee"). The
-        // window the incident fell into — a task active but not yet assigned, or assigned but not yet
-        // active — cannot exist here, because there is no intermediate write.
+        // Each claim moves status and assignee in one store transaction.
+        // A failed later write releases earlier claims before refusing the dispatch.
         //
         // It goes through the store directly rather than through `update_task`, whose SDD-370 guard
         // refuses assigning to an agent whose runtime is not ready. That guard is right for the tool
         // and wrong here: the launch three lines down is what makes the runtime ready, so the claim
         // is the one assignment that must precede readiness. The CAS on `updatedAt` keeps it honest
-        // against a concurrent board writer between the decision above and this write.
-        const claimed = claimPlan?.decision.kind === "claim"
-          ? await deps.tasks.update(claim_task!, {
+        // against a concurrent board writer between each decision and write.
+        const claimed: Array<{ task: Task; prior: Task }> = [];
+        try {
+          for (const plan of claimPlans) {
+            if (plan.decision.kind !== "claim") continue;
+            const updated = await deps.tasks.update(plan.id, {
               status: "active",
               assignee: name,
-              expect: { updatedAt: claimPlan.prior.updatedAt },
+              expect: { updatedAt: plan.prior.updatedAt },
               ...(deps.caller?.kind === "agent" && deps.caller.name ? { actor: deps.caller.name } : {}),
-            })
-          : undefined;
-        if (claimed) {
-          deps.onTasksChanged?.({ reason: "task-mutated", id: claimed.id });
-          const claimActor = taskNotificationActor(deps);
-          emitTaskNotification(deps, { type: "assigned", task: claimed, actor: claimActor, from: claimPlan?.prior.assignee, to: name });
-          emitTaskNotification(deps, { type: "statusChanged", task: claimed, actor: claimActor, from: claimPlan!.prior.status, to: "active" });
+            });
+            claimed.push({ task: updated, prior: plan.prior });
+            deps.onTasksChanged?.({ reason: "task-mutated", id: updated.id });
+            const claimActor = taskNotificationActor(deps);
+            emitTaskNotification(deps, { type: "assigned", task: updated, actor: claimActor, from: plan.prior.assignee, to: name });
+            emitTaskNotification(deps, { type: "statusChanged", task: updated, actor: claimActor, from: plan.prior.status, to: "active" });
+          }
+        } catch (claimError) {
+          for (const entry of claimed.slice().reverse()) {
+            await releaseSpawnClaim(deps, entry.task, entry.prior);
+          }
+          throw claimError;
         }
         try {
           // reveal:false — spawning a child must not steal the human's editor focus (F3);
@@ -301,7 +308,9 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
           // would hold `active`/assigned work for an agent that does not exist, and the next reader —
           // human or a restart of the same name — would believe it. Put the row back exactly as the
           // decision above found it, and say so if even that fails.
-          if (claimed) await releaseSpawnClaim(deps, claimed, claimPlan!.prior);
+          for (const entry of claimed.slice().reverse()) {
+            await releaseSpawnClaim(deps, entry.task, entry.prior);
+          }
           throw spawnError;
         }
         const session = deps.manager.session(name);
