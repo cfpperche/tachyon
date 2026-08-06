@@ -36,6 +36,7 @@ import type { CallerSnapshot, CallerIdentityRegistry, CallerScope } from "../cal
 import { redactSecrets } from "../redact.js";
 import type { HostActionBrokerResult } from "../../host-action/index.js";
 import type { ManagedWorktreeService } from "../../worktree/ManagedWorktreeService.js";
+import type { ChangedFile } from "../../worktree/review.js";
 import type { TaskNotificationEvent } from "../../tasks/taskNotificationPolicy.js";
 import type { TaskPrototypeSnapshot } from "../../tasks/TaskPrototypeStore.js";
 import { RuntimeLaunchPreflightError } from "../../runtime/launchPreflight.js";
@@ -486,6 +487,13 @@ export interface BridgeDeps {
    * correct there because a Temporary with no engine cannot own a checkout either.
    */
   agentWorktrees?: AgentWorktreeRemovalPorts;
+  /**
+   * t-75e9c7 — the diff-vs-baseRef git read `agent_touched_files` needs (working-tree compare, spec
+   * 213), threaded separately from `agentWorktrees` because that port is scoped to removal and this
+   * one is a plain read no removal call needs. `Workspace.worktrees` (a `WorktreeManager`) satisfies
+   * this directly. Optional for the same reason every other capability here is.
+   */
+  touchedFiles?: (cwd: string, baseRef: string) => Promise<ChangedFile[]>;
 }
 
 /**
