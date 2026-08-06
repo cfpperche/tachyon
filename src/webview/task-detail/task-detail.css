@@ -72,7 +72,11 @@
 .td-deps-list { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .td-body { margin-top: var(--ds-4); padding-top: var(--ds-3); border-top: var(--ds-border-width) solid var(--ds-border); }
-.td-body .ds-section { margin-bottom: var(--ds-2); }
+/* t-fe8ba3 — `.ds-section` is an inline span; vertical margin does nothing on an inline box, so its
+   label and a sibling inline placeholder sit on one line. A rendered body is safe (`MarkdownView`
+   emits a block `div.md`, which forces its own break) — only the empty-body placeholder is also an
+   inline span and needs the same treatment applied here rather than on the shared `.ds-section` rule. */
+.td-body .ds-section + .ds-dim { display: block; margin-top: var(--ds-2); }
 .td-body .md { font-family: var(--tachyon-font-reading); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
 /* t-5564b4 — reading rhythm: headings need air above, blocks need separation, and a code block must
    own its overflow. A `pre` that scrolls the PAGE instead of itself is the other half of the
