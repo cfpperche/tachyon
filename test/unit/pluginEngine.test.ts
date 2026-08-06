@@ -359,9 +359,28 @@ describe("planMcpTargets + per-runtime renderers (spec 254 Step 2)", () => {
     expect(renderClaudeMcpEntry(oneServer({ name: "bare", transport: "stdio", command: "node" }))).toEqual({ command: "node" });
   });
 
+  it("t-b6180e: substitutes leading ${PLUGIN_ROOT}/ in claude command+args for the absolute plugin root", () => {
+    const s = oneServer({ name: "local-srv", transport: "stdio", command: "${PLUGIN_ROOT}/servers/srv", args: ["--config", "${PLUGIN_ROOT}/config.json"] });
+    const root = "/ws/.tachyon/plugins/mcp-pl";
+    expect(renderClaudeMcpEntry(s, root)).toEqual({
+      command: `${root}/servers/srv`,
+      args: ["--config", `${root}/config.json`],
+    });
+    // without pluginRoot the token must not silently pass through (fail-closed)
+    expect(() => renderClaudeMcpEntry(s)).toThrow(/PLUGIN_ROOT/);
+  });
+
   it("renders a codex stdio TOML block — env refs become env_vars (codex doesn't expand ${VAR} in env)", async () => {
     expect(renderCodexMcpBlock(oneServer(STDIO))).toBe(
       `[mcp_servers.db]\ncommand = "npx"\nargs = ["-y", "@scope/db"]\nenv_vars = ["DB_URL"]\n`,
+    );
+  });
+
+  it("t-b6180e: substitutes leading ${PLUGIN_ROOT}/ in codex command+args for the absolute plugin root", () => {
+    const s = oneServer({ name: "local-srv", transport: "stdio", command: "${PLUGIN_ROOT}/servers/srv", args: ["${PLUGIN_ROOT}/config.json"] });
+    const root = "/ws/.tachyon/plugins/mcp-pl";
+    expect(renderCodexMcpBlock(s, root)).toBe(
+      `[mcp_servers.local-srv]\ncommand = "${root}/servers/srv"\nargs = ["${root}/config.json"]\n`,
     );
   });
 
@@ -425,6 +444,62 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     await applyRemove("mcp-pl", ws);
     expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" }); // user server survives
     expect(readJ(MCPJSON(ws)).mcpServers.db).toBeUndefined();
+  });
+
+  it("t-b6180e: ${PLUGIN_ROOT} is substituted on install; un-merge removes it; human config survives intact", async () => {
+    const BUNDLED = {
+      name: "local-srv",
+      transport: "stdio",
+      command: "${PLUGIN_ROOT}/servers/srv",
+      args: ["--config", "${PLUGIN_ROOT}/config.json"],
+    };
+    const ws = makeWorkspace(["claude"]);
+    // pre-existing human server (unrelated name) — must never be touched
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify({
+      mcpServers: {
+        playwright: { command: "npx", args: ["-y", "@playwright/mcp@latest"] },
+      },
+    }));
+    const dir = mcpPlugin([BUNDLED], ["claude"]);
+    fs.mkdirSync(path.join(dir, "servers"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "servers", "srv"), "#!/bin/sh\necho ok\n");
+    fs.writeFileSync(path.join(dir, "config.json"), "{}\n");
+
+    const r = await install(dir, ws);
+    expect(r.installed).toBe(true);
+    const root = path.join(ws, ".tachyon/plugins/mcp-pl");
+    const entry = readJ(MCPJSON(ws)).mcpServers["local-srv"];
+    // MUST be absolute substituted paths — never the literal placeholder (the red proof of t-b6180e)
+    expect(entry.command).toBe(`${root}/servers/srv`);
+    expect(entry.args).toEqual([`--config`, `${root}/config.json`]);
+    expect(JSON.stringify(entry)).not.toContain("${PLUGIN_ROOT}");
+    // human server intact after install
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx", args: ["-y", "@playwright/mcp@latest"] });
+    // lockfile removal identity is the SUBSTITUTED form (so content-aware un-merge matches)
+    const lockTarget = readJ(LOCK(ws)).plugins["mcp-pl"].targets.find((t: { kind: string }) => t.kind === "mcp-server");
+    expect(lockTarget.removal).toEqual(entry);
+
+    // human edits OUR server in place → un-merge must orphan it, never clobber
+    const j = readJ(MCPJSON(ws));
+    j.mcpServers["local-srv"].command = "/user/edited/srv";
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify(j));
+    const rmOrphan = await applyRemove("mcp-pl", ws);
+    expect(rmOrphan.removed).toBe(true);
+    expect(rmOrphan.orphans).toBe(1);
+    expect(readJ(MCPJSON(ws)).mcpServers["local-srv"].command).toBe("/user/edited/srv");
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx", args: ["-y", "@playwright/mcp@latest"] });
+
+    // reinstall + clean un-merge removes only ours; human playwright remains
+    j.mcpServers["local-srv"] = undefined;
+    delete j.mcpServers["local-srv"];
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify(j));
+    await install(dir, ws);
+    expect(readJ(MCPJSON(ws)).mcpServers["local-srv"].command).toBe(`${root}/servers/srv`);
+    const rm = await applyRemove("mcp-pl", ws);
+    expect(rm.removed).toBe(true);
+    expect(rm.orphans).toBe(0);
+    expect(readJ(MCPJSON(ws)).mcpServers["local-srv"]).toBeUndefined();
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx", args: ["-y", "@playwright/mcp@latest"] });
   });
 
   it("collision: undecided → fail-closed; Keep leaves the user's server; Replace overwrites", async () => {

@@ -6,7 +6,7 @@
  */
 
 import { parseHooksBlock, type BlockParseResult } from "./hooks.js";
-import type { McpServer } from "../mcp.js";
+import { withResolvedMcpPluginRoot, type McpServer } from "../mcp.js";
 
 export {
   PLUGIN_ROOT_PLACEHOLDER,
@@ -38,20 +38,24 @@ export function parseClaudeHooksBlock(rawJson: string): BlockParseResult {
 
 /**
  * spec 254 Step 2 — render ONE neutral MCP server to claude's `.mcp.json` `mcpServers.<name>` value object.
- * claude takes stdio `{command,args,env}` and http `{type:"http",url,headers}` verbatim and expands `${VAR}`
- * from the server's own env, so the neutral shape maps 1:1 (only empty maps/arrays are dropped). Pure; the
- * merge into the file (Step 3) JSON-encodes safely via JSON.stringify, so no escaping is needed here. */
-export function renderClaudeMcpEntry(server: McpServer): Record<string, unknown> {
-  if (server.transport === "stdio") {
+ * claude takes stdio `{command,args,env}` and http `{type:"http",url,headers}` and expands `${VAR}` from the
+ * server's own env for env values, so the neutral shape maps 1:1 (only empty maps/arrays are dropped). A
+ * leading `${PLUGIN_ROOT}/…` in command/args is rewritten to the absolute materialized payload root (t-b6180e)
+ * — the runtime does not receive the placeholder. Pure; the merge into the file (Step 3) JSON-encodes safely
+ * via JSON.stringify, so no escaping is needed here.
+ * @param pluginRoot absolute workspace payload root (`.tachyon/plugins/<name>`); required when the server uses `${PLUGIN_ROOT}`. */
+export function renderClaudeMcpEntry(server: McpServer, pluginRoot?: string): Record<string, unknown> {
+  const resolved = withResolvedMcpPluginRoot(server, pluginRoot);
+  if (resolved.transport === "stdio") {
     return {
-      command: server.command,
-      ...(server.args.length > 0 ? { args: [...server.args] } : {}),
-      ...(Object.keys(server.env).length > 0 ? { env: { ...server.env } } : {}),
+      command: resolved.command,
+      ...(resolved.args.length > 0 ? { args: [...resolved.args] } : {}),
+      ...(Object.keys(resolved.env).length > 0 ? { env: { ...resolved.env } } : {}),
     };
   }
   return {
     type: "http",
-    url: server.url,
-    ...(Object.keys(server.headers).length > 0 ? { headers: { ...server.headers } } : {}),
+    url: resolved.url,
+    ...(Object.keys(resolved.headers).length > 0 ? { headers: { ...resolved.headers } } : {}),
   };
 }
