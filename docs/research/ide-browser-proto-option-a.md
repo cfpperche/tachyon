@@ -3,6 +3,12 @@
 _Status: worktree prototype for Dev Host dogfood only. Not a product SDD. Not a release surface._  
 _Date: 2026-08-03. Worktree: `tachyon/grok`._
 
+> **RETIRED 2026-08-06 (`t-08f08e`).** The code this describes no longer exists: `src/webview/ide-browser-proto/`,
+> its `tachyon.ideBrowserProto.open` command, and its palette entry were deleted, because the shipped
+> Integrated Browser (`src/webview/ide-browser-bridge/`) covers navigation, interaction, capture, element
+> context and agent delivery. This page stays as the record of what Option A explored and why it was
+> tried — read it as history, not as a map of the tree. Nothing below is present tense any more.
+
 ## Intent
 
 Prove we can approximate Orca-style “browser in the IDE” **without** Companion and **without**
