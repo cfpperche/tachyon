@@ -405,6 +405,13 @@ Browser Bridge **up** (and optionally fills Pi). Do not remove markers from this
 | Post-launch readiness (model rejection, defense in depth) | an explicit model the catalog probe missed (composed/ambiguous command) still turns up as a live API `invalid_request_error` mid-turn, never exiting | `CodexLaunchReadiness` regex, same measured-phrase discipline as Claude's | **✓** `t-d501fc` — measured refusal (0.146.0, `codex exec --model bogus-model-xyz`): `invalid_request_error` naming *"'bogus-model-xyz' model is not supported when using Codex with a ChatGPT account."* Missed by the pre-fix regex (had "unsupported", not "not supported"); fixed alongside Claude's, sharing `MODEL_REJECTED_RE`. The primary defense for Codex remains the preflight catalog above — this only covers a pin the parser could not classify. |
 | Profile | isolation, composer, stop, model helpers | `runtimeProfile.codex` | code |
 
+Re-measure the four Codex facts embedded in the product with `npm run runtime:remeasure`; the command is always informative and never blocking:
+
+- **Configuration enums:** the command injects invalid scalar values into `approval_policy` and `sandbox_mode`, reads the Codex parser's `expected` list, and compares it with the arrays exported by `codexNativeConfigProjection.ts`.
+- **`--full-auto`:** the command runs `codex --full-auto --help` under a private `CODEX_HOME` and compares the observed rejection with the chip's absence from `FLAG_SUGGESTIONS`.
+- **Exact-path trust:** the command opens three TUIs without sending a key (exact directory, child, and child with a `-c` override), requires the exact case to reach the ready screen as a control, and reports sign-in, an unknown screen, or missing `tmux` as a concrete obstacle.
+- **Native-memory suppression:** the free command confirms only that `features list` changes under `--enable/--disable memories`; it reports suppression as **NOT MEASURED** because proving that the marker stops reaching the model requires two authenticated, quota-consuming `codex exec` sessions—feature status is not evidence of consequence.
+
 #### OpenCode
 
 | Cap | Native mechanism | Tachyon seam | Verified |

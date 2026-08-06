@@ -60,6 +60,7 @@ const scenarios = [
   "restart-modes",
   "runtime-launch-preflight",
   "runtime-observability",
+  "runtime-remeasure",
   "ui-shortlist",
   "worktree-plugin-projection",
 ];
