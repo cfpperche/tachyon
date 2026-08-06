@@ -416,6 +416,63 @@ function admitNested(input: {
 }
 
 /**
+ * Shared host-budget arithmetic for admit (claim) and preview (display).
+ *
+ * NEVER writes the ledger. Callers that need a claim do so themselves after this returns.
+ * t-7f9809: one math path so the number the snapshot reports cannot drift from the number a real
+ * run would receive.
+ */
+function evaluateVitestShare(input: {
+  memory: HostMemorySnapshot;
+  cpuCount: number;
+  ledgerPath?: string;
+  isAlive?: (pid: number) => boolean;
+  measure?: (pid: number) => number | undefined;
+  /** When set, drop this pid's claim so a process never bills itself (admit path). */
+  excludePid?: number;
+  workerMb?: number;
+  invocationMb?: number;
+  reserveMb?: number;
+  hardCap?: number;
+  maxUsefulWorkers?: number;
+}): {
+  file: string;
+  live: VitestClaim[];
+  billed: Array<{ claim: VitestClaim; chargeMb: number; materializedMb: number }>;
+  usedMb: number;
+  poolMb: number;
+  shareMb: number;
+  workers: number;
+  workerMb: number;
+  invocationMb: number;
+} {
+  const file = input.ledgerPath ?? vitestBudgetPath();
+  const isAlive = input.isAlive ?? defaultIsAlive;
+  const measure = input.measure ?? ((target: number) => measureTreePssMb(target));
+  const live = reap(readLedger(file), isAlive).filter((claim) =>
+    input.excludePid === undefined || claim.pid !== input.excludePid);
+
+  const workerMb = Math.max(64, input.workerMb ?? envInt("TACHYON_VERIFY_WORKER_MB") ?? DEFAULT_WORKER_MB);
+  const invocationMb = Math.max(0, input.invocationMb ?? envInt("TACHYON_VITEST_INVOCATION_MB") ?? DEFAULT_INVOCATION_MB);
+
+  const billed = live.map((claim) => ({ claim, ...billedMb(claim, measure) }));
+  const usedMb = billed.reduce((sum, entry) => sum + entry.chargeMb, 0);
+  const materializedMb = billed.reduce((sum, entry) => sum + entry.materializedMb, 0);
+  const poolMb = vitestPoolMb({ memory: input.memory, materializedMb, reserveMb: input.reserveMb });
+  const shareMb = poolMb - usedMb;
+  const workers = sizeFromShare({
+    shareMb,
+    cpuCount: input.cpuCount,
+    workerMb,
+    invocationMb,
+    hardCap: input.hardCap,
+    maxUsefulWorkers: input.maxUsefulWorkers,
+  });
+
+  return { file, live, billed, usedMb, poolMb, shareMb, workers, workerMb, invocationMb };
+}
+
+/**
  * Take a share of the host-wide vitest budget, or refuse.
  *
  * REFUSING is the point, and it is the half of this that the DONE_WHEN names: a run that cannot
@@ -445,23 +502,33 @@ export function admitVitestRun(input: {
   forcedWorkers?: number;
 }): VitestAdmission {
   const file = input.ledgerPath ?? vitestBudgetPath();
-  const isAlive = input.isAlive ?? defaultIsAlive;
   const now = input.now ?? Date.now;
   const pid = input.pid ?? process.pid;
 
-  const measure = input.measure ?? ((target: number) => measureTreePssMb(target));
-
   return withProcessLockSync(`${file}.lock`, (): VitestAdmission => {
     // Our own stale claim (same pid, an earlier run in this process) must never be counted against us.
-    const live = reap(readLedger(file), isAlive).filter((claim) => claim.pid !== pid);
+    const share = evaluateVitestShare({
+      memory: input.memory,
+      cpuCount: input.cpuCount,
+      ledgerPath: file,
+      isAlive: input.isAlive,
+      measure: input.measure,
+      excludePid: pid,
+      workerMb: input.workerMb,
+      invocationMb: input.invocationMb,
+      reserveMb: input.reserveMb,
+      hardCap: input.hardCap,
+      maxUsefulWorkers: input.maxUsefulWorkers,
+    });
+    const { live, billed, usedMb, poolMb, shareMb, workerMb, invocationMb } = share;
 
-    const workerMb = Math.max(64, input.workerMb ?? envInt("TACHYON_VERIFY_WORKER_MB") ?? DEFAULT_WORKER_MB);
-    const invocationMb = Math.max(0, input.invocationMb ?? envInt("TACHYON_VITEST_INVOCATION_MB") ?? DEFAULT_INVOCATION_MB);
-
+    // Before any of the host-wide arithmetic is spent on this run: is it a DESCENDANT of a run that
+    // has already paid for it? Ordered first because the answer makes the share irrelevant — an
+    // inherited run is not spending the pool, it is spending its ancestor's reservation.
     const inherited = admitNested({
       live,
       pid,
-      measure,
+      measure: input.measure ?? ((target: number) => measureTreePssMb(target)),
       ancestorsOf: input.ancestorsOf ?? ancestorPids,
       cpuCount: input.cpuCount,
       workerMb,
@@ -472,20 +539,7 @@ export function admitVitestRun(input: {
     });
     if (inherited) return inherited;
 
-    const billed = live.map((claim) => ({ claim, ...billedMb(claim, measure) }));
-    const usedMb = billed.reduce((sum, entry) => sum + entry.chargeMb, 0);
-    const materializedMb = billed.reduce((sum, entry) => sum + entry.materializedMb, 0);
-    const poolMb = vitestPoolMb({ memory: input.memory, materializedMb, reserveMb: input.reserveMb });
-    const shareMb = poolMb - usedMb;
-
-    let workers = sizeFromShare({
-      shareMb,
-      cpuCount: input.cpuCount,
-      workerMb,
-      invocationMb,
-      hardCap: input.hardCap,
-      maxUsefulWorkers: input.maxUsefulWorkers,
-    });
+    let workers = share.workers;
 
     if (input.forcedWorkers !== undefined && input.forcedWorkers >= 1) {
       workers = Math.min(input.forcedWorkers, input.hardCap ?? HARD_CAP_WORKERS, Math.max(1, input.cpuCount || 1));
@@ -533,6 +587,86 @@ export function admitVitestRun(input: {
       reason:
         `host vitest budget: pool ${poolMb}MB, ${live.length} sibling run(s) hold ${usedMb}MB, `
         + `share ${shareMb}MB → workers=${workers} (claiming ${costMb}MB)`,
+    };
+  }, { timeoutMs: LOCK_TIMEOUT_MS, label: "tachyon vitest budget ledger" });
+}
+
+/**
+ * t-7f9809 — what a NEW vitest run would receive RIGHT NOW, without claiming.
+ *
+ * Same arithmetic as `admitVitestRun` (`evaluateVitestShare`); the only difference is this function
+ * never writes the ledger and never returns a claim. The Runtime Ops snapshot (and any future
+ * display) must use this rather than `decideHeavyGate()`, which sizes as if the process were alone.
+ *
+ * When the budget is spent, `ok` is false and `workers` is 0 — the only state where alone-sizing
+ * and reality disagree about yes-versus-no, not only magnitude. Context fields travel with the
+ * number so a later consumer can explain the figure without re-reading the ledger.
+ */
+export type VitestSharePreview = {
+  ok: boolean;
+  workers: number;
+  siblingCount: number;
+  usedMb: number;
+  shareMb: number;
+  poolMb: number;
+  reason: string;
+};
+
+export function previewVitestShare(input: {
+  memory: HostMemorySnapshot;
+  cpuCount: number;
+  ledgerPath?: string;
+  isAlive?: (pid: number) => boolean;
+  measure?: (pid: number) => number | undefined;
+  workerMb?: number;
+  invocationMb?: number;
+  reserveMb?: number;
+  hardCap?: number;
+  maxUsefulWorkers?: number;
+}): VitestSharePreview {
+  const file = input.ledgerPath ?? vitestBudgetPath();
+
+  // Lock only for a consistent ledger read (same critical section admit uses). Never write.
+  return withProcessLockSync(`${file}.lock`, (): VitestSharePreview => {
+    const share = evaluateVitestShare({
+      memory: input.memory,
+      cpuCount: input.cpuCount,
+      ledgerPath: file,
+      isAlive: input.isAlive,
+      measure: input.measure,
+      // No excludePid: a brand-new run is not already on the ledger.
+      workerMb: input.workerMb,
+      invocationMb: input.invocationMb,
+      reserveMb: input.reserveMb,
+      hardCap: input.hardCap,
+      maxUsefulWorkers: input.maxUsefulWorkers,
+    });
+    const { live, usedMb, poolMb, shareMb, workers, workerMb, invocationMb } = share;
+
+    if (workers === 0) {
+      return {
+        ok: false,
+        workers: 0,
+        siblingCount: live.length,
+        usedMb,
+        shareMb,
+        poolMb,
+        reason:
+          `host vitest budget spent: pool ${poolMb}MB, ${live.length} sibling run(s) hold ${usedMb}MB, `
+          + `leaving ${shareMb}MB — less than the ${invocationMb}MB + ${workerMb}MB one run needs`,
+      };
+    }
+
+    return {
+      ok: true,
+      workers,
+      siblingCount: live.length,
+      usedMb,
+      shareMb,
+      poolMb,
+      reason:
+        `host vitest budget preview: pool ${poolMb}MB, ${live.length} sibling run(s) hold ${usedMb}MB, `
+        + `share ${shareMb}MB → workers=${workers} (not claimed)`,
     };
   }, { timeoutMs: LOCK_TIMEOUT_MS, label: "tachyon vitest budget ledger" });
 }

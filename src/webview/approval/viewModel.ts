@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   APPROVALS_REL_DIR,
   APPROVAL_ID_PREFIX,
-  decisionSealState,
+  witnessedDecisionSealState,
   readApprovalRequest,
   type ApprovalPayload,
   type ApprovalRequest,
@@ -70,7 +70,7 @@ export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalVie
         // read exists to catch also delete the evidence from the human's queue. A broken seal means the
         // decision bytes are not what was written, so what is on disk cannot say a human is done with
         // it — it stays listed, tampered, with the reader's message attached.
-        const sealed = decisionSealState(raw as ApprovalRequest) !== "broken";
+        const sealed = witnessedDecisionSealState(workspaceRoot, raw as ApprovalRequest) !== "broken";
         if (sealed && raw.status && raw.status !== "pending") continue;
         approvals.push({
           id: typeof raw.id === "string" ? raw.id : id,
