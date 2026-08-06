@@ -3,35 +3,36 @@ import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { FLEET_VIEW_TYPE, FleetPanelManager, type FleetDeps } from "../../src/webview/FleetPanel.js";
 import { readyMessage } from "../../src/webview/fleet/messages.js";
-import type { CockpitWorkspaceBundle } from "../../src/cockpit/model.js";
+import type { FleetVM } from "../../src/sidebar/types.js";
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 beforeEach(() => __resetVscodeMock());
 afterEach(() => { for (const panel of __createdPanels) if (!panel.disposed) panel.dispose(); });
 
-function bundle(wsHash: string, agent: string): CockpitWorkspaceBundle {
+function fleetVm(wsHash: string, agent: string): FleetVM {
   return {
-    control: { folderName: wsHash, workspaceRoot: `/${wsHash}`, wsHash, bridgeUrl: "http://127.0.0.1:1", identity: null, notes: [] } as CockpitWorkspaceBundle["control"],
-    agents: [{ name: agent, running: false, lifetime: "saved", wsHash }],
-    worktrees: [], approvals: [],
+    folder: { hash: wsHash, name: wsHash },
+    bridge: { port: "1", connected: true },
+    agents: [{ name: agent, status: "stopped", kind: "agent" }],
+    terminals: [],
+    pipelines: [],
+    schedules: [],
+    commands: [],
+    runbooks: [],
+    pins: [],
   };
 }
 
 function harness() {
-  const started: Array<{ name: string; project: string }> = [];
-  const probed: Array<{ name: string; project: string }> = [];
-  const edited: Array<{ name: string; project: string }> = [];
-  const activity: Array<{ name: string; project: string }> = [];
+  const actions: Array<{ id: string; name: string; project: string }> = [];
   const deps: FleetDeps = {
-    collect: async () => [bundle("ws-a", "alpha"), bundle("ws-b", "beta")],
+    loadFleet: async (project) => fleetVm(project, project === "ws-a" ? "alpha" : "beta"),
     openBoard: () => {},
-    start: async (name, project) => { started.push({ name, project }); },
-    stop: async () => {}, terminal: async () => {}, activity: async (name, project) => { activity.push({ name, project }); },
-    probes: async (name, project) => { probed.push({ name, project }); },
-    edit: async (name, project) => { edited.push({ name, project }); }, continueTask: async () => {},
+    runAction: async (id, name, project) => { actions.push({ id, name, project }); },
+    continueTask: async () => {},
   };
-  return { manager: new FleetPanelManager(Uri.file("/ext"), deps), started, probed, edited, activity };
+  return { manager: new FleetPanelManager(Uri.file("/ext"), deps), actions };
 }
 
 async function open(manager: FleetPanelManager, project: string) {
@@ -42,44 +43,56 @@ async function open(manager: FleetPanelManager, project: string) {
   return panel;
 }
 
-function names(panel: typeof __createdPanels[number]): string[] {
-  const message = panel.webview.posted.filter((item) => (item as { type?: string }).type === "fleetModel").at(-1) as { model?: { fleet?: Array<{ name: string }> } } | undefined;
-  return message?.model?.fleet?.map((row) => row.name) ?? [];
+function agentNames(panel: typeof __createdPanels[number]): string[] {
+  const message = panel.webview.posted.filter((item) => (item as { type?: string }).type === "fleetModel").at(-1) as {
+    fleet?: { agents?: Array<{ name: string; status?: string }> };
+  } | undefined;
+  return message?.fleet?.agents?.map((row) => row.name) ?? [];
 }
 
-describe("SDD 485 D7 — standalone Fleet dashboard", () => {
-  it("keys and filters panels by the project accepted by buildCockpitModel", async () => {
+function agentStatuses(panel: typeof __createdPanels[number]): string[] {
+  const message = panel.webview.posted.filter((item) => (item as { type?: string }).type === "fleetModel").at(-1) as {
+    fleet?: { agents?: Array<{ status?: string }> };
+  } | undefined;
+  return message?.fleet?.agents?.map((row) => row.status ?? "") ?? [];
+}
+
+describe("SDD 485 D7 / t-41117e — standalone Fleet dashboard", () => {
+  it("keys and filters panels by project and pushes FleetVM agents", async () => {
     const h = harness();
     const a = await open(h.manager, "ws-a");
     const b = await open(h.manager, "ws-b");
     expect(h.manager.openKeys).toEqual([`${FLEET_VIEW_TYPE}|ws-a`, `${FLEET_VIEW_TYPE}|ws-b`]);
-    expect(names(a)).toEqual(["alpha"]);
-    expect(names(b)).toEqual(["beta"]);
+    expect(agentNames(a)).toEqual(["alpha"]);
+    expect(agentNames(b)).toEqual(["beta"]);
+    expect(agentStatuses(a)).toEqual(["stopped"]);
   });
 
   it("uses the immutable panel project for actions, not a client wsHash", async () => {
     const h = harness();
     const panel = await open(h.manager, "ws-a");
-    panel.webview.__receive({ type: "fleetStart", name: "alpha", wsHash: "ws-b" });
+    panel.webview.__receive({ type: "action", id: "spawn", agent: "alpha" });
     await flush(); await flush();
-    expect(h.started).toEqual([{ name: "alpha", project: "ws-a" }]);
+    expect(h.actions).toEqual([{ id: "spawn", name: "alpha", project: "ws-a" }]);
   });
 
   it("keeps Probes and Edit with the extracted surface and its immutable project", async () => {
     const h = harness();
     const panel = await open(h.manager, "ws-a");
-    panel.webview.__receive({ type: "fleetProbes", name: "alpha", wsHash: "ws-b" });
-    panel.webview.__receive({ type: "fleetAgentStudio", name: "alpha", wsHash: "ws-b" });
+    panel.webview.__receive({ type: "action", id: "probes", agent: "alpha" });
+    panel.webview.__receive({ type: "action", id: "edit", agent: "alpha" });
     await flush(); await flush();
-    expect(h.probed).toEqual([{ name: "alpha", project: "ws-a" }]);
-    expect(h.edited).toEqual([{ name: "alpha", project: "ws-a" }]);
+    expect(h.actions).toEqual([
+      { id: "probes", name: "alpha", project: "ws-a" },
+      { id: "edit", name: "alpha", project: "ws-a" },
+    ]);
   });
 
-  it("the Fleet action keeps entering Activity through its command-shaped dependency", async () => {
+  it("the Fleet action keeps entering Activity through its action id", async () => {
     const h = harness();
     const panel = await open(h.manager, "ws-a");
-    panel.webview.__receive({ type: "fleetActivity", name: "alpha", wsHash: "ws-b" });
+    panel.webview.__receive({ type: "action", id: "activity", agent: "alpha" });
     await flush(); await flush();
-    expect(h.activity).toEqual([{ name: "alpha", project: "ws-a" }]);
+    expect(h.actions).toEqual([{ id: "activity", name: "alpha", project: "ws-a" }]);
   });
 });
