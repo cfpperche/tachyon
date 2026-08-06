@@ -5,7 +5,9 @@ import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
-import { FAILURE_LIMITS, STATIC_GATES, formatFailure, formatSuccess, summarizeReport, summarizeUnavailableCoverage } from "../../scripts/verify-full.mjs";
+import { FAILURE_LIMITS, STATIC_GATES, describeChildExit, formatFailure, formatSuccess, summarizeReport, summarizeUnavailableCoverage } from "../../scripts/verify-full.mjs";
+// @ts-expect-error -- same: the reporter the gate hands to Vitest is plain ESM the gate owns.
+import { UNHANDLED_OUTPUT_ENV } from "../../scripts/vitest-unhandled-reporter.mjs";
 
 const repoRoot = process.cwd();
 const runner = path.join(repoRoot, "scripts/verify-full.mjs");
@@ -164,6 +166,97 @@ describe("quiet full verification", () => {
     expect(result.stderr).toContain("reported failure");
   });
 
+  /**
+   * t-d62d90 — the INVERSE question, pinned as a truth table rather than as prose.
+   *
+   * The observed defect is a red gate with a green report (2/6 under 16 workers), and the question it
+   * raised is the one that decides whether any green this repo attested means anything: can the gate
+   * exit ZERO while the report is red — or absent, or unreadable? Reading the condition is not an
+   * answer, because the condition is one line and the return value below it is another: the branch
+   * returns `tests.code || 1`, so the cell that matters most (report red, Vitest exit 0) depends on
+   * that `|| 1` and on nothing else.
+   *
+   * So every cell runs through the production door — the real runner, spawned, with a fake Vitest —
+   * and the assertion is the same in all of them: zero is reachable ONLY when the child exited zero,
+   * unsignalled, AND the report parsed AND the report is green. One cell per way of being red.
+   */
+  describe("tests phase: zero is reachable only when EVERY signal is green", () => {
+    const greenExit = { FAKE_EXIT: "0" };
+
+    it("exits zero when the child exits zero and the report is green", async () => {
+      const result = await execute(workspace(), greenExit);
+      expect(result.code).toBe(0);
+    });
+
+    // The measured defect itself: report green, exit non-zero. The gate must stay RED — and must now
+    // say which of the two doors it came through, because the report and the log both say nothing.
+    it("stays red when the child exits non-zero with a fully green report, and names the code", async () => {
+      const result = await execute(workspace(), { FAKE_EXIT: "1" });
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain("failed during tests");
+      expect(result.stderr).toContain("child exited with code 1");
+    });
+
+    // A child killed AFTER writing its report — the shape a dying worker or an outside kill produces.
+    // `code` is null here, so a message built from the exit code alone would report the coerced 1 and
+    // send the reader looking for a Vitest that failed on its own.
+    it("stays red when the child is killed by a signal after writing a green report, and names the signal", async () => {
+      const result = await execute(workspace("", `
+        import fs from "node:fs";
+        const output = process.argv.find((arg) => arg.startsWith("--outputFile="))?.slice(13);
+        fs.writeFileSync(output, process.env.FAKE_REPORT);
+        process.kill(process.pid, "SIGKILL");
+      `), greenExit);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("failed during tests");
+      expect(result.stderr).toContain("child killed by SIGKILL");
+      expect(result.stderr).not.toContain("exited with code");
+    });
+
+    /**
+     * The false-GREEN half of the same defect. Vitest checks its unhandled-error list once, before
+     * reporters are told the run finished; one that arrives after that moment sets no exit code, is
+     * dropped by the JSON reporter, and would leave the gate green over a real error. Here the fake
+     * Vitest exits zero with a green report and only the side channel disagrees.
+     */
+    it("stays red on unhandled errors even when the child exits zero with a green report", async () => {
+      const result = await execute(workspace("", `
+        import fs from "node:fs";
+        const output = process.argv.find((arg) => arg.startsWith("--outputFile="))?.slice(13);
+        fs.writeFileSync(output, process.env.FAKE_REPORT);
+        fs.writeFileSync(process.env["${UNHANDLED_OUTPUT_ENV}"], JSON.stringify([
+          { type: "Unhandled Rejection", message: "LATE REJECTION DETAIL", stack: "Error: LATE REJECTION DETAIL",
+            testPath: "test/unit/somewhere.test.ts", afterEnvironmentTeardown: true },
+        ]));
+        process.exit(0);
+      `), greenExit);
+      expect(result.code).not.toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("failed during tests");
+      expect(result.stderr).toContain("1 unhandled error(s) outside any test");
+      expect(result.stderr).toContain("LATE REJECTION DETAIL");
+      expect(result.stderr).toContain("test/unit/somewhere.test.ts");
+      expect(result.stderr).toContain("after environment teardown");
+    });
+
+    it("stays red when the child exits zero having written no report at all", async () => {
+      const result = await execute(workspace("", "process.exit(0);\n"), greenExit);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("failed during tests");
+    });
+
+    it("stays red when the child exits zero and the report is unparseable", async () => {
+      const result = await execute(workspace("", `
+        import fs from "node:fs";
+        const output = process.argv.find((arg) => arg.startsWith("--outputFile="))?.slice(13);
+        fs.writeFileSync(output, "{ truncated");
+        process.exit(0);
+      `), greenExit);
+      expect(result.code).not.toBe(0);
+      expect(result.stderr).toContain("failed during tests");
+    });
+  });
+
   it("falls back to a bounded build tail when no JSON report exists", async () => {
     const result = await execute(workspace("console.error('BUILD FAILURE DETAIL'); process.exit(4)\n"));
     expect(result.code).toBe(4);
@@ -215,6 +308,65 @@ describe("quiet full verification", () => {
     const code = await closed;
     trackRetained(stderr);
     expect(code).toBe(143);
+  });
+
+  /**
+   * t-d62d90 — the reporter is a courier and nothing else. It must dump at process exit (the only
+   * moment late errors exist), it must stay silent when there is nothing to carry, and it must never
+   * write anywhere the gate did not ask it to.
+   */
+  describe("unhandled-error reporter", () => {
+    const reporterPath = path.join(repoRoot, "scripts/vitest-unhandled-reporter.mjs");
+
+    function driveReporter(errors: unknown[], outputFile?: string) {
+      const script = `
+        import Reporter from ${JSON.stringify(reporterPath)};
+        new Reporter().onInit({ state: { getUnhandledErrors: () => (${JSON.stringify(errors)}) } });
+      `;
+      const env = { ...process.env, [UNHANDLED_OUTPUT_ENV]: outputFile } as NodeJS.ProcessEnv;
+      if (!outputFile) delete env[UNHANDLED_OUTPUT_ENV];
+      return new Promise<void>((resolve, reject) => {
+        const child = spawn(process.execPath, ["--input-type=module", "-e", script], { env });
+        child.on("error", reject);
+        child.on("close", () => resolve());
+      });
+    }
+
+    it("writes the errors Vitest collected, keeping the worker's file and teardown tags", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-full-unhandled-test-"));
+      createdPaths.add(root);
+      const outputFile = path.join(root, "unhandled.json");
+      await driveReporter([{
+        type: "Unhandled Rejection", name: "Error", message: "boom", stack: "Error: boom\n    at nowhere",
+        VITEST_TEST_PATH: "test/unit/leaky.test.ts", VITEST_TEST_NAME: "a leaky test", VITEST_AFTER_ENV_TEARDOWN: true,
+      }], outputFile);
+      const written = JSON.parse(fs.readFileSync(outputFile, "utf8"));
+      expect(written).toEqual([{
+        type: "Unhandled Rejection", name: "Error", message: "boom", stack: "Error: boom\n    at nowhere",
+        testPath: "test/unit/leaky.test.ts", testName: "a leaky test", afterEnvironmentTeardown: true,
+      }]);
+      expect(fs.statSync(outputFile).mode & 0o777).toBe(0o600);
+    });
+
+    it("writes nothing at all when the run collected no unhandled error", async () => {
+      const root = fs.mkdtempSync(path.join(os.tmpdir(), "verify-full-unhandled-test-"));
+      createdPaths.add(root);
+      const outputFile = path.join(root, "unhandled.json");
+      await driveReporter([], outputFile);
+      expect(fs.existsSync(outputFile)).toBe(false);
+    });
+
+    it("is inert for every Vitest invocation that did not ask for the side channel", async () => {
+      // `npm test` and a focused run load no env var, so the reporter must be a no-op there.
+      await expect(driveReporter([{ message: "boom" }])).resolves.toBeUndefined();
+    });
+  });
+
+  it("describes each way a child can end, without inventing an exit code it never had", () => {
+    expect(describeChildExit({ code: 3, signal: undefined })).toBe("child exited with code 3");
+    // runChild coerces a signalled child's null code to 1; the signal must still win the message.
+    expect(describeChildExit({ code: 1, signal: "SIGKILL" })).toBe("child killed by SIGKILL, no exit code");
+    expect(describeChildExit({ code: 1, signal: undefined, error: new Error("ENOENT") })).toBe("child never ran: ENOENT");
   });
 
   it("declares the governed quiet runner as the canonical full verification entry point", () => {

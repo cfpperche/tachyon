@@ -2,8 +2,9 @@ import { chmodSync, closeSync, createReadStream, mkdtempSync, openSync, readdirS
 import { execFileSync, spawn } from "node:child_process";
 import { cpus, tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { decideHeavyGate } from "./host-resources.mjs";
+import { UNHANDLED_OUTPUT_ENV } from "./vitest-unhandled-reporter.mjs";
 import { recordVerification, reuseDecision, verifiableTree, verifierFingerprint } from "./verify-record.mjs";
 
 export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 * 1024, totalBytes: 24 * 1024 });
@@ -25,6 +26,12 @@ export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 
 export function resolveHeavyGate() {
   return decideHeavyGate({ cpuCount: cpus().length || 1 });
 }
+
+/**
+ * t-d62d90 — resolved against THIS file, never against `process.cwd()`. The gate runs with the
+ * verified checkout as its cwd, but the reporter is part of the gate, not of the tree under test.
+ */
+const UNHANDLED_REPORTER = path.join(path.dirname(fileURLToPath(import.meta.url)), "vitest-unhandled-reporter.mjs");
 
 /** t-6a9bc4: at most one full-suite gate host-wide (verify_task + agent contracts share this entrypoint). */
 export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH || path.join(tmpdir(), "tachyon-verify-full.lock");
@@ -302,11 +309,55 @@ function assertionFailures(report) {
   return failures;
 }
 
-export function formatFailure({ phase, report, fallback = "", logDir }) {
-  const header = `verify:full:quiet failed during ${phase}`;
+/**
+ * t-d62d90 — an exit code and a signal are different bugs, and the gate used to report neither.
+ *
+ * The `tests` object already held both; the failure branch threw them away in exactly the case where
+ * they are the only evidence there is. A run that went red with `success: true`, 0 of 7932 failed and
+ * a 9 KB log containing no error left a reader unable to tell whether Vitest exited 1 on its own or
+ * whether something outside killed it — and those two point at opposite investigations.
+ */
+export function describeChildExit(result) {
+  if (!result) return "child exit unknown";
+  if (result.error) return `child never ran: ${result.error.message}`;
+  if (result.signal) return `child killed by ${result.signal}, no exit code`;
+  return `child exited with code ${result.code}`;
+}
+
+/**
+ * t-d62d90 — print the errors Vitest counts against the run but never shows.
+ *
+ * `scripts/vitest-unhandled-reporter.mjs` explains where these come from and why the JSON reporter
+ * cannot carry them. Here they go FIRST, ahead of the assertion list and the log tail: when they are
+ * present they are usually the whole explanation, and the log tail they would otherwise sit behind
+ * is precisely the thing that was empty.
+ */
+function formatUnhandledErrors(errors) {
+  const lines = [
+    `Vitest collected ${errors.length} unhandled error(s) outside any test. They set the non-zero exit`,
+    "on their own; the JSON report does not count them and prints nothing, so this is the only place",
+    "they appear.",
+  ];
+  for (const [index, error] of errors.slice(0, FAILURE_LIMITS.assertions).entries()) {
+    const where = error.testPath ? ` — ${error.testPath}` : "";
+    const when = error.afterEnvironmentTeardown ? " (arrived after environment teardown)" : "";
+    const label = `${index + 1}. ${error.type ?? error.name ?? "Unhandled Error"}${where}${when}`;
+    lines.push(truncateBytes(`${label}\n${error.stack ?? error.message ?? ""}`, FAILURE_LIMITS.assertionBytes));
+  }
+  if (errors.length > FAILURE_LIMITS.assertions) {
+    lines.push(`… ${errors.length - FAILURE_LIMITS.assertions} more unhandled error(s) omitted`);
+  }
+  return lines.join("\n");
+}
+
+export function formatFailure({ phase, report, fallback = "", logDir, exit, unhandled = [] }) {
+  const header = exit
+    ? `verify:full:quiet failed during ${phase} — ${exit}`
+    : `verify:full:quiet failed during ${phase}`;
   const hint = `Full private log retained at: ${logDir}\nVerbose hint: npm run verify:full`;
   const failures = report ? assertionFailures(report) : [];
   const sections = [header];
+  if (unhandled.length) sections.push(formatUnhandledErrors(unhandled));
   if (failures.length) {
     for (const [index, failure] of failures.slice(0, FAILURE_LIMITS.assertions).entries()) {
       sections.push(truncateBytes(`${index + 1}. ${failure.name}\n${failure.message}`, FAILURE_LIMITS.assertionBytes));
@@ -323,10 +374,14 @@ function privateFile(file) {
   return openSync(file, "w", 0o600);
 }
 
-function runChild(command, args, logFile, active) {
+function runChild(command, args, logFile, active, env) {
   const fd = privateFile(logFile);
   return new Promise((resolve) => {
-    const child = spawn(command, args, { cwd: process.cwd(), stdio: ["ignore", fd, fd] });
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      stdio: ["ignore", fd, fd],
+      ...(env ? { env: { ...process.env, ...env } } : {}),
+    });
     active.child = child;
     let settled = false;
     const finish = (result) => {
@@ -339,6 +394,14 @@ function runChild(command, args, logFile, active) {
     child.once("error", (error) => finish({ code: 1, signal: undefined, error }));
     child.once("close", (code, signal) => finish({ code: code ?? 1, signal }));
   });
+}
+
+/** t-d62d90 — absence is the normal case: no file means the run collected no unhandled error. */
+function readUnhandled(file) {
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
 }
 
 function readTail(file, maxBytes = 16 * 1024) {
@@ -436,13 +499,13 @@ export async function main() {
     for (const gate of STATIC_GATES) {
       const result = await runChild("npm", ["run", "--silent", gate], staticLog, active);
       if (result.code !== 0 || result.signal || receivedSignal) {
-        process.stderr.write(`${formatFailure({ phase: gate, fallback: await readTail(staticLog), logDir: root })}\n`);
+        process.stderr.write(`${formatFailure({ phase: gate, fallback: await readTail(staticLog), logDir: root, exit: describeChildExit(result) })}\n`);
         return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : result.code || 1;
       }
     }
     const build = await runChild(process.execPath, ["esbuild.mjs"], buildLog, active);
     if (build.code !== 0 || build.signal || receivedSignal) {
-      process.stderr.write(`${formatFailure({ phase: "build", fallback: await readTail(buildLog), logDir: root })}\n`);
+      process.stderr.write(`${formatFailure({ phase: "build", fallback: await readTail(buildLog), logDir: root, exit: describeChildExit(build) })}\n`);
       return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : build.code || 1;
     }
     const vitestEntry = path.resolve("node_modules/vitest/vitest.mjs");
@@ -451,14 +514,26 @@ export async function main() {
     // `vitest.config.ts` takes for every other vitest invocation — the gate would have been the one
     // run exempt from the ledger, and the one that runs the whole suite. The gate above still refuses
     // under memory pressure and still reports what it saw; the sizing itself now has one owner.
+    // t-d62d90 — the second reporter carries ONE thing the json reporter drops: the unhandled errors
+    // Vitest counts against the run. It adds no verdict of its own; see the reporter's own header.
+    const unhandledFile = path.join(root, "vitest-unhandled.json");
     const tests = await runChild(process.execPath,
-      [vitestEntry, "run", "--reporter=json", `--outputFile=${reportFile}`, "--silent=passed-only"], testLog, active);
+      [vitestEntry, "run", "--reporter=json", `--outputFile=${reportFile}`,
+        `--reporter=${UNHANDLED_REPORTER}`, "--silent=passed-only"],
+      testLog, active, { [UNHANDLED_OUTPUT_ENV]: unhandledFile });
     let report;
     try { report = JSON.parse(readFileSync(reportFile, "utf8")); } catch { report = undefined; }
     const reportSummary = report ? summarizeReport(report) : undefined;
     const reportFailed = report?.success === false || (reportSummary?.failed ?? 0) > 0 || (reportSummary?.failedFiles ?? 0) > 0;
-    if (tests.code !== 0 || tests.signal || receivedSignal || !report || reportFailed) {
-      process.stderr.write(`${formatFailure({ phase: "tests", report, fallback: await readTail(testLog), logDir: root })}\n`);
+    const unhandled = readUnhandled(unhandledFile);
+    // Unhandled errors join the red conditions, and that direction is the only one it can move. Vitest
+    // already fails a run that collects them — `_checkUnhandledErrors` sets exit 1 — but it checks the
+    // list ONCE, before reporters are told the run finished, so one that a worker forwards after that
+    // moment sets nothing and shows nothing. Reading them here applies Vitest's own configured policy
+    // (`dangerouslyIgnoreUnhandledErrors` is its opt-out, and this repo does not set it) at a moment
+    // that does not race. It can turn a green into a red; it can never turn a red into a green.
+    if (tests.code !== 0 || tests.signal || receivedSignal || !report || reportFailed || unhandled.length) {
+      process.stderr.write(`${formatFailure({ phase: "tests", report, fallback: await readTail(testLog), logDir: root, exit: describeChildExit(tests), unhandled })}\n`);
       return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : tests.code || 1;
     }
     const browserDecision = browserGateDecision();
@@ -466,14 +541,20 @@ export async function main() {
     if (browserDecision.run) {
       const browserLog = path.join(root, "browser.log");
       const browserReportFile = path.join(root, "browser-report.json");
+      // The browser suite reaches the same json reporter through the same door, so it gets the same
+      // second reporter: leaving it out would have kept the identical blind spot one command over.
+      const browserUnhandledFile = path.join(root, "browser-unhandled.json");
       const browserTests = await runChild(process.execPath,
-        [vitestEntry, "run", "--config", "vitest.browser.config.ts", "--reporter=json", `--outputFile=${browserReportFile}`, "--silent=passed-only"], browserLog, active);
+        [vitestEntry, "run", "--config", "vitest.browser.config.ts", "--reporter=json", `--outputFile=${browserReportFile}`,
+          `--reporter=${UNHANDLED_REPORTER}`, "--silent=passed-only"],
+        browserLog, active, { [UNHANDLED_OUTPUT_ENV]: browserUnhandledFile });
       let browserReport;
       try { browserReport = JSON.parse(readFileSync(browserReportFile, "utf8")); } catch { browserReport = undefined; }
       const browserCount = browserReport ? summarizeReport(browserReport) : undefined;
       const browserFailed = browserReport?.success === false || (browserCount?.failed ?? 0) > 0 || (browserCount?.failedFiles ?? 0) > 0;
-      if (browserTests.code !== 0 || browserTests.signal || receivedSignal || !browserReport || browserFailed) {
-        process.stderr.write(`${formatFailure({ phase: "browser tests", report: browserReport, fallback: await readTail(browserLog), logDir: root })}\n`);
+      const browserUnhandled = readUnhandled(browserUnhandledFile);
+      if (browserTests.code !== 0 || browserTests.signal || receivedSignal || !browserReport || browserFailed || browserUnhandled.length) {
+        process.stderr.write(`${formatFailure({ phase: "browser tests", report: browserReport, fallback: await readTail(browserLog), logDir: root, exit: describeChildExit(browserTests), unhandled: browserUnhandled })}\n`);
         return receivedSignal === "SIGINT" ? 130 : receivedSignal === "SIGTERM" ? 143 : browserTests.code || 1;
       }
       browserSummary = `${browserCount.total} browser tests (${browserDecision.webviewPaths.length} change${browserDecision.webviewPaths.length === 1 ? "" : "s"} under ${browserDecision.roots.length} browser-suite root${browserDecision.roots.length === 1 ? "" : "s"})`;
