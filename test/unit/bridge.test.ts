@@ -19,6 +19,9 @@ import type { ChangedFile } from "../../src/worktree/review.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
 import { projectRuntimeCondition, NO_QUOTA_CHANNEL } from "../../src/runtimeOps/runtimeCondition.js";
 import type { NoticeSourceMetadata } from "../../src/bridge/tools.js";
+import { resolveAgentFocus } from "../../src/sidebar/agentFocus.js";
+import { SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "../../src/sidebar/wireText.js";
+import { parseSidebarViewV1 } from "../../src/runtime-api/sidebarProjection.js";
 import fs from "node:fs";
 import os from "node:os";
 import nodePath from "node:path";
@@ -508,6 +511,13 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const updated = await client.callTool({ name: "update_pin", arguments: { id, tags: ["docs"] } });
     expect(updated.isError).toBeFalsy();
     expect(pins.list().find((p) => p.id === id)?.tags).toEqual(["docs"]);
+
+    const oversized = await client.callTool({
+      name: "update_pin",
+      arguments: { id, text: "p".repeat(SIDEBAR_PIN_TEXT_MAX + 1) },
+    });
+    expect(oversized.isError).toBe(true);
+    expect(pins.list().find((p) => p.id === id)?.text).toBe("flaky test found");
 
     const bad = await client.callTool({ name: "complete_pin", arguments: { id: "p-ffffff" } });
     expect(bad.isError).toBe(true);
@@ -1124,6 +1134,45 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const badSkip = await client.callTool({ name: "spawn_agent", arguments: { name: "child-ai", cmd: "claude", skip_contract_reason: "trivial" } });
     expect(badSkip.isError).toBe(true);
     expect(JSON.stringify(badSkip.content)).toContain("skip_contract_reason");
+  });
+
+  it("t-a11ac5: a valid composed spawn brief cannot make the Sidebar reader reject the workspace", async () => {
+    const name = "composed-brief-child";
+    const spawned = await client.callTool({
+      name: "spawn_agent",
+      arguments: {
+        name,
+        cmd: "claude",
+        parent: "claude",
+        instructions: `Inspect the persisted projection boundary and report the result. ${"context ".repeat(220)}`,
+        skip_contract_reason: "single bounded read-only measurement",
+      },
+    });
+    expect(spawned.isError).toBeFalsy();
+
+    const persisted = new SessionLedger(WS).get(name)?.def;
+    expect(persisted, JSON.stringify(spawned)).toBeDefined();
+    expect(persisted?.taskBrief, JSON.stringify(persisted)).toBeDefined();
+    expect(persisted?.taskBrief?.length).toBeGreaterThan(SIDEBAR_FOCUS_FULL_MAX);
+    const focus = resolveAgentFocus({
+      agent: name,
+      kind: "agent",
+      ledger: { taskBrief: persisted?.taskBrief },
+    });
+    const view = parseSidebarViewV1({
+      schemaVersion: 1,
+      fleet: {
+        folder: { hash: HASH, name: "workspace" },
+        bridge: { port: "1234", connected: true },
+        agents: [{ name, kind: "agent", status: "running", focus }],
+        terminals: [], pipelines: [], schedules: [], commands: [], runbooks: [], pins: [], notices: [], proposals: [],
+        handoff: { exists: false, staleness: "fresh", pendingCount: 0 },
+      },
+    });
+    expect(view.fleet.agents[0]?.focus?.full.length).toBeLessThanOrEqual(SIDEBAR_FOCUS_FULL_MAX);
+    expect(view.fleet.agents[0]?.focus?.full).toContain("open the agent for the full brief");
+
+    await client.callTool({ name: "kill_agent", arguments: { name } });
   });
 
   it("spawn_agent: a contract-skipped spawn without a task receives waiting guidance, not a task brief", async () => {
