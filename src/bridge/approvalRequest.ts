@@ -185,7 +185,16 @@ export interface ApprovalRequest {
 
 /** Witness-log event — one JSON line per append. */
 export type ApprovalWitnessEvent =
-  | { kind: "requested"; id: string; requester: string; session: string; at: string; payloadHash: string }
+  | {
+      kind: "requested";
+      id: string;
+      requester: string;
+      session: string;
+      at: string;
+      payloadHash: string;
+      /** Absent on historical lines written before t-f85a02. */
+      decisionSealVersion?: number;
+    }
   | { kind: "resolved"; id: string; decision: ApprovalDecision; at: string; by?: string }
   | { kind: "cancelled"; id: string; by: string; at: string; reason: string };
 
@@ -243,13 +252,16 @@ export function payloadHashMatches(record: ApprovalRequest): boolean {
  *     DETECTING an edit is not PREVENTING a resolution; closing the door is a capability fix and stays
  *     t-5313dc. Door 3 in invariant (3) above is still open — it is now noisy, not shut.
  *   - not that a human decided. No path to this record observes a person.
- *   - not that an unsealed record was tampered with. A record carrying neither seal field predates
- *     this change and is read exactly as it always was — accusing it would be accusing legitimate
- *     history.
+ *   - not WHO wrote the witness ledger either. For post-t-f85a02 records, the requested line in that
+ *     second file says this record was born in the seal era; it does not identify either writer.
+ *   - not that an unsealed record with a historical requested line was tampered with. A requested line
+ *     carrying no `decisionSealVersion` predates t-f85a02 and is read exactly as it always was —
+ *     accusing it would be accusing legitimate history.
  *
- * That last rule is also this seal's own DOWNGRADE limit, stated rather than hidden, and measured by a
- * test: a rewrite that drops BOTH seal fields reads as a pre-seal record. Binding the seal era to the
- * witness ledger (a second file the forger would then have to edit too) is t-f85a02.
+ * t-f85a02 closes the one-file DOWNGRADE limit by binding the era to the requested witness line: a
+ * rewrite that drops BOTH record fields now contradicts the second file. This is one additional edit,
+ * not a closed door. A same-uid forger who also deletes/changes the ledger marker can still make the
+ * rewrite look historical, because neither file is keyed or access-isolated (t-5313dc remains open).
  */
 export const DECISION_SEAL_VERSION = 1;
 
@@ -300,9 +312,20 @@ export function sealDecision(record: ApprovalRequest): ApprovalRequest {
   return { ...stamped, decisionSeal: computeDecisionSeal(stamped) };
 }
 
-/** Pure predicate — the readers that must NOT throw (Control's pending list) use this directly. */
-export function decisionSealState(record: ApprovalRequest): DecisionSealState {
+/** Pure predicate; workspace-aware readers pass the externally witnessed seal version. */
+export function decisionSealState(
+  record: ApprovalRequest,
+  witnessedSealVersion?: number,
+): DecisionSealState {
   const { decisionSealVersion: version, decisionSeal: seal } = record;
+  // t-f85a02 — the witness lives in a second file, so removing both fields from THIS file no longer
+  // turns a post-seal request into history. Invalid/conflicting witness versions arrive as NaN and are
+  // broken too: an unreadable era marker must not become another downgrade spelling.
+  if (witnessedSealVersion !== undefined) {
+    if (!Number.isInteger(witnessedSealVersion) || witnessedSealVersion < 1 || version !== witnessedSealVersion) {
+      return "broken";
+    }
+  }
   if (version === undefined && seal === undefined) return "unsealed";
   if (version !== DECISION_SEAL_VERSION || typeof seal !== "string") return "broken";
   return seal === computeDecisionSeal(record) ? "intact" : "broken";
@@ -367,6 +390,50 @@ export function writeApprovalRequest(workspaceRoot: string, request: ApprovalReq
   return file;
 }
 
+/**
+ * Creates a NEW approval record and its seal-era witness.
+ *
+ * The ledger append deliberately happens first. The old record-then-ledger order left a crash window
+ * in which a post-seal record existed with no second-file evidence of its era; stripping its two seal
+ * fields would then look historical again. A crash after this append can leave an orphan witness but
+ * no approval record, which is fail-closed: there is no decision for a reader to honour.
+ */
+export function recordApprovalRequest(workspaceRoot: string, request: ApprovalRequest): string {
+  const file = approvalRequestPath(workspaceRoot, request.id);
+  if (fs.existsSync(file)) throw new Error(`approval request '${request.id}' already exists`);
+  const sealed = sealDecision(request);
+  appendApprovalWitnessEvent(workspaceRoot, {
+    kind: "requested",
+    id: sealed.id,
+    requester: sealed.requester,
+    session: sealed.session,
+    at: sealed.createdAt,
+    payloadHash: sealed.payloadHash,
+    decisionSealVersion: sealed.decisionSealVersion,
+  });
+  return writeApprovalRequest(workspaceRoot, sealed);
+}
+
+/** The seal era witnessed for this id, or undefined for genuine pre-t-f85a02 history. */
+function witnessedDecisionSealVersion(workspaceRoot: string, id: string): number | undefined {
+  const requested = readApprovalWitnessEvents(workspaceRoot).filter(
+    (event): event is Extract<ApprovalWitnessEvent, { kind: "requested" }> =>
+      event.kind === "requested" && event.id === id,
+  );
+  const versions = requested
+    .filter((event) => Object.prototype.hasOwnProperty.call(event, "decisionSealVersion"))
+    .map((event) => event.decisionSealVersion);
+  if (versions.length === 0) return undefined;
+  if (versions.some((version) => typeof version !== "number")) return Number.NaN;
+  const distinct = new Set(versions as number[]);
+  return distinct.size === 1 ? (versions[0] as number) : Number.NaN;
+}
+
+/** Workspace-aware state used by both the trust-bearing reader and the human pending surface. */
+export function witnessedDecisionSealState(workspaceRoot: string, record: ApprovalRequest): DecisionSealState {
+  return decisionSealState(record, witnessedDecisionSealVersion(workspaceRoot, record.id));
+}
+
 export function readApprovalRequest(workspaceRoot: string, id: string): ApprovalRequest {
   const file = approvalRequestPath(workspaceRoot, id);
   const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as ApprovalRequest;
@@ -387,7 +454,7 @@ export function readApprovalRequest(workspaceRoot: string, id: string): Approval
   // (t-d85857 built that path for `payloadHash`), so a broken record becomes MORE visible, not less.
   // What a refusal costs is the requester's own read of a broken record; a new request is the recovery,
   // and it needs no privileged repair door (the family t-0cbcbd's rule).
-  if (decisionSealState(parsed) === "broken") {
+  if (witnessedDecisionSealState(workspaceRoot, parsed) === "broken") {
     throw new Error(
       `approval record '${id}' is corrupt — its decision (status/resolution) no longer matches the decision seal ` +
         `written with it. This proves the bytes changed after they were sealed; it does not say who changed them.`,

@@ -4,12 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import {
   APPROVALS_REL_DIR,
+  APPROVALS_WITNESS_REL_PATH,
   approvalRequestPath,
   buildApprovalRequest,
   cancelOwnApprovalRequest,
   computeDecisionSeal,
   decisionSealState,
   readApprovalRequest,
+  recordApprovalRequest,
   resolveApproval,
   writeApprovalRequest,
   type ApprovalRequest,
@@ -175,6 +177,14 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
 
     it("stay readable and are never reported as tampered", () => {
       const root = workspace();
+      const historicalWitnessBytes =
+        '{"kind":"requested","id":"a-011111","requester":"child-agent","session":"tachyon-child-agent","at":"2026-08-05T00:00:00.000Z","payloadHash":"c63c185a29fe339244deb958f3490d29e8486282f0282e6a6f60e7071ebf15bb"}\n';
+      const historicalWitnessFile = path.join(root, APPROVALS_WITNESS_REL_PATH);
+      fs.mkdirSync(path.dirname(historicalWitnessFile), { recursive: true });
+      fs.writeFileSync(historicalWitnessFile, historicalWitnessBytes, "utf8");
+      const HISTORICAL_UNSEALED_EXCEPTION =
+        "t-f85a02: this requested witness predates the decisionSealVersion field, so its unsealed record is legitimate history";
+      expect(HISTORICAL_UNSEALED_EXCEPTION).toContain("predates the decisionSealVersion field");
       // A record resolved before this change: no seal fields anywhere, `resolvedBy` still the retired
       // pre-t-86e59a actor string. History, read as history — the absence of a seal means the record is
       // OLDER than the seal, and calling that tampering would accuse a legitimate file.
@@ -193,6 +203,9 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
       expect(legacy.status).toBe("resolved");
       expect(legacy.resolution?.decision).toBe("approved");
       expect(decisionSealState(legacy)).toBe("unsealed");
+      // Named supersession exception above changes live behavior without rewriting the historical
+      // witness into today's schema. Its exact bytes remain the oracle and remain untouched by reads.
+      expect(fs.readFileSync(historicalWitnessFile, "utf8")).toBe(historicalWitnessBytes);
 
       // A legacy PENDING record is readable too, and resolving it seals what the resolver writes —
       // upgrading at decision time claims a seal only over bytes this process authored.
@@ -218,21 +231,30 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
       expect(() => readApprovalRequest(root, "a-033333")).toThrow(/decision seal/);
     });
 
-    it("MEASURED LIMIT: stripping both seal fields downgrades a forgery into looking like history (t-f85a02)", () => {
+    it("refuses a post-seal record whose two seal fields were stripped (t-f85a02)", () => {
       const root = workspace();
-      writeApprovalRequest(root, pending("a-044444"));
+      const request = pending("a-044444");
+      recordApprovalRequest(root, request);
 
       // The forger rewrites the whole file, dropping the seal era along with the decision it forges.
-      // Nothing IN the record can tell this apart from a genuine pre-seal record — that is exactly the
-      // rule that keeps history from being accused, seen from the other side. Asserted rather than
-      // hoped: closing it means anchoring the seal era in a second file (t-f85a02).
+      // Nothing IN the record can tell this apart from a genuine pre-seal record. The requested witness
+      // in the second file dates this request to the seal era, so dropping the two fields is evidence of
+      // tampering. It still says nothing about who wrote either file.
       editOnDisk(root, "a-044444", (raw) => {
         raw.status = "resolved";
         raw.resolution = forgedResolution("a-044444");
         delete raw.decisionSeal;
         delete raw.decisionSealVersion;
       });
-      expect(readApprovalRequest(root, "a-044444").status).toBe("resolved");
+      expect(() => readApprovalRequest(root, "a-044444")).toThrow(/decision seal/);
+      const [tampered] = listPendingApprovalViewItems(root);
+      expect(tampered).toMatchObject({ id: "a-044444", tampered: true });
+      const [requested] = fs
+        .readFileSync(path.join(root, APPROVALS_WITNESS_REL_PATH), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(requested.decisionSealVersion).toBe(1);
     });
   });
 
