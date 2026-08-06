@@ -482,3 +482,38 @@ Sexta correção de agente sobre mim nas ondas J–R.
 Os quatro doorbells desta onda carregam `summary` e `pointer`. Antes do reload eram 0 de
 2091. O conserto da t-167b5c (spec 493) está vivo, e a evidência é a coordenação acima:
 sem o texto no registro, aquelas duas mensagens teriam sido só "alguém tocou a campainha".
+
+## Onda S (2026-08-06 ~20h00): quatro slots repostos depois do corte da 0.64.0
+
+Frota vazia, `main` limpa e empurrada em `28daa306` (0.64.0). Medi antes de despachar:
+
+    Mem: 15990 MB total | 9694 MB disponíveis | 24 cores
+
+| agente | task | kind | runtime | `cmd` no despacho | desfecho |
+|---|---|---|---|---|---|
+| crashroot | t-9713ff | bug (p0) | claude | `claude` | — |
+| zodpath | t-74274c | bug (p0) | claude | `claude` | — |
+| remeasure | t-0ac2e9 | feature (p1) | codex | `codex -c model_reasoning_effort=medium` | — |
+| adoptgesture | t-5160e8 | feature (p0) | codex | `codex -c model_reasoning_effort=medium` | — |
+
+### Por que estes runtimes
+
+Dois claude e dois codex, e a razão é a mesma das ondas anteriores. Codex `medium` segue
+sendo a única configuração com amostra real neste arquivo — n=6 antes desta onda, todas
+limpas. Claude ficou nas duas que precisam de julgamento e não só de execução: o
+`crashroot` tem de decidir um veredito sobre um suspeito, e o `zodpath` tem de decidir se
+degradação por linha é segura ou se entrega só metade com razão escrita.
+
+O `adoptgesture` foi para codex apesar de ser p0 porque é a task mais bem especificada do
+board: a restrição vinculante está escrita, e existe um teste
+(`test/unit/agentFormationBootstrap.test.ts`) que falha se ela for violada. Trabalho com
+guarda mecânico é onde `medium` tem histórico.
+
+### O que estes quatro briefs testam, além da entrega
+
+Três dos quatro briefs pedem explicitamente para o agente REFUTAR uma premissa minha, e
+dois nomeiam a premissa que eu mais suspeito estar errada: que os 85 órfãos importam, e que
+o defeito 2 da t-74274c ainda existe. Duas das quatro tasks têm corpo ANTERIOR a um conserto
+que já landou, e o brief avisa disso em caixa alta — a t-74274c teve metade fechada pela
+t-a11ac5 e a t-0ac2e9 teve a metade 1 fechada pela t-1322b5. Escrever "esta task é mais
+velha que o repositório" no brief é a regra 1 aplicada no despacho em vez de na revisão.
