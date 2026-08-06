@@ -1,9 +1,12 @@
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { isResumable, type SessionRecord } from "../resume/SessionLedger.js";
+import { MEASURED_CLI_VERSIONS } from "../runtime/measuredCliVersions.js";
 import { buildRuntimeUsageSource, runtimeUsageSemantics, type RuntimeUsageUpdate } from "../runtimeUsage/model.js";
 import { modelFromCommand, resolveModelFact, type ObservedModelInput } from "../sidebar/agentModel.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
@@ -14,6 +17,8 @@ import { buildWorkspaceLabels, type RuntimeOpsWorkspaceInput } from "./workspace
 import { cpus } from "node:os";
 import { readHostMemory } from "../host/hostResources.js";
 import { previewVitestShare } from "../host/vitestBudget.js";
+
+const execFileP = promisify(execFile);
 
 export interface RuntimeOpsWorkspaceSource {
   workspaceRoot: string;
@@ -48,6 +53,12 @@ export interface RuntimeOpsSnapshotServiceOptions {
   providerObservations?: () => RuntimeOpsProviderObservationSnapshotInput;
   /** t-e3bae0 — shared with sidebar fleet so CPU% has continuous samples across views. */
   resourceSampler?: Pick<import("../attention/resourceSample.js").ResourceSampler, "sample" | "clear" | "keys">;
+  /**
+   * t-1322b5 — PATH `--version` for runtimes with a measured product baseline.
+   * Default runs `<runtime> --version` with a short timeout. Inject in tests.
+   * Returns the raw banner string, or null when the CLI cannot be read.
+   */
+  readPathVersion?: (runtime: string) => Promise<string | null>;
 }
 
 export interface RuntimeOpsActivityLog {
@@ -92,6 +103,8 @@ export class RuntimeOpsSnapshotService {
   private readonly activityLog: NonNullable<RuntimeOpsSnapshotServiceOptions["activityLog"]>;
   private readonly providerObservations?: NonNullable<RuntimeOpsSnapshotServiceOptions["providerObservations"]>;
   private readonly resourceSampler?: NonNullable<RuntimeOpsSnapshotServiceOptions["resourceSampler"]>;
+  private readonly readPathVersion: (runtime: string) => Promise<string | null>;
+  private pathVersions?: { value: Record<string, string | null>; expiresAt: number; generation: number };
   private readonly activity = new Map<string, ActivityProjection>();
 
   constructor(
@@ -105,11 +118,13 @@ export class RuntimeOpsSnapshotService {
       new ActivityLog(path.join(workspaceRoot, ".tachyon", "activity"), agent));
     this.providerObservations = options.providerObservations;
     this.resourceSampler = options.resourceSampler;
+    this.readPathVersion = options.readPathVersion ?? defaultReadPathVersion;
   }
 
   invalidateDetection(): void {
     this.detectionGeneration += 1;
     this.detection = undefined;
+    this.pathVersions = undefined;
   }
 
   async snapshot(): Promise<RuntimeOpsSnapshotV2> {
@@ -188,10 +203,12 @@ export class RuntimeOpsSnapshotService {
     } catch {
       // Provider observation is additive. A broken cached accessor must not remove native runtime inventory.
     }
+    const pathVersions = await this.pathVersionsCached();
     return buildRuntimeOpsSnapshot({
       generatedAt: new Date(this.now()).toISOString(),
       detectedRuntimes,
       agents,
+      pathVersions,
       providerObservations,
       // t-7f9809 — workers from the host-wide budget preview (siblings discounted), not alone-sizing.
       hostMemory: (() => {
@@ -332,6 +349,32 @@ export class RuntimeOpsSnapshotService {
     return promise;
   }
 
+  /**
+   * t-1322b5 — PATH versions for runtimes that have a product measured baseline.
+   * Cached on the same TTL/generation as CLI presence detection. Never blocks the product
+   * when a probe fails: the map carries null and the UI says the running version is unknown.
+   */
+  private async pathVersionsCached(): Promise<Record<string, string | null>> {
+    const now = this.now();
+    const generation = this.detectionGeneration;
+    if (this.pathVersions && this.pathVersions.generation === generation && now < this.pathVersions.expiresAt) {
+      return this.pathVersions.value;
+    }
+    const runtimes = Object.keys(MEASURED_CLI_VERSIONS);
+    const entries = await Promise.all(
+      runtimes.map(async (runtime) => {
+        try {
+          return [runtime, await this.readPathVersion(runtime)] as const;
+        } catch {
+          return [runtime, null] as const;
+        }
+      }),
+    );
+    const value = Object.fromEntries(entries);
+    this.pathVersions = { value, expiresAt: this.now() + this.detectionTtlMs, generation };
+    return value;
+  }
+
   /** t-e3bae0 — pane-subtree RSS/CPU via shared ResourceSampler (Linux /proc). */
   private async sampleAgentResources(
     workspace: RuntimeOpsWorkspaceSource,
@@ -346,6 +389,23 @@ export class RuntimeOpsSnapshotService {
     } catch {
       return undefined;
     }
+  }
+}
+
+/**
+ * t-1322b5 — default PATH version probe. Only `--version` (never upgrade selectors).
+ * Returns null when the binary is missing or the banner is empty — never invents a version.
+ */
+async function defaultReadPathVersion(runtime: string): Promise<string | null> {
+  try {
+    const { stdout, stderr } = await execFileP(runtime, ["--version"], {
+      timeout: 10_000,
+      encoding: "utf8",
+    });
+    const banner = `${stdout ?? ""}${stderr ?? ""}`.trim();
+    return banner || null;
+  } catch {
+    return null;
   }
 }
 

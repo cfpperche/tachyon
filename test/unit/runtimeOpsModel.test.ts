@@ -67,6 +67,68 @@ describe("Runtime Ops projection", () => {
     expect(grok.version).toEqual({ state: "unavailable" });
   });
 
+  describe("t-1322b5 — measured vs PATH version parity", () => {
+    it("match: PATH equals measured", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [],
+        pathVersions: { codex: "codex-cli 0.146.0" },
+      });
+      expect(snapshot.runtimes.find((row) => row.runtime === "codex")?.versionParity).toEqual({
+        state: "match",
+        measured: "0.146.0",
+        running: "0.146.0",
+      });
+    });
+
+    it("drift: PATH differs at any patch", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [],
+        pathVersions: { codex: "codex-cli 0.146.1" },
+      });
+      expect(snapshot.runtimes.find((row) => row.runtime === "codex")?.versionParity).toEqual({
+        state: "drift",
+        measured: "0.146.0",
+        running: "0.146.1",
+      });
+    });
+
+    it("unknown-running: PATH unreadable — never assumes match", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [],
+        pathVersions: { codex: null },
+      });
+      expect(snapshot.runtimes.find((row) => row.runtime === "codex")?.versionParity).toEqual({
+        state: "unknown-running",
+        measured: "0.146.0",
+      });
+    });
+
+    it("omits parity when the host did not probe PATH versions", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["codex"],
+        agents: [],
+      });
+      expect(snapshot.runtimes.find((row) => row.runtime === "codex")?.versionParity).toBeUndefined();
+    });
+
+    it("omits parity for runtimes without a product measured baseline", () => {
+      const snapshot = buildRuntimeOpsSnapshot({
+        generatedAt: "2026-07-09T21:00:00.000Z",
+        detectedRuntimes: ["claude"],
+        agents: [],
+        pathVersions: { claude: "2.1.220" },
+      });
+      expect(snapshot.runtimes.find((row) => row.runtime === "claude")?.versionParity).toBeUndefined();
+    });
+  });
+
   describe("spec 378 — observed model + divergence projection", () => {
     it("projects an available observed model with effort/observedAt/stale, and divergence", () => {
       const snapshot = buildRuntimeOpsSnapshot({

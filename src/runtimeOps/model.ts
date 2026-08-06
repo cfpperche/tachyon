@@ -1,4 +1,5 @@
 import { runtimeLabel, runtimeUsageSemantics, type RuntimeUsageSource } from "../runtimeUsage/model.js";
+import { compareMeasuredCliVersion } from "../runtime/measuredCliVersions.js";
 import type {
   RuntimeOpsAgentRefV1,
   RuntimeOpsContextPressureV1,
@@ -11,6 +12,7 @@ import type {
   RuntimeOpsThrottleRuntime,
   RuntimeOpsThrottleScope,
   RuntimeOpsUsageV1,
+  RuntimeOpsVersionParityV1,
 } from "./types.js";
 import { projectRuntimeOpsProviderCapacity } from "./providerProjection.js";
 
@@ -97,6 +99,12 @@ export interface RuntimeOpsProjectionInput {
     hostMemTotalMb?: number;
     recommendedVitestWorkers?: number;
   };
+  /**
+   * t-1322b5 — PATH `--version` banners keyed by runtime id.
+   * `null` means the probe ran and failed; missing key means not probed.
+   * Projection never spawns a CLI — the host fills this map.
+   */
+  pathVersions?: Readonly<Record<string, string | null>>;
 }
 
 export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): RuntimeOpsSnapshotV2 {
@@ -104,7 +112,12 @@ export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): Runti
   for (const agent of input.agents) runtimeIds.add(agent.runtime);
   const runtimes = [...runtimeIds]
     .sort((a, b) => runtimeLabel(a).localeCompare(runtimeLabel(b)) || a.localeCompare(b))
-    .map((runtime) => projectRuntime(runtime, input.detectedRuntimes.includes(runtime), input.agents.filter((agent) => agent.runtime === runtime)));
+    .map((runtime) => projectRuntime(
+      runtime,
+      input.detectedRuntimes.includes(runtime),
+      input.agents.filter((agent) => agent.runtime === runtime),
+      input.pathVersions,
+    ));
   return {
     schemaVersion: 2,
     generatedAt: input.generatedAt,
@@ -124,7 +137,12 @@ export function buildRuntimeOpsSnapshot(input: RuntimeOpsProjectionInput): Runti
   };
 }
 
-function projectRuntime(runtime: string, pathDetected: boolean, agents: RuntimeOpsAgentInput[]): RuntimeOpsRuntimeV1 {
+function projectRuntime(
+  runtime: string,
+  pathDetected: boolean,
+  agents: RuntimeOpsAgentInput[],
+  pathVersions?: Readonly<Record<string, string | null>>,
+): RuntimeOpsRuntimeV1 {
   const orderedAgents = [...agents].sort((a, b) =>
     a.workspaceLabel.localeCompare(b.workspaceLabel) || a.agentName.localeCompare(b.agentName) || a.workspaceKey.localeCompare(b.workspaceKey));
   const workspaces = [...new Map(orderedAgents.map((agent) => [agent.workspaceKey, { key: agent.workspaceKey, label: agent.workspaceLabel }])).values()];
@@ -148,6 +166,14 @@ function projectRuntime(runtime: string, pathDetected: boolean, agents: RuntimeO
     .filter((agent): agent is typeof agent & { runtimeVersion: string } => agent.runtimeVersion !== undefined)
     .sort((a, b) => (a.versionObservedAt ?? "").localeCompare(b.versionObservedAt ?? "") || a.workspaceKey.localeCompare(b.workspaceKey) || a.agentName.localeCompare(b.agentName))
     .at(-1);
+  // t-1322b5 — only when the host supplies pathVersions. Missing key and null both mean "not known".
+  // Omit the field when the host did not probe so pure projection tests stay quiet.
+  const versionParity = pathVersions !== undefined
+    ? compareMeasuredCliVersion(
+      runtime,
+      Object.prototype.hasOwnProperty.call(pathVersions, runtime) ? pathVersions[runtime] : null,
+    ) as RuntimeOpsVersionParityV1 | undefined
+    : undefined;
   return {
     key: `runtime:${runtime}`,
     runtime,
@@ -165,6 +191,7 @@ function projectRuntime(runtime: string, pathDetected: boolean, agents: RuntimeO
           ...(versionCandidate.versionObservedAt ? { observedAt: versionCandidate.versionObservedAt } : {}),
         }
       : { state: "unavailable" },
+    ...(versionParity ? { versionParity } : {}),
     workspaces,
     agents: orderedAgents.map((agent) => ({
       key: `${agent.workspaceKey}:${agent.agentName}`,

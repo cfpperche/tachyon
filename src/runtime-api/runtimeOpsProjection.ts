@@ -108,6 +108,24 @@ const stringValue = z.discriminatedUnion("state", [
   z.object({ state: z.literal("unavailable") }).strict(),
 ]);
 
+/** t-1322b5 — measured-vs-PATH display only; optional so runtimes without a product baseline stay quiet. */
+const versionParity = z.discriminatedUnion("state", [
+  z.object({
+    state: z.literal("match"),
+    measured: text(64, 1),
+    running: text(64, 1),
+  }).strict(),
+  z.object({
+    state: z.literal("drift"),
+    measured: text(64, 1),
+    running: text(64, 1),
+  }).strict(),
+  z.object({
+    state: z.literal("unknown-running"),
+    measured: text(64, 1),
+  }).strict(),
+]);
+
 const runtime = z.object({
   key: text(128, 1),
   runtime: text(64, 1),
@@ -116,6 +134,7 @@ const runtime = z.object({
   usage,
   lastActivity: stringValue,
   version: stringValue,
+  versionParity: versionParity.optional(),
   workspaces: z.array(z.object({ key: text(128, 1), label: text(256, 1) }).strict()).max(MAX_WORKSPACES),
   agents: z.array(agent).max(MAX_AGENTS),
 }).strict().superRefine((value, context) => {
@@ -325,6 +344,7 @@ function mergeRuntime(runtimeId: string, rows: RuntimeOpsRuntimeV1[]): RuntimeOp
   }
   const lastActivity = newestAvailable(rows.map((row) => row.lastActivity));
   const version = newestAvailable(rows.map((row) => row.version));
+  const versionParity = mergeVersionParity(rows.map((row) => row.versionParity));
   return {
     key: `runtime:${runtimeId}`,
     runtime: runtimeId,
@@ -349,9 +369,21 @@ function mergeRuntime(runtimeId: string, rows: RuntimeOpsRuntimeV1[]): RuntimeOp
     },
     lastActivity,
     version,
+    ...(versionParity ? { versionParity } : {}),
     workspaces: [...workspaceMap.values()].sort((left, right) => left.label.localeCompare(right.label) || left.key.localeCompare(right.key)),
     agents,
   };
+}
+
+/** Prefer the most informative parity fact when merging host rows (drift > unknown > match). */
+function mergeVersionParity(
+  values: Array<RuntimeOpsRuntimeV1["versionParity"]>,
+): RuntimeOpsRuntimeV1["versionParity"] {
+  const present = values.filter((value): value is NonNullable<typeof value> => value !== undefined);
+  if (present.length === 0) return undefined;
+  return present.find((value) => value.state === "drift")
+    ?? present.find((value) => value.state === "unknown-running")
+    ?? present[0];
 }
 
 function newestAvailable(

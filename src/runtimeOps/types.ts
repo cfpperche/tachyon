@@ -107,6 +107,16 @@ export interface RuntimeOpsAgentRefV1 {
   resources?: { cpuPct?: number; memMb: number };
 }
 
+/**
+ * t-1322b5 — product measured CLI version vs PATH `--version` for this host.
+ * Absent when the product has no measured baseline for the runtime.
+ * Display only: never blocks spawn, gates, or ports.
+ */
+export type RuntimeOpsVersionParityV1 =
+  | { state: "match"; measured: string; running: string }
+  | { state: "drift"; measured: string; running: string }
+  | { state: "unknown-running"; measured: string };
+
 export interface RuntimeOpsRuntimeV1 {
   key: string;
   runtime: string;
@@ -118,6 +128,8 @@ export interface RuntimeOpsRuntimeV1 {
   usage: RuntimeOpsValue<RuntimeOpsUsageV1>;
   lastActivity: RuntimeOpsValue<string>;
   version: RuntimeOpsValue<string>;
+  /** Measured-vs-running compare when the product owns a baseline for this runtime. */
+  versionParity?: RuntimeOpsVersionParityV1;
   workspaces: RuntimeOpsWorkspaceV1[];
   agents: RuntimeOpsAgentRefV1[];
 }
