@@ -1,6 +1,6 @@
 # Spec 241 — per-agent continuity (working memory across session boundaries)
 
-**Status:** shipped · **Date:** 2026-06-21 · **Follows:** spec 216 (role re-anchor), spec 239 (activity log), spec 192 (notes/pins), spec 209 (session resume), spec 225 (fork) · **Runtime:** claude v1 · **Debate:** see `debate.md` (D3 corrected; D7–D10 added) · **Closure:** see `tasks.md` (impl shipped; EDH pending)
+**Status:** shipped · **Date:** 2026-06-21 · **Follows:** spec 216 (role re-anchor), spec 239 (activity log), spec 192 (notes/pins), spec 209 (session resume), spec 225 (fork) · **Runtime:** claude v1 · **Debate:** see `debate.md` (D3 corrected; D7–D10 added) · **Closure:** read-path amendment shipped for t-c35335
 
 ## Problem
 
@@ -51,6 +51,9 @@ The agent reads + writes it (its private working memory); Tachyon nudges it to k
 - **D8 — fork (spec 225) behavior.** A fork gets a **snapshot copy** under the child name (separate file) with `forked_from_agent` / `forked_from_session_id` + a staleness note, started **`status: paused`** ("inherited from parent — re-scope to your own task before treating as active"): an off-task fork must not present the parent's goal as its own.
 - **D9 — discontinuity state model.** Persist discontinuity state SEPARATELY from sessionId — a `compacted_since_last_restore` flag + `last_discontinuity_seq` — so a same-session post-compaction resume is correctly classified as "needs restore". This is the state machine D3/D6 depend on; it carries the test matrix.
 - **D10 — privacy / tracking policy.** `.tachyon/continuity/` is **gitignored by default** (per-agent private working state: transient paths, partial plans, possibly sensitive context). Docs instruct agents to promote durable shared facts to notes/pins/specs.
+- **D11 — derived open work.** `get_continuity` appends open assigned tasks and open owned pins at read time. The store never saves this projection. The retired Delivery subsystem contributes no rows.
+- **D12 — read-path freshness.** `get_continuity` leads with a stale verdict when lag exceeds `staleLag`. The verdict states the exact lag and requires reconciliation.
+- **D13 — advisory drop detection.** `set_continuity` compares task identifiers and wiki links against the previous body. Missing tokens produce a warning after the write. The warning never blocks a legitimate removal.
 
 ## Non-goals (v1)
 - LLM auto-summarization of the activity log into a brief (deferred; `confidence: derived` only).
@@ -85,6 +88,19 @@ The agent reads + writes it (its private working memory); Tachyon nudges it to k
 - [ ] A fork starts from a `status: paused` snapshot of the parent brief in its own file (D8).
 - [ ] `.tachyon/continuity/` is gitignored by default (D10).
 - [ ] No regression to spec 216 re-anchor, 239 activity log, or 209 resume.
+- [x] **Scenario: Rebuild context includes live open work**
+  - **Given** an agent has an authored brief, assigned open tasks, and owned open pins.
+  - **When** the agent calls `get_continuity`.
+  - **Then** the response includes the authored brief and a derived open-work section.
+  - **Then** the stored brief excludes the derived section.
+- [x] **Scenario: Rebuild context exposes stale state**
+  - **Given** the brief lag exceeds the stale threshold.
+  - **When** the agent calls `get_continuity`.
+  - **Then** the response begins with the exact lag and a reconciliation instruction.
+- [x] **Scenario: Rewrite reports removed references**
+  - **Given** the previous body contains a task identifier or wiki link.
+  - **When** `set_continuity` replaces the body without that token.
+  - **Then** the write succeeds and the response warns about the removed token.
 
 ## v1 scope (smallest honest version)
 **In:** the brief file + write contract (D7), `get`/`set`/`status` Bridge tools (D2), the discontinuity state model + injection (D3/D9), exact-lag + stale wording (D4), idle/boundary nudges with cooldown (D5/OQ1), cold-start missing state (OQ3), sidebar badge + manual re-inject (OQ4), bounded pre-teardown checkpoint (OQ6), fork snapshot (D8), gitignore (D10).
