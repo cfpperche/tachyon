@@ -366,6 +366,9 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
   it("t-75e9c7: an agent with ZERO commits still reports its uncommitted edits honestly — a commit-only diff would lie", async () => {
     const m = mgr();
     const { record: rec } = await m.ensure({ agent: "zerocommits", branch: "tachyon/zerocommits" });
+    fs.writeFileSync(path.join(repo, "main-moved.txt"), "the base branch moved, but the agent branch did not\n");
+    git(["add", "main-moved.txt"], repo);
+    git(["commit", "-m", "move main without moving agent"], repo);
     // No commit made on tachyon/zerocommits — this branch is bit-for-bit identical to its baseRef in history.
     expect(git(["log", "--oneline", `${rec.baseRef}..tachyon/zerocommits`], repo).trim()).toBe("");
     fs.writeFileSync(path.join(rec.path, "README.md"), "touched but never committed\n");
@@ -379,11 +382,64 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     // WORKING TREE, not baseRef vs HEAD.
     const rows = await collectAgentTouchedFiles(
       [{ name: "zerocommits", running: true }],
-      () => ({ path: rec.path, branch: rec.branch, baseRef: rec.baseRef }),
-      { changedFiles: (cwd, baseRef) => m.changedFiles(cwd, baseRef) },
+      () => ({ path: rec.path, branch: rec.branch, baseRef: rec.baseRef, baseBranch: "main" }),
+      {
+        changedFiles: (cwd, baseRef) => m.changedFiles(cwd, baseRef),
+        mergeBase: async (cwd, left, right) => git(["merge-base", left, right], cwd).trim(),
+      },
     );
     expect(rows).toEqual([
-      { agent: "zerocommits", worktree: true, branch: "tachyon/zerocommits", baseRef: rec.baseRef, files: [{ status: "M", path: "README.md" }] },
+      {
+        agent: "zerocommits",
+        worktree: true,
+        branch: "tachyon/zerocommits",
+        baseRef: rec.baseRef,
+        baseBranch: "main",
+        comparisonRef: rec.baseRef,
+        files: [{ status: "M", path: "README.md" }],
+      },
+    ]);
+  });
+
+  it("t-004255: a long-lived worktree excludes changes made only on its advancing base branch", async () => {
+    const m = mgr();
+    const { record: rec } = await m.ensure({ agent: "long-lived", branch: "tachyon/long-lived" });
+
+    fs.writeFileSync(path.join(repo, "main-only.txt"), "main moved after the agent was created\n");
+    git(["add", "main-only.txt"], repo);
+    git(["commit", "-m", "advance main 1"], repo);
+    for (let i = 2; i <= 12; i += 1) {
+      fs.appendFileSync(path.join(repo, "main-only.txt"), `main-only change ${i}\n`);
+      git(["add", "main-only.txt"], repo);
+      git(["commit", "-m", `advance main ${i}`], repo);
+    }
+    const currentMain = git(["rev-parse", "HEAD"], repo).trim();
+    expect(git(["rev-list", "--count", `${rec.baseRef}..main`], repo).trim()).toBe("12");
+    git(["merge", "--ff-only", "main"], rec.path);
+
+    // A long-lived branch periodically catches up to main, but its recorded creation base stays
+    // stale. Its raw working-tree diff now includes a file this agent never touched. This is the
+    // production failure t-004255 caught with 881 files on a Saved Agent.
+    expect(await m.changedFiles(rec.path, rec.baseRef)).toEqual([{ status: "A", path: "main-only.txt" }]);
+
+    const rows = await collectAgentTouchedFiles(
+      [{ name: "long-lived", running: true }],
+      () => ({ path: rec.path, branch: rec.branch, baseRef: rec.baseRef, baseBranch: "main" }),
+      {
+        changedFiles: (cwd, baseRef) => m.changedFiles(cwd, baseRef),
+        mergeBase: async (cwd, left, right) => git(["merge-base", left, right], cwd).trim(),
+      },
+    );
+    expect(rows).toEqual([
+      {
+        agent: "long-lived",
+        worktree: true,
+        branch: "tachyon/long-lived",
+        baseRef: rec.baseRef,
+        baseBranch: "main",
+        comparisonRef: currentMain,
+        files: [],
+      },
     ]);
   });
 

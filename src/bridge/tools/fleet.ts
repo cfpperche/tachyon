@@ -923,11 +923,13 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "t-75e9c7 — which files has each LIVE agent already touched, read from its OWN worktree diff " +
-        "(baseRef vs working tree, spec 213) instead of anyone declaring it. Replaces the coordinator " +
+        "(current base-branch merge-base vs working tree, spec 213) instead of anyone declaring it. " +
+        "Using the current merge-base prevents a Saved Agent's stale creation base from attributing " +
+        "main-branch drift to that agent (t-004255). Replaces the coordinator " +
         "writing that list from memory into every brief: this is a FACT observed during the work, not a " +
         "promise made before it. Includes UNCOMMITTED changes on purpose — an agent with zero commits " +
         "yet is not reported as having 'touched nothing', because that would be exactly the lie this " +
-        "tool exists to kill. Cheap: two `git` calls per live agent, run on demand (no cache to go " +
+        "tool exists to kill. Cheap: three `git` calls per live agent, run on demand (no cache to go " +
         "stale). Read-only and ADVISORY — this is not a file lock (worktrees already isolate writes); " +
         "it only tells you where two agents' work will collide at MERGE. An agent with no isolated " +
         "worktree (a shared-checkout agent) is reported by name with worktree:false and a note, never " +
@@ -941,7 +943,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         const report = await collectAgentTouchedFiles(
           rows,
           (name) => deps.agentWorktrees?.ledger.get(name)?.worktree,
-          { changedFiles: deps.touchedFiles },
+          { changedFiles: deps.touchedFiles, mergeBase: deps.touchedFilesMergeBase },
         );
         return ok(JSON.stringify(report, null, 2));
       } catch (err) {

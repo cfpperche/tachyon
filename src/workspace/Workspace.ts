@@ -2167,6 +2167,13 @@ export class Workspace {
         // already used by evidence/inspect). Separate from `agentWorktrees` because it is a plain
         // read, not part of the removal cascade.
         touchedFiles: (cwd, baseRef) => this.worktrees.changedFiles(cwd, baseRef),
+        // t-004255 — a creation base becomes branch drift in a long-lived Saved Agent. Resolve the
+        // moving base branch against this worktree's HEAD, then keep changedFiles' working-tree diff
+        // so uncommitted edits remain visible.
+        touchedFilesMergeBase: async (cwd, leftRef, rightRef) => {
+          const result = await this.gitExec(["merge-base", leftRef, rightRef], cwd);
+          return result.code === 0 ? result.stdout.trim() || undefined : undefined;
+        },
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
         knownSecrets: () => [this.token, this.externalToken].filter((s): s is string => !!s),

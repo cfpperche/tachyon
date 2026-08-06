@@ -494,6 +494,8 @@ export interface BridgeDeps {
    * this directly. Optional for the same reason every other capability here is.
    */
   touchedFiles?: (cwd: string, baseRef: string) => Promise<ChangedFile[]>;
+  /** t-004255 — current branch merge-base for drift-free agent_touched_files comparisons. */
+  touchedFilesMergeBase?: (cwd: string, leftRef: string, rightRef: string) => Promise<string | undefined>;
 }
 
 /**
