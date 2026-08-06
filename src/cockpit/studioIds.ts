@@ -8,6 +8,9 @@
  * D0 shipped "command" (the pilot). D1a added terminal/runbook/schedule. D1b (this PR) adds agent —
  * its evolution/soul-profile domain messages are substantially larger than the other three's shared
  * shape, hence its own PR. D2 adds task (closes C.1b). D3 adds pin (closes C.4).
+ *
+ * t-337cdf — this remains the production type boundary for `studioRegistry.ts`; the standalone
+ * Command, Terminal, Runbook, Schedule, and Agent Studio panels consume that registry directly.
  */
 export const STUDIO_IDS = ["command", "terminal", "runbook", "schedule", "agent", "task", "pin"] as const;
 

@@ -22,6 +22,11 @@
  *    "where does back/breadcrumb go": today they agree (task-detail's nav tab AND its breadcrumb
  *    parent are both Mission), but a future route could highlight one tab while its breadcrumb
  *    parent is a different node, so these stay two functions on purpose.
+ *
+ * t-337cdf — retained after Control's renderer was removed because the live `CockpitModel`
+ * contract still type-imports `CockpitRoute` for `activeRoute`, while the preview fixture builds
+ * route-shaped compatibility models with `routes`. Removing this module therefore belongs with
+ * dissolving that remaining model contract, not with deleting the retired host in isolation.
  */
 import type { CockpitSectionId } from "./model.js";
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "../humanInbox/model.js";

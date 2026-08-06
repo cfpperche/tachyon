@@ -7,11 +7,14 @@
  * stays a thin per-studio index (command/terminal's handler is a 3-line browse→cwd forward; this one
  * genuinely needs its own module).
  *
- * The one structural difference from the retired class: `ctx.entityId` (studioHost.ts's
- * StudioMessageHooks, D1b addition) replaces `StudioDomainMessageContext.entityId`
+ * The one structural difference from the retired class: `ctx.entityId` replaces
+ * `StudioDomainMessageContext.entityId`
  * (StudioPanelManagerBase's per-panel tracked field) — same value, same "does this message's OWN
- * `agent` field match what's actually bound right now" guard, just sourced from the single active
- * binding instead of a per-panel entry in a Map.
+ * `agent` field match what's actually bound right now" guard, now sourced from the bound document
+ * session rather than a manager-owned entry in a Map.
+ *
+ * t-337cdf — this is still production-reachable: `studioRegistry.ts` installs this handler on the
+ * Agent entry, and `AgentStudioPanel.ts` consumes that registry for the standalone Agent Studio.
  */
 import * as vscode from "vscode";
 import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
