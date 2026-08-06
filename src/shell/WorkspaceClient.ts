@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { EngineControlClient, EngineControlClientError } from "../engine-service/controlClient.js";
 import {
   stagePackagedEngineBundle,
+  resolveEngineRuntimeSource,
   stageEngineRuntime,
   type StagedEngineBundle,
   type StagedEngineRuntime,
@@ -149,8 +150,15 @@ export async function connectPackagedWorkspaceClient(
     requiredChannel,
     requiredBuild,
   });
+  // t-d11d57 — resolve BEFORE staging, and await it here. On a local Extension Host `process.execPath`
+  // is the Electron binary, which does not start once copied out of the VS Code installation. The probe
+  // runs a subprocess, so it must not sit inside the synchronous `stageEngineRuntime` fs primitive
+  // (`cxWedgeBehavior.gen.test.ts` forbids sync child_process under `src/`, and it is right: this runs
+  // at activation in the Extension Host). Remote hosts already have a real Node and pass straight through.
   const runtime = stageEngineRuntime({
-    sourceExecutable: runtimeSourceExecutable ?? process.execPath,
+    sourceExecutable: await resolveEngineRuntimeSource({
+      sourceExecutable: runtimeSourceExecutable ?? process.execPath,
+    }),
     installRoot: runtimeInstallRoot,
   });
   return connectRemoteWorkspaceClient({ ...clientOptions, bundle, runtime });

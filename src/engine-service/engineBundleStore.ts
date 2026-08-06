@@ -2,7 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import {
   engineBundleId,
   isEngineBundleManifestV1,
@@ -73,6 +74,8 @@ export class EngineBundleError extends Error {
   }
 }
 
+const execFileAsync = promisify(execFile);
+
 export function isElectronRuntime(
   versions: Readonly<Record<string, string | undefined>> = process.versions,
 ): boolean {
@@ -87,13 +90,24 @@ function nodeExecutableNames(platform: NodeJS.Platform, env: NodeJS.ProcessEnv):
   return extensions.map((extension) => `node${extension.toLowerCase()}`);
 }
 
-function validatesAsNode(candidate: string, env: NodeJS.ProcessEnv): boolean {
+/**
+ * ASYNC, and the wedge invariant is why. A first cut used the blocking form and
+ * `cxWedgeBehavior.gen.test.ts` went red on it, correctly: this probes every PATH entry with a 5s
+ * timeout each, and it runs at activation inside the Extension Host — exactly where a blocking
+ * subprocess freezes the window the human is waiting on. The allowlist in that guard was not the
+ * answer either; every entry there says "separate process, no VS Code running", and this one runs
+ * with VS Code running, so claiming a slot would have made the guard lie.
+ *
+ * Do not name the blocking API in this file, not even in prose. The guard matches the identifier
+ * anywhere in the text, so a comment explaining why it is absent would itself be an offender.
+ */
+async function validatesAsNode(candidate: string, env: NodeJS.ProcessEnv): Promise<boolean> {
   try {
-    const output = execFileSync(candidate, [
+    const { stdout } = await execFileAsync(candidate, [
       "-p",
       "JSON.stringify({execPath:process.execPath,node:process.versions.node,electron:process.versions.electron||null})",
     ], { encoding: "utf8", env, timeout: 5_000, windowsHide: true });
-    const probe = JSON.parse(output) as { execPath?: unknown; node?: unknown; electron?: unknown };
+    const probe = JSON.parse(stdout) as { execPath?: unknown; node?: unknown; electron?: unknown };
     if (typeof probe.execPath !== "string" || typeof probe.node !== "string" || probe.electron !== null) return false;
     return fs.realpathSync(probe.execPath) === fs.realpathSync(candidate);
   } catch {
@@ -101,8 +115,14 @@ function validatesAsNode(candidate: string, env: NodeJS.ProcessEnv): boolean {
   }
 }
 
-/** Resolve a relocatable Node binary when the Extension Host itself is Electron. */
-export function resolveEngineRuntimeSource(input: ResolveEngineRuntimeSourceInput): string {
+/**
+ * Resolve a relocatable Node binary when the Extension Host itself is Electron.
+ *
+ * Deliberately NOT called from `stageEngineRuntime`. That function is an fs primitive — hash, copy,
+ * verify — and its callers (including three tests) stay synchronous. Only the probe needs to await,
+ * so the resolution happens one level up, in `connectPackagedWorkspaceClient`, which is already async.
+ */
+export async function resolveEngineRuntimeSource(input: ResolveEngineRuntimeSourceInput): Promise<string> {
   if (!isElectronRuntime(input.versions)) return input.sourceExecutable;
 
   const env = input.env ?? process.env;
@@ -111,12 +131,13 @@ export function resolveEngineRuntimeSource(input: ResolveEngineRuntimeSourceInpu
   for (const directory of directories) {
     for (const name of nodeExecutableNames(platform, env)) {
       const candidate = path.resolve(directory, name);
-      if (validatesAsNode(candidate, env)) return fs.realpathSync(candidate);
+      if (await validatesAsNode(candidate, env)) return fs.realpathSync(candidate);
     }
   }
   throw new EngineBundleError(
     "NODE_RUNTIME_NOT_FOUND",
-    "the local Electron Extension Host requires a real Node executable on PATH",
+    "the local Electron Extension Host requires a real Node executable on PATH. A shim (asdf, volta) "
+      + "is rejected on purpose: the probe requires the candidate's own process.execPath to match it.",
   );
 }
 
@@ -192,9 +213,8 @@ export function engineRuntimeInstallRoot(
  * retain an ExecStart path inside ~/.vscode-server or an extension installation.
  */
 export function stageEngineRuntime(input: StageEngineRuntimeInput): StagedEngineRuntime {
-  const resolvedSource = resolveEngineRuntimeSource({ sourceExecutable: input.sourceExecutable });
   let source: string;
-  try { source = fs.realpathSync(path.resolve(resolvedSource)); }
+  try { source = fs.realpathSync(path.resolve(input.sourceExecutable)); }
   catch (error) {
     throw new EngineBundleError("RUNTIME_SOURCE_UNREADABLE", `engine runtime source is unreadable: ${String(error)}`);
   }
