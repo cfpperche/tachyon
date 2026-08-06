@@ -1,5 +1,22 @@
 # Tasks 241 — per-agent continuity
 
+## Read-path amendment
+
+- [x] Add failing tests for derived work, stale verdicts, and drop warnings.
+- [x] Add pure continuity response helpers.
+- [x] Wire tasks and pins into `get_continuity`.
+- [x] Add advisory reference-drop detection to `set_continuity`.
+- [x] Update the tool description.
+- [x] Run focused tests.
+- [x] Run `npm run typecheck`.
+- [x] Run `npm run verify:full:quiet` on the final tree.
+
+**Verify:** `npm run typecheck`
+
+**Dogfood-Opt-Out:** Bridge integration tests exercise the complete MCP tool door.
+
+**Visual QA Opt-Out:** This amendment changes text tool responses only.
+
 **Verify:** `cd /home/goat/tachyon && env -u TMUX npx vitest run`
 **UI impact:** ui (sidebar badge + manual action; no project UI test runner — dogfood in EDH)
 

@@ -1,5 +1,7 @@
 import type { ContinuityStatus } from "./ContinuityStore.js";
 
+export const CONTINUITY_STALE_LAG = 100;
+
 /**
  * spec 241 D3/D9 — the PURE decision for "should Tachyon re-inject the continuity pointer now?".
  * Kept vscode-free + node-testable (the spec-240 configHome drift class of bugs lived in vscode-bound code
@@ -121,4 +123,3 @@ export function reminderText(agent: string, lag: number): string {
 export function coldStartReminderText(agent: string): string {
   return `[Tachyon] You have no continuity brief yet — checkpoint your working state with set_continuity(agent: "${agent}", content: "# Current Goal …\\n# Next Steps …\\n# Open Threads …") so it survives a compaction / clear / restart. Use that exact agent name.`;
 }
-

@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { listPendingApprovalRequests } from "../approvalRequest.js";
+import { removedContinuityReferences, renderContinuity, renderDerivedOpenWork } from "../../continuity/presentation.js";
 import { type BridgeDeps, AGENT_NAME, contextRenewalRequestRefusal, fail, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void {
@@ -25,8 +26,17 @@ export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void 
         if (!selfActor.ok) return fail(new Error(selfActor.message));
         if (!selfActor.name) return fail(new Error("get_continuity requires a resolvable agent identity"));
         const brief = deps.continuity.read(selfActor.name);
-        if (!brief) return ok("(no continuity brief yet — create one with set_continuity once your goal/state are clear)");
-        return ok(`---\n${JSON.stringify(brief.meta)}\n---\n${brief.body}`);
+        if (!brief) {
+          const openWork = renderDerivedOpenWork(selfActor.name, deps.tasks.listRaw(), deps.pins.list());
+          return ok(`(no continuity brief yet — create one with set_continuity once your goal/state are clear)\n\n${openWork}`);
+        }
+        return ok(renderContinuity({
+          agent: selfActor.name,
+          brief,
+          currentActivitySeq: deps.currentActivitySeq?.(selfActor.name),
+          tasks: deps.tasks.listRaw(),
+          pins: deps.pins.list(),
+        }));
       } catch (err) {
         return fail(err);
       }
@@ -37,11 +47,9 @@ export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void 
     "set_continuity",
     {
       description:
-        "Checkpoint YOUR working state into your continuity brief (.tachyon/continuity/<agent>.md). REPLACES " +
-        "the whole brief — keep it SHORT and current. Use these markdown sections: '# Current Goal' (your " +
-        "current execution objective, not your task contract), '# Working State', '# Decisions', '# Next Steps', " +
-        "'# Open Threads', '# Files / Artifacts In Play'. Tachyon stamps the metadata. Update it before a likely " +
-        "compaction and whenever your plan changes — a stale brief misleads your future self.",
+        "Checkpoint YOUR authored continuity narrative. Record your goal, state, decisions, next steps, and relevant artifacts. " +
+        "Tachyon derives your open tasks and pins during reads. Do not copy that checklist into this narrative. " +
+        "This call replaces the authored body and preserves Tachyon metadata. Removed task IDs and wiki links produce advisory warnings.",
       inputSchema: {
         agent: AGENT_NAME.describe(
           "your EXACT Tachyon agent name (as shown in Tachyon's nudge / the sidebar, and in your $TACHYON_AGENT_NAME env var) — " +
@@ -59,13 +67,24 @@ export function registerContinuityTools(mcp: McpServer, deps: BridgeDeps): void 
         if (!selfActor.ok) return fail(new Error(selfActor.message));
         if (!selfActor.name) return fail(new Error("set_continuity requires a resolvable agent identity"));
         const self = selfActor.name;
+        let previousBody = "";
+        try {
+          previousBody = deps.continuity.read(self)?.body ?? "";
+        } catch {
+          // Drop detection is advisory. A malformed old brief must not prevent ContinuityStore.write recovery.
+        }
+        const removed = removedContinuityReferences(previousBody, content);
         const res = deps.continuity.write(self, content, {
           updatedBy: "agent",
           status,
           sourceActivitySeq: source_activity_seq ?? deps.currentActivitySeq?.(self),
         });
         deps.onContinuityChanged?.(self);
-        return ok(res.warning ? `continuity updated — ${res.warning}` : "continuity updated");
+        const warnings = [
+          res.warning,
+          removed.length > 0 ? `removed references: ${removed.join(", ")}. Confirm that each removal was intended.` : undefined,
+        ].filter((warning): warning is string => warning !== undefined);
+        return ok(warnings.length > 0 ? `continuity updated — ${warnings.join(" ")}` : "continuity updated");
       } catch (err) {
         return fail(err);
       }

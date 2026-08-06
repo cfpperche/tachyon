@@ -20,3 +20,19 @@ gathers inputs + performs side effects.
 
 ## Verify
 `cd /home/goat/tachyon && env -u TMUX npx vitest run`
+
+## Read-path amendment
+
+- Add pure formatting and token-diff helpers under `src/continuity/`.
+- Read tasks and pins through existing Bridge dependencies.
+- Keep `ContinuityStore` limited to authored data.
+- Calculate lag through the existing activity sequence dependency.
+- Share one stale threshold with host injection and sidebar status.
+- Return drop warnings after successful writes.
+- Cover agent tool calls in `test/unit/bridge.test.ts`.
+
+The Interface cannot call these private tools. Agents reach them through Bridge calls. Tachyon reaches stored briefs through injection and sidebar paths. Those host paths remain unchanged.
+
+Rejected: persist the open-work projection. Persisted derived state can drift from tasks and pins.
+
+Rejected: block removals. Agents can remove references intentionally.
