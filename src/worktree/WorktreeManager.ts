@@ -618,6 +618,12 @@ export class WorktreeManager {
     // Reuse path — only when validated.
     if (this.exists(wtPath)) {
       const lockPathProbe = await this.git(["rev-parse", "--git-path", "locked"], wtPath);
+      if (lockPathProbe.code !== 0 && !listed) {
+        throw new WorktreeUnavailableError(
+          `worktree path ${wtPath} exists but is not a Git checkout. It is safe to remove this directory if its local state is not needed.`,
+          "reuse-invalid",
+        );
+      }
       const lockPath = lockPathProbe.code === 0 && lockPathProbe.stdout.trim()
         ? path.resolve(wtPath, lockPathProbe.stdout.trim())
         : undefined;
