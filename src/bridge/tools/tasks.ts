@@ -91,7 +91,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         "many of how many entries came back — pass journal:\"all\" for the whole log, or page with " +
         "journalOffset.",
       inputSchema: {
-        id: TASK_ID.describe("task id from list_tasks or next_task"),
+        id: TASK_ID.describe("task id from list_tasks or create_task"),
         journal: z
           .enum(["tail", "all", "none"])
           .default("tail")
@@ -170,7 +170,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
     "update_task",
     {
       description:
-        "Patch a Task. Use expect:{assignee:null} when claiming a task returned by next_task; " +
+        "Patch a Task. Use expect:{assignee:null} when claiming unassigned work; " +
         "precondition failures are structured errors and mean you must re-query. " +
         "Answers with a compact receipt {id,status,updatedAt,changed,cleared?} — not the task; " +
         "`updatedAt` is the CAS token for your next expect, and `cleared` names fields the STORE " +
@@ -397,7 +397,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         "Do not use for human reminders or cross-cutting findings; create_pin for those. Author is always the Bridge-resolved caller; never pass author. " +
         "Answers with a receipt {taskId,entryId,ts,author} — your own note text is not echoed back.",
       inputSchema: {
-        id: TASK_ID.describe("task id from list_tasks or next_task"),
+        id: TASK_ID.describe("task id from list_tasks or create_task"),
         text: z.string().min(1).max(4000).describe("journal text; bounded per entry and appended atomically to the per-task .journal log"),
         author: z.string().optional().describe("reserved legacy field; rejected when supplied because authorship is Bridge-resolved"),
       },
@@ -483,22 +483,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  mcp.registerTool(
-    "next_task",
-    {
-      description:
-        "Return the single best Task for an assignee to work next. Advisory only: claim unassigned work with " +
-        "update_task(id, assignee:<you>, expect:{assignee:null}) before editing.",
-      inputSchema: {
-        agent: z.string().min(1).max(64).describe("assignee asking for work; use 'human' for the human queue"),
-      },
-    },
-    async ({ agent }) => {
-      try {
-        return ok(JSON.stringify(deps.tasks.next(agent), null, 2));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
+  // t-a4ac02 — Bridge tool `next_task` removed. The pure function nextTask() in src/tasks/nextTask.ts
+  // still computes Mission Control spotlight via boardSnapshot; agents claim work through
+  // spawn_agent(claim_task:) or update_task CAS, not an advisory pull tool.
 }
