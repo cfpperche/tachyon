@@ -32,6 +32,7 @@ describe("PluginSurfaceHost lifecycle (spec 349 hardening)", () => {
     expect(__createdPanels).toHaveLength(1);
     const panel = __createdPanels[0];
     expect(panel.disposed).toBe(false);
+    expect(panel.webview.html).toContain('data-shell-surface="tachyonPluginSurface"');
     expect(panel.webview.posted.some((m) => isProjection(m))).toBe(true);
 
     const projection = panel.webview.posted.find(isProjection) as {
@@ -78,6 +79,7 @@ describe("PluginSurfaceHost lifecycle (spec 349 hardening)", () => {
 
     host.resolveWebviewView(view as unknown as vscode.WebviewView);
     await tick();
+    expect(view.webview.html).toContain('data-shell-surface="tachyonPluginSurfaces"');
     const firstProjection = view.webview.posted.find(isProjection) as { projection: { agents: Array<{ handle: string }> } };
     expect(firstProjection.projection.agents[0]).toMatchObject({ label: "Agent 1", status: "running" });
 

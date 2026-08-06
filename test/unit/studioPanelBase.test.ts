@@ -115,6 +115,17 @@ describe("StudioPanelManagerBase lifecycle", () => {
     expect(__createdPanels[0].revealCount).toBe(1);
   });
 
+  it("binds the rendered shell to the studio surface posture", () => {
+    const manager = new StudioPanelManagerBase(
+      Uri.file("/ext"),
+      { ...surface, extend: ["page-chrome"] },
+      makeAdapter(new Map()),
+    );
+    manager.openNew("ws1");
+    expect(__createdPanels[0].webview.html).toContain('data-shell-surface="test.widget"');
+    expect(__createdPanels[0].webview.html).toContain('data-shell-extends="page-chrome"');
+  });
+
   it("posts a load message with the fresh entity for new mode", async () => {
     const manager = new StudioPanelManagerBase(Uri.file("/ext"), surface, makeAdapter(new Map()));
     manager.openNew("ws1");

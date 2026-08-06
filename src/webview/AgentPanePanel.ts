@@ -162,6 +162,8 @@ export class AgentPanePanelManager {
       styles: [uri("xterm.css"), uri("agent-pane.css")],
       bundle: uri("agent-pane.js"),
       mode: "live",
+      surface: AGENT_PANE_VIEW_TYPE,
+      extend: ["base-style", "token-scale"],
       persistedState: {
         schemaVersion: 1,
         view: AGENT_PANE_VIEW_TYPE,

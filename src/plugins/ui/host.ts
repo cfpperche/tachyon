@@ -16,6 +16,10 @@ import { renderWebviewShell } from "../../webview/shared/shell.js";
 import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap, type PluginUiActionRelayMessage } from "../../webview/plugin-host/relay.js";
 import { notify } from "../../workspace/NotificationService.js";
 
+const PLUGIN_EDITOR_VIEW_TYPE = "tachyonPluginSurface";
+const PLUGIN_SIDEBAR_VIEW_TYPE = "tachyonPluginSurfaces";
+type PluginShellViewType = typeof PLUGIN_EDITOR_VIEW_TYPE | typeof PLUGIN_SIDEBAR_VIEW_TYPE;
+
 export interface InstalledPluginSurface {
   key: string;
   pluginId: string;
@@ -68,7 +72,7 @@ interface PluginSurfaceSession {
 }
 
 export class PluginSurfaceHost implements vscode.WebviewViewProvider {
-  public static readonly viewType = "tachyonPluginSurfaces";
+  public static readonly viewType = PLUGIN_SIDEBAR_VIEW_TYPE;
   private readonly sessions = new Map<string, PluginSurfaceSession>();
   private readonly editorPanels = new Map<string, vscode.WebviewPanel>();
   private sidebarView?: vscode.WebviewView;
@@ -106,13 +110,13 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
 
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const panel = vscode.window.createWebviewPanel(
-      "tachyonPluginSurface",
+      PLUGIN_EDITOR_VIEW_TYPE,
       surface.title,
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: false },
       { enableScripts: true, localResourceRoots: [root], retainContextWhenHidden: true },
     );
     panel.iconPath = panelIcon(this.extensionUri, "extensions");
-    const session = this.attachWebview(surface, panel.webview, () => panel.dispose());
+    const session = this.attachWebview(PLUGIN_EDITOR_VIEW_TYPE, surface, panel.webview, () => panel.dispose());
     this.sessions.set(surface.key, session);
     this.editorPanels.set(surface.key, panel);
     panel.onDidDispose(() => {
@@ -143,7 +147,7 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     if (!surface) {
       this.sidebarSurfaceKey = undefined;
       view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "dist", "webview")] };
-      view.webview.html = this.renderShell(view.webview, undefined);
+      view.webview.html = this.renderShell(PLUGIN_SIDEBAR_VIEW_TYPE, view.webview, undefined);
       return;
     }
     if (this.sidebarSurfaceKey === surface.key && this.sessions.has(surface.key)) {
@@ -152,15 +156,15 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     }
     if (this.sidebarSurfaceKey) this.revoke(this.sidebarSurfaceKey);
     this.sidebarSurfaceKey = surface.key;
-    const session = this.attachWebview(surface, view.webview, () => undefined);
+    const session = this.attachWebview(PLUGIN_SIDEBAR_VIEW_TYPE, surface, view.webview, () => undefined);
     this.sessions.set(surface.key, session);
     void session.push();
   }
 
-  private attachWebview(surface: InstalledPluginSurface, webview: vscode.Webview, dispose: () => void): PluginSurfaceSession {
+  private attachWebview(shellViewType: PluginShellViewType, surface: InstalledPluginSurface, webview: vscode.Webview, dispose: () => void): PluginSurfaceSession {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     webview.options = { enableScripts: true, localResourceRoots: [root] };
-    webview.html = this.renderShell(webview, surface);
+    webview.html = this.renderShell(shellViewType, webview, surface);
     const broker = new PluginActionBroker({
       pluginId: surface.pluginId,
       sessionId: surface.key,
@@ -200,7 +204,7 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     });
   }
 
-  private renderShell(webview: vscode.Webview, surface: InstalledPluginSurface | undefined): string {
+  private renderShell(shellViewType: PluginShellViewType, webview: vscode.Webview, surface: InstalledPluginSurface | undefined): string {
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
     const uri = (f: string): string => webview.asWebviewUri(vscode.Uri.joinPath(root, f)).toString();
     const bootstrap: PluginHostBootstrap | undefined = surface
@@ -212,6 +216,7 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
       styles: [uri("codicon.css"), uri("design-system.css"), uri("plugin-host.css")],
       bundle: uri("plugin-host.js"),
       mode: "live",
+      surface: shellViewType,
       frameSrc: "self",
       scriptCspSource: false,
       ...(bootstrap ? { bootstrapGlobals: { __tachyonPluginHost: bootstrap } } : {}),
