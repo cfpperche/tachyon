@@ -228,3 +228,30 @@ que nunca foi tocado.
 - Variar **effort** em task de arquitetura. Zero amostras até hoje.
 - Registrar **custo** (tokens/tempo), que segue vazio em 26 linhas.
 - **Copiar o `cmd` para a tabela no despacho**, não no merge — ver o defeito acima.
+
+## Onda J (2026-08-05 ~23h): `cmd` copiado NO DESPACHO
+
+Primeira onda registrada antes do desfecho, que era a correção pedida no fim da onda anterior.
+As três premissas foram verificadas no ponto de uso antes do despacho, pela regra do dono
+("task escrita não é tarefa aceita"). As três valiam.
+
+| agente | task | kind | runtime | `cmd` no despacho | desfecho | nota |
+|---|---|---|---|---|---|---|
+| readylie | t-d501fc | bug | claude | `claude --model claude-sonnet-5` | — | mede recusa de 3 CLIs |
+| relcmd | t-c767fc | bug | codex | `codex -c model_reasoning_effort=medium` | — | **effort medium: primeira amostra** |
+| boardproj | t-ee0a19 | chore | grok | `grok` | — | grok segue sem eixo de effort medido |
+
+### Duas coisas que este despacho mede e o registro pedia
+
+- **Effort medium no codex é amostra nova.** Havia `low` (o default, nunca escrito) e `high`. O
+  eixo interno de um runtime é o que o teto de 3 agentes obriga a variar, e é o que faltava.
+- **Grok continua sem variação de effort**, e a razão é honesta: não confirmei qual flag o CLI
+  aceita. Chutar id de modelo ou flag é exatamente o defeito da `t-d501fc`, que despachei nesta
+  mesma onda. Fica registrado como buraco do eixo, não como amostra.
+
+### Uma falha minha que vira instrução, não reclamação
+
+Quatro commits do codex entraram hoje com **corpo vazio**. Reclamei na primeira e nunca pus a
+exigência no brief. Repetir a cobrança sem mudar a instrução é culpar o agente por um contrato que
+eu não escrevi. O brief do `relcmd` agora pede o corpo do commit explicitamente, e o próximo
+despacho de qualquer runtime herda a frase.
