@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { WorktreeManager, WorktreeUnavailableError, resolveWorktreeCwd } from "../../src/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { collectAgentTouchedFiles } from "../../src/worktree/agentTouchedFiles.js";
 
 /** Real-git integration: create/reuse/attach/fail/dirty/ahead/remove on a tmp repo. */
 describe("WorktreeManager — git side (real git, tmp repo)", () => {
@@ -360,6 +361,30 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     expect(await m.changedFiles(rec.path, rec.baseRef)).toEqual([]); // fresh worktree, no edits
     fs.rmSync(rec.path, { recursive: true, force: true });
     expect(await m.changedFiles(rec.path, rec.baseRef)).toEqual([]); // gone → no crash
+  });
+
+  it("t-75e9c7: an agent with ZERO commits still reports its uncommitted edits honestly — a commit-only diff would lie", async () => {
+    const m = mgr();
+    const { record: rec } = await m.ensure({ agent: "zerocommits", branch: "tachyon/zerocommits" });
+    // No commit made on tachyon/zerocommits — this branch is bit-for-bit identical to its baseRef in history.
+    expect(git(["log", "--oneline", `${rec.baseRef}..tachyon/zerocommits`], repo).trim()).toBe("");
+    fs.writeFileSync(path.join(rec.path, "README.md"), "touched but never committed\n");
+
+    // The naive manual command from the old workflow (`git diff main...<branch> --name-only`, commits
+    // only) sees nothing — exactly the lie this task exists to kill.
+    const naive = git(["diff", "--name-only", `${rec.baseRef}...tachyon/zerocommits`], rec.path).trim();
+    expect(naive).toBe("");
+
+    // collectAgentTouchedFiles, wired to the real WorktreeManager, reports it — baseRef vs the
+    // WORKING TREE, not baseRef vs HEAD.
+    const rows = await collectAgentTouchedFiles(
+      [{ name: "zerocommits", running: true }],
+      () => ({ path: rec.path, branch: rec.branch, baseRef: rec.baseRef }),
+      { changedFiles: (cwd, baseRef) => m.changedFiles(cwd, baseRef) },
+    );
+    expect(rows).toEqual([
+      { agent: "zerocommits", worktree: true, branch: "tachyon/zerocommits", baseRef: rec.baseRef, files: [{ status: "M", path: "README.md" }] },
+    ]);
   });
 
   it("C3: headState reports HEAD + dirty, advancing on commit (spec 214)", async () => {
