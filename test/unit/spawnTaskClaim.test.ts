@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { selectAssignedWork } from "../../src/agents/assignmentSelection.js";
+import { sessionRecordManifest } from "../../src/agents/sessionWorkRecord.js";
 import { registerTools } from "../../src/bridge/tools.js";
 import { decideSpawnTaskClaim } from "../../src/bridge/spawnTaskClaim.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
@@ -137,6 +139,52 @@ describe("decideSpawnTaskClaim — the decision, without a store", () => {
 });
 
 describe("t-48f504 — spawn_agent(claim_task) binds the launch to the board", () => {
+  it("records every task from one multi-task dispatch in durable work", async () => {
+    const first = await taskIn("triaged");
+    const second = await taskIn("triaged");
+    const { spawn, spawned } = bridge();
+
+    const result = await spawn({
+      name: "helper",
+      cmd: "codex",
+      parent: "ada",
+      claim_task: [first.id, second.id],
+      ...CONTRACT,
+    });
+
+    expect(result.isError).toBeFalsy();
+    expect(spawned).toHaveLength(1);
+    const assignment = selectAssignedWork(store.listRaw(), "helper");
+    expect(sessionRecordManifest({
+      isolation: { kind: "shared", cwd: root },
+      assignment,
+    })).toMatchObject({
+      assignedTaskIds: expect.arrayContaining([first.id, second.id]),
+      assignedCount: 2,
+    });
+  });
+
+  it("refuses the entire dispatch when one item is invalid, naming that task and reason", async () => {
+    const valid = await taskIn("triaged");
+    const invalid = await taskIn("inbox");
+    const { spawn, spawned } = bridge();
+
+    const result = await spawn({
+      name: "helper",
+      cmd: "codex",
+      parent: "ada",
+      claim_task: [valid.id, invalid.id],
+      ...CONTRACT,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain(invalid.id);
+    expect(result.content[0]?.text).toContain("it is in inbox");
+    expect(spawned).toEqual([]);
+    expect(store.get(valid.id)).toMatchObject({ status: "triaged" });
+    expect(store.get(invalid.id)).toMatchObject({ status: "inbox" });
+  });
+
   it("moves triaged -> active with the child as assignee, in ONE operation", async () => {
     const task = await taskIn("triaged");
     const { spawn, spawned } = bridge();
@@ -252,6 +300,25 @@ describe("t-48f504 — spawn_agent(claim_task) binds the launch to the board", (
     expect(result.content[0]?.text).toContain("tmux session could not be created");
     expect(store.get(task.id)).toMatchObject({ status: "triaged" });
     expect(store.get(task.id).assignee).toBeUndefined();
+  });
+
+  it("releases every new claim when a multi-task launch fails", async () => {
+    const first = await taskIn("triaged");
+    const second = await taskIn("triaged");
+    const { spawn } = bridge({ spawnFails: true });
+
+    const result = await spawn({
+      name: "helper",
+      cmd: "codex",
+      parent: "ada",
+      claim_task: [first.id, second.id],
+      ...CONTRACT,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("tmux session could not be created");
+    expect(store.get(first.id)).toMatchObject({ status: "triaged" });
+    expect(store.get(second.id)).toMatchObject({ status: "triaged" });
   });
 
   it("leaves the board untouched when no claim is asked for", async () => {

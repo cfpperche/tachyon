@@ -232,7 +232,7 @@ function RuntimeRow({
           <SourcedText value={runtime.lastActivity} kind="activity" format={formatTimestamp} />
         </div>
         <div class="runtime-ops-cell" data-label="Version" role="cell">
-          <SourcedText value={runtime.version} kind="version" />
+          <VersionCell runtime={runtime} />
         </div>
       </div>
       {runtime.agents.length > 0 && (
@@ -667,6 +667,39 @@ function SourcedText({ value, kind, format = (text) => text }: { value: RuntimeO
   if (value.state === "unavailable") return <><strong>Unavailable</strong><span>{unavailableCopy(kind)}</span></>;
   const source = sourceCopy(value.source);
   return <><strong>{format(value.value)}</strong><span>{source}</span></>;
+}
+
+/**
+ * t-1322b5 — show measured vs PATH when the product owns a baseline.
+ * Display only: quiet on match, factual on drift, honest when PATH cannot be read.
+ */
+function VersionCell({ runtime }: { runtime: RuntimeOpsRuntimeV1 }) {
+  const parity = runtime.versionParity;
+  if (!parity) {
+    return <SourcedText value={runtime.version} kind="version" />;
+  }
+  if (parity.state === "match") {
+    return (
+      <>
+        <strong>{parity.running}</strong>
+        <span>Matches measured {parity.measured}</span>
+      </>
+    );
+  }
+  if (parity.state === "drift") {
+    return (
+      <>
+        <strong>{parity.running}</strong>
+        <span class="runtime-ops-version-drift">Measured {parity.measured} · differs</span>
+      </>
+    );
+  }
+  return (
+    <>
+      <strong>Unknown</strong>
+      <span class="runtime-ops-version-unknown">Measured {parity.measured} · running version not read</span>
+    </>
+  );
 }
 
 function Model({ value }: { value: RuntimeOpsModelV1 }) {

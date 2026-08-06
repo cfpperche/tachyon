@@ -180,6 +180,10 @@
   background: var(--vscode-button-secondaryHoverBackground, color-mix(in srgb, var(--ds-fg) 18%, transparent));
 }
 
+/* t-1322b5 — version drift is a fact to follow, not an alarm. Mild weight only. */
+.runtime-ops-version-drift { color: var(--ds-warn); }
+.runtime-ops-version-unknown { color: var(--ds-muted); }
+
 .runtime-ops-table { min-width: 0; max-width: 100%; }
 
 .runtime-ops-header {
