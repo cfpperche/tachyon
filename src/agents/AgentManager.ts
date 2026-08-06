@@ -267,6 +267,8 @@ export interface ManagedEntryInfo {
   session: string;
   /** alive process (a crashed dead-pane session is NOT running) */
   running: boolean;
+  /** t-8168a7 — true/false when Attention knows; absent when reload left the turn history unknown. */
+  hasStartedTurn?: boolean;
   /** graceful Stop is in flight; user actions that contend for the pane should be held */
   stopping?: boolean;
   /** graceful Stop timed out while the pane stayed alive; retry is allowed */
@@ -539,6 +541,8 @@ export interface AgentManagerOptions {
   wsHash: string;
   workspaceRoot: string;
   getConfig: () => TachyonConfig | undefined;
+  /** t-8168a7 — tri-state live/durable turn evidence, projected through list() for all consumers. */
+  hasStartedTurn?: (name: string) => boolean | undefined;
   /**
    * t-0ad300 — agents that ARE declared in tachyon.yml and were refused, name → reason.
    *
@@ -1894,10 +1898,12 @@ export class AgentManager {
         this.clearStopFailed(name);
       }
       const recordedInstance = this.opts.ledger?.get(name)?.instance;
+      const hasStartedTurn = this.opts.hasStartedTurn?.(name);
       return {
         name,
         session: this.session(name),
         running: alive,
+        ...(hasStartedTurn !== undefined ? { hasStartedTurn } : {}),
         ...(stopping ? { stopping: true } : {}),
         ...(stopFailed ? { stopFailed: true } : {}),
         // t-04052d — THE ONE PLACE the roster's durability question is answered.

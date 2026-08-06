@@ -55,6 +55,35 @@ function fixture(opts: { completionHinted?: (name: string) => boolean } = {}) {
 }
 
 describe("TemporaryBackstopMonitor", () => {
+  it("t-8168a7: the production idle poke names never-started separately from finished", async () => {
+    const f = fixture();
+    f.entries.set("child", agent("child", { parent: "parent", hasStartedTurn: false }));
+    f.attention.set("child", att("idle", 1_000_000, "never-started"));
+    f.setNow(1_000_000 + 10 * 60_000 + 1);
+
+    await f.monitor.tick();
+    expect(f.delivered[0].line).toContain("has not started a turn after 10m idle");
+
+    f.monitor.reset("child");
+    f.entries.set("child", agent("child", { parent: "parent", hasStartedTurn: true }));
+    f.attention.set("child", att("idle", 1_000_000, "finished"));
+    await f.monitor.tick();
+    expect(f.delivered[1].line).toContain("has been idle for 10m after finishing a turn");
+  });
+
+  it("t-8168a7 review: unknown post-reload history keeps the honest generic idle poke", async () => {
+    const f = fixture();
+    f.entries.set("child", agent("child", { parent: "parent", hasStartedTurn: undefined }));
+    f.attention.set("child", att("idle", 1_000_000, "reload-unknown"));
+    f.setNow(1_000_000 + 10 * 60_000 + 1);
+
+    await f.monitor.tick();
+
+    expect(f.delivered[0].line).toContain("has been idle for 10m with no new output");
+    expect(f.delivered[0].line).not.toContain("has not started");
+    expect(f.delivered[0].line).not.toContain("after finishing");
+  });
+
   it("pokes once for a live child agent with a live parent after idle output is stable past threshold", async () => {
     const f = fixture();
     f.attention.set("child", att("idle", 1_000_000, "idle-1"));

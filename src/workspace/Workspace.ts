@@ -266,7 +266,7 @@ import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
 import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
 import { gcOrphanAgentFootprints } from "../continuity/orphanGc.js";
-import { agentLogId } from "../activity/logStore.js";
+import { ActivityLog, agentLogId } from "../activity/logStore.js";
 import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
 import { planProjectedPluginHooks, readHookProjectionCandidates } from "../plugins/agentHookProjection.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
@@ -697,6 +697,8 @@ export class Workspace {
   /** t-4ecf9a — latest control-mode #{window_activity} map (session → unix seconds); live only while engine is up. */
   private activityBySession = new Map<string, number>();
   private activityFeedLive = false;
+  /** t-8168a7 review — fresh spawns observed by this host; surviving reload sessions are absent. */
+  private readonly freshTurnBaselines = new Set<string>();
 
   /** spec 233 — the host port; the engine calls this instead of `vscode`. */
   private get host(): EngineHost {
@@ -853,6 +855,9 @@ export class Workspace {
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
+      // t-8168a7 — list() carries Attention's real-turn latch. The manager is constructed before the
+      // monitor, but this thunk is first read after construction, when the monitor exists.
+      hasStartedTurn: (name) => this.monitor?.hasStartedTurn(name),
       // SDD 480 — the seam that genuinely carries the id into the child's environment.
       ...(deps.recordExecution ? { recordExecution: deps.recordExecution } : {}),
       // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
@@ -1193,6 +1198,14 @@ export class Workspace {
         this.pendingAnchor.delete(name);
         this.pendingContextRenewal.delete(name);
         this.recordSpawnIncarnation(name);
+        if (reveal === "preserve") {
+          this.freshTurnBaselines.delete(name);
+        } else {
+          this.freshTurnBaselines.add(name);
+          // A tick may race launch observation and seed unknown before onSpawned. Rebuild only an
+          // unproven snapshot; positive pane evidence from a turn already in flight must survive.
+          if (this.monitor?.hasStartedTurn(name) !== true) this.monitor?.reset(name);
+        }
         this.clientRebind?.onNewIncarnation(name);
         this.noticeQueue.clear(name);
         this.observeAgentLiveForReloadSummary(name);
@@ -1226,6 +1239,8 @@ export class Workspace {
         this.noticeQueue.clear(name);
         this.temporaryBackstop.reset(name);
         this.completionHints.clear(name);
+        this.monitor?.reset(name);
+        this.freshTurnBaselines.delete(name);
         this.expectedDeath.add(name); // spec 332 (dueto F3): kill_agent/dismiss_agent/killAll — a deliberate
         // termination, never a completion signal; consumed by the next observed death edge.
         await this.returnTaskClaimsForUnavailableAgent(name, `agent '${name}' was stopped`);
@@ -1248,6 +1263,8 @@ export class Workspace {
         this.terminals.close(name);
         this.temporaryBackstop.reset(name);
         this.completionHints.clear(name);
+        this.monitor?.reset(name);
+        this.freshTurnBaselines.delete(name);
       },
       // spec 210 — worktree isolation: resolve the cwd a session is born in.
       // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);
@@ -1398,6 +1415,10 @@ export class Workspace {
           if (!att) return { enabled: this.manager.kindOf(agent) !== "terminal", silenceSec: 8, patterns: [] };
           return { enabled: att.enabled, silenceSec: att.silenceSec, patterns: safePatterns(att.patterns, this.t, (m, l) => this.host.notify(m, l)) };
         },
+        // A correlated Activity event proves a turn. A fresh spawn observed by this host proves the
+        // initial false. A surviving session with neither stays unknown and gets the generic poke.
+        initialTurnState: (agent) =>
+          this.hasDurableTurnEvidence(agent) ? true : this.freshTurnBaselines.has(agent) ? false : undefined,
         // spec 216 (codex r1 M1): compaction detection / re-anchoring is an AI-agent concept only.
         // Return null for terminals so a terminal running a claude/codex-shaped cmd (attention forced
         // on) can never enqueue a re-anchor and get injected into.
@@ -3871,6 +3892,54 @@ export class Workspace {
       return raw.endsWith("\n") ? n : n + 1;
     } catch {
       return undefined;
+    }
+  }
+
+  /**
+   * t-8168a7 review — positive-only durable proof for the CURRENT runtime session.
+   *
+   * Activity is archived by agent across fresh starts, so old events alone prove nothing about the
+   * live incarnation. Match a turn-bearing event against the current ledger/ownership session ids.
+   * Missing, delayed, unsupported, or malformed activity remains unknown, never "did not start".
+   *
+   * The pane transcript is deliberately excluded: it appends by agent name across restart/resume
+   * without incarnation markers, so prior output there cannot answer this question safely.
+   */
+  private hasDurableTurnEvidence(agent: string): boolean {
+    try {
+      const record = this.ledger.get(agent);
+      if (!record) return false;
+      const sessionIds = new Set<string>();
+      if (record.resume?.sessionId) sessionIds.add(record.resume.sessionId);
+      const owner = latestOwnerFor(
+        readSessionOwners(sessionOwnersFile(this.workspaceRoot)),
+        agent,
+        path.resolve(record.cwd),
+      );
+      if (owner?.sessionId) sessionIds.add(owner.sessionId);
+      if (sessionIds.size === 0) return false;
+
+      const turnEvents = new Set([
+        "user.message.completed",
+        "user.interrupted",
+        "system.nudge",
+        "assistant.message.completed",
+        "assistant.thinking",
+        "tool.started",
+        "tool.completed",
+        "tool.failed",
+        "file.referenced",
+        "file.changed",
+        "file.snapshot",
+        "usage.updated",
+      ]);
+      const log = new ActivityLog(path.join(this.workspaceRoot, ".tachyon", "activity"), agent);
+      return log.readTail(1_000).some((event) => {
+        const sessionId = event.sessionId ?? event.source.sessionId;
+        return sessionId !== undefined && sessionIds.has(sessionId) && turnEvents.has(event.type);
+      });
+    } catch {
+      return false;
     }
   }
 

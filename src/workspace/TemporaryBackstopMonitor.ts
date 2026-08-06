@@ -77,7 +77,7 @@ export interface TemporaryBackstopDeps {
   completionHinted?(agent: string): boolean;
 }
 
-type BackstopReason = "idle" | "working";
+type BackstopReason = "never-started" | "idle" | "working";
 
 /** What the last delivered poke said about a child, and whether its coordinator answered. */
 interface PokeRecord {
@@ -210,7 +210,8 @@ export class TemporaryBackstopMonitor {
         // only the idle message path (or silence) — already remapped to idle above
       }
 
-      const reason: BackstopReason = effectiveState;
+      const reason: BackstopReason =
+        effectiveState === "idle" && entry.hasStartedTurn === false ? "never-started" : effectiveState;
       const episodeKey = attention.episodeKey ?? String(stableSince);
       const record = this.poked.get(entry.name);
 
@@ -241,9 +242,11 @@ export class TemporaryBackstopMonitor {
         // Unacknowledged: one line per (child, reason, output episode), unchanged.
         if (record && record.reason === reason && record.episodeKey === episodeKey) continue;
         line =
-          reason === "idle"
-            ? `[tachyon] child '${entry.name}' has been idle for ${formatDuration(stableMs)} with no new output — ${openDoors(entry.name)}`
-            : `[tachyon] child '${entry.name}' has produced no output for ${formatDuration(stableMs)} while still listed as working — ${openDoors(entry.name)}`;
+          reason === "never-started"
+            ? `[tachyon] child '${entry.name}' has not started a turn after ${formatDuration(stableMs)} idle — ${openDoors(entry.name)}`
+            : reason === "idle"
+              ? `[tachyon] child '${entry.name}' has been idle for ${formatDuration(stableMs)}${entry.hasStartedTurn === true ? " after finishing a turn" : ""} with no new output — ${openDoors(entry.name)}`
+              : `[tachyon] child '${entry.name}' has produced no output for ${formatDuration(stableMs)} while still listed as working — ${openDoors(entry.name)}`;
       }
 
       this.poked.set(entry.name, { reason, episodeKey, reportedMs: stableMs, ack });
@@ -261,6 +264,7 @@ function openDoors(agent: string): string {
 }
 
 function describeState(reason: BackstopReason): string {
+  if (reason === "never-started") return "idle without starting a turn";
   return reason === "idle" ? "idle" : "silent while working";
 }
 
@@ -286,7 +290,9 @@ function describeChange(
       text:
         reason === "working"
           ? `now listed as working with no output for ${formatDuration(stableMs)}`
-          : `now idle for ${formatDuration(stableMs)}`,
+          : reason === "never-started"
+            ? `now idle for ${formatDuration(stableMs)} without starting a turn`
+            : `now idle for ${formatDuration(stableMs)}`,
       keepAck: false,
     };
   }
