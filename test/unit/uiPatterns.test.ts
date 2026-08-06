@@ -36,10 +36,13 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     // it renders no product surface any more, so "does the page adopt the shared page patterns" has
     // no page to ask about. The surfaces that inherited its screens are each asserted in their own
     // cutover test plus the shared page-chrome guard, so nothing this line covered went uncovered.
+    // t-41117e — Fleet no longer paints its own ListRow boolean list. It reuses AgentsRoster
+    // (nine statuses) under PageChrome + EmptyState, which is the richer shared pattern.
     const fleet = readFileSync("src/webview/fleet/App.tsx", "utf8");
     expect(fleet).toContain("PageChrome");
-    expect(fleet).toContain("ListRow");
+    expect(fleet).toContain("AgentsRoster");
     expect(fleet).toContain("EmptyState");
+    expect(fleet).not.toMatch(/\ba\.running\b/);
     const approvals = readFileSync("src/webview/approval/App.tsx", "utf8");
     expect(approvals).toContain("PageChrome");
     expect(approvals).toContain("EmptyState");

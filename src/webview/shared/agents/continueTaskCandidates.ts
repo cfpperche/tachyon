@@ -2,7 +2,7 @@
  * t-41117e — pure candidate rule for "Continue task in…".
  * No preact — unit tests and the picker UI share this filter.
  */
-import { isAgentRow, type AgentVM } from "../../../sidebar/types";
+import { isAgentRow, isTemporaryAgentRow, type AgentVM } from "../../../sidebar/types";
 
 /** Live enough that the destination cannot accept a new session yet. */
 export function destinationBusy(a: AgentVM): boolean {
@@ -23,7 +23,7 @@ export function continueTaskCandidates(agents: readonly AgentVM[], fromName: str
   return agents
     .filter((row) => row.name !== fromName)
     .filter((row) => isAgentRow(row))
-    .filter((row) => !row.adhoc)
+    .filter((row) => !isTemporaryAgentRow(row))
     .slice()
     .sort((a, b) => Number(destinationBusy(a)) - Number(destinationBusy(b)));
 }

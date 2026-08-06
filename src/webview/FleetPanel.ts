@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { FleetVM } from "../sidebar/types.js";
 import type { ActionId } from "../sidebar/actions.js";
-import { isAgentRow } from "../sidebar/types.js";
+import { isAgentRow, isTemporaryAgentRow } from "../sidebar/types.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
@@ -95,7 +95,7 @@ function ctxOf(a: FleetVM["agents"][number]): string {
   return agentContextValue({
     state,
     ai: isAgentRow(a),
-    temporary: !!a.adhoc,
+    temporary: isTemporaryAgentRow(a),
     worktree: !!a.worktree,
     verifiable: !!a.verifiable,
     forkable: !!a.forkable,

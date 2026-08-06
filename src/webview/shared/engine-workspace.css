@@ -1,6 +1,24 @@
 /* SDD 485 D5–D7 — opt-in primitives shared by Control and extracted apps. Engine, Worktrees and Fleet
    consume ck-card-list; Control retains two ck-empty consumers in Overview. Typography lives in
    control-typography.css; the surface-owned ck-wt-* leaf moved to worktrees.css. */
+
+/* t-41117e — Fleet tab project identity (one project per dashboard). Not per-row folder/wsHash. */
+.fleet-project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--ds-muted, var(--vscode-descriptionForeground));
+}
+.fleet-agents-shell {
+  min-height: 0;
+}
+.fleet-tab .agents-roster {
+  /* editor width: keep the dense sidebar row layout readable */
+  max-width: 100%;
+}
+
 .ck-card-list {
   display: flex;
   flex-direction: column;

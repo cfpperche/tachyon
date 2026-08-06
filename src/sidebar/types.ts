@@ -137,6 +137,14 @@ export function isAgentRow(row: Pick<AgentVM, "kind">): boolean {
   return row.kind === "agent";
 }
 
+/**
+ * t-41117e — Temporary instance (wire flag `adhoc` on the row VM).
+ * Callers outside the nomenclature allowlist must use this helper so product files never spell the species.
+ */
+export function isTemporaryAgentRow(row: Pick<AgentVM, "adhoc">): boolean {
+  return !!row.adhoc;
+}
+
 export type RunState = "idle" | "running" | "paused" | "failed";
 export interface PipelineNodeVM {
   id: string;
