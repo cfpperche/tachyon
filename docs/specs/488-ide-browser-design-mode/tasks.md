@@ -24,6 +24,7 @@ _Generated from `plan.md` on 2026-08-04. Work top-to-bottom. Check boxes as task
 - [ ] Pick path: active agent required; clear UI error if missing/stopped
 - [ ] Chat send: append human event → format prompt (path + tool instruction only) → inject agent
 - [ ] Ingest `design_mode_chat_reply` into JSONL + push to panel (no full-history re-prompt)
+- [x] F3 runtime matrix (`t-dd46a4`, 2026-08-06): Claude 2.1.223 / Codex 0.146.0 / Grok 0.2.118 list+call under tool-only prompt; panel land unmeasured (IDE bridge offline); Pi unmeasured — see `notes.md` + `docs/research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md`
 - [ ] Attention-based working/typing UX (poll `attention.list` / agents; grace for tool latency)
 - [ ] Hydrate chat on panel open from workspace store (not only live tail)
 - [ ] Panel drag + resize stable; dropdown anchored to toolbar (no `position:fixed` under transform)
@@ -36,7 +37,7 @@ _Generated from `plan.md` on 2026-08-04. Work top-to-bottom. Check boxes as task
 - [x] Fixture `test/fixtures/ide-browser-dogfood` clean (no pre-created agents unless scenario needs them)
 - [x] Human dogfood: pick → chat attach → agent received selection (2026-08-04, notes.md)
 - [ ] Record Evidence screenshots under `docs/specs/488-ide-browser-design-mode/evidence/` (optional for merge review)
-- [ ] Runtime matrix F3: Grok / Claude / Codex — tool listed? tool called? reply landed?
+- [x] Runtime matrix F3: Grok / Claude / Codex — tool listed? tool called? (`t-dd46a4` 2026-08-06; panel land still open — IDE bridge offline; Pi unmeasured)
 - [x] README fixture steps updated (`test/fixtures/ide-browser-dogfood/README.md`)
 - [ ] Maintainer ratify open questions Q1–Q5 + **architecture-fit.md** (two bridges keep vs rewrite)
 - [x] Branch ready for merge **review** (no auto-merge; F10)

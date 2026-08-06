@@ -1,0 +1,16 @@
+
+MCP Doctor
+
+  Config sources
+    ~/.grok/config.toml                      1 server
+    ~/.claude.json                           not found
+    .mcp.json                                not found
+    grok.com                                 0 servers
+
+  tachyon_bridge (http: http://127.0.0.1:42897/mcp)
+    ✓ server started (0.0s)
+    ✓ handshake OK (protocol 2025-06-18)
+    ✓ 113 tools discovered
+
+Found 1 healthy, 0 failing.
+

@@ -124,6 +124,29 @@ _None yet under this SDD id. Related unit tests pass on branch as of scaffold da
 
 - `npx vitest run test/unit/designModeChat.test.ts test/unit/ideBrowserClient.test.ts` — pass (2026-08-04)
 
+## F3 runtime matrix (`t-dd46a4`, 2026-08-06)
+
+Living dogfood for `design_mode_chat_reply` tool-call reliability (blocks confident F1).
+
+| Runtime | Binary | Listed | Called | turnId in args | Markers | Panel land |
+|---------|--------|:------:|:------:|:--------------:|:-------:|:----------:|
+| Claude | 2.1.223 | ✓ | ✓ | ✗ (`text` only) | ✗ | **?** IDE browser offline |
+| Codex | 0.146.0 | ✓ | ✓ | ✓ | ✗ | **?** offline |
+| Grok | 0.2.118 | ✓ | ✓ | ✓ (1st call) | ✗ | **?** offline |
+| Pi | — | **?** unmeasured | **?** | **?** | **?** | **?** |
+
+- **How:** headless CLI runs (no spawn_agent) with `formatDmChatPrompt`-shaped prompt including
+  `Turn id: dm-turn-f3matrix01` and required tool call. Evidence under
+  `docs/research/evidence-t-dd46a4-f3/`; narrative
+  `docs/research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md`; parity §3.1.3 / row 19.
+- **Historical Codex “listed, used markers”** (2026-08-04 notes above) did **not** reproduce on
+  0.146.0 under the current tool-only prompt.
+- **F1 verdict:** tool-compliance green for claude/codex/grok → F1 no longer blocked by “Codex
+  won’t call the tool.” Marker deletion still needs a live panel dogfood (IDE Browser Bridge up)
+  before removing `extractDmChatReplyMarkers`. Do not do F1 from this task.
+- **Live schema gap:** running Bridge `tools/list` omitted `turnId` despite 0.62.0 source; engine
+  process was long-lived. Re-check after engine reload when dogfooding panel land.
+
 ## Ratify log
 
 - 2026-08-04 — Product lean agreed in conversation: Design Mode viable as Tachyon product slice;
