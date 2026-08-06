@@ -155,11 +155,42 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
       quarantineForLaunch: true,
     });
     expect(attempted).toMatchObject({ created: false, preparationLocked: true });
-    await expect(m.ensure({ agent: "retry", branch: "tachyon/retry" }))
-      .rejects.toMatchObject({ reason: "recovery-preserved" });
+    await expect(m.ensure({ agent: "retry", branch: "tachyon/retry" })).rejects.toMatchObject({
+      reason: "recovery-preserved",
+      message: expect.stringContaining("its Git preparation lock is still present; inspect it and unlock explicitly"),
+    });
 
     await complete(m, attempted.record);
     await expect(m.ensure({ agent: "retry", branch: "tachyon/retry" })).resolves.toMatchObject({ created: false });
+  });
+
+  it("identifies a residual directory that is not a Git checkout", async () => {
+    const m = mgr();
+    const residualPath = path.join(base, "h", "residual");
+    fs.mkdirSync(path.join(residualPath, ".tachyon"), { recursive: true });
+    const diagnosis = `worktree path ${residualPath} exists but is not a Git checkout. It is safe to remove this directory if its local state is not needed.`;
+
+    await expect(m.ensure({
+      agent: "residual",
+      branch: "tachyon/residual",
+      quarantineForLaunch: true,
+    })).rejects.toMatchObject({
+      reason: "reuse-invalid",
+      message: diagnosis,
+    });
+
+    const notices: string[] = [];
+    await expect(resolveWorktreeCwd(
+      { name: "residual", worktree: true, branch: "tachyon/residual", isRestart: false },
+      {
+        manager: m,
+        settings: { worktree: { base } },
+        resolveParent: async () => ({ known: false }),
+        runSetup: async () => {},
+        notify: (message) => notices.push(message),
+      },
+    )).resolves.toBeNull();
+    expect(notices).toEqual([`'residual' falling back to the workspace root — ${diagnosis}`]);
   });
 
   it("never falls back to root when a locked recovery checkout has branch drift", async () => {
