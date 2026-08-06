@@ -80,7 +80,7 @@ describe("SDD 494 Part 4 — the five states derived from four presence facts", 
    * a non-member never has one, because there is no member to remove.
    */
   it("gives every member a removal door and every non-member a stated reason for having none", () => {
-    for (const { facts, state, member } of TABLE) {
+    for (const { state, member } of TABLE) {
       const removal = savedAgentRemovalDoor(state);
       expect(removal.reason.length).toBeGreaterThan(0);
       if (member) {
