@@ -306,7 +306,15 @@ async function measureTrust(base: string): Promise<DimensionResult> {
       console.log(`  trust case '${c.key}' -> ${read.screen}`);
     }
   } finally {
-    spawnSync("tmux", ["kill-server"], { env: { ...process.env, TMUX_TMPDIR: tmuxTmpdir }, timeout: 20_000 });
+    // TMUX and TMUX_PANE MUST be cleared here, exactly as readCodexScreen does. This script runs
+    // inside a fleet pane, so `process.env.TMUX` names the fleet socket, and tmux resolves a client
+    // through TMUX before it ever looks at TMUX_TMPDIR. Spreading process.env without clearing them
+    // sends this kill-server to the fleet server instead of the private one. Measured on 2026-08-06:
+    // it killed the whole fleet three times (t-9713ff).
+    spawnSync("tmux", ["kill-server"], {
+      env: { ...process.env, TMUX_TMPDIR: tmuxTmpdir, TMUX: undefined, TMUX_PANE: undefined },
+      timeout: 20_000,
+    });
   }
 
   const full = { exact: screens.exact ?? "unknown", child: screens.child ?? "unknown", argv: screens.argv ?? "unknown" };
