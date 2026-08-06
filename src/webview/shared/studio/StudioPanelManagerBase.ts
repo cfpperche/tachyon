@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { renderWebviewShell } from "../shell.js";
+import { renderWebviewShell, type ShellExtensionPoint } from "../shell.js";
 import { panelIcon } from "../panelIcon.js";
 import type { StudioHostAdapter } from "./adapter.js";
 import { decodeStudioMessage, envelope, STUDIO_PROTOCOL_VERSION, type StudioConcurrencyState, type StudioRestoreSnapshot } from "./protocol.js";
@@ -49,6 +49,8 @@ export interface StudioSurfaceConfig {
   extraLocalResourceRoots?: (wsKey: string) => vscode.Uri[];
   /** Optional editor-tab icon, resolved via media/icons/{light,dark}/<name>.svg. */
   iconName?: string;
+  /** Named design-system extension points declared by this studio surface. Omitted means conform. */
+  extend?: readonly ShellExtensionPoint[];
   /** nonce'd inline globals emitted before the bundle (`window.<k> = <JSON(v)>`) — a function because it
    *  needs the panel's own `asWebviewUri` helper (e.g. an asset root path), computed once per `open()`. */
   bootstrapGlobals?: (uri: (f: string) => string) => Record<string, unknown>;
@@ -181,6 +183,8 @@ export class StudioPanelManagerBase<TEntity, TFields, TPatch, TReferenceData = u
       styles: this.surface.styleFiles.map(uri),
       bundle: uri(this.surface.bundleFile),
       mode: "live",
+      surface: this.surface.viewType,
+      ...(this.surface.extend?.length ? { extend: this.surface.extend } : {}),
       ...(this.surface.imgBlob ? { imgBlob: true } : {}),
       ...(this.surface.connectSrc ? { connectSrc: true } : {}),
       ...(this.surface.workerSrc ? { workerSrc: this.surface.workerSrc } : {}),

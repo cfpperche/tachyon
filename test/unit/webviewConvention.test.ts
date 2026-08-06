@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import ts from "typescript";
 import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
 import { SHELL_DESIGN_SYSTEM_STYLESHEET, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
@@ -185,15 +186,61 @@ function ownStylesheets(view: string): Array<{ file: string; css: string }> {
 
 const cssNamesIn = (block: string): string[] => [...block.matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
 
+interface ShellCallOptions {
+  chunk: string;
+  directOptions: Set<string>;
+}
+
+/** The exact object passed to each `renderWebviewShell` call. An AST walk keeps an unrelated `surface:` later
+ *  in the same host from masquerading as a shell option — precisely the false positive t-4a3333 exposed. */
+function shellCallOptions(hostSource: string): ShellCallOptions[] {
+  const sourceFile = ts.createSourceFile("webview-host.ts", hostSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const out: ShellCallOptions[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)
+      && ts.isIdentifier(node.expression)
+      && node.expression.text === "renderWebviewShell"
+      && ts.isObjectLiteralExpression(node.arguments[0])) {
+      const directOptions = new Set<string>();
+      for (const property of node.arguments[0].properties) {
+        if ((ts.isPropertyAssignment(property) || ts.isShorthandPropertyAssignment(property) || ts.isMethodDeclaration(property))
+          && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) directOptions.add(property.name.text);
+      }
+      out.push({ chunk: node.arguments[0].getText(sourceFile), directOptions });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return out;
+}
+
 /** the `renderWebviewShell` option chunks in a host file, one per call site (a host may serve two surfaces —
  *  SidebarPrototype renders both the sidebar view and pin-preview). Keyed back to a surface by its bundle. */
-function shellCallChunks(hostSource: string): Array<{ view: string; chunk: string }> {
-  const out: Array<{ view: string; chunk: string }> = [];
-  for (const chunk of hostSource.split("renderWebviewShell(").slice(1)) {
-    const bundle = /\bbundle:\s*uri\(\s*["'`]([^"'`]+)\.js["'`]\s*\)/.exec(chunk)?.[1];
-    if (bundle) out.push({ view: bundle, chunk });
+function shellCallChunks(hostSource: string): Array<ShellCallOptions & { view: string }> {
+  const out: Array<ShellCallOptions & { view: string }> = [];
+  for (const call of shellCallOptions(hostSource)) {
+    const bundle = /\bbundle:\s*uri\(\s*["'`]([^"'`]+)\.js["'`]\s*\)/.exec(call.chunk)?.[1];
+    if (bundle) out.push({ ...call, view: bundle });
   }
   return out;
+}
+
+/** Every production emitter behind the manifest: direct host files plus the shared managers they delegate to. */
+function shellEmitterFiles(): string[] {
+  const out = new Set(
+    [...new Set(WEBVIEW_SURFACES.map((surface) => surface.hostFile))]
+      .filter(existsSync)
+      .filter((file) => shellCallOptions(readFileSync(file, "utf8")).length > 0),
+  );
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const file = join(dir, entry);
+      if (statSync(file).isDirectory()) walk(file);
+      else if (entry.endsWith(".ts") && shellCallOptions(readFileSync(file, "utf8")).length > 0) out.add(file);
+    }
+  };
+  walk("src/webview/shared");
+  return [...out];
 }
 
 /** the stylesheet basenames a surface links, in link order. Three shapes exist, all of them ending at the
@@ -431,17 +478,21 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
     expect(violations, violations.join("\n")).toEqual([]);
   });
 
-  it("a host that binds itself to the shell declares exactly its manifest posture", () => {
-    // A2/A3 — `surface`/`extend` on renderWebviewShell put the claim in the rendered page. The manifest stays
-    // the declaration of record (Cockpit.ts, AgentPanePanel.ts and StudioPanelManagerBase were Phase B's files
-    // when this landed and are not bound yet — t-4a3333), but a host that DOES bind must not disagree with it.
+  it("every host binds itself to the shell and declares exactly its manifest posture", () => {
+    // A2/A3 — every production emitter passes `surface` to the exact renderWebviewShell options object, so
+    // every rendered page names itself. Do not search the rest of the file: Studio configs and installed
+    // plugin surfaces have unrelated properties with the same name. The manifest remains the declaration of
+    // record, and directly keyed hosts must pass exactly its extension-point set.
     const violations: string[] = [];
+    for (const hostFile of shellEmitterFiles()) {
+      for (const call of shellCallOptions(readFileSync(hostFile, "utf8"))) {
+        if (!call.directOptions.has("surface")) violations.push(`${hostFile}: renderWebviewShell does not bind surface`);
+      }
+    }
     for (const hostFile of [...new Set(WEBVIEW_SURFACES.map((s) => s.hostFile))]) {
       for (const { view, chunk } of shellCallChunks(readFileSync(hostFile, "utf8"))) {
         const surface = WEBVIEW_SURFACES.find((s) => s.view === view && s.hostFile === hostFile);
         if (!surface) continue;
-        const bound = /\bextend:\s*\[/.test(chunk) || /\bsurface:\s*/.test(chunk);
-        if (!bound) continue;
         const block = /\bextend:\s*\[([\s\S]*?)\]/.exec(chunk);
         const passed = block ? [...block[1].matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1]).sort() : [];
         const declared = declaredExtensionPoints(surface).slice().sort();
