@@ -12,9 +12,9 @@ _Generated from `plan.md` on 2026-08-04. Work top-to-bottom. Check boxes as task
 - [x] Always-register `ide_browser_*` + `design_mode_chat_reply` when `ideBrowserRequest` is wired (`src/bridge/tools.ts`)
 - [x] `bridge.refresh-tools` extension command exists (kept for settings-like catalog flips; **not** used on IDE browser start/stop)
 - [x] IDE Browser Bridge `start`/`stop` does **not** force MCP session kill (`manager.ts` 2026-08-04)
-- [ ] Unit test: tools register without a live instance file (mock deps with `ideBrowserRequest` only)
-- [ ] Unit test: offline call returns actionable error envelope (not missing tool)
-- [ ] Confirm `isIdeBrowserBridgeAvailable` remains a **status** probe, not a registration gate
+- [x] Unit test: tools register without a live instance file (mock deps with `ideBrowserRequest` only) — `test/unit/ideBrowserToolsOffline.test.ts` (t-3cab05)
+- [x] Unit test: offline call returns actionable error envelope (not missing tool) — matches F3 stream text (t-3cab05)
+- [x] Confirm `isIdeBrowserBridgeAvailable` remains a **status** probe, not a registration gate — same test file (t-3cab05)
 
 ## Phase 1 — Loop reliability (productize prototype)
 
