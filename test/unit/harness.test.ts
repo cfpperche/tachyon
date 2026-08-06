@@ -2103,7 +2103,14 @@ describe("HarnessManager materialize (fs)", () => {
  * contents differed from the authority's, while sibling homes were still symlinks.
  */
 describe("t-9598cc Claude credential projection and refresh", () => {
-  const NOW = Date.parse("2026-07-27T12:30:00.000Z");
+  // Was `Date.parse("2026-07-27T12:30:00.000Z")` — a frozen clock, which armed a time bomb that went
+  // off on 2026-08-06. Most cases here pass NOW explicitly into a pure ranking function and are
+  // deterministic either way. But `materialize()` reads the REAL `Date.now()`, so a fixture written
+  // "240 hours from the frozen date" is only in the future until that date plus 240 hours actually
+  // arrives. It did, mid-session, and "a merely-lapsed access token the runtime will renew itself"
+  // started failing because its refresh window had genuinely closed ~30 minutes earlier. Anchoring to
+  // real time keeps every relative offset in this block meaning what it says.
+  const NOW = Date.now();
   const HOUR = 3_600_000;
   let ws: string;
   let realHome: string;
