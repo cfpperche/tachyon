@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-05 (SDD 490 Fatia C — native lane suppression registry; prior 2026-08-02 `t-0db8cb` codex idle attention; 2026-07-29 `t-e7c4a9` native-config; 2026-07-28 Grok Attention audit `t-aafa10`)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-06 (SDD 488 F3 / `t-dd46a4` — `design_mode_chat_reply` runtime call matrix; prior 2026-08-05 SDD 490 Fatia C native lane suppression; 2026-08-02 `t-0db8cb` codex idle attention)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/runtime/nativeLaneSuppression.ts`, `src/runtime/nativeMemory.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 **Native-config / Runtime Config seams:** `src/config/agentNativeConfigPolicy.ts` (family definitions + SDD 471/472 `authorize`), `src/config/agentNativeConfigSchema.ts` (`AGENT_NATIVE_CONFIG_FAMILIES`), `src/config/codexNativeConfigProjection.ts`, `src/config/claudeNativeConfigProjection.ts`, `src/config/grokNativeConfigProjection.ts`, `src/runtimeConfig/codexInventory.ts`, `src/runtimeConfig/claudeInventory.ts`, `src/runtimeConfig/grokInventory.ts`, `src/runtimeObservability/claudeStatusLineCapture.ts` (host-written Claude `statusLine` wrapper into `spawn-settings`)
 
@@ -54,6 +54,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 16 | **Auth-required detection** | Runtime exposes a MEASURED signal that it cannot execute for authentication reasons, distinct from rate limit, quota, permission, network and invalid session. `✓` needs a **turn-attached** signal measured on a stated version AND consumed by Tachyon — turn-attached is what makes it work mid-run as well as at launch. `~` means measured but not yet consumed, OR consumed only at the launch boundary because the runtime emits nothing during a turn (`t-0338fc`). `✗` means the runtime gives no reliable signal anywhere. Inferring auth state from silence or exit code alone never qualifies. |
 | 17 | **Temporary Agent (`spawn_agent`)** | The runtime may be handed a DELEGATION through the lighter Temporary path — no durable Agent Profile required — and can honor it: it resumes as the same entity, it can receive the spec 246 brief, and it can answer through the Bridge. `✓` needs all three; `~` means the runtime is admitted with a declared, task-owned shortfall; `✗` means a command of that shape is refused as an Agent and belongs to `spawn_terminal`. This is a SEPARATE axis from Agent Profile attestation — see §3.6.1. |
 | 18 | **Internal checklist telemetry** | Runtime has a native structured execution checklist and Tachyon can observe it through a measured structured protocol/event/transcript path. This is ephemeral telemetry only: it never becomes a Board Task or proves Delivery completion. `✓` requires structured read plus correlation and provenance; `~` means native mechanism with weaker observation/control; `✗` means no built-in mechanism. See the [2026-07-28 research](../research/runtime-internal-checklist-capabilities.md). |
+| 19 | **Design Mode chat reply (`design_mode_chat_reply`)** | Under the current tool-only Design Mode prompt (`formatDmChatPrompt`, post-`t-181925` turn id), the runtime **lists** the Bridge tool and the model **calls** it (not pane markers). `✓` needs a dated headless or live dogfood that shows a real MCP tool call on a stated binary version. `~` means listed only, or called without turn bind / panel land. `✗` means the model refuses the tool path and falls back to markers or pane text. Panel land (IDE Browser Bridge online + chat JSONL) is a separate cell in §3.1.3 — tool-call green does **not** imply F1 may delete markers without a land dogfood. Research: [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md). |
 
 For the Codex marks in rows 7, 9, and 12, **✓** is scoped to durable Agent Profiles: Tachyon regenerates
 the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
@@ -125,6 +126,18 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 16 Auth-required detection | ✓ | ✓ | ~‖ | ✓ | ~ | **✗** |
 | 17 Temporary Agent (`spawn_agent`) | ✓ | ✓ | ✓ | ✓ | ✓ | **✗**# |
 | 18 Internal checklist telemetry | ~ | ~ | ~ | ~ | ✗ | **✗** / **~**¶ |
+| 19 Design Mode chat reply | ✓º | ✓º | **?** | ✓º | **?** | **?** |
+
+º **Design Mode chat reply (2026-08-06, `t-dd46a4` / SDD 488 F3):** headless probe with the current
+tool-only `formatDmChatPrompt` shape (incl. `Turn id: dm-turn-…`). Claude 2.1.223, Codex 0.146.0,
+and Grok 0.2.118 each **listed** Bridge `design_mode_chat_reply` and **called** it; none used
+markers. Panel land **unmeasured** (IDE Browser Bridge offline on the host — every call failed
+closed with the offline error, proving MCP→handler only). Live Bridge `tools/list` omitted
+`turnId` even though source 0.62.0 declares it — Codex and Grok still sent `turnId` in args;
+Claude sent `{text}` only. Pi / OpenCode / Outros **?** unmeasured. Full matrix §3.1.3 and
+[`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md).
+**F1 (delete marker fallback) is unblocked for tool-compliance on claude/codex/grok, not for
+unconditional marker deletion** — re-dogfood with IDE bridge up first.
 
 ¶ **Internal checklist telemetry (2026-07-28, `t-c2209d`):** this row distinguishes
 runtime-native capability from current Tachyon integration. Claude has the richest native model
@@ -322,6 +335,35 @@ native formats and launch effects may exist elsewhere in Tachyon, but Control ha
 Runtime Config adapter for them. Do not list them as disabled choices: absence communicates the
 honest contract, and their eventual addition must update this table and the applicable parity row
 in the same change.
+
+### 3.1.3 Design Mode `design_mode_chat_reply` (SDD 488 F3 / `t-dd46a4`)
+
+Product context: Design Mode chat's happy path is Bridge tool `design_mode_chat_reply` (prompt from
+`formatDmChatPrompt`; optional `turnId` after `t-181925` / 0.62.0). Pane markers remain in code as
+legacy unwrap (`extractDmChatReplyMarkers`) until F1 — F1 is gated on this matrix.
+
+**Measured 2026-08-06** by running each CLI **directly** (no `spawn_agent`) against the live
+workspace Bridge with a prompt matching the current tool-only shape. Full write-up and raw streams:
+[`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md),
+[`evidence-t-dd46a4-f3/`](../research/evidence-t-dd46a4-f3/).
+
+| Runtime | Binary | Listed | Called tool | Sent `turnId` | Used markers | Panel land |
+|---------|--------|:------:|:-----------:|:-------------:|:------------:|:----------:|
+| Claude | 2.1.223 | ✓ | ✓ (`mcp__tachyon_bridge__design_mode_chat_reply` after ToolSearch) | ✗ (`{text}` only) | ✗ | **?** IDE Browser Bridge offline |
+| Codex | 0.146.0 | ✓ | ✓ (`mcp_tool_call`) | ✓ (`dm-turn-f3matrix01`) | ✗ | **?** offline |
+| Grok | 0.2.118 | ✓ | ✓ (`use_tool` ×2) | ✓ first call; second `{text}` only | ✗ | **?** offline |
+| Pi | — | **?** unmeasured | **?** | **?** | **?** | **?** |
+| OpenCode / Outros | — | **?** unmeasured | **?** | **?** | **?** | **?** |
+
+Invocations (summary): Claude `claude -p … --mcp-config … --output-format stream-json`; Codex
+`codex exec --json` with private `CODEX_HOME` Bridge MCP; Grok `grok -p … --output-format json`
+with private `GROK_HOME` Bridge MCP. Every call that reached the handler returned
+`IDE browser bridge offline` — MCP path live, panel append unproven.
+
+**F1 verdict:** tool-call compliance is green for **claude / codex / grok** on the versions above
+(the 2026-08-04 “Codex listed tool, used markers” failure did **not** reproduce under the current
+prompt). Deleting the marker fallback is **not** green until someone re-dogfoods with the IDE
+Browser Bridge **up** (and optionally fills Pi). Do not remove markers from this task.
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 
@@ -810,6 +852,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 | [`docs/runtimes/opencode.md`](./opencode.md) | Deep OpenCode measurement report |
 | [`docs/runtimes/hermes.md`](./hermes.md) | Hermes gap inventory (native CLI vs Tachyon seams; promotion path) |
 | [`docs/research/adhoc-runtime-parity-grok.md`](../research/adhoc-runtime-parity-grok.md) | Ad-hoc spawn isolation parity; Grok 0.2.112 measurements (`t-1d49df`) |
+| [`docs/research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md) | SDD 488 F3 — `design_mode_chat_reply` list/call matrix (`t-dd46a4`) |
 | `src/runtime/runtimeProfile.ts` | Machine-readable profile fragments |
 | `src/resume/adapters.ts` | Resume/fork/harness descriptors |
 | `.tachyon/reviews/parity-doc-claude.md` | 2026-07-09 adversarial review |
@@ -821,6 +864,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-08-06 | **Design Mode `design_mode_chat_reply` runtime matrix (`t-dd46a4` / SDD 488 F3):** measured Claude 2.1.223, Codex 0.146.0, Grok 0.2.118 headless against the live Bridge with the current tool-only Design Mode prompt (incl. turn id). All three **listed** and **called** the tool; none used pane markers. Panel land **unmeasured** (IDE Browser Bridge offline). Live `tools/list` omitted `turnId` while source 0.62.0 declares it. Capability row 19 + §3.1.3; research [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md). F1 (delete markers) unblocked for tool-compliance on those three, not for unconditional deletion. Pi left **?** unmeasured. |
 | 2026-08-05 | **`spawn_agent` stopped answering `ready` for a runtime the CLI itself refused (`t-d501fc`):** measured incident — `spawn_agent({cmd: "claude --model sonnet-5"})` (the correct id is `claude-sonnet-5`) answered `state: "ready"`; the CLI had actually booted, printed the whole primer, then refused the model and sat at an empty prompt, never starting work. The coordinator found out ten minutes later, from an idle poke, only because it inspected the pane instead of acknowledging. Root cause traced to `GenericLaunchReadiness.classify()` (`src/runtime/launchReadiness.ts`): the model-rejection regex existed and ran BEFORE the composer-readiness check (rejection was always meant to win), but it did not match the CLI's actual words, so classify() fell through to the composer check — which DOES match, because the CLI settles at its ordinary empty `❯ ` prompt right under the refusal, indistinguishable from a healthy idle agent. Measured by running each CLI directly with a bogus model (`<cli> --model <bogus> -p "hi"`, never through `spawn_agent` — the workspace was capped at 3 parallel agents after a RAM crash), answering the task's three questions: (1) **timing** — Claude ~2.3–2.7s, Grok ~0.6–0.8s, both fast and CLI-side; Codex ~2–9s, network-bound (a live API round trip with retry), sometimes exceeding the existing 5s `LAUNCH_READINESS_WINDOW_MS` — noted as a residual gap, not fixed here, since Codex's primary defense is the preflight catalog below, not this window. (2) **shape** — each CLI refuses in its own words, confirmed NOT a shared phrase: Claude *"There's an issue with the selected model (X). It may not exist or you may not have access to it."*; Codex an `invalid_request_error` naming *"'X' model is not supported when using Codex with a ChatGPT account."*; Grok *`Couldn't set model 'X': Invalid params: "unknown model id"`* — Grok's shape already matched the pre-fix regex, which is exactly why the incident was Claude-specific. Detection is per-adapter (`MODEL_REJECTED_RE` in `launchReadiness.ts`, shared by `GenericLaunchReadiness` and `CodexLaunchReadiness`; see the Claude/Codex "Model preflight" and "Post-launch readiness" rows above for the full per-runtime picture — including that Codex already carries an undocumented, pre-existing authoritative preflight, `codex debug models`, which is the primary reason a bad Codex model rarely reaches this classify path at all). (3) **attention** — confirmed the coordinator's `idle` signal does not distinguish "finished a real turn" from "never got past boot": `AttentionMonitor` seeds every agent `working` on first observation, so the one candidate flag (`unseen`, meant for "finished, awaiting eyes") fires identically on a boot-to-blank-prompt as on a genuine completed turn, and `AgentManager`'s own `readyAgents`/`provisionalAgents` latch (the thing that DOES know, via `isReady`) is never plumbed into `list()`/`ManagedEntryInfo` or `TemporaryBackstopMonitor`'s idle-poke text. That gap is real but NOT what this fix closes — the guard names two independent-either options, and this fix takes the first: `spawn_agent` now answers success only when the runtime was observed to accept the launch, because a caught rejection makes `AgentManager.spawn()` throw (`observeLaunchReadiness` → `RuntimeLaunchReadinessError`), so `spawn_agent` returns a Bridge tool failure instead of `{state: "ready"}`. Nothing here validates a Tachyon-held model list — the fix only widens what a real, measured refusal SENTENCE is recognized as, which is the direction the task required (the runtime's catalog changes without telling us; a copied list errs in both directions). Evidence: `test/unit/launchReadinessRecovery.test.ts` (three new per-runtime classify() cases, using each measured sentence verbatim — the Claude and Codex cases fail against the pre-fix regex) and `test/unit/agentManager.test.ts` ("the REAL classify pipeline rejects a spawn against Claude's measured refusal pane, not a stubbed one" — the existing `runtime_model_rejected` coverage stubbed `launchReadiness.wait` directly and so never actually exercised the classify() regex against real text; this one replays the incident's own pane). The attention idle-vs-never-started gap is filed as a follow-up rather than fixed here (out of scope: `src/attention/*` and `TemporaryBackstopMonitor` were not this task's owned files, and the guard's other exit — this one — already closes the measured incident). |
 | 2026-08-05 | **Native lane suppression measured for formation (SDD 490 Fatia C):** `nativeSuppressionConfirmed` stopped being hard-coded `false` and now reads `src/runtime/nativeLaneSuppression.ts`. Combined gate requires verified **instructions** *and* verified (or unsupported) **memory** disable — the formation receipt covers every enabled human lane at once. Measured on installed binaries: Claude 2.1.222 — project `CLAUDE.md` suppressed by `--setting-sources user` (marker NONE vs TOKEN with `user,project`); combined **✓** with existing memory disable. Codex 0.146.0 — `project_doc_max_bytes=0` suppresses `AGENTS.md` (marker NONE); `--ignore-rules` does **not**; combined **~** because memory disable remains declared. Grok 0.2.118 — no rules disable control (`inspect` always lists planted AGENTS.md; `--system-prompt-override` still returns marker); combined **~**. Evidence: [`native-lane-suppression-sdd490-fatia-c.md`](../research/native-lane-suppression-sdd490-fatia-c.md), `test/unit/runtimeNativeLaneSuppression.test.ts`. Does not wire Codex `project_doc_max_bytes=0` into launches or invent Grok verified. |
 | 2026-08-03 | **`spawn_agent` refusal diagnosis tells the truth per runtime (`t-5d8e96`):** the composite claim "no measured resume, brief or Bridge" for every non-admitted binary contradicted §3.3 / §3.6.1 — Antigravity has resume+brief, Continue has resume; both are Terminal by admission, not by total absence. `admitAgentRuntimeCommand` now derives the reason from resume/prompt seams: partial secondaries name present + missing mechanisms and still point at `spawn_terminal`; authoring-catalog chips and generic processes keep distinct honest sentences. Admission set unchanged. §3.6.1 table split Antigravity / Continue / authoring / generic rows so the matrix matches the code. |

@@ -1,0 +1,13 @@
+[Design Mode · measure-agent]
+Turn id: dm-turn-f3matrix01
+Open page: https://example.com/
+Chat log (append-only JSONL, one event per line): /tmp/does-not-need-to-exist/chat.jsonl
+If you need earlier turns, read/tail that file with tools — do not ask the human to paste history.
+
+Human: Reply with exactly the four words: matrix probe alpha ok
+
+Required: answer ONLY via Bridge tool design_mode_chat_reply({ text: "...", turnId: "dm-turn-f3matrix01" }) with the plain answer.
+The turnId argument must be exactly "dm-turn-f3matrix01" — a reply with a different or missing turn id will not update this chat turn.
+Do not write the answer only in the terminal pane — the Design Mode chat panel updates only when that tool is called.
+Do not wrap the answer in markers or dump tool JSON into the pane.
+Do not use any other tools. Call design_mode_chat_reply once and stop.

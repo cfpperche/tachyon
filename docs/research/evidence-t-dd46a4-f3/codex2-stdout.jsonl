@@ -1,0 +1,6 @@
+{"type":"thread.started","thread_id":"019fd50b-6c07-7623-90e4-77d81e89958a"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_0","type":"mcp_tool_call","server":"tachyon_bridge","tool":"design_mode_chat_reply","arguments":{"text":"matrix probe alpha ok","turnId":"dm-turn-f3matrix01"},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_0","type":"mcp_tool_call","server":"tachyon_bridge","tool":"design_mode_chat_reply","arguments":{"text":"matrix probe alpha ok","turnId":"dm-turn-f3matrix01"},"result":{"content":[{"type":"text","text":"error: IDE browser bridge offline. In VS Code: Tachyon: IDE Browser Bridge Start (Dev Host / Extension Development)."}],"structured_content":null},"error":null,"status":"failed"}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":""}}
+{"type":"turn.completed","usage":{"input_tokens":28257,"cached_input_tokens":24064,"cache_write_input_tokens":0,"output_tokens":292,"reasoning_output_tokens":181}}
