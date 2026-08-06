@@ -4,7 +4,7 @@ import { AgentManager } from "../../agents/AgentManager.js";
 import { readPaneTranscript } from "../../agents/paneTranscript.js";
 import { composerProfileFor } from "../../runtime/composerRegion.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "../notifyAgent.js";
-import { appendDoorbellEvent } from "../doorbell.js";
+import { appendDoorbellEvent, readDoorbellEventsFor, READ_NOTICES_MAX } from "../doorbell.js";
 import { redactSecrets } from "../redact.js";
 import { type BridgeDeps, AGENT_NAME, deliverNoticeFallback, fail, lifecycleScopeGuard, limitText, managedEntry, ok, resolveDeclaredActor } from "./shared.js";
 
@@ -254,7 +254,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         } catch (err) {
           // A resolved agent that reached notify_agent is still witnessed when the hangable
           // preflight itself fails (for example, tmux timing out while checking the session).
-          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
+          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer });
           throw err;
         }
         if (!sessionAlive) {
@@ -262,7 +262,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
           // wants the ring when static checks pass and only hangable preflight fails. Ghost targets
           // are not kind:agent in our roster unless declared — keep prior path for unknown names:
           // only append when we would have reached the hangable preflight with a resolved agent.
-          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
+          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer });
           return fail(new Error(`agent '${to}' is not running`));
         }
         if (!(await deps.manager.isReady(to))) {
@@ -275,7 +275,10 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         // spec 363 T1 / t-5f80c6 — witness the doorbell after readiness so a bootstrap refuse does not
         // inflate doorbell counts; a child that reached a ready parent still gets credit before any
         // later hangable delivery failure.
-        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString() });
+        // spec 493 — carry the content, not just from/to/at: this witness record is now also the
+        // durable read door (`read_notices`), so a recipient that never opens the one drain window
+        // (the working→idle attention edge) can still read what rang for it afterward.
+        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer });
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }
@@ -308,10 +311,57 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
           return ok(
             result.heldFor === "human-draft"
               ? `queued '${to}': a human is typing in that pane — the notice is held (receipt: held-human-draft) and delivered when the draft clears, or it expires and the loss is reported to the human${suffix}`
-              : `queued '${to}' for idle delivery${suffix}`,
+              // spec 493 — this used to promise only "for idle delivery", which is exactly the promise
+              // that doesn't hold for a coordinator that rarely goes idle (t-167b5c: ten of ten arrived
+              // after the recipient had already acted on the fact some other way). The summary is now
+              // durably recorded regardless of whether the pane flush ever lands.
+              : `queued '${to}' for idle delivery${suffix} — durably recorded; '${to}' can read it with read_notices even if the pane delivery never lands or lands late`,
           );
         }
         return ok(`notified '${to}'${suffix}`);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "read_notices",
+    {
+      description:
+        "spec 493 — read the durable record of notify_agent doorbells rung FOR you, independent of whether the pane " +
+        "delivery ever landed. `notify_agent`'s one drain window is your working→idle attention edge; a coordinator " +
+        "that stays busy (or that restarted since the notice rang) never opens it and would otherwise never know a " +
+        "doorbell rang. This reads `.tachyon/doorbells.jsonl`, which witnesses every notify_agent call regardless of " +
+        "delivery outcome — self-only (no parameter can target another agent's notices), oldest-first, capped at " +
+        `${READ_NOTICES_MAX} per call. Pass the highest \`at\` you've already seen as \`since\` to page forward — ` +
+        "there is no server-side read-receipt; you own the cursor. Out of scope (unchanged, still best-effort/in-" +
+        "memory-only): Tachyon's own backstop pokes (child-death, needs-input, rate-limited, auth-required) are " +
+        "claims about live state and are deliberately NOT witnessed here — durably replaying one after the child it " +
+        "describes is gone would be wrong, not just incomplete.",
+      inputSchema: {
+        agent: AGENT_NAME.describe(
+          "YOUR agent name — resolved against the Bridge-authenticated caller, same as notify_agent's `agent` param. " +
+            "It's the value of your $TACHYON_AGENT_NAME env var; never guess it.",
+        ),
+        since: z.string().min(1).max(64).optional().describe(
+          "ISO 8601 timestamp cursor — only notices strictly AFTER this `at` are returned. Omit to start from the " +
+            `oldest matching notice (capped at ${READ_NOTICES_MAX}; \`truncated\` says if more remain). Use the ` +
+            "highest `at` from a previous call as `since` to page forward without re-reading old notices.",
+        ),
+      },
+    },
+    async ({ agent, since }) => {
+      try {
+        const senderActor = resolveDeclaredActor(deps, agent);
+        if (!senderActor.ok) return fail(new Error(senderActor.message));
+        agent = senderActor.name ?? agent;
+        const result = readDoorbellEventsFor(deps.workspaceRoot, agent, since);
+        return ok(JSON.stringify({
+          notices: result.notices.map(({ from, at, summary, pointer }) => ({ from, at, summary, pointer })),
+          returned: result.returned,
+          truncated: result.truncated,
+        }));
       } catch (err) {
         return fail(err);
       }

@@ -40,7 +40,9 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "task journal (t-f33480). The old wording said \"human decision\" and nothing enforced it; a boundary that " +
         "is neither imposed nor audited is a sentence, so the enforcement became the TRACE rather than the caller. " +
         "With parent set, the child's brief already teaches it to call notify_agent(to: \"<your name>\", summary: ...) when the " +
-        "deliverable/done_when is met, so YOU get woken up — no need to tell it separately. " +
+        "deliverable/done_when is met — no need to tell it separately. That lands on your pane the next time you go idle " +
+        "(spec 341); a coordinator that stays busy past that (spec 493, t-167b5c) should also poll " +
+        "read_notices(agent: \"<your name>\") rather than assume the pane wake-up alone caught it. " +
         "Subject to the maxAgents guardrail.",
       inputSchema: {
         name: AGENT_NAME.describe("managed entry name (becomes part of the tmux session name)"),

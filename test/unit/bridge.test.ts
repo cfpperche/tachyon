@@ -103,7 +103,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // t-a4ac02 — 77 → 76: next_task Bridge tool removed (function nextTask() still powers MC spotlight).
   // t-75e9c7 — 76 → 77: agent_touched_files, the worktree-diff read that replaces the coordinator's
   // hand-written "who's touching what" list.
-  it("exposes exactly the 77 canonical tools, including the explicit Terminal operation", async () => {
+  // t-167b5c — 77 → 78: read_notices, the durable read door onto .tachyon/doorbells.jsonl (spec 493).
+  it("exposes exactly the 78 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -153,6 +154,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "propose_saved_agent",
       "propose_saved_agent_removal",
       "propose_schedule",
+      "read_notices",
       "read_output",
       "reanchor_agent",
       "reconcile_runtime_credentials",
@@ -1508,6 +1510,64 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     } finally {
       noticeMode = "immediate";
       await client.callTool({ name: "kill_agent", arguments: { name: "queued-sibling" } });
+    }
+  });
+
+  // t-167b5c / spec 493 — the read door. Ten of ten notify_agent doorbells in the incident that
+  // motivated this arrived AFTER the coordinator had already merged and dismissed the sender; the
+  // single working→idle drain window never opened in time. read_notices answers "what rang for me?"
+  // straight from the durable witness log, independent of the in-memory NoticeQueue/pane flush.
+  it("read_notices: a busy recipient reads a notice it never saw flushed to the pane", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "read-notices-sibling", cmd: "claude", parent: "claude", skip_contract_reason: "test fixture, no real delegation" } });
+    noticeMode = "queued";
+    try {
+      const notified = await client.callTool({
+        name: "notify_agent",
+        arguments: { to: "read-notices-sibling", summary: "t-abc done", pointer: "t-abc", agent: "claude" },
+      });
+      expect(notified.isError).toBeFalsy();
+      // the pane never received anything — delivery was queued, not flushed
+      expect(sessions.get(`tachyon-${HASH}-read-notices-sibling`)).toBe("");
+
+      const read = await client.callTool({ name: "read_notices", arguments: { agent: "read-notices-sibling" } });
+      expect(read.isError).toBeFalsy();
+      const body = JSON.parse((read.content as Array<{ text: string }>)[0].text);
+      expect(body.notices).toHaveLength(1);
+      // no `to` in the response: read_notices is self-only by construction (no parameter can target
+      // another agent), so echoing the recipient back would be redundant.
+      expect(body.notices[0]).toMatchObject({ from: "claude", pointer: "t-abc" });
+      expect(body.notices[0].summary).toContain("t-abc done");
+      expect(typeof body.notices[0].at).toBe("string");
+    } finally {
+      noticeMode = "immediate";
+      await client.callTool({ name: "kill_agent", arguments: { name: "read-notices-sibling" } });
+    }
+  });
+
+  it("read_notices: since-cursor excludes what was already returned, and self-only has no `to` parameter", async () => {
+    await client.callTool({ name: "spawn_agent", arguments: { name: "cursor-sibling", cmd: "claude", parent: "claude", skip_contract_reason: "test fixture, no real delegation" } });
+    noticeMode = "queued";
+    try {
+      await client.callTool({ name: "notify_agent", arguments: { to: "cursor-sibling", summary: "first", agent: "claude" } });
+      const firstRead = JSON.parse(
+        ((await client.callTool({ name: "read_notices", arguments: { agent: "cursor-sibling" } })).content as Array<{ text: string }>)[0].text,
+      );
+      expect(firstRead.notices.map((n: { summary?: string }) => n.summary)).toEqual(["first"]);
+      const cursor = firstRead.notices[0].at;
+
+      await client.callTool({ name: "notify_agent", arguments: { to: "cursor-sibling", summary: "second", agent: "claude" } });
+      const secondRead = JSON.parse(
+        ((await client.callTool({ name: "read_notices", arguments: { agent: "cursor-sibling", since: cursor } })).content as Array<{ text: string }>)[0].text,
+      );
+      expect(secondRead.notices.map((n: { summary?: string }) => n.summary)).toEqual(["second"]);
+
+      // no way to read another agent's notices — the tool has no `to`/target parameter at all
+      const { tools } = await client.listTools();
+      const schema = tools.find((t) => t.name === "read_notices")?.inputSchema as { properties?: Record<string, unknown> };
+      expect(Object.keys(schema.properties ?? {}).sort()).toEqual(["agent", "since"]);
+    } finally {
+      noticeMode = "immediate";
+      await client.callTool({ name: "kill_agent", arguments: { name: "cursor-sibling" } });
     }
   });
 

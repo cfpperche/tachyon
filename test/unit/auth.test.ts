@@ -98,7 +98,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(77); // t-a4ac02 removed next_task (77 → 76); t-75e9c7 added agent_touched_files (76 → 77). bridge.test.ts holds the by-name inventory.
+      expect(tools.length).toBe(78); // t-a4ac02 removed next_task (77 → 76); t-75e9c7 added agent_touched_files (76 → 77); t-167b5c added read_notices (77 → 78). bridge.test.ts holds the by-name inventory.
       await client.close();
     } finally {
       await bridge.dispose();
@@ -111,7 +111,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(77); // t-a4ac02 removed next_task (77 → 76); t-75e9c7 added agent_touched_files (76 → 77). bridge.test.ts holds the by-name inventory.
+      expect((await client.listTools()).tools.length).toBe(78); // t-a4ac02 removed next_task (77 → 76); t-75e9c7 added agent_touched_files (76 → 77); t-167b5c added read_notices (77 → 78). bridge.test.ts holds the by-name inventory.
       await client.close();
     } finally {
       await bridge.dispose();
