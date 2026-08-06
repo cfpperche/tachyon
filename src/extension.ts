@@ -1177,9 +1177,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (view === "probes") probesPanels.refresh();
     if (view === "tasks") onTasksChanged(); // spec 335 — same fan-out path engine-side mutations use directly
     // t-610705 (Phase D, D1a) — Runbook/Schedule's refreshReferenceData() retired with their panel
-    // managers; the Control-route equivalent doesn't need a per-studio "which kind changed" gate
-    // (refreshStudioReferenceData is a no-op off a studio route, and best-effort otherwise — see its
-    // own doc comment in studioHost.ts).
+    // managers; the Control-route equivalent did not need a per-studio "which kind changed" gate.
+    // t-337cdf — that Control-route host (studioHost.ts) is now deleted along with the renderer it
+    // served, so the equivalent it described no longer exists; only the standalone panels below run.
     if (view === "commands" || view === "agents") {
       for (const manager of Object.values(studioPanels)) manager.refreshReferenceData();
     }

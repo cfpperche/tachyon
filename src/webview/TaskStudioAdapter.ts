@@ -50,7 +50,7 @@ export class TaskStudioAdapter implements StudioHostAdapter<TaskDetailEntity, Ta
       // t-610705 (Phase D, D2) — `expectUpdatedAt` is only ever absent from the projection
       // (taskStudioProjection.ts's `!task` branch) when `entityId` is a pre-minted id with no store
       // row yet — a task genuinely cannot exist in TaskStore without an `updatedAt`. This is the
-      // `persisted` signal studioHost.ts needs to gate `adapter.onCancel` correctly (see adapter.ts's
+      // `persisted` signal the studio host needs to gate `adapter.onCancel` correctly (see adapter.ts's
       // StudioLoadResult doc comment) — derived here, not threaded through the wire protocol, since
       // the projection already carries everything needed to compute it.
       return { status: "ok", entity, ...(entityId !== undefined ? { persisted: entity.expectUpdatedAt !== undefined } : {}) };
