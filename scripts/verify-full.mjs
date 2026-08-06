@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { decideHeavyGate } from "./host-resources.mjs";
 import { UNHANDLED_OUTPUT_ENV } from "./vitest-unhandled-reporter.mjs";
-import { recordVerification, reuseDecision, verifiableTree, verifierFingerprint } from "./verify-record.mjs";
+import { auditTrunk, formatTrunkAudit, recordVerification, reuseDecision, verifiableTree, verifierFingerprint } from "./verify-record.mjs";
 
 export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 * 1024, totalBytes: 24 * 1024 });
 
@@ -463,6 +463,42 @@ export function decideReuse({ env = process.env, now = () => Date.now() } = {}) 
   });
 }
 
+/**
+ * t-884b48 — say out loud which trunk states carry no proof, from the door everyone already uses.
+ *
+ * This gate proves ONE tree: the one in front of it. With parallel agents the trunk moves between an
+ * agent's green and the merge that lands it, so the merged content is new and nobody verified it —
+ * measured 2026-08-05, 42 of 70 merges into `main` had no record for their resulting tree. Nothing
+ * asked, because `check` only ever gets pointed at a tip.
+ *
+ * ADVISORY, AND DELIBERATELY NOT A REFUSAL. Those trees are already in the trunk's history; refusing
+ * a push does not un-land them, and the only thing that would have prevented them is a full gate per
+ * merge — ~78s median, serialized behind a host-wide mutex, against 31 new-content merges in a day.
+ * That is ~40 minutes of added wall clock on a host that is also running the agents, which is exactly
+ * the load that made this gate report a false red once already (t-efb7cc). A blocked merge with no
+ * governed way out is the failure mode t-0cbcbd names; a gap that announces itself is not.
+ *
+ * WHY HERE and not in the merge flow: a check the coordinator has to remember to invoke is the same
+ * discipline with more steps. This command is what the pre-push gate resolves and what every careful
+ * actor already runs, so the notice arrives without anyone choosing to ask for it — including on the
+ * reuse path, where the gate returns in milliseconds and this is the ONLY thing it has to say.
+ *
+ * The audit must never fail the gate it reports beside: an advisory that can turn a green red would
+ * be a worse defect than the one it reports.
+ */
+export function trunkAuditNotice({ audit = auditTrunk, format = formatTrunkAudit } = {}) {
+  try {
+    return format(audit()) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function announceTrunkAudit() {
+  const notice = trunkAuditNotice();
+  if (notice) process.stdout.write(`${notice}\n`);
+}
+
 export async function main() {
   // t-5d0e9d — an identical tree that already passed, in this environment, recently, does not need to
   // pass again. Every other case runs the suite: the decision is fail-closed and never consults a
@@ -471,6 +507,7 @@ export async function main() {
   if (reuse.reuse) {
     process.stdout.write(`verify:full reused: ${reuse.reason}\n`);
     process.stdout.write(`  ${reuse.record.summary ?? "no summary recorded"} — set TACHYON_VERIFY_FORCE=1 to run it anyway\n`);
+    announceTrunkAudit();
     return 0;
   }
   let lock;
@@ -627,6 +664,7 @@ export async function main() {
         ? `verified tree ${filed.record.tree.slice(0, 12)} recorded\n`
         : `no verification record written: ${filed.reason}\n`,
     );
+    announceTrunkAudit();
     rmSync(root, { recursive: true, force: true });
     return 0;
   } finally {
