@@ -190,6 +190,29 @@ describe("engine bundle store", () => {
     })).rejects.toThrowError(expect.objectContaining({ code: "NODE_RUNTIME_NOT_FOUND" }));
   });
 
+  /**
+   * t-a8e1f7 — the VSIX smoke matches this refusal by WORDING, and here is why it has to.
+   *
+   * The test above pins the code where the code exists. A caller outside the process cannot see it:
+   * measured on VS Code 1.128.0, `extension.activate()` rejects with a plain `Error` carrying only
+   * `stack`, `name` and `message`, so every custom property is dropped at the activation boundary.
+   * The engine-refusal door of `test/vsix-smoke/probe/suite.js` therefore matches the class name and
+   * this phrase. Reword the refusal and that door goes red for a reason nobody would find; this test
+   * goes red first, in the same commit, and says where to look.
+   */
+  it("keeps the refusal wording the VSIX smoke door matches", async () => {
+    const empty = temp("tachyon-runtime-empty-");
+
+    await expect(resolveEngineRuntimeSource({
+      sourceExecutable: "/usr/share/code/code",
+      versions: { node: "20.18.0", electron: "32.2.7" },
+      env: { PATH: empty },
+    })).rejects.toThrowError(expect.objectContaining({
+      name: "EngineBundleError",
+      message: expect.stringMatching(/requires a real Node executable on PATH/),
+    }));
+  });
+
   it("materializes the verified packaged bundle outside the disposable extension root", () => {
     const extensionRoot = temp("tachyon-packaged-extension-");
     const sourceRoot = path.join(extensionRoot, "dist", "engine");

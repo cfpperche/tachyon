@@ -13,10 +13,25 @@
  *      `scripts/package-closure.mjs`. This is the layer that catches the class: measured RED on the
  *      real `tachyon-0.57.0.vsix` (`ws <= src/webview/ide-browser-bridge/cdpSession.ts`) and GREEN on
  *      `tachyon-0.57.1.vsix`.
- *   2. ACTIVATION (a real, disposable VS Code, ~5s). Install the .vsix into a throwaway
- *      extensions/user-data directory, start an extension host on an empty folder, and open one door
- *      per live surface (`test/vsix-smoke/probe/suite.js`). This is the layer that proves the package
- *      STARTS — the floor layer 1 cannot reach, because a bundle can be closed and still throw.
+ *   2. ACTIVATION (a real, disposable VS Code). Install the .vsix into a throwaway
+ *      extensions/user-data directory, start an extension host on a CONFIGURED folder, and open one
+ *      door per live surface (`test/vsix-smoke/probe/suite.js`). This is the layer that proves the
+ *      package STARTS — the floor layer 1 cannot reach, because a bundle can be closed and still throw.
+ *
+ * t-a8e1f7 — LAYER 2 RUNS TWICE, and the workspace carries a `tachyon.yml`.
+ *
+ * Until now the workspace was empty, so no engine was ever requested and every door was an engine-free
+ * door. That left the packaged engine untouched until a human installed it. The disposable editor is
+ * real Electron, which is exactly the host where the engine used to die, so the equipment for this
+ * already existed. Both runs use it.
+ *
+ *   engine-ready — Node on PATH. The engine must become ready and answer a query (t-d11d57).
+ *   node-missing — PATH pruned of Node. The shell must refuse by name, not time out.
+ *
+ * The second run reproduces a host that offers no Node at all. It is NOT the graphical-launcher case,
+ * and believing it was cost a wrong green: VS Code re-probes the login shell and merges its PATH, so
+ * the host read `~/.nvm/.../bin/node` even after the runner pruned it. See `--force-disable-user-env`
+ * below.
  *
  * WHY THIS IS A RELEASE STEP AND NOT A GATE STEP — a structural answer, not a timing one. There is no
  * .vsix at gate time and there cannot be one: `assertStableBuildSource` (scripts/engine-release-channel.mjs)
@@ -32,6 +47,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { packageClosureViolations } from "./package-closure.mjs";
@@ -40,6 +56,28 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PROBE = path.join(root, "test", "vsix-smoke", "probe");
 /** A host that has not answered in this long is not going to; the measured run is ~2s. */
 const ACTIVATION_TIMEOUT_MS = 180_000;
+
+/** This run's private tmux server. The engine identity folds it in, so the engine is private too. */
+const TMUX_SOCKET = `tachyon-vsix-smoke-${process.pid}`;
+
+/** The command the engine door asks the daemon to report back. */
+const ENGINE_COMMAND = "vsix-smoke-engine-door";
+
+/**
+ * The workspace configuration both activation runs open.
+ *
+ * It declares one command and nothing else. A declared agent or terminal would start a process, and
+ * this smoke measures the engine rather than the fleet. The engine still has to stage a runtime,
+ * launch its daemon, parse this file and project it — which is the whole claim.
+ */
+const SMOKE_CONFIG = `# Written by scripts/vsix-smoke.mjs (t-a8e1f7). Presence is what requests the engine.
+commands:
+  ${ENGINE_COMMAND}:
+    cmd: "echo vsix-smoke"
+`;
+
+/** Every engine this run started, keyed the way the product keys it. Teardown reads this list. */
+const startedEngines = [];
 
 const argv = process.argv.slice(2);
 const closureOnly = argv.includes("--closure-only");
@@ -96,13 +134,13 @@ try {
   const editor = await resolveEditor();
   const extensionsDir = path.join(work, "extensions");
   const userDataDir = path.join(work, "user-data");
-  const workspace = path.join(work, "workspace");
-  for (const dir of [extensionsDir, userDataDir, workspace]) fs.mkdirSync(dir, { recursive: true });
+  const baseEnv = { ...childEnv(work), DONT_PROMPT_WSL_INSTALL: "1" };
+  for (const dir of [extensionsDir, userDataDir]) fs.mkdirSync(dir, { recursive: true });
 
   const install = spawnSync(
     editor.cli,
     ["--install-extension", vsix, "--extensions-dir", extensionsDir, "--user-data-dir", userDataDir],
-    { encoding: "utf8", env: { ...childEnv(work), DONT_PROMPT_WSL_INSTALL: "1" } },
+    { encoding: "utf8", env: baseEnv },
   );
   if (install.status !== 0) {
     console.error(install.stdout ?? "");
@@ -111,53 +149,73 @@ try {
   }
   console.log(`vsix-smoke: installed into a disposable editor (${editor.version})`);
 
-  const resultFile = path.join(work, "result.json");
-  const args = [
-    `--user-data-dir=${userDataDir}`,
-    `--extensions-dir=${extensionsDir}`,
-    `--extensionDevelopmentPath=${PROBE}`,
-    `--extensionTestsPath=${path.join(PROBE, "suite.js")}`,
-    "--disable-workspace-trust",
-    "--disable-updates",
-    "--disable-crash-reporter",
-    "--skip-release-notes",
-    "--no-sandbox",
-    workspace,
-  ];
+  const prunedPath = pathWithoutNode(baseEnv.PATH);
 
-  // Never the human's display: project guidance forbids opening a desktop window unasked, and an
-  // Electron window stealing focus mid-release is exactly that.
-  const [command, commandArgs] = headless(editor.executable, args);
-  const run = spawnSync(command, commandArgs, {
-    encoding: "utf8",
-    timeout: ACTIVATION_TIMEOUT_MS,
-    env: { ...childEnv(work), DONT_PROMPT_WSL_INSTALL: "1", TACHYON_SMOKE_RESULT: resultFile },
-  });
+  /** Open every door of one activation run. Returns false when the run did not pass. */
+  const activation = ({ label, expect, env }) => {
+    const workspace = configuredWorkspace(work, label);
+    const resultFile = path.join(work, `result-${label}.json`);
+    const args = [
+      `--user-data-dir=${userDataDir}`,
+      `--extensions-dir=${extensionsDir}`,
+      `--extensionDevelopmentPath=${PROBE}`,
+      `--extensionTestsPath=${path.join(PROBE, "suite.js")}`,
+      "--disable-workspace-trust",
+      "--disable-updates",
+      "--disable-crash-reporter",
+      "--skip-release-notes",
+      // MEASURED, and it is why the refusal run is honest. Without this flag VS Code runs the user's
+      // login shell and merges the PATH it prints. The first attempt handed the host a PATH with no
+      // Node, and the extension host read `/home/goat/.nvm/.../bin` anyway, so activation succeeded and
+      // the door was red for the wrong reason. VS Code 1.128.0 `main.js`: `resolveShellEnv(): skipped
+      // (--force-disable-user-env)`. Both runs pass it, so PATH is the only difference between them.
+      "--force-disable-user-env",
+      "--no-sandbox",
+      workspace,
+    ];
 
-  for (const line of `${run.stdout ?? ""}\n${run.stderr ?? ""}`.split("\n")) {
-    if (line.includes("[vsix-smoke]")) console.log(`  ${line.trim()}`);
-  }
+    // Never the human's display: project guidance forbids opening a desktop window unasked, and an
+    // Electron window stealing focus mid-release is exactly that.
+    const [command, commandArgs] = headless(editor.executable, args);
+    console.log(`vsix-smoke: activation run '${label}' — ${expect}`);
+    const run = spawnSync(command, commandArgs, {
+      encoding: "utf8",
+      timeout: ACTIVATION_TIMEOUT_MS,
+      env: { ...env, TACHYON_SMOKE_RESULT: resultFile, TACHYON_SMOKE_EXPECT: expect },
+    });
 
-  let result;
-  try {
-    result = JSON.parse(fs.readFileSync(resultFile, "utf8"));
-  } catch {
-    result = undefined;
-  }
-
-  // The file alone is never trusted: a host that died before writing it must not read as a pass.
-  if (run.status !== 0 || !result?.ok) {
-    console.error(`vsix-smoke: FAILED — the packaged extension did not start cleanly (exit ${run.status})`);
-    for (const problem of result?.failures ?? []) console.error(`  ${problem}`);
-    if (!result) {
-      console.error("  the probe produced no result — the extension host died before reporting. Host output:");
-      console.error((run.stderr || run.stdout || "(no output)").split("\n").slice(-25).join("\n"));
+    for (const line of `${run.stdout ?? ""}\n${run.stderr ?? ""}`.split("\n")) {
+      if (line.includes("[vsix-smoke]")) console.log(`  ${line.trim()}`);
     }
-    exitCode = 1;
-  } else {
-    console.log(`vsix-smoke: PASS — ${result.doors.length} door(s) answered in ${result.durationMs}ms`);
-  }
+
+    let result;
+    try {
+      result = JSON.parse(fs.readFileSync(resultFile, "utf8"));
+    } catch {
+      result = undefined;
+    }
+
+    // The file alone is never trusted: a host that died before writing it must not read as a pass.
+    if (run.status !== 0 || !result?.ok) {
+      console.error(`vsix-smoke: FAILED — run '${label}' did not answer cleanly (exit ${run.status})`);
+      for (const problem of result?.failures ?? []) console.error(`  ${problem}`);
+      if (!result) {
+        console.error("  the probe produced no result — the extension host died before reporting. Host output:");
+        console.error((run.stderr || run.stdout || "(no output)").split("\n").slice(-25).join("\n"));
+      }
+      return false;
+    }
+    console.log(`vsix-smoke: run '${label}' PASS — ${result.doors.length} door(s) in ${result.durationMs}ms`);
+    return true;
+  };
+
+  // Run one proves the fix. Run two proves the refusal a launcher-started editor gets.
+  const ready = activation({ label: "engine-ready", expect: "engine-ready", env: baseEnv });
+  const refused = activation({ label: "node-missing", expect: "node-missing", env: { ...baseEnv, PATH: prunedPath } });
+  if (!ready || !refused) exitCode = 1;
+  else console.log("vsix-smoke: PASS — the packaged engine starts on Electron and refuses by name without Node");
 } finally {
+  retireEngines();
   if (keep) console.log(`vsix-smoke: kept working directory ${work}`);
   else fs.rmSync(work, { recursive: true, force: true });
 }
@@ -265,7 +323,104 @@ function childEnv(work) {
   const settings = path.join(work, "global-settings-home");
   for (const dir of [tmux, settings]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   env.TMUX_TMPDIR = tmux;
-  env.TACHYON_TMUX_SOCKET = `tachyon-vsix-smoke-${process.pid}`;
+  env.TACHYON_TMUX_SOCKET = TMUX_SOCKET;
   env.TACHYON_GLOBAL_SETTINGS_HOME = settings;
   return env;
+}
+
+/**
+ * A workspace folder that requests the engine, plus the identity its engine will have.
+ *
+ * Each run gets its OWN folder. The engine key is a digest of the folder, so two folders are two
+ * engines, and one run can never adopt the other's daemon. The key is recorded here rather than at
+ * teardown because teardown runs after the folder is gone.
+ */
+function configuredWorkspace(work, label) {
+  const workspace = path.join(work, `workspace-${label}`);
+  fs.mkdirSync(workspace, { recursive: true });
+  fs.writeFileSync(path.join(workspace, "tachyon.yml"), SMOKE_CONFIG, "utf8");
+  startedEngines.push(engineWorkspaceKey(workspace));
+  return workspace;
+}
+
+/**
+ * The digest the product computes for an engine identity, restated.
+ *
+ * `engineWorkspaceKey` (src/engine-service/engineSupervisor.ts) folds the tmux socket override into
+ * the key, so this run owns a distinct control socket, state directory and systemd unit. The rule is
+ * repeated here, as `.vscode-test.mjs` repeats it, because this script must not import build output.
+ * `engineIdentityIsolation` in the unit tests pins the shape, so a change fails there instead of
+ * silently orphaning units.
+ */
+function engineWorkspaceKey(workspaceRoot) {
+  const material = `${fs.realpathSync(workspaceRoot)}\u0000tmux:${TMUX_SOCKET}`;
+  return createHash("sha256").update(material).digest("hex").slice(0, 32);
+}
+
+/**
+ * Stop every engine this run started, and the tmux server behind it.
+ *
+ * The engine is persistent by design, so it outlives the extension host that asked for it. A smoke
+ * that left one behind would leak a daemon per release. Names are derived from THIS run's folders;
+ * nothing here globs, so a live fleet engine is unreachable from this code.
+ *
+ * The staged runtime and bundle under `~/.local/share/tachyon/` are deliberately left alone. They are
+ * content-addressed and shared with real installs, so they are a cache, not residue.
+ */
+function retireEngines() {
+  for (const key of startedEngines) {
+    const unit = `tachyon-engine-${key}.service`;
+    quiet("systemctl", ["--user", "stop", unit]);
+    quiet("systemctl", ["--user", "reset-failed", unit]);
+    const runtimeDir = process.env.XDG_RUNTIME_DIR?.trim();
+    if (runtimeDir) fs.rmSync(path.join(runtimeDir, "tachyon", "engines", key), { recursive: true, force: true });
+    const stateHome = process.env.XDG_STATE_HOME?.trim() || path.join(os.homedir(), ".local", "state");
+    fs.rmSync(path.join(stateHome, "tachyon", "engines", key), { recursive: true, force: true });
+  }
+  quiet("tmux", ["-L", TMUX_SOCKET, "kill-server"]);
+}
+
+/** Absent is the goal state, so every teardown call is best effort. */
+function quiet(bin, argv) {
+  try {
+    execFileSync(bin, argv, { stdio: "ignore" });
+  } catch {
+    /* already gone */
+  }
+}
+
+/**
+ * The same PATH with every directory that holds a Node executable removed.
+ *
+ * The pruning is by MEASUREMENT rather than by name: any directory answering for `node` goes, wherever
+ * it lives. A named list would pass on a host that keeps Node somewhere else, which is the one host
+ * this run exists to describe.
+ *
+ * The run is refused if pruning would also remove the tools the engine needs for other reasons. A red
+ * door must mean "no Node", never "no systemd".
+ */
+function pathWithoutNode(value) {
+  const directories = (value ?? "").split(path.delimiter).filter(Boolean);
+  const kept = directories.filter((directory) => !holds(directory, "node"));
+  if (kept.length === directories.length) {
+    fail("no directory on PATH holds a Node executable, so the engine-ready run has nothing to prove");
+  }
+  for (const tool of ["systemd-run", "tmux", "git"]) {
+    if (!kept.some((directory) => holds(directory, tool))) {
+      fail(`pruning Node from PATH also removes ${tool}, so the refusal run would measure the wrong thing`);
+    }
+  }
+  return kept.join(path.delimiter);
+}
+
+/** True when the directory holds an executable file of that name. */
+function holds(directory, name) {
+  try {
+    const candidate = path.join(directory, name);
+    if (!fs.statSync(candidate).isFile()) return false;
+    fs.accessSync(candidate, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
