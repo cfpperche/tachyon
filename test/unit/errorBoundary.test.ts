@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
  * claim about ALL of them.
  *
  * So the wiring case is now measured across every app, and the measurement found the criterion is
- * only PARTLY true: 12 of 29 mounts have no boundary at all. Rather than assert a green that isn't
+ * only PARTLY true: 12 of 29 mounts had no boundary at all. Rather than assert a green that isn't
  * there, the gap is named and ratcheted — adopters must wrap the ROOT (a boundary around one inner
  * surface catches less than the panel-blanking case it exists for), and the unprotected list may
  * shrink but never grow.
@@ -40,25 +40,30 @@ function appMains(): string[] {
 }
 
 /**
- * Measured 2026-08-04 (SDD 485 E1). Not an approved shape — a debt list with an owner in t-e1b0c9.
- * `sidebar` is the one entry that is arguably fine as-is (it is the other app, not an editor panel);
- * the five studio shells, `agent-pane` and `pin-preview` are real product surfaces that blank on an
- * uncaught render error, and the rest are dev-only fixtures.
+ * Measured 2026-08-04 (SDD 485 E1), reduced by t-cd01bb. These five exclusions are deliberate:
+ * each reason stays beside the ratchet entry so a future reader can distinguish a decision from an
+ * overlooked product surface.
  */
 const UNPROTECTED = [
-  "src/webview/agent-pane/main.tsx",
+  // Dev-only spec 350 fixture: failures should stay raw and conspicuous to fixture authors.
   "src/webview/agent-studio-fixture/main.tsx",
-  "src/webview/agent-studio-shell/main.tsx",
-  "src/webview/command-studio-shell/main.tsx",
-  "src/webview/pin-preview/main.tsx",
+  // Dev-only preview: masking a broken development surface with product recovery has no user benefit.
   "src/webview/pipeline-studio/main.tsx",
+  // Imperative sandbox host with no Preact tree: plugin faults belong to isolation/relay handling, not this boundary.
   "src/webview/plugin-host/main.tsx",
-  "src/webview/runbook-studio-shell/main.tsx",
-  "src/webview/schedule-studio-shell/main.tsx",
+  // This is the whole navigation app, not an editor panel; replacing it needs a sidebar-wide recovery design.
   "src/webview/sidebar/main.tsx",
-  "src/webview/terminal-studio-shell/main.tsx",
+  // Dev-only compatibility harness: uncaught failures are the gate's diagnostic output, not a recoverable state.
   "src/webview/ui-gate/main.tsx",
 ];
+
+function wrapsProductRoot(source: string): boolean {
+  const compact = source.replace(/\s+/g, " ");
+  return /render\(\s*<ErrorBoundary>/.test(compact)
+    // The studio helper owns the render call and lifecycle shell; its caller supplies the complete
+    // product subtree. Require the boundary at that outermost caller-supplied component.
+    || /mountSingleModeStudio\(\s*\(props\)\s*=>\s*\(\s*<ErrorBoundary>/.test(compact);
+}
 
 describe("the shared ErrorBoundary keeps its contract (t-668b05)", () => {
   it("is a Preact class component implementing the error-boundary contract", () => {
@@ -90,7 +95,7 @@ describe("SDD 485 C2 — per-app error boundary, measured across every app", () 
   it("wraps the ROOT render in every app that adopts it, not one inner surface", () => {
     const offenders = appMains()
       .filter((file) => read(file).includes("ErrorBoundary"))
-      .filter((file) => !/render\(\s*<ErrorBoundary>/.test(read(file).replace(/\s+/g, " ")));
+      .filter((file) => !wrapsProductRoot(read(file)));
     expect(
       offenders,
       "these import ErrorBoundary but do not wrap the root render — a boundary around one inner " +
