@@ -10,7 +10,7 @@ export const FORGET_AGENT_FOOTPRINTS = [
   "session ledger row",
   "activity log and writer state",
   "session-owner ledger rows",
-  "private harness/config home (including Pi sessions)",
+  "private runtime-home credentials",
   "legacy/idempotent Pi session subtree",
   "per-spawn settings file",
   "generated spawn brief and soul anchor",

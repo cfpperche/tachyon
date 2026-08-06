@@ -4054,7 +4054,7 @@ export class AgentManager {
 
   /**
    * Remove an EPHEMERAL agent's durable footprint through the canonical forgetAgent()
-   * cleanup: ledger row, activity log/state, session-owner rows, private harness/session homes,
+   * cleanup: ledger row, activity log/state, session-owner rows, private runtime-home credentials,
    * and per-spawn settings. t-eb4b30 — since the row IS the definition, this is no longer the on-disk
    * half of a two-place forget: it is the whole one. `forgetTemporary` now only clears lineage.
    *
