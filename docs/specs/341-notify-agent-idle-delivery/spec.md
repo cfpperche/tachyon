@@ -45,6 +45,8 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 ## Non-goals
 
 - This is not a durable message bus. Queued notices are best-effort runtime state, not persisted project history.
+  **Reversed in part, 2026-08-06 — see `## Amendments` below.** The bullet above is left exactly as
+  written: it was the right call with what was known in July, and this is the record of that.
 - This does not make notices safe while a human is actively typing in the recipient pane; stale attention state can still race with human input.
 - This does not redesign agent-to-agent coordination around a file inbox or runtime hooks.
 - This does not change generic `write_input` behavior.
@@ -52,3 +54,15 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 ## Open questions
 
 - Answered during implementation: queue defaults are 20 notices per target, drop-oldest on overflow, and a 10 minute TTL for stale notices.
+
+## Amendments
+
+- **2026-08-06 — first non-goal ("not a durable message bus / not persisted project history")
+  partially reversed by `docs/specs/493-doorbell-read-inbox/spec.md`.** That spec adds `summary`/
+  `pointer` fields to the witness record `.tachyon/doorbells.jsonl` already kept for every `notify_agent`
+  call, and a `read_notices` tool to read it back. The other three non-goals on this page — human-typing
+  safety, no file-inbox redesign, `write_input` unchanged — were NOT reopened and still hold. The TTL
+  and the single `working→idle` drain window (this page's own delivery mechanism) are also unchanged;
+  493 only makes the RECORD of a doorbell durable and readable, not the delivery itself. See 493's
+  "Supersedes" section for why the July reasoning stopped fitting a coordinator that runs continuously
+  and rarely goes idle.
