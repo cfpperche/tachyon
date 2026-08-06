@@ -886,6 +886,107 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     pins.setDone(pin.id, true);
   });
 
+  it("set_continuity does not store or accumulate derived open work from a full read response", async () => {
+    const authoredBody = "# Current Goal\nkeep the narrative";
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: authoredBody },
+    });
+
+    const storedBodies: string[] = [];
+    for (let cycle = 0; cycle < 5; cycle += 1) {
+      const read = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+      const projection = (read.content as Array<{ text: string }>)[0].text;
+      await client.callTool({
+        name: "set_continuity",
+        arguments: { agent: "claude", content: projection },
+      });
+      storedBodies.push(continuity.read("claude")?.body ?? "");
+    }
+
+    expect(storedBodies).toEqual(Array.from({ length: 5 }, () => authoredBody));
+    expect(storedBodies.every((body) => !body.includes("# Derived Open Work"))).toBe(true);
+  });
+
+  it("set_continuity does not persist a stale prefix from a full read response", async () => {
+    activitySeq = 108;
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: "# Current Goal\nrefresh", source_activity_seq: 7 },
+    });
+    const staleRead = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+    const staleProjection = (staleRead.content as Array<{ text: string }>)[0].text;
+    expect(staleProjection).toMatch(/^STALE:/);
+
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: staleProjection },
+    });
+
+    expect(continuity.read("claude")?.body).toBe("# Current Goal\nrefresh");
+    const freshRead = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+    expect((freshRead.content as Array<{ text: string }>)[0].text).not.toMatch(/^STALE:/);
+    activitySeq = 7;
+  });
+
+  it("set_continuity does not store the cold-start placeholder from a full read response", async () => {
+    continuity.remove("claude");
+    const coldRead = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+    const coldProjection = (coldRead.content as Array<{ text: string }>)[0].text;
+
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: coldProjection },
+    });
+
+    expect(continuity.read("claude")?.body).toBe("");
+  });
+
+  it("set_continuity preserves a derived open work heading inside the authored narrative", async () => {
+    const authoredContent = [
+      "# Current Goal",
+      "keep the narrative",
+      "",
+      "# Derived Open Work",
+      "",
+      "This human-authored context stays.",
+      "",
+      "# Next",
+      "continue",
+    ].join("\n");
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: authoredContent },
+    });
+
+    const read = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+    const projection = (read.content as Array<{ text: string }>)[0].text;
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: projection },
+    });
+
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8"))
+      .toContain("# Derived Open Work\n\nThis human-authored context stays.\n\n# Next");
+  });
+
+  it("set_continuity preserves human-authored YAML frontmatter", async () => {
+    const authoredBody = "---\ntitle: Human notes\n---\n# Current Goal\ncontinue";
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: authoredBody },
+    });
+    const read = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+    const projection = (read.content as Array<{ text: string }>)[0].text;
+
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: projection },
+    });
+
+    expect(continuity.read("claude")?.body).toBe(authoredBody);
+  });
+
   it("set_continuity warns after removed task ids and wiki links", async () => {
     await client.callTool({
       name: "set_continuity",
