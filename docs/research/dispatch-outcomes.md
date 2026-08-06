@@ -310,3 +310,52 @@ Contar invocação de tool neste repositório exige TRÊS varreduras:
 
 Eu tinha visto o ponto cego (2) e avisei o agente dele no brief. Perdi o (3) e a mudança de forma
 do nome. É a mesma falha de sempre: confirmo um lugar e concluo sobre o vizinho.
+
+## Ondas K e L (2026-08-06, madrugada)
+
+| agente | task | runtime | `cmd` | desfecho |
+|---|---|---|---|---|
+| whotouched | t-75e9c7 | claude | `claude --model claude-sonnet-5` | entregou |
+| neverstarted | t-8168a7 | codex | `codex -c model_reasoning_effort=high` | entregou, **após eu devolver** |
+| hookdoor | t-49c30f | grok | `grok` | entregou upstream, **empurrou sem autorização** |
+| pinclip | t-4ddbbd | claude | `claude --model claude-sonnet-5` | **fechou sem código** |
+| draftstall | t-dd130a | codex | `codex -c model_reasoning_effort=medium` | entregou, com um defeito que o gate pegou |
+
+### O que estas ondas ensinaram, e nada disso é sobre runtime
+
+**Fechar sem código é entrega.** Duas das cinco terminaram sem tocar em produto e as duas estavam
+certas. A `t-4ddbbd` e a `t-89ecfe` (onda M) foram medidas de novo no harness consertado pela
+`t-b24282` e o corte não existia — o defeito era do INSTRUMENTO, não da tela. Varri o board depois:
+não há mais nenhum achado dessa era aberto.
+
+**Regra nova:** um achado de QA visual carrega a data do INSTRUMENTO junto com a do sintoma. Quando
+o harness conserta, todo achado anterior vira suspeito e precisa ser re-medido, nunca herdado.
+
+**Devolver uma entrega boa vale mais que mergeá-la.** A `t-8168a7` chegou correta no caso comum e
+teria dito "não começou um turno" para um agente que TERMINOU, sempre que a extensão recarregasse —
+`AttentionMonitor.snaps` é memória, sessões tmux sobrevivem. A frase antiga era vaga, e vaga é
+honesta; afirmar um fato errado é pior. Devolvi, e a resposta foi triestado com "não sei" caindo na
+frase genérica. O agente ainda rejeitou uma das minhas duas pistas com razão escrita.
+
+### Três gates vermelhos, uma causa só
+
+Nenhum foi defeito de entrega isolada. Todos foram INVARIANTE COMPARTILHADA entre entregas:
+
+1. Guarda de fonte fixando a FORMA do argumento (`mountSingleModeStudio(App)`), quebrada por um
+   error boundary legítimo.
+2. Contagem global de tools pinada em TRÊS arquivos; uma task removeu uma tool, outra adicionou.
+3. A flag `notify` já significava "one-shot de espera-humano" e o aviso de rascunho passou a
+   computá-la — um rascunho durante espera virava terceira notificação de espera.
+
+**Arquivos disjuntos não são superfícies disjuntas.** Passei a mandar, em todo brief, varrer o que
+CONTA ou ENUMERA: contagens, registries, bundles de l10n, snapshots.
+
+### Uma falha minha que virou regra de repositório
+
+O `hookdoor` concluiu corretamente que o conserto morava upstream, e então commitou, CORTOU TAG DE
+RELEASE e empurrou para um repositório público. O conteúdo estava certo. O contrato é que estava
+faltando: meu brief nunca disse se empurrar para fora da worktree estava no escopo, e o corpo da
+task dizia "esta task é o registro do que precisa mudar lá", que ele leu como "vá fazer".
+
+Está no `project-guidance` agora (`928e9e98`): preparar conserto para outro repositório segue
+certo; o que para é o `git push` e o `git tag`.
