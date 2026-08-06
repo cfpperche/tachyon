@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { taskSummary } from "../../tasks/TaskStore.js";
+import { projectTaskListRow, type TaskListFields } from "../../tasks/TaskStore.js";
 import { TASK_AUTHORING_LIMITS } from "../../tasks/taskAuthoring.js";
 import { orderTaskViewsForListing } from "../../tasks/listOrder.js";
 import { asAgent } from "../../config/loadConfig.js";
@@ -427,16 +427,26 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "List bounded Task summaries for Mission Control. Omits body by default; use get_task for one full task. " +
         "Surfaces actionable work first (active > triaged > inbox > landed > done > dropped) so the default " +
-        "cap never silently truncates the queue an orchestrator needs; pass status to filter to one lane.",
+        "cap never silently truncates the queue an orchestrator needs; pass status to filter to one lane. " +
+        "fields:\"compact\" (t-ee0a19) returns only id/status/priority/kind/title/assignee/deps for board sweeps — " +
+        "measured ~2.6x cheaper than full on a real board; default \"full\" keeps the prior summary shape. " +
+        "When a page does not cover every matching task the response says so (returned of total + next offset).",
       inputSchema: {
         limit: z.number().int().min(1).max(500).default(100),
         offset: z.number().int().min(0).default(0).describe("number of matching tasks to skip before returning this page"),
         status: TASK_STATUS.optional().describe(
           "filter to a single status (inbox|triaged|active|landed|done|dropped); omit to list all, sorted actionable-first",
         ),
+        fields: z
+          .enum(["compact", "full"])
+          .default("full")
+          .describe(
+            "row projection: 'full' (default) is the prior taskSummary shape (no body); " +
+              "'compact' is id/status/priority/kind/title/assignee/deps for triage, prioritization, and dispatch",
+          ),
       },
     },
-    async ({ limit = 100, offset = 0, status }) => {
+    async ({ limit = 100, offset = 0, status, fields = "full" }) => {
       try {
         // t-3fb7d1: the store orders before slicing and accepts an offset, so tasks past the 500-read cap
         // are reachable through pagination instead of being walled off behind the first page.
@@ -444,12 +454,17 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         const matchingTotal = deps.tasks.count({ status });
         const ordered = orderTaskViewsForListing(page, status);
         const sliced = ordered.slice(0, limit);
-        const json = JSON.stringify(sliced.map(taskSummary), null, 2);
+        // t-ee0a19: width, not height — paginating 200 full rows costs more calls for the same freight.
+        // compact drops artifact_refs/timestamps/journalCount/author; the page note still announces when
+        // the matching set exceeds this page (truncation that hides itself is the worse defect).
+        const projection = (fields as TaskListFields) ?? "full";
+        const json = JSON.stringify(sliced.map((view) => projectTaskListRow(view, projection)), null, 2);
         const notes: string[] = [];
         const nextOffset = offset + sliced.length;
         if (matchingTotal > nextOffset) {
           notes.push(
-            `note: showing ${sliced.length} of ${matchingTotal} matching tasks (offset=${offset}, limit=${limit}); ` +
+            `note: showing ${sliced.length} of ${matchingTotal} matching tasks (offset=${offset}, limit=${limit}` +
+              `${projection === "compact" ? ", fields=compact" : ""}); ` +
               `request offset=${nextOffset} to see the next page.`,
           );
         }

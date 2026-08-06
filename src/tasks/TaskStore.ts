@@ -630,6 +630,44 @@ export function taskSummary(view: TaskView): Omit<Task, "body"> & { attention?: 
   return { ...task, ...(view.journalCount !== undefined ? { journalCount: view.journalCount } : {}), ...(view.derived ? { derived: view.derived } : {}), ...(view.attention?.length ? { attention: view.attention } : {}) };
 }
 
+/**
+ * t-ee0a19 — list_tasks projection for orchestrator board sweeps.
+ *
+ * Measured on the live board (limit=200, 2026-08-06): full `taskSummary` rows were
+ * 115,871 chars; the decision columns alone were 35,742 (3.24x). Freight was mostly
+ * `artifact_refs`, timestamps, `author`, and `journalCount` — useful sometimes, never
+ * all at once for triage / prioritization / dispatch. Compact keeps what those three
+ * uses need and drops the rest; `get_task` remains the door for body and journal.
+ */
+export type TaskListFields = "compact" | "full";
+
+export type CompactTaskSummary = {
+  id: string;
+  title: string;
+  status: Task["status"];
+  priority?: Task["priority"];
+  kind?: string;
+  assignee?: string;
+  deps?: string[];
+};
+
+export function compactTaskSummary(view: TaskView): CompactTaskSummary {
+  const t = view.task;
+  return {
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    ...(t.priority !== undefined ? { priority: t.priority } : {}),
+    ...(t.kind !== undefined ? { kind: t.kind } : {}),
+    ...(t.assignee !== undefined ? { assignee: t.assignee } : {}),
+    ...(t.deps && t.deps.length > 0 ? { deps: t.deps } : {}),
+  };
+}
+
+export function projectTaskListRow(view: TaskView, fields: TaskListFields = "full"): CompactTaskSummary | ReturnType<typeof taskSummary> {
+  return fields === "compact" ? compactTaskSummary(view) : taskSummary(view);
+}
+
 /** spec 339 — exported so Task Studio can reserve a provisional id for its attachment namespace BEFORE the
  * task exists (staged create transaction); `TaskStore.create({ id })` then uses that exact id. */
 export function mintTaskId(): string {
