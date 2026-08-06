@@ -42,7 +42,11 @@ describe("RuntimeOpsSnapshotService", () => {
     let now = 1_000;
     let resolveDetection: ((value: string[]) => void) | undefined;
     const detector = vi.fn(() => new Promise<string[]>((resolve) => { resolveDetection = resolve; }));
-    const service = new RuntimeOpsSnapshotService(() => [], { detect: detector, now: () => now });
+    const service = new RuntimeOpsSnapshotService(() => [], {
+      detect: detector,
+      now: () => now,
+      readPathVersion: async () => null,
+    });
 
     const first = service.snapshot();
     const concurrent = service.snapshot();
@@ -63,6 +67,53 @@ describe("RuntimeOpsSnapshotService", () => {
     resolveDetection?.(["claude"]);
     await invalidated;
     expect(detector).toHaveBeenCalledTimes(3);
+  });
+
+  describe("t-1322b5 — PATH version parity on snapshot", () => {
+    it("match / drift / unknown from injected PATH reads", async () => {
+      const matchService = new RuntimeOpsSnapshotService(() => [], {
+        detect: async () => ["codex"],
+        readPathVersion: async () => "codex-cli 0.146.0",
+      });
+      expect((await matchService.snapshot()).runtimes.find((r) => r.runtime === "codex")?.versionParity).toEqual({
+        state: "match", measured: "0.146.0", running: "0.146.0",
+      });
+
+      const driftService = new RuntimeOpsSnapshotService(() => [], {
+        detect: async () => ["codex"],
+        readPathVersion: async () => "codex-cli 0.146.1",
+      });
+      expect((await driftService.snapshot()).runtimes.find((r) => r.runtime === "codex")?.versionParity).toEqual({
+        state: "drift", measured: "0.146.0", running: "0.146.1",
+      });
+
+      const unknownService = new RuntimeOpsSnapshotService(() => [], {
+        detect: async () => ["codex"],
+        readPathVersion: async () => null,
+      });
+      expect((await unknownService.snapshot()).runtimes.find((r) => r.runtime === "codex")?.versionParity).toEqual({
+        state: "unknown-running", measured: "0.146.0",
+      });
+    });
+
+    it("caches PATH version reads with detection TTL and invalidation", async () => {
+      let now = 1_000;
+      const reader = vi.fn(async () => "codex-cli 0.146.0");
+      const service = new RuntimeOpsSnapshotService(() => [], {
+        detect: async () => ["codex"],
+        now: () => now,
+        readPathVersion: reader,
+      });
+      await service.snapshot();
+      await service.snapshot();
+      expect(reader).toHaveBeenCalledTimes(1);
+      now += 60_001;
+      await service.snapshot();
+      expect(reader).toHaveBeenCalledTimes(2);
+      service.invalidateDetection();
+      await service.snapshot();
+      expect(reader).toHaveBeenCalledTimes(3);
+    });
   });
 
   it("projects lifecycle, model, resume, throttle, and Bridge state without serializing matchedLine", async () => {
