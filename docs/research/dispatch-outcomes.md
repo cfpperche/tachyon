@@ -255,3 +255,58 @@ Quatro commits do codex entraram hoje com **corpo vazio**. Reclamei na primeira 
 exigência no brief. Repetir a cobrança sem mudar a instrução é culpar o agente por um contrato que
 eu não escrevi. O brief do `relcmd` agora pede o corpo do commit explicitamente, e o próximo
 despacho de qualquer runtime herda a frase.
+
+### Onda J: desfecho
+
+| agente | task | runtime | `cmd` | desfecho | corrigiu premissa minha? |
+|---|---|---|---|---|---|
+| boardproj | t-ee0a19 | grok | `grok` | entregou | **SIM** — meu "5,7x" era 2,59x |
+| relcmd | t-c767fc | codex | `codex -c model_reasoning_effort=medium` | entregou | não |
+| readylie | t-d501fc | claude | `claude --model claude-sonnet-5` | entregou | **SIM** — a detecção existia e era cega |
+| deadtool | t-a4ac02 | grok | `grok` | entregou | **SIM** — meu "zero invocações" eram 10 |
+| blankpanel | t-cd01bb | codex | `codex -c model_reasoning_effort=medium` | entregou | não |
+
+Cinco despachos, cinco entregas, zero reversões. Todas mergeadas em `280bc949`, `0ebbcb98`,
+`a5d7e471`, `a6d35a84`, `38cd7658`.
+
+### O que esta onda mede, e é a primeira vez que o eixo interno aparece
+
+**Codex `medium`, n=2, classes de task diferentes.** `relcmd` fez script/processo de release;
+`blankpanel` fez UI mais uma decisão escrita sobre cinco exclusões. Os dois entregaram limpo, com
+vermelho antes de verde, e o `blankpanel` produziu a melhor evidência visual do dia — injetou um
+throw temporário para fotografar o componente REAL em vez de um mock, e removeu antes do commit.
+Não dá para concluir que `medium` é melhor que `low` ou `high` com n=2. Dá para dizer que `medium`
+não custou nada em duas classes diferentes, que era a dúvida.
+
+**Grok segue sem eixo de effort**, pelo mesmo motivo declarado no despacho.
+
+### O achado que vale mais que os cinco commits
+
+**Três de cinco entregas corrigiram uma premissa MINHA**, e as três premissas erradas eram números
+ou mecanismos que eu tinha afirmado sem mostrar a conta:
+
+- `5,7x` era **2,59x** (t-ee0a19).
+- "faltava detecção de recusa" — a detecção **existia** e o regex era cego à frase da Claude (t-d501fc).
+- "zero invocações, nunca" eram **10** (t-a4ac02).
+
+O que as três têm em comum não é o agente: é o brief. Nos três casos eu escrevi explicitamente
+"não confie no meu número, meça o seu" ou "verifique minha medição". Nos dois briefs onde não
+escrevi isso, ninguém me corrigiu — e não porque eu estivesse certo, mas porque ninguém procurou.
+
+Correção de processo, não de agente: **a frase que pede refutação em voz alta passa a ser padrão
+em todo brief**, junto com "vermelho antes de verde" e "meça antes de consertar". Custa uma linha.
+
+### Segunda ordem: como eu errei a medição da t-a4ac02
+
+Vale registrar porque é reproduzível e vai acontecer de novo. Contei invocações de tool casando
+`"name":"mcp__tachyon_bridge__next_task"` nos JSONL. Isso mede a família claude e mais nada.
+
+Contar invocação de tool neste repositório exige TRÊS varreduras:
+
+1. JSONL da família claude — nome com prefixo `mcp__tachyon_bridge__`.
+2. SQLite do harness de codex/grok — `.tachyon/harness/<agente>/*.sqlite`.
+3. Projeções JSONL em `.tachyon/retired-agent-profiles/*/*/runtime-projections/activity.jsonl`,
+   onde o nome aparece PURO.
+
+Eu tinha visto o ponto cego (2) e avisei o agente dele no brief. Perdi o (3) e a mudança de forma
+do nome. É a mesma falha de sempre: confirmo um lugar e concluo sobre o vizinho.
