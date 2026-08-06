@@ -90,10 +90,12 @@ Never describe one target as proof of another. Record target, owner, SHA, comman
 data roots are fixture-private. A worktree build therefore cannot replace the engine used by the installed
 extension.
 
-The installed VSIX accepts `stable` only. Stable packaging runs `npm run build:stable` and refuses unless it is
-executed from the clean primary `main` checkout with `HEAD`, local `main`, and cached `origin/main` at the exact
-same commit. `npm run package` invokes that gate through `vscode:prepublish`; ordinary users still only install
-the VSIX and open a workspace.
+The installed VSIX accepts `stable` only. `npm run release` (also exposed as the `npm run package` compatibility
+alias) runs the complete release operation: `build:stable` → `package:assert` → `vsce package` → `smoke:vsix`.
+It aborts on the first failure. The stable build refuses unless it is executed from the clean primary `main`
+checkout with `HEAD`, local `main`, and cached `origin/main` at the exact same commit. A direct `vsce package`
+still invokes `package:assert` through `vscode:prepublish`, so it cannot package unchecked bytes; ordinary users
+only install the VSIX and open a workspace.
 
 ## Single-owner lease
 
