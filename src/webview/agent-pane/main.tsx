@@ -2,6 +2,7 @@ import { render } from "preact";
 import { App } from "./App";
 import type { AgentPaneFromHost, AgentPaneToHost } from "./protocol";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
+import { ErrorBoundary } from "../shared/ErrorBoundary";
 
 declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
@@ -24,4 +25,11 @@ function onHostMessage(handler: (msg: AgentPaneFromHost) => void): () => void {
 }
 
 const root = document.getElementById("root");
-if (root) render(<App postMessage={postMessage} onHostMessage={onHostMessage} />, root);
+if (root) {
+  render(
+    <ErrorBoundary>
+      <App postMessage={postMessage} onHostMessage={onHostMessage} />
+    </ErrorBoundary>,
+    root,
+  );
+}

@@ -4,6 +4,7 @@ import { App } from "./App";
 import { PIN_DOCUMENT_MODE, PIN_PREVIEW, readyMessage, setPinDocumentModeAction, type PinPreviewHostMessage } from "./messages";
 import type { PinPreviewVM } from "../../sidebar/types";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
+import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { App as PinStudioApp } from "../pin-studio/App";
 
 // spec 279 — the Pin Preview webview entry (converted from inline HTML). `preact-static`: receives the VM once
@@ -53,4 +54,4 @@ function Root() {
 }
 
 const root = document.getElementById("root");
-if (root) render(<Root />, root);
+if (root) render(<ErrorBoundary><Root /></ErrorBoundary>, root);
