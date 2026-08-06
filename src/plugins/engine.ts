@@ -832,7 +832,13 @@ export interface InstallPreview {
   requires: DependencyState[];
 }
 
-function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, toolTargets: ToolPlanItem[], dataTargets: DataPlanItem[], viewTargets: ViewTarget[], payloadHash: string): string {
+/** Absolute materialized payload root for a plugin (where `${PLUGIN_ROOT}` resolves for MCP render). */
+function pluginPayloadAbs(workspaceRoot: string, pluginName: string): string {
+  return path.join(workspaceRoot, PAYLOAD_ROOT, pluginName);
+}
+
+function fingerprintOf(plugin: LoadedPlugin, workspaceRoot: string, targetRuntimes: Runtime[], steps: InstallStep[], skillTargets: SkillPlanItem[], mcpTargets: McpPlanItem[], mcpConfigBefore: McpConfigSnapshot[], gitHookTargets: GitHookPlanItem[], gitState: GitHookState | undefined, toolTargets: ToolPlanItem[], dataTargets: DataPlanItem[], viewTargets: ViewTarget[], payloadHash: string): string {
+  const pluginRoot = pluginPayloadAbs(workspaceRoot, plugin.manifest.name);
   const basis = {
     name: plugin.manifest.name,
     version: plugin.manifest.version,
@@ -854,9 +860,9 @@ function fingerprintOf(plugin: LoadedPlugin, targetRuntimes: Runtime[], steps: I
     steps: steps.map((s) => ({ rt: s.runtime, before: s.before, after: s.after })),
     // bind the skill plan + which dests collide (a changed collision set must invalidate consent).
     skills: skillTargets.map((s) => ({ rt: s.runtime, dest: s.destRel, collision: s.collision })),
-    // bind the MCP plan: rendered entry (a payload edit changes it) + the CURRENT on-disk entry + collision —
-    // so a same-name server appearing/changing since consent invalidates the fingerprint.
-    mcp: mcpTargets.map((m) => ({ rt: m.runtime, ref: m.ref, entry: renderMcp(m.runtime, m.server), current: m.current, collision: m.collision })),
+    // bind the MCP plan: rendered entry (a payload edit changes it; ${PLUGIN_ROOT} is bound via absolute root) +
+    // the CURRENT on-disk entry + collision — so a same-name server appearing/changing since consent invalidates the fingerprint.
+    mcp: mcpTargets.map((m) => ({ rt: m.runtime, ref: m.ref, entry: renderMcp(m.runtime, m.server, pluginRoot), current: m.current, collision: m.collision })),
     // bind each MCP config file snapshot (the lost-update basis): ANY change to the file invalidates consent.
     mcpConfig: mcpConfigBefore.map((c) => ({ rt: c.runtime, dest: c.destRel, text: c.text })),
     // spec 349 — bind UI surface identity + scopes/actions so any surface change requires fresh consent.
@@ -1054,7 +1060,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
 
   const viewTargets = planViewTargets(plugin, errors);
 
-  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, dataTargets, viewTargets, payload.hash);
+  const fingerprint = errors.length > 0 ? "" : fingerprintOf(plugin, workspaceRoot, targetRuntimes, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, gitState, toolTargets, dataTargets, viewTargets, payload.hash);
   const requires = dependencyStates(manifest.dependencies, lockRead.lockfile); // spec 276 — direct deps vs lockfile
   return { manifest, steps, skillTargets, mcpTargets, mcpConfigBefore, gitHookTargets, toolTargets, dataTargets, externalTargets, viewTargets, targetRuntimes, skipped, warnings, errors, fingerprint, payloadHash: payload.hash, requires };
 }
@@ -1240,7 +1246,7 @@ function resolveMcpWrites(mcpTargets: McpPlanItem[], mcpDecisions: Record<string
 
 /** PHASE 2d — build the materialized-target set (the uninstall manifest) + the runtimes this install touches,
  *  from the resolved hooks/skills/mcp writes. */
-function buildInstallTargets(fresh: InstallPreview, skillsToWrite: Array<SkillPlanItem & { replace: boolean }>, mcpToWrite: McpPlanItem[]): { runtimes: Runtime[]; targets: MaterializedTarget[] } {
+function buildInstallTargets(fresh: InstallPreview, skillsToWrite: Array<SkillPlanItem & { replace: boolean }>, mcpToWrite: McpPlanItem[], pluginRoot: string): { runtimes: Runtime[]; targets: MaterializedTarget[] } {
   const runtimes: Runtime[] = [];
   const targets: MaterializedTarget[] = [];
   for (const step of fresh.steps) {
@@ -1254,7 +1260,8 @@ function buildInstallTargets(fresh: InstallPreview, skillsToWrite: Array<SkillPl
     if (!runtimes.includes(st.runtime)) runtimes.push(st.runtime);
   }
   for (const mt of mcpToWrite) {
-    targets.push({ runtime: mt.runtime, kind: "mcp-server", file: mt.destRel, ref: mt.ref, removal: renderMcp(mt.runtime, mt.server) });
+    // removal identity is the SUBSTITUTED form written to disk — un-merge content-matches against this.
+    targets.push({ runtime: mt.runtime, kind: "mcp-server", file: mt.destRel, ref: mt.ref, removal: renderMcp(mt.runtime, mt.server, pluginRoot) });
     if (!runtimes.includes(mt.runtime)) runtimes.push(mt.runtime);
   }
   for (const vt of fresh.viewTargets) targets.push({ kind: "view", file: vt.fileRel, ref: vt.id });
@@ -1316,6 +1323,8 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   // 6) MCP servers — merge each consented server; clean up servers THIS plugin owned but the new version dropped.
   // Content-aware: a server the user edited away from what we recorded is left as an orphan, never clobbered.
   // (Tachyon writes the entry ONLY; each runtime's own MCP approval still gates actually running it — OQ6.)
+  // ${PLUGIN_ROOT}/… in command/args is substituted for the absolute payload root before write (t-b6180e).
+  const pluginRoot = pluginPayloadAbs(workspaceRoot, plugin.manifest.name);
   const mcpBefore = new Map(fresh.mcpConfigBefore.map((c) => [c.destRel, c.text]));
   const priorMcpRuntimes = priorMcpTargets.map((t) => t.runtime).filter((rt): rt is Runtime => rt !== undefined);
   const mcpRuntimes = new Set<Runtime>([...mcpToWrite.map((m) => m.runtime), ...priorMcpRuntimes]);
@@ -1335,7 +1344,7 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
         if (t.runtime !== rt || !t.ref || writeRefs.has(t.ref)) continue;
         if (mcpRepEquals(currentMcp(rt, text, t.ref), t.removal)) text = removeMcpServerText(rt, text, t.ref);
       }
-      for (const m of mcpToWrite.filter((x) => x.runtime === rt)) text = setMcpServer(rt, text, m.server);
+      for (const m of mcpToWrite.filter((x) => x.runtime === rt)) text = setMcpServer(rt, text, m.server, pluginRoot);
       writeMcpConfig(file, text ?? "");
     } catch (e) {
       return partial(`writing ${mcpRel}`, e);
@@ -1400,7 +1409,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     }
   }
 
-  const { runtimes, targets } = buildInstallTargets(fresh, skillsToWrite, mcpToWrite);
+  const { runtimes, targets } = buildInstallTargets(fresh, skillsToWrite, mcpToWrite, pluginPayloadAbs(workspaceRoot, plugin.manifest.name));
   if (runtimes.length === 0 && fresh.gitHookTargets.length === 0 && fresh.viewTargets.length === 0) {
     return { installed: false, runtimes: [], errors: ["nothing to install: every compatible skill/MCP server was kept and there are no hooks or views"] };
   }

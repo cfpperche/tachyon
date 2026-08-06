@@ -40,18 +40,19 @@ export function readMcpConfig(workspaceRoot: string, runtime: Runtime, rel: stri
 }
 
 /** The rendered representation of a server for `runtime` — the merged config entry AND the lockfile removal
- *  identity (claude: the `mcpServers.<name>` object; codex: the `[mcp_servers.<name>]` block text). */
-export function renderMcp(runtime: Runtime, server: McpServer): unknown {
-  if (runtime === "claude") return renderClaudeMcpEntry(server);
-  if (runtime === "codex") return renderCodexMcpBlock(server);
+ *  identity (claude: the `mcpServers.<name>` object; codex: the `[mcp_servers.<name>]` block text).
+ *  `pluginRoot` is the absolute materialized payload root; required when command/args use `${PLUGIN_ROOT}`. */
+export function renderMcp(runtime: Runtime, server: McpServer, pluginRoot?: string): unknown {
+  if (runtime === "claude") return renderClaudeMcpEntry(server, pluginRoot);
+  if (runtime === "codex") return renderCodexMcpBlock(server, pluginRoot);
   // grok has no project MCP install path (engine ADAPTERS.grok.mcpRel is null); never invent a codex shape.
   throw new Error(`renderMcp: runtime '${runtime}' has no plugin MCP codec`);
 }
 
 /** Merge a server into the runtime's MCP config text (render + place by name). */
-export function setMcpServer(runtime: Runtime, configText: string | undefined, server: McpServer): string {
-  if (runtime === "claude") return setClaudeMcpServer(configText, server.name, renderClaudeMcpEntry(server));
-  if (runtime === "codex") return setCodexMcpServer(configText, server.name, renderCodexMcpBlock(server));
+export function setMcpServer(runtime: Runtime, configText: string | undefined, server: McpServer, pluginRoot?: string): string {
+  if (runtime === "claude") return setClaudeMcpServer(configText, server.name, renderClaudeMcpEntry(server, pluginRoot));
+  if (runtime === "codex") return setCodexMcpServer(configText, server.name, renderCodexMcpBlock(server, pluginRoot));
   throw new Error(`setMcpServer: runtime '${runtime}' has no plugin MCP codec`);
 }
 

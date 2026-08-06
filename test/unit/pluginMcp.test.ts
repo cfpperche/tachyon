@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadMcpPayload, mcpRequiredEnv, type McpServer } from "../../src/plugins/mcp.js";
+import { loadMcpPayload, mcpRequiredEnv, resolveMcpPluginRootPath, withResolvedMcpPluginRoot, type McpServer } from "../../src/plugins/mcp.js";
 
 /** Build an `mcp.json` text from a list of server objects. */
 function payload(...servers: unknown[]): string {
@@ -155,6 +155,28 @@ describe("loadMcpPayload — ${PLUGIN_ROOT} containment (OQ4)", () => {
   it("rejects an absolute or metachar command", () => {
     expect(loadMcpPayload(payload({ name: "x", transport: "stdio", command: "/usr/bin/evil" })).payload).toBeUndefined();
     expect(loadMcpPayload(payload({ name: "x", transport: "stdio", command: "a; rm -rf /" })).payload).toBeUndefined();
+  });
+});
+
+describe("resolveMcpPluginRootPath / withResolvedMcpPluginRoot (t-b6180e)", () => {
+  it("substitutes a leading ${PLUGIN_ROOT}/ for an absolute root; leaves bare tokens alone", () => {
+    expect(resolveMcpPluginRootPath("${PLUGIN_ROOT}/servers/srv", "/ws/.tachyon/plugins/p")).toBe("/ws/.tachyon/plugins/p/servers/srv");
+    expect(resolveMcpPluginRootPath("npx", "/ws/.tachyon/plugins/p")).toBe("npx");
+  });
+  it("fail-closed when the token is present without an absolute pluginRoot", () => {
+    expect(() => resolveMcpPluginRootPath("${PLUGIN_ROOT}/x", undefined)).toThrow(/PLUGIN_ROOT/);
+    expect(() => resolveMcpPluginRootPath("${PLUGIN_ROOT}/x", "relative/path")).toThrow(/PLUGIN_ROOT/);
+  });
+  it("resolves command + path args on a stdio server; leaves http servers alone", () => {
+    const stdio = loadMcpPayload(payload(STDIO_BUNDLED)).payload!.servers[0] as McpServer;
+    const resolved = withResolvedMcpPluginRoot(stdio, "/abs/plugin");
+    expect(resolved).toMatchObject({
+      transport: "stdio",
+      command: "/abs/plugin/servers/srv",
+      args: ["--config", "/abs/plugin/config.json"],
+    });
+    const http = loadMcpPayload(payload(HTTP_BEARER)).payload!.servers[0] as McpServer;
+    expect(withResolvedMcpPluginRoot(http, "/abs/plugin")).toBe(http);
   });
 });
 
