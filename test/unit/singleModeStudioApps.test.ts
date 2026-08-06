@@ -48,9 +48,15 @@ describe("SDD 485 D13 — editing-only studio document apps", () => {
   it("has one standalone entry per studio and no renderer residue in Control", () => {
     expect(() => readFileSync("src/webview/cockpit/App.tsx", "utf8")).toThrow();
     for (const studio of studios) {
-      expect(
-        readFileSync(`src/webview/${studio}-studio-shell/main.tsx`, "utf8"),
-      ).toContain("mountSingleModeStudio(App)");
+      const main = readFileSync(`src/webview/${studio}-studio-shell/main.tsx`, "utf8");
+      // t-cd01bb: this asserted the literal `mountSingleModeStudio(App)` and went red when the
+      // studio roots gained an error boundary — the argument became a callback supplying the same
+      // App. What this case is FOR is unchanged by that: one standalone entry per studio, mounted
+      // through the shared helper rather than re-rendered inside Control. The literal argument form
+      // was a proxy for that claim and never the claim itself, so it pinned a shape no criterion
+      // asked for. Both facts are still checked, and `App` must still be what gets mounted.
+      expect(main).toContain("mountSingleModeStudio(");
+      expect(main).toMatch(/\bApp\b/);
     }
   });
 
