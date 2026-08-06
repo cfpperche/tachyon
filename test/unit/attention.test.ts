@@ -189,6 +189,7 @@ function makeMonitor(agents: Record<string, FakeAgent>) {
       capturePaneEscaped: async (a) => agents[a].escaped ?? agents[a].content,
       cpuTicks: async (a) => agents[a].cpu,
       settingsOf: (a) => agents[a].settings,
+      initialTurnState: () => false,
       cmdOf: (a) => agents[a].cmd ?? null,
       awaitingHumanOnIdle: (a) => agents[a].awaitingHumanOnIdle ?? false,
       now: () => now,
@@ -209,6 +210,26 @@ function makeMonitor(agents: Record<string, FakeAgent>) {
 const SETTINGS: AttentionSettings = { enabled: true, silenceSec: 8, patterns: [] };
 
 describe("AttentionMonitor", () => {
+  it("t-8168a7 review: reload seeds a finished stationary pane from durable turn evidence", async () => {
+    let now = 1_000_000;
+    const monitor = new AttentionMonitor({
+      runningAgents: async () => ["reloaded"],
+      capturePane: async () => "prior assistant output\n$ ",
+      cpuTicks: async () => null,
+      settingsOf: () => SETTINGS,
+      initialTurnState: () => true,
+      now: () => now,
+    });
+
+    await monitor.tick(); // first observation after extension reload: already stationary
+    now += 9_000;
+    await monitor.tick();
+
+    expect(monitor.stateOf("reloaded")?.state).toBe("idle");
+    expect(monitor.hasStartedTurn("reloaded")).toBe(true);
+    expect(monitor.stateOf("reloaded")?.unseen).toBe(true);
+  });
+
   it("t-8168a7: distinguishes an untouched prompt from a turn that later finishes", async () => {
     const f = makeMonitor({ claude: { content: "$ ", cpu: null, settings: SETTINGS } });
     await f.advance(0); // untouched prompt baseline

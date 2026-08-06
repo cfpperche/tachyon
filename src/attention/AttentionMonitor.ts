@@ -98,6 +98,12 @@ export interface MonitorIO {
   /** cumulative CPU ticks of the agent's process subtree; null when unknown (e.g. macOS) */
   cpuTicks(agent: string): Promise<number | null>;
   settingsOf(agent: string): AttentionSettings;
+  /**
+   * t-8168a7 review — durable/current-incarnation evidence used only for a new snapshot.
+   * true = a real turn is proven; false = this host observed the fresh spawn before any turn;
+   * undefined = a surviving session whose history cannot be established honestly.
+   */
+  initialTurnState?(agent: string): boolean | undefined;
   /** spec 216 — the agent's launch command, for runtime-aware compaction detection; null = unknown */
   cmdOf?(agent: string): string | null;
   /** t-10771a — true only for declared top-level agents eligible for derived human-question latches. */
@@ -167,9 +173,9 @@ interface Snapshot {
   /**
    * t-8168a7 — latched once this pane produces non-composer output after its first observation,
    * or already carries a measured in-flight activity signal on that observation. Unlike launch
-   * readiness, this answers whether a turn actually ran; it stays true across later idle periods.
+   * readiness, true answers that a turn actually ran; undefined preserves unknown reload history.
    */
-  hasStartedTurn: boolean;
+  hasStartedTurn: boolean | undefined;
   /** t-64f501 — epoch ms since the CURRENT matched pattern has been continuously recognized (near
    *  the bottom of) the tail, independent of contentSince: unrelated pane churn (e.g. a parallel
    *  tool still streaming output) must not reset this, or a genuine modal prompt would never
@@ -249,8 +255,8 @@ export class AttentionMonitor {
   }
 
   /** t-8168a7 — whether this tracked agent has produced evidence of a real turn. */
-  hasStartedTurn(agent: string): boolean {
-    return this.snaps.get(agent)?.hasStartedTurn ?? false;
+  hasStartedTurn(agent: string): boolean | undefined {
+    return this.snaps.get(agent)?.hasStartedTurn;
   }
 
   /** A lifecycle boundary makes every pane-derived latch belong to the old incarnation. */
@@ -452,7 +458,7 @@ export class AttentionMonitor {
             agent,
             content,
             initialComposer.composerOccupied && initialComposer.composerEvidence,
-          ),
+          ) ? true : this.io.initialTurnState?.(agent),
           matchSince: initialMatch ? now : null,
           matchKey: initialMatch ? initialMatch.pattern : null,
           lastWindowActivity: activityAt,

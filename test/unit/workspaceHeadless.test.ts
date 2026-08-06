@@ -10,7 +10,7 @@ import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { registerTools, type NotifyLevel } from "../../src/bridge/tools.js";
-import { agentLogId } from "../../src/activity/logStore.js";
+import { ActivityLog, agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
@@ -474,6 +474,37 @@ async function makeWorkspace(
   const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
   return { ws, host, tmux, sessions, sessionEnv, dead, sent, panes, calls };
 }
+
+it("t-8168a7 review: durable turn evidence is positive only for the current session", async () => {
+  const { ws } = await makeWorkspace();
+  try {
+    const agent = "b";
+    const currentSession = "current-session";
+    ws.ledger.record(agent, {
+      cwd: ws.workspaceRoot,
+      updatedAt: "test",
+      resume: { runtime: "codex", sessionId: currentSession },
+    });
+    const log = new ActivityLog(path.join(ws.workspaceRoot, ".tachyon", "activity"), agent);
+    const message = (sessionId: string, text: string) => ({
+      type: "assistant.message.completed" as const,
+      runtime: "codex" as const,
+      sequence: 1,
+      sessionId,
+      payload: { text },
+      raw: {},
+    });
+    const subject = ws as unknown as { hasDurableTurnEvidence(agent: string): boolean };
+
+    log.appendRecord([message("old-session", "old incarnation")], { runtime: "codex", sessionId: "old-session", recordId: "old" }, "2026-08-06T00:00:00Z");
+    expect(subject.hasDurableTurnEvidence(agent)).toBe(false);
+
+    log.appendRecord([message(currentSession, "finished current turn")], { runtime: "codex", sessionId: currentSession, recordId: "current" }, "2026-08-06T00:01:00Z");
+    expect(subject.hasDurableTurnEvidence(agent)).toBe(true);
+  } finally {
+    ws.dispose();
+  }
+});
 
 it("t-6f0377 defers one replaceable context-renewal gesture until idle", async () => {
   const { ws, sent } = await makeWorkspace(() => {}, { bRuntime: "codex" });

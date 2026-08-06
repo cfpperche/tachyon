@@ -6684,6 +6684,14 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect((await h.manager.list()).find((entry) => entry.name === "reviewer")?.hasStartedTurn).toBe(true);
   });
 
+  it("t-8168a7 review: list() preserves unknown instead of asserting never-started after reload", async () => {
+    const h = harness("agents:\n  reviewer:\n    cmd: claude\n", {
+      hasStartedTurn: () => undefined,
+    });
+
+    expect((await h.manager.list()).find((entry) => entry.name === "reviewer")?.hasStartedTurn).toBeUndefined();
+  });
+
   it("persists a delegator at spawn and restores that display lineage after a host reload (t-bae303)", async () => {
     const h = harness("agents:\n  boss:\n    cmd: claude\n  reviewer:\n    cmd: claude\n");
 
