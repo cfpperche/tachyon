@@ -1,5 +1,5 @@
 import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -132,6 +132,7 @@ const mkdir = (): string => {
   return d;
 };
 afterEach(() => {
+  vi.useRealTimers();
   __resetVscodeMock();
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });
@@ -188,6 +189,7 @@ const doorbellMetadataFor = (ws: Workspace, sender: string) => priv(ws).sourceNo
 
 skipTestsWithoutOptionalRuntimeAuth({
   claude: [
+    "an unsent composer tells the human the agent is idle and names the remedy exactly once",
     "THE MEASURED BUG: the poll says the composer is free, the pane says a human is typing — nothing is injected",
     "the sender is TOLD a human is holding it — a queued doorbell that waits on a person says so",
     "NO REGRESSION: an empty composer still delivers immediately, exactly as before",
@@ -205,6 +207,32 @@ skipTestsWithoutOptionalRuntimeAuth({
 });
 
 describe("t-a53dd9 — a human typing is not idleness", () => {
+  it("an unsent composer tells the human the agent is idle and names the remedy exactly once", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const { ws, host, panes, session } = await withCoordAndChild(HUMAN_DRAFT);
+
+    await ws.monitor.tick();
+    vi.setSystemTime(1_009_000);
+    await ws.monitor.tick();
+    await ws.monitor.tick();
+
+    // Late runtime chrome can briefly reclassify the pane as working. The same draft must not warn
+    // again when it settles back to idle; the one-shot belongs to the draft episode, not state flap.
+    panes.set(session, `late runtime chrome\n${paneWith(HUMAN_DRAFT)}`);
+    vi.setSystemTime(1_009_001);
+    await ws.monitor.tick();
+    vi.setSystemTime(1_018_001);
+    await ws.monitor.tick();
+
+    expect(host.notices).toContainEqual({
+      message: "'coord' is idle — your draft was not sent. Send it to start work, or discard it.",
+      level: "warn",
+    });
+    expect(host.notices.filter((notice) => notice.message.includes("your draft was not sent"))).toHaveLength(1);
+    ws.dispose();
+  });
+
   it("THE MEASURED BUG: the poll says the composer is free, the pane says a human is typing — nothing is injected", async () => {
     // Fail-before: with only the cached guard, `forceStateOf(..., "idle")` (composerOccupied absent =
     // free, exactly what a pre-typing capture leaves behind) sent the line straight into the pane the

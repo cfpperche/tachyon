@@ -453,7 +453,7 @@
   "command '{0}' passed ({1}s)": "comando '{0}' passou ({1}s)",
   "command '{0}' saved — ▶ in the sidebar (or run_command) runs it": "comando '{0}' salvo — ▶ na sidebar (ou run_command) executa",
   "command: required": "comando: obrigatório",
-  "composer has a draft": "o composer tem um rascunho",
+  "'{0}' is idle — your draft was not sent. Send it to start work, or discard it.": "'{0}' está parado — seu rascunho não foi enviado. Envie-o para iniciar o trabalho ou descarte-o.",
   "could not write tachyon.yml — see the notification": "não foi possível escrever o tachyon.yml — veja a notificação",
   "could not write tachyon.yml: {0}": "não foi possível escrever o tachyon.yml: {0}",
   "crashed": "caiu",

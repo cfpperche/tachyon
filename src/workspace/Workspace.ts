@@ -1438,7 +1438,7 @@ export class Workspace {
         },
         now: () => Date.now(),
       },
-      (agent, attention, shouldToast) => {
+      (agent, attention, shouldToast, attentionCause) => {
         // t-9552f3 / t-0db8cb — clear the completion latch only when a NEW turn starts
         // (this callback only fires on state change; state === "working" here is the non-working → working
         // edge). Do NOT clear on every contentSince advance: after notify_agent the same turn still paints
@@ -1476,6 +1476,16 @@ export class Workspace {
         else this.cancelRateLimitAutoContinue(agent);
         if (shouldToast && attention.state === "throttled") {
           this.pokeParentOnThrottle(agent, attention);
+        }
+        // t-dd130a — a composer draft is actionable only once the agent is idle: while the agent is
+        // still working, pre-typing the next message is harmless. Lead with the consequence the
+        // human cannot see, then name the two actions Tachyon deliberately will not take for them.
+        if (attentionCause === "composer-draft") {
+          this.host.notify(
+            this.t("'{0}' is idle — your draft was not sent. Send it to start work, or discard it.", agent),
+            "warn",
+            [{ label: this.t("Open"), run: () => void this.terminals.open(agent, this.manager.session(agent)) }],
+          );
         }
         // Suppress the toast when you're already looking at this agent's terminal —
         // the prompt is right in front of you; the popup would be pure noise. The

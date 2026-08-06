@@ -115,7 +115,7 @@
   "When tab tools are on, agents see user_browser_* on the Bridge. Pairing Companion is still required to run them. Generate a pair code here (or via the command palette).": "When tab tools are on, agents see user_browser_* on the Bridge. Pairing Companion is still required to run them. Generate a pair code here (or via the command palette).",
   "Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list.": "Writes settings.companion.tabTools in tachyon.yml and refreshes the Bridge tool list.",
   "busy ({0})": "busy ({0})",
-  "composer has a draft": "composer has a draft",
+  "'{0}' is idle — your draft was not sent. Send it to start work, or discard it.": "'{0}' is idle — your draft was not sent. Send it to start work, or discard it.",
   "default": "default",
   "explicit": "explicit",
   "Allowed hosts (optional)": "Allowed hosts (optional)",
