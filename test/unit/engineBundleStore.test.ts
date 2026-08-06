@@ -7,7 +7,9 @@ import {
   EngineBundleError,
   engineBundleInstallRoot,
   engineRuntimeInstallRoot,
+  isElectronRuntime,
   loadStagedEngineBundle,
+  resolveEngineRuntimeSource,
   stagePackagedEngineBundle,
   stageEngineBundle,
   stageEngineRuntime,
@@ -149,6 +151,43 @@ describe("engine bundle store", () => {
     fs.writeFileSync(staged.executable, "tampered", "utf8");
     expect(() => verifyStagedEngineRuntime(staged))
       .toThrowError(expect.objectContaining({ code: "UNSAFE_STAGED_RUNTIME" }));
+  });
+
+  it("detects Electron from runtime versions", () => {
+    expect(isElectronRuntime({ node: "20.18.0", electron: "32.2.7" })).toBe(true);
+    expect(isElectronRuntime({ node: "20.18.0" })).toBe(false);
+  });
+
+  it("keeps a real Node source unchanged", () => {
+    expect(resolveEngineRuntimeSource({
+      sourceExecutable: "/vscode-server/node",
+      versions: { node: "20.18.0" },
+      env: { PATH: "" },
+    })).toBe("/vscode-server/node");
+  });
+
+  it("resolves and validates Node from PATH for an Electron source", () => {
+    const bin = temp("tachyon-runtime-path-");
+    const node = path.join(bin, "node");
+    fs.symlinkSync(process.execPath, node);
+
+    expect(resolveEngineRuntimeSource({
+      sourceExecutable: "/usr/share/code/code",
+      versions: { node: "20.18.0", electron: "32.2.7" },
+      env: { PATH: bin },
+    })).toBe(fs.realpathSync(node));
+  });
+
+  it("rejects PATH candidates that are not real Node runtimes", () => {
+    const bin = temp("tachyon-runtime-path-");
+    const node = path.join(bin, "node");
+    fs.writeFileSync(node, "#!/bin/sh\necho not-node\n", { mode: 0o500 });
+
+    expect(() => resolveEngineRuntimeSource({
+      sourceExecutable: "/usr/share/code/code",
+      versions: { node: "20.18.0", electron: "32.2.7" },
+      env: { PATH: bin },
+    })).toThrowError(expect.objectContaining({ code: "NODE_RUNTIME_NOT_FOUND" }));
   });
 
   it("materializes the verified packaged bundle outside the disposable extension root", () => {

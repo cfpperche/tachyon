@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import {
   engineBundleId,
   isEngineBundleManifestV1,
@@ -44,6 +45,13 @@ export interface StageEngineRuntimeInput {
   installRoot?: string;
 }
 
+export interface ResolveEngineRuntimeSourceInput {
+  sourceExecutable: string;
+  versions?: Readonly<Record<string, string | undefined>>;
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+}
+
 export interface StagedEngineRuntime {
   runtimeId: string;
   root: string;
@@ -63,6 +71,53 @@ export class EngineBundleError extends Error {
     super(message);
     this.name = "EngineBundleError";
   }
+}
+
+export function isElectronRuntime(
+  versions: Readonly<Record<string, string | undefined>> = process.versions,
+): boolean {
+  return typeof versions.electron === "string" && versions.electron.length > 0;
+}
+
+function nodeExecutableNames(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string[] {
+  if (platform !== "win32") return ["node"];
+  const extensions = (env.PATHEXT || ".EXE;.CMD;.BAT;.COM")
+    .split(";")
+    .filter(Boolean);
+  return extensions.map((extension) => `node${extension.toLowerCase()}`);
+}
+
+function validatesAsNode(candidate: string, env: NodeJS.ProcessEnv): boolean {
+  try {
+    const output = execFileSync(candidate, [
+      "-p",
+      "JSON.stringify({execPath:process.execPath,node:process.versions.node,electron:process.versions.electron||null})",
+    ], { encoding: "utf8", env, timeout: 5_000, windowsHide: true });
+    const probe = JSON.parse(output) as { execPath?: unknown; node?: unknown; electron?: unknown };
+    if (typeof probe.execPath !== "string" || typeof probe.node !== "string" || probe.electron !== null) return false;
+    return fs.realpathSync(probe.execPath) === fs.realpathSync(candidate);
+  } catch {
+    return false;
+  }
+}
+
+/** Resolve a relocatable Node binary when the Extension Host itself is Electron. */
+export function resolveEngineRuntimeSource(input: ResolveEngineRuntimeSourceInput): string {
+  if (!isElectronRuntime(input.versions)) return input.sourceExecutable;
+
+  const env = input.env ?? process.env;
+  const platform = input.platform ?? process.platform;
+  const directories = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  for (const directory of directories) {
+    for (const name of nodeExecutableNames(platform, env)) {
+      const candidate = path.resolve(directory, name);
+      if (validatesAsNode(candidate, env)) return fs.realpathSync(candidate);
+    }
+  }
+  throw new EngineBundleError(
+    "NODE_RUNTIME_NOT_FOUND",
+    "the local Electron Extension Host requires a real Node executable on PATH",
+  );
 }
 
 /**
@@ -132,13 +187,14 @@ export function engineRuntimeInstallRoot(
 }
 
 /**
- * Copies the exact Node/Electron runtime used to launch the daemon into immutable Tachyon-owned
+ * Copies the exact Node runtime used to launch the daemon into immutable Tachyon-owned
  * storage.  A systemd unit may outlive the VS Code Server version that activated it, so it must never
  * retain an ExecStart path inside ~/.vscode-server or an extension installation.
  */
 export function stageEngineRuntime(input: StageEngineRuntimeInput): StagedEngineRuntime {
+  const resolvedSource = resolveEngineRuntimeSource({ sourceExecutable: input.sourceExecutable });
   let source: string;
-  try { source = fs.realpathSync(path.resolve(input.sourceExecutable)); }
+  try { source = fs.realpathSync(path.resolve(resolvedSource)); }
   catch (error) {
     throw new EngineBundleError("RUNTIME_SOURCE_UNREADABLE", `engine runtime source is unreadable: ${String(error)}`);
   }
