@@ -60,3 +60,27 @@ and does not block anything:
 Spec, plan and tasks are written. No product code changed. The implementation is Parts 0 to 4
 in `tasks.md` and is a separate task. `claude23` is intact and is the acceptance fixture for
 the first scenario.
+
+## Parts 0 and 1 implementation
+
+The removal test list uses these actor and trigger names:
+
+1. `Human, Agent Studio x planAgentProfileForget`
+2. `Human, Agent Studio x forgetAgentProfileAgentCascade`
+3. `Agent, Bridge x propose_saved_agent_removal`
+4. `Human, sidebar x config.agent.delete`
+5. `Agent or Human x dismiss_agent`
+6. `Human, text editor x edit tachyon.yml`
+
+The sidebar door was absent from the measurement table. Source inspection found it before
+production changes. It used `isAgentProfileAgent` through `deleteConfiguredAgent`.
+
+The first focused run failed at the plan, cascade, and Bridge doors. The expanded run also
+failed at the sidebar door. The dismiss refusal and raw text edit behaved as documented.
+
+`isSavedAgentMember` now reads only `agentSources`. It accepts `profile` and `refused`.
+The plan, cascade, Bridge inspection, sidebar deletion, direct transaction, and locator fact
+use membership. The focused suite passes all six cases.
+
+The acceptance fixture uses the name `claude23` in a temporary workspace. It reproduces the
+spec 471 refusal from a private fake home. The live `claude23` remains unchanged.

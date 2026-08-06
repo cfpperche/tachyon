@@ -329,6 +329,49 @@ function canonicalHost(
   return { host: new SharedSecretHost(mkdir(), secrets, settings), secrets };
 }
 
+/** SDD 494 Part 0 — reproduce claude23's refusal without reading host runtime state. */
+async function refusedSavedAgentWorkspace() {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.mkdirSync(path.join(homeDir, ".claude"), { recursive: true });
+  fs.writeFileSync(
+    path.join(homeDir, ".claude", "settings.json"),
+    JSON.stringify({ permissions: { defaultMode: "bypassPermissions" } }, null, 2),
+  );
+  const permissions = {
+    source: "global",
+    treatment: "overlay",
+    refresh: "every-launch",
+    lifecycle: ["fresh", "restart", "resume", "fork"],
+  };
+  const { host } = canonicalHost(root, [
+    {
+      name: "claude",
+      spec: {
+        runtime: "claude",
+        extra: {
+          grants: { proposeSavedAgent: true },
+          nativeConfig: { permissions: { ...permissions, authorize: ["bypassPermissions"] } },
+        },
+      },
+    },
+    {
+      name: "claude23",
+      spec: { runtime: "claude", extra: { nativeConfig: { permissions } } },
+    },
+  ]);
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  expect(asAgent(ws.config?.agents.claude)?.profileLifecycle).toBeDefined();
+  expect(ws.config?.agents.claude23).toBeUndefined();
+  expect(ws.refusedAgents().claude23).toContain("'bypassPermissions' is not projectable");
+  return { root, ws, fake };
+}
+
 /**
  * SDD 478 M7 — a workspace whose canonical agents have Evolution ENABLED.
  *
@@ -932,6 +975,103 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
   } finally {
     ws.dispose();
   }
+});
+
+/**
+ * SDD 494 Part 0 — every actor and trigger measured in the evidence table has one matching case.
+ * The text-editor case is intentionally outside the governed transaction. It remains the unsafe
+ * escape hatch. The other four cases prove each product door keeps the refused member addressable.
+ */
+describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
+  it("Human, Agent Studio x planAgentProfileForget", async () => {
+    const { ws } = await refusedSavedAgentWorkspace();
+    try {
+      const revision = (await ws.inspectAgentProfileLifecycle("claude23")).revision;
+      const plan = await ws.planAgentProfileForget("claude23", revision);
+      expect(plan.steps.find((entry) => entry.id === "remove-locator")?.state).toBe("will-run");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("Human, Agent Studio x forgetAgentProfileAgentCascade", async () => {
+    const { root, ws } = await refusedSavedAgentWorkspace();
+    try {
+      const result = await ws.forgetAgentProfileAgentCascade("claude23");
+      expect(result.agentName).toBe("claude23");
+      expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23"))).toBe(false);
+      expect(fs.existsSync(path.join(root, ".tachyon", "canonical-agent-transactions", "forget", result.txid, "journal.json"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("Agent, Bridge x propose_saved_agent_removal", async () => {
+    const { root, ws } = await refusedSavedAgentWorkspace();
+    const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
+    registerTools(
+      { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
+      {
+        workspaceRoot: root,
+        caller: { kind: "agent", name: "claude" },
+        manager: ws.manager,
+        inspectSavedAgentProfile: async (name: string) => {
+          if (!ws.isSavedAgentMember(name)) return undefined;
+          const snapshot = await ws.inspectAgentProfileLifecycle(name);
+          return { agentId: snapshot.agentId, revision: snapshot.revision };
+        },
+      } as never,
+    );
+    try {
+      const result = await tools.get("propose_saved_agent_removal")!({ name: "claude23", rationale: "retire refused fixture" });
+      expect(result.isError).toBeFalsy();
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("Human, sidebar x config.agent.delete", async () => {
+    const { root, ws } = await refusedSavedAgentWorkspace();
+    try {
+      await executeExtensionCommand(
+        { workspace: ws, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0],
+        { action: "config.agent.delete", agent: "claude23", removeWorktree: false },
+      );
+      expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23"))).toBe(false);
+      expect(fs.existsSync(path.join(root, ".tachyon", "canonical-agent-transactions", "forget"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("Agent or Human x dismiss_agent", async () => {
+    const { root, ws } = await refusedSavedAgentWorkspace();
+    const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
+    registerTools(
+      { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
+      { workspaceRoot: root, caller: { kind: "agent", name: "claude" }, manager: ws.manager } as never,
+    );
+    try {
+      const result = await tools.get("dismiss_agent")!({ name: "claude23" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("propose_saved_agent_removal");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("Human, text editor x edit tachyon.yml", async () => {
+    const { root, ws } = await refusedSavedAgentWorkspace();
+    try {
+      const file = path.join(root, "tachyon.yml");
+      const text = fs.readFileSync(file, "utf8");
+      fs.writeFileSync(file, text.replace(/  claude23:\n    profile: .tachyon\/agents\/claude23\/agent.yml\n/u, ""));
+      expect(fs.readFileSync(file, "utf8")).not.toContain("claude23:");
+      expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
 });
 
 it("refuses the bare canonical forget while a tmux binding exists, and plans the kill in the Studio door", async () => {
