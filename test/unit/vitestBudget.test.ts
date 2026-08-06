@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   admitVitestRun,
   admitOrFallback,
+  ancestorPids,
   previewVitestShare,
   sizeFromShare,
   vitestPoolMb,
@@ -496,5 +497,257 @@ describe("vitest host budget (t-3ad4af)", () => {
     const measured = measureTreePssMb(process.pid);
     expect(measured).toBeDefined();
     expect(measured!).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * t-690f52 — a vitest run spawned INSIDE another one is a descendant, not a sibling.
+ *
+ * Measured on the real gate before any of this existed: the 16-worker run billed 7168MB, a second
+ * agent's focused run billed 2368MB, the pool was 8936MB, and the share left for the nested child
+ * was -600MB. The child died loading `vitest.config.ts` and the parent test reported the one thing
+ * that does not help — "Command failed". The RAM it was refused over was RAM its own ancestor had
+ * already reserved, so the ledger was charging the same pages twice.
+ *
+ * Every case here keeps the ancestry EXPLICIT via `ancestorsOf`, because the distinction the fix
+ * turns on — descendant vs sibling — is invisible in the arithmetic and lives entirely in /proc.
+ */
+describe("nested vitest inherits its ancestor's claim (t-690f52)", () => {
+  /** The measured shape of the incident: a gate holding 16 workers, and a nested focused child. */
+  const FOCUSED_INVOCATION_MB = 512;
+  const GATE_CLAIM_MB = INVOCATION_MB + 16 * WORKER_MB; // 7168
+  /**
+   * What the sampled machine looks like with no vitest on it. Everything else is derived from this,
+   * so `memAvailable` MOVES when a holder's tree grows — a fixture that pins both independently can
+   * assert a pool the machine could never be in, and `vitestPoolMb` reads exactly that pair.
+   */
+  const BASELINE_AVAILABLE_MB = 8_936;
+
+  const measured = new Map<number, number>();
+  afterEach(() => measured.clear());
+
+  function host(): HostMemorySnapshot {
+    const inUse = [...measured.values()].reduce((sum, mb) => sum + mb, 0);
+    return { ...HOST, memAvailableMb: BASELINE_AVAILABLE_MB - inUse };
+  }
+
+  /** The 16-worker gate, plus the unrelated agent run that was live in the sampled window. */
+  function gateHolder(file: string, pid: number, usingMb: number): void {
+    const other = liveProcess();
+    fs.writeFileSync(file, JSON.stringify([
+      { pid, workers: 16, costMb: GATE_CLAIM_MB, startedAtMs: Date.now(), label: "gate" },
+      { pid: other, workers: 1, costMb: 2_368, startedAtMs: Date.now(), label: "other-agent" },
+    ] satisfies VitestClaim[]));
+    measured.set(pid, usingMb);
+    measured.set(other, 76); // the sampled reading: billed 2368MB, using 76MB
+  }
+
+  /** The nested child as `vitest.config.ts` sizes it: one named file, so 512MB + one worker. */
+  function nestedChild(file: string, pid: number, ancestors: number[]) {
+    return admitVitestRun({
+      memory: host(),
+      cpuCount: 24,
+      label: "nested",
+      ledgerPath: file,
+      pid,
+      reserveMb: RESERVE_MB,
+      invocationMb: FOCUSED_INVOCATION_MB,
+      workerMb: WORKER_MB,
+      maxUsefulWorkers: 1,
+      measure: (target) => measured.get(target),
+      ancestorsOf: () => ancestors,
+    });
+  }
+
+  it("THE MEASURED BUG: the child of a claim holder was refused over RAM its ancestor already reserved", () => {
+    const file = ledgerFile();
+    const gate = liveProcess();
+    gateHolder(file, gate, 2_682); // the real sample: 2682MB materialized of a 7168MB claim
+
+    // The ancestry from the `ps` snapshot: vitest main → worker → npm exec → sh → vitest main.
+    const admitted = nestedChild(file, liveProcess(), [liveProcess(), liveProcess(), liveProcess(), gate]);
+
+    expect(admitted.ok).toBe(true);
+    if (!admitted.ok) return;
+    expect(admitted.reason).toContain("inheriting the claim of gate");
+    // Sized to what it can use, never to the ancestor's whole headroom.
+    expect(admitted.workers).toBe(1);
+  });
+
+  it("keeps the refusal for a run that is NOT a descendant — the sibling t-3ad4af bought protection from", () => {
+    const file = ledgerFile();
+    gateHolder(file, liveProcess(), 2_682);
+
+    // Same host, same exhausted ledger, same focused cost. The ONLY difference is that nothing in
+    // this run's ancestry holds a claim, so it is an N+1th independent run and must still be told no.
+    const sibling = admitVitestRun({
+      memory: host(),
+      cpuCount: 24,
+      label: "unrelated-agent",
+      ledgerPath: file,
+      pid: liveProcess(),
+      reserveMb: RESERVE_MB,
+      invocationMb: FOCUSED_INVOCATION_MB,
+      workerMb: WORKER_MB,
+      maxUsefulWorkers: 1,
+      measure: (target) => measured.get(target),
+      ancestorsOf: () => [liveProcess(), liveProcess()],
+    });
+
+    expect(sibling.ok).toBe(false);
+    if (sibling.ok) return;
+    expect(sibling.code).toBe("HOST_BUDGET_EXHAUSTED");
+  });
+
+  it("counts the child ONCE, not zero: it writes no claim, and the ancestor's bill is unchanged", () => {
+    const file = ledgerFile();
+    const gate = liveProcess();
+    gateHolder(file, gate, 2_682);
+    const before = readLedger(file);
+
+    const admitted = nestedChild(file, liveProcess(), [gate]);
+    expect(admitted.ok).toBe(true);
+    if (!admitted.ok) return;
+
+    // Nothing was added. Writing a claim here is the double count: this tree would be billed at its
+    // own pid AND again inside the ancestor's tree PSS.
+    expect(readLedger(file)).toEqual(before);
+    expect(admitted.claim.costMb).toBe(0);
+    admitted.claim.release();
+    expect(readLedger(file)).toEqual(before); // and releasing nothing does not disturb the ancestor
+
+    // Invisible is the other failure, and it is the one that caused the original incident. The child
+    // stays visible to a third party through the ancestor: while the ancestor is young its claim
+    // floor covers the child, and once the ancestor outgrows the claim the tree walk includes it.
+    measured.set(gate, GATE_CLAIM_MB + 400); // the ancestor's tree, child's pages included
+    const thirdParty = admitVitestRun({
+      memory: host(),
+      cpuCount: 24,
+      label: "third-party",
+      ledgerPath: file,
+      pid: liveProcess(),
+      reserveMb: RESERVE_MB,
+      invocationMb: INVOCATION_MB,
+      workerMb: WORKER_MB,
+      measure: (target) => measured.get(target),
+      ancestorsOf: () => [],
+    });
+    expect(thirdParty.ok).toBe(false); // the grown tree is charged in full to whoever arrives next
+  });
+
+  it("bounds an inherited run by the ancestor's unmaterialized headroom", () => {
+    const file = ledgerFile();
+    const gate = liveProcess();
+
+    // A nested run with no useful-worker cap would take the hard cap if nothing bounded it. What
+    // bounds it is what the ancestor reserved and has not spent: 7168 - 5168 = 2000MB, which after
+    // the 512MB fixed term buys 4 workers, not 16.
+    gateHolder(file, gate, 5_168);
+    const roomy = admitVitestRun({
+      memory: host(),
+      cpuCount: 24,
+      label: "nested-broad",
+      ledgerPath: file,
+      pid: liveProcess(),
+      reserveMb: RESERVE_MB,
+      invocationMb: FOCUSED_INVOCATION_MB,
+      workerMb: WORKER_MB,
+      measure: (target) => measured.get(target),
+      ancestorsOf: () => [gate],
+    });
+    expect(roomy.ok).toBe(true);
+    if (roomy.ok) expect(roomy.workers).toBe(4);
+  });
+
+  it("degrades to one worker, loudly, when the ancestor has outgrown its own claim", () => {
+    const file = ledgerFile();
+    const gate = liveProcess();
+    gateHolder(file, gate, GATE_CLAIM_MB + 1_500); // no headroom left at all
+
+    const admitted = nestedChild(file, liveProcess(), [gate]);
+    // Refusing here would free nothing — the ancestor holds the RAM either way — and would only
+    // break the test blocked on this child. So it starts, at the floor, and says the host is over.
+    expect(admitted.ok).toBe(true);
+    if (!admitted.ok) return;
+    expect(admitted.workers).toBe(1);
+    expect(admitted.reason).toContain("outgrown its claim");
+  });
+
+  it("lets TACHYON_VITEST_MAX_WORKERS lower an inherited run but never raise it", () => {
+    const file = ledgerFile();
+    const gate = liveProcess();
+    gateHolder(file, gate, 5_168); // headroom buys 4
+
+    const shared = {
+      memory: host(),
+      cpuCount: 24,
+      label: "nested-forced",
+      ledgerPath: file,
+      reserveMb: RESERVE_MB,
+      invocationMb: FOCUSED_INVOCATION_MB,
+      workerMb: WORKER_MB,
+      measure: (target: number) => measured.get(target),
+      ancestorsOf: () => [gate],
+    };
+
+    // The variable is the escape hatch for a caller taking RAM deliberately. A nested child takes
+    // its ancestor's RAM, and inherits the variable through the environment without anyone aiming
+    // it at the child — so upward it does not travel.
+    const raised = admitVitestRun({ ...shared, pid: liveProcess(), forcedWorkers: 16 });
+    expect(raised.ok).toBe(true);
+    if (raised.ok) expect(raised.workers).toBe(4);
+
+    const lowered = admitVitestRun({ ...shared, pid: liveProcess(), forcedWorkers: 2 });
+    expect(lowered.ok).toBe(true);
+    if (lowered.ok) expect(lowered.workers).toBe(2);
+  });
+
+  it("inherits from the NEAREST claim holder when runs are nested more than one deep", () => {
+    const file = ledgerFile();
+    const outer = liveProcess();
+    const inner = liveProcess();
+    fs.writeFileSync(file, JSON.stringify([
+      { pid: outer, workers: 16, costMb: GATE_CLAIM_MB, startedAtMs: Date.now(), label: "outer" },
+      { pid: inner, workers: 4, costMb: 3_000, startedAtMs: Date.now(), label: "inner" },
+    ] satisfies VitestClaim[]));
+    measured.set(outer, 2_000);
+    measured.set(inner, 2_800);
+
+    // Ancestry runs inward-out, so the inner run is met first — and its headroom is the one left to
+    // spend. Billing the outer one's headroom would spend RAM the inner run has already taken.
+    const admitted = nestedChild(file, liveProcess(), [inner, outer]);
+    expect(admitted.ok).toBe(true);
+    if (admitted.ok) expect(admitted.reason).toContain("inheriting the claim of inner");
+  });
+
+  it("does not inherit where /proc cannot answer, so a non-Linux host keeps the old refusal", () => {
+    const file = ledgerFile();
+    gateHolder(file, liveProcess(), 2_682);
+    const admitted = admitVitestRun({
+      memory: host(),
+      cpuCount: 24,
+      label: "no-proc",
+      ledgerPath: file,
+      pid: liveProcess(),
+      reserveMb: RESERVE_MB,
+      invocationMb: FOCUSED_INVOCATION_MB,
+      workerMb: WORKER_MB,
+      maxUsefulWorkers: 1,
+      measure: (target) => measured.get(target),
+      ancestorsOf: () => undefined, // "cannot tell" is not "no ancestors"
+    });
+    expect(admitted.ok).toBe(false);
+  });
+
+  it("reads a real ancestry out of /proc, and answers undefined where there is none", () => {
+    // The instrument. A wrong answer here decides the whole thing, so it is read against the real
+    // kernel rather than a fixture: this process is a descendant of whatever spawned it.
+    const chain = ancestorPids(process.pid);
+    expect(chain).toBeDefined();
+    expect(chain!).toContain(process.ppid);
+    expect(chain!.indexOf(process.ppid)).toBe(0); // nearest first
+    expect(chain!).not.toContain(process.pid);
+
+    expect(ancestorPids(process.pid, path.join(tempDir("tachyon-no-proc-"), "absent"))).toBeUndefined();
   });
 });

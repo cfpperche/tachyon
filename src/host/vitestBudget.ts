@@ -219,6 +219,36 @@ export function measureTreePssMb(pid: number, procRoot = "/proc"): number | unde
 }
 
 /**
+ * The pids between this process and init, nearest first. Linux-only; `undefined` where /proc is not
+ * readable, which the caller must read as "cannot tell" rather than "no ancestors".
+ *
+ * Same `stat` parsing as `measureTreePssMb` and for the same reason: `comm` is parenthesised and may
+ * contain spaces and parens, so ppid is located from the LAST ')'.
+ */
+export function ancestorPids(pid: number, procRoot = "/proc"): number[] | undefined {
+  const chain: number[] = [];
+  const seen = new Set<number>([pid]);
+  let current = pid;
+  // A process tree deep enough to exhaust this is not one this ledger can reason about anyway.
+  for (let hops = 0; hops < 64; hops++) {
+    let stat: string;
+    try {
+      stat = fs.readFileSync(path.join(procRoot, String(current), "stat"), "utf8");
+    } catch {
+      // The first read failing means no /proc at all — we cannot tell. A later one failing means the
+      // ancestor exited mid-walk, and what we already collected is still true.
+      return chain.length > 0 ? chain : undefined;
+    }
+    const ppid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
+    if (!Number.isInteger(ppid) || ppid <= 1 || seen.has(ppid)) return chain;
+    chain.push(ppid);
+    seen.add(ppid);
+    current = ppid;
+  }
+  return chain;
+}
+
+/**
  * What a live sibling is BILLED: its whole claim until it outgrows it, and its real size after.
  *
  * The claim is the FLOOR, not the measurement, and that ordering is the safety property. A run that
@@ -298,6 +328,94 @@ export function sizeFromShare(input: {
 }
 
 /**
+ * t-690f52 — a vitest run spawned INSIDE another one inherits its ancestor's claim instead of
+ * opening a second one, because its RAM is already billed to that ancestor. Twice over.
+ *
+ * Two `.gen` tests here run `npx vitest` from inside a test, and under the 16-worker gate that child
+ * was being refused (measured: pool 8936MB, gate billed 7168MB, a second agent's run billed 2368MB,
+ * share -600MB against the 832MB a focused child needs). The refusal is the t-3ad4af guard doing
+ * exactly what it was built to do to an N+1th SIBLING — and a descendant is not a sibling:
+ *
+ *  - `DEFAULT_INVOCATION_MB` was measured as "the vitest parent PLUS the subprocesses its tests
+ *    spawn" — 74% of the tree at 4 workers was test-spawned subprocesses. A nested `npx vitest` is
+ *    one of those subprocesses. The ancestor already reserved it inside that fixed term.
+ *  - `measureTreePssMb` walks the ancestor's whole tree, so once the ancestor outgrows its claim the
+ *    child's pages are literally inside the ancestor's bill.
+ *
+ * So the old path charged the same memory twice, and the double charge is what turned a run that fit
+ * into a refusal. Inheriting moves the child from counted-TWICE to counted-ONCE — never to zero,
+ * which is the property that matters. A third party sizing against this host still sees the child's
+ * RAM, inside the ancestor's claim floor while it is young and inside the ancestor's measured tree
+ * once it is not. An invisible sibling was the original defect; this child is not invisible, it is
+ * billed at its ancestor's door.
+ *
+ * "Refuse, do not degrade" is untouched for everyone else, and it does not transfer here for a
+ * mechanical reason: refusing an N+1th independent run stops ~2GB from being taken, while refusing a
+ * descendant frees NOTHING — the ancestor holds the RAM either way — and only breaks the test that
+ * is blocked on it. What it can still do is bound the child, so an inherited run is sized from what
+ * the ancestor reserved and has not yet materialized, with a floor of one worker.
+ *
+ * Reachable by: the two `.gen` tests (Agent/test trigger); anything a test spawns that transitively
+ * runs vitest. NOT by `verify:full`, whose runner holds no claim of its own, so its vitest child is
+ * top-level and still faces the full host-wide gate.
+ */
+function admitNested(input: {
+  live: VitestClaim[];
+  pid: number;
+  measure: (pid: number) => number | undefined;
+  ancestorsOf: (pid: number) => number[] | undefined;
+  cpuCount: number;
+  workerMb: number;
+  invocationMb: number;
+  hardCap?: number;
+  maxUsefulWorkers?: number;
+  forcedWorkers?: number;
+}): VitestAdmission | undefined {
+  const ancestors = input.ancestorsOf(input.pid);
+  if (ancestors === undefined || ancestors.length === 0) return undefined;
+  // Nearest ancestor first: with vitest inside vitest inside vitest, the innermost claim is the one
+  // whose headroom is actually left to spend.
+  const holder = ancestors.map((pid) => input.live.find((claim) => claim.pid === pid)).find(Boolean);
+  if (!holder) return undefined;
+
+  const materializedMb = input.measure(holder.pid) ?? 0;
+  const headroomMb = Math.max(0, holder.costMb - materializedMb);
+  const sized = sizeFromShare({
+    shareMb: headroomMb,
+    cpuCount: input.cpuCount,
+    workerMb: input.workerMb,
+    invocationMb: input.invocationMb,
+    ...(input.hardCap !== undefined ? { hardCap: input.hardCap } : {}),
+    ...(input.maxUsefulWorkers !== undefined ? { maxUsefulWorkers: input.maxUsefulWorkers } : {}),
+  });
+  // `TACHYON_VITEST_MAX_WORKERS` may only ever LOWER an inherited run. It is the escape hatch for a
+  // caller who takes RAM deliberately, and a nested child takes its ancestor's rather than its own —
+  // it also inherits the variable through the environment without anyone aiming it at the child.
+  const bounded = input.forcedWorkers !== undefined && input.forcedWorkers >= 1
+    ? Math.min(Math.trunc(input.forcedWorkers), Math.max(1, sized))
+    : Math.max(1, sized);
+  const workers = Math.max(1, Math.min(bounded, input.hardCap ?? HARD_CAP_WORKERS, Math.max(1, input.cpuCount || 1)));
+
+  return {
+    ok: true,
+    workers,
+    // costMb 0 and a no-op release: NOTHING is written to the ledger, because writing a claim here
+    // is the double count. Recording it would bill this tree once at its own pid and again inside
+    // the ancestor's tree PSS.
+    claim: { workers, costMb: 0, release: () => {} },
+    reason:
+      `nested vitest run: inheriting the claim of ${holder.label}#${holder.pid} `
+      + `(${holder.workers}w, claimed ${holder.costMb}MB, using ${materializedMb}MB) rather than taking a second one — `
+      + `this process is inside that run's tree and is already billed there. Headroom ${headroomMb}MB `
+      + `→ workers=${workers}, claiming 0MB (t-690f52)`
+      + (headroomMb === 0
+        ? `. WARNING: the ancestor has outgrown its claim, so this run is sized to the floor of 1 worker `
+        + `and the host is over its reservation until it exits.`
+        : ""),
+  };
+}
+
+/**
  * Shared host-budget arithmetic for admit (claim) and preview (display).
  *
  * NEVER writes the ledger. Callers that need a claim do so themselves after this returns.
@@ -372,6 +490,8 @@ export function admitVitestRun(input: {
   measure?: (pid: number) => number | undefined;
   now?: () => number;
   pid?: number;
+  /** Injected by tests. Production walks /proc upward looking for a claim-holding ancestor. */
+  ancestorsOf?: (pid: number) => number[] | undefined;
   workerMb?: number;
   invocationMb?: number;
   reserveMb?: number;
@@ -401,6 +521,24 @@ export function admitVitestRun(input: {
       maxUsefulWorkers: input.maxUsefulWorkers,
     });
     const { live, billed, usedMb, poolMb, shareMb, workerMb, invocationMb } = share;
+
+    // Before any of the host-wide arithmetic is spent on this run: is it a DESCENDANT of a run that
+    // has already paid for it? Ordered first because the answer makes the share irrelevant — an
+    // inherited run is not spending the pool, it is spending its ancestor's reservation.
+    const inherited = admitNested({
+      live,
+      pid,
+      measure: input.measure ?? ((target: number) => measureTreePssMb(target)),
+      ancestorsOf: input.ancestorsOf ?? ancestorPids,
+      cpuCount: input.cpuCount,
+      workerMb,
+      invocationMb,
+      ...(input.hardCap !== undefined ? { hardCap: input.hardCap } : {}),
+      ...(input.maxUsefulWorkers !== undefined ? { maxUsefulWorkers: input.maxUsefulWorkers } : {}),
+      ...(input.forcedWorkers !== undefined ? { forcedWorkers: input.forcedWorkers } : {}),
+    });
+    if (inherited) return inherited;
+
     let workers = share.workers;
 
     if (input.forcedWorkers !== undefined && input.forcedWorkers >= 1) {
