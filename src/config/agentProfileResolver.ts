@@ -81,7 +81,7 @@ export type AgentCapabilityHookClass = "capability" | "prompt-transform" | "obse
 export interface AgentCapabilityGrant {
   referenceId: string;
   sourceSha256: string;
-  adapter: "claude" | "codex" | "pi";
+  adapter: "claude" | "codex" | "grok" | "pi";
   kind: "skill" | "mcp" | "hook" | "pi-extension" | "pi-package";
   hookClass?: AgentCapabilityHookClass;
 }
@@ -283,7 +283,7 @@ const authoritySnapshotSchema = z.object({
   capabilityGrants: z.array(z.object({
     referenceId: publicIdSchema,
     sourceSha256: digestSchema,
-    adapter: z.enum(["claude", "codex", "pi"]),
+    adapter: z.enum(["claude", "codex", "grok", "pi"]),
     kind: z.enum(["skill", "mcp", "hook", "pi-extension", "pi-package"]),
     hookClass: z.enum(["capability", "prompt-transform", "observability", "enforcement"]).optional(),
   }).strict()).max(256).optional(),
@@ -753,7 +753,7 @@ function resolveCapabilities(
   }
 
   const adapter = profile.runtime.adapter;
-  if (adapter !== "claude" && adapter !== "codex" && adapter !== "pi") {
+  if (adapter !== "claude" && adapter !== "codex" && adapter !== "grok" && adapter !== "pi") {
     for (const id of [...new Set(ids)].sort(compareText)) {
       withholdId(
         id,
@@ -774,6 +774,16 @@ function resolveCapabilities(
   if ((adapter === "claude" || adapter === "codex") && piIds.length > 0) {
     for (const id of [...new Set(piIds)].sort(compareText)) {
       withholdId(id, "profile/capability", `Pi resources are not supported by the ${adapter} projection`, "capabilities.pi");
+    }
+  }
+  if (adapter === "grok") {
+    for (const id of [...new Set([...(selected?.mcp ?? []), ...(selected?.hooks ?? []), ...piIds])].sort(compareText)) {
+      withholdId(
+        id,
+        "profile/capability",
+        "Grok profile projection supports exact captured skills only; MCP, hooks and Pi resources have separate runtime doors",
+        "capabilities",
+      );
     }
   }
   if (adapter === "pi") {

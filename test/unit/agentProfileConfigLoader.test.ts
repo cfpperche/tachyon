@@ -921,7 +921,7 @@ describe("loadProfileAwareConfig", () => {
     const HOOK_GROUP = { matcher: "Bash", hooks: [{ type: "command", command: "echo guard" }] };
 
     /** A workspace with a canonical Grok profile plus one installed plugin, materialized for grok. */
-    function grokWorkspaceWithPlugin(label: string): { root: string; options: LoadProfileAwareConfigInput } {
+    function grokWorkspaceWithPlugin(label: string): { root: string; payload: string; options: LoadProfileAwareConfigInput } {
       const root = temporaryRoot(label);
       const directory = path.join(root, ".tachyon", "agents", "grok-p");
       fs.mkdirSync(directory, { recursive: true });
@@ -974,6 +974,7 @@ describe("loadProfileAwareConfig", () => {
       };
       return {
         root,
+        payload,
         options: {
           yamlText: "agents:\n  grok-p:\n    profile: .tachyon/agents/grok-p/agent.yml\n",
           workspaceRoot: root,
@@ -987,6 +988,38 @@ describe("loadProfileAwareConfig", () => {
       const result = loadProfileAwareConfig(options);
       expect(result.errors).toEqual([]);
       expect(result.config?.agents["grok-p"]).toMatchObject({ kind: "agent", cmd: "grok" });
+    });
+
+    it("t-84c678: resolves only an exact Grok-granted skill into the private-home snapshot", () => {
+      const { root, payload, options } = grokWorkspaceWithPlugin("tachyon-grok-granted-skill-");
+      const skillDigest = treeSha256(payload);
+      const bytes = Buffer.from(stringify({
+        schemaVersion: 1,
+        agentId: AGENT_ID,
+        runtime: { adapter: "grok", executable: "grok" },
+        capabilities: { skills: ["sdd"] },
+        references: [{
+          id: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd",
+          path: ".tachyon/plugins/sdd/skills/sdd", mode: "pinned", sha256: skillDigest, version: "1.8.0",
+        }],
+      }));
+      fs.writeFileSync(path.join(root, ".tachyon", "agents", "grok-p", "agent.yml"), bytes);
+      const prior = options.authorities.get("grok-p")!;
+      (options.authorities as Map<string, AgentProfileAuthorityRecord>).set("grok-p", {
+        ...prior,
+        canonicalSha256: sha256(bytes),
+        capabilityGrants: [{ referenceId: "sdd", sourceSha256: skillDigest, adapter: "grok", kind: "skill" }],
+      });
+
+      const result = loadProfileAwareConfig(options);
+
+      expect(result.errors).toEqual([]);
+      expect(asAgent(result.config?.agents["grok-p"])?.profileCapabilities).toMatchObject({
+        adapter: "grok",
+        skills: [{ name: "sdd", source: { sha256: skillDigest } }],
+        mcp: {},
+        hooks: {},
+      });
     });
 
     it("a `.grok` entry no plugin claims still blocks, naming that entry", () => {

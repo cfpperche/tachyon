@@ -926,7 +926,14 @@ export class Workspace {
               capabilities: def.profileCapabilities,
             }, cwd, this.bridgeEntry());
           }
-          return this.harness.materializeProfileCapabilities(name, def.profileCapabilities, adapter, cwd, this.bridgeEntry());
+          return this.harness.materializeProfileCapabilities(
+            name,
+            def.profileCapabilities,
+            adapter,
+            cwd,
+            this.bridgeEntry(),
+            def.profileNativeConfig,
+          );
         }
         // SDD 401/406 — Pi is private-home by default; an opt-in resource harness uses its
         // dedicated exact-resource materializer rather than pretending Pi has generic MCP wiring.

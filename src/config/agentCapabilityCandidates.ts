@@ -23,6 +23,7 @@ import path from "node:path";
 const SKILLS_REL: Record<string, string> = {
   claude: ".claude/skills",
   codex: ".agents/skills",
+  grok: ".grok/skills",
 };
 
 /**

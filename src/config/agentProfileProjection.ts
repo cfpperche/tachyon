@@ -77,13 +77,34 @@ const GROK_INSPECTOR_CONTRACT_V2 = [
  * inspector contract is an attestation, and attesting to a symlink that must not exist would be
  * attesting to the defect.
  */
-const GROK_INSPECTOR_CONTRACT = [
+const GROK_INSPECTOR_CONTRACT_V3 = [
   "tachyon/grok-private-home-input-inspector/v3",
   "literal executable grok",
   "GROK_HOME and HOME are Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
   "config.toml and trusted_folders.toml are rewritten before launch",
   "config.toml carries only closed global profile-projected scalars plus typed agent-owned selectors",
   "compat cells for cursor, claude and codex are pinned off",
+  "memory is disabled in config and pinned off by GROK_MEMORY",
+  "auth.json is a private copy of the external credential, never a pointer to it, because the runtime writes it",
+  "a refreshed private credential is harvested back to the external credential",
+  "ambient project .grok tooling and AGENTS.md must be absent",
+  "unselected ambient ~/.grok config, memory and plugins are not inherited",
+].join("\n");
+/**
+ * t-84c678 — private `GROK_HOME` was never sufficient for project skills: Grok 0.2.118 still loaded
+ * `.grok/skills` and its native `.agents/skills` alias with every compatibility cell off. v4 names
+ * the new closed door: those project roots are ignored, and only exact granted bytes are projected
+ * into the private home. This strengthens every authority that named v3, so v3 remains admissible.
+ */
+const GROK_INSPECTOR_CONTRACT = [
+  "tachyon/grok-private-home-input-inspector/v4",
+  "literal executable grok",
+  "GROK_HOME and HOME are Tachyon-owned bridge-mcp/<agent>.grok on every canonical launch",
+  "config.toml and trusted_folders.toml are rewritten before launch",
+  "config.toml carries only closed global profile-projected scalars plus typed agent-owned selectors",
+  "compat cells for cursor, claude and codex are pinned off",
+  "project .grok/skills and .agents/skills roots are ignored for workspace and effective cwd",
+  "selected owner-captured skills require exact Grok grants and are reprojected into the private home",
   "memory is disabled in config and pinned off by GROK_MEMORY",
   "auth.json is a private copy of the external credential, never a pointer to it, because the runtime writes it",
   "a refreshed private credential is harvested back to the external credential",
@@ -120,7 +141,7 @@ export const PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR = Object.freeze({
 export const GROK_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
   adapter: "grok",
   id: "tachyon.grok-private-home-inputs",
-  version: "3",
+  version: "4",
   sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT).digest("hex"),
 });
 export const CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR = Object.freeze({
@@ -211,6 +232,12 @@ const SUPERSEDED_RUNTIME_INSPECTORS: Partial<Record<AttestedRuntime, readonly In
       id: "tachyon.grok-private-home-inputs",
       version: "2",
       sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V2).digest("hex"),
+    }),
+    Object.freeze({
+      adapter: "grok",
+      id: "tachyon.grok-private-home-inputs",
+      version: "3",
+      sha256: crypto.createHash("sha256").update(GROK_INSPECTOR_CONTRACT_V3).digest("hex"),
     }),
   ],
 };
@@ -542,6 +569,7 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
     observations: profile.runtime.adapter === "grok"
       ? [
           { field: "environment.GROK_HOME", source: "environment", suppressed: true },
+          { field: "capabilities.skills", source: "private-runtime-config", suppressed: true },
           { field: "capabilities.mcp", source: "private-runtime-config", suppressed: true },
         ]
       : profile.runtime.adapter === "claude"

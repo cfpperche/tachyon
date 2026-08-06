@@ -228,16 +228,21 @@ describe("t-5498a6 — a pinned capability cannot change underneath the person w
   });
 });
 
-describe("t-5498a6 — an unsupported runtime refuses LOUDLY instead of granting nothing", () => {
-  it("names Grok's missing grant record rather than failing a schema later", () => {
-    // The failure this shape prevents is the one t-62f599 was: a policy expressible for some runtimes
-    // and silently inert for another. Grok is absent from the grant enum; that must be a stated
-    // refusal at the door, not an opaque validation error further down.
-    const result = authorizeWorkspaceSkill(empty, { adapter: "grok", origin: pluginOrigin(), sha256: DIGEST_A });
+describe("t-84c678 — Grok holds exact per-agent skill grants", () => {
+  it("authorizes a Grok skill at the pinned source used by private-home projection", () => {
+    const result = authorizeWorkspaceSkill(empty, {
+      adapter: "grok",
+      origin: pluginOrigin({ runtimes: ["claude", "codex", "grok"] }),
+      sha256: DIGEST_A,
+    });
 
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).toContain("grok");
-    expect(!result.ok && result.error).toContain("cannot hold a skill grant yet");
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.state.grants).toEqual([{
+      referenceId: "visual-qa",
+      sourceSha256: DIGEST_A,
+      adapter: "grok",
+      kind: "skill",
+    }]);
   });
 
   it("refuses to re-grant an existing reference to a different runtime", () => {
@@ -298,11 +303,9 @@ describe("t-5498a6 — emitted records match the persisted schemas", () => {
     const authority = fs.readFileSync(path.join(process.cwd(), "src/config/agentProfileAuthority.ts"), "utf8");
     const adapters = /adapter: z\.enum\(\[([^\]]*)\]\)/.exec(authority);
     expect(adapters).toBeTruthy();
-    for (const adapter of ["claude", "codex", "pi"]) {
+    for (const adapter of ["claude", "codex", "grok", "pi"]) {
       expect(adapters![1], `${adapter} is no longer a grantable adapter`).toContain(`"${adapter}"`);
     }
-    // The refusal above is only honest while grok is genuinely absent from the enum.
-    expect(adapters![1]).not.toContain('"grok"');
 
     const result = authorizeWorkspaceSkill(empty, { adapter: "claude", origin: pluginOrigin(), sha256: DIGEST_A });
     const grantKinds = /kind: z\.enum\(\[([^\]]*)\]\)/.exec(authority);

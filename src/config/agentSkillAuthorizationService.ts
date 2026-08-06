@@ -118,7 +118,7 @@ export async function authorizeAgentSkill(input: AuthorizeAgentSkillInput): Prom
   const state: SkillAuthorizationState = {
     references: (current.profile.references ?? []).filter(isAuthorizedSkillShape),
     grants: current.grants.filter((grant): grant is PersistedGrant & { kind: "skill" } => grant.kind === "skill")
-      .map((grant) => ({ referenceId: grant.referenceId, sourceSha256: grant.sourceSha256, adapter: grant.adapter as "claude" | "codex" | "pi", kind: "skill" })),
+      .map((grant) => ({ referenceId: grant.referenceId, sourceSha256: grant.sourceSha256, adapter: grant.adapter as "claude" | "codex" | "grok" | "pi", kind: "skill" })),
   };
 
   const decided = authorizeWorkspaceSkill(
@@ -178,7 +178,7 @@ export async function revokeAgentSkill(input: {
   const state: SkillAuthorizationState = {
     references: (current.profile.references ?? []).filter(isAuthorizedSkillShape),
     grants: current.grants.filter((grant) => grant.kind === "skill")
-      .map((grant) => ({ referenceId: grant.referenceId, sourceSha256: grant.sourceSha256, adapter: grant.adapter as "claude" | "codex" | "pi", kind: "skill" as const })),
+      .map((grant) => ({ referenceId: grant.referenceId, sourceSha256: grant.sourceSha256, adapter: grant.adapter as "claude" | "codex" | "grok" | "pi", kind: "skill" as const })),
   };
   const revoked = revokeWorkspaceSkill(state, input.referenceId, selected);
   if (!revoked.removed) return { ok: true, removed: false, deselected: false };

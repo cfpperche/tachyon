@@ -24,6 +24,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { HarnessDef } from "../config/loadConfig.js";
 import type { ResolvedAgentNativeConfigProjection } from "../config/agentNativeConfigPolicy.js";
 import { GROK_PROJECTED_KEY_ORDER } from "../config/grokNativeConfigProjection.js";
+import { withGrokProjectSkillsIgnored } from "../config/grokSkillIsolation.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
 import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
@@ -1377,6 +1378,7 @@ export class HarnessManager {
     adapter: ResumeAdapter,
     cwd?: string,
     bridgeEntry?: Record<string, unknown>,
+    nativeConfig?: ResolvedAgentNativeConfigProjection,
   ): MaterializedHarness {
     if (projection.adapter !== adapter.runtime) {
       throw new HarnessUnavailableError(agent, `capability snapshot targets '${projection.adapter}', not '${adapter.runtime}'`);
@@ -1386,7 +1388,9 @@ export class HarnessManager {
       return this.materializeCanonicalClaudeProfileHome(agent, adapter, { capabilities: projection }, cwd, bridgeEntry);
     }
     if (adapter.runtime === "grok") {
-      const home = this.materializeBridgeMcpGrok(agent, bridgeEntry ?? {}, cwd);
+      const home = this.materializeBridgeMcpGrok(agent, bridgeEntry ?? {}, cwd, {
+        ...(nativeConfig ? { nativeConfig } : {}),
+      });
       this.replaceCapturedSkillTree(agent, home, projection);
       this.writeProfileCapabilityManifest(agent, home, projection);
       return { home, env: { GROK_HOME: home, HOME: home }, args: [] };
@@ -2002,7 +2006,7 @@ export class HarnessManager {
     // config into the private home. H7: ${VAR} stays literal on disk.
     const workspaceServers = def.inherit === "workspace" ? readWorkspaceMcpServers(this.workspaceRoot) : null;
     const mergedServers = mergeServers(def, workspaceServers, bridge);
-    const args = this.materializeMcpConfig(agent, def, adapter, home, mergedServers, bridge);
+    const args = this.materializeMcpConfig(agent, def, adapter, home, mergedServers, bridge, cwd);
     if (adapter.runtime === "grok") {
       this.materializeGrokLifecycleHooks(agent, this.grokHome(home), lifecycle?.handoffPath ?? path.join(this.workspaceRoot, ".tachyon", "HANDOFF.md"), {
         // Grok is not an eligible silent-persistence runtime. Keep the capability explicit for the
@@ -2562,7 +2566,15 @@ export class HarnessManager {
     fs.writeFileSync(path.join(home, ".claude.json"), `${JSON.stringify(cfg, null, 2)}\n`, { mode: 0o600 });
   }
 
-  private materializeMcpConfig(_agent: string, def: HarnessDef, adapter: ResumeAdapter, home: string, servers: Record<string, unknown>, bridgeEntry?: Record<string, unknown>): string[] {
+  private materializeMcpConfig(
+    _agent: string,
+    def: HarnessDef,
+    adapter: ResumeAdapter,
+    home: string,
+    servers: Record<string, unknown>,
+    bridgeEntry?: Record<string, unknown>,
+    cwd?: string,
+  ): string[] {
     const h = adapter.harness;
     if (!h) return [];
     if (h.mcp.mode === "flag") {
@@ -2577,7 +2589,7 @@ export class HarnessManager {
     if (adapter.runtime === "grok") {
       const configPath = path.join(this.grokHome(home), h.mcp.fileName);
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
-      fs.writeFileSync(configPath, this.buildGrokHarnessConfig(def, bridgeEntry), "utf8");
+      fs.writeFileSync(configPath, this.buildGrokHarnessConfig(def, bridgeEntry, cwd), "utf8");
       return [];
     }
     if (adapter.runtime === "hermes") {
@@ -2714,7 +2726,7 @@ export class HarnessManager {
     return toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`;
   }
 
-  private buildGrokHarnessConfig(def: HarnessDef, bridgeEntry?: Record<string, unknown>): string {
+  private buildGrokHarnessConfig(def: HarnessDef, bridgeEntry?: Record<string, unknown>, cwd?: string): string {
     let toml = "";
     if (def.inherit === "workspace") {
       try {
@@ -2730,6 +2742,9 @@ export class HarnessManager {
       const url = typeof bridgeEntry.url === "string" ? bridgeEntry.url : "";
       const headers = bridgeEntry.headers && typeof bridgeEntry.headers === "object" && !Array.isArray(bridgeEntry.headers) ? (bridgeEntry.headers as Record<string, string>) : {};
       if (url) toml = setCodexMcpServer(toml, "tachyon_bridge", this.renderGrokMcpBlock("tachyon_bridge", { url, headers }));
+    }
+    if (def.inherit !== "workspace") {
+      toml = withGrokProjectSkillsIgnored(toml, this.workspaceRoot, cwd);
     }
     return toml.endsWith("\n") || toml.length === 0 ? toml : `${toml}\n`;
   }
@@ -3134,6 +3149,11 @@ export class HarnessManager {
     // t-26f508 — the canonical projection is rendered FIRST and the Bridge block appended after it,
     // so `setCodexMcpServer` never has to splice a server table into the middle of a scalar table.
     let toml = options.nativeConfig ? renderGrokCanonicalConfig(agent, options.nativeConfig) : "";
+    // t-84c678 — redirecting GROK_HOME does not suppress native project discovery. Grok 0.2.118
+    // still loaded both `.grok/skills` and `.agents/skills` with every compat cell off. The private
+    // config therefore hides the workspace/effective-worktree roots; exact selected bytes, when any,
+    // are written to this home's own `skills/` by `materializeProfileCapabilities`.
+    toml = withGrokProjectSkillsIgnored(toml, this.workspaceRoot, cwd);
     if (url) {
       toml = setCodexMcpServer(toml, "tachyon_bridge", this.renderGrokMcpBlock("tachyon_bridge", { url, headers }));
     }
