@@ -6,6 +6,52 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.64.0 — What the product creates, it can now read, show and undo
+
+The theme of this release is one class of defect, found four times in one day: Tachyon could
+create state it then refused to load, display or remove.
+
+### Fixed
+- **A valid `spawn_agent` brief no longer takes the whole workspace down** (`t-a11ac5`). The tool
+  capped `instructions` at 2000 on the way IN, then stored the *composed* brief — primer plus
+  instructions — with no cap, and the loader refused it on the way OUT. The workspace did not
+  degrade: it reported "No Tachyon workspace" and took `verify`, `projectGuidance`, `maxAgents`
+  and auth down with the fleet. Size policy now lives in one module that both the projection and
+  the tool schemas import, oversized display prose degrades per field, and identities that must
+  match exactly are never truncated.
+- **A correctly refused Saved Agent can be removed again** (`t-02e72c`, SDD 494). A refusal
+  dropped the agent from `config.agents`, and all three removal doors asked `config.agents`
+  whether it existed — so Forget hung on "Computing what this will do…" forever. Membership and
+  runnability no longer share one map.
+- **Creating an agent no longer fails on a leftover directory** (`t-760d53`). A path that exists
+  but is not a Git checkout was reported as a preserved quarantine lock. It now says what it is
+  and that removing it is safe.
+- `${PLUGIN_ROOT}` is substituted when a plugin's MCP server is rendered (`t-b6180e`). Latent —
+  0 of 15 installed plugins use it — and the un-merge stays exactly reversible.
+- The continuity brief stops re-ingesting Tachyon's own framing (`t-fe9fca`). A stored `STALE:`
+  prefix used to make a freshly written brief claim forever that it was behind.
+
+### Added
+- **`reconcile_roster`** names which records disagree about a Saved Agent, and **which door would
+  remove it** (`t-6c029b`, SDD 494 Part 4). Five states derived from four presence facts; nothing
+  stored.
+- **`worktree_process_hygiene`** reports processes that outlived their worktree (`t-1926ce`). It
+  reports only — killing another process stays the human's. Post-dismiss retention is now
+  disclosed before you dismiss, including that it differs per runtime (`t-23ee99`).
+- The packaged VSIX smoke now opens a door **with the engine running**, on an Electron extension
+  host (`t-a8e1f7`). This is the half that was uncovered when 0.57.0 shipped broken past two
+  reviews and a green gate.
+- Runtime Ops shows the CLI version a behavior was measured on against the one on `PATH` —
+  match, drift, or unknown (`t-1322b5`).
+- `claim_task` accepts several task ids, all-or-nothing, and rolls back every claim if a later
+  one or the launch fails (`t-66c4d7`).
+
+### Changed
+- `exit-empty` is reserved and forced off (`t-9713ff`). A single tmux server hosts the whole
+  fleet, and it must not be able to end itself when it briefly holds no sessions.
+- `role: custom` in a canonical profile is refused instead of accepted and delivered empty
+  (`t-7d8744`).
+
 ## 0.63.0 — The engine starts on a local extension host
 
 ### Fixed
