@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { isSidebarViewV1, parseSidebarViewV1 } from "../../src/runtime-api/sidebarProjection.js";
+import { SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "../../src/sidebar/wireText.js";
 
 function minimalFleet(agentStatus: string) {
   return {
@@ -57,5 +58,31 @@ describe("parseSidebarViewV1 agent status enum", () => {
   it("rejects unknown agent status (fail-closed)", () => {
     expect(isSidebarViewV1(minimalFleet("finished"))).toBe(false);
     expect(() => parseSidebarViewV1(minimalFleet("finished"))).toThrow();
+  });
+
+  it("degrades oversized persisted focus prose without splitting Unicode or rejecting the fleet", () => {
+    const input = minimalFleet("running");
+    (input.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...input.fleet.agents[0],
+      focus: { text: "long brief", source: "brief", full: `brief ${"😀".repeat(SIDEBAR_FOCUS_FULL_MAX)}` },
+    };
+    const full = parseSidebarViewV1(input).fleet.agents[0]!.focus!.full;
+    expect(full.length).toBeLessThanOrEqual(SIDEBAR_FOCUS_FULL_MAX);
+    expect(full).toContain("open the agent for the full brief");
+    expect(full).not.toMatch(/[\uD800-\uDBFF]$/u);
+  });
+
+  it("keeps full entity identities while degrading legacy oversized pin prose", () => {
+    const input = minimalFleet("running");
+    const longName = `agent_${"n".repeat(180)}`;
+    input.fleet.agents[0] = { ...input.fleet.agents[0], name: longName };
+    (input.fleet.pins as Array<Record<string, unknown>>).push({
+      id: "p-abcdef", text: "p".repeat(SIDEBAR_PIN_TEXT_MAX + 1), done: false, tags: [],
+    });
+
+    const fleet = parseSidebarViewV1(input).fleet;
+    expect(fleet.agents[0]!.name).toBe(longName);
+    expect(fleet.pins[0]!.text.length).toBeLessThanOrEqual(SIDEBAR_PIN_TEXT_MAX);
+    expect(fleet.pins[0]!.text).toContain("open the pin for full detail");
   });
 });
