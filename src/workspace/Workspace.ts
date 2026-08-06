@@ -5,6 +5,11 @@ import {
   partitionStoppedTemporaryResidue,
 } from "../agents/stoppedTemporaryResidue.js";
 import { ideBrowserRequest, isIdeBrowserBridgeAvailable } from "../ide-browser/client.js";
+import {
+  IDE_BROWSER_DISABLED_CODE,
+  IDE_BROWSER_DISABLED_ERROR,
+  isIdeBrowserEnabled,
+} from "../ide-browser/settings.js";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
@@ -264,7 +269,7 @@ import { buildProbeView, type ProbeView } from "../probe/probeView.js";
 import { ContinuityStore } from "../continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
 import { ContinuityState } from "../continuity/ContinuityState.js";
-import { classifyInjection, injectionText, type Transition } from "../continuity/classifier.js";
+import { classifyInjection, CONTINUITY_STALE_LAG, injectionText, type Transition } from "../continuity/classifier.js";
 import { gcOrphanAgentFootprints } from "../continuity/orphanGc.js";
 import { ActivityLog, agentLogId } from "../activity/logStore.js";
 import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
@@ -1861,9 +1866,19 @@ export class Workspace {
         // Listed when settings.companion.tabTools is true; execution still requires a paired device.
         companionTabToolsEnabled: () => this.config?.settings.companion?.tabTools === true,
         // Prototype: Integrated Browser (shell HTTP+CDP). Always wire request so tools stay listed;
-        // offline/instance-missing fails at call time. ideBrowserToolsEnabled kept for status probes.
+        // offline/instance-missing and settings.ideBrowser.enabled=false fail at call time (t-3cab05 / F4).
+        // Never gate registration on enabled or live instance — MCP freezes the catalog at connect.
         ideBrowserToolsEnabled: () => isIdeBrowserBridgeAvailable(this.workspaceRoot),
-        ideBrowserRequest: (route, body) => ideBrowserRequest(this.workspaceRoot, route, body),
+        ideBrowserRequest: (route, body) => {
+          if (!isIdeBrowserEnabled(this.config?.settings)) {
+            return Promise.resolve({
+              ok: false as const,
+              code: IDE_BROWSER_DISABLED_CODE,
+              error: IDE_BROWSER_DISABLED_ERROR,
+            });
+          }
+          return ideBrowserRequest(this.workspaceRoot, route, body);
+        },
         // Tab tools require a browser companion session (not mobile-only pair).
         companionBrowserPaired: () => this.companion.hasPairedKind("browser"),
         companionRefHints: (tabId, ref) => this.companionTabRefs.hintsFor(tabId, ref),
@@ -3896,7 +3911,7 @@ export class Workspace {
 
   // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────
   /** D4 staleness threshold (activity records) past which an injected brief is flagged "may be stale". */
-  private static readonly CONTINUITY_STALE_LAG = 100;
+  private static readonly CONTINUITY_STALE_LAG = CONTINUITY_STALE_LAG;
 
   /** The current activity "seq" = record count of the durable per-agent log (cheap; the freshness anchor, D4). */
   currentActivitySeq(agent: string): number | undefined {

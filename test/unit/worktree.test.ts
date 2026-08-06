@@ -513,8 +513,25 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
         expect(AGENT_NAME_PATTERN.test(leaf)).toBe(false);
       });
 
-      it("mints a fresh value per call, even within the same second", () => {
-        const seen = new Set(Array.from({ length: 32 }, () => temporaryBranchFor("codex-residuo", at)));
+      // t-ad8d95 — this asserted 32 unique draws from the DEFAULT entropy and went red under
+      // verify:full ("expected 31 to be 32"). The default is `randomBytes(2)`: 16 bits, 65536
+      // values. The birthday bound for 32 draws is ~0.76% per run, so the assertion was a coin
+      // flip the entropy budget cannot honestly pay for — a false red waiting on the clock.
+      //
+      // The product's promise is narrower than the old test claimed, and the docstring says so:
+      // the entropy "covers two spawns of one name inside the same second". Two, not thirty-two.
+      // So the two claims are now tested separately, each at a sample size it can honestly carry.
+      // Do NOT widen the default to make the old shape pass — 2 bytes is deliberate, and the
+      // stamp plus the agent name already carry the readability the branch name exists for.
+      it("draws its entropy per call, so two spawns in the same second differ", () => {
+        // Matches the documented promise exactly. Collision odds here are 1/65536.
+        expect(temporaryBranchFor("codex-residuo", at)).not.toBe(temporaryBranchFor("codex-residuo", at));
+      });
+
+      it("composes a distinct branch for every distinct entropy, with the clock held still", () => {
+        // The shape's own uniqueness, proven without spending the random budget: inject.
+        const entropies = Array.from({ length: 32 }, (_unused, i) => i.toString(16).padStart(4, "0"));
+        const seen = new Set(entropies.map((e) => temporaryBranchFor("codex-residuo", at, e)));
         expect(seen.size).toBe(32);
       });
 

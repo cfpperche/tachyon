@@ -16,6 +16,8 @@ export interface SettingsDeps {
   openDoctor(): void;
   openConfigFile(wsHash?: string): Promise<void>;
   setCompanionTabTools(wsHash: string, enabled: boolean): Promise<void>;
+  /** SDD 488 F4 — settings.ideBrowser.enabled (human surface + call-time gate). */
+  setIdeBrowserEnabled(wsHash: string, enabled: boolean): Promise<void>;
   setIdleAfterMinutes(wsHash: string, minutes?: number | "never"): Promise<void>;
   setCompanionAllowedHosts(wsHash: string, hosts: string[]): Promise<void>;
   unpairCompanionDevice(wsHash: string, deviceId?: string): Promise<void>;
@@ -76,6 +78,7 @@ export class SettingsPanelManager {
     else if (c.type === "setGlobalSettings") sharedGlobalSettings().update(c.patch);
     else if (c.type === "setIdleAfterMinutes") await this.deps.setIdleAfterMinutes(project, c.minutes);
     else if (c.type === "setCompanionTabTools" && typeof c.enabled === "boolean") await this.deps.setCompanionTabTools(project, c.enabled);
+    else if (c.type === "setIdeBrowserEnabled" && typeof c.enabled === "boolean") await this.deps.setIdeBrowserEnabled(project, c.enabled);
     else if (c.type === "setCompanionAllowedHosts" && Array.isArray(c.hosts)) {
       await this.deps.setCompanionAllowedHosts(project, c.hosts.filter((h: unknown): h is string => typeof h === "string"));
     } else if (c.type === "unpairCompanionDevice") await this.deps.unpairCompanionDevice(project, typeof c.deviceId === "string" ? c.deviceId : undefined);

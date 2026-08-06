@@ -10,6 +10,8 @@ settings:
   maxAgents: 8
   auth: true
   ideBrowser:
+    # SDD 488 F4 — opt-in GA gate (human surface + call-time). Tools stay listed either way.
+    enabled: true
     # Change this to your app under development (http(s) URL or host).
     homeUrl: about:blank
 

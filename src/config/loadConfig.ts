@@ -560,9 +560,12 @@ export interface TachyonConfig {
      */
     companion?: { tabTools?: boolean; allowedHosts?: string[]; lanAccess?: boolean };
     /**
-     * Integrated Browser (Design Mode / ide_browser_*). Workspace home URL for the globe control.
+     * Integrated Browser (Design Mode / ide_browser_*).
+     * enabled — GA opt-in for the human surface and call-time execution (default absent = off).
+     * Tools always register when the engine wires ideBrowserRequest; disabled/offline fail at call time.
+     * homeUrl — workspace default for the globe control.
      */
-    ideBrowser?: { homeUrl?: string };
+    ideBrowser?: { enabled?: boolean; homeUrl?: string };
     /**
      * SDD 479 — the sidebar agent card's layout, owned by the project (it travels with the repo).
      *
@@ -1722,10 +1725,17 @@ export function parseConfig(yamlText: string): ParseResult {
       }
       if (raw.settings.ideBrowser !== undefined) {
         if (!isPlainObject(raw.settings.ideBrowser)) {
-          errors.push("settings.ideBrowser: must be a mapping with optional 'homeUrl'");
+          errors.push("settings.ideBrowser: must be a mapping with optional 'enabled' and 'homeUrl'");
         } else {
           const ib = raw.settings.ideBrowser;
-          const out: { homeUrl?: string } = {};
+          const out: { enabled?: boolean; homeUrl?: string } = {};
+          if (ib.enabled !== undefined) {
+            if (typeof ib.enabled !== "boolean") {
+              errors.push("settings.ideBrowser.enabled: must be a boolean");
+            } else {
+              out.enabled = ib.enabled;
+            }
+          }
           if (ib.homeUrl !== undefined) {
             if (typeof ib.homeUrl !== "string" || !ib.homeUrl.trim()) {
               errors.push("settings.ideBrowser.homeUrl: must be a non-empty string (http(s) URL or host)");
@@ -1734,7 +1744,7 @@ export function parseConfig(yamlText: string): ParseResult {
             }
           }
           for (const key of Object.keys(ib)) {
-            if (key !== "homeUrl") {
+            if (key !== "enabled" && key !== "homeUrl") {
               errors.push(`settings.ideBrowser: unknown key '${key}'`);
             }
           }

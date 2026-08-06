@@ -154,6 +154,12 @@ export interface CockpitStrings {
   companionTabToolsHelp: string;
   companionAllowedHosts: string;
   companionAllowedHostsHelp: string;
+  /** SDD 488 F4 — Integrated Browser GA gate. */
+  ideBrowserTitle: string;
+  ideBrowserHint: string;
+  ideBrowserBody: string;
+  ideBrowserEnabled: string;
+  ideBrowserEnabledHelp: string;
   // t-585d5c — Control -> Settings, idle-notification window.
   idleNotifyTitle: string;
   idleNotifyHelp: string;
@@ -253,6 +259,8 @@ export type CockpitAction =
   | { type: "engineLogJournal"; wsHash: string }
   /** SDD 414 — patch settings.companion.tabTools for one workspace. */
   | { type: "setCompanionTabTools"; wsHash: string; enabled: boolean }
+  /** SDD 488 F4 — patch settings.ideBrowser.enabled for one workspace. */
+  | { type: "setIdeBrowserEnabled"; wsHash: string; enabled: boolean }
   // t-585d5c — `minutes` absent means "reset to the product default", which REMOVES the key rather
   // than writing the default number; `"never"` is the explicit off.
   | { type: "setIdleAfterMinutes"; wsHash: string; minutes?: number | "never" }
@@ -428,6 +436,11 @@ export const setIdleAfterMinutesAction = (wsHash: string, minutes?: number | "ne
 
 export const setCompanionTabToolsAction = (wsHash: string, enabled: boolean): CockpitAction => ({
   type: "setCompanionTabTools",
+  wsHash,
+  enabled,
+});
+export const setIdeBrowserEnabledAction = (wsHash: string, enabled: boolean): CockpitAction => ({
+  type: "setIdeBrowserEnabled",
   wsHash,
   enabled,
 });

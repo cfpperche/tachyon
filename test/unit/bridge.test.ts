@@ -248,6 +248,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const EV_HEAD = "abc123";
   let evSeq = 0;
   let validationChanges = 0;
+  let activitySeq = 7;
   const hostActionCalls: unknown[] = [];
   const bridge = new Bridge({
     workspaceRoot: pinsRoot,
@@ -259,7 +260,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     continuity,
     handoff,
     lastActivityAt: () => null,
-    currentActivitySeq: () => 7,
+    currentActivitySeq: () => activitySeq,
     notify: (message, level) => notifications.push({ message, level }),
     onTasksChanged: () => { taskChanges += 1; },
     onValidationsChanged: () => { validationChanges += 1; },
@@ -843,6 +844,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   it("continuity tools round-trip through MCP onto the per-agent file (spec 241)", async () => {
     const status0 = await client.callTool({ name: "continuity_status", arguments: { agent: "claude" } });
     expect(JSON.parse((status0.content as Array<{ text: string }>)[0].text)).toMatchObject({ agent: "claude", exists: false }); // cold start
+    const cold = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+    expect((cold.content as Array<{ text: string }>)[0].text).toContain("# Derived Open Work");
 
     const set = await client.callTool({ name: "set_continuity", arguments: { agent: "claude", content: "# Current Goal\nship spec 241", status: "active" } });
     expect(set.isError).toBeFalsy();
@@ -855,6 +858,71 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const status1 = await client.callTool({ name: "continuity_status", arguments: { agent: "claude" } });
     const parsed = JSON.parse((status1.content as Array<{ text: string }>)[0].text);
     expect(parsed).toMatchObject({ agent: "claude", exists: true, status: "active", source_activity_seq: 7, current_activity_seq: 7, lag: 0 });
+  });
+
+  it("get_continuity derives open work without storing it and leads with stale lag", async () => {
+    const task = await tasks.create({ title: "Reconcile live continuity", author: "human", assignee: "claude" });
+    await tasks.update(task.id, { status: "triaged" });
+    await tasks.update(task.id, { status: "active" });
+    const pin = pins.create("Review continuity contract", "claude");
+    pins.create("Another agent's reminder", "codex");
+    activitySeq = 108;
+
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: "# Current Goal\nship", source_activity_seq: 7 },
+    });
+    const got = await client.callTool({ name: "get_continuity", arguments: { agent: "claude" } });
+    const text = (got.content as Array<{ text: string }>)[0].text;
+
+    expect(text).toMatch(/^STALE: continuity brief is 101 activity records behind/);
+    expect(text).toContain(`- ${task.id}: Reconcile live continuity`);
+    expect(text).toContain(`- ${pin.id}: Review continuity contract`);
+    expect(text).not.toContain("Another agent's reminder");
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8")).not.toContain("Derived Open Work");
+
+    activitySeq = 7;
+    await tasks.update(task.id, { status: "done" });
+    pins.setDone(pin.id, true);
+  });
+
+  it("set_continuity warns after removed task ids and wiki links", async () => {
+    await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: "# Open Threads\n- t-ed20f5\n- [[decision-log]]" },
+    });
+    const rewritten = await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: "# Open Threads\n- complete" },
+    });
+
+    const text = (rewritten.content as Array<{ text: string }>)[0].text;
+    expect(text).toContain("continuity updated");
+    expect(text).toContain("removed references: t-ed20f5, [[decision-log]]");
+    expect(fs.readFileSync(nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md"), "utf8")).toContain("- complete");
+  });
+
+  it("set_continuity describes authored narrative and derived open work", async () => {
+    const { tools: listed } = await client.listTools();
+    const tool = listed.find((candidate) => candidate.name === "set_continuity");
+
+    expect(tool?.description).toContain("authored continuity narrative");
+    expect(tool?.description).toContain("derives your open tasks and pins during reads");
+    expect(tool?.description).not.toContain("keep it SHORT");
+  });
+
+  it("set_continuity keeps advisory drop detection non-blocking for malformed prior content", async () => {
+    const continuityPath = nodePath.join(pinsRoot, ".tachyon", "continuity", "claude.md");
+    fs.writeFileSync(continuityPath, "malformed prior content with t-ed20f5", "utf8");
+
+    const rewritten = await client.callTool({
+      name: "set_continuity",
+      arguments: { agent: "claude", content: "# Current Goal\nrecover" },
+    });
+
+    expect(rewritten.isError).toBeFalsy();
+    expect((rewritten.content as Array<{ text: string }>)[0].text).toBe("continuity updated");
+    expect(fs.readFileSync(continuityPath, "utf8")).toContain("# Current Goal\nrecover");
   });
 
   it("project-handoff tools round-trip through MCP: append (any agent) + CAS rewrite (owner) (spec 245)", async () => {

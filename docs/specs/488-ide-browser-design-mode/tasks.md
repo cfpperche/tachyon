@@ -55,7 +55,7 @@ _Start only after P2 green or explicit maintainer pull-forward. Prefer split SDD
 - [ ] **F1** Remove pane marker primary path after runtime matrix green
 - [ ] **F2** Multi-agent group thread product rules + SDD or design task
 - [ ] **F3** Runtime parity matrix living doc / notes table
-- [ ] **F4** GA settings gate + onboarding copy
+- [x] **F4** GA settings gate + onboarding copy (`settings.ideBrowser.enabled` + first-use tips; tools still always-register) — t-48ff4a
 - [ ] **F5** Pick → structured edit quality
 - [ ] **F6** Security review (eval, token, Trusted Types, click)
 - [ ] **F7** `cookbook.md` via sdd-cookbook (operator: which browser product when)
