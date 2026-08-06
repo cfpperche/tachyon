@@ -2096,7 +2096,7 @@ export class Workspace {
         onSavedAgentProposed: (proposal) => deps.onSavedAgentProposed?.(this, proposal),
         onSavedAgentRemovalProposed: (proposal) => deps.onSavedAgentRemovalProposed?.(this, proposal),
         inspectSavedAgentProfile: async (name) => {
-          if (!this.isAgentProfileAgent(name)) return undefined;
+          if (!this.isSavedAgentMember(name)) return undefined;
           try {
             const snapshot = await this.inspectAgentProfileLifecycle(name);
             return { agentId: snapshot.agentId, revision: snapshot.revision };
@@ -4107,6 +4107,14 @@ export class Workspace {
     return asAgent(this.config?.agents[name])?.profileLifecycle !== undefined;
   }
 
+  /** SDD 494 Part 1 — membership survives a failed runtime projection. */
+  isSavedAgentMember(name: string): boolean {
+    const source = (this.config as (TachyonConfig & {
+      agentSources?: Record<string, { mode: "terminal" | "profile" | "refused" }>;
+    }) | undefined)?.agentSources?.[name];
+    return source?.mode === "profile" || source?.mode === "refused";
+  }
+
   /**
    * t-e722ce — the read-only projection of what a forget would do, computed before the human is
    * asked to approve anything.
@@ -4122,7 +4130,7 @@ export class Workspace {
    * runs either way), and the cascade re-proves absence against the repository before it acts.
    */
   async planAgentProfileForget(name: string, expectedRevision?: string): Promise<AgentForgetPlanV1> {
-    if (!this.isAgentProfileAgent(name)) throw new Error(`agent '${name}' is not backed by a canonical profile`);
+    if (!this.isSavedAgentMember(name)) throw new Error(`agent '${name}' is not backed by a canonical profile`);
     const snapshot = await this.inspectAgentProfileLifecycle(name);
     if (expectedRevision !== undefined && snapshot.revision !== expectedRevision) {
       throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${name}' profile revision conflict`);
@@ -4171,7 +4179,7 @@ export class Workspace {
       authorityPresent: authority !== undefined
         && authority.agentId === snapshot.profile.agentId
         && authority.canonicalSha256 === snapshot.provenance.canonical.sha256,
-      locatorPresent: this.config?.agents[name] !== undefined,
+      locatorPresent: this.isSavedAgentMember(name),
       profileHomePresent: fs.existsSync(home),
     });
   }
@@ -4192,7 +4200,7 @@ export class Workspace {
    * an optimisation that lets a later gate be skipped — it is the gate that makes the later two pass.
    */
   async forgetAgentProfileAgentCascade(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
-    if (!this.isAgentProfileAgent(name)) throw new Error(`agent '${name}' is not backed by a canonical profile`);
+    if (!this.isSavedAgentMember(name)) throw new Error(`agent '${name}' is not backed by a canonical profile`);
     if (this.ledger.get(name)?.worktree) await removeAgentWorktree(this, name, true);
     await stopAgentSessionForDelete(this.manager, name);
     return this.forgetAgentProfileAgent(name, expectedRevision);
@@ -4200,8 +4208,7 @@ export class Workspace {
 
   /** Recoverable retirement for a profile-backed declared agent. */
   async forgetAgentProfileAgent(name: string, expectedRevision?: string): Promise<AgentProfileForgetResult> {
-    const lifecycle = asAgent(this.config?.agents[name])?.profileLifecycle;
-    if (!lifecycle) throw new Error(`agent '${name}' is not backed by a canonical profile`);
+    if (!this.isSavedAgentMember(name)) throw new Error(`agent '${name}' is not backed by a canonical profile`);
     const inspected = await this.inspectAgentProfileLifecycle(name);
     if (expectedRevision !== undefined && inspected.revision !== expectedRevision) {
       throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${name}' profile revision conflict`);

@@ -968,7 +968,7 @@ async function deleteConfiguredAgent(
   // t-e722ce — the profile-backed cascade lives on the Workspace now, because Agent Studio's Forget
   // runs the SAME one. This operation and that button are two callers of one implementation rather
   // than two implementations of one promise, which is what let them disagree in the first place.
-  if (workspace.isAgentProfileAgent(agent)) {
+  if (workspace.isSavedAgentMember(agent)) {
     await workspace.forgetAgentProfileAgentCascade(agent);
     onViewsChanged("agents");
     return json({ changed: true });

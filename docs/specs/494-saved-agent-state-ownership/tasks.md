@@ -7,30 +7,30 @@ Ship Part 1 alone if the rest is deferred.
 
 ## Part 0 — prove the guard red
 
-- [ ] Enumerate every actor and trigger that can reach removal of a Saved Agent. Start from the
+- [x] Enumerate every actor and trigger that can reach removal of a Saved Agent. Start from the
       five rows in `evidence/measurement-2026-08-06.md` and add any door found since. Make that
       list the test-case list, named the same way.
-- [ ] Add a fixture that builds a refused canonical agent without SecretStorage. Port
+- [x] Add a fixture that builds a refused canonical agent without SecretStorage. Port
       `repro.ts` from the evidence: two Claude agents, a private fake home, one with
       `authorize: [bypassPermissions]` and one without.
-- [ ] Write the failing test. Assert that a forget plan is computed for the refused agent, and
+- [x] Write the failing test. Assert that a forget plan is computed for the refused agent, and
       that `remove-locator` reports `will-run`. Watch it FAIL before any fix.
-- [ ] Write the failing test for the Bridge door. Assert that
+- [x] Write the failing test for the Bridge door. Assert that
       `propose_saved_agent_removal` accepts the refused agent. Watch it FAIL.
 
 ## Part 1 — membership and runnability stop sharing one map
 
-- [ ] Add a membership predicate over `agentSources`. It admits `mode: "profile"` and
+- [x] Add a membership predicate over `agentSources`. It admits `mode: "profile"` and
       `mode: "refused"`. It must not read `config.agents`.
-- [ ] Replace `isAgentProfileAgent` with it at `Workspace.ts:2099`, `4125` and `4195`.
-- [ ] Change `locatorPresent` at `Workspace.ts:4170` to read the roster, not `config.agents`.
+- [x] Replace `isAgentProfileAgent` with it at `Workspace.ts:2099`, `4125` and `4195`.
+- [x] Change `locatorPresent` at `Workspace.ts:4170` to read the roster, not `config.agents`.
       This is the trap the evidence names. Cover it with its own assertion.
-- [ ] Make `planAgentProfileForget` compute every step without a successful projection. Confirm
+- [x] Make `planAgentProfileForget` compute every step without a successful projection. Confirm
       each remaining input comes from disk, the ledger, the occupancy probe or the authority
       port.
-- [ ] Confirm `forgetAgentProfileAgentCascade` completes for a refused agent, and writes a
+- [x] Confirm `forgetAgentProfileAgentCascade` completes for a refused agent, and writes a
       journal entry under `.tachyon/canonical-agent-transactions/forget/`.
-- [ ] Run the Part 0 tests. They must pass now, and the enumeration must have no uncovered door.
+- [x] Run the Part 0 tests. They must pass now, and the enumeration must have no uncovered door.
 
 ## Part 2 — the roster document
 
