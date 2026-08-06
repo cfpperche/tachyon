@@ -122,6 +122,18 @@ describe("designModeChat JSONL store", () => {
     expect(p).toMatch(/design_mode_chat_reply/);
   });
 
+  it("formatDmChatPrompt embeds host turn id for design_mode_chat_reply (t-181925)", () => {
+    const p = formatDmChatPrompt({
+      agent: "alice",
+      text: "what color is the button?",
+      workspaceRoot: root,
+      turnId: "dm-turn-abc",
+    });
+    expect(p).toContain("Turn id: dm-turn-abc");
+    expect(p).toContain('design_mode_chat_reply({ text: "...", turnId: "dm-turn-abc" })');
+    expect(p).toMatch(/turnId argument must be exactly "dm-turn-abc"/);
+  });
+
   it("distinguishes missing, empty, ok, and corrupt chat files (t-9b2741)", async () => {
     expect(inspectDmChatFile(root).status).toBe("missing");
 

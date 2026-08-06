@@ -363,14 +363,24 @@ export function formatDmChatPrompt(input: {
    * When present, this human turn is about that selection.
    */
   pickContext?: string;
+  /**
+   * Host-minted turn id for this send (t-181925 / C-06). The agent must echo it on
+   * design_mode_chat_reply so a late reply cannot clear a different turn's wait.
+   */
+  turnId?: string;
 }): string {
   void input.recent;
   const chatPath =
     input.chatLogPath
     ?? (input.workspaceRoot ? designModeChatPath(input.workspaceRoot) : null);
+  const turnId = input.turnId?.trim() || "";
+  const replyTool = turnId
+    ? `design_mode_chat_reply({ text: "...", turnId: "${turnId}" })`
+    : `design_mode_chat_reply({ text: "..." })`;
 
   const lines = [
     `[Design Mode · ${input.agent}]`,
+    turnId ? `Turn id: ${turnId}` : null,
     input.pageUrl ? `Open page: ${input.pageUrl}` : null,
     chatPath
       ? `Chat log (append-only JSONL, one event per line): ${chatPath}`
@@ -387,7 +397,11 @@ export function formatDmChatPrompt(input: {
     `Human: ${input.text}`,
     "",
     // Happy path is tool-only. Pane markers are not advertised — they taught agents to skip MCP.
-    "Required: answer ONLY via Bridge tool design_mode_chat_reply({ text: \"...\" }) with the plain answer.",
+    // turnId binds the reply to this send so late replies cannot resolve another wait (t-181925).
+    `Required: answer ONLY via Bridge tool ${replyTool} with the plain answer.`,
+    turnId
+      ? `The turnId argument must be exactly "${turnId}" — a reply with a different or missing turn id will not update this chat turn.`
+      : null,
     "Do not write the answer only in the terminal pane — the Design Mode chat panel updates only when that tool is called.",
     "Do not wrap the answer in markers or dump tool JSON into the pane.",
   ];
