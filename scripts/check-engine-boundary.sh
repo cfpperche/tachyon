@@ -9,16 +9,16 @@ cd "$(dirname "$0")/.."
 # spec 349 T11: plugins/ui/host.ts is also shell; the pure projection/broker modules stay vscode-free.
 #
 # SDD 410 Phase D (t-610705) moved the studio panel wiring out of src/webview/ — which is shell — into
-# src/cockpit/. The files below are that same panel/host code under a new path: studioHost replaces the
-# one-panel-per-entity lifecycle, studioRegistry declares each studio's adapter + legacy serializer, and
-# each *Domain handler is a webview message handler ported from a retired *PanelManager (file dialogs,
-# image import). Their vscode use is UI interaction, not engine logic.
+# src/cockpit/. The files below are that same panel/host code under a new path: studioRegistry declares
+# each studio's adapter + legacy serializer, and each *Domain handler is a webview message handler
+# ported from a retired *PanelManager (file dialogs, image import). Their vscode use is UI interaction,
+# not engine logic.
 #
-# They are ENUMERATED, not matched by a `src/cockpit/` prefix, on purpose: the other seven files in that
-# directory (route/resolveSection/model/missionVm/taskDetailVm/activityFeed/studioIds) are pure logic and
-# must STAY vscode-free. A directory-wide allow would let them acquire a vscode import in silence, which
-# is the regression this guard exists to catch.
-SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runtimeOps/openRuntimeOps\.ts|workspace/(VsCodeHost|notify|legacyVsCodeSettings)\.ts|cockpit/(studioHost|studioRegistry|taskStudioDomain|pinStudioDomain|agentStudioDomain)\.ts)'
+# They are ENUMERATED, not matched by a `src/cockpit/` prefix, on purpose: the other modules in that
+# directory (including route/resolveSection/model/missionVm/taskDetailVm/activityFeed/studioIds) are pure
+# logic and must STAY vscode-free. A directory-wide allow would let them acquire a vscode import in
+# silence, which is the regression this guard exists to catch.
+SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runtimeOps/openRuntimeOps\.ts|workspace/(VsCodeHost|notify|legacyVsCodeSettings)\.ts|cockpit/(studioRegistry|taskStudioDomain|pinStudioDomain|agentStudioDomain)\.ts)'
 
 # Match every way to pull in vscode: static import (either quote style), require, and dynamic import().
 VSCODE_IMPORT='from ['"'"'"]vscode['"'"'"]|require\(['"'"'"]vscode['"'"'"]\)|import\(['"'"'"]vscode['"'"'"]\)'
