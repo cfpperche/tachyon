@@ -359,3 +359,68 @@ task dizia "esta task é o registro do que precisa mudar lá", que ele leu como 
 
 Está no `project-guidance` agora (`928e9e98`): preparar conserto para outro repositório segue
 certo; o que para é o `git push` e o `git tag`.
+
+---
+
+## Ondas M a Q (2026-08-06) — reconstruídas, e a reconstrução falhou em parte
+
+Registro atrasado, escrito em 06/08 ~14h30. A regra 23 manda copiar o `cmd` NO DESPACHO e eu não
+copiei por cinco ondas. Abaixo está o que consegui recuperar do disco, e o que não consegui.
+
+### O que os merges provam (fonte: `git log --merges`, main)
+
+| horário | merge | task | agente | kind |
+|---|---|---|---|---|
+| 00:08 | `4e7cd2fa` | t-198615 | hostname | bug |
+| 00:14 | `ad96b85f` | t-dd46a4 | replymatrix | chore |
+| 00:15 | `8db0f5a4` | t-fe8ba3 | bodylabel | bug |
+| 00:23 | `ac338400` | t-3cab05 | offlineenv | chore |
+| 00:24 | `689ca376` | t-08f08e | protoexit | chore |
+| 00:36 | `4936fbe9` | t-a8f4a9 | eventhub | design |
+| 09:43 | `aaa832d1` | t-dc98af | stalecomment | chore |
+| 09:47 | `a42eff86` | t-004255 | basedrift | bug |
+| 09:59 | `236e4e6e` | t-167b5c | doorbell | proposal |
+| 11:04 | `ba8cd9ab` | t-48ff4a | browsergate | feature |
+| 11:16 | `879b5d06` | t-c35335 | continuity | design |
+
+Onze entregas, onze merges, zero reversões.
+
+### Runtimes, e como cada atribuição foi obtida
+
+| agente | runtime | como eu sei |
+|---|---|---|
+| offlineenv | grok | registrado no meu continuity brief no despacho |
+| protoexit | codex `medium` | idem |
+| eventhub | claude `claude-sonnet-5` | idem |
+| basedrift | codex | `.tachyon/harness/basedrift/` tem `config.toml` + `goals_1.sqlite` |
+| continuity | codex | idem |
+| localhost | codex | idem, mais `auth.json` |
+| doorbell | claude | `.tachyon/harness/doorbell/` tem `backups` + `file-history` |
+| plugapply | claude | idem, mais `history.jsonl` |
+| stalecomment | grok | INFERIDO por ausência — grok não deixa dir em `.tachyon/harness/` |
+| browsergate | grok | idem, mais o despacho desta sessão |
+| hostname, replymatrix, bodylabel | **NÃO RECUPERÁVEL** | nada no disco os atribui |
+
+O `effort` só sobreviveu onde eu o tinha escrito à mão no brief. Para as outras oito entregas, o
+eixo interno do runtime está perdido. Este é o custo direto de não copiar o `cmd` no despacho.
+
+### O defeito que a reconstrução revelou, e ele é maior que o registro
+
+**A regra 14 deste projeto está errada.** Ela diz: "fonte durável pós-dismiss:
+`.tachyon/activity/<agente>.jsonl`". Não é durável. Medido hoje: `browsergate` e `continuity`
+foram dispensados às 14h05 e 14h16, e seus arquivos já não estão lá — `kill_agent` remove o
+worktree e o registro de activity junto.
+
+E `.tachyon/retired-agent-profiles/` também não cobre: os 17 perfis lá param em 05/08 17h12. É
+outra coisa — aposentadoria de perfil de Saved Agent, não histórico de Temporary dispensado.
+
+O que de fato sobrevive é `.tachyon/harness/<agente>/`, e SÓ para claude e codex. Grok não deixa
+diretório nenhum. Então a história de um agente grok dispensado é irrecuperável por construção,
+enquanto a de um codex sobrevive — assimetria que ninguém declarou e na qual eu estava confiando.
+
+### O que isto muda no método
+
+1. Copiar o `cmd` no despacho deixa de ser higiene e passa a ser a ÚNICA fonte de `effort`.
+2. A regra 14 precisa ser reescrita com o caminho certo e com a assimetria por runtime declarada.
+3. Reconciliar a task ANTES de dispensar o agente ganha uma segunda razão: depois do dismiss, para
+   grok, não sobra de onde reconstruir.
