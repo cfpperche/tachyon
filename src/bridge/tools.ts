@@ -76,11 +76,10 @@ import { redactSecrets } from "./redact.js";
 import { hostActionName, type HostActionBrokerResult } from "../host-action/index.js";
 import {
   buildApprovalRequest,
-  writeApprovalRequest,
+  recordApprovalRequest,
   listPendingApprovalRequests,
   readOwnApprovalRequest,
   cancelOwnApprovalRequest,
-  appendApprovalWitnessEvent,
 } from "./approvalRequest.js";
 import type { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import type { TaskNotificationEvent } from "../tasks/taskNotificationPolicy.js";
@@ -5850,15 +5849,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
         // (user: notification + Control/Approvals only; checklist pins stay for knowledge).
         // Legacy records may still carry pinId; resolve/cancel completePin remains best-effort.
         const request = base;
-        writeApprovalRequest(deps.workspaceRoot, request);
-        appendApprovalWitnessEvent(deps.workspaceRoot, {
-          kind: "requested",
-          id: request.id,
-          requester: request.requester,
-          session: request.session,
-          at: request.createdAt,
-          payloadHash: request.payloadHash,
-        });
+        recordApprovalRequest(deps.workspaceRoot, request);
         deps.onApprovalRequested?.({ id: request.id, requester: request.requester });
         return ok(
           JSON.stringify(
