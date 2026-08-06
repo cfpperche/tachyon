@@ -52,9 +52,9 @@
 import path from "node:path";
 
 /** The grant record's adapter enum — the runtimes that can hold a capability grant at all. */
-export type SkillGrantAdapter = "claude" | "codex" | "pi";
+export type SkillGrantAdapter = "claude" | "codex" | "grok" | "pi";
 
-const GRANT_ADAPTERS: readonly string[] = ["claude", "codex", "pi"];
+const GRANT_ADAPTERS: readonly string[] = ["claude", "codex", "grok", "pi"];
 
 /** Reference ids are stable, human-readable handles; same shape the profile schema enforces. */
 const REFERENCE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
@@ -192,9 +192,7 @@ export function authorizeWorkspaceSkill(
 ): SkillAuthorizationResult {
   const { adapter, origin } = request;
 
-  // Grok is absent from the grant enum, so it cannot hold a capability grant at all. Say that in the
-  // operator's terms instead of letting a schema rejection surface later as an opaque validation error
-  // — an unsupported runtime must refuse LOUDLY, never accept and deliver nothing.
+  // Unsupported runtimes must refuse LOUDLY, never accept and deliver nothing.
   if (!GRANT_ADAPTERS.includes(adapter)) {
     return { ok: false, error: `runtime '${adapter}' cannot hold a skill grant yet — no capability grant record exists for it` };
   }

@@ -41,6 +41,7 @@ import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentPr
 
 const claude = adapterForRuntime("claude")!;
 const codex = adapterForRuntime("codex")!;
+const grok = adapterForRuntime("grok")!;
 const pi = adapterForRuntime("pi")!;
 const DEF = (inherit: "none" | "workspace"): HarnessDef => ({
   inherit,
@@ -686,6 +687,49 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.readFileSync(repairedPrompt, "utf8")).toBe("Review with evidence.\n");
   });
 
+  it("t-84c678: Grok hides project skill roots and rebuilds only the captured per-agent selection", () => {
+    const realGrokHome = path.join(path.dirname(realHome), "realgrok-profile");
+    fs.mkdirSync(realGrokHome, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    const worktree = path.join(path.dirname(ws), "grok-profile-worktree");
+    fs.mkdirSync(worktree, { recursive: true });
+    const source = {
+      source: ".tachyon/plugins/sdd/skills/sdd",
+      sourcePath: path.join(ws, ".tachyon/plugins/sdd/skills/sdd"),
+      type: "tree" as const,
+      sha256: "f".repeat(64),
+      entries: [
+        { path: ".", type: "directory" as const, mode: 0o755 },
+        { path: "SKILL.md", type: "file" as const, mode: 0o644, bytes: Buffer.from("# Captured SDD\n") },
+      ],
+    };
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "grok",
+      sha256: "d".repeat(64),
+      sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: source.source, sha256: source.sha256 }],
+      skills: [{ name: "sdd", source }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const mgr = new HarnessManager(
+      ws, realHome, PROC, path.join(realHome, ".claude.json"), undefined, undefined, undefined, realGrokHome,
+    );
+
+    const selected = mgr.materializeProfileCapabilities("grok-profile", projection, grok, worktree);
+    const config = fs.readFileSync(path.join(selected.home, "config.toml"), "utf8");
+    for (const root of [ws, worktree]) {
+      expect(config).toContain(JSON.stringify(path.join(root, ".grok", "skills")));
+      expect(config).toContain(JSON.stringify(path.join(root, ".agents", "skills")));
+    }
+    expect(fs.readFileSync(path.join(selected.home, "skills", "sdd", "SKILL.md"), "utf8")).toBe("# Captured SDD\n");
+
+    const empty = { ...projection, sha256: "e".repeat(64), sources: [], skills: [] };
+    mgr.materializeProfileCapabilities("grok-profile", empty, grok, worktree);
+    expect(fs.readdirSync(path.join(selected.home, "skills"))).toEqual([]);
+  });
+
   it("spec 298: codex harness writes private config.toml, symlinks auth, and returns CODEX_HOME only", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex");
     fs.mkdirSync(codexHome, { recursive: true });
@@ -1247,6 +1291,8 @@ describe("HarnessManager materialize (fs)", () => {
     expect(first).toContain('permission_mode = "ask"');
     expect(first).toContain("[compat.claude]");
     expect(first).toContain("enabled = false");
+    expect(first).toContain("[skills]");
+    expect(first).toContain(JSON.stringify(path.join(ws, ".grok", "skills")));
     expect(first).toContain("[mcp_servers.tachyon_bridge]");
 
     // Restart/resume rewrite the same home. The bytes must be identical, and the external credential

@@ -61,6 +61,16 @@ describe("t-5498a6 — the lockfile decides which list a skill belongs to", () =
     expect(listAuthorizableCapabilities(root, "codex").workspaceSkills.map((s) => s.name)).toEqual(["codex-only"]);
     expect(listAuthorizableCapabilities(root, "claude").workspaceSkills).toEqual([]);
   });
+
+  it("t-84c678: surfaces Grok project skills for explicit per-agent authorization", () => {
+    const root = workspace();
+    writeLock(root, {});
+    writeSkill(root, ".grok/skills/grok-only");
+
+    expect(listAuthorizableCapabilities(root, "grok").workspaceSkills).toEqual([
+      { name: "grok-only", path: ".grok/skills/grok-only" },
+    ]);
+  });
 });
 
 describe("t-5498a6 — a plugin that cannot be authorized is SHOWN with the reason, never hidden", () => {
