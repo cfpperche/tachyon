@@ -43,8 +43,12 @@ const CONTROL_RE = /[\x00-\x1f\x7f]/;
 /** object keys that would pollute the prototype chain / break the own-key contract — rejected everywhere. */
 const DANGEROUS_KEYS: ReadonlySet<string> = new Set(["__proto__", "constructor", "prototype"]);
 
-const PLUGIN_ROOT = "${PLUGIN_ROOT}";
-const PLUGIN_ROOT_PREFIX = "${PLUGIN_ROOT}/";
+/** The leading path token a plugin author writes in stdio `command` / path `args` (OQ4). Renderers substitute
+ *  it for the absolute materialized payload root at install time — the runtime never sees the placeholder. */
+export const MCP_PLUGIN_ROOT = "${PLUGIN_ROOT}";
+export const MCP_PLUGIN_ROOT_PREFIX = "${PLUGIN_ROOT}/";
+const PLUGIN_ROOT = MCP_PLUGIN_ROOT;
+const PLUGIN_ROOT_PREFIX = MCP_PLUGIN_ROOT_PREFIX;
 const RESERVED_NAMES: ReadonlySet<string> = new Set(["tachyon", "tachyon_bridge"]);
 
 // Resource caps — untrusted payload, bound everything before trusting it.
@@ -76,6 +80,29 @@ export interface McpServerHttp {
 }
 
 export type McpServer = McpServerStdio | McpServerHttp;
+
+/**
+ * Substitute a leading `${PLUGIN_ROOT}/…` with the absolute plugin payload root. Non-token strings pass
+ * through. Fail-closed when the token is present but `pluginRoot` is missing / not absolute — leaving the
+ * literal would reintroduce t-b6180e (shell expands empty → `/servers/srv`).
+ */
+export function resolveMcpPluginRootPath(value: string, pluginRoot: string | undefined): string {
+  if (!value.startsWith(PLUGIN_ROOT_PREFIX)) return value;
+  if (typeof pluginRoot !== "string" || pluginRoot.length === 0 || !pluginRoot.startsWith("/") || pluginRoot.includes("\0") || pluginRoot.includes("\\")) {
+    throw new Error("MCP ${PLUGIN_ROOT} substitution requires an absolute pluginRoot");
+  }
+  const root = pluginRoot.endsWith("/") ? pluginRoot.slice(0, -1) : pluginRoot;
+  return `${root}/${value.slice(PLUGIN_ROOT_PREFIX.length)}`;
+}
+
+/** Return a server whose stdio command/args have `${PLUGIN_ROOT}/…` resolved; http servers are unchanged. */
+export function withResolvedMcpPluginRoot(server: McpServer, pluginRoot: string | undefined): McpServer {
+  if (server.transport !== "stdio") return server;
+  const command = resolveMcpPluginRootPath(server.command, pluginRoot);
+  const args = server.args.map((a) => resolveMcpPluginRootPath(a, pluginRoot));
+  if (command === server.command && args.every((a, i) => a === server.args[i])) return server;
+  return { ...server, command, args };
+}
 
 export interface McpPayload {
   servers: McpServer[];

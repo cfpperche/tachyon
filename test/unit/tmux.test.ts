@@ -161,6 +161,8 @@ describe("TmuxService argument construction", () => {
       "set-option", "-g", "focus-events", "on", ";",
       "set-option", "-g", "history-limit", "10000", ";",
       "set-option", "-g", "remain-on-exit", "on", ";",
+      // t-9713ff — reserved: fleet server must not self-exit when session count hits zero
+      "set-option", "-g", "exit-empty", "off", ";",
       // spec 219 — no clipboard helper set → idempotent unwind to the OSC 52 default + tmux's true
       // default copy bind (copy-pipe-and-cancel with no command, the 3.6 built-in)
       "set-option", "-gu", "set-clipboard", ";",
@@ -613,6 +615,7 @@ describe("server options (settings.tmux overlay over Tachyon defaults)", () => {
     expect(flat).toContain("set-option -g focus-events on");
     expect(flat).toContain("set-option -g history-limit 10000");
     expect(flat).toContain("set-option -g remain-on-exit on"); // reserved, always present
+    expect(flat).toContain("set-option -g exit-empty off"); // t-9713ff reserved
     expect(flat).toContain("new-session -d -s tachyon-x-a -x 220 -y 50 sh");
   });
 
@@ -626,6 +629,7 @@ describe("server options (settings.tmux overlay over Tachyon defaults)", () => {
     expect(flat).toContain("set-option -g history-limit 50000");
     expect(flat).toContain("set-option -g mode-keys vi"); // user addition
     expect(flat).toContain("set-option -g remain-on-exit on"); // reserved survives the overlay
+    expect(flat).toContain("set-option -g exit-empty off"); // t-9713ff reserved survives the overlay
   });
 
   it("a user cannot disable remain-on-exit via setServerOptions", async () => {
@@ -634,6 +638,14 @@ describe("server options (settings.tmux overlay over Tachyon defaults)", () => {
     tmux.setServerOptions({ "remain-on-exit": "off" }); // (parse layer rejects this; defense in depth here)
     await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
     expect(calls[0].join(" ")).toContain("set-option -g remain-on-exit on");
+  });
+
+  it("a user cannot enable exit-empty via setServerOptions (t-9713ff)", async () => {
+    const { calls, exec } = recordingExecutor();
+    const tmux = new TmuxService(exec);
+    tmux.setServerOptions({ "exit-empty": "on" }); // parse layer rejects; defense in depth
+    await tmux.newSession({ name: "tachyon-x-a", cmd: "sh" });
+    expect(calls[0].join(" ")).toContain("set-option -g exit-empty off");
   });
 });
 
