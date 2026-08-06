@@ -405,6 +405,13 @@ Browser Bridge **up** (and optionally fills Pi). Do not remove markers from this
 | Post-launch readiness (model rejection, defense in depth) | an explicit model the catalog probe missed (composed/ambiguous command) still turns up as a live API `invalid_request_error` mid-turn, never exiting | `CodexLaunchReadiness` regex, same measured-phrase discipline as Claude's | **✓** `t-d501fc` — measured refusal (0.146.0, `codex exec --model bogus-model-xyz`): `invalid_request_error` naming *"'bogus-model-xyz' model is not supported when using Codex with a ChatGPT account."* Missed by the pre-fix regex (had "unsupported", not "not supported"); fixed alongside Claude's, sharing `MODEL_REJECTED_RE`. The primary defense for Codex remains the preflight catalog above — this only covers a pin the parser could not classify. |
 | Profile | isolation, composer, stop, model helpers | `runtimeProfile.codex` | code |
 
+Re-medição dos quatro fatos de Codex embutidos no produto (`npm run runtime:remeasure`, sempre informativa e nunca bloqueante):
+
+- **Enums de configuração:** o comando injeta valores escalares inválidos em `approval_policy` e `sandbox_mode`, lê a lista `expected` do parser do Codex e a compara com os arrays exportados por `codexNativeConfigProjection.ts`.
+- **`--full-auto`:** o comando executa `codex --full-auto --help` em `CODEX_HOME` privado e compara a recusa observada com a ausência do chip em `FLAG_SUGGESTIONS`.
+- **Trust exact-path:** o comando abre três TUIs sem enviar tecla (diretório exato, filho e filho com override `-c`), exige que o caso exato chegue à tela pronta como controle e relata login, tela desconhecida ou falta de `tmux` como obstáculo concreto.
+- **Supressão de memória nativa:** o comando gratuito confirma somente que `features list` muda com `--enable/--disable memories`; relata **NOT MEASURED** para supressão porque provar que o marcador deixa de chegar ao modelo requer duas sessões `codex exec` autenticadas e com consumo de quota — status de feature não é evidência de consequência.
+
 #### OpenCode
 
 | Cap | Native mechanism | Tachyon seam | Verified |
