@@ -21,7 +21,7 @@ approval App ─┤                 ├─ sections/* (in-tree)
 
 1. **Extend spec 279, do not fork a fourth list**
    - Add fields on `WebviewSurface` (names exact at impl time), e.g.:
-     - `editorHome?: "standalone" | "cockpit-section" | "cockpit-thin-host" | "sidebar" | "dev-only"`
+     - `hostKind?: "standalone" | "cockpit-section" | "cockpit-thin-host" | "sidebar" | "dev-only"`
      - `cockpitSectionId?: CockpitSectionId | string`
      - `retiredInFavorOf?: "cockpit" | viewId`
    - Update `webviewConvention.test.ts` expectations in the **same** PRs that retire hosts.
@@ -43,7 +43,7 @@ approval App ─┤                 ├─ sections/* (in-tree)
 
 4. **Host routing**
    - `openCockpit({ section })` for native sections; legacy panel only while
-     `editorHome === "standalone"`.
+     `hostKind === "standalone"`.
    - Serializer: restore `section`; unknown → `"overview"` + unit test.
 
 5. **Pilot surface (named)**

@@ -30,8 +30,11 @@ export type WebviewPosture =
   | { posture: "extend"; extensionPoints: readonly ShellExtensionPoint[] }
   | { posture: "replace"; reason: string };
 
-/** spec 410 — where editor UI should live long-term (sidebar stays separate). */
-export type WebviewEditorHome =
+/**
+ * spec 410 — the kind of host that owns the surface. This does NOT say where a panel opens:
+ * `hostFile` names the concrete owner, whose implementation determines its VS Code location.
+ */
+export type WebviewHostKind =
   | "sidebar"
   | "cockpit"
   | "standalone"
@@ -48,7 +51,7 @@ interface WebviewSurfaceBase {
   /** false ⇒ still an inline-HTML panel (guard-allowlisted until its lane lands); true ⇒ a preact bundle. */
   converted: boolean;
   /**
-   * spec 410 — preferred editor home after cockpit-single-app migration. Every migrated
+   * spec 410 — the kind of host that owns this surface after cockpit-single-app migration. Every migrated
    * section/studio's OLD panel is retired to a types-only stub (its own doc comment explains the
    * retirement) and DROPS OUT of this manifest entirely — a manifest row only exists for a surface
    * that still genuinely creates a panel.
@@ -61,7 +64,7 @@ interface WebviewSurfaceBase {
    * hadn't dropped out of this manifest yet). Re-add the shape if a future retirement genuinely needs
    * to describe "revive redirects into a specific Control section" again — don't keep it unused.
    */
-  editorHome?: WebviewEditorHome;
+  hostKind?: WebviewHostKind;
 }
 
 /** spec 485 A1 — every surface carries its posture; the union makes "extend names its points" and "replace
@@ -77,12 +80,12 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // spec 485 A1 — 410's standing sidebar exception, now EXPLICIT: the sidebar lives in the side-bar surface,
   // not the editor, so sidebar.css overrides the design system's editor background and page pad on `html, body`
   // (its own comment says so). Shared shell, shared kit, own page chrome → `extend`, not an exception entry.
-  { viewId: "tachyonSidebar", view: "sidebar", hostFile: "src/webview/SidebarPrototype.ts", mode: "live", converted: true, editorHome: "sidebar", posture: "extend", extensionPoints: ["page-chrome"] },
+  { viewId: "tachyonSidebar", view: "sidebar", hostFile: "src/webview/SidebarPrototype.ts", mode: "live", converted: true, hostKind: "sidebar", posture: "extend", extensionPoints: ["page-chrome"] },
   // SDD 485 D17 — Activity is standalone again, keyed as a document by its immutable workspace+agent
   // route identity. It mounts through SectionPanelManager and consumes the shared .ds-page chrome.
-  { viewId: "tachyonActivity", view: "activity", hostFile: "src/webview/ActivityPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "extend", extensionPoints: ["page-chrome"] },
+  { viewId: "tachyonActivity", view: "activity", hostFile: "src/webview/ActivityPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "extend", extensionPoints: ["page-chrome"] },
   // SDD 485 D18 — one document app whose immutable identity is workspace-wide or agent-scoped.
-  { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // t-610705 (SDD 410 Phase C.3, 2026-07-21) — the standalone Project Handoff panel was retired:
   // it's a Control section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx;
   // standalone bundle + harness route retired — use ?view=cockpit&fixture=handoff instead). The
@@ -115,7 +118,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // `conform`, and the contract checks it: it mounts through the shared shell (via SectionPanelManager),
   // links design-system.css, and inspector.css styles no page frame, mints no `--ds-*` values and gives
   // `#root` no height — it is a page-scrolling document, so it links no page-frame.css either.
-  { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/TmuxPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonServerInspector", view: "inspector", hostFile: "src/webview/TmuxPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // SDD 485 D2 (2026-08-03) — Plugins is a STANDALONE APP again, reversing 410 Phase B's retirement
   // (t-d23f93). It is the `dashboard` kind and the case the spec's table always described: a plugin
   // install is a per-workspace fact end to end, so the per-workspace need this row's previous comment
@@ -133,7 +136,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // `#root` no height — a page-scrolling document, so no `page-frame.css` either. What it DID gain is its
   // own `--ds-page-pad-*` rule, which used to come from cockpit.css: page pad is not page chrome (the
   // scan reads `html`/`body` selectors), so this stays a conforming surface that now owns its own pad.
-  { viewId: "tachyonPlugins", view: "plugins", hostFile: "src/webview/PluginsPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonPlugins", view: "plugins", hostFile: "src/webview/PluginsPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // The Engine/Bridge Control Inspector POC was removed as dead code (t-b5dcae, 2026-07-20):
   // ControlInspector.ts and src/webview/control-inspector/* had zero real importers — Cockpit's
   // Engine tab was already built on its own JSX + EngineLogPanel.tsx, using src/control-inspector/
@@ -145,18 +148,18 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // (margin/pad/background/colour/font) rather than inheriting the design system's, and centres a fixed
   // 880px column. Own page chrome → `extend`. (The body block largely restates what design-system.css already
   // sets; collapsing it is a real cleanup, but it is a VISUAL change and this phase moves nothing.)
-  { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/PinDetailPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "extend", extensionPoints: ["page-chrome"] },
-  { viewId: "tachyonCommandStudioShell", view: "command-studio-shell", hostFile: "src/webview/CommandStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonTerminalStudioShell", view: "terminal-studio-shell", hostFile: "src/webview/TerminalStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonRunbookStudioShell", view: "runbook-studio-shell", hostFile: "src/webview/RunbookStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonScheduleStudioShell", view: "schedule-studio-shell", hostFile: "src/webview/ScheduleStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonPinPreview", view: "pin-preview", hostFile: "src/webview/PinDetailPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "extend", extensionPoints: ["page-chrome"] },
+  { viewId: "tachyonCommandStudioShell", view: "command-studio-shell", hostFile: "src/webview/CommandStudioPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonTerminalStudioShell", view: "terminal-studio-shell", hostFile: "src/webview/TerminalStudioPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonRunbookStudioShell", view: "runbook-studio-shell", hostFile: "src/webview/RunbookStudioPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonScheduleStudioShell", view: "schedule-studio-shell", hostFile: "src/webview/ScheduleStudioPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // t-610355 — layer-2 first-party agent pane (runtime TUI in Tachyon webview + xterm; additive to integrated terminal)
   // spec 485 A1 — the ONLY live standalone editor panel today, and the sharpest departure in the manifest: it
   // links NO design-system.css (AgentPanePanel.ts: "Tachyon Mono @font-face breaks xterm cell metrics") and
   // therefore mints its own `--ds-1..4` spacing values in agent-pane.css. Both were code comments until now —
   // which is precisely the silence this contract exists to end. Shared shell, own base layer → `extend`.
-  { viewId: "tachyonAgentPane", view: "agent-pane", hostFile: "src/webview/AgentPanePanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "extend", extensionPoints: ["base-style", "token-scale"] },
+  { viewId: "tachyonAgentPane", view: "agent-pane", hostFile: "src/webview/AgentPanePanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "extend", extensionPoints: ["base-style", "token-scale"] },
   // spec 335/339 panels — always preact, just predated this manifest; added on spec 342 dogfood round 2 (#4)
   // when they gained a webview-preview harness route (this list is what the catalog-completeness test spans).
   // SDD 485 C5 (2026-08-03) — the Board is a STANDALONE APP again, and SDD 410's app-count decision is the
@@ -173,13 +176,13 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // The legacy "tachyonMissionControl" viewType is NOT this row: it stays a serializer-only redirect in
   // extension.ts (a revived pre-410 panel disposes itself and opens THIS app for its persisted workspace),
   // which is why the new panel needed a viewType of its own.
-  { viewId: "tachyonBoard", view: "mission-control", hostFile: "src/webview/BoardPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonBoard", view: "mission-control", hostFile: "src/webview/BoardPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // SDD 485 C4 (2026-08-03) — Task Detail is a STANDALONE APP again, and this row is the reversal of
   // 410 Phase C.1's retirement (which had made it a Control subroute). It is the `document` kind: one
   // panel per identity, so two task details stand side by side and neither is retargeted by the project
   // selector. It mounts through the shared shell via `SectionPanelManager`, links design-system.css, and
   // task-detail.css neither styles the page frame nor mints `--ds-*` values → `conform`.
-  { viewId: "tachyonTaskDetail", view: "task-detail", hostFile: "src/webview/TaskDetailPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonTaskDetail", view: "task-detail", hostFile: "src/webview/TaskDetailPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // t-610705 (SDD 410 Phase D, D2) — the standalone Task Studio panel was retired: it's a Control
   // studio route now (src/webview/task-studio/App.tsx stays, lazy-imported by cockpit/App.tsx via
   // CSS co-load, same as command/terminal/runbook/schedule/agent before it). The trusted serializer
@@ -204,8 +207,8 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // `#root` no height — a page-scrolling document, so no `page-frame.css` either. It already owned its own
   // `--ds-page-pad-*` rule, which is why this migration moved no CSS and only DELETED the embed-context
   // overrides that Control and this sheet each carried for the other.
-  { viewId: "tachyonRuntimeOps", view: "runtime-ops", hostFile: "src/webview/RuntimeOpsPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonRuntimeConfig", view: "runtime-config", hostFile: "src/webview/RuntimeConfigPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonRuntimeOps", view: "runtime-ops", hostFile: "src/webview/RuntimeOpsPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonRuntimeConfig", view: "runtime-config", hostFile: "src/webview/RuntimeConfigPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // SDD 485 D4 (2026-08-03) — the Human Inbox is a STANDALONE APP, the fourth Phase D migration and the
   // third `dashboard`: everything it reads is rooted at ONE workspace root (pending approvals, that
   // workspace's validations, both Saved Agent proposal queues, the artifact loader's containment root), so
@@ -221,27 +224,27 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // the dimensions of), so no `page-frame.css` either. Its `--ds-page-pad-*` rule was ALREADY its own —
   // cockpit.css never carried one for `.hi-root`, which is the third answer that grep has now given
   // (D2 had to move a rule, D3 had to delete two, this one had nothing to do).
-  { viewId: "tachyonHumanInbox", view: "human-inbox", hostFile: "src/webview/HumanInboxPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonEngine", view: "engine", hostFile: "src/webview/EnginePanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonWorktrees", view: "worktrees", hostFile: "src/webview/WorktreesPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonFleet", view: "fleet", hostFile: "src/webview/FleetPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonExecutionGraph", view: "execution-graph", hostFile: "src/webview/ExecutionGraphPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonSettings", view: "settings", hostFile: "src/webview/SettingsPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonOverview", view: "overview", hostFile: "src/webview/OverviewPanel.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonHumanInbox", view: "human-inbox", hostFile: "src/webview/HumanInboxPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonEngine", view: "engine", hostFile: "src/webview/EnginePanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonWorktrees", view: "worktrees", hostFile: "src/webview/WorktreesPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonFleet", view: "fleet", hostFile: "src/webview/FleetPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonExecutionGraph", view: "execution-graph", hostFile: "src/webview/ExecutionGraphPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonSettings", view: "settings", hostFile: "src/webview/SettingsPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonOverview", view: "overview", hostFile: "src/webview/OverviewPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.
   // spec 485 A1 — a dev-only spec-350 fake, carried forward EXPLICITLY rather than implicitly. It mounts
   // through StudioPanelManagerBase → renderWebviewShell and layers only kit sheets (studio-frame.css is part
   // of the shared kit, not a departure from it), so dev-only status buys it no exemption: it `conform`s.
-  { viewId: "tachyonPipelineStudio", view: "pipeline-studio", hostFile: "src/webview/PipelineStudioPanel.ts", mode: "live", converted: true, editorHome: "dev-only", posture: "conform" },
+  { viewId: "tachyonPipelineStudio", view: "pipeline-studio", hostFile: "src/webview/PipelineStudioPanel.ts", mode: "live", converted: true, hostKind: "dev-only", posture: "conform" },
   // spec 350 T5 — Agent-entity fixture (Fake 2), region-composition proof. Same dev-tooling-only status as
   // Pipeline Studio above: never instantiated or registered from extension.ts.
   // spec 485 A1 — the other dev-only spec-350 fake, EXPLICIT for the same reason. Its region composition is
   // StudioFrame's four CONTENT regions (client-side, spec 350 T5), which is kit usage, not a page-frame
   // departure — so it `conform`s too.
-  { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true, editorHome: "dev-only", posture: "conform" },
+  { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true, hostKind: "dev-only", posture: "conform" },
   // SDD 485 C1–C3 — the section-app proof surface: the first (and so far only) app driven by the generic
   // `SectionPanelManager`, and the second entry of the code-split build without which "Preact and the kit
   // are extracted into shared chunks" would be a claim with no witness. Dev-only in the same sense as the
@@ -250,9 +253,9 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // shell (via SectionPanelManager), links design-system.css, and its own stylesheet neither styles the
   // page frame nor mints `--ds-*` values. It `conform`s, and the contract checks that rather than trusting
   // this sentence.
-  // `editorHome: "dev-only"` and not "standalone": the mechanism is for standalone apps, but THIS surface
-  // never reaches a user, and the field records where a surface actually lives, not what it demonstrates.
-  { viewId: "tachyonSectionAppFixture", view: "section-app-fixture", hostFile: "src/webview/SectionAppFixturePanel.ts", mode: "live", converted: true, editorHome: "dev-only", posture: "conform" },
+  // `hostKind: "dev-only"` and not "standalone": the mechanism is for standalone apps, but THIS surface
+  // never reaches a user, and the field classifies the host that owns it, not what the surface demonstrates.
+  { viewId: "tachyonSectionAppFixture", view: "section-app-fixture", hostFile: "src/webview/SectionAppFixturePanel.ts", mode: "live", converted: true, hostKind: "dev-only", posture: "conform" },
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone Command/Terminal/Runbook/Schedule/Agent
   // Studio (shell) panels were retired: they're Control routes now (studio-new/studio-edit, studio:
   // "command"/"terminal"/"runbook"/"schedule"/"agent" — studios-routes-design.md; standalone bundles
@@ -264,8 +267,8 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // of an opaque-origin sandboxed `srcdoc` frame; the first-party RELAY page around it is ordinary kit on the
   // shared shell, so the relay `conform`s. Its `frameSrc`/`scriptCspSource` options are a SECURITY posture, not
   // a design-system one — deliberately not extension points (see SHELL_EXTENSION_POINTS).
-  { viewId: "tachyonPluginSurface", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
-  { viewId: "tachyonPluginSurfaces", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true, editorHome: "standalone", posture: "conform" },
+  { viewId: "tachyonPluginSurface", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonPluginSurfaces", view: "plugin-host", hostFile: "src/plugins/ui/host.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
 ];
 
 /**
