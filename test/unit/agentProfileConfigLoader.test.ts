@@ -99,6 +99,18 @@ describe("agent profile pointer syntax", () => {
 });
 
 describe("loadProfileAwareConfig", () => {
+  it("refuses a canonical custom role because no instructions can reach it", () => {
+    const root = temporaryRoot("tachyon-agent-profile-custom-role-");
+    const bytes = writeProfile(root, { prompt: { role: "custom" } });
+
+    const result = load(root, authority(bytes));
+
+    expect(result.config?.agents.codex).toBeUndefined();
+    expect(result.errors).toContain(
+      "agents.codex.profile: profile/projection: role 'custom' requires instructions, but canonical profiles cannot declare that formation lane",
+    );
+  });
+
   it("accepts the closed native configuration policy shape and rejects duplicate lifecycle phases", () => {
     const profile = {
       schemaVersion: 1,

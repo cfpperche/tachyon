@@ -700,6 +700,11 @@ function projectDefinition(
     errors.push("profile/projection: secret injection belongs to a later slice");
   }
   errors.push(...validateAgentNativeConfigPolicy(definition.runtime.adapter, definition.nativeConfig));
+  if (definition.prompt?.role === "custom") {
+    errors.push(
+      "profile/projection: role 'custom' requires instructions, but canonical profiles cannot declare that formation lane",
+    );
+  }
   if (definition.prompt?.soul || definition.prompt?.instructions || definition.prompt?.memory) {
     // t-50bbd4 — this used to defer to t-a2827d, which CLOSED on 2026-07-22, so the message pointed
     // at nobody. The structural fact is what a reader needs: these three do not project into
