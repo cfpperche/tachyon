@@ -18,6 +18,8 @@ import {
   readHookProjectionCandidates,
   type AgentHookProjectionPolicy,
 } from "../plugins/agentHookProjection.js";
+import { PLUGIN_PAYLOAD_ROOT } from "../plugins/paths.js";
+import type { InspectedHook } from "./sessionInspection.js";
 
 /**
  * t-283149 / t-0c963d — read what a live session was actually given, and hand it to the pure projection.
@@ -69,21 +71,30 @@ function renderSettingValue(key: string, value: unknown): string {
 }
 
 /**
- * t-141f61 — which enforcement gates the workspace asked for and did NOT get here.
+ * t-141f61 / t-d848e4 — which enforcement gates this session does not hold, and why.
  *
- * Recomputed from the SAME pure planner every spawn door already calls (authority lockfile ×
- * classification × runtime), never a second opinion parallel to it: the projection module's own
- * header states the plan is a pure function of those three, so this panel is one more door onto it
- * rather than a copy that can drift.
+ * Two questions, one list:
+ * 1. What does today's plan withhold? Same pure planner every spawn door calls (lockfile ×
+ *    classification × runtime). Reasons name manifest gaps, class refusals, and missing channels.
+ * 2. What did the plan project that this session's disk does not carry? A live session can predate
+ *    an install. The plan then says the gate projects, while the session still has none. Match by
+ *    plugin path under `.tachyon/plugins/<name>/`, never by full command text — materializers rewrite
+ *    commands per runtime.
  *
- * Filtered to plugins the human CLASSIFIED, matching the spawn-time notice rule: an unclassified
- * plugin is the default state, not a refusal, and thirteen of those rows would bury the one that
- * means "this agent has no gate".
+ * Filtered to plugins the human CLASSIFIED: an unclassified plugin is the default state, not a
+ * refusal.
  */
+function sessionHoldsPluginGate(hooks: readonly InspectedHook[], plugin: string): boolean {
+  const marker = `${PLUGIN_PAYLOAD_ROOT}/${plugin}/`;
+  const markerWin = `${PLUGIN_PAYLOAD_ROOT}\\${plugin}\\`;
+  return hooks.some((hook) => hook.command.includes(marker) || hook.command.includes(markerWin));
+}
+
 function withheldGates(
   workspaceRoot: string,
   runtime: string,
   policy: AgentHookProjectionPolicy | undefined,
+  sessionHooks: readonly InspectedHook[],
 ): { plugin: string; reason: string }[] {
   if (!policy || Object.keys(policy).length === 0) return [];
   const plan = planProjectedPluginHooks({
@@ -91,9 +102,21 @@ function withheldGates(
     runtime,
     policy,
   });
-  return plan.withheld
+  const rows: { plugin: string; reason: string }[] = plan.withheld
     .filter((entry) => policy[entry.plugin] !== undefined)
     .map((entry) => ({ plugin: entry.plugin, reason: entry.reason }));
+  const reported = new Set(rows.map((row) => row.plugin));
+  for (const entry of plan.projected) {
+    if (policy[entry.plugin] === undefined) continue;
+    if (reported.has(entry.plugin)) continue;
+    if (sessionHoldsPluginGate(sessionHooks, entry.plugin)) continue;
+    rows.push({
+      plugin: entry.plugin,
+      reason: "this session was born before this gate; restart it to receive the gate",
+    });
+    reported.add(entry.plugin);
+  }
+  return rows;
 }
 
 export async function collectSessionInspection(input: {
@@ -158,7 +181,7 @@ export async function collectSessionInspection(input: {
     mcpServers: found?.mcpServers ?? [],
     strictMcp: (argv ?? []).includes("--strict-mcp-config"),
     env: inspectEnv(env ?? {}, config?.extraEnvKeys ?? []),
-    gatesWithheld: withheldGates(workspaceRoot, runtime, input.hookProjectionPolicy),
+    gatesWithheld: withheldGates(workspaceRoot, runtime, input.hookProjectionPolicy, found?.hooks ?? []),
     notExposed: [
       ...(found?.notExposed ?? []),
       // Summarized, and SAID to be summarized. The full text is in .tachyon/briefs/spawn/<agent>.md

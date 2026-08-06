@@ -332,9 +332,23 @@ describe("t-141f61 — a withheld enforcement gate reaches the session projectio
 
   it("withholds nothing from the runtime the gate does reach", async () => {
     // The other polarity, and the one that keeps the row meaningful: a false alarm on claude would
-    // train the reader to skip the section on grok.
+    // train the reader to skip the section on grok. t-d848e4: the plan alone is not enough — the
+    // session must also hold the plugin path on disk, or the panel correctly reports a gap.
+    const root = workspaceWithGate();
+    fs.mkdirSync(path.join(root, ".tachyon", "spawn-settings"), { recursive: true });
+    fs.writeFileSync(path.join(root, ".tachyon", "spawn-settings", "claude.json"), JSON.stringify({
+      hooks: {
+        PreToolUse: [{
+          matcher: "Bash",
+          hooks: [{
+            type: "command",
+            command: "bash /ws/.tachyon/plugins/secrets-guard/claude/guard.sh",
+          }],
+        }],
+      },
+    }));
     const result = await collectSessionInspection({
-      workspaceRoot: workspaceWithGate(),
+      workspaceRoot: root,
       agent: "claude",
       runtime: "claude",
       ports: OFFLINE,
@@ -372,6 +386,114 @@ describe("t-141f61 — a withheld enforcement gate reaches the session projectio
   it("stays empty when the workspace classified nothing", async () => {
     const result = await collectSessionInspection({
       workspaceRoot: workspaceWithGate(), agent: "solo", runtime: "grok", ports: OFFLINE,
+    });
+
+    expect(result.gatesWithheld).toEqual([]);
+  });
+});
+
+/**
+ * t-d848e4 — gatesWithheld must report what THIS live session holds, not only today's plan.
+ *
+ * The plan recomputes from the lockfile of today. A session born before install can lack the gate
+ * on disk while the plan says the gate projects. The panel must name that gap. Matching uses the
+ * plugin path `.tachyon/plugins/<name>/`, not a full command string.
+ */
+describe("t-d848e4 — a live session missing a disk gate reports it withheld", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  /** Lockfile of today: secrets-guard declares a grok PreToolUse gate. */
+  function workspaceWithGrokGate(): string {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-inspect-stale-gate-"));
+    dirs.push(root);
+    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
+    const lock = {
+      schemaVersion: 1,
+      plugins: {
+        "secrets-guard": {
+          name: "secrets-guard",
+          version: "2.1.0",
+          runtimes: ["claude", "codex", "grok"],
+          targets: [{
+            runtime: "grok",
+            kind: "settings-hook",
+            file: ".grok/hooks/tachyon-plugins.json",
+            ref: "PreToolUse",
+            removal: [{
+              matcher: "Bash",
+              hooks: [{
+                type: "command",
+                command: "\"${TACHYON_PLUGIN_ROOT}\"/guard.sh",
+              }],
+            }],
+          }],
+        },
+      },
+    };
+    fs.writeFileSync(path.join(root, ".tachyon", "plugins.lock.json"), `${JSON.stringify(lock, null, 2)}\n`);
+    return root;
+  }
+
+  const OFFLINE = { panePid: async () => undefined, processArgv: () => undefined, processEnv: () => undefined };
+
+  it("reports the gate when the session home has no projected hook on disk", async () => {
+    const root = workspaceWithGrokGate();
+    // Measured shape: the home exists and holds lifecycle hooks, but never got projected.json.
+    const home = path.join(root, ".tachyon", "bridge-mcp", "stale.grok");
+    fs.mkdirSync(path.join(home, "hooks"), { recursive: true });
+    fs.writeFileSync(path.join(home, "config.toml"), "model = \"grok\"\n");
+    fs.writeFileSync(path.join(home, "hooks", "session-start.json"), JSON.stringify({
+      hooks: {
+        SessionStart: [{
+          hooks: [{
+            type: "command",
+            command: "node '/ws/.tachyon/activity/session-owner-record.cjs' 'stale'",
+          }],
+        }],
+      },
+    }));
+
+    const result = await collectSessionInspection({
+      workspaceRoot: root,
+      agent: "stale",
+      runtime: "grok",
+      ports: OFFLINE,
+      hookProjectionPolicy: { "secrets-guard": "enforcement" },
+    });
+
+    expect(result.hooks.some((h) => h.command.includes(".tachyon/plugins/secrets-guard/"))).toBe(false);
+    expect(result.gatesWithheld).toEqual([{
+      plugin: "secrets-guard",
+      reason: "this session was born before this gate; restart it to receive the gate",
+    }]);
+  });
+
+  it("stays quiet when the session disk already carries the plugin gate path", async () => {
+    const root = workspaceWithGrokGate();
+    const home = path.join(root, ".tachyon", "bridge-mcp", "fresh.grok");
+    fs.mkdirSync(path.join(home, "hooks"), { recursive: true });
+    fs.writeFileSync(path.join(home, "config.toml"), "model = \"grok\"\n");
+    fs.writeFileSync(path.join(home, "hooks", "projected.json"), JSON.stringify({
+      hooks: {
+        PreToolUse: [{
+          matcher: "Bash",
+          hooks: [{
+            type: "command",
+            command: "if [ ! -d \"/ws/.tachyon/plugins/secrets-guard/grok\" ]; then exit 2; fi; \"/ws/.tachyon/plugins/secrets-guard/grok\"/guard.sh",
+          }],
+        }],
+      },
+    }));
+
+    const result = await collectSessionInspection({
+      workspaceRoot: root,
+      agent: "fresh",
+      runtime: "grok",
+      ports: OFFLINE,
+      hookProjectionPolicy: { "secrets-guard": "enforcement" },
     });
 
     expect(result.gatesWithheld).toEqual([]);
