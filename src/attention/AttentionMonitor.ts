@@ -194,6 +194,8 @@ interface Snapshot {
   lastCaptureAt: number;
   /** t-f45313 — profile-backed guard for a human-owned composer draft. */
   composerOccupied: boolean;
+  /** t-dd130a — one human warning per continuously occupied composer episode. */
+  composerDraftNotified: boolean;
   /** Whether the composer draft decision had the runtime's measured ANSI evidence available. */
   composerEvidence: boolean;
 }
@@ -206,8 +208,13 @@ export class AttentionMonitor {
 
   constructor(
     private readonly io: MonitorIO,
-    /** fired on every state transition; `notify` is true exactly once per needs-input episode */
-    private readonly onChange?: (agent: string, attention: AgentAttention, notify: boolean) => void,
+    /** fired on every state transition; `notify` is true exactly once per actionable episode */
+    private readonly onChange?: (
+      agent: string,
+      attention: AgentAttention,
+      notify: boolean,
+      cause?: "composer-draft",
+    ) => void,
     /** spec 216 — fired once when a compaction banner first appears in an agent's pane */
     private readonly onCompaction?: (agent: string) => void,
     /** t-47bfe8 — fired ONCE per idle episode when continuous inactivity (no output) crosses
@@ -463,6 +470,7 @@ export class AttentionMonitor {
           matchKey: initialMatch ? initialMatch.pattern : null,
           lastWindowActivity: activityAt,
           lastCaptureAt: now,
+          composerDraftNotified: false,
           ...initialComposer,
         };
         this.snaps.set(agent, snap);
@@ -495,8 +503,16 @@ export class AttentionMonitor {
         snap.composerOccupied = composer.composerOccupied;
         snap.composerEvidence = composer.composerEvidence;
         this.evaluateStall(agent, snap, now);
-        if (wasComposerOccupied && !snap.composerOccupied) {
-          this.onChange?.(agent, this.toAttention(agent, snap), false);
+        if (wasComposerOccupied !== snap.composerOccupied) {
+          if (!snap.composerOccupied) snap.composerDraftNotified = false;
+          const draftNeedsHuman = snap.composerOccupied && snap.state === "idle" && !snap.composerDraftNotified;
+          if (draftNeedsHuman) snap.composerDraftNotified = true;
+          this.onChange?.(
+            agent,
+            this.toAttention(agent, snap),
+            draftNeedsHuman,
+            draftNeedsHuman ? "composer-draft" : undefined,
+          );
         }
         continue;
       }
@@ -515,9 +531,11 @@ export class AttentionMonitor {
         // Composer-only changes returned above: typing a draft is not starting a turn. Every other
         // pane-output change is the production observation that work reached the runtime.
         snap.hasStartedTurn = true;
+        const wasComposerOccupied = snap.composerOccupied;
         const composer = await this.composerSnapshot(agent, content);
         snap.composerOccupied = composer.composerOccupied;
         snap.composerEvidence = composer.composerEvidence;
+        if (wasComposerOccupied && !snap.composerOccupied) snap.composerDraftNotified = false;
       }
 
       // t-5bfb72 — track how long the runtime's own "you are not authenticated" line has been sitting
@@ -692,7 +710,8 @@ export class AttentionMonitor {
       snap.authSince = null;
       snap.authKey = null;
     }
-    let notify = false;
+    let notify = state === "idle" && snap.composerOccupied && !snap.composerDraftNotified;
+    if (notify) snap.composerDraftNotified = true;
     if (state === "needs-input") {
       // One notification per episode; the episode key is when this content appeared. Unlike the
       // throttled anti-spam gate below transition()'s call site, this one-shot is NOT vulnerable
@@ -705,7 +724,12 @@ export class AttentionMonitor {
         notify = true;
       }
     }
-    this.onChange?.(agent, this.toAttention(agent, snap), notify);
+    this.onChange?.(
+      agent,
+      this.toAttention(agent, snap),
+      notify,
+      notify && state === "idle" && snap.composerOccupied ? "composer-draft" : undefined,
+    );
   }
 
   /**
