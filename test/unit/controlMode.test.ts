@@ -251,7 +251,7 @@ describe("ControlModeClient", () => {
     await expect(after).resolves.toEqual({ stdout: "after\n", stderr: "" });
   });
 
-  it("t-72d4d3 — has-session never rides the control channel (occupancy probe is fail-closed)", async () => {
+  it("t-62671d — has-session rides the control channel after per-command frame accounting", async () => {
     const { client, procs, fallbackCalls } = makeClient();
     await client.start();
     guard(procs[0]);
@@ -259,11 +259,13 @@ describe("ControlModeClient", () => {
     ackSubs(procs[0]);
 
     const exec = client.makeExecutor();
-    await expect(exec(["-L", "tachyon", "has-session", "-t", "=ghost"]))
-      .resolves.toEqual({ stdout: "fallback\n", stderr: "" });
-    // Channel traffic is only the two subscription bootstraps — no has-session line.
-    expect(procs[0].written).toHaveLength(2);
-    expect(fallbackCalls.some((args) => args.includes("has-session"))).toBe(true);
+    const probe = exec(["-L", "tachyon", "has-session", "-t", "=ghost"]);
+    await tick();
+    expect(procs[0].written.at(-1)).toBe("has-session -t =ghost");
+    expect(fallbackCalls.some((args) => args.includes("has-session"))).toBe(false);
+    // Missing session: tmux answers %error (same semantic path as subprocess).
+    procs[0].stdout.write("%begin 100 4 0\ncan't find session: ghost\n%error 100 4 0\n");
+    await expect(probe).rejects.toThrow("can't find session: ghost");
   });
 
   it("frame body may contain %-prefixed pane content (tag matching)", async () => {

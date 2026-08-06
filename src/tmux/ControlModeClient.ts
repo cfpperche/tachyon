@@ -286,20 +286,10 @@ export class ControlModeClient {
    * tmux errors (%error — e.g. "can't find session") reject like the subprocess
    * path would; only transport problems fall back.
    *
-   * t-72d4d3 — `has-session` always takes the subprocess path. Occupancy probes are
-   * correctness-critical for spawn (`agent 'X' is already running` is thrown on a
-   * true hasSession with a non-dead state). Control-mode replies are FIFO without
-   * per-command identity; under load a desynced success frame can make a missing
-   * session look present. Measured on engineService: daemon reported already-running
-   * while the private socket's list-sessions showed only `tachyon-ctl-<hash>`. A
-   * false-positive has-session is worse than the extra subprocess, so this probe
-   * never rides the channel.
-   *
-   * t-9610e8 named that desync: `newSession` writes one line holding several `;`-separated
-   * commands, and each answered with its OWN frame, so `new-session`'s surplus `%end` completed
-   * whichever probe was queued next — a missing session answering like a present one. Frame
-   * accounting closes it, but the diversion stays: reconvergence is its own commit, so if the
-   * daemon regresses again we know which half did it.
+   * t-62671d — `has-session` rides the channel again. t-72d4d3 diverted it after a
+   * false-positive occupancy probe made spawn refuse with "agent X is already running";
+   * t-9610e8 closed that desync by counting one pending frame per `;`-separated command
+   * (not per written line), so the probe is safe on the channel.
    */
   makeExecutor(): TmuxExecutor {
     return (args: string[], options: TmuxExecOptions = {}) => {
@@ -313,7 +303,6 @@ export class ControlModeClient {
         // Separators only: nothing would run, so no frame would ever come back and the pending
         // would sit at the head of the queue absorbing the NEXT command's reply.
         || commandGroupCount(cmd) === 0
-        || cmd.includes("has-session")
       ) {
         return this.fallback(args, options);
       }
