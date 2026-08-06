@@ -477,6 +477,12 @@ export interface BridgeDeps {
   managedWorktrees?: ManagedWorktreeService;
   runtimeCredentialHygiene?: (input: { dryRun: boolean; agentNames: string[] }) => Promise<unknown>;
   /**
+   * SDD 494 Part 4 — read-only roster reconciliation: per agent, membership, the four presence
+   * facts, the derived disagreement state, and the door that would remove it. Enables
+   * `reconcile_roster`; absent on a Bridge stood up without a workspace.
+   */
+  savedAgentRosterReconciliation?: () => Promise<unknown>;
+  /**
    * t-d06da3 — the ports the SHARED agent-removal cascade needs (`agentRemovalCascade`), so
    * `dismiss_agent` runs the same worktree step the engine's `config.agent.delete` runs instead of
    * being a third door with no worktree step at all. `Workspace` satisfies this interface directly,

@@ -58,14 +58,19 @@ Ship Part 1 alone if the rest is deferred.
 
 ## Part 4 — naming the disagreement
 
-- [ ] Derive the five states from the four presence facts. Store nothing.
-- [ ] Carry the state on the existing `refused` string of the sidebar row. Localize it with
-      `vscode.l10n.t(...)` and update the bundles.
-- [ ] Add the on-demand roster reconciliation tool beside `reconcile_worktree_hygiene`. It
+- [x] Derive the five states from the four presence facts. Store nothing.
+      `src/config/savedAgentState.ts`, a pure total function over the four booleans; the whole
+      16-row truth table is `test/unit/savedAgentState.test.ts`.
+- [x] Carry the state on the existing `refused` string of the sidebar row. Localize it with
+      `vscode.l10n.t(...)` and update the bundles. `Workspace.refusedAgents()` is the one place the
+      string is built, so the sidebar row and `list_agents` carry the same line; the injected
+      `this.t` is the host's `vscode.l10n.t`, and both `l10n/` bundles gained the five keys.
+- [x] Add the on-demand roster reconciliation tool beside `reconcile_worktree_hygiene`. It
       answers, per agent: membership, the four owner facts, the derived state, and the door that
-      would remove it.
-- [ ] Resolve the third open question. Enumerate the doors that could create
-      `unlisted-profile`. If none exists, make its handling a refusal to act.
+      would remove it. `reconcile_roster`, in `src/bridge/tools/fleet.ts`.
+- [x] Resolve the third open question. Enumerate the doors that could create
+      `unlisted-profile`. If none exists, make its handling a refusal to act. Six doors found, three
+      of them durable, so the handling is unchanged. The enumeration is in `spec.md`.
 
 ## Verification
 
@@ -101,8 +106,22 @@ not resolve.** Measure the forget dialogue and the sidebar row at 880 and at 360
 row is the shared surface, so capture a neighbour row that this spec does not change and anchor
 on not regressing it.
 
-- [ ] Evidence:
-- [ ] Verdict:
+- [x] Evidence (Part 4 only; the forget dialogue belongs to Parts 1 and the acceptance run):
+      `test/browser/savedAgentDisagreementShots.test.ts`, measured at 880 and 360 in system Chrome.
+      Shots at `.tachyon/visual-qa/t-6c029b-saved-agent-disagreement/` (machine-local, `.tachyon/`
+      is ignored by Git). Preview fixture for a human to open: `sidebar` / `disagreement-state`.
+      The suite renders the SAME rows with the old string and the new one and compares geometry, so
+      "did not regress the neighbour" is a measurement rather than a look.
+- [x] Verdict: **passes, and the length risk `plan.md` predicted does not exist.** The refusal rides
+      a `title` tooltip and the badge reads `refused` either way (`src/webview/sidebar/App.tsx`, the
+      `refused` meta renderer, a t-0ad300 decision), so the longer string has NO geometry: badge
+      width, refused-row height and healthy-row height are byte-identical before and after at both
+      widths, and nothing overflows sideways.
+      Two findings recorded rather than fixed here. First, a refused row is 58px against a healthy
+      row's 34px at both widths — that is the extra badge and it predates this change. Second, and
+      worth the owner's judgment: the state name reaches a human ONLY on hover. That follows the
+      spec, which asked for the state on the existing refusal string, but if the owner wants the
+      disagreement visible without hovering, that is a change to the BADGE and a separate decision.
 
 ## Cookbook
 

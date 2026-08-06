@@ -189,12 +189,12 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 
 ### Naming the disagreement where a reader already looks
 
-- [ ] **Scenario: the sidebar row says which owners disagree**
+- [x] **Scenario: the sidebar row says which owners disagree**
   - **Given** an agent in any of the five states
   - **When** the fleet is projected to the sidebar
   - **Then** the existing refusal string on the row names the state and the owners that
     disagree, and the row stays visible.
-- [ ] **Scenario: an agent can ask what disagrees**
+- [x] **Scenario: an agent can ask what disagrees**
   - **Given** an agent diagnosing a fleet problem through the Bridge
   - **When** it asks for the roster reconciliation
   - **Then** it receives, per agent, the membership fact, the four owner facts, the derived
@@ -227,6 +227,30 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   the input changed, so the human sees a new refusal with no cause. A snapshot would name the
   cause. It also adds a sixth place to keep in agreement, which is what this spec is trying to
   reduce. Owner: the human. Not resolved here.
-- **Is `unlisted-profile` reachable today?** The measurement did not produce one. If no door
-  can create it, the state is defensive and its handling can be a refusal to act rather than
-  an adoption offer. Resolve by enumerating the doors during the plan.
+- **Is `unlisted-profile` reachable today? RESOLVED 2026-08-06 (Part 4, `t-6c029b`): yes, by six
+  doors, so its handling stays "report it and keep the profile" and does NOT become a refusal to
+  act.** The measurement did not produce one because it never edited `tachyon.yml` by hand. The
+  doors, each read at the point of use:
+
+  | # | Actor | Trigger | Durable? |
+  |---|---|---|---|
+  | 1 | Human | delete an agent's row from `tachyon.yml` in a text editor | yes, nothing recovers it |
+  | 2 | Agent | `write_tachyon_config` writes the whole file and omits a row | yes, nothing recovers it |
+  | 3 | Human | copy a profile directory into `.tachyon/agents/` | yes, no product code ran |
+  | 4 | Human or Agent | `commitAgentProfileLifecycle` create, crashed between `profile-published` and `locator-written` | no, `reconcileAgentProfileLifecycle` closes it |
+  | 5 | Human | `commitAgentProfileForget`, crashed between `locator-removed` and `home-quarantined` | no, `reconcileAgentProfileForgets` closes it |
+  | 6 | Human or Agent | `commitAgentProfileRename`, crashed between `profile-moved` and `locator-written` | no, `reconcileAgentProfileRenames` closes it |
+
+  Door 1 is already covered by a test: "Human, text editor x edit tachyon.yml" in
+  `test/unit/workspaceHeadless.test.ts` deletes the row and asserts the profile is still on disk.
+  That test WAS an `unlisted-profile` before this question had a name.
+
+  The three transactional windows are transient by design and the three reconcilers close them, so
+  they are not what decides this question. Doors 1 to 3 do: they are durable, no reconciler owns
+  them, and two of the three are ordinary use of a documented surface.
+
+  What the resolution changes: nothing in the resolution table above. `unlisted-profile` keeps
+  "the profile stays, never delete it automatically", `reconcile_roster` reports it with no removal
+  door, and the reason it gives names the two ways out (restore the roster row, or delete the
+  directory by hand). Adoption is still not built — it needs a human who asks for it, and Part 4
+  found none.

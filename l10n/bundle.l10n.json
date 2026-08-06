@@ -221,5 +221,10 @@
   "{0} stopped temporary agent(s) remain listed with no tmux session: {1}. Resume keeps them; dismiss removes the ledger row and any claimed worktree.": "{0} stopped temporary agent(s) remain listed with no tmux session: {1}. Resume keeps them; dismiss removes the ledger row and any claimed worktree.",
   "Dismiss all {0}": "Dismiss all {0}",
   "dismissed {0} stopped temporary agent(s)": "dismissed {0} stopped temporary agent(s)",
-  "dismissed {0} stopped temporary agent(s); {1} error(s): {2}": "dismissed {0} stopped temporary agent(s); {1} error(s): {2}"
+  "dismissed {0} stopped temporary agent(s); {1} error(s): {2}": "dismissed {0} stopped temporary agent(s); {1} error(s): {2}",
+  "orphan-locator — the roster and the profile on disk disagree. {0}": "orphan-locator — the roster and the profile on disk disagree. {0}",
+  "unattested — the roster and the host authority disagree. {0}": "unattested — the roster and the host authority disagree. {0}",
+  "unprojectable — the profile and the runtime configuration disagree. {0}": "unprojectable — the profile and the runtime configuration disagree. {0}",
+  "unlisted-profile — a profile is on disk and the roster does not list it. {0}": "unlisted-profile — a profile is on disk and the roster does not list it. {0}",
+  "stranded-authority — a host authority is left and the agent is gone. {0}": "stranded-authority — a host authority is left and the agent is gone. {0}"
 }

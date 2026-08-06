@@ -98,7 +98,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
         }),
       );
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(79); // t-167b5c added read_notices (77 → 78); t-1926ce added worktree_process_hygiene (78 → 79). bridge.test.ts holds the by-name inventory.
+      expect(tools.length).toBe(80); // t-167b5c added read_notices (77 → 78); t-1926ce added worktree_process_hygiene (78 → 79); SDD 494 Part 4 added reconcile_roster (79 → 80). bridge.test.ts holds the by-name inventory.
       await client.close();
     } finally {
       await bridge.dispose();
@@ -111,7 +111,7 @@ describe("Bridge auth enforcement (live HTTP)", () => {
     try {
       const client = new Client({ name: "open", version: "0.0.1" });
       await client.connect(new StreamableHTTPClientTransport(new URL(bridge.url!)));
-      expect((await client.listTools()).tools.length).toBe(79); // t-167b5c added read_notices (77 → 78); t-1926ce added worktree_process_hygiene (78 → 79). bridge.test.ts holds the by-name inventory.
+      expect((await client.listTools()).tools.length).toBe(80); // t-167b5c added read_notices (77 → 78); t-1926ce added worktree_process_hygiene (78 → 79); SDD 494 Part 4 added reconcile_roster (79 → 80). bridge.test.ts holds the by-name inventory.
       await client.close();
     } finally {
       await bridge.dispose();
