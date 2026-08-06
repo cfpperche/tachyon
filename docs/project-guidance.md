@@ -111,6 +111,19 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   which is why this is a rule and not a reprimand. If a fix belongs in another repository, prepare it —
   commit locally, write the patch, say exactly what should be published and where — and stop. Publishing
   is the human's, the same way moving `main` is.
+- **Never install, upgrade, or downgrade a tool that lives outside your worktree, and never send a bare
+  Enter to a runtime CLI.** On 2026-08-06 a measuring agent drove three runtime CLIs in tmux panes. One
+  blind Enter landed on the codex update selector, which ran `npm install -g @openai/codex` and moved the
+  **host** from `0.146.0` to `0.146.1`. The agent disclosed it unprompted and did not revert, because a
+  downgrade was never authorized — stopping there was right. The cost is not the patch bump: `parity.md`
+  and about ten source comments record "measured on 0.146.0", and nothing compares that to the CLI on
+  PATH, so a behavior that changed in `.1` would be acted on from the old measurement in silence
+  (`t-1322b5`). Two rules follow. **Answer only a selector you recognized first** — read the pane, name
+  the option, then send the keystroke; a bare Enter accepts whatever is focused, which is often an
+  upgrade prompt. And **the human's machine is not your worktree**: global npm, package managers, and
+  `~/.<runtime>/` configs are shared state. If a measurement needs a different tool version, say which
+  one and why, and stop. An agent that grants trust or writes config for a scratch directory must revert
+  every entry it created and say so — that half was done correctly here, and it is the standard.
 - Use `npm run dogfood -- <scenario>`; list scenarios with `npm run dogfood -- --list`. Dogfood must
   use existing harnesses rather than add one-off package scripts.
 - Dev Host is checkout-local: `npm run dogfood -- dev-host -- point --fixture <slug>`; `--worktree`

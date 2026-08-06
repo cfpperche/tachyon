@@ -90,9 +90,13 @@ delegated toolkit breaks unless its source moves to the payload.
   record travels in the repo, a teammate's clone applies skills they never chose; if it stays local,
   a team re-answers the same question on every machine. Maintainer's call, needed before Phase A
   chooses the record's location.
-- **Unmeasured: what a runtime does with a skill dir that disappears mid-session.** Un-applying while
-  an agent runs is a real sequence and no runtime's behaviour there has been measured. Measure it in
-  Phase A before the UI offers the switch, or the switch is a promise nobody checked.
+- ~~**Unmeasured: what a runtime does with a skill dir that disappears mid-session.**~~ **MEASURED
+  2026-08-06 (`t-5d219f`) — see `notes.md` § Measurements.** No runtime crashes or wedges on a skill,
+  so A5 may offer the switch during a live session. The HOOK half came back the other way and is the
+  real constraint: codex 0.146.1 and grok 0.2.118 fix their hook set at session start, so a removed
+  hook keeps firing until the session restarts, and an un-apply switch reading "disarmed" would be
+  wrong on both. Claude 2.1.223 re-reads live. Both runtimes also hold a hook behind their OWN trust
+  gate, which Tachyon's switch cannot open.
 - **`t-84c678` shrinks but does not vanish.** Measured while drafting: the delegated toolkit already
   filters by runtime and already admits Grok, so a Temporary Grok child already receives skills
   privately. The gap is Saved agents. The task's framing is right; its implied scope was wider than
