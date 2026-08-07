@@ -4088,7 +4088,19 @@ export class Workspace {
     }
   }
 
-  /** Canonical declared-agent removal tail. Caller owns deleting the tachyon.yml entry first. */
+  /**
+   * Canonical declared-agent removal tail. The caller owns the `tachyon.yml` entry — and since
+   * t-af4a5f it deletes that entry AFTER this call, not before.
+   *
+   * The old wording here said "first", and `deleteConfiguredAgent` obeyed it. Nothing joins the two
+   * writes: no journal, no lock, and — measured — no reconcile, because a declared terminal holds no
+   * session-ledger row for `gcLedger` to collect and this tail writes no journal for
+   * `reconcileAgentProfileLifecycle` to read. A crash between them therefore left the roster row
+   * deleted and every footprint below intact, permanently and with no door pointing at it. Clearing
+   * the footprint while the name is still declared leaves the opposite residue: a listed entry that
+   * looks exactly like a terminal nobody has launched, which the next removal finishes because every
+   * step here is idempotent.
+   */
   async forgetAgent(name: string): Promise<void> {
     await this.evolutionStore.retireAgent(name);
     forgetAgentFootprint(name, {
