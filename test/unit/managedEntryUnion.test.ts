@@ -96,10 +96,10 @@ describe("ManagedEntry union — agent-only capabilities are unrepresentable on 
   it("keeps refusing the agent-only keys the parser already refused", () => {
     // `harness`, `soul`, `selfEvolution`, `instructions`, `role`, `isolate` and `subagents` were
     // already refused for a terminal imperatively; the union does not weaken those diagnostics.
-    const { errors } = parseConfig(
+    const { warnings } = parseConfig(
       "terminals:\n  dev:\n    cmd: npm run dev\n    harness: {}\n    soul: true\n",
     );
-    expect(errors.some((error) => error.includes("'harness' applies only to agents"))).toBe(true);
-    expect(errors.some((error) => error.includes("'soul' applies only to agents"))).toBe(true);
+    expect(warnings.some((error) => error.includes("'harness' applies only to agents"))).toBe(true);
+    expect(warnings.some((error) => error.includes("'soul' applies only to agents"))).toBe(true);
   });
 });

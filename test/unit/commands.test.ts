@@ -37,8 +37,8 @@ function fakeTmux() {
 }
 
 function configOf(yaml: string): TachyonConfig {
-  const { config, errors } = parseConfig(yaml);
-  if (!config) throw new Error(errors.join("; "));
+  const { config, warnings } = parseConfig(yaml);
+  if (!config) throw new Error(warnings.join("; "));
   return config;
 }
 
@@ -64,8 +64,8 @@ describe("commands config", () => {
     const config = configOf(YML);
     expect(config.commands.test.cmd).toBe("npm test");
     expect(config.commands.lint.cwd).toBe("web");
-    expect(parseConfig("agents:\n  a:\n    cmd: x\ncommands:\n  bad:\n    nope: 1\n").errors[0]).toContain("commands.bad");
-    expect(parseConfig("agents:\n  a:\n    cmd: x\ncommands:\n  t:\n    cmd: x\n    extra: 1\n").errors[0]).toContain("unknown key 'extra'");
+    expect(parseConfig("agents:\n  a:\n    cmd: x\ncommands:\n  bad:\n    nope: 1\n").warnings[0]).toContain("commands.bad");
+    expect(parseConfig("agents:\n  a:\n    cmd: x\ncommands:\n  t:\n    cmd: x\n    extra: 1\n").warnings[0]).toContain("unknown key 'extra'");
   });
 });
 
