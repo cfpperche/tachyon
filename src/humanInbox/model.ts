@@ -1,5 +1,5 @@
 /**
- * Human Inbox — the aggregate read-model over everything waiting on a human (t-e76acc).
+ * Human Inbox — the aggregate read-model over pending work and its read-only decision history.
  *
  * Ratified from `docs/reports/2026-07-27-approvals-validations-human-decision.md`, option B, and the
  * whole design is one sentence from it:
@@ -85,6 +85,12 @@ export interface HumanInboxItem {
   requester: string;
   requesterTrust: "bridge-resolved" | "self-declared";
   createdAt: string;
+  state: "waiting" | "resolved";
+  /** Kind-specific terminal result; absent while waiting or on older incomplete records. */
+  outcome?: "approved" | "denied" | "cancelled" | "passed" | "failed" | "skipped";
+  resolvedAt?: string;
+  /** Verbatim proven actor/channel when present; explicit `unattributed` when the store proves none. */
+  resolvedBy?: string;
   wsHash: string;
   folder: string;
   /** display-only staleness mark; nothing here auto-approves, auto-denies or auto-closes */
@@ -99,7 +105,7 @@ export interface HumanInboxItem {
 export interface HumanInboxInput {
   wsHash: string;
   folder: string;
-  /** pending approvals, already read from disk by `listPendingApprovalViewItems` */
+  /** every authoritative approval record, already read from disk by `listApprovalViewItems` */
   approvals: readonly ApprovalViewItem[];
   /** every validation in the workspace; this module decides which ones still await a human */
   validations: readonly ValidationViewItem[];
@@ -161,6 +167,21 @@ function validationArtifacts(validation: ValidationViewItem): ArtifactRef[] {
   return [...validation.sourceRefs, ...validation.rounds.flatMap((round) => round.evidenceRefs)];
 }
 
+function lastClosedValidationRound(validation: ValidationViewItem): ValidationViewItem["rounds"][number] | undefined {
+  for (let index = validation.rounds.length - 1; index >= 0; index -= 1) {
+    const round = validation.rounds[index];
+    if (round?.closedAt) return round;
+  }
+  return undefined;
+}
+
+function validationResolvedBy(validation: ValidationViewItem): string | undefined {
+  const actor = lastClosedValidationRound(validation)?.closedBy;
+  if (!actor) return validation.status === "closed" ? "unattributed" : undefined;
+  if (actor.kind === "unattributed") return actor.name ? `unattributed:${actor.name}` : "unattributed";
+  return actor.name ?? actor.kind;
+}
+
 /**
  * Project both stores into one ordered list: kind severity first, then oldest-first within a kind,
  * because the thing that has waited longest is the thing a human is most likely to have forgotten.
@@ -175,6 +196,21 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
   const items: HumanInboxItem[] = [];
 
   for (const approval of input.approvals) {
+    const resolved = approval.status === "resolved" && approval.resolution
+      ? {
+          state: "resolved" as const,
+          outcome: approval.resolution.decision,
+          resolvedAt: approval.resolution.resolvedAt,
+          resolvedBy: approval.resolution.resolvedBy ?? "unattributed",
+        }
+      : approval.status === "cancelled" && approval.cancellation
+        ? {
+            state: "resolved" as const,
+            outcome: "cancelled" as const,
+            resolvedAt: approval.cancellation.cancelledAt,
+            resolvedBy: approval.cancellation.cancelledBy,
+          }
+        : { state: "waiting" as const };
     items.push({
       id: approval.id,
       kind: "approval",
@@ -184,9 +220,10 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       requester: approval.requester,
       requesterTrust: "bridge-resolved",
       createdAt: approval.createdAt,
+      ...resolved,
       wsHash: input.wsHash,
       folder: input.folder,
-      stale: isStale(approval.createdAt),
+      stale: resolved.state === "waiting" && isStale(approval.createdAt),
       artifacts: [],
       ...(approval.warning ? { warning: approval.warning } : {}),
       detail: { kind: "approval", approval },
@@ -206,6 +243,7 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       // token, so no agent could have named itself here.
       requesterTrust: "bridge-resolved",
       createdAt: proposal.createdAt,
+      state: "waiting",
       wsHash: input.wsHash,
       folder: input.folder,
       stale: isStale(proposal.createdAt),
@@ -229,6 +267,7 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       // proposer field cannot be trusted would be the single most misleading thing on the row.
       requesterTrust: "self-declared",
       createdAt: new Date(0).toISOString(),
+      state: "waiting",
       wsHash: input.wsHash,
       folder: input.folder,
       stale: false,
@@ -279,6 +318,7 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       requester: proposal.proposer,
       requesterTrust: "bridge-resolved",
       createdAt: proposal.createdAt,
+      state: "waiting",
       wsHash: input.wsHash,
       folder: input.folder,
       stale: isStale(proposal.createdAt),
@@ -298,6 +338,7 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       requester: "unknown",
       requesterTrust: "self-declared",
       createdAt: new Date(0).toISOString(),
+      state: "waiting",
       wsHash: input.wsHash,
       folder: input.folder,
       stale: false,
@@ -327,7 +368,10 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
   }
 
   for (const validation of input.validations) {
-    if (!validationAwaitsHuman(validation)) continue;
+    const waiting = validationAwaitsHuman(validation);
+    const resolved = validation.status === "closed" && validation.executor === "human";
+    if (!waiting && !resolved) continue;
+    const lastClosedRound = lastClosedValidationRound(validation);
     items.push({
       id: validation.id,
       kind: "validation",
@@ -335,9 +379,13 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       requester: validation.assignee ?? "human",
       requesterTrust: "self-declared",
       createdAt: validation.createdAt,
+      state: resolved ? "resolved" : "waiting",
+      ...(resolved && lastClosedRound?.outcome ? { outcome: lastClosedRound.outcome } : {}),
+      ...(resolved ? { resolvedAt: lastClosedRound?.closedAt ?? validation.updatedAt } : {}),
+      ...(resolved ? { resolvedBy: validationResolvedBy(validation) } : {}),
       wsHash: input.wsHash,
       folder: input.folder,
-      stale: isStale(validation.createdAt),
+      stale: waiting && isStale(validation.createdAt),
       artifacts: validationArtifacts(validation),
       detail: { kind: "validation", validation },
     });
@@ -354,6 +402,7 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
       requester: proposal.by,
       requesterTrust: "bridge-resolved",
       createdAt: proposal.createdAt,
+      state: "waiting",
       wsHash: input.wsHash,
       folder: input.folder,
       stale: isStale(proposal.createdAt),
@@ -363,6 +412,11 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
   }
 
   return items.sort((a, b) => {
+    if (a.state !== b.state) return a.state === "waiting" ? -1 : 1;
+    if (a.state === "resolved") {
+      const byResolved = Date.parse(b.resolvedAt ?? b.createdAt) - Date.parse(a.resolvedAt ?? a.createdAt);
+      if (Number.isFinite(byResolved) && byResolved !== 0) return byResolved;
+    }
     const bySeverity = KIND_SEVERITY[a.kind] - KIND_SEVERITY[b.kind];
     if (bySeverity !== 0) return bySeverity;
     const byAge = Date.parse(a.createdAt) - Date.parse(b.createdAt);
@@ -382,15 +436,57 @@ export interface HumanInboxCounts {
   stale: number;
 }
 
+export type HumanInboxStateFilter = "waiting" | "resolved" | "all";
+export type HumanInboxOutcomeFilter = NonNullable<HumanInboxItem["outcome"]> | "all";
+export type HumanInboxPeriodFilter = "day" | "week" | "month" | "all";
+
+export interface HumanInboxFilters {
+  state: HumanInboxStateFilter;
+  kind: HumanInboxKind | "all";
+  outcome: HumanInboxOutcomeFilter;
+  period: HumanInboxPeriodFilter;
+  query: string;
+}
+
+const PERIOD_MS: Record<Exclude<HumanInboxPeriodFilter, "all">, number> = {
+  day: 24 * 60 * 60 * 1000,
+  week: 7 * 24 * 60 * 60 * 1000,
+  month: 30 * 24 * 60 * 60 * 1000,
+};
+
+/** Pure client-side query over the authoritative rows; filtering never changes the waiting counter. */
+export function filterHumanInboxItems(
+  items: readonly HumanInboxItem[],
+  filters: HumanInboxFilters,
+  now = new Date().toISOString(),
+): HumanInboxItem[] {
+  const query = filters.query.trim().toLocaleLowerCase();
+  const cutoff = filters.period === "all" ? undefined : Date.parse(now) - PERIOD_MS[filters.period];
+  return items.filter((item) => {
+    if (filters.state !== "all" && item.state !== filters.state) return false;
+    if (filters.kind !== "all" && item.kind !== filters.kind) return false;
+    if (filters.outcome !== "all" && item.outcome !== filters.outcome) return false;
+    if (cutoff !== undefined && item.state === "resolved") {
+      const resolvedAt = Date.parse(item.resolvedAt ?? "");
+      if (!Number.isFinite(resolvedAt) || resolvedAt < cutoff) return false;
+    }
+    if (!query) return true;
+    return [item.id, item.title, item.requester, item.outcome, item.resolvedBy]
+      .filter((value): value is string => Boolean(value))
+      .some((value) => value.toLocaleLowerCase().includes(query));
+  });
+}
+
 /** The aggregate answer to "how much is waiting on me", derived from the rows themselves. */
 export function humanInboxCounts(items: readonly HumanInboxItem[]): HumanInboxCounts {
+  const waiting = items.filter((item) => item.state === "waiting");
   return {
-    total: items.length,
-    approvals: items.filter((i) => i.kind === "approval").length,
-    savedAgentProposals: items.filter((i) => i.kind === "saved-agent-proposal").length,
-    savedAgentRemovals: items.filter((i) => i.kind === "saved-agent-removal").length,
-    scheduleProposals: items.filter((i) => i.kind === "schedule-proposal").length,
-    validations: items.filter((i) => i.kind === "validation").length,
-    stale: items.filter((i) => i.stale).length,
+    total: waiting.length,
+    approvals: waiting.filter((i) => i.kind === "approval").length,
+    savedAgentProposals: waiting.filter((i) => i.kind === "saved-agent-proposal").length,
+    savedAgentRemovals: waiting.filter((i) => i.kind === "saved-agent-removal").length,
+    scheduleProposals: waiting.filter((i) => i.kind === "schedule-proposal").length,
+    validations: waiting.filter((i) => i.kind === "validation").length,
+    stale: waiting.filter((i) => i.stale).length,
   };
 }

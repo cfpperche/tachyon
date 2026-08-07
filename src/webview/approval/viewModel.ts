@@ -5,8 +5,11 @@ import {
   APPROVAL_ID_PREFIX,
   witnessedDecisionSealState,
   readApprovalRequest,
+  type ApprovalCancellation,
   type ApprovalPayload,
   type ApprovalRequest,
+  type ApprovalResolution,
+  type ApprovalStatus,
 } from "../../bridge/approvalRequest.js";
 import type { CockpitApprovalRow } from "../../cockpit/model.js";
 
@@ -18,6 +21,10 @@ export interface ApprovalViewItem {
   payload: ApprovalPayload;
   tampered: boolean;
   warning?: string;
+  /** Production readers always set this; optional only for legacy preview/test fixtures. */
+  status?: ApprovalStatus;
+  resolution?: ApprovalResolution;
+  cancellation?: ApprovalCancellation;
 }
 
 export interface ApprovalViewModel {
@@ -33,18 +40,14 @@ export function buildApprovalViewModel(input: { workspaceRoot: string; folder: s
 }
 
 /**
- * t-d85857 — the ONE pending-approval read behind both Control surfaces: the Approvals section
- * (which renders these items) and Overview's counter (which only counts them). They used to have
- * different sources — the section read this, while the shell bundled a hardcoded empty list — so
- * Overview reported `approvals pending: 0` with requests sitting on disk. A security counter that
- * reads zero is worse than no counter, so the two now cannot disagree by construction.
+ * The authoritative approval read behind both pending surfaces and the Human Inbox history. Pending
+ * consumers use the wrapper below, so the Overview counter and action surface still cannot disagree;
+ * history consumers retain the verified terminal records instead of copying them into another store.
  *
- * Pending is what a human still owes an answer to: resolved and cancelled records are skipped, and
- * a record whose payloadHash no longer matches, whose decision seal is broken (t-65e80b), or that
- * will not parse at all is still listed — tampering is a reason to look at it, never a reason to drop
- * it from the count.
+ * A record whose payloadHash no longer matches, whose decision seal is broken (t-65e80b), or that
+ * will not parse at all stays pending: tampering cannot retire itself from the human's count.
  */
-export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalViewItem[] {
+export function listApprovalViewItems(workspaceRoot: string): ApprovalViewItem[] {
   const approvals: ApprovalViewItem[] = [];
   const dir = path.join(workspaceRoot, APPROVALS_REL_DIR);
   if (!fs.existsSync(dir)) return approvals;
@@ -53,7 +56,6 @@ export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalVie
     const id = file.slice(0, -".json".length);
     try {
       const request = readApprovalRequest(workspaceRoot, id);
-      if (request.status !== "pending") continue;
       approvals.push({
         id: request.id,
         requester: request.requester,
@@ -61,6 +63,9 @@ export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalVie
         createdAt: request.createdAt,
         payload: request.payload,
         tampered: false,
+        status: request.status,
+        ...(request.resolution ? { resolution: request.resolution } : {}),
+        ...(request.cancellation ? { cancellation: request.cancellation } : {}),
       });
     } catch (err) {
       try {
@@ -79,6 +84,7 @@ export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalVie
           createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
           payload: { ...emptyPayload(), ...(raw.payload ?? {}) },
           tampered: true,
+          status: "pending",
           warning: err instanceof Error ? err.message : String(err),
         });
       } catch {
@@ -89,12 +95,18 @@ export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalVie
           createdAt: "",
           payload: emptyPayload(),
           tampered: true,
+          status: "pending",
           warning: `approval record '${id}' is unreadable`,
         });
       }
     }
   }
   return approvals;
+}
+
+/** The action surface remains pending-only; history consumers opt into the complete authoritative read. */
+export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalViewItem[] {
+  return listApprovalViewItems(workspaceRoot).filter((item) => (item.status ?? "pending") === "pending");
 }
 
 /** Overview's row shape for the same pending set — id + status only; the counter renders no payload. */
