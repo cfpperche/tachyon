@@ -96,8 +96,8 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         "get a receipt: answered-prompt back. submit=false only types the text with no Enter — raw, unsubmitted " +
         "keystrokes can land in or concatenate with whatever the recipient's composer already holds, so the " +
         "caller should know the recipient's state. " +
-        "GOVERNANCE (t-bec361): as an agent you may type into only yourself or an agent below you in your own " +
-        "lineage — typing into someone else's terminal is a command gesture, not a message. To reach a sibling, " +
+        "GOVERNANCE (t-bec361/t-b5f896): as an agent you may type into only yourself, an agent below you in your own " +
+        "lineage, or a Saved Agent you own in the roster — typing into someone else's terminal is a command gesture, not a message. To reach a sibling, " +
         "a parent or any other agent, use notify_agent, which is not lineage-scoped.",
       inputSchema: {
         name: AGENT_NAME,

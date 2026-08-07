@@ -179,12 +179,20 @@ describe("Bridge tool-level actor resolution (spec 351 T4)", () => {
     expect(explicit.isError).toBe(true);
     expect(JSON.stringify(explicit.content)).toContain("parent is only valid for a Temporary delegated agent");
 
-    // t-bec361 — cleanup goes through the human-operation token, not `claude`. Activating a Saved
-    // Agent deliberately creates NO runtime lineage (the assertions above are exactly that), so
-    // `claude` is not these two entries' owner and kill_agent now refuses it. `declaredOwner` is
-    // durable roster metadata, not lineage, and the lifecycle scope reads lineage only.
+    // t-b5f896 — Saved activation still creates NO runtime lineage, but the durable roster owner
+    // must be able to undo that activation. A different agent stays outside the lifecycle scope,
+    // and its structured refusal names the roster owner instead of misreporting a human-owned
+    // top-level agent.
+    const strangerKill = await codexClient.callTool({ name: "kill_agent", arguments: { name: "owned" } });
+    expect(strangerKill.isError).toBe(true);
+    expect(JSON.stringify(strangerKill.content)).toContain("belongs to 'claude'");
+
+    const ownerKill = await claudeClient.callTool({ name: "kill_agent", arguments: { name: "owned" } });
+    expect(ownerKill.isError).toBeFalsy();
+
+    // The genuinely top-level Saved Agent still has no agent owner, so its cleanup remains a human
+    // operation. Merely activating it does not mint authority for the caller.
     await client.callTool({ name: "kill_agent", arguments: { name: "saved" } });
-    await client.callTool({ name: "kill_agent", arguments: { name: "owned" } });
   });
 
   it("notify_agent: sender is the resolved caller, not whatever the call declares", async () => {
