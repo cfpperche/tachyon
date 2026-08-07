@@ -1,6 +1,6 @@
 /**
  * t-6e2952 — shared Control section navigation metadata (icon + English label) for the launcher
- * grid and any other surface that must open the same twelve tabs in the same order.
+ * grid and any other surface that must open the same tabs in the same order.
  *
  * Icons match Control's TabsBar (`TAB_META` in cockpit/App.tsx). Labels match `strings()` in
  * Cockpit.ts (English source of `vscode.l10n.t`); the host re-localizes when pushing tiles.
@@ -30,7 +30,6 @@ export interface ControlSectionNav {
 const NAV_BY_ID: ReadonlyMap<CockpitSectionId, Omit<ControlSectionNav, "id">> = new Map([
   ["overview", { icon: "dashboard", label: "Overview" }],
   ["engine", { icon: "server-environment", label: "Engine" }],
-  ["fleet", { icon: "organization", label: "Fleet" }],
   ["inbox", { icon: "inbox", label: "Inbox" }],
   ["mission", { icon: "checklist", label: "Board" }],
   ["worktrees", { icon: "folder-library", label: "Worktrees" }],
@@ -43,17 +42,21 @@ const NAV_BY_ID: ReadonlyMap<CockpitSectionId, Omit<ControlSectionNav, "id">> = 
 ]);
 
 /**
- * The launcher grid's order — the twelve tiles, unchanged as a product surface.
+ * The launcher grid's order — the tiles, in product order.
  *
  * SDD 485 C5 — this is no longer `COCKPIT_SECTION_ORDER` itself. `mission` (Board) left that list when it
  * became a standalone app, and the launcher is the door to it either way: it lists what the human can OPEN,
  * not what Control happens to render. Keeping the two lists distinct is what lets a migration change a
- * destination without moving a tile, which is exactly what Phase D will do ten more times.
+ * destination without moving a tile, which is exactly what Phase D did ten more times.
+ *
+ * t-5f2b5b — and what lets a tile be DELETED without touching the id it named. `fleet` left this list
+ * (owner decision, 2026-08-07: the sidebar Agents tab is the only fleet, so the tile had nowhere worth
+ * going) while staying a `CockpitSectionId`: it is still the parent section of the agent-activity and
+ * agent-probes subroutes and of five studios, so it must still decode. Eleven tiles now, not twelve.
  */
 const LAUNCHER_ORDER: readonly CockpitSectionId[] = [
   "overview",
   "engine",
-  "fleet",
   "inbox",
   "mission",
   "worktrees",

@@ -274,11 +274,10 @@ fresh cheap CDP connection, does one thing, prints a JSON line, disconnects. No 
 
 ```bash
 node scripts/dev-host/headless-session.mjs up                       # boot once (detached), ~10s
-node scripts/dev-host/headless-session.mjs cmd "Tachyon: Open Control"
-node scripts/dev-host/headless-session.mjs eval control "[...document.querySelectorAll('.ck-tabs button')].map(b=>b.textContent.trim())"
-node scripts/dev-host/headless-session.mjs click control "Fleet"
-node scripts/dev-host/headless-session.mjs dom control "[data-testid='control-fleet'] button"
-node scripts/dev-host/headless-session.mjs shot fleet             # → session-out/fleet.png (Read it)
+node scripts/dev-host/headless-session.mjs cmd "Tachyon: Open Human Inbox"
+node scripts/dev-host/headless-session.mjs eval "!!document.querySelector('.hi-root')" "[...document.querySelectorAll('.ds-page-chrome button')].map(b=>b.title.trim())"
+node scripts/dev-host/headless-session.mjs dom "!!document.querySelector('.hi-root')" "[data-testid='inbox-counts']"
+node scripts/dev-host/headless-session.mjs shot inbox              # → session-out/inbox.png (Read it)
 node scripts/dev-host/headless-session.mjs down                     # kill EDH + Xvfb
 ```
 

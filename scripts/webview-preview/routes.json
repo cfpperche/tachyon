@@ -1909,42 +1909,6 @@
     ]
   },
   {
-    "view": "fleet",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=fleet&fixture=default",
-    "frame": {
-      "w": 880,
-      "h": 900
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Fleet",
-    "aliases": [
-      "fleet",
-      "agents",
-      "agent runtime"
-    ]
-  },
-  {
-    "view": "fleet",
-    "fixture": "agent-states",
-    "url": "/scripts/webview-preview/index.html?view=fleet&fixture=agent-states",
-    "frame": {
-      "w": 880,
-      "h": 900
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Fleet",
-    "aliases": [
-      "fleet",
-      "agents",
-      "agent runtime"
-    ]
-  },
-  {
     "view": "settings",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=settings&fixture=default",

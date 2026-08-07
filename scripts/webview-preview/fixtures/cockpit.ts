@@ -970,7 +970,9 @@ const executionGraphVm = buildExecutionGraphVm({ projection: projectExecutions(e
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
   engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
-  fleet: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "fleet", nowIso: now }) },
+  // t-5f2b5b — no `fleet` fixture: the Fleet section had no Control renderer left and its standalone app is
+  // deleted, so there is no surface to photograph. `fleet` is still the nav section the studio/agent-subroute
+  // fixtures below build against, which is why those keep using it.
   // SDD 485 C5 — no `mission` fixture: Control has no Board section to photograph any more. The Board has
   // its own harness route (?view=mission-control), rendering the same component in the page it really ships.
   // SDD 485 C4 — the four `task-detail*` cockpit fixtures are GONE with the subroute: the task detail

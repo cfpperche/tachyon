@@ -17,7 +17,6 @@ import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/Runtime
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
-import { FLEET_VIEW_TYPE, FleetPanelManager } from "./webview/FleetPanel.js";
 import { EXECUTION_GRAPH_VIEW_TYPE, ExecutionGraphPanelManager } from "./webview/ExecutionGraphPanel.js";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { OVERVIEW_VIEW_TYPE, OverviewPanelManager } from "./webview/OverviewPanel.js";
@@ -1682,8 +1681,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     return result.forgotten === true ? undefined : `record not found or refused: ${id}`;
   };
-  // SDD 485 D7 / t-41117e — Continue picker is webview-local; this remains the authoritative host action
-  // for both the Fleet tab and the sidebar Agents roster.
+  // SDD 485 D7 / t-41117e — Continue picker is webview-local; this remains the authoritative host action.
+  // t-5f2b5b — the Fleet app is gone, so the sidebar Agents roster is its only caller now.
   const continueFleetTask = async (fromName: string, toName: string, wsHash: string): Promise<void> => {
     const ws = byHash(wsHash);
     if (!ws) throw new Error("no Tachyon workspace for that hash");
@@ -1696,7 +1695,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (dest.lifetime !== "saved") throw new Error(`destination '${toName}' is a Temporary Agent (not declared in tachyon.yml)`);
     if (dest.running) throw new Error(`destination '${toName}' is running — stop it first`);
     const result = jsonObject(await extensionInvoke(ws, {
-      action: "agent.continue-task", fromAgent: fromName, toAgent: toName, reason: "continued from Fleet",
+      action: "agent.continue-task", fromAgent: fromName, toAgent: toName, reason: "continued from the Agents roster",
     }), "agent.continue-task");
     if (result.ok !== true) throw new Error(typeof result.message === "string" ? result.message : "continue-task failed");
     const handoff = typeof result.handoffPath === "string" ? result.handoffPath : "";
@@ -2456,74 +2455,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     overviewPanels.open(ws.wsHash); return true;
   };
 
-  // SDD 485 D7 / t-41117e — Fleet is one dashboard per immutable project. Source is the same
-  // FleetVM as the sidebar Agents tab (nine statuses). Actions use the panel project, never a row fallback.
-  const fleetPanels = new FleetPanelManager(context.extensionUri, {
-    loadFleet: async (project) => {
-      const ws = byHash(project);
-      if (!ws) throw new Error(`workspace ${project} is not attached`);
-      return ws.sidebar.loadSidebar();
-    },
-    openBoard: (project) => openBoard(project),
-    runAction: async (id, name, project, contextValue) => {
-      const ws = byHash(project);
-      if (!ws) throw new Error(`workspace ${project} is not attached`);
-      if (id === "inspect") {
-        await vscode.commands.executeCommand("tachyon.openAgentTerminalItem", name, project);
-        return;
-      }
-      if (id === "openPane") {
-        await vscode.commands.executeCommand("tachyon.openAgentPaneItem", name, project);
-        return;
-      }
-      if (id === "activity") {
-        await vscode.commands.executeCommand("tachyon.openAgentActivity", name, project);
-        return;
-      }
-      if (id === "probes") {
-        await vscode.commands.executeCommand("tachyon.openProbes", project, name);
-        return;
-      }
-      const ACTION_CMD: Partial<Record<string, string>> = {
-        stop: "tachyon.stopAgentItem",
-        kill: "tachyon.killAgentItem",
-        restart: "tachyon.restartAgentItem",
-        restartNew: "tachyon.restartAgentNewItem",
-        restartForceNew: "tachyon.restartAgentForceNewItem",
-        spawn: "tachyon.spawnAgentItem",
-        resume: "tachyon.resumeAgentItem",
-        fork: "tachyon.forkAgentItem",
-        verify: "tachyon.verifyAgentItem",
-        reanchor: "tachyon.reanchorAgentItem",
-        reinjectContinuity: "tachyon.reinjectContinuityItem",
-        injectPrompt: "tachyon.injectPromptTemplateItem",
-        promote: "tachyon.promoteAgentItem",
-        reviewWorktree: "tachyon.reviewWorktreeItem",
-        createPr: "tachyon.createWorktreePrItem",
-        edit: "tachyon.editAgentStudioItem",
-        editYaml: "tachyon.editAgentItem",
-        clone: "tachyon.cloneAgentItem",
-        remove: "tachyon.deleteAgentItem",
-      };
-      const cmd = ACTION_CMD[id];
-      if (!cmd) return;
-      await vscode.commands.executeCommand(
-        cmd,
-        ...ws.sidebar.shellCommandArgs({ kind: "agent", agentName: name, contextValue }),
-      );
-    },
-    continueTask: continueFleetTask,
-  }, undefined, controlWorkspaceScope);
-  context.subscriptions.push({ dispose: () => fleetPanels.dispose() });
-  const openFleetTab = (hash?: string): boolean => {
-    const ws = (hash ? byHash(hash) : undefined)
-      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
-      ?? workspaces()[0];
-    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
-    fleetPanels.open(ws.wsHash);
-    return true;
-  };
-
   // SDD 485 C5 — the pre-410 standalone Board panel's viewType, revived a second time into a second home.
   // It disposes itself and opens the Board APP for the workspace it persisted, so the screen the human had
   // comes back where it lives now. Unlike C4's task-detail row, this viewType could NOT simply be reused by
@@ -2546,7 +2477,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, EXECUTION_GRAPH_VIEW_TYPE, (panel, state) => executionGraphPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, OVERVIEW_VIEW_TYPE, (panel, state) => overviewPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<SectionPanelState>(context, FLEET_VIEW_TYPE, (panel, state) => fleetPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
   // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
@@ -2644,7 +2574,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // panel INTO. `SectionPanelManager` itself does support revival (it persists project + identity and
   // re-opens on the same key); that contract is exercised against a real `registerTrustedPanelSerializer`
   // in `test/unit/sectionPanelManager.test.ts`, and C4/C5 wire it here for the apps that ship.
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView"]) {
+  // t-5f2b5b — `tachyonFleet` joins them: the Fleet app is deleted, so a tab a human left open before the
+  // deletion has no manager to revive into. Without this row VS Code hands the panel back to nobody and the
+  // human gets a dead editor tab; with it the stale panel is disposed on the spot.
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet"]) {
     registerDisposePanelSerializer(context, viewType);
   }
 
@@ -2996,10 +2929,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openWorktreesTab();
           return Promise.resolve();
         }
-        if (resolved === "fleet") {
-          openFleetTab();
-          return Promise.resolve();
-        }
         if (resolved === "runtime-config") {
           openRuntimeConfigTab();
           return Promise.resolve();
@@ -3016,6 +2945,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openOverviewTab();
           return Promise.resolve();
         }
+        // t-5f2b5b — `fleet` has NO arm any more and deliberately falls through here. The app is deleted
+        // (owner decision: the sidebar Agents tab is the only fleet), but the id still DECODES, because it
+        // is the parent section of the agent-activity/agent-probes subroutes and of five studios. A stale
+        // deep link or a persisted pre-deletion state therefore lands on Overview instead of a section
+        // nothing renders — the same answer the retired `tachyonCockpit` tombstone gives.
         openOverviewTab();
         return Promise.resolve();
       }

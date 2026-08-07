@@ -21,7 +21,6 @@ import { taskMessage } from "../../src/webview/task-detail/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
 import { engineModelMessage } from "../../src/webview/engine/messages";
 import { worktreesModelMessage } from "../../src/webview/worktrees/messages";
-import { fleetModelMessage } from "../../src/webview/fleet/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
 import { executionGraphModelMessage } from "../../src/webview/execution-graph/messages";
 import { settingsModelMessage } from "../../src/webview/settings/messages";
@@ -429,25 +428,10 @@ export const ROUTES: Record<string, Route> = {
     module: true,
     makeMessage: (vm) => worktreesModelMessage(vm as never),
   },
-  // SDD 485 D7 / t-41117e — Fleet reuses the sidebar AgentsRoster (nine statuses). Fixture is a FleetVM
-  // (agent-states), not CockpitModel.fleet. CSS matches production: sidebar.css paints AgentRow.
-  fleet: {
-    bundle: "/dist/webview/fleet.js",
-    cssLinks: [
-      CODICON,
-      DESIGN_SYSTEM,
-      "/dist/webview/control-typography.css",
-      "/dist/webview/sidebar.css",
-      "/dist/webview/engine-workspace.css",
-    ],
-    frame: { w: 880, h: 900 },
-    fixtures: {
-      default: sidebarFixtures["agent-states"],
-      "agent-states": sidebarFixtures["agent-states"],
-    },
-    module: true,
-    makeMessage: (vm) => fleetModelMessage(vm as never),
-  },
+  // t-5f2b5b — no `fleet` route: SDD 485 D7's Fleet app is deleted. The roster it previewed is the
+  // sidebar's own AgentsRoster, and `?view=sidebar&fixture=agent-states` renders it in the surface that
+  // still ships. `VIEW_META.sidebar` already carries the "fleet"/"agents" aliases, so a named lookup for
+  // "fleet" resolves there rather than to nothing.
   settings: {
     bundle: "/dist/webview/settings.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/settings.css"],
@@ -523,7 +507,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "human-inbox": { title: "Human Inbox", aliases: ["inbox", "human inbox", "waiting on you", "approvals queue"] },
   engine: { title: "Engine", aliases: ["engine", "bridge", "control plane"] },
   worktrees: { title: "Worktrees", aliases: ["worktrees", "managed worktrees", "checkout hygiene"] },
-  fleet: { title: "Fleet", aliases: ["fleet", "agents", "agent runtime"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
   "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },
