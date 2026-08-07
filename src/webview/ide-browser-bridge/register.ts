@@ -12,6 +12,7 @@
  * engine). Tools stay always-registered when ideBrowserRequest is wired (t-3cab05).
  */
 
+import path from "node:path";
 import * as vscode from "vscode";
 import {
   IDE_BROWSER_FIRST_USE_TIPS,
@@ -68,8 +69,14 @@ export type IdeBrowserBridgeRegisterOptions = {
 };
 
 function workspaceRoot(): string {
-  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+  return registerOptions.getWorkspace?.()?.workspaceRoot
+    ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
     ?? process.cwd();
+}
+
+function managerForActiveWorkspace(): IdeBrowserBridgeManager | null {
+  if (!manager) return null;
+  return path.resolve(manager.status.workspaceRoot) === path.resolve(workspaceRoot()) ? manager : null;
 }
 
 /** Live opt-in from the active workspace's tachyon.yml (absent = off). */
@@ -233,9 +240,10 @@ async function requireEnabled(op: string): Promise<boolean> {
  * serving a surface the human opted out of. When it turns on, only show the bars (no auto-boot).
  */
 async function applyGateAfterConfigChange(): Promise<void> {
-  if (!featureEnabled() && manager?.running) {
+  const active = managerForActiveWorkspace();
+  if (!featureEnabled() && active?.running) {
     try {
-      await manager.stop();
+      await active.stop();
       manager = null;
       log?.appendLine("[ide-browser] stopped — settings.ideBrowser.enabled is off");
     } catch (err) {
@@ -252,14 +260,15 @@ async function showStatus(): Promise<void> {
     void vscode.window.showInformationMessage(DISABLED_HUMAN_MESSAGE);
     return;
   }
-  const st = manager?.status;
+  const active = managerForActiveWorkspace();
+  const st = active?.status;
   if (!st?.running) {
     void vscode.window.showInformationMessage(
       "IDE Browser bridge is off. Click the globe icon on the status bar to open.",
     );
     return;
   }
-  const dm = manager?.designMode;
+  const dm = active?.designMode;
   void vscode.window.showInformationMessage(
     `IDE Browser: ${st.endpoint} · CDP ${st.cdp} · ${st.url || "(no page yet)"}`
       + (dm?.on ? ` · Design Mode → ${dm.agent}` : ""),
@@ -299,9 +308,6 @@ async function toggleDesignMode(): Promise<void> {
     if (m.status.cdp !== "connected") {
       await m.navigate(homeUrl());
     }
-    if (registerOptions.getWorkspace) {
-      m.setWorkspaceResolver(registerOptions.getWorkspace);
-    }
     const ws = registerOptions.getWorkspace?.();
     if (ws) {
       try {
@@ -334,7 +340,6 @@ async function setDesignMode(on: boolean): Promise<void> {
     const m = await ensureManager();
     if (!m.running) await m.start();
     if (m.status.cdp !== "connected") await m.navigate(homeUrl());
-    if (registerOptions.getWorkspace) m.setWorkspaceResolver(registerOptions.getWorkspace);
     await m.setDesignMode(on);
     paintBars();
   } catch (err) {
@@ -359,12 +364,17 @@ async function ensureStarted(): Promise<{ endpoint: string; cdp: string; url: st
 }
 
 async function ensureManager(): Promise<IdeBrowserBridgeManager> {
+  const owner = registerOptions.getWorkspace?.();
+  const root = owner?.workspaceRoot ?? workspaceRoot();
+  if (manager && path.resolve(manager.status.workspaceRoot) !== path.resolve(root)) {
+    await manager.stop();
+    manager = null;
+    log?.appendLine(`[ide-browser] workspace owner changed → ${root}`);
+  }
   if (!manager) {
     if (!log) log = vscode.window.createOutputChannel("Tachyon IDE Browser");
-    manager = new IdeBrowserBridgeManager(workspaceRoot(), log);
-    if (registerOptions.getWorkspace) {
-      manager.setWorkspaceResolver(registerOptions.getWorkspace);
-    }
+    manager = new IdeBrowserBridgeManager(root, log);
+    manager.setWorkspaceResolver(() => owner);
     manager.setDesignModeChangedHandler(() => {
       paintBars();
     });
@@ -385,8 +395,9 @@ function paintBars(): void {
     return;
   }
 
-  const st = manager?.status;
-  const dm = manager?.designMode;
+  const active = managerForActiveWorkspace();
+  const st = active?.status;
+  const dm = active?.designMode;
   const endpoint = st?.running ? st.endpoint : undefined;
   const cdp = st?.cdp ?? "disconnected";
   const url = st?.url ?? "";

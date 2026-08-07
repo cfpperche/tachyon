@@ -17,6 +17,7 @@ import {
   resolveBase,
 } from "./WorktreeManager.js";
 import { classifyManagedWorktree, resolveTrunkRefs, type WorktreeClassification } from "./classify.js";
+import { probeLandSuggestion, probePrimaryCheckout, type LandSuggestion, type PrimaryCheckoutState } from "./land.js";
 import {
   resolveHygieneAuthority,
   type HygieneAuthorityDecision,
@@ -167,16 +168,38 @@ export class ManagedWorktreeService {
    * already fail-closes probe failures to `needs-review` internally) never silently reports that
    * entry as safe: it renders as `needs-review` with a stated `classification failed` reason instead
    * of failing the whole batch.
+   *
+   * t-7cb971 — a row also carries a `land` suggestion when, and only when, it has work the trunk does
+   * not contain. That condition comes free from the classification just computed, so a landed or empty
+   * checkout costs no extra probe at all: there is nothing to land, and offering a command for it
+   * would be the "suggestion that reads as authority" this is meant to replace.
    */
   async listClassified(filter?: {
     kind?: ManagedWorktreeKind;
     status?: ManagedWorktreeEntry["status"];
-  }): Promise<Array<ManagedWorktreeEntry & { classification: WorktreeClassification; ownerPresence: OwnerPresence }>> {
+  }): Promise<Array<ManagedWorktreeEntry & {
+    classification: WorktreeClassification;
+    ownerPresence: OwnerPresence;
+    land?: LandSuggestion;
+  }>> {
     const entries = this.list(filter);
     // t-24e28d — the trunk is a property of the REPOSITORY, so it is discovered once per sweep against
     // the workspace root rather than re-probed inside every entry's checkout. Resolving it here also
     // means a row whose path has gone missing is still described against the same trunk as its peers.
     const trunkRefs = await resolveTrunkRefs(this.git, this.opts.workspaceRoot);
+    // t-7cb971 — only a LOCAL branch can be fast-forwarded, so the land suggestion needs the local
+    // name out of the candidate list rather than whichever candidate proved containment (which may be
+    // `origin/<trunk>`). No local trunk at all is an honest null: the suggestion then refuses by name.
+    const localTrunk = trunkRefs.find((ref) => !ref.startsWith("origin/")) ?? null;
+    // t-7cb971 — and so is the primary checkout, for both of the reasons the trunk is: three
+    // subprocesses per row otherwise, and two rows in one refresh must not disagree about which
+    // branch it has checked out. Probed lazily: a sweep with nothing to land never pays for it.
+    // Memoizes the PROMISE, not its result: the rows below run concurrently under `Promise.all`, so
+    // caching after the await would let every row start its own probe before the first one finished
+    // and defeat the whole point.
+    let primaryProbe: Promise<PrimaryCheckoutState> | undefined;
+    const primaryOnce = (): Promise<PrimaryCheckoutState> =>
+      (primaryProbe ??= probePrimaryCheckout(this.git, this.opts.workspaceRoot));
     return Promise.all(
       entries.map(async (entry) => {
         // t-621613 — carried on every row because a reader deciding what to DO with an agent entry
@@ -190,7 +213,25 @@ export class ManagedWorktreeService {
             occupancy: this.opts.occupancy,
             trunkRefs,
           });
-          return { ...entry, classification, ownerPresence };
+          // t-7cb971 — nothing to land once the trunk already contains the work, and nothing to probe
+          // when the checkout is gone. A `land` that threw is dropped rather than reported half-built:
+          // a partial precondition list is the one output shape worse than none.
+          const land = classification.pathExists && !classification.containedInTrunk
+            ? await primaryOnce()
+              .then((primary) => probeLandSuggestion({
+                git: this.git,
+                worktreePath: entry.path,
+                trunkRef: localTrunk,
+                primary,
+                dirty: classification.dirty,
+                commits: classification.aheadOfBase,
+              }))
+              // Inside the catch on purpose: a failed primary probe must cost this row its land
+              // block, never its CLASSIFICATION — the outer handler would report the whole row as
+              // `classification failed`, which is a false statement about a classification that ran.
+              .catch(() => undefined)
+            : undefined;
+          return { ...entry, classification, ownerPresence, ...(land ? { land } : {}) };
         } catch (err) {
           return {
             ...entry,

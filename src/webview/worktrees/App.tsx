@@ -14,6 +14,72 @@ function wtGroupOf(row: CockpitWorktreeRow): WtGroup {
   return row.classification?.state ?? "needs-review";
 }
 
+/** t-7cb971 — the check id → its localized label; the sentence beside it is the engine's own. */
+const LAND_CHECK_LABEL: Record<string, keyof Strings> = {
+  "worktree-clean": "landCheckWorktreeClean",
+  "verified-tree": "landCheckVerifiedTree",
+  "fast-forward": "landCheckFastForward",
+  "primary-on-trunk": "landCheckPrimaryOnTrunk",
+  "primary-clean": "landCheckPrimaryClean",
+};
+
+/**
+ * t-7cb971 — "suggest and copy": for a delivery the trunk does not yet contain, the exact command and
+ * the state of every precondition behind it.
+ *
+ * The checks are shown WHETHER OR NOT they pass, and a green one names what proved it. A list that
+ * only ever appeared when something was wrong could not be told apart from a list that was broken —
+ * and the point of this block is to be believed by someone who has been burned by running the command
+ * by hand. The command itself appears only when every check is green; a blocked delivery gets the
+ * reasons and the exits instead, because a command that would fail wastes the reader's time and one
+ * that would SUCCEED when it should not is the defect this replaces.
+ *
+ * Tachyon does not run it. That is stated in the block rather than implied, so nobody goes looking for
+ * a button that is deliberately absent.
+ */
+function LandBlock({ s, land, onCopyText }: { s: Strings; land: NonNullable<CockpitWorktreeRow["land"]>; onCopyText: (text: string) => void }) {
+  const blocked = land.checks.filter((c) => !c.ok);
+  return (
+    <section class="ck-land" data-testid="worktree-land">
+      <div class="ck-land-head">
+        <span class="ck-land-title">{s.landTitle}</span>
+        <span class="ck-land-count">
+          {land.commits} {s.landCommits} → <span class="ck-mono">{land.trunkRef}</span>
+        </span>
+      </div>
+      <p class="ck-land-intro">{s.landIntro}</p>
+      <ul class="ck-land-checks">
+        {land.checks.map((check) => (
+          <li key={check.id} class={check.ok ? "ck-land-ok" : "ck-land-bad"}>
+            <span class="ck-land-mark" aria-hidden="true">{check.ok ? "✓" : "✕"}</span>
+            <span class="ck-land-check-body">
+              <b>{s[LAND_CHECK_LABEL[check.id] ?? "landTitle"]}</b> — {check.detail}
+              {check.fix ? (
+                <span class="ck-land-fix">
+                  {s.landFixLabel}: {check.fix}
+                </span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {land.command ? (
+        <div class="ck-land-command">
+          <span class="ck-land-command-label">{s.landCommandLabel}</span>
+          <code class="ck-mono ck-land-command-text">{land.command}</code>
+          <Button variant="primary" onClick={() => onCopyText(land.command!)}>
+            {s.landCopyCommand}
+          </Button>
+        </div>
+      ) : (
+        <p class="ck-land-blocked" role="status">
+          {s.landBlocked.replace("{0}", String(blocked.length))}
+        </p>
+      )}
+    </section>
+  );
+}
+
 function WtGroupHead({ group, title, count, action }: { group: WtGroup; title: string; count: number; action?: ComponentChildren }) {
   return (
     <div class="ck-wt-group-head">
@@ -148,7 +214,17 @@ export function WorktreesHygiene({
             {orphaned ? <span class="ck-wt-reason-muted">{s.wtAgentGone}</span> : null}
           </>
         }
-        detail={group !== "record-only" && row.path ? <span class="ck-mono">{row.path}</span> : undefined}
+        detail={
+          group === "record-only" ? undefined : (
+            <>
+              {row.path ? <span class="ck-mono">{row.path}</span> : null}
+              {/* t-7cb971 — present only when the engine found work the trunk does not contain, so it
+                  appears on the rows that actually have something to land, in whichever hygiene group
+                  they sit. Absent is never "ready": no block at all is the fail-closed default. */}
+              {row.land ? <LandBlock s={s} land={row.land} onCopyText={onCopyText} /> : null}
+            </>
+          )
+        }
         actions={
           studioOwned ? (
             <>
@@ -314,6 +390,18 @@ export const defaultStrings: Strings = {
   reveal: "Reveal",
   copyPath: "Copy path",
   noneListed: "Nothing listed for this workspace yet.",
+  landTitle: "Land this delivery",
+  landIntro: "Tachyon never moves the trunk. When every precondition below is proved, this is the exact command — you run it.",
+  landCommandLabel: "Land command",
+  landCopyCommand: "Copy command",
+  landBlocked: "Not ready to land — {0} precondition(s) not proved. No command is offered: one that would fail wastes your time, and one that would succeed here would land something nobody verified.",
+  landCheckWorktreeClean: "Worktree clean",
+  landCheckVerifiedTree: "Verified tree",
+  landCheckFastForward: "Fast-forward",
+  landCheckPrimaryOnTrunk: "Primary checkout on the trunk",
+  landCheckPrimaryClean: "Primary checkout clean",
+  landFixLabel: "Fix",
+  landCommits: "commit(s)",
   wtAgentGone: "Agent no longer exists — leftover checkout",
   wtAgentOwned: "Managed by Agent Studio → Forget",
   wtAlsoDeleteBranch: "Also delete local branch",

@@ -742,6 +742,33 @@ function worktreeStatusFrom(value: unknown): WorktreeStatus {
   return row as unknown as WorktreeStatus;
 }
 
+/**
+ * t-7cb971 — accept the engine's land suggestion only in a shape this can render, and NEVER repair or
+ * re-derive one. It returns undefined (the row simply has no land block) rather than throwing, because
+ * an engine that predates this field is an ordinary state, not a broken worktrees payload — throwing
+ * here would take the whole tab down over a section that is additive.
+ *
+ * `command` is carried exactly as sent. The rule that a command exists only when every precondition
+ * passed belongs to `landSuggestion`; asserting it a second time here would be a copy free to drift
+ * from the one that produced the checks — the failure the maintainer measured three times in one day.
+ */
+type LandRow = NonNullable<NonNullable<CockpitWorkspaceBundle["worktrees"]>[number]["land"]>;
+
+function landRowFrom(value: unknown): LandRow | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const row = value as Record<string, unknown>;
+  if (typeof row.head !== "string" || typeof row.branch !== "string" || typeof row.trunkRef !== "string") return undefined;
+  if (typeof row.commits !== "number" || !Array.isArray(row.checks) || row.checks.length === 0) return undefined;
+  if (row.primaryPath !== null && typeof row.primaryPath !== "string") return undefined;
+  if (row.command !== undefined && typeof row.command !== "string") return undefined;
+  const wellFormed = row.checks.every((check) => {
+    const c = check as Record<string, unknown>;
+    return !!c && typeof c === "object" && typeof c.id === "string" && typeof c.ok === "boolean"
+      && typeof c.detail === "string" && (c.fix === undefined || typeof c.fix === "string");
+  });
+  return wellFormed ? (row as unknown as LandRow) : undefined;
+}
+
 function changedFilesFrom(value: unknown): ChangedFile[] {
   return jsonArray(value, "worktree changed files").map((entry) => {
     const row = jsonObject(entry, "worktree changed file");
@@ -1880,6 +1907,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (!Array.isArray(rows)) throw new Error("engine returned no worktrees payload");
           worktreeRows = rows.map((row) => {
             const e = row as Record<string, unknown>;
+            const land = landRowFrom(e.land);
             return {
               id: String(e.id ?? ""),
               kind: String(e.kind ?? ""),
@@ -1895,6 +1923,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               // t-621613 — anything the engine did not state reads as `unknown`, which the tab
               // treats as "somebody lives here". An older engine that never sends it lands there.
               ownerPresence: e.ownerPresence === "absent" || e.ownerPresence === "present" ? e.ownerPresence : "unknown",
+              // t-7cb971 — shape-checked, never re-derived. The engine owns the rule that a command is
+              // offered only when every precondition passed; re-applying it here would be a second
+              // copy of that rule, free to drift from the one that computed the checks. So this asks
+              // only "is this the shape I can render", and a payload that is not (an older engine, a
+              // truncated response) drops the whole block rather than rendering half of it.
+              ...(land ? { land } : {}),
             };
           });
         } catch (err) {

@@ -20,6 +20,33 @@
 .ck-wt-unavailable-detail { color: var(--ds-muted); margin-top: var(--ds-1); }
 /* t-43c6fa — classifier reasons on a Delivery row (why it is in the state the badge claims). */
 .ck-dlv-reasons { display: block; color: var(--ds-muted); font-size: var(--ds-small); margin-top: var(--ds-1); }
+/* ── t-7cb971 — the land suggestion block on a row with unlanded work ─────── */
+/* `word-break: break-all` is inherited from .ds-list-row-detail, whose content is a filesystem path.
+   Prose is not a path: measured at 880 it wrapped "checked out" as "chec / ked out" on every line.
+   Reset it here and let only the command — the one genuinely unbreakable string — break anywhere. */
+.ck-land { margin-top: var(--ds-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); background: color-mix(in srgb, var(--ds-card) 60%, transparent); word-break: normal; overflow-wrap: break-word; }
+.ck-land-head { display: flex; align-items: baseline; gap: var(--ds-2); flex-wrap: wrap; }
+.ck-land-title { font-size: var(--ds-section); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.ck-land-count { font-size: var(--ds-micro); color: var(--ds-muted); font-variant-numeric: tabular-nums; }
+.ck-land-intro { margin: var(--ds-1) 0 var(--ds-2); font-size: var(--ds-small); color: var(--ds-muted); }
+.ck-land-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--ds-1); }
+.ck-land-checks li { display: flex; gap: var(--ds-2); font-size: var(--ds-small); }
+/* The mark keeps its column at every width so the sentences stay aligned when they wrap. */
+.ck-land-mark { flex: none; width: 1em; text-align: center; font-weight: 700; }
+.ck-land-check-body { min-width: 0; }
+/* The verdict colours the whole line, not just the mark: a proved check reads quiet, an unproved one
+   reads loud, and the ✓/✕ then carries the stronger accent on top of it. */
+.ck-land-ok { color: var(--ds-muted); }
+.ck-land-bad { color: var(--ds-warn); }
+.ck-land-ok .ck-land-mark { color: var(--ds-ok); }
+.ck-land-bad .ck-land-mark { color: var(--ds-err); }
+.ck-land-fix { display: block; color: var(--ds-muted); }
+/* Column, not a row: at 360 a command and its button side by side leave the command a few characters
+   wide, and a land command is the one string on this surface that must be readable in full. */
+.ck-land-command { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ds-1); margin-top: var(--ds-2); }
+.ck-land-command-label { font-size: var(--ds-micro); color: var(--ds-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.ck-land-command-text { display: block; width: 100%; box-sizing: border-box; overflow-wrap: anywhere; background: color-mix(in srgb, var(--ds-fg) 8%, transparent); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-1) var(--ds-2); font-size: var(--ds-small); user-select: all; }
+.ck-land-blocked { margin: var(--ds-2) 0 0; font-size: var(--ds-small); color: var(--ds-warn); }
 .ck-wt-batch-bar { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); display: flex; align-items: center; gap: var(--ds-3); background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); box-shadow: var(--ds-shadow-2); font-size: var(--ds-small); z-index: var(--ds-z-toast); }
 .ck-wt-confirm { position: fixed; inset: 0; background: var(--ds-scrim); display: flex; align-items: center; justify-content: center; z-index: var(--ds-z-dialog); }
 .ck-wt-confirm-card { max-width: 460px; width: calc(100% - var(--ds-6)); background: var(--ds-card); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-4); box-shadow: var(--ds-shadow-2); }
