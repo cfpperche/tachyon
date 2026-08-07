@@ -1,9 +1,9 @@
 # tachyon.yml.example — shared template for THIS monorepo dogfood fleet.
 #
-# Live config is gitignored. Create/edit locally:
+# Live config is gitignored, and nothing backs it up — no code in this product writes a copy
+# (t-173b96). Create/edit locally:
 #   cp tachyon.yml.example tachyon.yml
 #
-# Backup (this machine): ~/.local/share/tachyon-backups/tachyon.yml.latest
 # Format: https://github.com/cfpperche/tachyon
 
 # Agents are canonical profiles. Create the first one in Agent Studio; it will add its profile
