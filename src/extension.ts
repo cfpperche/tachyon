@@ -1673,6 +1673,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     return result.removed === true ? undefined : String(result.error ?? "removal refused");
   };
+  // t-d29398 — the human door for a checkout an interrupted launch left quarantined. Same immutable
+  // project rule as its two neighbours; the engine re-proves authority and occupancy per call.
+  const releaseManagedWorktreeLock = async (id: string, wsHash: string): Promise<string | undefined> => {
+    const ws = byHash(wsHash);
+    if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+    const result = jsonObject(
+      await extensionInvoke(ws, { action: "worktree.release-lock", id }),
+      "worktree.release-lock",
+    );
+    return result.released === true ? undefined : String(result.error ?? "release refused");
+  };
   const forgetManagedWorktreeRecord = async (id: string, wsHash: string): Promise<string | undefined> => {
     const ws = byHash(wsHash);
     if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
@@ -2363,6 +2374,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     revealPath: engineHost.revealPath,
     remove: removeManagedWorktree,
     forget: forgetManagedWorktreeRecord,
+    releaseLock: releaseManagedWorktreeLock,
   }, undefined, controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => worktreesPanels.dispose() });
   const openWorktreesTab = (hash?: string): boolean => {

@@ -186,15 +186,56 @@ export function validateReuse(args: {
   return { ok: true };
 }
 
-function listedWorktree(output: string, targetPath: string): { locked: boolean } | undefined {
+function listedWorktree(output: string, targetPath: string): { locked: boolean; lockReason?: string } | undefined {
   const target = path.resolve(targetPath);
   for (const block of output.split(/\n\n+/u)) {
     const lines = block.split("\n");
     const worktreeLine = lines.find((line) => line.startsWith("worktree "));
     if (!worktreeLine || path.resolve(worktreeLine.slice("worktree ".length)) !== target) continue;
-    return { locked: lines.some((line) => line === "locked" || line.startsWith("locked ")) };
+    // t-d29398 — the REASON travels with the flag. Git writes Tachyon's own quarantine as the literal
+    // `added with --lock`, and a human's `git worktree lock --reason …` as whatever they wrote; a
+    // refusal that cannot tell those apart tells the reader nothing about who is holding it.
+    const lockLine = lines.find((line) => line === "locked" || line.startsWith("locked "));
+    if (!lockLine) return { locked: false };
+    const reason = lockLine.slice("locked".length).trim();
+    return { locked: true, ...(reason ? { lockReason: reason } : {}) };
   }
   return undefined;
+}
+
+/**
+ * t-d29398 — the ONE sentence that names the human door for a preserved, still-locked checkout.
+ *
+ * It exists as a constant because the trap it replaces was reachable from five different refusals,
+ * each spelling its own version of "unlock explicitly" — an instruction the product offered no way to
+ * carry out. Whoever moves or renames the door edits this line, and every refusal follows.
+ */
+export const RELEASE_LOCK_HINT =
+  'open Control → Worktrees and use "Release lock" on this checkout — it shows what is inside (commits, uncommitted changes) before anything is released';
+
+/**
+ * t-d29398 — the refusal a human meets when a checkout an EARLIER launch quarantined is still locked.
+ *
+ * Two things it now says that it did not. First, WHY the lock is there: `added with --lock` is
+ * Tachyon's own receipt from an interrupted launch, so a reader who fixed the original failure is not
+ * left thinking the runtime is unsupported (the measured misreading). Second, WHERE to go, in a gesture
+ * that exists — the old sentence ordered "unlock explicitly" while the product shipped no unlock.
+ */
+export function preservedLockRefusal(worktreePath: string, lockReason?: string): string {
+  const provenance = lockReason === "added with --lock" || !lockReason
+    ? "an earlier launch was interrupted before it could hand this checkout over, and its Git quarantine is still held"
+    : `it is held by a Git worktree lock (reason: ${lockReason})`;
+  return `cannot reuse preserved worktree at ${worktreePath}: ${provenance}. Fixing the original failure does not clear it — ${RELEASE_LOCK_HINT}.`;
+}
+
+/** The reason git recorded inside `.git/worktrees/<id>/locked`, when it is readable. */
+function readLockReason(lockFilePath: string): string | undefined {
+  try {
+    const text = fs.readFileSync(lockFilePath, "utf8").trim();
+    return text.length > 0 ? text : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // ── Pure git-arg builders (no execution) ─────────────────────────────────────
@@ -482,18 +523,145 @@ export class WorktreeManager {
   }
 
   /**
-   * Preserve a fresh `ensure()` when later launch preparation fails. Even an exact HEAD plus a clean
-   * status is only a snapshot: a setup child or same-user process can create ignored work between the
-   * probe and `git worktree remove`, which would silently delete it. Automatic failure compensation is
-   * therefore deliberately non-destructive; the error exposes the recovery path for explicit cleanup.
+   * Compensate a fresh `ensure()` when later launch preparation fails — by DISCARDING the checkout
+   * this attempt just created, and preserving it only when Git itself refuses (t-d29398).
+   *
+   * The distinction this rests on, and the reason it is safe to act on: `created` is true only when
+   * THIS `ensure()` ran `git worktree add`. A checkout that was born in the attempt now failing, and
+   * was never handed to a runtime, is that attempt's own debris — not somebody's preserved work. A
+   * checkout that already existed takes the other path (`rollbackPreparation`) and is still never
+   * touched, which is what keeps "discard debris" from becoming "delete work".
+   *
+   * The earlier reasoning — that a probe-then-remove cannot exclude a concurrent ignored-file write —
+   * described a check we no longer make. `git worktree remove` WITHOUT `--force` is not a probe: git
+   * re-reads the tree inside the removal and refuses on any modified tracked file or any untracked
+   * one, so the refusal IS the guard and there is no window between deciding and acting. Same shape as
+   * `agentProfileHome`'s `rmdir`: let the thing that owns the state say no.
+   *
+   * What that guard does NOT cover is deliberate: git deletes IGNORED files silently (measured, git
+   * 2.53), and it unlinks a `node_modules` symlink without following it (measured — the primary
+   * checkout's directory survives). Everything ignored in a checkout of this age was produced by this
+   * same launch's `worktreeSetup` or by dependency sharing, and both are derived. Refusing on ignored
+   * files instead would refuse ALWAYS, since dependency sharing links `node_modules` by default — a
+   * guard that never passes is the bug wearing a safety costume.
+   *
+   * Commits are never at stake: removing a checkout does not remove its branch, and the branch is only
+   * deleted through `git branch -d`, which refuses anything unmerged.
    */
   rollbackCreated(rec: WorktreeRecord, initialHead: string | undefined, expectedPreparedHead: string): Promise<void> {
     return this.withLock(rec.path, async () => {
+      const outcome = await this.discardCreated(rec);
+      if (outcome.discarded) return;
       const initial = initialHead ? `; initial HEAD ${initialHead}` : "";
       throw new Error(
         `fresh worktree recovery state was preserved at ${rec.path} ` +
-          `(prepared HEAD ${expectedPreparedHead}${initial}); automatic rollback cannot exclude a concurrent ignored-file write`,
+          `(prepared HEAD ${expectedPreparedHead}${initial}): ${outcome.error ?? "it could not be discarded"}; ` +
+          RELEASE_LOCK_HINT,
       );
+    });
+  }
+
+  /**
+   * t-d29398 — drop a checkout this launch attempt created and never delivered, quarantine included.
+   *
+   * Returns rather than throws, because both outcomes are legitimate: `discarded` means the debris is
+   * gone and a retry starts clean; a refusal means something is in there and the checkout stays
+   * EXACTLY as it was — still locked, so no later launch can walk into it unnoticed.
+   *
+   * Order matters. Occupancy is asked before the lock comes off, so a checkout somebody is standing in
+   * never spends a moment unquarantined; and when the removal is refused the lock is re-armed before
+   * returning. (Re-arming loses git's original `added with --lock` reason text — it is re-locked
+   * without one. The FACT of the quarantine is what the refusals and the classifier read.)
+   */
+  discardCreated(rec: WorktreeRecord): Promise<{ discarded: boolean; branchDeleted: boolean; error?: string }> {
+    return this.withLock(rec.path, async () => {
+      const listedProbe = await this.git(gitArgs.listWorktrees(), this.opts.workspaceRoot);
+      if (listedProbe.code !== 0) {
+        return { discarded: false, branchDeleted: false, error: "Git worktree metadata could not be inspected" };
+      }
+      const listed = listedWorktree(listedProbe.stdout, rec.path);
+      // Nothing on disk and nothing in git's ledger: there is no debris left to discard, and saying so
+      // is not a claim that we removed anything.
+      if (!listed && !this.exists(rec.path)) return { discarded: true, branchDeleted: false };
+      if (this.opts.occupancy) {
+        let occupant: WorktreeOccupancy | undefined;
+        try {
+          occupant = await this.opts.occupancy(rec.path);
+        } catch (err) {
+          return {
+            discarded: false,
+            branchDeleted: false,
+            error: `occupancy could not be measured: ${err instanceof Error ? err.message : String(err)}`,
+          };
+        }
+        if (occupant) {
+          return { discarded: false, branchDeleted: false, error: `occupied by agent '${occupant.agent}'` };
+        }
+      }
+      if (listed?.locked) {
+        const unlock = await this.git(gitArgs.unlock(rec.path), this.opts.workspaceRoot);
+        if (unlock.code !== 0) {
+          return {
+            discarded: false,
+            branchDeleted: false,
+            error: `its Git preparation lock could not be released: ${unlock.stderr.trim() || unlock.stdout.trim()}`,
+          };
+        }
+      }
+      // SOFT remove: git re-reads the tree and refuses on modified or untracked files. No --force here,
+      // ever — force is what turns this compensation into data loss.
+      const rm = await this.git(gitArgs.remove(rec.path, false), this.opts.workspaceRoot);
+      if (rm.code !== 0) {
+        const error = rm.stderr.trim() || rm.stdout.trim();
+        if (listed?.locked) await this.git(gitArgs.lock(rec.path), this.opts.workspaceRoot);
+        return { discarded: false, branchDeleted: false, error };
+      }
+      let branchDeleted = false;
+      if (rec.tachyonCreatedBranch) {
+        // SAFE delete only. A branch this attempt created off HEAD deletes cleanly; one that somehow
+        // carries commits is refused by git and survives with them.
+        const del = await this.git(gitArgs.deleteBranchSafe(rec.branch), this.opts.workspaceRoot);
+        branchDeleted = del.code === 0;
+      }
+      await this.git(gitArgs.prune(), this.opts.workspaceRoot);
+      return { discarded: true, branchDeleted };
+    });
+  }
+
+  /**
+   * t-d29398 — is this checkout carrying a Git lock, and what does git say the reason is?
+   *
+   * `undefined` means UNKNOWN (git could not list, or does not know this path), never "unlocked":
+   * every caller here treats an unmeasured lock as a reason to stay careful.
+   */
+  async lockState(worktreePath: string): Promise<{ locked: boolean; reason?: string } | undefined> {
+    const listedProbe = await this.git(gitArgs.listWorktrees(), this.opts.workspaceRoot);
+    if (listedProbe.code !== 0) return undefined;
+    const listed = listedWorktree(listedProbe.stdout, worktreePath);
+    if (!listed) return undefined;
+    return { locked: listed.locked, ...(listed.lockReason ? { reason: listed.lockReason } : {}) };
+  }
+
+  /**
+   * t-d29398 — the human door's engine call: release the quarantine receipt, and nothing else.
+   *
+   * Deliberately NOT a removal. `git worktree unlock` deletes no file and rewrites no ref; it takes a
+   * checkout out of quarantine so the next launch may reuse it, which is precisely the gesture the
+   * owner had to perform by hand. Idempotent — an already-unlocked checkout answers `released`, so a
+   * second click (or a launch that finalized in between) is not an error to explain.
+   */
+  releaseLock(worktreePath: string): Promise<{ released: boolean; reason?: string; error?: string }> {
+    return this.withLock(worktreePath, async () => {
+      const state = await this.lockState(worktreePath);
+      if (!state) {
+        return { released: false, error: `Git does not list a worktree at ${worktreePath}` };
+      }
+      if (!state.locked) return { released: true };
+      const unlock = await this.git(gitArgs.unlock(worktreePath), this.opts.workspaceRoot);
+      if (unlock.code !== 0) {
+        return { released: false, ...(state.reason ? { reason: state.reason } : {}), error: unlock.stderr.trim() || unlock.stdout.trim() };
+      }
+      return { released: true, ...(state.reason ? { reason: state.reason } : {}) };
     });
   }
 
@@ -543,7 +711,9 @@ export class WorktreeManager {
       const listed = listedWorktree(listedProbe.stdout, rec.path);
       if (!listed) throw new Error(`persisted worktree is not registered with Git: ${rec.path}`);
       if (listed.locked) {
-        throw new Error(`persisted worktree remains Git-locked and requires explicit recovery: ${rec.path}`);
+        throw new Error(
+          `persisted worktree remains Git-locked and requires explicit recovery: ${rec.path}; ${RELEASE_LOCK_HINT}`,
+        );
       }
 
       const repoCommon = (await this.git(["rev-parse", "--git-common-dir"], this.opts.workspaceRoot)).stdout.trim();
@@ -591,10 +761,7 @@ export class WorktreeManager {
     }
     const listed = listedProbe.code === 0 ? listedWorktree(listedProbe.stdout, wtPath) : undefined;
     if (listed?.locked) {
-      throw new WorktreeUnavailableError(
-        `cannot reuse preserved worktree at ${wtPath}: its Git preparation lock is still present; inspect it and unlock explicitly`,
-        "recovery-preserved",
-      );
+      throw new WorktreeUnavailableError(preservedLockRefusal(wtPath, listed.lockReason), "recovery-preserved");
     }
     if (listed && !this.exists(wtPath) && o.quarantineForLaunch) {
       throw new WorktreeUnavailableError(
@@ -629,7 +796,7 @@ export class WorktreeManager {
         : undefined;
       if (lockPath && fs.existsSync(lockPath)) {
         throw new WorktreeUnavailableError(
-          `cannot reuse preserved worktree at ${wtPath}: its Git preparation lock is still present; inspect it and unlock explicitly`,
+          preservedLockRefusal(wtPath, listed?.lockReason ?? readLockReason(lockPath)),
           "recovery-preserved",
         );
       }

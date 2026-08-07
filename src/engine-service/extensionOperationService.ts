@@ -544,6 +544,16 @@ export async function executeExtensionCommand(
       });
       return json(result as unknown as JsonValue);
     }
+    case "worktree.release-lock": {
+      // t-d29398 — and this one deliberately does NOT hand agent entries back to Agent Studio the way
+      // the removal above does. The refusal there protects a checkout from being DELETED by a surface
+      // that would leave the session ledger owning it; releasing a quarantine deletes nothing and
+      // leaves no half-state to disagree about. It is also exactly the entry a human is stuck on: the
+      // measured incident was an agent's own worktree, and sending them to Forget would have offered
+      // to erase the agent when all they wanted was to launch it again.
+      const result = await workspace.managedWorktrees.releaseLock(command.id, { actor: { kind: "human" } });
+      return json(result as unknown as JsonValue);
+    }
     case "agent.verify":
       return json(await workspace.runVerify(command.agent));
     case "agent.reanchor":

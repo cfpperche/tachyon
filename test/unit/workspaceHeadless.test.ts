@@ -80,7 +80,8 @@ skipTestsWithoutOptionalRuntimeAuth({
     "t-e722ce: the forget plan names the blocking precondition and changes nothing",
     // Needs host codex auth to reach the intentional post-worktree session-creation failure; without
     // it the spawn dies earlier at harness materialize and the assertion becomes a misleading red.
-    "t-d06da3: a launch that fails after `git worktree add` leaves the checkout preserved AND registered",
+    "t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the checkout it just made, registry row and all",
+    "t-d29398: a failed launch preserves — and keeps registered — a checkout that has something in it",
   ],
   opencode: [
     "pokes the live parent with the child's matched prompt line when it enters needs-input",
@@ -3364,21 +3365,25 @@ it("t-e722ce: the forget plan names the blocking precondition and changes nothin
 });
 
 /**
- * t-d06da3 (spec 484, "failed create") — the fourth measure-first read, left PARTIAL on purpose.
+ * t-d06da3 (spec 484, "failed create") — the fourth measure-first read, end to end on a real git
+ * repository: an isolated launch that fails after `git worktree add` has already succeeded.
  *
- * `rollbackPreparedWorktree` PRESERVES the checkout after a launch fails, and deliberately so: its own
- * contract says deleting it "would risk deleting a concurrent ignored write or rewinding a commit
- * after a time-of-check/time-of-use gap". That is the better choice — a preserved tree is untidy, a
- * deleted one is unrecoverable. But it only holds if the preserved tree can be FOUND: `classify.ts`
- * classifies a registered `ManagedWorktreeEntry`, so `worktree_hygiene` sees a checkout iff
- * `.tachyon/managed-worktrees.json` still names it. Reading alone could not settle whether the
- * failure path keeps that row or rolls it back, and an unregistered preserved checkout is invisible
- * debt — the exact thing the criterion exists to prevent.
+ * t-d29398 CHANGED THE ANSWER, deliberately, and this case is now the pair of outcomes rather than the
+ * one. The old contract preserved EVERY failed create, on the argument that deleting one "would risk
+ * deleting a concurrent ignored write or rewinding a commit after a time-of-check/time-of-use gap".
+ * That argument described a probe-then-remove this no longer performs: the compensation is a SOFT
+ * `git worktree remove`, and git re-reads the tree inside the removal and refuses on any modified or
+ * untracked file, so there is no gap to race. What the old contract cost was measured on 2026-08-07 —
+ * the owner's launch failed on a missing credential, the locked leftover refused every retry, and the
+ * refusal instructed him to unlock a checkout the product gave him no way to unlock.
  *
- * So it is measured here, end to end, on a real git repository: a real isolated launch that fails
- * after `git worktree add` has already succeeded.
+ * So: debris this attempt made goes, and anything git will not part with stays — and the original
+ * question this case exists to answer is asked of BOTH outcomes, because it is the same question.
+ * `classify.ts` classifies a registered `ManagedWorktreeEntry`, so a preserved checkout is visible to
+ * `worktree_hygiene` iff `.tachyon/managed-worktrees.json` still names it, and a discarded one is
+ * residue of a second kind if that row survives it.
  */
-it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout preserved AND registered", async () => {
+it("t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the checkout it just made, registry row and all", async () => {
   const root = gitRepoWorkspace();
   const homeDir = mkdir();
   const worktreeBase = mkdir();
@@ -3389,8 +3394,9 @@ it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout p
   const host = new SharedSecretHost(mkdir(), new Map());
   // The failure: tmux refuses to create the session. That lands AFTER cwd resolution, which is where
   // a real launch spends most of its fallible steps, and it is the shape every one of them shares.
+  let refuseSessions = true;
   const fake = fakeTmux({
-    onExec: (args) => { if (args.includes("new-session")) throw new Error("tmux server unavailable"); },
+    onExec: (args) => { if (refuseSessions && args.includes("new-session")) throw new Error("tmux server unavailable"); },
   });
   const ws = await Workspace.createForTest(
     root,
@@ -3409,20 +3415,88 @@ it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout p
 
     // Measured, not assumed: the launch fails through the PRESERVATION path, so the assertions below
     // are about a checkout the product deliberately kept — not one it happened not to reach yet.
+    // The human is left holding the actionable cause and nothing else: no second failure about
+    // recovery state, because there is no recovery state.
+    const failure = await ws.manager.spawn("isolated").then(() => null, (error: unknown) => error as Error);
+    expect(failure?.message).toContain("tmux server unavailable");
+
+    const checkout = ws.worktrees.pathForAgent("isolated");
+    // 1. Gone from disk and from git — the leftover that refused the owner's retry cannot form.
+    expect(fs.existsSync(checkout)).toBe(false);
+    // 2. And gone from the registry. `Workspace.resolveSpawnCwd` registers the record the moment the
+    //    resolver hands it back — before the HEAD probe, before any launch step can fail — so a
+    //    discard that left the row behind would just move the residue one surface over: a claim on a
+    //    directory that does not exist, which is exactly what `record-only` rows are.
+    expect(ws.managedWorktrees.list({ kind: "agent" }).map((e) => e.path)).not.toContain(path.resolve(checkout));
+
+    // And the retry, once the cause is fixed, is an ordinary launch again.
+    refuseSessions = false;
+    await ws.manager.spawn("isolated");
+    expect(fs.existsSync(checkout)).toBe(true);
+  } finally {
+    ws.dispose();
+  }
+});
+
+/**
+ * t-d29398 — the other outcome, on the same seam: git refuses, so the checkout stays, still
+ * quarantined and still REGISTERED. This is the half the door exists for, and it is what keeps the
+ * discard above from being "delete the failed launch's tree" — the same code path answers both, and
+ * which one it answers is decided by git looking at the tree, not by us deciding beforehand.
+ */
+it("t-d29398: a failed launch preserves — and keeps registered — a checkout that has something in it", async () => {
+  const root = gitRepoWorkspace();
+  const homeDir = mkdir();
+  const worktreeBase = mkdir();
+  fs.writeFileSync(
+    path.join(root, "tachyon.yml"),
+    `agents: {}\nsettings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,
+  );
+  const host = new SharedSecretHost(mkdir(), new Map());
+  // Someone writes into the fresh checkout before the launch fails. `worktreeSetup` is the realistic
+  // author; the point under test is git's refusal, so the file is written by the failing step itself.
+  const fake = fakeTmux({
+    onExec: (args) => {
+      if (!args.includes("new-session")) return;
+      const checkout = path.join(worktreeBase, workspaceHash(root), "isolated");
+      if (fs.existsSync(checkout)) fs.writeFileSync(path.join(checkout, "unsaved.txt"), "someone's work\n");
+      throw new Error("tmux server unavailable");
+    },
+  });
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    await ws.commitAgentProfileLifecycle({
+      agentName: "isolated",
+      operation: "create",
+      createProfile: {
+        runtime: { adapter: "codex", executable: "codex" },
+        workspace: { worktree: { enabled: true } },
+      },
+    });
+
     const failure = await ws.manager.spawn("isolated").then(() => null, (error: unknown) => error as AggregateError);
-    expect(failure?.message).toContain("session creation failed");
     expect((failure?.errors ?? []).map((e: Error) => e.message)).toContain(
       "agent worktree recovery state was preserved instead of automatic cleanup",
     );
 
     const checkout = ws.worktrees.pathForAgent("isolated");
-    // 1. Preserved, as `rollbackPreparedWorktree` promises.
-    expect(fs.existsSync(checkout)).toBe(true);
-    // 2. And VISIBLE. `Workspace.resolveSpawnCwd` registers the record the moment the resolver hands
-    //    it back — before the HEAD probe, before any launch step can fail — and the rollback hook
-    //    deliberately leaves registry rows active "so reveal still points at the recovery path". So
-    //    `worktree_hygiene`, which reads exactly this list, can see the debt a failed launch left.
+    expect(fs.readFileSync(path.join(checkout, "unsaved.txt"), "utf8")).toBe("someone's work\n");
     expect(ws.managedWorktrees.list({ kind: "agent" }).map((e) => e.path)).toContain(path.resolve(checkout));
+
+    // Visible AS quarantined, with the facts a human needs before touching it — that is what makes
+    // the refusal's "Release lock" a reachable gesture rather than a sentence about one.
+    const [row] = await ws.managedWorktrees.listClassified({ kind: "agent" });
+    expect(row?.classification.lock).toBeDefined();
+    expect(row?.classification.dirty).toBe(true);
+    expect(row?.classification.state).toBe("needs-review");
+
+    const released = await ws.managedWorktrees.releaseLock(row!.id, { actor: { kind: "human" } });
+    expect(released.released).toBe(true);
+    expect(fs.readFileSync(path.join(checkout, "unsaved.txt"), "utf8")).toBe("someone's work\n");
   } finally {
     ws.dispose();
   }

@@ -11,7 +11,7 @@ import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../t
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
-import { resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
+import { RELEASE_LOCK_HINT, resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { bridgeGrokHome, defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import {
   type SessionLedger,
@@ -2771,6 +2771,22 @@ export class AgentManager {
       );
       return true;
     };
+    /**
+     * t-d29398 — a directory Tachyon deleted is a directory Tachyon says it deleted.
+     *
+     * `rollbackLaunchPreparation` resolving now means the checkout THIS attempt created was discarded
+     * rather than left locked behind. That is the point of the change — the next launch meets nothing —
+     * but a silent removal would be the wrong half of "leave no residue": the human is told, on every
+     * path that can reach it, and preservation still speaks for itself through its own error.
+     */
+    const announceDiscardedPreparation = (): void => {
+      if (!worktree) return;
+      this.opts.notify?.(
+        `agent '${name}' did not launch — the worktree this attempt had just created was discarded (${worktree.path});` +
+          " nothing was preserved, so a retry starts clean",
+        "warn",
+      );
+    };
     // `resolveSpawnCwd` may bind a project-configured named verifier's existing oracle/mechanics and
     // enrich the gate with their fixed hashes. Runner-neutral `cmd:` gates deliberately do neither. Compose
     // only afterwards so the primer carries the authoritative result, before any tmux mutation.
@@ -2940,7 +2956,9 @@ export class AgentManager {
       }
       if (worktree && this.opts.rollbackPreparedWorktree) {
         try {
-          await rollbackLaunchPreparation();
+          // t-d29398 — a `true` here now means the checkout THIS attempt created was discarded, so the
+          // retry after the human fixes the cause starts clean instead of meeting a locked leftover.
+          if (await rollbackLaunchPreparation()) announceDiscardedPreparation();
         } catch (preservation) {
           // t-7faea9 — rollback preservation always surfaces as AggregateError; Bridge clients only
           // see .message, so inline the primary preparation failure (e.g. missing oracle / primer).
@@ -3041,7 +3059,9 @@ export class AgentManager {
           // there is nothing to roll back TO, and guessing could discard real work.
           compensation.receipts.push(new Error("worktree recovery state was preserved deliberately: session creation failed without an exact prepared HEAD to roll back to; inspect it before retry"));
         } else {
-          try { await rollbackLaunchPreparation(); }
+          // t-d29398 — same compensation, same distinction: a checkout this attempt created and never
+          // handed to a runtime is discarded, and one git refuses to discard still fails loudly below.
+          try { if (await rollbackLaunchPreparation()) announceDiscardedPreparation(); }
           catch (cleanupError) { compensation.failures.push(new Error("agent worktree recovery state was preserved instead of automatic cleanup", { cause: cleanupError })); }
         }
       } else {
@@ -3063,7 +3083,7 @@ export class AgentManager {
         catch (revokeError) { failures.push(new Error("failed to revoke token after rejected launch", { cause: revokeError })); }
       }
       if (preparationLocked && worktree) {
-        failures.push(new Error(`agent worktree recovery state was preserved at ${worktree.path}; inspect and unlock it explicitly before retry`));
+        failures.push(new Error(`agent worktree recovery state was preserved at ${worktree.path}; ${RELEASE_LOCK_HINT}`));
       }
       if (failures.length > 1) {
         throw new AggregateError(
@@ -3173,7 +3193,7 @@ export class AgentManager {
         failures.push(new Error("runtime may still be live; its token remains valid for the preserved recovery session"));
       }
       if (worktree) {
-        failures.push(new Error(`agent worktree recovery state was preserved at ${worktree.path}; inspect and unlock it explicitly before retry`));
+        failures.push(new Error(`agent worktree recovery state was preserved at ${worktree.path}; ${RELEASE_LOCK_HINT}`));
       }
       throw new AggregateError(
         failures,
@@ -4591,7 +4611,7 @@ export class AgentManager {
         catch (revokeError) { failures.push(new Error("failed to revoke unconfirmed restart token", { cause: revokeError })); }
       }
       if (preparationLocked && worktree) {
-        failures.push(new Error(`restart worktree recovery state was preserved at ${worktree.path}; inspect and unlock it explicitly before retry`));
+        failures.push(new Error(`restart worktree recovery state was preserved at ${worktree.path}; ${RELEASE_LOCK_HINT}`));
         throw new AggregateError(
           failures,
           `agent '${name}' restart failed: ${primary.message}; locked recovery checkout: ${worktree.path}`,

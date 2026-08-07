@@ -44,6 +44,17 @@ export interface WorktreeClassification {
    */
   trunkRef: string;
   occupant?: WorktreeOccupancy;
+  /**
+   * t-d29398 — the Git worktree lock, when one is held, with the reason git recorded. Tachyon's own
+   * quarantine reads `added with --lock`; a human's `git worktree lock --reason` reads whatever they
+   * wrote.
+   *
+   * It has to be part of the classification rather than a detail the UI probes on the side, for the
+   * reason every other signal here is: a lock changes what may be DONE with the row. Git refuses to
+   * remove a locked checkout even with `--force`, so before this existed a locked-but-otherwise-clean
+   * worktree classified `ready-to-remove` and offered a Remove button that could only ever fail.
+   */
+  lock?: { reason?: string };
 }
 
 export interface ClassifyWorktreeDeps {
@@ -63,6 +74,12 @@ export interface ClassifyWorktreeDeps {
   status: (cwd: string, baseRef: string) => Promise<WorktreeStatus>;
   /** Live-agent occupancy probe — the same signature as `AgentManager.worktreeOccupant`. */
   occupancy?: (worktreePath: string) => Promise<WorktreeOccupancy | undefined>;
+  /**
+   * t-d29398 — Git lock probe, the same signature as `WorktreeManager.lockState`. `undefined` from it
+   * means UNKNOWN (git could not answer), and unwired means the caller never asked; neither is read as
+   * "unlocked", so an unmeasured lock costs a row nothing and claims nothing.
+   */
+  lockState?: (worktreePath: string) => Promise<{ locked: boolean; reason?: string } | undefined>;
   pathExists?: (p: string) => boolean;
 }
 
@@ -213,6 +230,8 @@ export async function classifyManagedWorktree(
 
   const git = deps.git ?? defaultGitExec;
   const occupant = await deps.occupancy?.(entry.path).catch(() => undefined);
+  const lockProbe = await deps.lockState?.(entry.path).catch(() => undefined);
+  const lock = lockProbe?.locked ? { ...(lockProbe.reason ? { reason: lockProbe.reason } : {}) } : undefined;
   const status = await deps.status(entry.path, entry.baseRef).catch(
     (): WorktreeStatus => ({
       staged: 0,
@@ -271,6 +290,7 @@ export async function classifyManagedWorktree(
       containedInTrunk,
       trunkRef,
       occupant,
+      ...(lock ? { lock } : {}),
     };
   }
 
@@ -278,6 +298,19 @@ export async function classifyManagedWorktree(
   // containment). Each line names a reachable exit after the why, matching hygieneAuthority.
   // Callers that surface a refusal should report reasons[0] only when one condition blocks the rest.
   const reasons: string[] = [];
+  // t-d29398 — FIRST, because it blocks every other exit. Git refuses to remove a locked worktree at
+  // all (measured: `remove --force` fails the same way as a soft remove; only `-f -f` overrides), so a
+  // reason list that led with dirtiness or containment would send a reader to fix something that would
+  // not have unblocked them anyway. It also names the door: this line is what the human reads instead
+  // of the old "unlock explicitly" that pointed at nothing.
+  if (lock) {
+    reasons.push(
+      `held by a Git worktree lock${lock.reason ? ` (${lock.reason})` : ""}` +
+        (lock.reason === "added with --lock"
+          ? " — an interrupted launch left its quarantine behind; release it from Control → Worktrees, then remove or relaunch"
+          : " — release it from Control → Worktrees once you know why it was locked, then remove or relaunch"),
+    );
+  }
   const statusRejected = status.aheadOfBase < 0;
   const genuinelyDirty = status.staged > 0 || status.unstaged > 0 || status.untracked > 0 || status.conflicts > 0;
   // A `git status` that could not run at all still blocks: without it we do not know whether there is
@@ -321,7 +354,7 @@ export async function classifyManagedWorktree(
     }
   }
 
-  const shape = { pathExists: true, dirty, aheadOfBase, containedInBase, containedInTrunk, trunkRef } as const;
+  const shape = { pathExists: true, dirty, aheadOfBase, containedInBase, containedInTrunk, trunkRef, ...(lock ? { lock } : {}) } as const;
   if (reasons.length === 0) return { state: "ready-to-remove", reasons: [], ...shape };
   return { state: "needs-review", reasons, ...shape };
 }

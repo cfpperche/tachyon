@@ -167,6 +167,61 @@ describe("classifyManagedWorktree", () => {
     expect(result.reasons[1]).toMatch(/base ref 'main' could not be resolved/);
   });
 
+  // ── t-d29398 — the Git lock, which no signal here used to measure ────────────────────────────
+  it("t-d29398: a clean, contained, LOCKED checkout is not ready-to-remove — git refuses to remove it at all", async () => {
+    const result = await classifyManagedWorktree(
+      entry(),
+      deps({ status: async () => cleanStatus(0), lockState: async () => ({ locked: true, reason: "added with --lock" }) }),
+    );
+    // Every other signal says safe. Before the lock was measured this classified ready-to-remove and
+    // the surface offered a Remove button that `git worktree remove` refuses even with --force.
+    expect(result.state).toBe("needs-review");
+    expect(result.dirty).toBe(false);
+    expect(result.aheadOfBase).toBe(0);
+    expect(result.lock).toEqual({ reason: "added with --lock" });
+    expect(result.reasons[0]).toMatch(/Git worktree lock \(added with --lock\)/);
+    expect(result.reasons[0]).toMatch(/interrupted launch/);
+  });
+
+  it("t-d29398: the lock leads the reasons, because it blocks the exits the other reasons name", async () => {
+    const result = await classifyManagedWorktree(
+      entry(),
+      deps({ status: async () => ({ ...cleanStatus(2), unstaged: 1 }), lockState: async () => ({ locked: true }) }),
+    );
+    expect(result.reasons).toHaveLength(3);
+    expect(result.reasons[0]).toMatch(/Git worktree lock/);
+    expect(result.reasons[1]).toMatch(/uncommitted changes/);
+    // A human's own lock reads differently from Tachyon's quarantine: nothing claims to know why.
+    expect(result.reasons[0]).not.toMatch(/interrupted launch/);
+  });
+
+  it("t-d29398: an unwired or failed lock probe changes nothing — it is never read as unlocked", async () => {
+    const unwired = await classifyManagedWorktree(entry(), deps({ status: async () => cleanStatus(0) }));
+    expect(unwired.state).toBe("ready-to-remove");
+    expect(unwired.lock).toBeUndefined();
+
+    // `undefined` from the probe means UNKNOWN. It costs the row nothing and claims nothing, exactly
+    // like the occupancy probe below: the honest alternative — blocking every row whose lock could not
+    // be measured — would refuse cleanup on any repository where `git worktree list` is unhappy.
+    const threw = await classifyManagedWorktree(
+      entry(),
+      deps({ status: async () => cleanStatus(0), lockState: async () => { throw new Error("git unavailable"); } }),
+    );
+    expect(threw.state).toBe("ready-to-remove");
+    expect(threw.lock).toBeUndefined();
+  });
+
+  it("t-d29398: occupancy still wins — a live agent's lock may belong to a launch in flight", async () => {
+    const occupant: WorktreeOccupancy = { state: "live", agent: "codex", cwd: "/wt/x" };
+    const result = await classifyManagedWorktree(
+      entry(),
+      deps({ status: async () => cleanStatus(0), occupancy: async () => occupant, lockState: async () => ({ locked: true }) }),
+    );
+    expect(result.state).toBe("occupied");
+    expect(result.lock).toEqual({});
+    expect(result.reasons[0]).toMatch(/occupied by 'codex'/);
+  });
+
   it("t-9f8dfc: a failed occupancy probe does not crash classification (best-effort, treated as unoccupied)", async () => {
     const result = await classifyManagedWorktree(
       entry(),

@@ -6,6 +6,11 @@
 .ck-wt-dot-needs-review { background: var(--ds-warn); }
 .ck-wt-dot-occupied { background: var(--ds-info); }
 .ck-wt-dot-record-only { background: var(--ds-muted); }
+/* t-d29398 — a quarantined checkout blocks every other action, so it reads as the loudest dot on the
+   page; the release itself is non-destructive, which is why the group DESCRIPTION says so rather than
+   the colour trying to. */
+.ck-wt-dot-locked { background: var(--ds-err); }
+.ck-wt-inside { color: var(--ds-fg); }
 .ck-wt-group-title { font-size: var(--ds-section); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .ck-wt-group-count { font-size: var(--ds-micro); color: var(--ds-muted); font-variant-numeric: tabular-nums; }
 .ck-wt-group-action { margin-left: auto; }

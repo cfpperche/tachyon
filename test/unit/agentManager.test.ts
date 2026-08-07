@@ -7368,6 +7368,71 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect(completed).toBe(0);
   });
 
+  // t-d29398 — the owner's measured launch: `git worktree add --lock` succeeds, preparation then fails
+  // on a missing credential, and what he met on the SECOND attempt was the first attempt's own lock.
+  it("compensates the fresh checkout it created when preparation fails, and says it discarded it", async () => {
+    const REC = { path: "/wt/h/grok", branch: "tachyon/grok", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const rolledBack: unknown[][] = [];
+    const notices: Array<{ message: string; level: string }> = [];
+    const h = harness("agents:\n  grok:\n    cmd: grok\n    worktree: true\n", {
+      resolveSpawnCwd: async () => ({
+        cwd: REC.path,
+        worktree: REC,
+        created: true,
+        preparationLocked: true,
+        rollbackHeadSha: "b",
+        preparationHeadBefore: "b",
+        preparationHeadAfter: "b",
+      }),
+      // The discard succeeds, so this resolves — which is the whole behavioural change: it used to
+      // throw "recovery state was preserved" for every failure, debris or not.
+      rollbackPreparedWorktree: async (...args) => { rolledBack.push(args); },
+      mintAgentToken: () => { throw new Error("no credentials at ~/.grok/auth.json — run grok login first"); },
+      notify: (message, level) => { notices.push({ message, level }); },
+    });
+
+    const failure = await h.manager.spawn("grok").catch((error: unknown) => error);
+
+    // The human is left holding the ACTIONABLE cause, not a second failure about preserved state.
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(AggregateError);
+    expect((failure as Error).message).toContain("run grok login first");
+    // Compensation ran on the created path — that flag is the measured distinction between this
+    // attempt's debris and a checkout that already existed.
+    expect(rolledBack).toHaveLength(1);
+    expect(rolledBack[0]?.[0]).toEqual(REC);
+    expect(rolledBack[0]?.[4]).toBe(true);
+    // And a directory Tachyon deleted is a directory Tachyon says it deleted.
+    expect(notices.map((n) => n.message).join("\n")).toContain("discarded (/wt/h/grok)");
+  });
+
+  it("still reports a preserved checkout when the discard itself is refused", async () => {
+    const REC = { path: "/wt/h/grok", branch: "tachyon/grok", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
+    const h = harness("agents:\n  grok:\n    cmd: grok\n    worktree: true\n", {
+      resolveSpawnCwd: async () => ({
+        cwd: REC.path,
+        worktree: REC,
+        created: true,
+        preparationLocked: true,
+        rollbackHeadSha: "b",
+        preparationHeadBefore: "b",
+        preparationHeadAfter: "b",
+      }),
+      rollbackPreparedWorktree: async () => {
+        throw new Error("fresh worktree recovery state was preserved at /wt/h/grok: it contains modified or untracked files");
+      },
+      mintAgentToken: () => { throw new Error("no credentials at ~/.grok/auth.json — run grok login first"); },
+    });
+
+    const failure = await h.manager.spawn("grok").catch((error: unknown) => error);
+
+    // Preservation is still a real outcome, and it still carries BOTH facts: what failed, and that
+    // something is being kept. What changed is that it is no longer the only outcome.
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as Error).message).toContain("run grok login first");
+    expect((failure as Error).message).toContain("its worktree recovery state was preserved");
+  });
+
   it("compensates token and checkout preparation when replacing a dead pane cannot be killed", async () => {
     const REC = { path: "/wt/h/dev", branch: "tachyon/dev", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const tmux = fakeTmux();
