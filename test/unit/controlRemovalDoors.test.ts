@@ -45,10 +45,15 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
     const block = blockFrom('registerCommand("tachyon.openControl"', 3_800);
     for (const opener of [
       "openBoard", "tmuxPanels.open", "openPluginsTab", "runtimeOpsPanels.open",
-      "openHumanInboxTab", "openEngineTab", "openWorktreesTab", "openFleetTab",
+      "openHumanInboxTab", "openEngineTab", "openWorktreesTab",
       "openRuntimeConfigTab", "openExecutionGraphTab", "openSettingsTab", "openOverviewTab",
     ]) expect(block, `${opener} is not reachable from tachyon.openControl`).toContain(opener);
     expect(block).not.toContain("openCockpit(");
+    // t-5f2b5b — `openFleetTab` left this list because the app it opened is deleted, and the assertion
+    // is INVERTED rather than dropped: `fleet` still decodes as a section id (it is the parent of the
+    // agent-activity/agent-probes subroutes and of five studios), so a resolver arm for it could come
+    // back by accident. It must fall through to the Overview default instead of opening anything.
+    expect(block).not.toContain("openFleetTab");
   });
 
   it("tachyon.openControl with no section defaults to Overview", () => {

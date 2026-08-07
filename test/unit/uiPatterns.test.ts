@@ -31,18 +31,34 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(guide).toContain("shared/ui");
   });
 
-  it("standalone Fleet and Approvals adopt the patterns", () => {
+  it("the surviving fleet roster and Approvals adopt the patterns", () => {
     // SDD 485 D18 — Control was the first subject in this list and has been dropped, not repointed:
     // it renders no product surface any more, so "does the page adopt the shared page patterns" has
     // no page to ask about. The surfaces that inherited its screens are each asserted in their own
     // cutover test plus the shared page-chrome guard, so nothing this line covered went uncovered.
-    // t-41117e — Fleet no longer paints its own ListRow boolean list. It reuses AgentsRoster
-    // (nine statuses) under PageChrome + EmptyState, which is the richer shared pattern.
-    const fleet = readFileSync("src/webview/fleet/App.tsx", "utf8");
-    expect(fleet).toContain("PageChrome");
-    expect(fleet).toContain("AgentsRoster");
-    expect(fleet).toContain("EmptyState");
-    expect(fleet).not.toMatch(/\ba\.running\b/);
+    //
+    // t-41117e — the roster must not paint a boolean running/stopped list: a wedged agent read as
+    // "Stopped", a throttled one and one waiting on input both read as "Running", and those are the
+    // three states a human has to act on. AgentsRoster + the nine-value AgentStatus is the fix.
+    //
+    // t-5f2b5b — the Fleet APP is deleted (owner decision, 2026-08-07: the sidebar Agents tab is the
+    // only fleet), so this subject MOVED rather than being dropped. `src/webview/fleet/App.tsx` was
+    // where the assertion lived; `AgentsRoster` itself lives in — and is rendered by — the sidebar,
+    // which is the surface that survived. Deleting the assertion with its old file would have let the
+    // two-state list t-41117e removed come back with nothing red.
+    const roster = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+    expect(roster).toContain("export function AgentsRoster");
+    expect(roster).toContain("EmptyState");
+    // what a row paints its state from: the status union, never a boolean.
+    expect(roster).toMatch(/STATUS_LABEL\[a\.status\]/);
+    expect(roster).not.toMatch(/\ba\.running\b/);
+    // and the union is genuinely nine wide. Without this, forbidding `a.running` alone would still pass
+    // if AgentStatus itself collapsed back to two values — the defect, not the spelling of it.
+    const types = readFileSync("src/sidebar/types.ts", "utf8");
+    const union = /export type AgentStatus =([^;]+);/.exec(types);
+    expect(union, "AgentStatus must be a declared union in src/sidebar/types.ts").toBeTruthy();
+    const statuses = union![1].split("|").map((s) => s.trim()).filter(Boolean);
+    expect(statuses, `AgentStatus must keep its nine states, got ${statuses.join(", ")}`).toHaveLength(9);
     const approvals = readFileSync("src/webview/approval/App.tsx", "utf8");
     expect(approvals).toContain("PageChrome");
     expect(approvals).toContain("EmptyState");

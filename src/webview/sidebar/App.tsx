@@ -1576,18 +1576,6 @@ export function App({
                 </button>
               )}
               <button type="button" class="act" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
-              {tab === "Agents" && (
-                <button
-                  type="button"
-                  class="act"
-                  title="Open agents as editor tab"
-                  aria-label="Open agents as editor tab"
-                  data-testid="open-agents-tab"
-                  onClick={() => dispatch?.global("openControl", selectedHash, "fleet")}
-                >
-                  <Icon name="link-external" />
-                </button>
-              )}
               {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
             </span>
           </>;

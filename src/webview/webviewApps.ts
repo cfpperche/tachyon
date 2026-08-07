@@ -205,9 +205,9 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // SDD 485 D6 — Worktrees is filtered by buildCockpitModel's wsHash before its classified rows are
   // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
   { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
-  // SDD 485 D7 / t-41117e — Fleet loads one project's FleetVM (same as sidebar Agents) by project key;
-  // so two projects have genuinely different fleets. It never had a standalone id; use a new one.
-  { view: "fleet", viewId: "tachyonFleet", section: "fleet", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // t-5f2b5b — SDD 485 D7's Fleet app is GONE (owner decision, 2026-08-07: the sidebar Agents tab is the
+  // only fleet). Its `tachyonFleet` viewType lives on only in extension.ts's dispose-only serializer loop,
+  // which is where a retired id belongs — not here, where a row means "this surface still creates a panel".
   // SDD 485 D9 — buildExecutionGraphSectionVm(deps, wsHash) accepts one project. New id: this
   // surface was born in Control, so there is no retired standalone identity or persisted shape.
   { view: "execution-graph", viewId: "tachyonExecutionGraph", section: "execution-graph", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },

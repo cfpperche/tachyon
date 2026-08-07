@@ -115,7 +115,7 @@ describe("t-6e2952 Control tab headless Visual QA", () => {
         expect(geom.insideTabPanel, `grid must live in the one tabpanel at ${w.px}px`).toBe(true);
         expect(geom.belowTabs, `grid must sit below the tab strip at ${w.px}px`).toBe(true);
         expect(geom.controlTabIndex, `Control is the second tab at ${w.px}px`).toBe(1);
-        expect(geom.tiles, `twelve section tiles at ${w.px}px`).toBe(CONTROL_SECTION_NAV.length);
+        expect(geom.tiles, `every launcher tile rendered at ${w.px}px`).toBe(CONTROL_SECTION_NAV.length);
         expect(geom.clippedLabels, `no clipped tile label at ${w.px}px`).toBe(0);
         expect(geom.overflowingTiles, `no tile past the panel edge at ${w.px}px`).toBe(0);
       }

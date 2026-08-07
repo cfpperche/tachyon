@@ -6,18 +6,30 @@ import { openPreview } from "./support/preview";
 
 // t-b24282 — `width` goes to the harness ONCE and lands on the surface's own viewport, so the 620px
 // `@media` in design-system.css that this file is about actually evaluates at 360.
+//
+// t-5f2b5b — the two subjects used to be Fleet and the Board. The Fleet app is deleted (owner decision,
+// 2026-08-07: the sidebar Agents tab is the only fleet), so its ROW moved rather than disappearing: the
+// claim here is about the SHARED PageChrome action region under `@media max-width 620`, and dropping to a
+// single subject would leave that primitive measured on one page only. The Human Inbox is the replacement
+// with the same shape Fleet had — title + hint + an action in `PageChrome`'s actions slot.
+const SURFACES = {
+  inbox: { view: "human-inbox", fixture: "list", waitFor: "[data-testid=inbox-counts]" },
+  mission: { view: "mission-control", fixture: "default", waitFor: ".mc-head-tools" },
+} as const;
+
 async function loadFixture(
   page: Page,
   origin: string,
-  fixture: "fleet" | "mission",
+  fixture: keyof typeof SURFACES,
   width: number,
 ): Promise<Frame> {
+  const surface = SURFACES[fixture];
   await page.setViewport({ width, height: 760 });
   return openPreview(page, origin, {
-    query: { view: fixture === "fleet" ? "fleet" : "mission-control", fixture: "default" },
+    query: { view: surface.view, fixture: surface.fixture },
     width,
     height: 760,
-    waitFor: fixture === "fleet" ? "[data-testid=control-fleet]" : ".mc-head-tools",
+    waitFor: surface.waitFor,
   });
 }
 
@@ -75,11 +87,11 @@ describe("t-ededdd — shared action regions reflow instead of leaving the viewp
   });
 
   it.each([
-    // t-41117e — Fleet no longer paints ListRow boolean rows. Its action-bearing shared region is
-    // PageChrome (Open Board). The reflow claim is unchanged: @media max-width 620 on shared
-    // primitives. ListRow remains covered wherever a surface still uses it; Fleet's subject moved.
+    // t-41117e — the action-bearing shared region is PageChrome, not ListRow. The reflow claim is
+    // unchanged: @media max-width 620 on shared primitives. ListRow remains covered wherever a surface
+    // still uses it. t-5f2b5b — the first subject is the Human Inbox now; see SURFACES above.
     {
-      fixture: "fleet" as const,
+      fixture: "inbox" as const,
       container: ".ds-page-chrome",
       main: ".ds-page-chrome-text",
       actions: ".ds-page-chrome-actions",
@@ -107,7 +119,7 @@ describe("t-ededdd — shared action regions reflow instead of leaving the viewp
 
   it.each([
     {
-      fixture: "fleet" as const,
+      fixture: "inbox" as const,
       container: ".ds-page-chrome",
       main: ".ds-page-chrome-text",
       actions: ".ds-page-chrome-actions",
