@@ -1346,6 +1346,14 @@ export class Workspace {
                 `agent '${ctx.name}' worktree preparation failed; recovery state was preserved`,
               );
             }
+            // t-d29398 — the checkout was DISCARDED, so this must not fall through to the reused-
+            // checkout sentence below: that one describes recovery state at a path that no longer
+            // exists, which is a worse lie than the residue this change removes.
+            this.forgetDiscardedWorktree(resolved.worktree.path);
+            throw new AggregateError(
+              [primary, new Error(`the fresh worktree at ${resolved.worktree.path} was discarded; nothing was preserved`)],
+              `agent '${ctx.name}' worktree preparation failed; its fresh checkout was discarded`,
+            );
           } else if (resolved.created) {
             throw new AggregateError(
               [primary, new Error("fresh worktree recovery state was preserved because its exact prepared HEAD is unknown")],
@@ -1383,11 +1391,16 @@ export class Workspace {
         }
       },
       rollbackPreparedWorktree: async (rec, initialHead, beforeHead, afterHead, created) => {
-        // rollbackCreated/rollbackPreparation intentionally preserve the checkout (recovery state).
-        // Registry rows stay active so reveal still points at the recovery path; human cleanup uses remove.
+        // t-d29398 — `created` IS the distinction, and it is measured rather than guessed: it is true
+        // only when this very attempt ran `git worktree add`. Such a checkout is discarded (see
+        // `rollbackCreated`, which still preserves whenever git refuses); one that already existed
+        // takes the path below and is never touched.
+        // A preserved checkout keeps its registry row, so reveal still points at it; a discarded one
+        // must lose that row, or the residue simply changes shape into a claim on a missing directory.
         if (created) {
           if (!afterHead) throw new Error(`fresh worktree cleanup was withheld without a prepared HEAD observation: ${rec.path}`);
           await this.worktrees.rollbackCreated(rec, initialHead, afterHead);
+          this.forgetDiscardedWorktree(rec.path);
           return;
         }
         if (!beforeHead || !afterHead) {
@@ -4007,6 +4020,31 @@ export class Workspace {
    * authority question is asked of it. Nothing here can delete work — `reconcileHygiene` re-proves
    * clean, unoccupied and contained per entry, so the worst case is that it removes nothing.
    */
+  /**
+   * t-d29398 — drop every claim on a checkout that was just discarded.
+   *
+   * A checkout is named in two places besides git: the managed registry (written at
+   * `syncAgentRecord`, BEFORE preparation can fail) and the session ledger's `worktree` block. Leaving
+   * either behind trades a locked directory for a row pointing at a directory that no longer exists —
+   * the same family of residue, one surface over. Best-effort and loud: a claim we could not clear is
+   * reported rather than swallowed, because the discard itself already succeeded and must not be undone.
+   */
+  private forgetDiscardedWorktree(worktreePath: string): void {
+    try {
+      const entry = this.managedWorktrees.get(worktreePath);
+      if (!entry) return;
+      this.managedWorktrees.unregister(entry.id, { kind: "human" });
+      // `clearWorktree` is a no-op for a row that never had one — the ordinary case here, since a
+      // failed first launch never persisted a ledger row at all.
+      if (entry.kind === "agent" && entry.agent) this.ledger.clearWorktree(entry.agent);
+    } catch (err) {
+      this.host.notify(
+        `the worktree registry still claims the discarded checkout at ${worktreePath}: ${err instanceof Error ? err.message : String(err)}`,
+        "warn",
+      );
+    }
+  }
+
   private sweepWorktreeHygiene(): void {
     void this.managedWorktrees
       // The host acting on its own registry is the workspace authority — the same principal the
@@ -4088,7 +4126,19 @@ export class Workspace {
     }
   }
 
-  /** Canonical declared-agent removal tail. Caller owns deleting the tachyon.yml entry first. */
+  /**
+   * Canonical declared-agent removal tail. The caller owns the `tachyon.yml` entry — and since
+   * t-af4a5f it deletes that entry AFTER this call, not before.
+   *
+   * The old wording here said "first", and `deleteConfiguredAgent` obeyed it. Nothing joins the two
+   * writes: no journal, no lock, and — measured — no reconcile, because a declared terminal holds no
+   * session-ledger row for `gcLedger` to collect and this tail writes no journal for
+   * `reconcileAgentProfileLifecycle` to read. A crash between them therefore left the roster row
+   * deleted and every footprint below intact, permanently and with no door pointing at it. Clearing
+   * the footprint while the name is still declared leaves the opposite residue: a listed entry that
+   * looks exactly like a terminal nobody has launched, which the next removal finishes because every
+   * step here is idempotent.
+   */
   async forgetAgent(name: string): Promise<void> {
     await this.evolutionStore.retireAgent(name);
     forgetAgentFootprint(name, {

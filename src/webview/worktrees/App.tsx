@@ -4,14 +4,48 @@ import type { CockpitModel, CockpitWorktreeRow } from "../../cockpit/model";
 import { Badge, Button, EmptyState, ListRow, PageChrome } from "../shared/ui";
 import type { WorktreesAction, WorktreesStrings as Strings } from "./messages";
 
-/** spec 444 — hygiene classification groups, in action-priority order. */
-const WT_GROUPS = ["ready-to-remove", "needs-review", "occupied", "record-only"] as const;
+/**
+ * spec 444 — hygiene classification groups, in action-priority order.
+ *
+ * t-d29398 — `locked` leads, because it is the only group whose blocking condition makes every other
+ * action impossible: Git refuses to remove a locked checkout at all. It is a CLIENT-side split of the
+ * engine's `needs-review`, not a fifth engine state — the engine already says why (a `lock` on the
+ * classification), and grouping it here is what gives the row its own door instead of a disabled button.
+ */
+const WT_GROUPS = ["locked", "ready-to-remove", "needs-review", "occupied", "record-only"] as const;
 type WtGroup = (typeof WT_GROUPS)[number];
 const WT_RECORD_COLLAPSE_AT = 4;
 
 /** Fail-closed: a row the engine did not classify is NEVER treated as safe. */
 function wtGroupOf(row: CockpitWorktreeRow): WtGroup {
-  return row.classification?.state ?? "needs-review";
+  const state = row.classification?.state ?? "needs-review";
+  // Occupancy still wins: a live agent's lock may belong to a launch in flight, and the thing to do
+  // about that row is to deal with the agent, not to take its quarantine away underneath it.
+  if (state === "occupied") return "occupied";
+  return row.classification?.lock ? "locked" : state;
+}
+
+/**
+ * t-d29398 — what is actually inside a checkout, shown BEFORE the release button rather than after.
+ *
+ * This is the whole difference between clearing debris and throwing away work: a quarantined worktree
+ * left by a failed launch and one holding somebody's unfinished commits look identical until the row
+ * says how many commits it carries and whether the tree is dirty. Fail-closed: with no classification
+ * at all it says so, and never renders as "empty".
+ */
+function InsideSummary({ s, row }: { s: Strings; row: CockpitWorktreeRow }) {
+  const c = row.classification;
+  const parts = c
+    ? [
+        c.aheadOfBase > 0 ? s.wtInsideCommits.replace("{0}", String(c.aheadOfBase)) : null,
+        c.dirty ? s.wtInsideDirty : s.wtInsideClean,
+      ].filter(Boolean)
+    : [s.wtInsideUnknown];
+  return (
+    <span class="ck-wt-inside" data-testid="worktree-inside">
+      {s.wtInsideLabel}: {parts.join(" · ")}
+    </span>
+  );
 }
 
 /** t-7cb971 — the check id → its localized label; the sentence beside it is the engine's own. */
@@ -150,6 +184,7 @@ export function WorktreesHygiene({
   };
 
   const groupMeta: Record<WtGroup, { title: string; desc: string }> = {
+    locked: { title: s.wtLockedTitle, desc: s.wtLockedDesc },
     "ready-to-remove": { title: s.wtReadyTitle, desc: s.wtReadyDesc },
     "needs-review": { title: s.wtReviewTitle, desc: s.wtReviewDesc },
     occupied: { title: s.wtOccupiedTitle, desc: s.wtOccupiedDesc },
@@ -204,9 +239,13 @@ export function WorktreesHygiene({
                 {s.wtOccupiedBy} <b>{occupant.agent}</b> ({occupant.state})
               </span>
             ) : null}
-            {group === "needs-review" && reasons.length > 0 ? (
+            {(group === "needs-review" || group === "locked") && reasons.length > 0 ? (
               <span class="ck-wt-reason-warn">⚠ {reasons.join("; ")}</span>
             ) : null}
+            {/* t-d29398 — the facts the release decision rests on, in the meta column with the other
+                reasons for the same measured reason t-621613 put its notice here: at 360px a sentence
+                beside the buttons collapses the row's main column. */}
+            {group === "locked" ? <InsideSummary s={s} row={row} /> : null}
             {group === "record-only" ? <span class="ck-wt-reason-muted">{reasons.join("; ")}</span> : null}
             {/* t-621613 — a REASON, so it sits with the other reasons rather than in the actions
                 column: measured at 880px, a sentence next to the buttons squeezed the row's main
@@ -226,7 +265,31 @@ export function WorktreesHygiene({
           )
         }
         actions={
-          studioOwned ? (
+          /* t-d29398 — the locked arm comes BEFORE the Agent-Studio hand-off, and that ordering is
+             the fix. The measured incident was an AGENT's own checkout: sending its owner to
+             Studio → Forget offers to erase the agent when all they want is to launch it again, and
+             the hand-off exists to protect a checkout from being DELETED by this tab. Releasing a
+             quarantine deletes nothing, so nothing it protects is at stake here. */
+          group === "locked" ? (
+            <>
+              <Button
+                variant="primary"
+                onClick={() => onPost({ type: "worktreeReleaseLock", id: row.id, ...(row.wsHash ? { wsHash: row.wsHash } : {}) })}
+              >
+                {s.wtReleaseLock}
+              </Button>
+              {row.path ? (
+                <>
+                  <Button variant="default" onClick={() => onRevealPath(row.path)}>
+                    {s.reveal}
+                  </Button>
+                  <Button variant="default" onClick={() => onCopyText(row.path)}>
+                    {s.copyPath}
+                  </Button>
+                </>
+              ) : null}
+            </>
+          ) : studioOwned ? (
             <>
               <span class="ck-wt-reason-muted">{s.wtAgentOwned}</span>
               {row.path ? (
@@ -413,6 +476,14 @@ export const defaultStrings: Strings = {
   wtConfirmTitle: "Confirm cleanup",
   wtEngineUnavailable: "Engine unavailable — registry not shown (unverified data is never displayed).",
   wtForgetRecord: "Forget record",
+  wtLockedTitle: "Preserved — quarantined",
+  wtLockedDesc: "A launch was interrupted and Git still holds this checkout. Nothing can reuse or remove it until the lock is released — releasing it deletes nothing.",
+  wtReleaseLock: "Release lock",
+  wtInsideLabel: "Inside",
+  wtInsideClean: "no uncommitted changes",
+  wtInsideDirty: "uncommitted changes",
+  wtInsideCommits: "{0} commit(s) beyond its base",
+  wtInsideUnknown: "contents could not be measured",
   wtOccupiedBy: "occupied by",
   wtOccupiedDesc: "A live agent holds this checkout right now.",
   wtOccupiedTitle: "Occupied",

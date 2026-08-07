@@ -28,6 +28,7 @@ import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../.
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, enableSavedAgentSelfEvolution, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 import { asAgent } from "../../src/config/loadConfig.js";
 import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
+import { parseExtensionCommandV1, type ExtensionCommandV1 } from "../../src/runtime-api/extensionOperations.js";
 import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
 
 /**
@@ -79,7 +80,8 @@ skipTestsWithoutOptionalRuntimeAuth({
     "t-e722ce: the forget plan names the blocking precondition and changes nothing",
     // Needs host codex auth to reach the intentional post-worktree session-creation failure; without
     // it the spawn dies earlier at harness materialize and the assertion becomes a misleading red.
-    "t-d06da3: a launch that fails after `git worktree add` leaves the checkout preserved AND registered",
+    "t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the checkout it just made, registry row and all",
+    "t-d29398: a failed launch preserves — and keeps registered — a checkout that has something in it",
   ],
   opencode: [
     "pokes the live parent with the child's matched prompt line when it enters needs-input",
@@ -1133,6 +1135,179 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
       fs.writeFileSync(file, text.replace(/  claude23:\n    profile: .tachyon\/agents\/claude23\/agent.yml\n/u, ""));
       expect(fs.readFileSync(file, "utf8")).not.toContain("claude23:");
       expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+});
+
+/**
+ * t-af4a5f — the same question one row down: who can remove a roster row whose row is a DECLARED
+ * TERMINAL, and what does each of them leave behind?
+ *
+ * The enumeration came before the code, and it is this list of case names:
+ *
+ *  - **A1 Human, sidebar x config.agent.delete** — `extension.ts:3632` reaches the third arm of
+ *    `deleteConfiguredAgent`, the only arm with no governed transaction behind it.
+ *  - **A2 Agent or API client, extension.invoke x config.agent.delete** — the SAME arm, reached
+ *    without the sidebar and with no section filter. `t-359469` measured this asymmetry on the Soul
+ *    door: the human path never renders for a terminal and the API path does, so a case that only
+ *    drives the button measures the door nobody uses.
+ *  - **A3 Agent, Bridge x dismiss_agent** — refused ahead of every side effect.
+ *  - **A4 Human or Agent, text editor / write_tachyon_config x edit tachyon.yml** — no door runs at
+ *    all. The deliberate escape hatch, and the reason the sweep has to name what it leaves.
+ *  - **A5 Tachyon, interruption x between this door's two writes** — the window with no journal, no
+ *    lock and no reconcile. Two cases, one per write, because the order between them IS the fix.
+ *
+ * The removal policy itself is `removeEmptyAgentProfileHome` (`src/config/agentProfileHome.ts`) and
+ * is not re-stated here: these cases drive the production door and assert what it leaves on disk,
+ * which is the only thing that proves the door reaches the policy at all.
+ */
+describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", () => {
+  const homeOf = (root: string) => path.join(root, ".tachyon", "agents", "b");
+
+  /** A declared terminal `b` that has run once and owns an Evolution profile inside its home. */
+  async function terminalWithFootprint() {
+    const made = await makeWorkspace();
+    const root = made.ws.workspaceRoot;
+    await made.ws.manager.spawn("b");
+    await made.ws.evolutionStore.ensureProfile("b");
+    expect(made.ws.config?.agents.b?.kind).toBe("terminal");
+    expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+    // Measured, and the reason `gcLedger` can never finish this door's work: a declared terminal
+    // holds no session-ledger row, so the one startup sweep that runs `forgetAgent` for a name that
+    // left `tachyon.yml` never sees this name.
+    expect(made.ws.ledger.get("b")).toBeUndefined();
+    return { ...made, root };
+  }
+
+  const deleteCommand = { action: "config.agent.delete", agent: "b", removeWorktree: false } as const;
+
+  const runDoor = (ws: Workspace, command: ExtensionCommandV1) => executeExtensionCommand(
+    { workspace: ws, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0],
+    command,
+  );
+
+  /**
+   * A5's interruption, injected at exactly the write the measurement names. A crash cannot be staged
+   * in-process, and a helper called directly would prove nothing about this door — so the door runs
+   * for real and one of its two writes refuses.
+   */
+  const interruptedAt = (ws: Workspace, method: "forgetAgent" | "mutateConfig"): Workspace =>
+    new Proxy(ws, {
+      get(target, property, receiver) {
+        if (property === method) return () => { throw new Error(`interrupted at ${String(property)}`); };
+        const value = Reflect.get(target, property, target);
+        void receiver;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as Workspace;
+
+  const sweepState = async (ws: Workspace) =>
+    (await ws.reconcileSavedAgentRoster()).agents.find((row) => row.agent === "b")?.state;
+
+  it("A1 Human, sidebar x config.agent.delete", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      await runDoor(ws, deleteCommand);
+      expect(ws.config?.agents.b).toBeUndefined();
+      expect(fs.existsSync(homeOf(root))).toBe(false);
+      expect(fs.existsSync(path.join(root, ".tachyon", "pane-transcripts", "b.log"))).toBe(false);
+      expect(await sweepState(ws)).toBeUndefined();
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A1 Human, sidebar x config.agent.delete, over a home holding a human's SOUL.md", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      fs.writeFileSync(path.join(homeOf(root), "SOUL.md"), "# a human wrote this\n");
+      await runDoor(ws, deleteCommand);
+      expect(ws.config?.agents.b).toBeUndefined();
+      // The `rmdir` refuses, which is the guard rather than a check in front of one, so the bytes
+      // stay — and since t-8b58b3 what stays is named instead of reported as `absent`.
+      expect(fs.readFileSync(path.join(homeOf(root), "SOUL.md"), "utf8")).toContain("a human wrote this");
+      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(false);
+      expect(await sweepState(ws)).toBe("orphan-home");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A2 Agent or API client, extension.invoke x config.agent.delete", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      // Through the runtime-api parser an untrusted caller actually goes through: the action is in
+      // EXTENSION_COMMAND_ACTIONS and its schema takes any agent name, terminal or not.
+      await runDoor(ws, parseExtensionCommandV1({ action: "config.agent.delete", agent: "b", removeWorktree: false }));
+      expect(ws.config?.agents.b).toBeUndefined();
+      expect(fs.existsSync(homeOf(root))).toBe(false);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A3 Agent, Bridge x dismiss_agent", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
+    registerTools(
+      { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
+      { workspaceRoot: root, caller: { kind: "agent", name: "a" }, manager: ws.manager } as never,
+    );
+    try {
+      expect((await tools.get("dismiss_agent")!({ name: "b" })).isError).toBe(true);
+      expect(ws.config?.agents.b?.kind).toBe("terminal");
+      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A4 Human or Agent, text editor x edit tachyon.yml", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      const file = path.join(root, "tachyon.yml");
+      fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("  b:\n    cmd: sh\n", ""));
+      expect(fs.readFileSync(file, "utf8")).not.toContain("  b:");
+      // Nothing runs, by design — and the whole footprint stays. What the product owes this shape is
+      // a name for it, which the sweep gives.
+      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+      expect(await sweepState(ws)).toBe("orphan-home");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A5 Tachyon, interruption x the footprint write, which must be the FIRST one", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      await expect(runDoor(interruptedAt(ws, "forgetAgent"), deleteCommand)).rejects.toThrow("interrupted at forgetAgent");
+      // The whole point of the order: an interruption here may not have spent the roster row. While
+      // the entry is still declared the name is listed, addressable, and the retry finishes it —
+      // whereas a row deleted first strands the footprint below with no journal and no door.
+      expect(ws.config?.agents.b?.kind).toBe("terminal");
+      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+      await runDoor(ws, deleteCommand);
+      expect(ws.config?.agents.b).toBeUndefined();
+      expect(fs.existsSync(homeOf(root))).toBe(false);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A5 Tachyon, interruption x the roster-row write, which must be the LAST one", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      await expect(runDoor(interruptedAt(ws, "mutateConfig"), deleteCommand)).rejects.toThrow("interrupted at mutateConfig");
+      // The residue this leaves is not residue: a declared terminal with the footprint of one that
+      // has never been launched. Nothing on disk needs a door, and the sweep has nothing to report.
+      expect(ws.config?.agents.b?.kind).toBe("terminal");
+      expect(fs.existsSync(homeOf(root))).toBe(false);
+      expect(await sweepState(ws)).toBeUndefined();
+      // Idempotent: the second attempt converges instead of failing on the already-cleared half.
+      await runDoor(ws, deleteCommand);
+      expect(ws.config?.agents.b).toBeUndefined();
     } finally {
       ws.dispose();
     }
@@ -3190,21 +3365,25 @@ it("t-e722ce: the forget plan names the blocking precondition and changes nothin
 });
 
 /**
- * t-d06da3 (spec 484, "failed create") — the fourth measure-first read, left PARTIAL on purpose.
+ * t-d06da3 (spec 484, "failed create") — the fourth measure-first read, end to end on a real git
+ * repository: an isolated launch that fails after `git worktree add` has already succeeded.
  *
- * `rollbackPreparedWorktree` PRESERVES the checkout after a launch fails, and deliberately so: its own
- * contract says deleting it "would risk deleting a concurrent ignored write or rewinding a commit
- * after a time-of-check/time-of-use gap". That is the better choice — a preserved tree is untidy, a
- * deleted one is unrecoverable. But it only holds if the preserved tree can be FOUND: `classify.ts`
- * classifies a registered `ManagedWorktreeEntry`, so `worktree_hygiene` sees a checkout iff
- * `.tachyon/managed-worktrees.json` still names it. Reading alone could not settle whether the
- * failure path keeps that row or rolls it back, and an unregistered preserved checkout is invisible
- * debt — the exact thing the criterion exists to prevent.
+ * t-d29398 CHANGED THE ANSWER, deliberately, and this case is now the pair of outcomes rather than the
+ * one. The old contract preserved EVERY failed create, on the argument that deleting one "would risk
+ * deleting a concurrent ignored write or rewinding a commit after a time-of-check/time-of-use gap".
+ * That argument described a probe-then-remove this no longer performs: the compensation is a SOFT
+ * `git worktree remove`, and git re-reads the tree inside the removal and refuses on any modified or
+ * untracked file, so there is no gap to race. What the old contract cost was measured on 2026-08-07 —
+ * the owner's launch failed on a missing credential, the locked leftover refused every retry, and the
+ * refusal instructed him to unlock a checkout the product gave him no way to unlock.
  *
- * So it is measured here, end to end, on a real git repository: a real isolated launch that fails
- * after `git worktree add` has already succeeded.
+ * So: debris this attempt made goes, and anything git will not part with stays — and the original
+ * question this case exists to answer is asked of BOTH outcomes, because it is the same question.
+ * `classify.ts` classifies a registered `ManagedWorktreeEntry`, so a preserved checkout is visible to
+ * `worktree_hygiene` iff `.tachyon/managed-worktrees.json` still names it, and a discarded one is
+ * residue of a second kind if that row survives it.
  */
-it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout preserved AND registered", async () => {
+it("t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the checkout it just made, registry row and all", async () => {
   const root = gitRepoWorkspace();
   const homeDir = mkdir();
   const worktreeBase = mkdir();
@@ -3215,8 +3394,9 @@ it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout p
   const host = new SharedSecretHost(mkdir(), new Map());
   // The failure: tmux refuses to create the session. That lands AFTER cwd resolution, which is where
   // a real launch spends most of its fallible steps, and it is the shape every one of them shares.
+  let refuseSessions = true;
   const fake = fakeTmux({
-    onExec: (args) => { if (args.includes("new-session")) throw new Error("tmux server unavailable"); },
+    onExec: (args) => { if (refuseSessions && args.includes("new-session")) throw new Error("tmux server unavailable"); },
   });
   const ws = await Workspace.createForTest(
     root,
@@ -3235,20 +3415,88 @@ it("t-d06da3: a launch that fails after `git worktree add` leaves the checkout p
 
     // Measured, not assumed: the launch fails through the PRESERVATION path, so the assertions below
     // are about a checkout the product deliberately kept — not one it happened not to reach yet.
+    // The human is left holding the actionable cause and nothing else: no second failure about
+    // recovery state, because there is no recovery state.
+    const failure = await ws.manager.spawn("isolated").then(() => null, (error: unknown) => error as Error);
+    expect(failure?.message).toContain("tmux server unavailable");
+
+    const checkout = ws.worktrees.pathForAgent("isolated");
+    // 1. Gone from disk and from git — the leftover that refused the owner's retry cannot form.
+    expect(fs.existsSync(checkout)).toBe(false);
+    // 2. And gone from the registry. `Workspace.resolveSpawnCwd` registers the record the moment the
+    //    resolver hands it back — before the HEAD probe, before any launch step can fail — so a
+    //    discard that left the row behind would just move the residue one surface over: a claim on a
+    //    directory that does not exist, which is exactly what `record-only` rows are.
+    expect(ws.managedWorktrees.list({ kind: "agent" }).map((e) => e.path)).not.toContain(path.resolve(checkout));
+
+    // And the retry, once the cause is fixed, is an ordinary launch again.
+    refuseSessions = false;
+    await ws.manager.spawn("isolated");
+    expect(fs.existsSync(checkout)).toBe(true);
+  } finally {
+    ws.dispose();
+  }
+});
+
+/**
+ * t-d29398 — the other outcome, on the same seam: git refuses, so the checkout stays, still
+ * quarantined and still REGISTERED. This is the half the door exists for, and it is what keeps the
+ * discard above from being "delete the failed launch's tree" — the same code path answers both, and
+ * which one it answers is decided by git looking at the tree, not by us deciding beforehand.
+ */
+it("t-d29398: a failed launch preserves — and keeps registered — a checkout that has something in it", async () => {
+  const root = gitRepoWorkspace();
+  const homeDir = mkdir();
+  const worktreeBase = mkdir();
+  fs.writeFileSync(
+    path.join(root, "tachyon.yml"),
+    `agents: {}\nsettings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,
+  );
+  const host = new SharedSecretHost(mkdir(), new Map());
+  // Someone writes into the fresh checkout before the launch fails. `worktreeSetup` is the realistic
+  // author; the point under test is git's refusal, so the file is written by the failing step itself.
+  const fake = fakeTmux({
+    onExec: (args) => {
+      if (!args.includes("new-session")) return;
+      const checkout = path.join(worktreeBase, workspaceHash(root), "isolated");
+      if (fs.existsSync(checkout)) fs.writeFileSync(path.join(checkout, "unsaved.txt"), "someone's work\n");
+      throw new Error("tmux server unavailable");
+    },
+  });
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    await ws.commitAgentProfileLifecycle({
+      agentName: "isolated",
+      operation: "create",
+      createProfile: {
+        runtime: { adapter: "codex", executable: "codex" },
+        workspace: { worktree: { enabled: true } },
+      },
+    });
+
     const failure = await ws.manager.spawn("isolated").then(() => null, (error: unknown) => error as AggregateError);
-    expect(failure?.message).toContain("session creation failed");
     expect((failure?.errors ?? []).map((e: Error) => e.message)).toContain(
       "agent worktree recovery state was preserved instead of automatic cleanup",
     );
 
     const checkout = ws.worktrees.pathForAgent("isolated");
-    // 1. Preserved, as `rollbackPreparedWorktree` promises.
-    expect(fs.existsSync(checkout)).toBe(true);
-    // 2. And VISIBLE. `Workspace.resolveSpawnCwd` registers the record the moment the resolver hands
-    //    it back — before the HEAD probe, before any launch step can fail — and the rollback hook
-    //    deliberately leaves registry rows active "so reveal still points at the recovery path". So
-    //    `worktree_hygiene`, which reads exactly this list, can see the debt a failed launch left.
+    expect(fs.readFileSync(path.join(checkout, "unsaved.txt"), "utf8")).toBe("someone's work\n");
     expect(ws.managedWorktrees.list({ kind: "agent" }).map((e) => e.path)).toContain(path.resolve(checkout));
+
+    // Visible AS quarantined, with the facts a human needs before touching it — that is what makes
+    // the refusal's "Release lock" a reachable gesture rather than a sentence about one.
+    const [row] = await ws.managedWorktrees.listClassified({ kind: "agent" });
+    expect(row?.classification.lock).toBeDefined();
+    expect(row?.classification.dirty).toBe(true);
+    expect(row?.classification.state).toBe("needs-review");
+
+    const released = await ws.managedWorktrees.releaseLock(row!.id, { actor: { kind: "human" } });
+    expect(released.released).toBe(true);
+    expect(fs.readFileSync(path.join(checkout, "unsaved.txt"), "utf8")).toBe("someone's work\n");
   } finally {
     ws.dispose();
   }

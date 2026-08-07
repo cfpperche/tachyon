@@ -13,6 +13,8 @@ export interface WorktreesDeps {
   revealPath(path: string): void;
   remove(id: string, deleteBranch: boolean, wsHash: string): Promise<string | undefined>;
   forget(id: string, wsHash: string): Promise<string | undefined>;
+  /** t-d29398 — release a preserved checkout's Git quarantine (non-destructive; never removes). */
+  releaseLock(id: string, wsHash: string): Promise<string | undefined>;
 }
 
 /**
@@ -83,6 +85,8 @@ export class WorktreesPanelManager {
       await this.runOne(session, "remove", message.id, message.deleteBranch === true);
     } else if (message.type === "worktreeForgetRecord" && typeof message.id === "string") {
       await this.runOne(session, "forget", message.id, false);
+    } else if (message.type === "worktreeReleaseLock" && typeof message.id === "string") {
+      await this.runOne(session, "releaseLock", message.id, false);
     } else if (message.type === "worktreeBatchCleanup" && Array.isArray(message.items)) {
       for (const item of message.items) {
         const row = item as { id?: unknown; op?: unknown };
@@ -93,10 +97,19 @@ export class WorktreesPanelManager {
     }
   }
 
-  private async runOne(session: SectionPanelSession<WorktreesRefreshKind>, op: "remove" | "forget", id: string, deleteBranch: boolean): Promise<void> {
+  private async runOne(
+    session: SectionPanelSession<WorktreesRefreshKind>,
+    op: "remove" | "forget" | "releaseLock",
+    id: string,
+    deleteBranch: boolean,
+  ): Promise<void> {
     const project = session.target.project;
     if (!project) throw new Error("Worktrees dashboard has no project");
-    const refusal = op === "remove" ? await this.deps.remove(id, deleteBranch, project) : await this.deps.forget(id, project);
+    const refusal = op === "remove"
+      ? await this.deps.remove(id, deleteBranch, project)
+      : op === "releaseLock"
+        ? await this.deps.releaseLock(id, project)
+        : await this.deps.forget(id, project);
     if (refusal) void vscode.window.showWarningMessage(refusal);
     await this.send(session);
   }
@@ -145,6 +158,17 @@ function worktreesStrings(): Record<string, string> {
     wtConfirmTitle: t("Confirm cleanup"),
     wtEngineUnavailable: t("Engine unavailable — registry not shown (unverified data is never displayed)."),
     wtForgetRecord: t("Forget record"),
+    wtLockedTitle: t("Preserved — quarantined"),
+    wtLockedDesc: t(
+      "A launch was interrupted and Git still holds this checkout. Nothing can reuse or remove it until"
+      + " the lock is released — releasing it deletes nothing.",
+    ),
+    wtReleaseLock: t("Release lock"),
+    wtInsideLabel: t("Inside"),
+    wtInsideClean: t("no uncommitted changes"),
+    wtInsideDirty: t("uncommitted changes"),
+    wtInsideCommits: t("{0} commit(s) beyond its base"),
+    wtInsideUnknown: t("contents could not be measured"),
     wtOccupiedBy: t("occupied by"),
     wtOccupiedDesc: t("A live agent holds this checkout right now."),
     wtOccupiedTitle: t("Occupied"),
