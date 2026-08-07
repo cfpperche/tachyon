@@ -99,6 +99,23 @@ describe("agent profile pointer syntax", () => {
 });
 
 describe("loadProfileAwareConfig", () => {
+  it("loads the tracked onboarding example through the production loader", () => {
+    const workspaceRoot = process.cwd();
+    const yamlText = fs.readFileSync(path.join(workspaceRoot, "tachyon.yml.example"), "utf8");
+
+    const result = loadProfileAwareConfig({
+      yamlText,
+      workspaceRoot,
+      authorities: new Map(),
+      homeDir: temporaryRoot("tachyon-onboarding-example-home-"),
+    });
+
+    expect(result.errors, yamlText).toEqual([]);
+    expect(result.config).toBeDefined();
+    expect(result.config?.agents).toEqual({});
+    expect(result.config?.settings.auth).toBe(true);
+  });
+
   it("refuses a canonical custom role because no instructions can reach it", () => {
     const root = temporaryRoot("tachyon-agent-profile-custom-role-");
     const bytes = writeProfile(root, { prompt: { role: "custom" } });
