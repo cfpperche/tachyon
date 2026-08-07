@@ -6,7 +6,7 @@ const BASE = "agents:\n  a:\n    cmd: claude\n";
 describe("task notification yaml settings (t-bae005)", () => {
   it("accepts the complete settings block", () => {
     const parsed = parseConfig(`${BASE}settings:\n  taskNotifications:\n    enabled: true\n    events: [created, awaitingHuman]\n    suppressOwnChanges: false\n    dedupeWindowMs: 12\n`);
-    expect(parsed.errors).toEqual([]);
+    expect(parsed.warnings).toEqual([]);
     expect(parsed.config?.settings.taskNotifications).toEqual({ enabled: true, events: ["created", "awaitingHuman"], suppressOwnChanges: false, dedupeWindowMs: 12 });
   });
 
@@ -18,6 +18,6 @@ describe("task notification yaml settings (t-bae005)", () => {
     ["unknown: true", "unknown key"],
   ])("rejects invalid task notification config: %s", (line, message) => {
     const parsed = parseConfig(`${BASE}settings:\n  taskNotifications:\n    ${line}\n`);
-    expect(parsed.errors.join("\n")).toContain(message);
+    expect(parsed.warnings.join("\n")).toContain(message);
   });
 });

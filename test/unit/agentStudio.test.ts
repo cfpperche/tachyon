@@ -287,8 +287,8 @@ describe("formLogic", () => {
       // ...but the resulting entry, wrapped as a full config, is rejected by parseConfig — which is the
       // guard Workspace.studioSubmit runs before persisting (so the file is never left broken).
       const entry = toEntry(state) as any;
-      const { errors } = parseConfig(`agents:\n  researcher:\n    cmd: claude\n    harness:\n      mcp:\n        bad:\n          args: ["x"]\n`);
-      expect(errors.length).toBeGreaterThan(0);
+      const { warnings } = parseConfig(`agents:\n  researcher:\n    cmd: claude\n    harness:\n      mcp:\n        bad:\n          args: ["x"]\n`);
+      expect(warnings.length).toBeGreaterThan(0);
       expect(entry.harness.mcp.bad).toBeTruthy(); // toEntry itself doesn't deep-validate
     });
 
