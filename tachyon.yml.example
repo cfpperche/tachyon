@@ -1,7 +1,6 @@
 # tachyon.yml.example — shared template for THIS monorepo dogfood fleet.
 #
-# Live config is gitignored, and nothing backs it up — no code in this product writes a copy
-# (t-173b96). Create/edit locally:
+# Live config is gitignored. Create/edit locally:
 #   cp tachyon.yml.example tachyon.yml
 #
 # Format: https://github.com/cfpperche/tachyon

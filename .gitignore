@@ -27,8 +27,6 @@ dist/
 .mcp.json
 
 # Local dogfood fleet / settings — machine-specific; not shared via git.
-# NOT backed up by anything: no code writes a copy of this file (t-173b96). Losing it costs the
-# whole roster. Whether it deserves a backup is an open product decision, not a promise made here.
 # Template for new checkouts: tachyon.yml.example
 tachyon.yml
 tachyon.yaml
