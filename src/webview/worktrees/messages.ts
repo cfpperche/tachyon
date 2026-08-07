@@ -15,6 +15,24 @@ export interface WorktreesStrings {
   reveal: string;
   copyPath: string;
   noneListed: string;
+  /**
+   * t-7cb971 — the land block. Only the CHROME is localized: a check's `detail` and `fix` are the
+   * engine's own sentences, carried through raw exactly as `classification.reasons` already are, so
+   * the reason a human reads is the one the check produced rather than a translation of it that can
+   * fall out of step with the code that decides.
+   */
+  landTitle: string;
+  landIntro: string;
+  landCommandLabel: string;
+  landCopyCommand: string;
+  landBlocked: string;
+  landCheckWorktreeClean: string;
+  landCheckVerifiedTree: string;
+  landCheckFastForward: string;
+  landCheckPrimaryOnTrunk: string;
+  landCheckPrimaryClean: string;
+  landFixLabel: string;
+  landCommits: string;
   wtAgentGone: string;
   wtAgentOwned: string;
   wtAlsoDeleteBranch: string;

@@ -141,6 +141,14 @@ export interface CockpitWorktreeRow {
    * lives here", exactly as it does in the engine's own authority decision.
    */
   ownerPresence?: import("../worktree/hygieneAuthority.js").OwnerPresence;
+  /**
+   * t-7cb971 — the land suggestion for a row that still has work the trunk does not contain: the
+   * exact command, and the state of every precondition behind it. Computed host-side beside
+   * `classification` (it needs the same async git probes) and ABSENT whenever there is nothing to
+   * land. Absent is never "ready" — a client must render nothing rather than guess, exactly as it
+   * must for `classification`.
+   */
+  land?: import("../worktree/land.js").LandSuggestion;
 }
 
 /**

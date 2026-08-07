@@ -296,6 +296,18 @@ export const strings: CockpitStrings & WorktreesStrings & ExecutionGraphStrings 
   wtBlocked: "Blocked",
   wtOccupiedBy: "occupied by",
   wtShowAll: "Show all",
+  landTitle: "Land this delivery",
+  landIntro: "Tachyon never moves the trunk. When every precondition below is proved, this is the exact command — you run it.",
+  landCommandLabel: "Land command",
+  landCopyCommand: "Copy command",
+  landBlocked: "Not ready to land — {0} precondition(s) not proved. No command is offered: one that would fail wastes your time, and one that would succeed here would land something nobody verified.",
+  landCheckWorktreeClean: "Worktree clean",
+  landCheckVerifiedTree: "Verified tree",
+  landCheckFastForward: "Fast-forward",
+  landCheckPrimaryOnTrunk: "Primary checkout on the trunk",
+  landCheckPrimaryClean: "Primary checkout clean",
+  landFixLabel: "Fix",
+  landCommits: "commit(s)",
 };
 /** Standalone Runtime Config receives this bootstrap global from its host; preview mirrors it. */
 export const runtimeConfigPreviewStrings: import("../../../src/webview/runtime-config/messages.js").RuntimeConfigStrings = {
@@ -413,6 +425,71 @@ const bundles: CockpitWorkspaceBundle[] = [
           containedInTrunk: false,
           trunkRef: "main",
           occupant: { state: "live", agent: "codex", cwd: "/cache/wt/b349073a/change/fleet-ui" },
+        },
+        // t-7cb971 — a delivery that is READY, on the row whose agent is still live in the checkout.
+        // Deliberately this row: occupancy blocks REMOVAL and not landing, and the preview is where
+        // that distinction has to be visible rather than argued in a comment.
+        land: {
+          head: "9f3c1ab27d5e408b6c1d90ffae2b7c1d4e88a021",
+          branch: "tachyon/change/fleet-ui",
+          trunkRef: "main",
+          primaryPath: "/home/goat/tachyon",
+          commits: 2,
+          checks: [
+            { id: "worktree-clean", ok: true, detail: "no uncommitted changes in the delivering worktree" },
+            { id: "verified-tree", ok: true, detail: "tree 41d0c7a9be22 verified at 2026-08-07T16:41:09.220Z" },
+            { id: "fast-forward", ok: true, detail: "'main' is an ancestor of 9f3c1ab27d5e — a fast-forward, no merge commit" },
+            { id: "primary-on-trunk", ok: true, detail: "the primary checkout has 'main' checked out" },
+            { id: "primary-clean", ok: true, detail: "no uncommitted changes in the primary checkout" },
+          ],
+          command: "git -C /home/goat/tachyon merge --ff-only 9f3c1ab27d5e408b6c1d90ffae2b7c1d4e88a021",
+        },
+      },
+      // t-7cb971 — the refusal, which is the state that has to read well: two preconditions unproved,
+      // each with its exit, and no command at all.
+      {
+        id: "mw-change-unlanded",
+        kind: "change",
+        path: "/cache/wt/b349073a/change/t-7cb971",
+        branch: "tachyon/change/t-7cb971",
+        status: "active",
+        slug: "t-7cb971",
+        folder: "tachyon",
+        wsHash: "b349073a",
+        tachyonCreatedBranch: true,
+        classification: {
+          state: "needs-review",
+          reasons: ["3 commit(s) not contained in base or in 'main'; land or integrate them into the trunk before removing"],
+          pathExists: true,
+          dirty: false,
+          aheadOfBase: 3,
+          containedInBase: false,
+          containedInTrunk: false,
+          trunkRef: "main",
+        },
+        land: {
+          head: "c47b8e10d9a3f6520b7e1c48ad9026fb3e7150cc",
+          branch: "tachyon/change/t-7cb971",
+          trunkRef: "main",
+          primaryPath: "/home/goat/tachyon",
+          commits: 3,
+          checks: [
+            { id: "worktree-clean", ok: true, detail: "no uncommitted changes in the delivering worktree" },
+            {
+              id: "verified-tree",
+              ok: false,
+              detail: "no verify record for the tree at c47b8e10d9a3 — this content has not been proved green here",
+              fix: "run the declared verify gate IN this worktree, and commit nothing after it — the tree you land must be the tree you verified",
+            },
+            {
+              id: "fast-forward",
+              ok: false,
+              detail: "'main' has moved past this branch's base — c47b8e10d9a3 does not contain it",
+              fix: "integrate 'main' into this branch and re-run the verify gate; the combined tree is the one that lands, and nothing has verified it yet",
+            },
+            { id: "primary-on-trunk", ok: true, detail: "the primary checkout has 'main' checked out" },
+            { id: "primary-clean", ok: true, detail: "no uncommitted changes in the primary checkout" },
+          ],
         },
       },
       // t-621613 — the row the tab had no answer for: an agent's checkout whose agent is in no
