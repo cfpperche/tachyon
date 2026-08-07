@@ -49,6 +49,33 @@ describe("designModeChat JSONL store", () => {
     expect(tail.hasMoreBefore).toBe(false);
   });
 
+  it("persists a structured edit event with an exact textual fallback", async () => {
+    const event = await appendDmChatEvent(root, {
+      kind: "edit",
+      role: "agent",
+      agent: "codex",
+      reply: "I tightened the primary action.",
+      text: "I tightened the primary action.\n\nChanged: Increase button padding\nFiles: src/button.css\n\ndiff --git a/src/button.css b/src/button.css\n@@ -1 +1 @@\n-padding: 4px\n+padding: 8px",
+      summary: "Increase button padding",
+      files: ["src/button.css"],
+      patch: "diff --git a/src/button.css b/src/button.css\n@@ -1 +1 @@\n-padding: 4px\n+padding: 8px",
+      activeAgent: "codex",
+      source: "tool",
+    });
+
+    expect(event).toMatchObject({
+      kind: "edit",
+      role: "agent",
+      summary: "Increase button padding",
+      files: ["src/button.css"],
+    });
+    expect(tailDmChat(root, 10).items[0]).toMatchObject({
+      kind: "edit",
+      reply: "I tightened the primary action.",
+      patch: expect.stringContaining("+padding: 8px"),
+    });
+  });
+
   it("tail and loadBefore support on-demand windows", async () => {
     for (let i = 0; i < 25; i++) {
       await appendDmChatEvent(root, {
@@ -120,6 +147,7 @@ describe("designModeChat JSONL store", () => {
     expect(p).toContain("button#go");
     expect(p).toContain("Human: increase padding");
     expect(p).toMatch(/design_mode_chat_reply/);
+    expect(p).toMatch(/include the exact patch.*edit/i);
   });
 
   it("formatDmChatPrompt embeds host turn id for design_mode_chat_reply (t-181925)", () => {

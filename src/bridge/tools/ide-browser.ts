@@ -186,9 +186,25 @@ export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void 
             .max(120)
             .optional()
             .describe("Ignored if it does not match the bound turn agent / Design Mode active agent; speaker defaults to that agent"),
+          edit: z
+            .object({
+              summary: z.string().min(1).max(1000).describe("Short description of the completed edit"),
+              files: z
+                .array(z.string().min(1).max(500))
+                .min(1)
+                .max(40)
+                .describe("Workspace-relative files represented by the patch"),
+              patch: z
+                .string()
+                .min(1)
+                .max(60_000)
+                .describe("Exact final unified diff, including diff --git headers"),
+            })
+            .optional()
+            .describe("Structured edit result; persisted by the host as a durable chat event"),
         },
       },
-      async ({ text, agent, turnId }) => {
+      async ({ text, agent, turnId, edit }) => {
         try {
           // Prefer authenticated caller name when available (ignore spoofed speaker).
           const callerName =
@@ -198,6 +214,7 @@ export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void 
             text,
             ...(speaker ? { agent: speaker } : {}),
             ...(turnId ? { turnId } : {}),
+            ...(edit ? { edit } : {}),
           });
           if (!result.ok) return fail(new Error(result.error || "design_mode_chat_reply failed"));
           return ok(JSON.stringify(result.data, null, 2));

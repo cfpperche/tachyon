@@ -25,6 +25,7 @@ import {
   formatDmChatPrompt,
   loadDmChatBefore,
   tailDmChat,
+  type DmChatEdit,
   type DmChatEvent,
 } from "./designModeChat.js";
 import {
@@ -705,6 +706,7 @@ export class IdeBrowserBridgeManager {
     source: "tool" | "markers" | "activity" = "tool",
     agent?: string,
     turnId?: string,
+    edit?: DmChatEdit,
   ): Promise<{ ok: true; event: DmChatEvent } | { ok: false; error: string }> {
     const body = text.trim();
     if (!body) return { ok: false, error: "empty reply" };
@@ -748,15 +750,52 @@ export class IdeBrowserBridgeManager {
     if (/^\s*\{[\s\S]*"tool_use"/.test(plain) || /^\s*tool_use\b/i.test(plain)) {
       return { ok: false, error: "reply looks like a tool payload — ignored" };
     }
+    let normalizedEdit: DmChatEdit | undefined;
+    if (edit) {
+      const summary = typeof edit.summary === "string" ? edit.summary.trim() : "";
+      const patch = typeof edit.patch === "string" ? edit.patch.trim() : "";
+      const files = Array.isArray(edit.files)
+        ? [...new Set(edit.files.map((file) => String(file).trim()).filter(Boolean))]
+        : [];
+      if (!summary || summary.length > 1_000) {
+        return { ok: false, error: "edit summary required (max 1000 characters)" };
+      }
+      if (!files.length || files.length > 40 || files.some((file) => file.length > 500)) {
+        return { ok: false, error: "edit files required (1-40 workspace-relative paths)" };
+      }
+      if (!patch || patch.length > 60_000 || !/^diff --git /m.test(patch)) {
+        return { ok: false, error: "edit patch must be an exact unified diff with diff --git headers (max 60000 characters)" };
+      }
+      normalizedEdit = { summary, files, patch };
+    }
     const activeAgent = match.resolvesWait && pending ? pending.agent : this.designAgent;
-    const ev = await appendDmChatEvent(this.workspaceRoot, {
-      kind: "message",
-      role: "agent",
-      agent: who,
-      text: plain.slice(0, 12_000),
-      activeAgent,
-      source: effectiveSource,
-    });
+    const reply = plain.slice(0, 12_000);
+    const ev = normalizedEdit
+      ? await appendDmChatEvent(this.workspaceRoot, {
+        kind: "edit",
+        role: "agent",
+        agent: who,
+        reply,
+        text: [
+          reply,
+          "",
+          `Changed: ${normalizedEdit.summary}`,
+          `Files: ${normalizedEdit.files.join(", ")}`,
+          "",
+          normalizedEdit.patch,
+        ].join("\n"),
+        ...normalizedEdit,
+        activeAgent,
+        source: effectiveSource,
+      })
+      : await appendDmChatEvent(this.workspaceRoot, {
+        kind: "message",
+        role: "agent",
+        agent: who,
+        text: reply,
+        activeAgent,
+        source: effectiveSource,
+      });
     if (match.resolvesWait) {
       this.clearChatReplyWait();
     }
@@ -914,7 +953,10 @@ export class IdeBrowserBridgeManager {
         const text = typeof body.text === "string" ? body.text : "";
         const agent = typeof body.agent === "string" ? body.agent : undefined;
         const turnId = typeof body.turnId === "string" ? body.turnId : undefined;
-        const result = await this.ingestChatReply(text, "tool", agent, turnId);
+        const edit = body.edit && typeof body.edit === "object"
+          ? body.edit as DmChatEdit
+          : undefined;
+        const result = await this.ingestChatReply(text, "tool", agent, turnId, edit);
         if (!result.ok) {
           json(400, { ok: false, error: result.error });
           return;
