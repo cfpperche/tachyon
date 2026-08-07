@@ -308,7 +308,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     // matches nothing proves nothing, and one that matched READS would prove the wrong thing.
     expect(live.doors.map((d) => `${d.at} -> ${d.value}`).sort()).toEqual([
       "src/engine-service/extensionOperationService.ts:311 -> APPROVAL_CHANNEL_VSCODE_COMMAND",
-      "src/workspace/Workspace.ts:3493 -> APPROVAL_CHANNEL_COMPANION_HTTP",
+      "src/workspace/Workspace.ts:3506 -> APPROVAL_CHANNEL_COMPANION_HTTP",
     ]);
   });
 
@@ -335,8 +335,8 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
       ),
     );
     expect(door2.findings.map((f) => ({ at: f.at, problem: f.problem }))).toEqual([
-      { at: "src/workspace/Workspace.ts:3493", problem: LITERAL_ACTOR },
-      { at: "src/workspace/Workspace.ts:3493", problem: HARD_CODED },
+      { at: "src/workspace/Workspace.ts:3506", problem: LITERAL_ACTOR },
+      { at: "src/workspace/Workspace.ts:3506", problem: HARD_CODED },
     ]);
 
     // A cast is the thing the TYPE cannot stop and this scan exists for.

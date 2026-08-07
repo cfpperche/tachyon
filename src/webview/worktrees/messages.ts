@@ -44,6 +44,20 @@ export interface WorktreesStrings {
   wtConfirmTitle: string;
   wtEngineUnavailable: string;
   wtForgetRecord: string;
+  /**
+   * t-d29398 — the preserved-and-quarantined group and its one gesture. `Release lock` is the door the
+   * refusal now names; the `wtInside*` strings are the facts it shows FIRST, because "release the
+   * debris of a failed launch" and "release someone's unfinished work" are the same button until the
+   * row says how many commits and whether the tree is dirty.
+   */
+  wtLockedTitle: string;
+  wtLockedDesc: string;
+  wtReleaseLock: string;
+  wtInsideLabel: string;
+  wtInsideClean: string;
+  wtInsideDirty: string;
+  wtInsideCommits: string;
+  wtInsideUnknown: string;
   wtOccupiedBy: string;
   wtOccupiedDesc: string;
   wtOccupiedTitle: string;
@@ -67,6 +81,7 @@ export type WorktreesAction =
   | { type: "copyText"; text: string }
   | { type: "worktreeRemove"; id: string; deleteBranch?: boolean; wsHash?: string }
   | { type: "worktreeForgetRecord"; id: string; wsHash?: string }
+  | { type: "worktreeReleaseLock"; id: string; wsHash?: string }
   | { type: "worktreeBatchCleanup"; items: Array<{ id: string; op: "remove" | "forget"; wsHash?: string }> };
 
 export const pollWorktreesAction = (): WorktreesAction => ({ type: POLL });

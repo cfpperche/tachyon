@@ -59,17 +59,20 @@ function harness(over: Partial<WorktreesDeps> = {}): {
   manager: WorktreesPanelManager;
   removed: Array<{ id: string; deleteBranch: boolean; wsHash: string }>;
   forgotten: Array<{ id: string; wsHash: string }>;
+  released: Array<{ id: string; wsHash: string }>;
 } {
   const removed: Array<{ id: string; deleteBranch: boolean; wsHash: string }> = [];
   const forgotten: Array<{ id: string; wsHash: string }> = [];
+  const released: Array<{ id: string; wsHash: string }> = [];
   const deps: WorktreesDeps = {
     collect: async () => [bundle("ws-a", row("ws-a", "a-only")), bundle("ws-b", row("ws-b", "b-only"))],
     revealPath: () => {},
     remove: async (id, deleteBranch, wsHash) => { removed.push({ id, deleteBranch, wsHash }); return undefined; },
     forget: async (id, wsHash) => { forgotten.push({ id, wsHash }); return undefined; },
+    releaseLock: async (id, wsHash) => { released.push({ id, wsHash }); return undefined; },
     ...over,
   };
-  return { manager: new WorktreesPanelManager(Uri.file("/ext"), deps), removed, forgotten };
+  return { manager: new WorktreesPanelManager(Uri.file("/ext"), deps), removed, forgotten, released };
 }
 
 async function open(manager: WorktreesPanelManager, wsHash: string): Promise<typeof __createdPanels[number]> {
@@ -112,6 +115,26 @@ describe("SDD 485 D6 — standalone Worktrees dashboard", () => {
     panelA.webview.__receive({ type: "worktreeForgetRecord", id: "ghost", wsHash: "ws-b" });
     await flush();
     expect(h.forgotten).toEqual([{ id: "ghost", wsHash: "ws-a" }]);
+  });
+
+  // t-d29398 — the door added for a checkout an interrupted launch left quarantined takes the same
+  // immutable-project rule as its neighbours: a row that claims another project is still acted on in
+  // the panel's own.
+  it("release lock uses the immutable panel project too", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeReleaseLock", id: "a-only", wsHash: "ws-b" });
+    await flush();
+    expect(h.released).toEqual([{ id: "a-only", wsHash: "ws-a" }]);
+  });
+
+  it("surfaces a refused release instead of claiming the lock is gone", async () => {
+    const h = harness({ releaseLock: async () => "refused: agent 'codex' occupies this checkout (live)" });
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeReleaseLock", id: "a-only" });
+    await flush();
+    expect(__getWarningMessageCalls().map((call) => call.message))
+      .toContain("refused: agent 'codex' occupies this checkout (live)");
   });
 
   it("batch cleanup revalidates every well-formed item and ignores malformed entries", async () => {

@@ -155,9 +155,12 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
       quarantineForLaunch: true,
     });
     expect(attempted).toMatchObject({ created: false, preparationLocked: true });
+    // t-d29398 — the refusal still refuses; what changed is that it names a gesture the product has.
+    // "inspect it and unlock explicitly" required a terminal and `git worktree unlock`, and an owner
+    // who had already fixed the original failure read it as the runtime being unsupported.
     await expect(m.ensure({ agent: "retry", branch: "tachyon/retry" })).rejects.toMatchObject({
       reason: "recovery-preserved",
-      message: expect.stringContaining("its Git preparation lock is still present; inspect it and unlock explicitly"),
+      message: expect.stringContaining("Release lock"),
     });
 
     await complete(m, attempted.record);

@@ -211,6 +211,7 @@ export class ManagedWorktreeService {
             git: this.git,
             status: (cwd, baseRef) => this.opts.manager.status(cwd, baseRef),
             occupancy: this.opts.occupancy,
+            lockState: (worktreePath) => this.opts.manager.lockState(worktreePath),
             trunkRefs,
           });
           // t-7cb971 — nothing to land once the trunk already contains the work, and nothing to probe
@@ -557,6 +558,7 @@ export class ManagedWorktreeService {
       git: this.git,
       status: (cwd, baseRef) => this.opts.manager.status(cwd, baseRef),
       occupancy: this.opts.occupancy,
+      lockState: (worktreePath) => this.opts.manager.lockState(worktreePath),
     });
     if (classification.state !== "ready-to-remove") {
       // t-dcdb7f — reasons are priority-ordered; name the blocking condition (and its exit), not the list.
@@ -648,6 +650,7 @@ export class ManagedWorktreeService {
         git: this.git,
         status: (cwd, baseRef) => this.opts.manager.status(cwd, baseRef),
         occupancy: this.opts.occupancy,
+        lockState: (worktreePath) => this.opts.manager.lockState(worktreePath),
       });
     } catch (err) {
       // A classifier that threw proves nothing, so the preview must not claim it would remove.
@@ -741,6 +744,57 @@ export class ManagedWorktreeService {
     } catch {
       /* audit is evidence, not a gate */
     }
+  }
+
+  /**
+   * t-d29398 — release the Git quarantine on a preserved checkout, and ONLY that.
+   *
+   * The gesture the product was missing. A launch that failed after `git worktree add --lock` left a
+   * lock nothing in the UI could clear, and every retry was refused with an instruction ("unlock
+   * explicitly") that required a terminal and knowledge of `git worktree unlock`. The owner hit this
+   * on 2026-08-07 and was stuck with a clean, commit-free checkout he could not reuse.
+   *
+   * It is deliberately NOT a removal, and that is what keeps it honest about preserved work: unlocking
+   * deletes no file and rewrites no ref. Whatever is inside is still inside afterwards — the caller can
+   * then relaunch into it, or remove it through the classification-gated door that re-proves clean,
+   * unoccupied and contained. So the surface can show what is in there and let the human decide,
+   * without this call ever being the thing that loses it.
+   *
+   * Refused while a live agent occupies the checkout: there the lock may be a launch still in flight,
+   * and taking its quarantine out from under it is a race nobody asked for.
+   */
+  async releaseLock(
+    idOrPath: string,
+    opts: { actor: { kind: string; name?: string } },
+  ): Promise<{ released: boolean; error?: string; lockReason?: string; authority?: HygieneAuthorityDecision }> {
+    const entry = findManagedEntry(this.load(), idOrPath);
+    if (!entry) return { released: false, error: `managed worktree not found: ${idOrPath}` };
+    // Same authority model as removal, which grants the host human unconditionally. Reusing it rather
+    // than inventing a second one is deliberate: a caller who may not ask for a removal has no better
+    // claim to lift the quarantine that stands in front of one.
+    const authority = resolveHygieneAuthority(entry, opts.actor, this.lineage(), await this.ownerPresenceOf(entry));
+    if (!authority.allowed) return { released: false, error: `refused: ${authority.reason}`, authority };
+    if (!fs.existsSync(entry.path)) {
+      return { released: false, error: `checkout is missing at ${entry.path}; forget the record instead`, authority };
+    }
+    const occupant = await this.opts.occupancy?.(entry.path).catch(() => undefined);
+    if (occupant) {
+      return {
+        released: false,
+        error:
+          `refused: agent '${occupant.agent}' occupies this checkout (${occupant.state})` +
+          `; its lock may belong to a launch still in progress — stop agent '${occupant.agent}' (kill_agent) first`,
+        authority,
+      };
+    }
+    const state = await this.opts.manager.lockState(entry.path);
+    const result = await this.opts.manager.releaseLock(entry.path);
+    return {
+      released: result.released,
+      ...(result.error ? { error: result.error } : {}),
+      ...(state?.reason ? { lockReason: state.reason } : {}),
+      authority,
+    };
   }
 
   async remove(
