@@ -46,6 +46,16 @@ delete can.
   single funnel every mutation passes through, runs before anything touches disk, and its refusal
   says what is actually wrong instead of "not declared in tachyon.yml", which was false.
 
+### Removed
+
+- **The Fleet app is gone; the sidebar's Agents tab is the fleet** (`t-5f2b5b`). The Control tile,
+  the editor tab and the "open agents as editor tab" button all go with it. The previous release had
+  already made both surfaces render the same roster with the same nine statuses, so the second one
+  stopped earning its keep. The guard that matters survived the deletion and got stronger: it still
+  forbids the fleet from painting a boolean running/stopped list — the defect where a wedged agent
+  read as "Stopped" and one waiting on input read as "Running" — and now also requires the status
+  union to stay nine wide, so the defect cannot return by collapsing the type instead of the markup.
+
 ### Changed
 
 - **An invalid `tachyon.yml` warns instead of taking the fleet down** (`t-48dd8d`). One mistyped key
