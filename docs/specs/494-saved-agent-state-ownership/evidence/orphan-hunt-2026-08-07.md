@@ -527,3 +527,43 @@ the record. What follows is what re-running the same scripts prints now.
   for it at all, and that is `t-359469` — but the residue it leaves is no longer invisible.
 - **Untouched, and still open:** O4 (`t-359469`) and O5 (`t-af4a5f`), both `terminals:`-shaped, and
   every entry of the "not decided" list except #6, which the two tasks above resolved.
+
+### O5 re-measured, 2026-08-07 (`t-af4a5f`)
+
+§O5 has two claims and they aged differently. **Both are re-measured through the production door**
+(`config.agent.delete` on a declared terminal), not by inspection.
+
+- **"Even without a crash the home is never touched" is no longer true, and `t-4a1f85` is why.** The
+  third arm hands the name to `Workspace.forgetAgent`, which is `forgetAgent` (R4), which since
+  `t-4a1f85` ends in `removeEmptyAgentProfileHome`. Driving the door over a terminal whose home holds
+  `evolution/` leaves no home at all; over a home also holding a human's `SOUL.md` the `rmdir`
+  refuses, the bytes stay, and the sweep reports `orphan-home`. `d0bf4119`'s own actor × trigger list
+  names this door — it fixed the door's *tail* while declaring O5 out of scope, which is exactly
+  right and is why nothing was left half-stated. **The remaining fix is not about the home.**
+- **The window between the two writes is real, and worse than the section says.** §O5 says no
+  workspace open reconciles it. Measured, the reason is sharper: a declared terminal holds **no
+  session-ledger row at all** (`ws.ledger.get("b") === undefined` after a real spawn), so `gcLedger`
+  — the one startup sweep that runs R4 for a name that left `tachyon.yml` — never sees the name even
+  in principle. The sweep *does* report the leftover home as `orphan-home`, and then hands the human
+  an `rmdir` that the surviving `evolution/` makes refuse.
+- **The fix is the ORDER, and it closes the window in the only direction that converges.** The
+  footprint write now runs first and the roster row last. An interruption between them leaves a name
+  that is still declared, still listed and still addressable, carrying the footprint of a terminal
+  that has never been launched — not residue, and the human's next Remove finishes it, because every
+  step of `forgetAgent` is idempotent. The trailing-edge property the project guidance states for
+  suppression, read one layer down: never drop the handle to the thing you still have to clean.
+  Stated trade: a config edit that refuses *after* the footprint is cleared loses the activity log,
+  transcript and Evolution profile while the terminal stays declared — a loss this door already takes
+  ahead of the same line, irreversibly, through `removeAgentWorktree` and `stopAgentSessionForDelete`.
+- **Not a journal.** The window is closed by ordering rather than by giving this door a journal and a
+  reconcile. A journal would be a second removal transaction beside the governed one, for a door
+  whose interruption residue is now indistinguishable from a fresh declaration — cost without a
+  defect to answer.
+- **Cases**, in `test/unit/workspaceHeadless.test.ts`, named by actor: A1 sidebar (two shapes), A2
+  `extension.invoke` through `parseExtensionCommandV1`, A3 Bridge `dismiss_agent`, A4 hand-edited
+  `tachyon.yml`, A5 the two interruptions. A5 is the pair that was red before the fix; A1–A4 were
+  already green and are the regression proof that the door — not the helper — reaches the policy.
+- **Found while enumerating, not fixed here:** A3's refusal calls a `terminals:` entry "a Saved Agent
+  (declared in tachyon.yml)" and sends the caller to `propose_saved_agent_removal` or Agent Studio,
+  neither of which serves a terminal. Same false-sentence shape as §O4/`t-359469`, different surface.
+  Filed as `t-849277`.
