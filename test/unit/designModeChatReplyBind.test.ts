@@ -114,4 +114,30 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
     expect(mgr.chatWait).toBeNull();
     expect(tailDmChat(root, 10).items).toHaveLength(2);
   });
+
+  it("stores an edit reply as one structured event with a readable fallback", async () => {
+    mgr.beginChatReplyWait("alice", "dm-turn-edit");
+    const result = await mgr.ingestChatReply(
+      "Done — the button now has more room.",
+      "tool",
+      "alice",
+      "dm-turn-edit",
+      {
+        summary: "Increase button padding",
+        files: ["src/button.css"],
+        patch: "diff --git a/src/button.css b/src/button.css\n@@ -1 +1 @@\n-padding: 4px\n+padding: 8px",
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    const [event] = tailDmChat(root, 10).items;
+    expect(event).toMatchObject({
+      kind: "edit",
+      role: "agent",
+      reply: "Done — the button now has more room.",
+      summary: "Increase button padding",
+      files: ["src/button.css"],
+    });
+    expect(event?.text).toContain("+padding: 8px");
+  });
 });

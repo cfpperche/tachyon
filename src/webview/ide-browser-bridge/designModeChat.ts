@@ -32,6 +32,13 @@ export const DM_CHAT_REPLY_END = "<<<END_DM_CHAT_REPLY>>>";
 
 export type DmChatRole = "user" | "agent" | "system";
 
+export type DmChatEdit = {
+  summary: string;
+  files: string[];
+  /** Exact unified diff captured after the requested edit. */
+  patch: string;
+};
+
 export type DmChatEvent =
   | {
     v: 1;
@@ -49,6 +56,23 @@ export type DmChatEvent =
     role: "agent";
     agent: string;
     text: string;
+    activeAgent: string;
+    source: "tool" | "markers" | "activity";
+    lineNo: number;
+  }
+  | {
+    v: 1;
+    at: string;
+    kind: "edit";
+    role: "agent";
+    agent: string;
+    /** Plain agent reply without the fallback patch rendering. */
+    reply: string;
+    /** Current injected chat renders text; the Preact successor can render the fields below. */
+    text: string;
+    summary: string;
+    files: string[];
+    patch: string;
     activeAgent: string;
     source: "tool" | "markers" | "activity";
     lineNo: number;
@@ -220,6 +244,17 @@ export type DmChatEventInput =
     source: "tool" | "markers" | "activity";
     at?: string;
   }
+  | ({
+    kind: "edit";
+    role: "agent";
+    agent: string;
+    reply: string;
+    /** Text fallback keeps the exact change visible before the Preact renderer lands. */
+    text: string;
+    activeAgent: string;
+    source: "tool" | "markers" | "activity";
+    at?: string;
+  } & DmChatEdit)
   | {
     kind: "system";
     text: string;
@@ -399,6 +434,9 @@ export function formatDmChatPrompt(input: {
     // Happy path is tool-only. Pane markers are not advertised — they taught agents to skip MCP.
     // turnId binds the reply to this send so late replies cannot resolve another wait (t-181925).
     `Required: answer ONLY via Bridge tool ${replyTool} with the plain answer.`,
+    input.pickContext
+      ? "If you changed workspace files for this selected element, include the exact patch in the optional edit argument: { summary, files, patch } (use the final unified diff, not a prose reconstruction)."
+      : null,
     turnId
       ? `The turnId argument must be exactly "${turnId}" — a reply with a different or missing turn id will not update this chat turn.`
       : null,

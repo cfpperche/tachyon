@@ -105,6 +105,30 @@ describe("t-3cab05 — ide_browser tools always-register + offline fail-closed",
     expect(res.content[0]?.text).toBe(F3_OFFLINE_TOOL_RESULT);
   });
 
+  it("forwards a structured edit through the existing bound reply door", async () => {
+    const requests: Array<{ route: string; body?: Record<string, unknown> }> = [];
+    const mcp = wire({
+      ideBrowserRequest: async (route, body) => {
+        requests.push({ route, body });
+        return { ok: true, data: { accepted: true } };
+      },
+    });
+
+    const handler = mcp.handlers.get("design_mode_chat_reply");
+    const edit = {
+      summary: "Increase button padding",
+      files: ["src/button.css"],
+      patch: "diff --git a/src/button.css b/src/button.css\n@@ -1 +1 @@\n-padding: 4px\n+padding: 8px",
+    };
+    const res = await handler!({ text: "Done.", turnId: "dm-turn-edit", edit });
+
+    expect(res.isError).not.toBe(true);
+    expect(requests).toEqual([{
+      route: "/design-mode/chat-reply",
+      body: { text: "Done.", turnId: "dm-turn-edit", edit },
+    }]);
+  });
+
   it("offline ide_browser_status returns the same F3-observed envelope", async () => {
     const syntheticRoot = "/tmp/tachyon-no-such-workspace-ide-browser-offlineenv";
     const mcp = wire({
