@@ -9,6 +9,7 @@ import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
 import { notify } from "../workspace/notify.js";
 import { showNotification } from "../workspace/NotificationService.js";
+import { recordShellFailure, SHELL_DIAGNOSTIC_CHANNEL } from "../workspace/shellDiagnosticLog.js";
 import type { TiptapJSON } from "../richDoc/types.js";
 import type { WorkspaceSidebarTarget, SidebarShellCommandContext } from "../shell/SidebarTarget.js";
 import { controlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
@@ -248,6 +249,23 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     void this.push();
   }
 
+  /**
+   * t-74274c — write the failure down, then hand back ONE line worth showing on a truncating surface.
+   *
+   * Every caller below reports through a status message that gets cut off, and the projection's
+   * refusal is a Zod issue array whose first eighty characters are all shape and no answer. The owner
+   * spent a session grepping for the field that `path` names immediately; `recordShellFailure` puts
+   * the whole issue list in the Output channel and returns the path as the head of the line, so the
+   * transient surface loses the least useful part instead of the most useful one.
+   *
+   * `context` is the stable English key the log is grepped by and is deliberately NOT localized;
+   * the caller's own title stays localized, which is why the two are separate arguments.
+   */
+  private failureLine(context: string, error: unknown): string {
+    const { summary } = recordShellFailure(context, error);
+    return vscode.l10n.t("{0} — full detail in Output → {1}", summary, SHELL_DIAGNOSTIC_CHANNEL);
+  }
+
   private async push(): Promise<void> {
     const view = this.view;
     if (!view) return;
@@ -257,7 +275,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       fleets = await Promise.all(this.getWorkspaces().map((ws) => ws.loadSidebar()));
     } catch (error) {
       if (this.view === view && generation === this.pushGeneration) {
-        notify(vscode.l10n.t("Could not refresh Sidebar: {0}", error instanceof Error ? error.message : String(error)), "error");
+        notify(vscode.l10n.t("Could not refresh Sidebar: {0}", this.failureLine("sidebar.refresh", error)), "error");
       }
       return;
     }
@@ -419,7 +437,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
           await vscode.env.clipboard.writeText(`ID: ${id}\nTitle: ${title}`);
           notify(vscode.l10n.t("Pin copied: {0}", id));
         } catch (error) {
-          notify(vscode.l10n.t("Could not copy pin: {0}", error instanceof Error ? error.message : String(error)), "error");
+          notify(vscode.l10n.t("Could not copy pin: {0}", this.failureLine("sidebar.pin-copy", error)), "error");
         }
         return;
       }
@@ -452,7 +470,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
         try {
           proposalName = (await ws.loadSidebar()).proposals.find((proposal) => proposal.id === id)?.name ?? id;
         } catch (error) {
-          notify(vscode.l10n.t("Could not load proposal: {0}", error instanceof Error ? error.message : String(error)), "error");
+          notify(vscode.l10n.t("Could not load proposal: {0}", this.failureLine("sidebar.proposal-reject", error)), "error");
           return;
         }
         const answer = await showNotification(

@@ -56,6 +56,8 @@ const __warningMessageCalls: Array<{ message: string; options: unknown; actions:
 const __statusBarMessages: Array<{ text: string; timeout: number | undefined }> = [];
 const __quickPickCalls: Array<{ items: readonly string[]; options: unknown }> = [];
 const __terminalCloseListeners = new Set<(terminal: typeof __createdTerminals[number]) => void>();
+/** t-74274c — Output channels are the shell's only on-disk diagnostic surface; tests read what landed there. */
+const __outputChannels: Array<{ name: string; lines: string[]; shown: boolean }> = [];
 
 export function __resetVscodeMock(): void {
   __configValues = {};
@@ -69,6 +71,7 @@ export function __resetVscodeMock(): void {
   __warningMessageCalls.splice(0);
   __statusBarMessages.splice(0);
   __quickPickCalls.splice(0);
+  __outputChannels.splice(0);
   __terminalCloseListeners.clear();
   __openDialogResult = undefined;
   __clipboardText = "";
@@ -106,6 +109,9 @@ export function __getStatusBarMessages(): Array<{ text: string; timeout: number 
 }
 export function __getQuickPickCalls(): Array<{ items: readonly string[]; options: unknown }> {
   return [...__quickPickCalls];
+}
+export function __getOutputChannels(): Array<{ name: string; lines: string[]; shown: boolean }> {
+  return [...__outputChannels];
 }
 
 /**
@@ -169,6 +175,22 @@ export const window = {
     return { dispose: () => __terminalCloseListeners.delete(listener) };
   },
   createStatusBarItem: () => ({ show: () => {}, dispose: () => {} }),
+  createOutputChannel: (name: string) => {
+    const channel = {
+      name,
+      lines: [] as string[],
+      shown: false,
+      append: (value: string) => { channel.lines.push(value); },
+      appendLine: (value: string) => { channel.lines.push(value); },
+      clear: () => { channel.lines.splice(0); },
+      show: () => { channel.shown = true; },
+      hide: () => {},
+      replace: (value: string) => { channel.lines.splice(0); channel.lines.push(value); },
+      dispose: () => {},
+    };
+    __outputChannels.push(channel);
+    return channel;
+  },
   setStatusBarMessage: (text: string, timeout?: number) => {
     __statusBarMessages.push({ text, timeout });
     return { dispose() {} };
