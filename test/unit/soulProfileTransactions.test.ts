@@ -568,6 +568,131 @@ describe("soul profile transactions (T15A)", () => {
     expect(await listDegradedTransactions(root, "Ada")).toHaveLength(1);
   });
 
+  /**
+   * t-359469 — Soul belongs to `agents:`, and the gate used to accept `terminals:` too.
+   *
+   * The cases below are named for the ACTOR × TRIGGER list in the task, because the project guidance
+   * makes that list the test-case list. Three actors can reach a Soul mutation, and A1/A2 arrive at
+   * these exact functions:
+   *
+   *   A1  human, VS Code Agent Studio webview  -> cockpit/agentStudioDomain -> Workspace.*Soul*
+   *   A2  human, Control/cockpit over the socket -> ClientWorkspaceStudioTarget -> the same
+   *   A3  agent or API client -> extension.invoke `soul.profile.*` -> Workspace.*Soul*
+   *        (covered at the Workspace door in workspaceHeadless.test.ts)
+   *   A4  Tachyon itself, at workspace open -> reconcileProfileTransactions (recovery, below)
+   *
+   * What the seven mutations share is `beginJournal`, so that is where the gate is and this is where
+   * all of A1-A3 are measured. The trigger axis is the seven actions themselves: every one of them
+   * asked only `priorConfig.present`, and `sectionOf` answers "terminals" as readily as "agents".
+   */
+  const terminalYaml = "agents:\n  Ada:\n    cmd: codex\nterminals:\n  shell:\n    cmd: bash\n";
+
+  it("A1/A2 studio doors — every Soul mutation refuses a terminals: name and says which block declares it", async () => {
+    const { root, access, read } = await workspace(terminalYaml);
+    const before = read();
+    const digest = "a".repeat(64);
+    const mutations: ReadonlyArray<[string, () => Promise<unknown>]> = [
+      ["create", () => createSoulProfile(root, "shell", access)],
+      ["import(bytes)", () => importSoulProfileBytesTransaction(root, "shell", Buffer.from("# Soul\n"), access)],
+      ["import(path)", () => importSoulProfileTransaction(root, "shell", path.join(root, "identity.md"), access)],
+      ["replace", () => replaceSoulProfileBytesTransaction(root, "shell", Buffer.from("# Soul\n"), digest, access)],
+      ["adopt", () => adoptSoulProfile(root, "shell", access, { expectedDigest: digest })],
+      ["enable", () => enableSoulProfile(root, "shell", access)],
+      ["disable", () => disableSoulProfile(root, "shell", access)],
+      ["delete", () => deleteSoulProfile(root, "shell", access)],
+    ];
+    await writeFile(path.join(root, "identity.md"), "# Soul\n");
+
+    for (const [action, run] of mutations) {
+      await expect(run(), action).rejects.toMatchObject({ code: "soul/not-an-agent" });
+      // The refusal it replaced — "Agent 'shell' is not declared in tachyon.yml" — was FALSE: the
+      // entry IS declared, in the other block. A refusal that misnames its reason sends the reader
+      // to add a row that already exists.
+      await expect(run(), action).rejects.toThrow(/declared in tachyon.yml under 'terminals:', not 'agents:'/);
+      await expect(run(), action).rejects.not.toThrow(/is not declared in tachyon\.yml/);
+    }
+
+    expect(read()).toBe(before);
+    // Control: the terminal's neighbour in `agents:` is untouched by the gate.
+    await expect(createSoulProfile(root, "Ada", access)).resolves.toMatchObject({ action: "create" });
+  });
+
+  it("A1/A2 studio doors — one refused terminal leaves no profile home and does not brick Soul for every other agent", async () => {
+    // Measured on 2026-08-07, and the reason this is its own case rather than a tail assertion on the
+    // one above: what the old code did was NOT the published home the task described. `beginJournal`
+    // reached `setAgentSoulEnablement`, which refuses a `terminals:` stanza with a plain Error — and
+    // `beginJournal` is called OUTSIDE `runMutation`'s try, after the tx directory is created and
+    // before the journal is written. `listDegradedTransactions` reads a journal-less tx directory as
+    // a synthetic degraded record whose principal is `*`, and `*` matches EVERY principal, so ONE
+    // click on a terminal blocked every Soul mutation in the workspace, permanently — reconcile never
+    // clears a degraded entry. The refusal being wrong was the smaller half of this defect.
+    const { root, access } = await workspace(terminalYaml);
+    // Deliberately asserts only THAT it refuses, not with which code — the case above owns the code.
+    // Keeping it loose is what makes the assertions below the ones that go red without the gate,
+    // instead of the run stopping on the refusal and never measuring the residue at all.
+    await expect(createSoulProfile(root, "shell", access)).rejects.toThrow();
+
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "shell"))).toBe(false);
+    expect(await readdir(profileTransactionsRoot(root)).catch(() => [])).toEqual([]);
+    expect(await listDegradedTransactions(root)).toEqual([]);
+    expect(await principalBlockedByProfileTransaction(root, "Ada")).toBe(false);
+    await expect(createSoulProfile(root, "Ada", access)).resolves.toMatchObject({ action: "create" });
+  });
+
+  it("A1/A2 studio doors — an undeclared name still gets the 'not declared' refusal, not the section one", async () => {
+    const { root, access } = await workspace(terminalYaml);
+    // Two different truths need two different refusals: 'Ghost' really is absent, and sending its
+    // reader to look in `terminals:` would be the same lie in the other direction.
+    await expect(createSoulProfile(root, "Ghost", access)).rejects.toMatchObject({ code: "soul/path-invalid" });
+    await expect(createSoulProfile(root, "Ghost", access)).rejects.toThrow(/is not declared in tachyon\.yml/);
+  });
+
+  it("A4 recovery — reconcile still compensates a half-published journal for a terminals: name", async () => {
+    // The gate lives in `beginJournal`, which recovery deliberately does not call. A journal written
+    // before this fix (or by a hand edit that moved a name between blocks) still has to be rolled
+    // back: refusing it would strand exactly the residue the gate exists to prevent.
+    const { root, access, file } = await workspace(terminalYaml);
+    const txid = "123e4567-e89b-42d3-a456-426614174099";
+    const txDir = path.join(profileTransactionsRoot(root), txid);
+    await mkdir(txDir, { recursive: true, mode: 0o700 });
+    const bytes = Buffer.from("# Soul\n\nI am the shell terminal.\n");
+    const profileId = "22222222-2222-4222-8222-222222222222";
+    const manifest = { schemaVersion: 1 as const, profileId, owner: "shell", state: "active" as const };
+    // Half published: SOUL.md landed, the manifest did not — so neither the prior nor the target
+    // tuple is complete and recovery must compensate rather than accept.
+    await mkdir(path.dirname(agentSoulPath(root, "shell")), { recursive: true, mode: 0o700 });
+    await writeFile(agentSoulPath(root, "shell"), bytes, { mode: 0o600 });
+    const token = agentStanzaCasToken(await readFile(file, "utf8"), "shell");
+    const journal: ProfileTransactionJournal = {
+      schemaVersion: 1,
+      txid,
+      action: "import",
+      principal: "shell",
+      phase: "published",
+      profileId,
+      targetProfileId: profileId,
+      priorSoulDigest: null,
+      targetSoulDigest: createHash("sha256").update(bytes).digest("hex"),
+      priorManifestDigest: null,
+      targetManifestDigest: createHash("sha256").update(`${JSON.stringify(manifest, null, 2)}\n`).digest("hex"),
+      priorManifestState: "missing",
+      targetManifestState: "active",
+      priorConfig: token,
+      targetConfig: token,
+      expectedSoulEnabled: false,
+      createdAt: new Date().toISOString(),
+    };
+    await writeFile(path.join(txDir, "journal.json"), `${JSON.stringify(journal)}\n`, { mode: 0o600 });
+
+    const report = await reconcileProfileTransactions(root, () => access);
+    expect(report.reconciled).toContain(txid);
+    expect(report.degraded).toEqual([]);
+    expect(fs.existsSync(agentSoulPath(root, "shell"))).toBe(false);
+    expect(await readdir(profileTransactionsRoot(root))).toEqual([]);
+    // And the gate is still closed afterwards — recovery does not re-open the mutation door.
+    await expect(createSoulProfile(root, "shell", access)).rejects.toMatchObject({ code: "soul/not-an-agent" });
+  });
+
   it("fails closed when the transaction root is a symlink outside the workspace", async () => {
     const { root, access } = await workspace();
     const outside = makeTempDir("tachyon-profile-tx-outside-");

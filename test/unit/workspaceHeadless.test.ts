@@ -1417,6 +1417,36 @@ it("rolls back a declared agent rename when the Evolution destination already ex
   await ws.dispose();
 });
 
+/**
+ * t-359469 — ACTOR A3: an agent or API client reaching `soul.profile.*` over `extension.invoke`.
+ *
+ * `extensionOperationService.ts:623-644` forwards `command.agent` to these Workspace methods with no
+ * section filter, so this door does not care what the sidebar would have offered. It is the LIVE one:
+ * the human doors A1/A2 never render a Soul button for a terminal (measured — `extension.ts:3569`
+ * routes by `def.kind` to Terminal Studio, which has no Soul panel, and Control's Agent Studio load
+ * goes through `asAgent`, which returns undefined for a terminal, so the entity comes back not-found).
+ * The gate is at the engine funnel precisely because that asymmetry is not a reason to trust callers.
+ */
+it("t-359469 refuses a Soul mutation on a declared terminal, from the door an API client uses", async () => {
+  // `makeWorkspace`'s default fixture declares `a` and `b` under `terminals:`.
+  const { ws } = await makeWorkspace();
+  try {
+    await expect(ws.createSoulProfile("a")).rejects.toMatchObject({ code: "soul/not-an-agent" });
+    await expect(ws.enableSoulProfile("a")).rejects.toMatchObject({ code: "soul/not-an-agent" });
+    await expect(ws.deleteSoulProfile("a")).rejects.toMatchObject({ code: "soul/not-an-agent" });
+    // The message is the point: "not declared in tachyon.yml" would send the reader to add a row
+    // that is already there, in the block next door.
+    await expect(ws.createSoulProfile("a")).rejects.toThrow(/under 'terminals:', not 'agents:'/);
+    await flushMicrotasks();
+    expect(fs.existsSync(path.join(ws.workspaceRoot, ".tachyon", "agents", "a"))).toBe(false);
+    const transactions = path.join(ws.workspaceRoot, ".tachyon", "agent-profile-transactions");
+    const entries = fs.existsSync(transactions) ? fs.readdirSync(transactions) : [];
+    expect(entries.filter((entry) => /^[0-9a-f-]{36}$/i.test(entry))).toEqual([]);
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("refuses a soul mutation a canonical pointer cannot accept, structurally and by name", async () => {
   // SDD 478 M7 — `createSoulProfile` mutates a declared agent by adding an inline `soul:` key, and
   // every declared agent is now a canonical profile pointer, which cannot coexist with an inline
