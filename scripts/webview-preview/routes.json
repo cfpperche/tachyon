@@ -1294,6 +1294,25 @@
   },
   {
     "view": "inspector",
+    "fixture": "scoped",
+    "url": "/scripts/webview-preview/index.html?view=inspector&fixture=scoped",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "tmux",
+    "aliases": [
+      "tmux",
+      "server inspector",
+      "tmux server inspector",
+      "sessions"
+    ]
+  },
+  {
+    "view": "inspector",
     "fixture": "volume",
     "url": "/scripts/webview-preview/index.html?view=inspector&fixture=volume",
     "frame": {
