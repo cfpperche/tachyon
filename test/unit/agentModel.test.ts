@@ -34,8 +34,33 @@ describe("agentModel.toAgentVM (spec 237)", () => {
       attention: "done",
     });
   });
+  // t-9d76b1 — the row the owner saw said `exited (130)` in crash red beside `resumable`: one badge
+  // claiming failure, one claiming everything is fine. The status now comes from the REQUEST, and the
+  // subline states both facts it has — that Tachyon asked, and the code the runtime answered with.
+  describe("a stop Tachyon asked for (t-9d76b1)", () => {
+    it("is stopped, keeps its real exit code, and never fabricates `exited (0)`", () => {
+      const vm = toAgentVM(raw({ name: "grok", dead: true, stopRequested: true, exitCode: 130 }), { resumable: true });
+      expect(vm).toMatchObject({ status: "stopped", sub: "stopped (exit 130)", resumable: true });
+      // 130 is a dead pane worth inspecting — NOT a collected clean exit, whose postmortem rules
+      // (actions.ts `isCleanExitPostmortem`) deliberately stop offering the pane.
+      expect(vm.exited).toBeUndefined();
+    });
+
+    it("says just `stopped` when the runtime answered the same stop with 0", () => {
+      const vm = toAgentVM(raw({ name: "codex", dead: true, stopRequested: true, exitCode: 0 }));
+      expect(vm).toMatchObject({ status: "stopped", sub: "stopped", exited: true });
+    });
+
+    it("leaves a real crash alone, including one that exits 130", () => {
+      expect(toAgentVM(raw({ name: "a", dead: true, crashed: true, exitCode: 130 }))).toMatchObject({
+        status: "crashed",
+        sub: "exited (130)",
+      });
+    });
+  });
+
   it("exit sub: clean vs crashed (with exit code)", () => {
-    expect(toAgentVM(raw({ name: "a", dead: true })).sub).toBe("exited (0)");
+    expect(toAgentVM(raw({ name: "a", dead: true, exitCode: 0 })).sub).toBe("exited (0)");
     expect(toAgentVM(raw({ name: "a", dead: true, crashed: true, exitCode: 137 })).sub).toBe("exited (137)");
     expect(toAgentVM(raw({ name: "a", running: true })).sub).toBeUndefined();
   });

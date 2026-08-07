@@ -30,11 +30,31 @@ export interface AgentRaw {
   stopFailure?: { stage: string; reason: string; nextAction: string };
   dead: boolean;
   crashed: boolean;
+  /** t-9d76b1 — Tachyon asked this instance to exit, so its death is a stop and not a crash. */
+  stopRequested?: boolean;
   exitCode?: number;
   cleanExited?: boolean;
   parent?: string;
   delegator?: string;
   declaredOwner?: string;
+}
+
+/**
+ * t-9d76b1 — the subline for a row whose process is GONE. Exported for unit tests.
+ *
+ * It used to be `crashed ? "exited (${exitCode})" : "exited (0)"`, which had one honest arm and one
+ * fabricated one: the moment a stop Tachyon asked for stopped counting as a crash, the other arm would
+ * have printed `exited (0)` over a pane that says 130. So the code is never invented and never hidden —
+ * a requested stop says `stopped`, and keeps its non-zero code beside it, which is also what leaves a
+ * crash-after-a-failed-stop visible instead of laundered.
+ *
+ * "Stopped" beside `resumable` is one coherent statement; `exited (130)` in crash red beside it was the
+ * pair of contradictory badges the owner saw.
+ */
+export function deadSubline(a: Pick<AgentRaw, "crashed" | "stopRequested" | "exitCode">): string {
+  if (a.crashed) return `exited (${a.exitCode ?? 1})`;
+  if (a.stopRequested) return a.exitCode !== undefined && a.exitCode !== 0 ? `stopped (exit ${a.exitCode})` : "stopped";
+  return "exited (0)";
 }
 
 /** Sidebar subline for a graceful stop that timed out. Exported for unit tests. */
@@ -286,7 +306,7 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
         : visibleAttention === "idle" && visibleUnseen
           ? "done"
           : undefined;
-  const sub = a.dead ? (a.crashed ? `exited (${a.exitCode ?? 1})` : "exited (0)") : a.cleanExited ? "exited (0)" : undefined;
+  const sub = a.dead ? deadSubline(a) : a.cleanExited ? "exited (0)" : undefined;
   const stopping = a.stopping && !a.dead ? "stopping..." : undefined;
   const stopFailed = a.stopFailed && !a.dead ? stopFailedSubline(a.stopFailure) : undefined;
   // A terminal runs a process, not a model. Any other arm (or an unknown one) still resolves.
@@ -314,8 +334,17 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(a.delegator ? { delegator: a.delegator } : {}),
     ...(a.declaredOwner ? { declaredOwner: a.declaredOwner } : {}),
     ...(sub || stopping || stopFailed ? { sub: sub ?? stopping ?? stopFailed } : {}),
-    ...((a.dead && !a.crashed) || a.cleanExited ? { exited: true } : {}),
-    ...(a.cleanExited ? { pane: false } : {}),
+    // t-9d76b1 — `exited` means the process exited ZERO (it gates the clean-exit postmortem rules in
+    // actions.ts, which suppress reopening the pane). Spelled out as the exit code rather than as
+    // `!crashed`, which used to be the same thing and no longer is: a requested stop that exits 130 is
+    // not a crash AND not a clean exit, and it must keep its inspectable dead pane.
+    ...((a.dead && a.exitCode === 0) || a.cleanExited ? { exited: true } : {}),
+    // t-9d76b1 — a dead row HAS a pane: remain-on-exit keeps the postmortem until dismiss/restart, and
+    // that is measured, not inferred. `hasPane` in actions.ts otherwise falls back to `status !==
+    // "stopped"`, which was true only because every dead-and-not-clean row used to be `crashed`; a
+    // requested stop is `stopped`, and the fallback would have hidden Inspect / Open pane / Kill for the
+    // very pane that holds the `^C` and the exit code.
+    ...(a.cleanExited ? { pane: false } : a.dead ? { pane: true } : {}),
     ...(x.worktree ? { worktree: x.worktree } : {}),
     ...(x.liveBranch ? { liveBranch: x.liveBranch } : {}),
     ...(x.branchDrift ? { branchDrift: true } : {}),

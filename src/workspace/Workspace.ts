@@ -1646,6 +1646,8 @@ export class Workspace {
             });
           }, delayMs);
         },
+        // t-9d76b1 — the manager owns the record of what Tachyon asked for; the monitor only asks.
+        wasStopRequested: (agent) => this.manager.wasStopRequested(agent),
         now: () => Date.now(),
       },
       {
@@ -1695,6 +1697,44 @@ export class Workspace {
             })
             .finally(() => this.refreshAgentsViews());
           this.host.notify(this.t("'{0}' exited cleanly", agent));
+        },
+        /**
+         * t-9d76b1 — the exit the human (or a rebind) ORDERED. Same release work as the two arms above,
+         * because the agent is just as gone; what changes is that nothing here calls it a failure and
+         * nothing restarts it. It used to land on `onCrash` for grok and hermes (exit 130) and on
+         * `onCleanExit` for codex, opencode and pi (exit 0) — one action, announced two different ways.
+         *
+         * The postmortem pane is collected only for a clean 0, exactly as before: a non-zero exit keeps
+         * its dead pane so the `^C` and the code stay inspectable. `dismissCleanExitPane` refuses a
+         * non-zero row anyway, so asking it here would just discard the reason.
+         */
+        onRequestedStop: (agent, exitCode) => {
+          this.waiters.notifyDead(agent, exitCode);
+          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' was stopped before submitting the review`);
+          this.noticeQueue.clear(agent);
+          void this.returnTaskClaimsForUnavailableAgent(agent, `agent '${agent}' was stopped on request`);
+          this.pokeParentOnDeath(agent, `stopped on request, exit ${exitCode !== undefined ? exitCode : "unknown"}`);
+          // spec 230 — a pipeline node whose agent was stopped did not finish its work: feed the real
+          // exit to the executor, which is what fails the node. A requested stop is not a completion.
+          const stoppedNode = this.pipelineNodeOf.get(agent);
+          if (stoppedNode) {
+            this.pipelines.onProcessExit(stoppedNode.runId, stoppedNode.nodeId, exitCode ?? 1);
+            return;
+          }
+          if (exitCode === 0) {
+            void this.manager.dismissCleanExitPane(agent)
+              .catch((err) => {
+                this.host.notify(this.t("'{0}' stopped, but Tachyon could not clear its terminal: {1}", agent, String(err instanceof Error ? err.message : err)), "warn");
+              })
+              .finally(() => this.refreshAgentsViews());
+          } else {
+            this.refreshAgentsViews();
+          }
+          this.host.notify(
+            exitCode === 0 || exitCode === undefined
+              ? this.t("'{0}' stopped", agent)
+              : this.t("'{0}' stopped (exit {1})", agent, exitCode),
+          );
         },
         onGone: (agent) => {
           this.waiters.notifyGone(agent);

@@ -297,6 +297,9 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     }
   });
 
+  /** t-9d76b1 — a finding's file, without the line: the claim is WHICH file holds a door, not where. */
+  const doorFile = (at: string): string => at.replace(/:\d+$/, "");
+
   it("no write door in src/ passes a `resolvedBy` literal — every one names a declared channel constant", () => {
     const live = scanSrc();
     expect(
@@ -306,9 +309,19 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
 
     // Both known doors are still wired, each naming its own channel — an enumeration that silently
     // matches nothing proves nothing, and one that matched READS would prove the wrong thing.
-    expect(live.doors.map((d) => `${d.at} -> ${d.value}`).sort()).toEqual([
-      "src/engine-service/extensionOperationService.ts:311 -> APPROVAL_CHANNEL_VSCODE_COMMAND",
-      "src/workspace/Workspace.ts:3530 -> APPROVAL_CHANNEL_COMPANION_HTTP",
+    //
+    // t-9d76b1 — compared by FILE and CHANNEL, with the line only in the failure text. The line number
+    // used to be part of the expectation, so any edit ABOVE either door turned `main` red while the
+    // guard's own claim still held: this went red at `Workspace.ts:3506 -> :3546` for forty inserted
+    // lines in an unrelated lifecycle handler. That is a stale number reporting a deliberate change as
+    // a defect — the same shape docs/project-guidance.md records for text-matching guards, and the same
+    // correction `uiPatterns.test.ts` already made for its tile count.
+    expect(
+      live.doors.map((d) => `${doorFile(d.at)} -> ${d.value}`).sort(),
+      `write doors found at: ${live.doors.map((d) => `${d.at} -> ${d.value}`).sort().join(", ")}`,
+    ).toEqual([
+      "src/engine-service/extensionOperationService.ts -> APPROVAL_CHANNEL_VSCODE_COMMAND",
+      "src/workspace/Workspace.ts -> APPROVAL_CHANNEL_COMPANION_HTTP",
     ]);
   });
 
@@ -322,9 +335,12 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
         'resolvedBy: "alguem",',
       ),
     );
-    expect(door1.findings.map((f) => ({ at: f.at, problem: f.problem }))).toEqual([
-      { at: "src/engine-service/extensionOperationService.ts:311", problem: LITERAL_ACTOR },
-      { at: "src/engine-service/extensionOperationService.ts:311", problem: HARD_CODED },
+    expect(
+      door1.findings.map((f) => ({ at: doorFile(f.at), problem: f.problem })),
+      `door 1 findings at: ${door1.findings.map((f) => f.at).join(", ")}`,
+    ).toEqual([
+      { at: "src/engine-service/extensionOperationService.ts", problem: LITERAL_ACTOR },
+      { at: "src/engine-service/extensionOperationService.ts", problem: HARD_CODED },
     ]);
 
     const door2 = scanSrc(
@@ -334,9 +350,12 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
         'resolvedBy: "alguem",',
       ),
     );
-    expect(door2.findings.map((f) => ({ at: f.at, problem: f.problem }))).toEqual([
-      { at: "src/workspace/Workspace.ts:3530", problem: LITERAL_ACTOR },
-      { at: "src/workspace/Workspace.ts:3530", problem: HARD_CODED },
+    expect(
+      door2.findings.map((f) => ({ at: doorFile(f.at), problem: f.problem })),
+      `door 2 findings at: ${door2.findings.map((f) => f.at).join(", ")}`,
+    ).toEqual([
+      { at: "src/workspace/Workspace.ts", problem: LITERAL_ACTOR },
+      { at: "src/workspace/Workspace.ts", problem: HARD_CODED },
     ]);
 
     // A cast is the thing the TYPE cannot stop and this scan exists for.

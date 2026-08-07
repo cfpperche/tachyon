@@ -42,6 +42,17 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(A({ status: "stopped" }))).not.toContain("inspect");
     expect(primaryActions(A({ status: "stopped" }))).not.toContain("openPane");
   });
+  // t-9d76b1 — a stop Tachyon asked for that the runtime answered with 130 (grok, hermes) is `stopped`,
+  // NOT `crashed`, and its remain-on-exit pane still holds the `^C` and the code. `hasPane`'s fallback
+  // reads "stopped" as "no pane", so the row must carry the measured `pane: true` — otherwise the fix to
+  // the badge would have taken Inspect / Open pane / Kill away from the pane it describes.
+  it("a requested stop with a non-zero exit keeps its postmortem pane doors", () => {
+    const a = A({ status: "stopped", pane: true, sub: "stopped (exit 130)", resumable: true });
+    expect(actionsFor(a)).toEqual(expect.arrayContaining(["inspect", "openPane", "kill", "restart", "resume"]));
+    expect(actionsFor(a)).not.toContain("spawn");
+    expect(actionsFor(a)).not.toContain("stop"); // it is already gone
+  });
+
   it("clean exit (stopped + exited) → no Open terminal/pane; Activity/Restart/Resume, NOT spawn", () => {
     const a = actionsFor(A({ status: "stopped", exited: true }));
     expect(a).toEqual(expect.arrayContaining(["activity", "restart"]));

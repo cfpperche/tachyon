@@ -8,17 +8,21 @@ function makeLifecycle(policies: Record<string, RestartPolicy>) {
   const states = new Map<string, { dead: boolean; exitCode?: number }>();
   const restarts: Array<{ agent: string; delayMs: number }> = [];
   const events: string[] = [];
+  /** t-9d76b1 — agents Tachyon asked to exit (what `AgentManager.wasStopRequested` answers live). */
+  const stopRequested = new Set<string>();
   const monitor = new LifecycleMonitor(
     {
       agentStates: async () => new Map(states),
       policyOf: (agent) => policies[agent] ?? "never",
       scheduleRestart: (agent, delayMs) => restarts.push({ agent, delayMs }),
+      wasStopRequested: (agent) => stopRequested.has(agent),
       now: () => now,
     },
     {
       onCrash: (agent, code, willRestart, delayMs) =>
         events.push(`crash:${agent}:${code}:${willRestart}${delayMs !== undefined ? `:${delayMs}` : ""}`),
       onCleanExit: (agent) => events.push(`clean:${agent}`),
+      onRequestedStop: (agent, code) => events.push(`stopped:${agent}:${code}`),
       onGiveUp: (agent, attempts) => events.push(`giveup:${agent}:${attempts}`),
       onGone: (agent) => events.push(`gone:${agent}`),
     },
@@ -28,6 +32,7 @@ function makeLifecycle(policies: Record<string, RestartPolicy>) {
     states,
     restarts,
     events,
+    stopRequested,
     advance: async (ms: number) => {
       now += ms;
       await monitor.tick();
@@ -44,6 +49,34 @@ describe("LifecycleMonitor", () => {
     await f.advance(3000);
     expect(f.events).toEqual(["clean:a"]);
     expect(f.restarts).toEqual([]);
+  });
+
+  // t-9d76b1 — the stop the human ORDERED. Measured: grok and hermes answer Tachyon's Ctrl-C with 130
+  // (128+SIGINT, the correct exit), codex/opencode/pi answer the same stop with 0. Before this, the
+  // first pair reached handleCrash — so `on-crash` restarted the agent the human had just stopped and
+  // announced it in red, while the second pair did not. One action, two outcomes, decided by a number
+  // that carries no intent.
+  it("a stop Tachyon asked for is never a crash and never restarts — whatever code the runtime chose", async () => {
+    for (const exitCode of [130, 0, 143, undefined] as const) {
+      const f = makeLifecycle({ a: "on-crash" });
+      f.states.set("a", { dead: false });
+      await f.advance(0);
+      f.stopRequested.add("a");
+      f.states.set("a", { dead: true, ...(exitCode !== undefined ? { exitCode } : {}) });
+      await f.advance(3000);
+      expect(f.events, `exit ${exitCode}`).toEqual([`stopped:a:${exitCode}`]);
+      expect(f.restarts, `exit ${exitCode}`).toEqual([]);
+    }
+  });
+
+  it("a real crash that happens to exit 130 is still a crash and still restarts", async () => {
+    const f = makeLifecycle({ a: "on-crash" });
+    f.states.set("a", { dead: false });
+    await f.advance(0);
+    f.states.set("a", { dead: true, exitCode: 130 }); // nobody asked — an external SIGINT / a runtime dying
+    await f.advance(3000);
+    expect(f.events).toEqual([`crash:a:130:true:${RESTART_DELAYS_MS[0]}`]);
+    expect(f.restarts).toEqual([{ agent: "a", delayMs: RESTART_DELAYS_MS[0] }]);
   });
 
   it("crash with policy never: event only, no restart, fired once", async () => {
