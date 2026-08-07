@@ -5,6 +5,11 @@ import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { SAMPLE, type FleetVM, type TabId } from "../../src/sidebar/types.js";
+// t-5f2b5b — the tile count below is DERIVED from the launcher catalog rather than written out. It was
+// the literal `12` and went red when the Fleet tile was deleted, which is a stale number reporting a
+// deliberate change as a defect. The claim this test owns is "Control keeps its launcher", not how many
+// tiles the launcher happens to hold; `controlSectionNav.test.ts` is what pins the inventory itself.
+import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
 
 /**
  * t-72ff5a — headless Visual QA for the sidebar's single workspace regime.
@@ -201,7 +206,7 @@ describe("t-72ff5a sidebar workspace scope — headless Visual QA", () => {
         selectorsInSecRow: document.querySelectorAll(".sec select").length,
         chrome: document.querySelectorAll(".ws-chrome .ws-select").length,
       }));
-      expect(control.tiles, `@ ${w.id}`).toBe(12);
+      expect(control.tiles, `@ ${w.id}`).toBe(CONTROL_SECTION_NAV.length);
       expect(control.selectorsInSecRow, `@ ${w.id}: the selector must not be back inside a tab`).toBe(0);
       expect(control.chrome, `@ ${w.id}: exactly one selector, in the chrome`).toBe(1);
 
