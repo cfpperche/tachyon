@@ -33,7 +33,6 @@ const referenceData: TerminalStudioReferenceData = {
     bash: ["-lc"],
   },
   defaultCwd: "/home/dev/project",
-  verifyCandidates: ["npm test", "npm run lint", "npm run typecheck"],
 };
 
 const newEntity: TerminalStudioEntity = {
@@ -51,10 +50,9 @@ const denseEntity: TerminalStudioEntity = {
     autostart: true,
     restartOnCrash: true,
     attention: true,
-    worktree: true,
-    branch: "feature/dev-shell-preview",
-    worktreeSetup: "pnpm install\npnpm --filter web build",
-    verify: "npm run typecheck",
+    // t-b54ead — worktree/branch/worktreeSetup/verify stay at their blank defaults on purpose: the
+    // Terminal Studio has no controls for them (they are agent-only, and the loader refuses all four
+    // under `terminals:`). A fixture that set them would render nothing and prove nothing.
   },
 };
 

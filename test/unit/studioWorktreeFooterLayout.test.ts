@@ -52,14 +52,17 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
     expect(src).not.toContain('set("isolate"');
   });
 
-  it("terminal-studio-shell places worktree in fields and omits sideActions", () => {
+  /**
+   * t-b54ead — Terminal Studio has NO worktree section any more, so the layout claim this case made
+   * for it no longer has a subject. What survives is the half that is still about layout: the
+   * terminal fields live in the `fields` region and nothing is pinned to a `sideActions` footer.
+   * The absence of the worktree controls is not asserted here — it is a domain rule, measured
+   * against the loader in `terminalStudioAgentOnlyKeys.test.ts`.
+   */
+  it("terminal-studio-shell keeps its fields in the fields region and omits sideActions", () => {
     const src = readSrc("src/webview/terminal-studio-shell/App.tsx");
-    expect(src).toContain("Git worktree isolation");
     expect(src).toContain("tsh-cwd");
     expect(src).not.toMatch(/sideActions\s*:/);
-    const cwdAt = src.indexOf('for="tsh-cwd"');
-    const worktreeAt = src.indexOf("Git worktree isolation");
-    expect(cwdAt).toBeGreaterThan(-1);
-    expect(worktreeAt).toBeGreaterThan(cwdAt);
+    expect(src.indexOf('for="tsh-cwd"')).toBeGreaterThan(-1);
   });
 });
