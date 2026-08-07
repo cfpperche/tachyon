@@ -499,3 +499,31 @@ The switch (`t-ae221c`) is not blocked by a missing detector; it is blocked by a
 answers "nothing is there" about a directory it just enumerated, and by two removal helpers that
 leave that directory behind. Fix `t-4a1f85` and `t-8b58b3` and the ghost cannot be created or, if it
 already exists, cannot hide.
+
+---
+
+## 10. What changed after this measurement
+
+Added 2026-08-07, after `t-4a1f85` and `t-8b58b3` landed. **Every transcript above is left exactly as
+measured** — it records the state of the code on the day of the hunt, and rewriting it would destroy
+the record. What follows is what re-running the same scripts prints now.
+
+- **R2 and R4 no longer abandon the home.** Both call `removeEmptyAgentProfileHome`
+  (`src/config/agentProfileHome.ts`), whose mechanism is `rmdir` and whose refusal on a non-empty
+  directory is the guard — so an emptied home goes, and one still holding `agent.yml`, `SOUL.md` or
+  Evolution bytes stays and is reported. The refusal is never escalated to an error: for the
+  lifecycle compensation, throwing there would land on `phase: "degraded"`, which every reconcile
+  skips forever (§O6).
+- **`orphan-repro.ts` now prints the opposite of §5.** ORIGIN A and ORIGIN B both report
+  `.tachyon/agents/<name>/ exists : false` — the residue is gone at the source, through the same
+  production helpers. The CONTROL blocks are unchanged.
+- **The detector has a fifth fact.** `profileHomeOnDisk` joined `SavedAgentPresenceFacts`, and a
+  home with no definition in it derives to the new state `orphan-home` with a reason that names the
+  directory and the `rmdir` that separates residue from a human's work — instead of `absent` /
+  "there is nothing to remove". `spec.md`'s ownership table, resolution table and open questions were
+  updated with it.
+- **`orphan-terminal-soul-repro.ts` now prints `orphan-home` where §O4 shows `absent`.** The
+  mechanism it reproduces is untouched — a `terminals:` name must not get a profile home published
+  for it at all, and that is `t-359469` — but the residue it leaves is no longer invisible.
+- **Untouched, and still open:** O4 (`t-359469`) and O5 (`t-af4a5f`), both `terminals:`-shaped, and
+  every entry of the "not decided" list except #6, which the two tasks above resolved.

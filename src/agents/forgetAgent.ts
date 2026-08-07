@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { deleteActivityLog } from "../activity/logStore.js";
+import { removeEmptyAgentProfileHome } from "../config/agentProfileHome.js";
 import { removeSessionOwnerRows, removeSpawnSettings, sessionOwnersFile } from "../activity/sessionOwners.js";
 import type { SessionLedger } from "../resume/SessionLedger.js";
 import { removeDerivedAgentFiles } from "./derivedFile.js";
@@ -17,6 +18,7 @@ export const FORGET_AGENT_FOOTPRINTS = [
   "generated spawn brief and soul anchor",
   "durable pane transcript",
   "Agent Evolution Profile",
+  "emptied Agent Profile home",
 ] as const;
 
 export interface ForgetAgentDeps {
@@ -55,5 +57,13 @@ export function forgetAgent(name: string, deps: ForgetAgentDeps): void {
   attempt(() => removeDerivedAgentFiles(deps.workspaceRoot, name));
   attempt(() => removePaneTranscript(deps.workspaceRoot, name));
   attempt(() => fs.rmSync(path.join(deps.workspaceRoot, ".tachyon", "agents", name, "evolution"), { recursive: true, force: true }));
+  // t-4a1f85 — LAST, and only if the line above emptied it. Removing `evolution/` and keeping its
+  // parent left an `.tachyon/agents/<name>/` nobody would ever list again: this helper writes no
+  // journal, so no reconcile revisits it. `removeEmptyAgentProfileHome` states why the removal is
+  // `rmdir` and not `rm -rf`; the short version is that this function is also reached for names that
+  // may still own a canonical `agent.yml` or a human's `SOUL.md` — the declared-terminal delete
+  // (`deleteConfiguredAgent`) and the startup ledger GC (`Workspace.gcLedger`) — and the kernel
+  // refusing a non-empty directory is the guard that keeps those bytes, unraceably.
+  attempt(() => removeEmptyAgentProfileHome(deps.workspaceRoot, name));
   if (failures.length) throw new AggregateError(failures, `failed to remove agent '${name}' footprints`);
 }
