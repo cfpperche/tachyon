@@ -354,8 +354,8 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Compatibility name: stop a running managed entry (kills its tmux session). GOVERNANCE (t-bec361): " +
-        "as an agent you may stop only yourself or an agent below you in your own lineage — never a sibling, a " +
-        "parent, or an unrelated fleet member. An out-of-scope target is refused with a structured error naming " +
+        "as an agent you may stop only yourself, an agent below you in your own lineage, or a Saved Agent you own " +
+        "in the roster — never a sibling, a parent, or an unrelated fleet member. An out-of-scope target is refused with a structured error naming " +
         "the target's owner. For a Temporary that owns a checkout this call also removes its worktree and branch, " +
         "which is why the scope is narrower than read-only tools'. For a Temporary, end-of-life removes " +
         "Tachyon activity and pane transcripts. Runtime-native caches may remain and are not a uniform archive.",
@@ -530,8 +530,8 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "Restart a managed entry (spec 389). stop=graceful|force (default graceful) × session=resume|new (default resume; falls back to new when resume is unavailable). " +
         "Graceful asks the CLI to exit, waits, then force-kills the tmux session only if still alive (never dismisses a Temporary instance). " +
         "Force replaces the process immediately. Crash/watch auto-restarts use force+new internally. " +
-        "GOVERNANCE (t-bec361): as an agent you may restart only yourself or an agent below you in your own " +
-        "lineage; an out-of-scope target is refused with a structured error naming the target's owner.",
+        "GOVERNANCE (t-bec361/t-b5f896): as an agent you may restart only yourself, an agent below you in your own " +
+        "lineage, or a Saved Agent you own in the roster; an out-of-scope target is refused with a structured error naming the target's owner.",
       inputSchema: {
         name: AGENT_NAME,
         stop: z.enum(["graceful", "force"]).optional().describe("how to stop a live pane; default graceful"),

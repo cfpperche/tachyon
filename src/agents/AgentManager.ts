@@ -322,7 +322,7 @@ export interface ManagedEntryInfo {
   parent?: string;
   /** Bridge-resolved agent that requested a gated delegation; display metadata, not runtime lineage. */
   delegator?: string;
-  /** config-declared owner from tachyon.yml subagents; display metadata only, not runtime lineage */
+  /** config-declared owner from tachyon.yml subagents; durable roster authority, not runtime lineage */
   declaredOwner?: string;
 }
 
@@ -1538,6 +1538,13 @@ export class AgentManager {
    *  AUTHORIZATION decision (inWaitOutputScope), so an in-memory miss must not read as "no parent". */
   parentOf(name: string): string | undefined {
     return this.lineage.get(name) ?? this.ledgerParentOf(name);
+  }
+
+  /** SDD 482 durable roster owner. Kept separate from runtime lineage: activating a Saved Agent
+   *  does not manufacture a parent edge, while lifecycle governance can still recognize the
+   *  owner declared by the human in tachyon.yml. */
+  declaredOwnerOf(name: string): string | undefined {
+    return this.opts.getConfig()?.declaredOwner?.[name];
   }
 
   /**

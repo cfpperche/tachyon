@@ -10,8 +10,9 @@
  * wrong call a deletion rather than an interruption.
  *
  * The rule is deliberately NARROWER than `inWaitOutputScope`'s (which also admits siblings): reading
- * a sibling's pane is observation, stopping it is destruction. Self, or below you in your own
- * lineage — nothing sideways, nothing upward.
+ * a sibling's pane is observation, stopping it is destruction. Self, below you in your own runtime
+ * lineage, or directly owned by you in the durable Saved Agent roster — nothing sideways, nothing
+ * upward. Roster ownership is checked separately and never converted into runtime lineage.
  *
  * Only a caller resolved as kind "agent" is scoped. master/external/legacy are the HUMAN's operation
  * tokens and stay unrestricted, because narrowing them would narrow the sidebar's own door — and the
@@ -20,9 +21,15 @@
  * directly and never pass through these tools, so they are unaffected by construction.
  */
 
-/** The one question this module asks of AgentManager — kept structural so tests need no real manager. */
+/** The runtime lineage question shared with read-only scope checks. */
 export interface LineageSource {
   parentOf(name: string): string | undefined;
+}
+
+/** The two independent ownership questions lifecycle mutation asks of AgentManager — kept
+ *  structural so tests need no real manager. */
+export interface LifecycleOwnershipSource extends LineageSource {
+  declaredOwnerOf(name: string): string | undefined;
 }
 
 export type LifecycleTool = "kill_agent" | "restart_agent" | "write_input";
@@ -40,9 +47,12 @@ const ACTION: Record<LifecycleTool, string> = {
  */
 const MAX_LINEAGE_HOPS = 64;
 
-/** True when `caller` is `target` itself, or an ancestor of `target` anywhere up its lineage chain. */
-export function inLifecycleScope(caller: string, target: string, lineage: LineageSource): boolean {
+/** True when `caller` is `target` itself, its direct roster owner, or an ancestor anywhere up its
+ *  runtime lineage chain. Declared ownership is deliberately direct: config validation forbids a
+ *  nested Saved ownership tree, and this must not invent one. */
+export function inLifecycleScope(caller: string, target: string, lineage: LifecycleOwnershipSource): boolean {
   if (caller === target) return true;
+  if (lineage.declaredOwnerOf(target) === caller) return true;
   let cursor = lineage.parentOf(target);
   for (let hops = 0; cursor !== undefined && hops < MAX_LINEAGE_HOPS; hops += 1) {
     if (cursor === caller) return true;
@@ -56,11 +66,11 @@ export function inLifecycleScope(caller: string, target: string, lineage: Lineag
  * here: an agent that learns only "no" retries or gives up silently, and the caller usually cannot see
  * the lineage it just violated.
  */
-export function lifecycleScopeRefusal(tool: LifecycleTool, caller: string, target: string, lineage: LineageSource): string {
-  const owner = lineage.parentOf(target);
+export function lifecycleScopeRefusal(tool: LifecycleTool, caller: string, target: string, lineage: LifecycleOwnershipSource): string {
+  const owner = lineage.parentOf(target) ?? lineage.declaredOwnerOf(target);
   const policy =
-    `${tool} refused: caller '${caller}' may ${ACTION[tool]} only itself or an agent below it in its own lineage ` +
-    `(policy: lineage-scoped, t-bec361)`;
+    `${tool} refused: caller '${caller}' may ${ACTION[tool]} only itself, an agent below it in its own lineage, ` +
+    `or a Saved Agent it owns in the roster (policy: lifecycle-scoped, t-bec361/t-b5f896)`;
   const ownership = owner
     ? `'${target}' is not in that lineage — it belongs to '${owner}'`
     : `'${target}' is not in that lineage — it has no lineage parent, so it is top-level and answers to the human, not to an agent`;

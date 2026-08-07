@@ -21,8 +21,9 @@ import path from "node:path";
  * branch (t-a76aed), which turns a wrong call from an interruption into a deletion.
  *
  * The rule under test, stated as ACTOR × TRIGGER because that is what the doors differ by:
- *  - Agent (resolved token) → itself, or an agent BELOW it in its own lineage. Anything else refused,
- *    naming the target's owner and the way through.
+ *  - Agent (resolved token) → itself, an agent BELOW it in its own lineage, or a Saved Agent it
+ *    directly owns in the roster. Anything else is refused, naming the target's owner and the way
+ *    through. Declared ownership does not become runtime lineage.
  *  - Legacy / external / master token (the human's operation doors) → unchanged, unrestricted.
  *  - The host's own doors (sidebar Kill via engineService, crash auto-restart via Workspace) call
  *    `manager.kill`/`manager.restart` directly and never pass through these tools at all.
@@ -73,7 +74,10 @@ describe("lifecycle caller scope (t-bec361)", () => {
     "agents:\n" +
     "  boss:\n" +
     "    cmd: claude\n" +
+    "    subagents: [owned]\n" +
     "  stranger:\n" +
+    "    cmd: claude\n" +
+    "  owned:\n" +
     "    cmd: claude\n",
   ).config;
   const tmux = new TmuxService(exec);
@@ -181,6 +185,26 @@ describe("lifecycle caller scope (t-bec361)", () => {
     } finally {
       await selfieClient.close();
     }
+  });
+
+  it("Saved roster owner reaches kill_agent, restart_agent, and write_input without gaining lineage", async () => {
+    const activated = await bossClient.callTool({ name: "spawn_agent", arguments: { name: "owned" } });
+    expect(activated.isError).toBeFalsy();
+    expect(manager.parentOf("owned")).toBeUndefined();
+    expect(manager.declaredOwnerOf("owned")).toBe("boss");
+
+    const write = await bossClient.callTool({ name: "write_input", arguments: { name: "owned", text: "continue" } });
+    expect(write.isError).toBeFalsy();
+
+    const restart = await bossClient.callTool({
+      name: "restart_agent",
+      arguments: { name: "owned", stop: "force", session: "new" },
+    });
+    expect(restart.isError).toBeFalsy();
+    expect(manager.parentOf("owned")).toBeUndefined();
+
+    const killed = await bossClient.callTool({ name: "kill_agent", arguments: { name: "owned" } });
+    expect(killed.isError).toBeFalsy();
   });
 
   it("restart_agent and write_input refuse the same out-of-scope target", async () => {
