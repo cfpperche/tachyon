@@ -224,6 +224,13 @@ Replace the bare `notify(err.message, "error")` at `extension.ts:3263` with
   (`notify.ts:33-39`), which renders `title` + `placeHolder` and **persists until dismissed**.
   The empty-actions branch — `setStatusBarMessage(…, 8_000)` at `notify.ts:41` — is what ate the
   owner's instruction. Adding an action changes the branch. *That is the whole first slice.*
+- **The mid-run path already proves this works.** `Workspace.ts:1538-1541` calls
+  `this.host.notify(describeAuthRequired(…), "warn", [{label: "Open", …}])`, and `VsCodeHost.notify`
+  (`src/workspace/VsCodeHost.ts:23-25`) forwards straight to `showNotificationActions`. Same
+  condition, same wording, one non-empty array — and it lands as a persistent QuickPick instead of a
+  status-bar flash. The launch path calls the **two-argument** module-level `notify`
+  (`src/workspace/notify.ts:52`), which cannot pass actions at all. That is the entire difference
+  between the presentation the owner got and the one he needed.
 
 A residue to state rather than hide: the QuickPick's `title` is itself width-bounded. So the
 **action label carries the verb** (`Log in`) and the `detail` carries the command, instead of relying
