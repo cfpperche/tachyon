@@ -8,7 +8,11 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import type { IdeBrowserEnvelope, IdeBrowserInstanceFile } from "./protocol.js";
-import { IDE_BROWSER_INSTANCES_DIR_NAME } from "./protocol.js";
+import {
+  IDE_BROWSER_INSTANCE_FRESHNESS_MS,
+  IDE_BROWSER_INSTANCE_HEADER,
+  IDE_BROWSER_INSTANCES_DIR_NAME,
+} from "./protocol.js";
 
 /** Operator home even when a private runtime rewrites `$HOME` (Grok/Hermes GROK_HOME etc.). */
 function operatorHomedir(): string {
@@ -39,12 +43,22 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
+function isCurrentInstance(raw: IdeBrowserInstanceFile, nowMs: number): boolean {
+  if (raw.kind !== "tachyon-ide-browser" || raw.schemaVersion !== 2) return false;
+  if (typeof raw.instanceId !== "string" || raw.instanceId.length < 16) return false;
+  const heartbeatMs = Date.parse(raw.heartbeatAt);
+  return Number.isFinite(Date.parse(raw.startedAt))
+    && Number.isFinite(heartbeatMs)
+    && nowMs - heartbeatMs >= 0
+    && nowMs - heartbeatMs <= IDE_BROWSER_INSTANCE_FRESHNESS_MS
+    && isPidAlive(raw.pid);
+}
+
 /**
  * Remove instance files whose owning shell pid is dead (or file is corrupt).
  * Returns how many files were deleted. Safe to call often — discovery and shell start both use it.
  */
-export function sweepDeadIdeBrowserInstances(): number {
-  const dir = instancesDir();
+export function sweepDeadIdeBrowserInstances(dir = instancesDir(), nowMs = Date.now()): number {
   if (!fs.existsSync(dir)) return 0;
   let removed = 0;
   for (const name of fs.readdirSync(dir)) {
@@ -52,7 +66,7 @@ export function sweepDeadIdeBrowserInstances(): number {
     const full = path.join(dir, name);
     try {
       const raw = JSON.parse(fs.readFileSync(full, "utf8")) as IdeBrowserInstanceFile;
-      if (raw.kind !== "tachyon-ide-browser" || raw.schemaVersion !== 1 || !isPidAlive(raw.pid)) {
+      if (!isCurrentInstance(raw, nowMs)) {
         fs.unlinkSync(full);
         removed++;
       }
@@ -68,32 +82,42 @@ export function sweepDeadIdeBrowserInstances(): number {
   return removed;
 }
 
-/** Find a live instance file whose workspaceRoot matches (or is a parent of) the given root. */
-export function findIdeBrowserInstance(workspaceRoot: string): IdeBrowserInstanceFile | null {
-  sweepDeadIdeBrowserInstances();
-  const dir = instancesDir();
-  if (!fs.existsSync(dir)) return null;
+/**
+ * List fresh hosts for one exact workspace, newest owner first.
+ * Parent/child fallback is deliberately absent: a worktree and its parent are different authorities.
+ */
+export function findIdeBrowserInstances(
+  workspaceRoot: string,
+  dir = instancesDir(),
+  nowMs = Date.now(),
+): IdeBrowserInstanceFile[] {
+  sweepDeadIdeBrowserInstances(dir, nowMs);
+  if (!fs.existsSync(dir)) return [];
   const want = normalizeRoot(workspaceRoot);
-  let best: IdeBrowserInstanceFile | null = null;
-  let bestLen = -1;
+  const matches: IdeBrowserInstanceFile[] = [];
   for (const name of fs.readdirSync(dir)) {
     if (!name.endsWith(".json")) continue;
     try {
       const raw = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")) as IdeBrowserInstanceFile;
-      if (raw.kind !== "tachyon-ide-browser" || raw.schemaVersion !== 1) continue;
-      if (!isPidAlive(raw.pid)) continue;
+      if (!isCurrentInstance(raw, nowMs)) continue;
       const root = normalizeRoot(raw.workspaceRoot);
-      if (want === root || want.startsWith(root + path.sep) || root.startsWith(want + path.sep)) {
-        if (root.length > bestLen) {
-          best = raw;
-          bestLen = root.length;
-        }
-      }
+      if (want === root) matches.push(raw);
     } catch {
       /* skip corrupt */
     }
   }
-  return best;
+  return matches.sort((a, b) => {
+    const byStart = Date.parse(b.startedAt) - Date.parse(a.startedAt);
+    return byStart || b.instanceId.localeCompare(a.instanceId);
+  });
+}
+
+export function findIdeBrowserInstance(
+  workspaceRoot: string,
+  dir = instancesDir(),
+  nowMs = Date.now(),
+): IdeBrowserInstanceFile | null {
+  return findIdeBrowserInstances(workspaceRoot, dir, nowMs)[0] ?? null;
 }
 
 export function isIdeBrowserBridgeAvailable(workspaceRoot: string): boolean {
@@ -105,9 +129,10 @@ export async function ideBrowserRequest(
   route: string,
   body?: Record<string, unknown>,
   timeoutMs = 45_000,
+  discoveryDir = instancesDir(),
 ): Promise<IdeBrowserEnvelope> {
-  const inst = findIdeBrowserInstance(workspaceRoot);
-  if (!inst) {
+  const instances = findIdeBrowserInstances(workspaceRoot, discoveryDir);
+  if (instances.length === 0) {
     return {
       ok: false,
       code: "bridge_offline",
@@ -115,9 +140,24 @@ export async function ideBrowserRequest(
         "IDE browser bridge offline. In VS Code: Tachyon: IDE Browser Bridge Start (Dev Host / Extension Development).",
     };
   }
+  let lastFailure: IdeBrowserEnvelope | null = null;
+  for (const inst of instances) {
+    const attempted = await requestInstance(inst, route, body, timeoutMs);
+    if (!attempted.retryDiscovery) return attempted.envelope;
+    lastFailure = attempted.envelope;
+  }
+  return lastFailure ?? { ok: false, code: "bridge_offline", error: "IDE browser bridge offline." };
+}
+
+async function requestInstance(
+  inst: IdeBrowserInstanceFile,
+  route: string,
+  body: Record<string, unknown> | undefined,
+  timeoutMs: number,
+): Promise<{ envelope: IdeBrowserEnvelope; retryDiscovery: boolean }> {
   const method = body === undefined ? "GET" : "POST";
   const payload = body === undefined ? undefined : JSON.stringify(body);
-  return await new Promise<IdeBrowserEnvelope>((resolve) => {
+  return await new Promise((resolve) => {
     const req = http.request(
       {
         hostname: "127.0.0.1",
@@ -135,21 +175,35 @@ export async function ideBrowserRequest(
         const chunks: Buffer[] = [];
         res.on("data", (c) => chunks.push(c as Buffer));
         res.on("end", () => {
+          const responseInstanceId = res.headers[IDE_BROWSER_INSTANCE_HEADER];
+          if (res.statusCode === 401 || responseInstanceId !== inst.instanceId) {
+            resolve({
+              envelope: { ok: false, code: "bridge_identity_mismatch", error: "IDE browser host identity changed during discovery." },
+              retryDiscovery: true,
+            });
+            return;
+          }
           const text = Buffer.concat(chunks).toString("utf8");
           try {
-            resolve(JSON.parse(text) as IdeBrowserEnvelope);
+            resolve({ envelope: JSON.parse(text) as IdeBrowserEnvelope, retryDiscovery: false });
           } catch {
-            resolve({ ok: false, error: `Invalid JSON from bridge (HTTP ${res.statusCode}): ${text.slice(0, 200)}` });
+            resolve({
+              envelope: { ok: false, error: `Invalid JSON from bridge (HTTP ${res.statusCode}): ${text.slice(0, 200)}` },
+              retryDiscovery: false,
+            });
           }
         });
       },
     );
     req.on("error", (err) => {
-      resolve({ ok: false, code: "bridge_error", error: err.message });
+      resolve({ envelope: { ok: false, code: "bridge_error", error: err.message }, retryDiscovery: true });
     });
     req.on("timeout", () => {
       req.destroy();
-      resolve({ ok: false, code: "timeout", error: `IDE browser bridge timed out after ${timeoutMs}ms` });
+      resolve({
+        envelope: { ok: false, code: "timeout", error: `IDE browser bridge timed out after ${timeoutMs}ms` },
+        retryDiscovery: false,
+      });
     });
     if (payload) req.write(payload);
     req.end();

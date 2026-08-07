@@ -18,13 +18,18 @@ export type IdeBrowserStatus = {
 };
 
 export type IdeBrowserInstanceFile = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   kind: "tachyon-ide-browser";
+  instanceId: string;
   workspaceRoot: string;
   port: number;
   token: string;
   pid: number;
   startedAt: string;
+  heartbeatAt: string;
 };
 
 export const IDE_BROWSER_INSTANCES_DIR_NAME = "ide-browser-instances";
+export const IDE_BROWSER_INSTANCE_HEARTBEAT_MS = 5_000;
+export const IDE_BROWSER_INSTANCE_FRESHNESS_MS = 30_000;
+export const IDE_BROWSER_INSTANCE_HEADER = "x-tachyon-ide-browser-instance";

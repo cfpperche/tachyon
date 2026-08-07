@@ -11,7 +11,11 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { WorkspaceShellHandle } from "../../shell/WorkspaceShellHandle.js";
 import type { IdeBrowserEnvelope, IdeBrowserInstanceFile, IdeBrowserStatus } from "../../ide-browser/protocol.js";
-import { IDE_BROWSER_INSTANCES_DIR_NAME } from "../../ide-browser/protocol.js";
+import {
+  IDE_BROWSER_INSTANCE_HEADER,
+  IDE_BROWSER_INSTANCE_HEARTBEAT_MS,
+  IDE_BROWSER_INSTANCES_DIR_NAME,
+} from "../../ide-browser/protocol.js";
 import { sweepDeadIdeBrowserInstances } from "../../ide-browser/client.js";
 import { IdeBrowserCdpSession, isBrowserDebugSession } from "./cdpSession.js";
 import {
@@ -45,7 +49,9 @@ export class IdeBrowserBridgeManager {
   private server: http.Server | null = null;
   private port = 0;
   private token = "";
+  private instanceId = "";
   private instancePath: string | null = null;
+  private instanceHeartbeat: ReturnType<typeof setInterval> | null = null;
   private cdp = new IdeBrowserCdpSession();
   private launching: Promise<void> | null = null;
   private readonly log: vscode.OutputChannel;
@@ -123,6 +129,7 @@ export class IdeBrowserBridgeManager {
   async start(): Promise<IdeBrowserStatus> {
     if (this.server) return this.status;
     this.token = crypto.randomBytes(16).toString("hex");
+    this.instanceId = crypto.randomUUID();
     this.server = http.createServer((req, res) => {
       void this.handleHttp(req, res);
     });
@@ -814,6 +821,10 @@ export class IdeBrowserBridgeManager {
   }
 
   async stop(): Promise<void> {
+    if (this.instanceHeartbeat) {
+      clearInterval(this.instanceHeartbeat);
+      this.instanceHeartbeat = null;
+    }
     await this.resetBrowserSession();
     this.sessionEndSub?.dispose();
     this.sessionEndSub = null;
@@ -844,18 +855,38 @@ export class IdeBrowserBridgeManager {
     // Drop orphan discovery files so agents/engine don't scan dozens of dead pids.
     const n = sweepDeadIdeBrowserInstances();
     if (n > 0) this.log.appendLine(`[ide-browser] swept ${n} dead instance file(s)`);
-    const id = crypto.createHash("sha256").update(`${this.workspaceRoot}:${process.pid}`).digest("hex").slice(0, 12);
-    this.instancePath = path.join(dir, `${id}.json`);
+    const workspaceId = crypto.createHash("sha256").update(this.workspaceRoot).digest("hex").slice(0, 12);
+    this.instancePath = path.join(dir, `${workspaceId}-${this.instanceId}.json`);
+    const startedAt = new Date().toISOString();
     const body: IdeBrowserInstanceFile = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       kind: "tachyon-ide-browser",
+      instanceId: this.instanceId,
       workspaceRoot: this.workspaceRoot,
       port: this.port,
       token: this.token,
       pid: process.pid,
-      startedAt: new Date().toISOString(),
+      startedAt,
+      heartbeatAt: startedAt,
     };
-    fs.writeFileSync(this.instancePath, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+    this.persistInstanceFile(body);
+    this.instanceHeartbeat = setInterval(() => {
+      if (!this.instancePath || !this.server) return;
+      body.heartbeatAt = new Date().toISOString();
+      try {
+        this.persistInstanceFile(body);
+      } catch (error) {
+        this.log.appendLine(`[ide-browser] instance heartbeat failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }, IDE_BROWSER_INSTANCE_HEARTBEAT_MS);
+    this.instanceHeartbeat.unref?.();
+  }
+
+  private persistInstanceFile(body: IdeBrowserInstanceFile): void {
+    if (!this.instancePath) return;
+    const temporary = `${this.instancePath}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, `${JSON.stringify(body, null, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(temporary, this.instancePath);
   }
 
   private async removeInstanceFile(): Promise<void> {
@@ -876,7 +907,10 @@ export class IdeBrowserBridgeManager {
   private async handleHttp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     const json = (status: number, body: IdeBrowserEnvelope): void => {
-      res.writeHead(status, { "content-type": "application/json" });
+      res.writeHead(status, {
+        "content-type": "application/json",
+        [IDE_BROWSER_INSTANCE_HEADER]: this.instanceId,
+      });
       res.end(JSON.stringify(body));
     };
     try {
