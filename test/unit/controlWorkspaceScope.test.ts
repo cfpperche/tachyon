@@ -105,9 +105,15 @@ describe("the global workspace scope has exactly one control (SDD 485 C6, revise
 describe("local filters are not global selectors (t-46eb4f)", () => {
   it("tmux keeps its Workspace filter — its universe includes closed and other-workspace sessions", () => {
     const inspector = readFileSync(path.join(WEBVIEW, "inspector", "App.tsx"), "utf8");
-    // A client-side filter over the rows already on screen…
-    expect(inspector).toContain('const [workspace, setWorkspace] = useState("all")');
+    // t-6b5dea — the window scope now supplies this filter's DEFAULT, so the initializer is no longer a
+    // literal "all". What the filter IS did not change and is what this case protects: a client-side
+    // narrowing of the rows already on screen, with "all" still reachable…
+    expect(inspector).toMatch(/const \[chosen, setChosen\] = useState<string \| undefined>\(undefined\)/);
+    expect(inspector).toMatch(/return chosen \?\? scope\?\.hash \?\? "all";/);
     expect(inspector).toMatch(/workspace !== "all" && \(group\.wsHash \?\? "unscoped"\) !== workspace/);
+    // …and the way back to it on screen rather than only in the dropdown, because the default is one
+    // nobody chose. `tmuxScopeDefault.test.ts` proves both against a real render; this pins the shape.
+    expect(inspector).toContain('setChosen("all")');
     // …that posts nothing: it cannot move the global scope.
     expect(inspector).not.toContain("switchControlWorkspace");
     expect(inspector).not.toContain("switchWorkspace");

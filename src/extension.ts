@@ -1409,8 +1409,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * `makeServerInspectorDeps` closes over live state the panel must not lose between opens: the terminal
    * registry `open()` reuses (`termBySession`), the per-pid CPU-tick baselines `cpuBusy` differences
    * against, and the `displayedRows` receipt `kill` refuses a stale identity with.
+   *
+   * t-6b5dea — it also READS the window scope, to open on the project the sidebar has selected. Reading
+   * only: the sidebar remains the one writer of that scope, and this screen's own Workspace filter still
+   * reaches the closed-folder and other-window sessions no attached-project selector can name.
    */
-  const tmuxPanels = new TmuxPanelManager(context.extensionUri, makeServerInspectorDeps());
+  const tmuxPanels = new TmuxPanelManager(context.extensionUri, makeServerInspectorDeps(), controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => tmuxPanels.dispose() });
 
   /**

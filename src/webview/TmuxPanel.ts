@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import { buildInspectorModel, type InspectorModel } from "../inspector/model.js";
-import { READY, captureMessage, initMessage, modelMessage, type InspectorAction, type InspectorStrings } from "./inspector/messages.js";
+import { READY, captureMessage, initMessage, modelMessage, type InspectorAction, type InspectorScope, type InspectorStrings } from "./inspector/messages.js";
 import type { InspectorDeps } from "./ServerInspector.js";
 import { showNotification } from "../workspace/NotificationService.js";
 
@@ -64,12 +64,25 @@ type TmuxRefreshKind = "tmux";
  * a `views-changed` for tmux, and this migration does not invent one. The socket is polled, not watched,
  * and that was true inside Control too.
  */
+/**
+ * t-6b5dea — the read side of `ControlWorkspaceScope`, and only the read side.
+ *
+ * This app is a READER of the window scope, never a writer: the sidebar owns that control (asserted by
+ * `controlWorkspaceScope.test.ts` — exactly one selector, and it is not this screen's). Depending on the
+ * one property it reads rather than on the class says so in the type, and lets the tests hand it a value
+ * without a `Memento`.
+ */
+export interface WorkspaceScopeReader {
+  readonly current: string | undefined;
+}
+
 export class TmuxPanelManager {
   private readonly manager: SectionPanelManager<TmuxRefreshKind>;
 
   constructor(
     extensionUri: vscode.Uri,
     private readonly deps: InspectorDeps,
+    private readonly scope: WorkspaceScopeReader | undefined,
     app: WebviewAppEntry = webviewApp("inspector"),
   ) {
     this.manager = new SectionPanelManager<TmuxRefreshKind>(extensionUri, this.configFor(app));
@@ -127,7 +140,11 @@ export class TmuxPanelManager {
           // The strings ride with every model rather than once at handshake: the model push IS the
           // catch-up path (`replay`), so a panel revived after a reload — which never sends a second
           // `ready` the host could answer with init — would otherwise paint with no strings at all.
-          session.post(initMessage(inspectorStrings()));
+          // t-6b5dea — the window scope rides the same way, and gains the property for free: every door
+          // that repaints this screen (open, reveal, revive, reap, the client's own refresh) reads the
+          // scope as it is AT THAT MOMENT, so no separate subscription has to keep it fresh and this app
+          // still opens no fan-out door of its own.
+          session.post(initMessage(inspectorStrings(), this.currentScope()));
           session.post(modelMessage(model));
         };
         return {
@@ -140,6 +157,27 @@ export class TmuxPanelManager {
         };
       },
     };
+  }
+
+  /**
+   * The window's selected project, named — or nothing, when no project is selected (a window with no
+   * folder attached, or a build with no scope wired).
+   *
+   * The LABEL is resolved host-side because the client cannot: the hash may belong to a project that owns
+   * no session on this socket, and the client only ever learns folder names from the groups the model
+   * carries. Falling back to the hash keeps the option nameable rather than blank in the case where the
+   * scope points at a folder the snapshot does not mention.
+   */
+  private currentScope(): InspectorScope | undefined {
+    const hash = this.scope?.current;
+    if (!hash) return undefined;
+    let label = hash;
+    try {
+      label = this.deps.folderByHash().get(hash) ?? hash;
+    } catch {
+      /* a folder map that cannot be read still leaves the hash, which is a real handle */
+    }
+    return { hash, label };
   }
 
   /**
@@ -258,5 +296,10 @@ export function inspectorStrings(): InspectorStrings {
     total: t("Total"), orphaned: t("Orphaned"), socket: t("Socket"), path: t("Path"), health: t("Health"), version: t("tmux version"),
     serverPids: t("Server PIDs"), diagnostics: t("Process diagnostics"), noDiagnostics: t("No process diagnostics available."),
     refreshCapture: t("Refresh capture"), close: t("Close"), bulkActions: t("Bulk actions"),
+    // t-6b5dea — "{1} hidden" is the number that keeps the scope default honest, and "Show every session"
+    // is deliberately not the name of the Workspace filter's "All": this screen's universe is wider than
+    // the attached projects, and the way out has to promise the wider set.
+    scopeNote: t("Showing {0}, the project selected in the sidebar — {1} session(s) in other workspaces are hidden.", "{0}", "{1}"),
+    scopeShowAll: t("Show every session"),
   };
 }

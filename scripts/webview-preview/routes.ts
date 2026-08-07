@@ -32,7 +32,7 @@ import { pinStudioFixtures, pinStudioMakeMessage } from "./fixtures/pin-studio";
 import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
-import { inspectorFixtures, strings as inspectorStrings } from "./fixtures/inspector";
+import { inspectorFixtures, scopeFor as inspectorScopeFor, strings as inspectorStrings } from "./fixtures/inspector";
 import { initMessage as inspectorInitMessage, modelMessage as inspectorModelMessage } from "../../src/webview/inspector/messages";
 import {
   cockpitFixtures,
@@ -332,7 +332,9 @@ export const ROUTES: Record<string, Route> = {
     fixtures: inspectorFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
     module: true,
-    makeMessage: (vm) => [inspectorInitMessage(inspectorStrings), inspectorModelMessage(vm as never)],
+    // t-6b5dea — `init` also carries the window scope, which is why the fixture decides it: `scoped`
+    // renders the screen a sidebar selection produces, the others the screen with no selection at all.
+    makeMessage: (vm) => [inspectorInitMessage(inspectorStrings, inspectorScopeFor(vm as never)), inspectorModelMessage(vm as never)],
   },
   // SDD 485 D2 — Plugins, standalone again, so it gets its own route back for the same reason the task
   // detail, the Board and the inspector did: this renders the REAL shipped `plugins.js` with the exact

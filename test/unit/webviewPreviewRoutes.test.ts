@@ -112,12 +112,18 @@ describe("preview route table", () => {
     expect(r.pageFrame).toBeUndefined();
     // `volume` is the fixture the two-width visual pass drives — C5's lesson, that a thin fixture can
     // pass a broken layout, applied before the screenshot rather than after it.
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "volume"]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "scoped", "volume"]);
     const volume = r.fixtures.volume.vm as { totalSessions: number; groups: unknown[] };
     expect(volume.totalSessions).toBeGreaterThanOrEqual(20);
     expect(volume.groups.length).toBeGreaterThanOrEqual(4);
     const msgs = r.makeMessage(r.fixtures.default.vm) as Array<{ type: string }>;
     expect(msgs.map((m) => m.type)).toEqual(["init", "model"]);
+    // t-6b5dea — the window scope is host state and rides on `init`, so the two screens the task's guard
+    // is about are two ADDRESSABLE fixtures: `scoped` opens narrowed to the sidebar's project, and every
+    // other fixture renders the screen a window with no selection gets.
+    const scopedInit = (r.makeMessage(r.fixtures.scoped.vm) as Array<{ type: string; scope?: { hash: string } }>)[0];
+    expect(scopedInit.scope?.hash).toBe("a1b2c3d4");
+    expect((r.makeMessage(r.fixtures.volume.vm) as Array<{ scope?: unknown }>)[0].scope).toBeUndefined();
   });
 
   it("declares the Plugins route (SDD 485 D2) against the REAL standalone bundle and the host's own CSS list", () => {

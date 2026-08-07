@@ -16,6 +16,7 @@ import {
   reapDeadAction,
   reapOrphansAction,
   refreshAction,
+  type InspectorScope,
   type InspectorStrings,
 } from "./messages";
 
@@ -50,6 +51,10 @@ const post = (message: unknown): void => {
 
 function InspectorRoot() {
   const [strings, setStrings] = useState<InspectorStrings | undefined>(undefined);
+  // t-6b5dea — the window's selected project rides with `init`, which the host re-posts with EVERY model
+  // push, so a sidebar selection taken after this tab opened arrives on the next refresh like any other
+  // host state. Nothing new polls for it and this client never writes it back.
+  const [scope, setScope] = useState<InspectorScope | undefined>(undefined);
   const [model, setModel] = useState<InspectorModel | undefined>(undefined);
   const [captures, setCaptures] = useState<Record<string, string>>({});
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -59,7 +64,10 @@ function InspectorRoot() {
     const onMessage = (event: MessageEvent) => {
       const raw = event.data as Record<string, unknown> | undefined;
       if (!raw || typeof raw.type !== "string") return;
-      if (raw.type === INIT && raw.strings) setStrings(raw.strings as InspectorStrings);
+      if (raw.type === INIT && raw.strings) {
+        setStrings(raw.strings as InspectorStrings);
+        setScope(raw.scope as InspectorScope | undefined);
+      }
       else if (raw.type === MODEL && raw.model) setModel(raw.model as InspectorModel);
       else if (raw.type === CAPTURE && typeof raw.session === "string") {
         setCaptures((prev) => ({ ...prev, [raw.session as string]: String(raw.text ?? "") }));
@@ -105,7 +113,7 @@ function InspectorRoot() {
     [],
   );
 
-  return <App model={model} strings={strings} captures={captures} open={open} auto={auto} {...dispatch} />;
+  return <App model={model} strings={strings} scope={scope} captures={captures} open={open} auto={auto} {...dispatch} />;
 }
 
 const root = document.getElementById("root");

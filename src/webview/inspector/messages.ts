@@ -19,12 +19,24 @@ export interface InspectorStrings {
   details: string; fullName: string; hash: string; command: string; startCommand: string; uptime: string;
   total: string; orphaned: string; socket: string; path: string; health: string; version: string; serverPids: string;
   diagnostics: string; noDiagnostics: string; refreshCapture: string; close: string; bulkActions: string;
+  scopeNote: string; scopeShowAll: string;
 }
+
+/**
+ * t-6b5dea — the window's selected project, as the SIDEBAR set it (`ControlWorkspaceScope`).
+ *
+ * It is the DEFAULT the screen opens on, never a restriction: the host resolves the hash to a folder name
+ * so the client can name the project even when that project owns no session on the socket, and the client
+ * drops it the moment a human picks something in the Workspace filter.
+ */
+export interface InspectorScope { hash: string; label: string }
 
 // ── host → webview ───────────────────────────────────────────────────────────
 export const INIT = "init" as const;
-export interface InitMessage { type: typeof INIT; strings: InspectorStrings }
-export function initMessage(strings: InspectorStrings): InitMessage { return { type: INIT, strings }; }
+export interface InitMessage { type: typeof INIT; strings: InspectorStrings; scope?: InspectorScope }
+export function initMessage(strings: InspectorStrings, scope?: InspectorScope): InitMessage {
+  return { type: INIT, strings, scope };
+}
 
 export const MODEL = "model" as const;
 export interface ModelMessage { type: typeof MODEL; model: InspectorModel }
