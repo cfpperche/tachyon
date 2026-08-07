@@ -1139,11 +1139,19 @@ export interface BridgeRuntimeHomeRetirement extends BridgeRuntimeHome {
   heldBy?: string;
 }
 
-/** Bytes on disk (apparent size) and file count of a subtree. Best-effort: unreadable entries are skipped. */
-export function measureDirUsage(dir: string): { bytes: number; files: number } {
+/**
+ * Bytes on disk (apparent size) and file count of a subtree. Best-effort: unreadable entries are skipped.
+ *
+ * `maxFiles` bounds the walk because the caller on the startup path is measuring exactly the tree that
+ * motivated this — the real one held 41,948 files, and a report is not worth 42k stat calls before the
+ * workspace opens. A bounded answer says so through `truncated` so the reader knows it is a floor.
+ */
+export function measureDirUsage(dir: string, maxFiles = Number.POSITIVE_INFINITY): { bytes: number; files: number; truncated: boolean } {
   let bytes = 0;
   let files = 0;
+  let truncated = false;
   const walk = (current: string): void => {
+    if (truncated) return;
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(current, { withFileTypes: true });
@@ -1151,10 +1159,15 @@ export function measureDirUsage(dir: string): { bytes: number; files: number } {
       return;
     }
     for (const entry of entries) {
+      if (truncated) return;
       const child = path.join(current, entry.name);
       if (entry.isDirectory()) {
         walk(child);
         continue;
+      }
+      if (files >= maxFiles) {
+        truncated = true;
+        return;
       }
       files += 1;
       try {
@@ -1165,7 +1178,7 @@ export function measureDirUsage(dir: string): { bytes: number; files: number } {
     }
   };
   walk(dir);
-  return { bytes, files };
+  return { bytes, files, truncated };
 }
 
 /**

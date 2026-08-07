@@ -5180,6 +5180,14 @@ export class Workspace {
     compactSpawnSettings(this.workspaceRoot, known);
   }
 
+  /**
+   * t-7bc276 — how many files the orphan-home report will stat before answering with a floor. Chosen
+   * against the measured case: the tree that motivated this held 41,948 files across 35 homes, so a
+   * cap in the low thousands still names every home and its order of magnitude for a fraction of the
+   * syscalls, on a path that runs inside `start()`.
+   */
+  private static readonly ORPHAN_HOME_MEASURE_FILE_CAP = 2000;
+
   private gcHarnessHomes(): void {
     try {
       if (agentProfileForgetRetentionUncertain(this.workspaceRoot)) return;
@@ -5220,17 +5228,21 @@ export class Workspace {
   private reportOrphanBridgeRuntimeHomes(declared: Set<string>, tracked: Set<string>): void {
     const orphans = this.harness.listBridgeRuntimeHomes()
       .filter((home) => !declared.has(home.agent) && !tracked.has(home.agent))
-      .map((home) => ({ ...home, ...measureDirUsage(home.path) }));
+      // Bounded per home: this runs inside `start()`, and the tree that motivated the fix held 41,948
+      // files. A floor is enough to make the cost legible; an exact byte count is not worth the stat storm.
+      .map((home) => ({ ...home, ...measureDirUsage(home.path, Workspace.ORPHAN_HOME_MEASURE_FILE_CAP) }));
     if (orphans.length === 0) return;
     const bytes = orphans.reduce((total, home) => total + home.bytes, 0);
     const files = orphans.reduce((total, home) => total + home.files, 0);
+    // A capped walk reports a FLOOR, and says so rather than quietly understating the disk.
+    const floor = orphans.some((home) => home.truncated) ? "≥ " : "";
     const worst = [...orphans].sort((a, b) => b.bytes - a.bytes).slice(0, 3)
-      .map((home) => `${home.agent}.${home.runtime} (${humanBytes(home.bytes)})`).join(", ");
+      .map((home) => `${home.agent}.${home.runtime} (${home.truncated ? "≥ " : ""}${humanBytes(home.bytes)})`).join(", ");
     this.host.notify(this.t(
       "{0} private runtime home(s) under .tachyon/bridge-mcp belong to no agent: {1}, {2} file(s). Largest: {3}. Nothing reads them; dismissing an agent now removes its own.",
       String(orphans.length),
-      humanBytes(bytes),
-      String(files),
+      `${floor}${humanBytes(bytes)}`,
+      `${floor}${files}`,
       worst,
     ), "warn");
   }

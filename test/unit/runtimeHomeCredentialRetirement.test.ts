@@ -8,6 +8,7 @@ import {
   bridgeMcpRoot,
   bridgeRuntimeHome,
   listBridgeRuntimeHomes,
+  measureDirUsage,
 } from "../../src/harness/HarnessManager.js";
 import { RESUME_RUNTIMES, adapterForRuntime } from "../../src/resume/adapters.js";
 import { makeTempDir } from "../helpers/tempDir.js";
@@ -139,6 +140,22 @@ describe("t-7bc276 private bridge-mcp runtime home retirement", () => {
     expect(outcomes.map((o) => [o.runtime, o.removed, o.bytes])).toEqual([["grok", false, 512]]);
     expect(outcomes[0].heldBy).toBe(path.join(home, "sessions"));
     expect(fs.existsSync(home)).toBe(true);
+  });
+
+  it("answers with a floor rather than a stat storm when a home is larger than the walk budget", () => {
+    const workspace = makeTempDir("tachyon-runtime-measure-cap-");
+    const home = bridgeRuntimeHome(workspace, "huge", "grok");
+    fs.mkdirSync(path.join(home, "bundled"), { recursive: true });
+    for (let i = 0; i < 12; i += 1) fs.writeFileSync(path.join(home, "bundled", `asset-${i}.bin`), "xxxx", "utf8");
+
+    // Unbounded: the exact answer.
+    expect(measureDirUsage(home)).toEqual({ bytes: 48, files: 12, truncated: false });
+    // Bounded: a FLOOR, flagged as one. The report on the startup path takes this shape because the
+    // measured tree held 41,948 files and no notification is worth that many stat calls before start.
+    const capped = measureDirUsage(home, 5);
+    expect(capped.truncated).toBe(true);
+    expect(capped.files).toBe(5);
+    expect(capped.bytes).toBeLessThan(48);
   });
 
   it("says nothing about a runtime whose private home was never materialized, and is idempotent", () => {
