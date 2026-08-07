@@ -210,7 +210,13 @@ describe("runtime launch preflight", () => {
       try {
         return fs.readFileSync(`/proc/${pid}/stat`, "utf8").split(" ")[2] !== "Z";
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        // t-9d76b1 — ESRCH belongs here with ENOENT, and only one of them was listed. This poll exists
+        // to watch a process disappear, so it races that disappearance BY CONSTRUCTION: `open` can
+        // succeed and the `read` then fail with ESRCH once the pid is reaped between the two. Rethrowing
+        // turned "the descendant died, exactly as asserted" into a failed run — twice inside one
+        // `verify:full` on a loaded host, in the test whose whole claim is that the process is gone.
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "ENOENT" || code === "ESRCH") return false;
         throw error;
       }
     };
