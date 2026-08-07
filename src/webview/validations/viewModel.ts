@@ -1,5 +1,5 @@
 import type { ArtifactRef } from "../../tasks/types.js";
-import type { Validation, ValidationExecutor, ValidationOutcome, ValidationStatus } from "../../validations/types.js";
+import type { Validation, ValidationActor, ValidationExecutor, ValidationOutcome, ValidationStatus } from "../../validations/types.js";
 
 export interface ValidationRoundVM {
   n: number;
@@ -8,6 +8,7 @@ export interface ValidationRoundVM {
   assignee?: string;
   outcome?: ValidationOutcome;
   resultNote?: string;
+  closedBy?: ValidationActor;
   evidenceRefs: ArtifactRef[];
 }
 
@@ -52,6 +53,7 @@ export function buildValidationsViewModel(input: { folder: string; wsHash: strin
         ...(round.assignee ? { assignee: round.assignee } : {}),
         ...(round.outcome ? { outcome: round.outcome } : {}),
         ...(round.result_note ? { resultNote: round.result_note } : {}),
+        ...(round.closedBy ? { closedBy: round.closedBy } : {}),
         evidenceRefs: round.evidence_refs ?? [],
       })),
       createdAt: validation.createdAt,

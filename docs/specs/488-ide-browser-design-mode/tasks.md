@@ -52,6 +52,10 @@ _Generated from `plan.md` on 2026-08-04. Work top-to-bottom. Check boxes as task
 
 _Start only after P2 green or explicit maintainer pull-forward. Prefer split SDD when large._
 
+**Ordering, kill list and open decisions live in [`hybrid-d-path.md`](hybrid-d-path.md)** (`t-d49ef0`,
+2026-08-07). Read it before picking one of these up: it re-scopes F1/F5/F7, folds `t-2b948e` into
+`t-64edaf`, and names three task bodies whose premise has already drifted.
+
 - [ ] **F1** Remove pane marker primary path after runtime matrix green
 - [ ] **F2** Multi-agent group thread product rules + SDD or design task
 - [ ] **F3** Runtime parity matrix living doc / notes table

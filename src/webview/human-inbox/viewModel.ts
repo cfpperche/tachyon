@@ -2,7 +2,7 @@
  * Human Inbox — the view models Control's section and detail route render (t-e76acc).
  *
  * This is the projection layer, and it deliberately holds no reads of its own: approvals arrive from
- * `listPendingApprovalViewItems` and validations from `buildValidationsViewModel`, the SAME two reads
+ * `listApprovalViewItems` and validations from `buildValidationsViewModel`, the SAME authoritative reads
  * the Approvals and Validations sections already use. That is the whole point of the ratified
  * contract — "the inbox is a router, not a resolver": one more surface over the same stores, never a
  * second source of truth that can disagree with them (see `humanInbox/model.ts` for the counter that

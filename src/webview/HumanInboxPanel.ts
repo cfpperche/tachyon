@@ -25,7 +25,7 @@ import type { ValidationOutcome } from "../validations/types.js";
 import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
 import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
 import { buildValidationsViewModel } from "./validations/viewModel.js";
-import { listPendingApprovalViewItems } from "./approval/viewModel.js";
+import { listApprovalViewItems } from "./approval/viewModel.js";
 import { readLiveSavedAgentProposalQueue } from "../agents/savedAgentProposalStore.js";
 import { buildSavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
 import { denySavedAgentProposal, type SavedAgentCommitResult } from "../agents/savedAgentProposalCommit.js";
@@ -127,7 +127,7 @@ interface InboxSources {
  * took an optional `wsHash` and resolved ONE approval workspace from it, and every read underneath is rooted
  * at that single `workspaceRoot`:
  *
- *  - `listPendingApprovalViewItems(workspaceRoot)` — the pending approval queue is that workspace's directory;
+ *  - `listApprovalViewItems(workspaceRoot)` — pending and resolved approvals come from that workspace's directory;
  *  - the validations half is `deps.validations.getWorkspaces().find(w => w.wsHash === approvalWs.wsHash)` —
  *    a per-workspace target, and an absent one is REPORTED rather than borrowed from a neighbour;
  *  - both Saved Agent queues (`readLiveSavedAgentProposalQueue` / `…RemovalProposalQueue`) read that root, and
@@ -263,7 +263,7 @@ export class HumanInboxPanelManager {
     return buildHumanInboxViewModel({
       folder: approvalWs.folderName,
       wsHash: approvalWs.wsHash,
-      approvals: listPendingApprovalViewItems(approvalWs.workspaceRoot),
+      approvals: listApprovalViewItems(approvalWs.workspaceRoot),
       validations: validationWs
         ? buildValidationsViewModel({
           folder: approvalWs.folderName,

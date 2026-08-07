@@ -97,6 +97,54 @@ const emptyVm: HumanInboxViewModel = {
   counts: humanInboxCounts([]),
 };
 
+const historyItems = buildHumanInbox(
+  {
+    wsHash: WS_HASH,
+    folder: FOLDER,
+    approvals: [
+      volumeApproval(1),
+      {
+        ...volumeApproval(2),
+        id: "a-audit1",
+        status: "resolved",
+        resolution: {
+          decision: "approved",
+          resolvedAt: "2026-08-07T15:20:00.000Z",
+          resolvedBy: "unattributed:vscode-command",
+          injectedText: "fixed receipt",
+          note: "Approved after reviewing the proposed cleanup.",
+        },
+      },
+    ],
+    validations: [
+      {
+        ...volumeValidation(1),
+        id: "v-audit2",
+        title: "Verify the Human Inbox history at both widths",
+        status: "closed",
+        updatedAt: "2026-08-06T18:00:00.000Z",
+        rounds: [{
+          n: 1,
+          startedAt: "2026-08-06T17:30:00.000Z",
+          closedAt: "2026-08-06T18:00:00.000Z",
+          outcome: "failed",
+          resultNote: "The narrow row lost its actor before this change.",
+          closedBy: { kind: "unattributed", name: "engine-control" },
+          evidenceRefs: [],
+        }],
+      },
+    ],
+  },
+  { now: "2026-08-07T18:00:00.000Z" },
+);
+
+const historyVm: HumanInboxViewModel = {
+  folder: FOLDER,
+  wsHash: WS_HASH,
+  items: historyItems,
+  counts: humanInboxCounts(historyItems),
+};
+
 export const humanInboxFixtures: Record<string, Fixture<HumanInboxPreviewState>> = {
   // the mixed queue: one approval, one validation, one Saved Agent proposal — the three weights the row
   // badge exists to keep apart.
@@ -106,4 +154,5 @@ export const humanInboxFixtures: Record<string, Fixture<HumanInboxPreviewState>>
   volume: { provenance: "synthetic-edge", vm: { state: "list", vm: volumeVm } },
   // "Nothing is waiting on you" is a state a human sees often and a screenshot set forgets to check.
   empty: { provenance: "synthetic-edge", vm: { state: "list", vm: emptyVm } },
+  history: { provenance: "unit-fixture-derived", vm: { state: "list", vm: historyVm } },
 };

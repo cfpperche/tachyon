@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildHumanInbox,
+  filterHumanInboxItems,
   humanInboxCounts,
   validationAwaitsHuman,
   type HumanInboxItem,
@@ -111,6 +112,53 @@ describe("Human Inbox — what is waiting, and in what order", () => {
     expect(item.warning).toBe("payloadHash mismatch");
     expect(humanInboxCounts([item]).approvals).toBe(1);
   });
+
+  it("projects resolved history without changing the waiting count or laundering actor provenance", () => {
+    const items = build(
+      [
+        approval(),
+        approval({
+          id: "a-resolved",
+          status: "resolved",
+          resolution: {
+            decision: "approved",
+            resolvedAt: "2026-07-27T11:00:00.000Z",
+            resolvedBy: "unattributed:vscode-command",
+            injectedText: "fixed receipt",
+          },
+        }),
+      ],
+      [
+        validation({
+          id: "v-closed",
+          status: "closed",
+          updatedAt: "2026-07-27T11:30:00.000Z",
+          rounds: [{
+            n: 1,
+            closedAt: "2026-07-27T11:30:00.000Z",
+            outcome: "failed",
+            closedBy: { kind: "unattributed", name: "engine-control" },
+            evidenceRefs: [],
+          }],
+        }),
+      ],
+    );
+
+    expect(items.map(({ id, state, outcome, resolvedBy }) => ({ id, state, outcome, resolvedBy }))).toEqual([
+      { id: "a-000001", state: "waiting", outcome: undefined, resolvedBy: undefined },
+      { id: "v-closed", state: "resolved", outcome: "failed", resolvedBy: "unattributed:engine-control" },
+      { id: "a-resolved", state: "resolved", outcome: "approved", resolvedBy: "unattributed:vscode-command" },
+    ]);
+    expect(humanInboxCounts(items)).toEqual({
+      total: 1,
+      approvals: 1,
+      savedAgentProposals: 0,
+      savedAgentRemovals: 0,
+      scheduleProposals: 0,
+      validations: 0,
+      stale: 0,
+    });
+  });
 });
 
 describe("Human Inbox — the artifacts a detail route will preview", () => {
@@ -139,5 +187,35 @@ describe("Human Inbox — the artifacts a detail route will preview", () => {
     expect(item.artifacts).toEqual([]);
     // an approval carries none by construction: its payload is verbatim text, not attachments
     expect(build([approval()], [])[0].artifacts).toEqual([]);
+  });
+});
+
+describe("Human Inbox — history filters", () => {
+  const history = () => build(
+    [
+      approval(),
+      approval({
+        id: "a-approved",
+        status: "resolved",
+        resolution: {
+          decision: "approved",
+          resolvedAt: "2026-07-27T11:00:00.000Z",
+          resolvedBy: "unattributed:companion-http",
+          injectedText: "fixed receipt",
+        },
+      }),
+    ],
+    [validation({
+      id: "v-failed",
+      title: "visual regression",
+      status: "closed",
+      rounds: [{ n: 1, outcome: "failed", closedAt: "2026-07-20T11:00:00.000Z", evidenceRefs: [] }],
+    })],
+  );
+
+  it("defaults to waiting and combines kind, result, period and search without flattening outcomes", () => {
+    expect(filterHumanInboxItems(history(), { state: "waiting", kind: "all", outcome: "all", period: "all", query: "" }, NOW).map((i) => i.id)).toEqual(["a-000001"]);
+    expect(filterHumanInboxItems(history(), { state: "resolved", kind: "approval", outcome: "approved", period: "day", query: "reconcile" }, NOW).map((i) => i.id)).toEqual(["a-approved"]);
+    expect(filterHumanInboxItems(history(), { state: "resolved", kind: "validation", outcome: "failed", period: "day", query: "" }, NOW)).toEqual([]);
   });
 });

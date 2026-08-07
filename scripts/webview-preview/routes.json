@@ -1502,6 +1502,25 @@
     ]
   },
   {
+    "view": "human-inbox",
+    "fixture": "history",
+    "url": "/scripts/webview-preview/index.html?view=human-inbox&fixture=history",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "unit-fixture-derived"
+    ],
+    "title": "Human Inbox",
+    "aliases": [
+      "inbox",
+      "human inbox",
+      "waiting on you",
+      "approvals queue"
+    ]
+  },
+  {
     "view": "runtime-ops",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=runtime-ops&fixture=default",

@@ -1,14 +1,19 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 import type { ApprovalDecision } from "../../bridge/approvalRequest";
 import type { ValidationOutcome } from "../../validations/types";
-import type { HumanInboxItem, HumanInboxKind } from "../../humanInbox/model";
+import {
+  filterHumanInboxItems,
+  type HumanInboxFilters,
+  type HumanInboxItem,
+  type HumanInboxKind,
+} from "../../humanInbox/model";
 import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview";
 import type { SavedAgentRemovalProposalReview } from "../../agents/savedAgentRemovalProposalReview";
 import type { ScheduleProposal } from "../../schedule/ProposalStore";
 import type { InboxArtifactPreview } from "../../humanInbox/artifacts";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "./viewModel";
 import type { HumanInboxErrorReceipt } from "./messages";
-import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textarea } from "../shared/ui";
+import { Badge, Button, EmptyState, Icon, IconButton, Input, PageChrome, Select, Textarea } from "../shared/ui";
 
 /**
  * Human Inbox — one surface for everything waiting on a human (t-e76acc).
@@ -92,12 +97,18 @@ function InboxRow({ item, dispatch }: { item: HumanInboxItem; dispatch: HumanInb
       <span class="hi-row-top">
         <KindBadge kind={item.kind} />
         <span class="hi-title">{item.title}</span>
+        {item.outcome ? <Badge tone={item.outcome === "failed" || item.outcome === "denied" ? "err" : "info"}>{item.outcome}</Badge> : null}
         {item.stale ? <Badge tone="warn" title="waiting longer than a day">stale</Badge> : null}
       </span>
       <span class="hi-row-meta">
         <span class="hi-id">{item.id}</span>
         <Requester item={item} />
-        <span class="hi-age">{age(item.createdAt)}</span>
+        {item.state === "resolved" ? (
+          <span class="hi-resolver" data-testid={`inbox-resolved-by-${item.kind}-${item.id}`}>
+            resolved by <strong>{item.resolvedBy ?? "unattributed"}</strong>
+          </span>
+        ) : null}
+        <span class="hi-age">{item.state === "resolved" ? `resolved ${age(item.resolvedAt ?? item.createdAt)} ago` : age(item.createdAt)}</span>
         {item.artifacts.length > 0 ? (
           <span class="hi-artifacts">
             <Icon name="file-media" /> {item.artifacts.length}
@@ -110,6 +121,16 @@ function InboxRow({ item, dispatch }: { item: HumanInboxItem; dispatch: HumanInb
 }
 
 export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?: HumanInboxErrorReceipt; dispatch: HumanInboxDispatch }) {
+  const [filters, setFilters] = useState<HumanInboxFilters>({
+    state: "waiting",
+    kind: "all",
+    outcome: "all",
+    period: "all",
+    query: "",
+  });
+  const rows = useMemo(() => filterHumanInboxItems(vm?.items ?? [], filters), [vm, filters]);
+  const updateFilter = <K extends keyof HumanInboxFilters,>(key: K, value: HumanInboxFilters[K]): void =>
+    setFilters((current) => ({ ...current, [key]: value }));
   if (!vm) {
     return (
       <div class="hi-root ds-page">
@@ -133,16 +154,51 @@ export function App({ vm, error, dispatch }: { vm?: HumanInboxViewModel; error?:
         <span class="hi-count">{counts.validations} validations</span>
         {counts.stale > 0 ? <span class="hi-count warn">{counts.stale} stale</span> : null}
       </div>
+      <div class="hi-filters" aria-label="Inbox filters">
+        <Select aria-label="State" value={filters.state} onChange={(event) => updateFilter("state", event.currentTarget.value as HumanInboxFilters["state"])}>
+          <option value="waiting">Waiting</option>
+          <option value="resolved">Resolved</option>
+          <option value="all">All states</option>
+        </Select>
+        <Select aria-label="Type" value={filters.kind} onChange={(event) => updateFilter("kind", event.currentTarget.value as HumanInboxFilters["kind"])}>
+          <option value="all">All types</option>
+          <option value="approval">Approval</option>
+          <option value="validation">Validation</option>
+          <option value="saved-agent-proposal">New Saved Agent</option>
+          <option value="saved-agent-removal">Retire Saved Agent</option>
+          <option value="schedule-proposal">New schedule</option>
+        </Select>
+        <Select aria-label="Result" value={filters.outcome} onChange={(event) => updateFilter("outcome", event.currentTarget.value as HumanInboxFilters["outcome"])}>
+          <option value="all">All results</option>
+          <optgroup label="Approvals">
+            <option value="approved">approved</option>
+            <option value="denied">denied</option>
+            <option value="cancelled">cancelled</option>
+          </optgroup>
+          <optgroup label="Validations">
+            <option value="passed">passed</option>
+            <option value="failed">failed</option>
+            <option value="skipped">skipped</option>
+          </optgroup>
+        </Select>
+        <Select aria-label="Period" value={filters.period} onChange={(event) => updateFilter("period", event.currentTarget.value as HumanInboxFilters["period"])}>
+          <option value="all">All time</option>
+          <option value="day">Last 24 hours</option>
+          <option value="week">Last 7 days</option>
+          <option value="month">Last 30 days</option>
+        </Select>
+        <Input aria-label="Search inbox" placeholder="Search decisions…" value={filters.query} onInput={(event) => updateFilter("query", event.currentTarget.value)} />
+      </div>
       {error ? (
         <div class="hi-error" role="alert">
           <Icon name="error" /> {error.message}
         </div>
       ) : null}
-      {vm.items.length === 0 ? (
-        <EmptyState kind="empty" message="Nothing is waiting on you" />
+      {rows.length === 0 ? (
+        <EmptyState kind="empty" message={filters.state === "waiting" ? "Nothing is waiting on you" : "No decisions match these filters"} />
       ) : (
         <div class="hi-list">
-          {vm.items.map((item) => (
+          {rows.map((item) => (
             <InboxRow key={`${item.kind}:${item.id}`} item={item} dispatch={dispatch} />
           ))}
         </div>
@@ -241,6 +297,8 @@ function Artifacts({ vm }: { vm: HumanInboxItemViewModel }) {
 }
 
 function ApprovalDetail({ item, dispatch }: { item: Extract<HumanInboxItem["detail"], { kind: "approval" }>["approval"]; dispatch: HumanInboxDispatch }) {
+  const resolved = item.status === "resolved" ? item.resolution : undefined;
+  const cancelled = item.status === "cancelled" ? item.cancellation : undefined;
   return (
     <>
       {item.tampered ? (
@@ -263,7 +321,22 @@ function ApprovalDetail({ item, dispatch }: { item: Extract<HumanInboxItem["deta
           </div>
         ))}
       </section>
-      <div class="hi-decision">
+      {resolved ? (
+        <section class="hi-resolution" aria-label="Approval resolution" data-testid="inbox-approval-resolution">
+          <strong>{resolved.decision}</strong>
+          <span>{resolved.resolvedAt}</span>
+          <span>resolved by <code>{resolved.resolvedBy ?? "unattributed"}</code></span>
+          {resolved.note ? <p>{resolved.note}</p> : null}
+        </section>
+      ) : cancelled ? (
+        <section class="hi-resolution" aria-label="Approval cancellation" data-testid="inbox-approval-resolution">
+          <strong>cancelled</strong>
+          <span>{cancelled.cancelledAt}</span>
+          <span>resolved by <code>{cancelled.cancelledBy}</code></span>
+          <p>{cancelled.reason}</p>
+        </section>
+      ) : (
+        <div class="hi-decision">
         <Button
           variant="primary"
           icon="check"
@@ -276,7 +349,8 @@ function ApprovalDetail({ item, dispatch }: { item: Extract<HumanInboxItem["deta
         <Button variant="danger" icon="close" disabled={item.tampered} onClick={() => dispatch.resolveApproval(item.id, "denied")}>
           Deny
         </Button>
-      </div>
+        </div>
+      )}
     </>
   );
 }
@@ -314,13 +388,20 @@ function ValidationDetail({
                 <strong>Round {round.n}</strong>
                 {round.outcome ? ` · ${round.outcome}` : ""}
                 {round.assignee ? ` · ${round.assignee}` : ""}
+                {round.startedAt ? <div class="hi-dim">started {round.startedAt}</div> : null}
+                {round.closedAt ? <div class="hi-dim">closed {round.closedAt}</div> : null}
+                {round.closedBy ? (
+                  <div class="hi-dim">
+                    resolved by <code>{round.closedBy.name ? `${round.closedBy.kind}:${round.closedBy.name}` : round.closedBy.kind}</code>
+                  </div>
+                ) : round.closedAt ? <div class="hi-dim">resolved by <code>unattributed</code></div> : null}
                 {round.resultNote ? <p>{round.resultNote}</p> : null}
               </li>
             ))}
           </ol>
         </section>
       ) : null}
-      <div class="hi-decision">
+      {item.status !== "closed" ? <><div class="hi-decision">
         <label class="hi-assign">
           Assignee
           <input value={assignee} maxlength={64} placeholder="human or agent" onInput={(e) => setAssignee(e.currentTarget.value)} />
@@ -343,7 +424,7 @@ function ValidationDetail({
         <Button variant="primary" disabled={!note.trim()} data-testid="inbox-close-validation" onClick={() => dispatch.closeValidation(item.id, outcome, note.trim())}>
           Close validation
         </Button>
-      </div>
+      </div></> : null}
     </>
   );
 }
@@ -625,7 +706,15 @@ export function ItemApp({
       <div class="hi-detail-meta">
         <KindBadge kind={item.kind} />
         <Requester item={item} />
-        <span class="hi-age" title={item.createdAt}>waiting {waited}</span>
+        {item.state === "resolved" ? (
+          <>
+            {item.outcome ? <Badge tone={item.outcome === "failed" || item.outcome === "denied" ? "err" : "info"}>{item.outcome}</Badge> : null}
+            <span class="hi-age" title={item.resolvedAt}>resolved {age(item.resolvedAt ?? item.createdAt)} ago</span>
+            <span>resolved by <code>{item.resolvedBy ?? "unattributed"}</code></span>
+          </>
+        ) : (
+          <span class="hi-age" title={item.createdAt}>waiting {waited}</span>
+        )}
         {item.stale ? <Badge tone="warn">stale</Badge> : null}
       </div>
       {item.warning && item.detail.kind !== "approval" ? (
