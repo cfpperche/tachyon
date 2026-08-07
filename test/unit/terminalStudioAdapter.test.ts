@@ -46,8 +46,10 @@ describe("TerminalStudioAdapter", () => {
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity).toEqual({ fields: blankTerminalFields() });
-    expect(result.referenceData).toMatchObject({ defaultCwd: "/ws/root", verifyCandidates: ["npm test"] });
+    expect(result.referenceData).toMatchObject({ defaultCwd: "/ws/root" });
     expect(result.entity).not.toHaveProperty("defaultCwd");
+    // t-b54ead — a verify gate is agent-only, so the terminal form is served no candidate chips at all.
+    expect(result.referenceData).not.toHaveProperty("verifyCandidates");
     expect(result.entity).not.toHaveProperty("verifyCandidates");
   });
 

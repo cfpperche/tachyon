@@ -56,10 +56,30 @@ function entryCount(doc: ReturnType<typeof parseDocument>): number {
   return (mapOf(doc, "agents")?.items.length ?? 0) + (mapOf(doc, "terminals")?.items.length ?? 0);
 }
 
-/** A `terminals:` entry must not carry AI-only fields (kind is implied; no AI) — strip them. */
+/**
+ * Keys this writer removes from a `terminals:` entry, because `parseAgentEntry` refuses every one of
+ * them for a terminal and `Workspace.mutateConfig` refuses to WRITE a file the loader would discard
+ * from — so a caller that includes one does not get a warning, it gets a failed save.
+ *
+ * t-b54ead added the four worktree/verify keys. They reached here from the Terminal Studio, which
+ * offered a "Git worktree isolation" section for a year: the fields were mirrored from Agent Studio
+ * in `aa99c066` when its footer-void LAYOUT fix was ported, and the parser's refusals only arrived
+ * later (SDD 478 M6). The form no longer offers them; this closes the same hole for every OTHER
+ * writer of a terminal entry, which is the half a form fix cannot reach.
+ *
+ * Exported so `test/unit/terminalStudioAgentOnlyKeys.test.ts` can prove the list is a SUBSET of what
+ * the loader actually refuses — measured by running the parser, not by reading a second list. A key
+ * here that the loader accepts would be silent data loss, and that is the assertion.
+ */
+export const TERMINAL_STRIPPED_AGENT_KEYS = [
+  "kind", "instructions", "soul", "selfEvolution", "worktree", "branch", "worktreeSetup", "verify",
+] as const;
+
+/** A `terminals:` entry must not carry agent-only fields (kind is implied; no AI, no worktree) — strip them. */
 function sanitizeForSection(section: Section, entry: Record<string, unknown>): Record<string, unknown> {
   if (section !== "terminals") return entry;
-  const { kind: _kind, instructions: _instructions, soul: _soul, selfEvolution: _selfEvolution, ...rest } = entry;
+  const rest = { ...entry };
+  for (const key of TERMINAL_STRIPPED_AGENT_KEYS) delete rest[key];
   return rest;
 }
 
