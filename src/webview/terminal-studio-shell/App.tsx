@@ -7,7 +7,7 @@ import { readTombstoneMessage, type StudioTombstoneInfo } from "../shared/studio
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
-import { Button, Chip, Input, Textarea } from "../shared/ui";
+import { Button, Chip, Input } from "../shared/ui";
 import { blankTerminalFields, computeTerminalDirty, terminalStudioTitleFor, type TerminalStudioReferenceData } from "./domain";
 import { browseMessage, cancelMessage, dirtyMessage, patchMessage, readyMessage, saveMessage } from "./messages";
 import type { TerminalStudioEntity, TerminalStudioFields, TerminalStudioHostMessage } from "./types";
@@ -18,6 +18,15 @@ import type { TerminalStudioEntity, TerminalStudioFields, TerminalStudioHostMess
  * mountNonce mount handshake, eager ref updates for the synchronous freeze checkpoint, useStudioFreeze
  * for the nav-transaction freeze). Nothing here is Terminal-specific except the field UI and the
  * domain compute functions — the generic machinery is a straight port.
+ *
+ * t-b54ead — there is deliberately NO "Git worktree isolation" section here, and re-adding one is a
+ * regression rather than a feature. `worktree`, `branch`, `worktreeSetup` and `verify` are agent-only
+ * BY CONSUMPTION (`ManagedWorktreeKind` is "agent" | "change"; `effectiveVerify` is typed on
+ * `AgentEntry`), so `parseAgentEntry` refuses all four under `terminals:` — and `Workspace.mutateConfig`
+ * refuses to write a config the loader would discard from, which made Save fail with a message pointing
+ * at Agent Studio. The section arrived on 2026-07-06 (`aa99c066`) by mirroring Agent Studio's footer-void
+ * LAYOUT fix (t-a1ba6c) and taking its fields along; the parser refusals landed later, in SDD 478 M6.
+ * The invariant is measured in `test/unit/terminalStudioAgentOnlyKeys.test.ts` against the loader itself.
  */
 export interface TerminalStudioAppProps {
   dispatch: StudioDispatch;
@@ -29,7 +38,7 @@ export interface TerminalStudioAppProps {
 }
 
 const firstToken = (cmd: string): string => (cmd.trim().split(/\s+/)[0] || "").split("/").pop() || "";
-const emptyReferenceData = (): TerminalStudioReferenceData => ({ flagMap: {}, defaultCwd: "", verifyCandidates: [] });
+const emptyReferenceData = (): TerminalStudioReferenceData => ({ flagMap: {}, defaultCwd: "" });
 
 export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: TerminalStudioAppProps) {
   const [mode, setMode] = useState<"new" | "edit">("new");
@@ -241,23 +250,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Term
               <label><input type="checkbox" checked={fields.restartOnCrash} onChange={(e) => set("restartOnCrash", (e.currentTarget as HTMLInputElement).checked)} /> Restart on crash</label>
               <label><input type="checkbox" checked={fields.attention} onChange={(e) => set("attention", (e.currentTarget as HTMLInputElement).checked)} /> Attention detection</label>
             </div>
-
-            {/* t-a1ba6c — worktree section in main fields column (same footer-void fix as Agent Studio). */}
-            <details open={fields.worktree || !!fields.branch || !!fields.worktreeSetup || !!fields.verify}>
-              <summary>Git worktree isolation</summary>
-              <label class="check"><input type="checkbox" checked={fields.worktree} onChange={(e) => set("worktree", (e.currentTarget as HTMLInputElement).checked)} /> Run in its own git worktree + branch</label>
-              <label class="tsh-label" for="tsh-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
-              <Input id="tsh-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
-              <label class="tsh-label" for="tsh-setup">Setup commands</label>
-              <Textarea id="tsh-setup" rows={3} value={fields.worktreeSetup} onInput={(e) => set("worktreeSetup", (e.currentTarget as HTMLTextAreaElement).value)} />
-              <label class="tsh-label" for="tsh-verify">Verify gate</label>
-              <Input id="tsh-verify" value={fields.verify} placeholder="npm test · a command/runbook name" onInput={(e) => set("verify", (e.currentTarget as HTMLInputElement).value)} />
-              <div class="tsh-chips">
-                {referenceData.verifyCandidates.map((c) => (
-                  <Chip key={c} active={c === fields.verify.trim()} onClick={() => set("verify", c)}>{c}</Chip>
-                ))}
-              </div>
-            </details>
           </div>
         ),
       }}
