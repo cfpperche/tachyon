@@ -141,6 +141,13 @@
   align-content: start;
 }
 
+/* A proposal is a decision document, not a data dump. Keep its reading measure stable while leaving
+ * the other Inbox detail kinds on their existing page geometry. */
+.hi-root.hi-detail-saved-agent {
+  max-width: 760px;
+  margin-inline: auto;
+}
+
 .hi-root .hi-detail-meta,
 .hi-root .hi-chips {
   display: flex;
@@ -218,6 +225,115 @@
   margin: 0;
   padding-left: var(--ds-4);
   font-size: var(--ds-small);
+}
+
+/* ── Saved Agent proposal ───────────────────────────────────────────────────────────────────── */
+
+.hi-root .hi-proposal {
+  display: grid;
+  gap: var(--ds-4);
+  min-width: 0;
+}
+
+.hi-root .hi-proposal-rationale {
+  max-width: 68ch;
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.hi-root .hi-proposal-facts {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(0, 1fr);
+  gap: var(--ds-2) var(--ds-4);
+  margin: 0;
+}
+
+.hi-root .hi-proposal-facts dt {
+  color: var(--ds-muted);
+  font-size: var(--ds-small);
+  font-weight: var(--tachyon-weight-semibold);
+}
+
+.hi-root .hi-proposal-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.hi-root .hi-proposal-digest {
+  color: var(--ds-muted);
+  font-family: var(--ds-mono);
+  font-size: var(--ds-small);
+  word-break: break-all;
+}
+
+.hi-root .hi-proposal-section h3 {
+  margin: 0 0 var(--ds-3);
+  font-size: var(--ds-body);
+  font-weight: var(--tachyon-weight-semibold);
+}
+
+.hi-root .hi-proposal-section ul {
+  display: grid;
+  gap: var(--ds-2);
+  margin: 0;
+  padding-left: var(--ds-4);
+  line-height: 1.5;
+}
+
+.hi-root .hi-proposal-plain,
+.hi-root .hi-proposal-env {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.hi-root .hi-proposal-env {
+  margin-top: var(--ds-3);
+  padding-top: var(--ds-3);
+  border-top: var(--ds-border-width) solid var(--ds-border);
+  color: var(--ds-muted);
+  font-size: var(--ds-small);
+}
+
+.hi-root .hi-proposal-note {
+  margin: var(--ds-3) 0 0;
+  padding: var(--ds-2) var(--ds-3);
+  border-left: 2px solid var(--ds-info);
+  border-radius: var(--ds-radius);
+  background: color-mix(in srgb, var(--ds-info) 8%, transparent);
+  line-height: 1.5;
+}
+
+.hi-root .hi-proposal-decide {
+  display: grid;
+  gap: var(--ds-3);
+}
+
+.hi-root .hi-proposal-decide textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+}
+
+.hi-root .hi-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ds-2);
+}
+
+@media (max-width: 520px) {
+  .hi-root .hi-proposal-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ds-1);
+  }
+
+  .hi-root .hi-proposal-facts dd:not(:last-child) {
+    margin-bottom: var(--ds-2);
+  }
 }
 
 /* ── evidence ───────────────────────────────────────────────────────────────────────────────── */

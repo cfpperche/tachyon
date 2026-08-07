@@ -396,7 +396,7 @@ function SavedAgentProposalDetail({
     <div class="hi-proposal" data-testid="inbox-saved-agent-proposal">
       {error ? <div class="hi-error" role="alert" data-testid="inbox-saved-agent-error">{error.message}</div> : null}
       <p class="hi-proposal-rationale">{proposal.rationale}</p>
-      <dl class="hi-proposal-facts">
+      <dl class="hi-proposal-facts ds-card">
         <dt>Agent</dt><dd data-testid="proposal-agent-name">{proposal.agentName}</dd>
         <dt>Runtime</dt><dd>{proposal.runtime.adapter}{proposal.runtime.executable ? ` (${proposal.runtime.executable})` : ""}</dd>
         <dt>Model</dt><dd>{proposal.runtime.model ?? "Runtime default"}</dd>
@@ -416,31 +416,30 @@ function SavedAgentProposalDetail({
         </dd>
         <dt>Proposed by</dt><dd>{proposal.proposer} <Badge tone="info">Bridge-resolved</Badge></dd>
         <dt>Expires</dt><dd>{proposal.expiresAt}</dd>
-        <dt>Digest</dt><dd class="hi-proposal-digest">{proposal.digest.slice(0, 16)}…</dd>
+        <dt>Digest</dt><dd class="hi-proposal-digest" title={proposal.digest}>{proposal.digest}</dd>
       </dl>
 
       {proposal.dangerous.length > 0 ? (
-        <div class="hi-proposal-dangerous" data-testid="proposal-dangerous">
+        <div class="hi-proposal-section hi-proposal-dangerous ds-card" data-testid="proposal-dangerous">
           <h3>What this grants</h3>
           <ul>
             {proposal.dangerous.map((entry) => (
               <li key={entry.label}><strong>{entry.label}</strong>: {entry.detail}</li>
             ))}
           </ul>
+          {proposal.environmentNames.length > 0 ? (
+            <p class="hi-proposal-env">
+              Environment variables requested (names only): {proposal.environmentNames.join(", ")}
+            </p>
+          ) : null}
         </div>
       ) : (
-        <p class="hi-proposal-plain" data-testid="proposal-dangerous-none">
+        <p class="hi-proposal-section hi-proposal-plain ds-card" data-testid="proposal-dangerous-none">
           This proposal requests no additional authority, shared checkout, ownership, hooks or environment.
         </p>
       )}
 
-      {proposal.environmentNames.length > 0 ? (
-        <p class="hi-proposal-env">
-          Environment variables requested (names only): {proposal.environmentNames.join(", ")}
-        </p>
-      ) : null}
-
-      <div class="hi-proposal-affected">
+      <div class="hi-proposal-section hi-proposal-affected ds-card">
         <h3>What approving writes</h3>
         <ul>{proposal.affected.map((entry) => <li key={entry}>{entry}</li>)}</ul>
         <p class="hi-proposal-note" data-testid="proposal-created-enabled-note">
@@ -448,28 +447,30 @@ function SavedAgentProposalDetail({
         </p>
       </div>
 
-      <div class="hi-proposal-decide">
+      <div class="hi-proposal-decide ds-card">
         <Textarea
           value={reason}
           placeholder="Reason (required to deny)"
           onInput={(e) => setReason((e.currentTarget as HTMLTextAreaElement).value)}
         />
-        <Button
-          variant="primary"
-          data-testid="inbox-approve-saved-agent"
-          disabled={proposal.baseDiverged || proposal.expired || Boolean(pending)}
-          onClick={() => decide("approve")}
-        >
-          {pending === "approve" ? "Creating…" : "Approve and create"}
-        </Button>
-        <Button
-          variant="default"
-          data-testid="inbox-deny-saved-agent"
-          disabled={!reason.trim() || Boolean(pending)}
-          onClick={() => decide("deny")}
-        >
-          {pending === "deny" ? "Denying…" : "Deny"}
-        </Button>
+        <div class="hi-proposal-actions">
+          <Button
+            variant="primary"
+            data-testid="inbox-approve-saved-agent"
+            disabled={proposal.baseDiverged || proposal.expired || Boolean(pending)}
+            onClick={() => decide("approve")}
+          >
+            {pending === "approve" ? "Creating…" : "Approve and create"}
+          </Button>
+          <Button
+            variant="default"
+            data-testid="inbox-deny-saved-agent"
+            disabled={!reason.trim() || Boolean(pending)}
+            onClick={() => decide("deny")}
+          >
+            {pending === "deny" ? "Denying…" : "Deny"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -619,7 +620,7 @@ export function ItemApp({
   const item = vm.item;
   const waited = age(item.createdAt);
   return (
-    <div class="hi-root hi-detail ds-page" data-testid="control-human-inbox-item">
+    <div class={`hi-root hi-detail ds-page${item.detail.kind === "saved-agent-proposal" ? " hi-detail-saved-agent" : ""}`} data-testid="control-human-inbox-item">
       <PageChrome title={item.title} hint={`${item.id} · ${vm.folder}`} backLink={backLink} />
       <div class="hi-detail-meta">
         <KindBadge kind={item.kind} />
