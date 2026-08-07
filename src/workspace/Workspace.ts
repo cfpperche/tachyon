@@ -126,7 +126,7 @@ import {
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
-import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type ManagedEntryInfo } from "../agents/AgentManager.js";
+import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type ManagedEntryInfo, type RestartSessionMode } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 
@@ -1624,12 +1624,7 @@ export class Workspace {
         policyOf: (agent) =>
           this.monitor.isAuthRequired(agent) ? "never" : (this.config?.agents[agent]?.restart ?? "never"),
         scheduleRestart: (agent, delayMs) => {
-          setTimeout(() => {
-            // spec 389 — crash recovery is force + new (not operator graceful+resume).
-            this.manager.restart(agent, { stop: "force", session: "new" }).catch((err) => {
-              this.host.notify(`auto-restart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
-            });
-          }, delayMs);
+          setTimeout(() => void this.recoverFromCrash(agent), delayMs);
         },
         now: () => Date.now(),
       },
@@ -1657,8 +1652,10 @@ export class Workspace {
           } else {
             this.host.notify(this.t("'{0}' crashed{1} — dead pane kept for postmortem", agent, code), "error", [
               { label: this.t("Inspect"), run: () => void this.terminals.open(agent, this.manager.session(agent)) },
-              // spec 389 — one-click crash recovery stays force + new section.
-              { label: this.t("Restart"), run: () => void this.manager.restart(agent, { stop: "force", session: "new" }).catch((err) => this.host.notify(String(err instanceof Error ? err.message : err), "error")) },
+              // t-f6aa7c — the SAME trigger (a crash) reached by a different ACTOR (the human, after
+              // the policy declined to auto-restart). It goes through the same recovery, or the two
+              // doors out of one crash would disagree about whether the agent keeps its memory.
+              { label: this.t("Restart"), run: () => void this.recoverFromCrash(agent) },
             ]);
           }
         },
@@ -6809,6 +6806,47 @@ export class Workspace {
     this.scheduler.setPaused(name, paused);
     this.deps.onViewsChanged("schedules");
     this.host.notify(paused ? this.t("schedule '{0}' paused", name) : this.t("schedule '{0}' resumed", name));
+  }
+
+  /**
+   * t-f6aa7c — recovery from a crash, for both doors out of one: the `restart: on-crash` policy's
+   * scheduled attempt and the human clicking Restart on the postmortem toast.
+   *
+   * An AGENT comes back on the SAME conversation; a TERMINAL comes back zeroed. The `stop: "force"`
+   * half is unchanged and still right for both — the process is already dead, so there is no
+   * graceful handshake left to run. Only the SESSION half branches, on the question spec 389 never
+   * asked: does this thing have memory worth preserving? `bun run dev` has none. An agent two hours
+   * into a task has all of it, and it did not choose to die.
+   *
+   * Spec 389 recorded crash as "force + new" under the heading *unchanged* — it was preserving the
+   * pre-389 single path while it introduced the stop × session axes, and it listed auto-resume on
+   * crash as an explicit NON-GOAL. So this does not overturn a decision spec 389 made; it answers
+   * the question spec 389 deferred.
+   *
+   * Resuming must never become REFUSING. When there is nothing to resume — a first crash, a
+   * transcript aged out, a runtime with no resume adapter — `restart` already falls back to a fresh
+   * section on its own, and this says WHY out loud. The defect being fixed is a human discovering
+   * the loss by watching the agent re-ask a question that was already answered; a fresh section that
+   * announces its own reason is not that.
+   */
+  private async recoverFromCrash(agent: string): Promise<void> {
+    const session: RestartSessionMode = this.manager.kindOf(agent) === "agent" ? "resume" : "new";
+    try {
+      const result = await this.manager.restart(agent, { stop: "force", session });
+      if (session === "resume" && !result.resumed) {
+        this.host.notify(
+          this.t(
+            "'{0}' crashed — restarted on a NEW session, its prior context is gone: {1}",
+            agent,
+            result.resumeUnavailable ?? this.t("no resumable session"),
+          ),
+          "warn",
+        );
+      }
+    } catch (err) {
+      // Reached by the human's toast click as well as the policy, so it does not claim "auto".
+      this.host.notify(`crash restart of '${agent}' failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
   }
 
   rebuildWatches(): void {
