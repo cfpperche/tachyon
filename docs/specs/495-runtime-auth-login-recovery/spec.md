@@ -74,21 +74,33 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 
 ### First slice — "the refusal becomes readable and actionable"
 
-- [ ] **Scenario: a launch refused for credentials is never printed to the status bar**
+_Delivered 2026-08-07 by `t-2656d7`. The third criterion is met in substance and narrowed in form —
+see its note._
+
+- [x] **Scenario: a launch refused for credentials is never printed to the status bar**
   - **Given** an agent whose runtime home has no usable credential
   - **When** a human starts it from any door (sidebar ▶, command palette, Agent Studio)
   - **Then** the failure is presented through a **persistent, dismissible** surface that shows the
     whole sentence — runtime, agent and the safe action — and is still readable ten seconds later.
-- [ ] **Scenario: the refusal carries a login action**
+- [x] **Scenario: the refusal carries a login action**
   - **Given** that presentation
   - **When** the human chooses the offered login action
   - **Then** that runtime's own login command runs in a Tachyon-governed pane the human can type
     into, without opening an external terminal.
-- [ ] **Scenario: the launch refusal is the same condition as the mid-run one**
+- [x] **Scenario: the launch refusal is the same condition as the mid-run one**
   - **Given** a credential-missing launch refusal
   - **When** it is classified
   - **Then** it produces `AuthRequiredEvidence` for that runtime and surfaces with the same wording
     contract as `describeAuthRequired` — no second vocabulary for the same state.
+  - _Delivered by `authRequiredFromHarness()`, which reads the human action from whichever
+    declaration measured that runtime (`RUNTIME_AUTH_PROFILES`, else `RUNTIME_AUTH_PREFLIGHT`) rather
+    than composing a second one, and by presenting through the same `host.notify(…, actions)` channel
+    the mid-run hold uses. **Narrowing to state:** the evidence does not travel the engine→shell
+    protocol as a typed payload (plan §L2). It did not need to: `host.notify` reaches the human from
+    inside the engine, and the protocol error result is a `hasOnlyKeys` shape whose extension is a
+    schema change this slice did not require. The consequence is visible and left standing — the
+    shell's own `catch` in `extension.ts` still echoes the flattened message to the status bar
+    alongside the actioned notice. Redundant, not a loss._
 
 ### Full architecture
 

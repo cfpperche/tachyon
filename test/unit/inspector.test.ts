@@ -27,6 +27,12 @@ describe("classifySession", () => {
     expect(classifySession(`tachyon-rb-${HASH}-ship-2`)).toEqual({ kind: "runbook", wsHash: HASH, label: "ship-2" });
   });
 
+  // t-2656d7 — a runtime login pane. Named rather than left to fall through to `unknown`, so the
+  // inspector does not report Tachyon's own governed pane as somebody else's session.
+  it("names a runtime login pane", () => {
+    expect(classifySession(`tachyon-login-${HASH}-grok`)).toEqual({ kind: "login", wsHash: HASH, label: "grok" });
+  });
+
   it("treats non-tachyon names as unknown, surfacing the raw name", () => {
     expect(classifySession("someone-elses-session")).toEqual({ kind: "unknown", label: "someone-elses-session" });
   });

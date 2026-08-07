@@ -62,7 +62,7 @@ import {
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
 import { AgentRuntimeAdmissionError, admitAgentRuntimeCommand } from "./agentRuntimeAdmission.js";
-import { authRequiredFromPreflight, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { authRequiredFromPreflight, authRequiredOf, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
 import { AgentProfileRefusal, type AgentProfileRefusalCode } from "../config/agentProfileRefusal.js";
@@ -625,6 +625,21 @@ export interface AgentManagerOptions {
   ownedSession?: (name: string, cwd: string) => { sessionId: string; transcriptPath: string } | undefined;
   /** spec 236 — surface a non-blocking advisory (e.g. a user `--strict-mcp-config` mutes Bridge injection). */
   notify?: (message: string, level: "warn") => void;
+  /**
+   * t-2656d7 (SDD 495) — a launch refused because the RUNTIME is not authenticated.
+   *
+   * Separate from `notify` above, and the separation is the fix. `notify` is a one-way line with no
+   * actions, and an action-less notice is precisely the branch that routes to
+   * `vscode.window.setStatusBarMessage(…, 8_000)` — clipped by width, erased on a timer, no button.
+   * That is where the owner's `— run grok login first` went on 2026-08-07. This condition is the one
+   * launch failure a human can FIX, so it needs a surface that can carry the fix as a control; the
+   * host decides what that surface is.
+   *
+   * Every launch door reaches it: the harness credential refusal (all runtimes), the OpenCode
+   * pre-launch store probe, and a `runtime_auth_rejected` readiness verdict. Left undefined it
+   * degrades to `notify`, which is today's behavior and is what the AgentManager suites construct.
+   */
+  onAuthRequired?: (agent: string, evidence: AuthRequiredEvidence) => void;
   /** spec 312 — lets Workspace tie pane-nudge suppression to the actual spawn-time hook outcome. */
   onSessionHooksInjected?: (name: string, injected: boolean) => void;
   onSpawned?: (name: string, reveal: SpawnReveal, context?: { worktree?: WorktreeRecord; temporary: boolean }) => void;
@@ -1373,7 +1388,7 @@ export class AgentManager {
     // letting the launch through produces a healthy-looking agent answering on a model nobody chose.
     if (result.state === "unauthenticated") {
       const evidence = authRequiredFromPreflight(result.runtime, result.reportedLine);
-      if (evidence) this.opts.notify?.(describeAuthRequired(name, evidence), "warn");
+      if (evidence) this.reportAuthRequired(name, evidence);
       throw new RuntimeLaunchPreflightError(result);
     }
     if (result.state === "unsupported" || result.state === "failed") throw new RuntimeLaunchPreflightError(result);
@@ -1510,7 +1525,7 @@ export class AgentManager {
       }
       const primary = new RuntimeLaunchReadinessError(readiness.code, authRequired);
       if (authRequired) {
-        this.opts.notify?.(describeAuthRequired(name, authRequired), "warn");
+        this.reportAuthRequired(name, authRequired);
       }
       const failures: Error[] = [primary];
       try { await this.opts.tmux.killSession(session); }
@@ -2240,7 +2255,36 @@ export class AgentManager {
     // A private config home is materialized for the Agent arm only, so the materializer receives an
     // AgentEntry and never has to ask what it was handed.
     if (!agent || !needsPrivateHome || !this.opts.materializeHarness) return null;
-    return this.opts.materializeHarness({ name, def: agent, cwd, delegated });
+    try {
+      return this.opts.materializeHarness({ name, def: agent, cwd, delegated });
+    } catch (error) {
+      // t-2656d7 — the ONE place a harness is materialized, so every door that can refuse a launch
+      // for credentials converges here: sidebar ▶, restart, resume, autostart, crash restart, a
+      // pipeline node, and a Bridge `spawn_agent`/`restart_agent`. The repository's ACTOR × TRIGGER
+      // rule is why the interception sits at the convergence and not at the caller — the second
+      // caller is the one that does not exist yet on the day of the plan.
+      //
+      // The error is RETHROWN unchanged: reporting is presentation, and swallowing the refusal here
+      // would let a launch look like it succeeded.
+      const evidence = authRequiredOf(error);
+      if (evidence) this.reportAuthRequired(name, evidence);
+      throw error;
+    }
+  }
+
+  /**
+   * t-2656d7 — the single exit for "this launch was refused because the runtime is not logged in".
+   *
+   * The fallback to `notify` is deliberate and is not a silent degrade: it is exactly today's
+   * behavior, preserved for the constructions that wire no host (the AgentManager unit suites). The
+   * production construction in `Workspace` always wires `onAuthRequired`.
+   */
+  private reportAuthRequired(name: string, evidence: AuthRequiredEvidence): void {
+    if (this.opts.onAuthRequired) {
+      this.opts.onAuthRequired(name, evidence);
+      return;
+    }
+    this.opts.notify?.(describeAuthRequired(name, evidence), "warn");
   }
 
   private applyHarness(
