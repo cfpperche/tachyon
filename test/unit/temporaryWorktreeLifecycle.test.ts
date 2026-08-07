@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { registerTools } from "../../src/bridge/tools.js";
+import type { LifecycleOwnershipSource } from "../../src/bridge/lifecycleScope.js";
 import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
 import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
 
@@ -79,13 +80,28 @@ function dismissWorld(opts: {
   // to tmux, then free once the cascade's gate has killed it.
   const verdicts = opts.occupancy ?? [{ state: "occupied" as const, detail: "a stopped pane is still present in tmux" }, { state: "free" as const }];
   let probe = 0;
-  const manager = {
-    list: async () => [{ name: "child", lifetime: "temporary", running: false, dead: opts.dead === true }],
-    liveDescendants: async () => opts.descendants ?? [],
+  // The deps object below reaches `registerTools` through `as never`, because `BridgeDeps.manager`
+  // is the whole `AgentManager` class and this fake implements the seven members the cascade calls.
+  // That cast erases every structural check, so the ownership half is pinned to the interface the
+  // production code actually declares for it — the one `lifecycleScopeGuard` passes `deps.manager`
+  // into. When that interface grows a member, THIS FILE goes red at typecheck instead of at runtime:
+  // t-b5f896 added `declaredOwnerOf` to it, the fake did not have it, and the first thing the
+  // untyped fake produced was `kill_agent` throwing "lineage.declaredOwnerOf is not a function"
+  // through the refusal path — a double that does not reproduce the FORM of the original is theatre.
+  const lifecycle: LifecycleOwnershipSource = {
     // t-bec361 — the caller below is 'ada', and a Temporary child that owns a checkout got that
     // checkout by being SPAWNED by someone. Saying so is what makes this fake faithful to the
     // production shape the cascade runs in: the coordinator stopping its own finished child.
     parentOf: (agent: string) => (agent === "child" ? "ada" : undefined),
+    // t-b5f896 — 'child' is a Temporary reached by lineage, never a Saved Agent the human declared
+    // an owner for, so the roster answer is genuinely "nobody" rather than a stub returning 'ada'.
+    // Keeping it that way is what makes the lineage walk above the branch these tests exercise.
+    declaredOwnerOf: () => undefined,
+  };
+  const manager = {
+    list: async () => [{ name: "child", lifetime: "temporary", running: false, dead: opts.dead === true }],
+    liveDescendants: async () => opts.descendants ?? [],
+    ...lifecycle,
     probeAgentOccupancy: async () => {
       events.push("probe");
       return verdicts[Math.min(probe++, verdicts.length - 1)]!;
