@@ -92,13 +92,19 @@ Parts 2 and 3 did not run. The owner shrank their motivation after the measureme
 row fact still reads the `tachyon.yml` pointer through `agentSources`. The derivation names the
 FACT, not the file, so a later Part 2 changes one line in `savedAgentPresenceFacts`.
 
-The five states are `src/config/savedAgentState.ts`, a total function over four booleans. The
+The states are `src/config/savedAgentState.ts`, a total function over booleans — four when Part 4
+shipped, five since `t-8b58b3` added `profileHomeOnDisk` and the `orphan-home` state with it. The
 presence facts decide before the projection does, which matters because the projection's input is
 a host file no Tachyon record owns; a projection that somehow succeeded while a record was missing
-must not report `consistent`.
+must not report `consistent`. Below the roster row the disk decides before the host authority does,
+for the mirror-image reason: among states with no member, the record that may hold a human's bytes
+outranks the one that holds none.
 
-The truth table is written out in the test, all sixteen rows. A table generated from the
-implementation would agree with any implementation, including a wrong one.
+The truth table is written out in the test, all thirty-two rows (sixteen before the fifth fact). A
+table generated from the implementation would agree with any implementation, including a wrong one.
+Eight of the thirty-two cannot be measured on a real filesystem — `agent.yml` implies its parent
+directory — and are written anyway, with one case asserting that the impossible half never buys a
+different answer than its possible twin.
 
 The state rides `Workspace.refusedAgents()`, which is the ONE place the refusal string is built.
 The sidebar row and `list_agents` therefore carry the same line without a second code path.

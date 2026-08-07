@@ -39,6 +39,18 @@ function sectionOf(doc: ReturnType<typeof parseDocument>, name: string): Section
   return undefined;
 }
 
+/**
+ * `t-359469` — which block declares `name`, for a caller that must treat the two blocks differently.
+ *
+ * `agentStanzaCasToken` deliberately does NOT carry this: the token is persisted inside profile
+ * transaction journals (`schemaVersion: 1`) and compared field-by-field, so adding a field would make
+ * every in-flight journal fail validation or CAS. A separate read keeps the token wire-stable.
+ */
+export function agentStanzaSection(text: string | undefined, name: string): Section | undefined {
+  if (text === undefined || text.trim().length === 0) return undefined;
+  return sectionOf(load(text), name);
+}
+
 /** Total declared entries across both blocks — the "can't delete the last one" guard. */
 function entryCount(doc: ReturnType<typeof parseDocument>): number {
   return (mapOf(doc, "agents")?.items.length ?? 0) + (mapOf(doc, "terminals")?.items.length ?? 0);

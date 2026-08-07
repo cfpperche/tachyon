@@ -1,13 +1,13 @@
 /**
- * SDD 494 Part 4 — the five disagreements between the owners of a Saved Agent's state, derived from
- * four presence facts and stored nowhere.
+ * SDD 494 Part 4 — the six disagreements between the owners of a Saved Agent's state, derived from
+ * five presence facts and stored nowhere.
  *
  * `spec.md` names one owner per fact. This module answers the question that follows from that table:
  * when the owners disagree, WHICH disagreement is it, and which door removes the agent. Both answers
  * are computed from the facts on every read.
  *
- * Storing the state would be the defect the spec exists to remove. Three of the four facts live
- * outside Tachyon's own records — a directory on disk, a host secret, and a projection whose input is
+ * Storing the state would be the defect the spec exists to remove. Four of the five facts live
+ * outside Tachyon's own records — two paths on disk, a host secret, and a projection whose input is
  * `~/.claude/settings.json`, which any tool on the machine may rewrite. A stored verdict about them
  * ages the moment it is written, and the reader has no way to tell a fresh one from a stale one.
  *
@@ -17,10 +17,11 @@
  */
 
 /**
- * The four presence facts, each read from the record that OWNS it.
+ * The five presence facts, each read from the record that OWNS it.
  *
  * They are supplied together because the state is a statement about their disagreement; no single
- * fact carries it. A caller that can only measure three of them has not measured the state.
+ * fact carries it. A caller that can only measure four of them has not measured the state — which is
+ * exactly how t-8b58b3 happened, one fact short and confident about it.
  */
 export interface SavedAgentPresenceFacts {
   /** Membership. The roster row exists — today, a `tachyon.yml` pointer, read through `agentSources`. */
@@ -31,11 +32,26 @@ export interface SavedAgentPresenceFacts {
   authorityRecord: boolean;
   /** Runnability. The load projected this agent into a runnable definition. Derived, never stored. */
   projection: boolean;
+  /**
+   * Residence. The directory `.tachyon/agents/<name>/` exists — whatever is or is not inside it.
+   *
+   * t-8b58b3 added this fact, and adding it is the whole fix. The sweep that feeds this table
+   * ENUMERATES that directory to find its subjects and then measured only the FILE inside it, so a
+   * name it had just listed came back with four false facts and derived to `absent` — "there is
+   * nothing to remove", said about a directory the same function had just read. A vocabulary with no
+   * word for "the home exists" cannot report a home that exists; that is upstream of any arm of the
+   * derivation below, which was right about the facts it was given.
+   *
+   * `profileOnDisk` implies this fact — an `agent.yml` cannot exist without its parent. The reverse
+   * does not hold, and the gap is exactly the residue: an interrupted create, a `forgetAgent` that
+   * took `evolution/`, or a Soul import that wrote `SOUL.md` under a name with no roster row.
+   */
+  profileHomeOnDisk: boolean;
 }
 
 /**
  * `consistent` and `absent` are not disagreements; they complete the function so every combination of
- * the four facts has one named answer rather than falling through a default arm.
+ * the five facts has one named answer rather than falling through a default arm.
  */
 export type SavedAgentState =
   | "consistent"
@@ -44,14 +60,17 @@ export type SavedAgentState =
   | "unattested"
   | "unprojectable"
   | "stranded-authority"
+  | "orphan-home"
   | "absent";
 
 export interface SavedAgentRemovalDoor {
   /**
    * The door that would remove this agent, or `null` when the product owns no door for this state.
    *
-   * `null` is an answer, not a gap. Two of the five states hold no roster row, so there is no member
+   * `null` is an answer, not a gap. Three of the six states hold no roster row, so there is no member
    * to remove; deleting their residue automatically would turn a display disagreement into data loss.
+   * A `null` door therefore owes the reader more than the states that have one: its reason is the
+   * whole answer, and it has to say what is there and how to deal with it by hand.
    */
   door: string | null;
   /** Why that door removes it, or why no door does. */
@@ -64,14 +83,25 @@ export interface SavedAgentRemovalDoor {
  * That order is the safety property. `projection` is the one fact whose input Tachyon does not own,
  * so a projection that somehow succeeded while a presence fact was missing must not be allowed to
  * report the agent as consistent — the missing record still decides.
+ *
+ * Below the roster row the order is the DISK first, and that is the same safety property read from
+ * the other end: among the states that hold no member, the one that names bytes on disk must win
+ * over the one that names a record with no bytes. `unlisted-profile` already beat
+ * `stranded-authority` for that reason, and `orphan-home` joins it on the same ground — a directory
+ * may hold a human's Soul, an authority record holds nothing anyone can lose. The caller reads every
+ * fact alongside the state, so nothing is hidden by the state that wins.
  */
 export function deriveSavedAgentState(facts: SavedAgentPresenceFacts): SavedAgentState {
-  const { rosterRow, profileOnDisk, authorityRecord, projection } = facts;
-  if (!rosterRow && !profileOnDisk && !authorityRecord) return "absent";
-  // A profile with no roster row is not a member, whatever the authority says. `unlisted-profile`
-  // therefore wins over `stranded-authority`: the profile is the record that may hold a human's work.
-  if (!rosterRow && profileOnDisk) return "unlisted-profile";
-  if (!rosterRow) return "stranded-authority";
+  const { rosterRow, profileOnDisk, authorityRecord, projection, profileHomeOnDisk } = facts;
+  if (!rosterRow) {
+    // A profile with no roster row is not a member, whatever the authority says: the profile is the
+    // record that may hold a human's work.
+    if (profileOnDisk) return "unlisted-profile";
+    // t-8b58b3 — a home with no definition in it. Was `absent` when the authority was missing too,
+    // which reported "there is nothing to remove" about a directory the sweep had just enumerated.
+    if (profileHomeOnDisk) return "orphan-home";
+    return authorityRecord ? "stranded-authority" : "absent";
+  }
   if (!profileOnDisk) return "orphan-locator";
   if (!authorityRecord) return "unattested";
   return projection ? "consistent" : "unprojectable";
@@ -113,8 +143,26 @@ export function savedAgentRemovalDoor(state: SavedAgentState): SavedAgentRemoval
       return {
         door: null,
         reason:
-          "no roster row and no profile, so there is no member to remove; what is left is a host authority "
-          + "record, and no product door retires an authority whose agent is already gone",
+          "no roster row, no profile and nothing left on disk, so there is no member to remove; what is left "
+          + "is a host authority record, and no product door retires an authority whose agent is already gone",
+      };
+    /**
+     * t-8b58b3 — the residue an interrupted create or an ungoverned delete leaves behind.
+     *
+     * No door, and for the same reason `unlisted-profile` has none: there is no member, and the
+     * directory may hold bytes. The reason has to carry the human the rest of the way, so it names
+     * the one command that tells the two cases apart by refusing — `rmdir` succeeds on residue and
+     * fails on anything worth keeping, which is the same policy the removal helpers now use.
+     */
+    case "orphan-home":
+      return {
+        door: null,
+        reason:
+          "no roster row, no agent.yml and no authority, but .tachyon/agents/<name>/ is still on disk. There "
+          + "is no member to remove, and Tachyon never deletes a profile directory automatically. Run "
+          + "`rmdir .tachyon/agents/<name>/`: it succeeds when the directory is empty residue from an "
+          + "interrupted create or forget, and refuses when it still holds Soul, Evolution or memory bytes — "
+          + "read those before deleting them, or restore the roster row to adopt what is there",
       };
     case "absent":
       return { door: null, reason: "no roster row, no profile and no authority; there is nothing to remove" };

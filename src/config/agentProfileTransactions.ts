@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
+import { removeEmptyAgentProfileHome } from "./agentProfileHome.js";
 import { closeCanonicalAgentProfile, readCanonicalAgentProfile } from "./agentProfileReader.js";
 import { asciiFoldAgentName } from "./nameValidation.js";
 
@@ -350,6 +351,15 @@ export function publishAgentProfile(workspaceRoot: string, agentName: string, pr
   }
 }
 
+/**
+ * Unpublish a canonical profile the transaction itself published, and take the home with it.
+ *
+ * The home goes because this is the CREATE branch of compensation: `publishAgentProfile` minted
+ * `.tachyon/agents/<name>/` inside the same transaction, so a rollback that leaves it has not put
+ * the workspace back the way it found it. `removeEmptyAgentProfileHome` states the policy and the
+ * argument for `rmdir` over `rm -rf` — anything the create did not put there survives, and is now
+ * reported as `orphan-home` rather than disappearing into `absent` (t-4a1f85, t-8b58b3).
+ */
 export function removeAgentProfileIfExact(
   workspaceRoot: string,
   agentName: string,
@@ -364,4 +374,5 @@ export function removeAgentProfileIfExact(
   } finally {
     closeCanonicalAgentProfile(source);
   }
+  removeEmptyAgentProfileHome(workspaceRoot, agentName);
 }

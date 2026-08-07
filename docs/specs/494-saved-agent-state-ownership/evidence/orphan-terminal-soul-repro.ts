@@ -52,6 +52,12 @@ const facts = {
   profileOnDisk: fs.existsSync(path.join(ws, ".tachyon", "agents", "shell", "agent.yml")),
   authorityRecord: false,
   projection: false,
+  // t-8b58b3 — the fifth fact. It does not fix O4 (the home should never have been published for a
+  // `terminals:` name; that is `t-359469`), but it does stop the residue reporting as `absent`.
+  profileHomeOnDisk: fs.lstatSync(
+    path.join(ws, ".tachyon", "agents", "shell"),
+    { throwIfNoEntry: false },
+  )?.isDirectory() === true,
 };
 const state = deriveSavedAgentState(facts);
 console.log(`\n  presence facts            : ${JSON.stringify(facts)}`);

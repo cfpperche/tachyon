@@ -534,8 +534,52 @@ describe("agent profile lifecycle kernel", () => {
       expect(config.read()).toBe(originalConfig);
       expect(authority.records.has("codex")).toBe(false);
       expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
+      // t-4a1f85 — "no partial identity state" includes the HOME. The create minted
+      // `.tachyon/agents/codex/`, so a rollback that keeps it has not put the workspace back: the
+      // journal is then deleted as clean and no reconcile ever revisits the directory again.
+      expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex"))).toBe(false);
     },
   );
+
+  /**
+   * t-4a1f85 — the other half of the removal policy, and the reason it is `rmdir` and not `rm -rf`.
+   *
+   * `savedAgentState.ts` says a profile directory may hold work a human wants and that Tachyon never
+   * deletes it automatically. A compensation that recursively cleared the home it created would
+   * break that rule for anything that arrived in the meantime — a Soul import writes `SOUL.md` into
+   * the same directory. So the rollback removes only what it can remove EMPTY, the stray bytes
+   * survive, and the leftover is now `orphan-home` in `reconcile_roster` rather than invisible.
+   */
+  it("keeps a compensated create's home when something else wrote into it, and does not degrade", async () => {
+    const root = temporaryWorkspace();
+    const authority = new MemoryAuthority();
+    const config = configPort(root);
+    const originalConfig = config.read();
+    const home = path.join(root, ".tachyon", "agents", "codex");
+    const soul = path.join(home, "SOUL.md");
+
+    await expect(commitAgentProfileLifecycle({
+      workspaceRoot: root,
+      agentName: "codex",
+      operation: "create",
+      createProfile: initialProfile,
+      authority,
+      config,
+      onPhase: (current) => {
+        if (current === "locator-written") fs.writeFileSync(soul, "# a human's soul\n", "utf8");
+        if (current === "activated") throw new Error("fail-activated");
+      },
+    })).rejects.toThrow("fail-activated");
+
+    // The rollback still succeeded on every record the journal names — a refused `rmdir` must never
+    // turn a clean compensation into `degraded`, which every reconcile skips forever.
+    expect(config.read()).toBe(originalConfig);
+    expect(authority.records.has("codex")).toBe(false);
+    expect(agentProfileLifecycleBlocked(root, "codex")).toBe(false);
+    expect(fs.existsSync(path.join(home, "agent.yml"))).toBe(false);
+    expect(fs.readFileSync(soul, "utf8")).toBe("# a human's soul\n");
+    expect(fs.readdirSync(home)).toEqual(["SOUL.md"]);
+  });
 
   it("sets canonical enablement without making it authorable in tachyon.yml", async () => {
     const root = temporaryWorkspace();
@@ -771,6 +815,9 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
 
     // Compensated, not committed: the created agent is rolled back and the owner is untouched.
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "importer", "agent.yml"))).toBe(false);
+    // t-4a1f85 — the RECOVERY door reaches the same removal as the in-process one. Same actor as a
+    // create (Human or Agent), different trigger (the process died), and the residue was identical.
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "importer"))).toBe(false);
     expect(fs.readFileSync(path.join(root, ".tachyon", "agents", "boss", "agent.yml"), "utf8")).toBe(priorOwnerProfile);
     expect(authority.records.get("boss")).toEqual(priorOwnerAuthority);
   });

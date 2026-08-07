@@ -4145,6 +4145,15 @@ export class Workspace {
       profileOnDisk: fs.existsSync(path.join(this.workspaceRoot, ".tachyon", "agents", name, "agent.yml")),
       authorityRecord: authorityNames.has(name),
       projection: source?.mode === "profile",
+      // t-8b58b3 — measured EXACTLY the way `savedAgentSubjects` enumerates it below: `lstat` +
+      // `isDirectory`, so a symlink is neither listed as a subject nor reported as a home. The
+      // defect this fact closes was the sweep listing a subject by reading the directory and then
+      // measuring only the file inside it, and a listing rule the measurement does not share would
+      // reintroduce it in the other direction.
+      profileHomeOnDisk: fs.lstatSync(
+        path.join(this.workspaceRoot, ".tachyon", "agents", name),
+        { throwIfNoEntry: false },
+      )?.isDirectory() === true,
     };
   }
 
@@ -5473,8 +5482,14 @@ export class Workspace {
         return this.t("stranded-authority — a host authority is left and the agent is gone. {0}", reason);
       // A refusal with no disagreement behind it keeps the string it always had. Adding a state name
       // here would tell the reader that owners disagree when the measurement says they do not.
+      //
+      // `orphan-home` joins them because it cannot be reached from here at all, not because it says
+      // nothing: this method is only ever called for a name `refusedAgentReasons` yielded, i.e. one
+      // whose `agentSources` mode is `refused`, which makes `rosterRow` true — and no arm below the
+      // roster row can then be selected. `reconcile_roster` is where that state has a reader.
       case "consistent":
       case "absent":
+      case "orphan-home":
         return reason;
     }
   }

@@ -41,6 +41,7 @@ import {
 } from "./soul.js";
 import {
   agentStanzaCasToken,
+  agentStanzaSection,
   setAgentSoulEnablement,
   type AgentStanzaCasToken,
 } from "../config/YamlConfigEditor.js";
@@ -356,6 +357,40 @@ async function capturePriorProfile(workspaceRoot: string, name: string, txDir: s
   };
 }
 
+/**
+ * `t-359469` — Soul belongs to an `agents:` entry. Refuse a name declared under `terminals:`.
+ *
+ * ## Why here and not at the seven check sites
+ *
+ * Every mutation (create/import/replace/adopt/enable/disable/delete) asks `priorConfig.present`, and
+ * that token comes from `agentStanzaCasToken`, whose `sectionOf` answers `"terminals"` as readily as
+ * `"agents"` — so all seven let a terminal through. Writing the section check seven times would close
+ * seven doors and leave the eighth open the day someone adds a mutation. `beginJournal` is the single
+ * funnel: `runMutation` is the only caller of it, and every mutation is a `runMutation`. That is the
+ * `t-e73e54` / `t-17d885` shape from the project guidance — a mechanism built for one caller, reached
+ * later by another that skipped the logic — answered by gating where the callers converge instead.
+ *
+ * Recovery (`reconcileProfileTransactions`) deliberately does NOT pass through here. A journal that
+ * already exists for a name now living under `terminals:` still has to be compensated back to its
+ * prior tuple; refusing it would strand exactly the residue this gate exists to prevent.
+ *
+ * ## Why the message says what it says
+ *
+ * The refusal these seven sites would otherwise give — "Agent 'x' is not declared in tachyon.yml" —
+ * is FALSE here. The entry is declared; it is in the other block. A refusal that misnames its own
+ * reason sends the reader to add a row that already exists, under a name that is already taken.
+ */
+function assertSoulSection(configText: string | undefined, name: string): void {
+  if (agentStanzaSection(configText, name) !== "terminals") return;
+  throw new SoulError(
+    "soul/not-an-agent",
+    `'${name}' is declared in tachyon.yml under 'terminals:', not 'agents:', so it has no Soul to mutate. `
+    + "A terminal is a plain process with no identity, and publishing one would write "
+    + `'.tachyon/agents/${name}/' — the profile home belonging to the AGENT of that name. `
+    + `To give '${name}' an identity, delete the terminal entry and create it as an agent in Agent Studio.`,
+  );
+}
+
 function desiredConfigToken(text: string | undefined, name: string, enabled: boolean, prior: AgentStanzaCasToken): AgentStanzaCasToken {
   if (!prior.present) return prior;
   return agentStanzaCasToken(setAgentSoulEnablement(text, name, enabled).text, name);
@@ -377,14 +412,22 @@ async function beginJournal(
   if (collision && collision.owner !== name) {
     throw new SoulError("soul/profile-collision", `Soul profile name '${name}' collides with existing profile owner '${collision.owner}' (profileId ${collision.profileId})`);
   }
+  // The config read, the section gate and the target token are computed BEFORE anything exists on
+  // disk. The seven mutations each check `priorConfig.present` inside their own body, which runs
+  // under `runMutation`'s try — but `beginJournal` is called OUTSIDE it, so a throw from here leaves a
+  // tx directory with no `journal.json`, and `listDegradedTransactions` reads that as a synthetic
+  // journal whose principal is `*` — one that blocks EVERY principal, forever, because reconcile
+  // never clears a degraded entry. Ordering, not the try, is what keeps this refusal clean.
+  const configText = access.readConfigText();
+  assertSoulSection(configText, name);
+  const priorConfig = agentStanzaCasToken(configText, name);
+  const targetSoulEnabled = expectedSoulEnabled === "preserve" ? priorConfig.soulEnabled : expectedSoulEnabled;
+  const targetConfig = desiredConfigToken(configText, name, targetSoulEnabled, priorConfig);
   const root = await ensureTxRoot(workspaceRoot);
   const txid = randomUUID();
   const txDir = path.join(root, txid);
   await mkdir(txDir, { mode: 0o700 });
   await syncDirectory(root);
-  const configText = access.readConfigText();
-  const priorConfig = agentStanzaCasToken(configText, name);
-  const targetSoulEnabled = expectedSoulEnabled === "preserve" ? priorConfig.soulEnabled : expectedSoulEnabled;
   const prior = await capturePriorProfile(workspaceRoot, name, txDir);
   const journal: ProfileTransactionJournal = {
     schemaVersion: PROFILE_TX_SCHEMA_VERSION,
@@ -402,7 +445,7 @@ async function beginJournal(
     priorManifestState: prior.priorManifestState,
     targetManifestState: prior.priorManifestState,
     priorConfig,
-    targetConfig: desiredConfigToken(configText, name, targetSoulEnabled, priorConfig),
+    targetConfig,
     expectedSoulEnabled: targetSoulEnabled,
     createdAt: new Date().toISOString(),
   };

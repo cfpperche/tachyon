@@ -3936,6 +3936,41 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(() => manager.removeEphemeralFootprint("never-existed")).not.toThrow();
   });
 
+  /**
+   * t-4a1f85 — the ACTOR × TRIGGER that reaches `forgetAgent` most often: a Temporary agent dismissed
+   * by a human in the sidebar, or by an agent through Bridge `dismiss_agent`. Both land here.
+   *
+   * `forgetAgent` used to remove `.tachyon/agents/<name>/evolution` and leave the parent standing.
+   * Nothing revisited it — this path writes no journal, so no reconcile owns it — and the one sweep
+   * that enumerates the directory called it `absent`, "there is nothing to remove".
+   *
+   * The neighbour is the policy argument: the removal is `rmdir`, so a home that still holds a
+   * human's `SOUL.md` loses its Evolution subtree and keeps everything else, directory included.
+   */
+  it("dismissTemporary takes the Agent Profile home it emptied and keeps one that still holds Soul", async () => {
+    const { manager, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n");
+    const home = (name: string) => path.join(ws, ".tachyon", "agents", name);
+    await manager.spawn("eph", { cmd: "opencode", parent: "main" });
+    await manager.spawn("soulful", { cmd: "opencode", parent: "main" });
+    // Seeded exactly the way EvolutionStore.atomicWrite seeds it: the recursive mkdir of
+    // `<home>/evolution/profile.json` is what mints the home in the first place.
+    for (const name of ["eph", "soulful"]) {
+      fs.mkdirSync(path.join(home(name), "evolution"), { recursive: true });
+      fs.writeFileSync(path.join(home(name), "evolution", "profile.json"), "{}\n", "utf8");
+    }
+    fs.writeFileSync(path.join(home("soulful"), "SOUL.md"), "# a human's soul\n", "utf8");
+
+    manager.dismissTemporary("eph");
+    manager.dismissTemporary("soulful");
+
+    expect(fs.existsSync(home("eph"))).toBe(false);
+    expect(fs.existsSync(path.join(home("soulful"), "evolution"))).toBe(false);
+    expect(fs.readdirSync(home("soulful"))).toEqual(["SOUL.md"]);
+    expect(fs.readFileSync(path.join(home("soulful"), "SOUL.md"), "utf8")).toBe("# a human's soul\n");
+    // Idempotent like every other footprint: the dismissNode→kill double-call must not throw.
+    expect(() => manager.dismissTemporary("eph")).not.toThrow();
+  });
+
   it("canonical forgetAgent removes a populated private harness home recursively", () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-forget-"));
     dirs.push(ws);
@@ -3969,6 +4004,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "generated spawn brief and soul anchor",
       "durable pane transcript",
       "Agent Evolution Profile",
+      "emptied Agent Profile home",
     ]);
   });
 
