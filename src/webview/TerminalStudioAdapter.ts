@@ -34,7 +34,6 @@ export class TerminalStudioAdapter implements StudioHostAdapter<TerminalStudioEn
     const referenceData: TerminalStudioReferenceData = {
       flagMap: FLAG_SUGGESTIONS,
       defaultCwd: deps.defaultCwd,
-      verifyCandidates: deps.verifyCandidates(),
     };
     if (entityId === undefined) {
       return { status: "ok", entity: { fields: blankTerminalFields() }, referenceData };

@@ -2,7 +2,7 @@
 
 _Created 2026-08-07._
 
-**Status:** draft
+**Status:** in-progress
 
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
@@ -149,9 +149,23 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
   the governed one-shot command session (`src/commands/CommandRunner.ts`) already exist. This spec
   wires what is there.
 
+## Owner decisions — answered 2026-08-07
+
+Q1–Q3 are settled and the first slice is unblocked. Q4–Q6 remain open and none of them blocks it.
+
+- **Q1 — first slice size: ACCEPTED as proposed.** The launch refusal stops going to the status bar
+  and carries a `Log in` button that runs the runtime's own login in a governed pane. No lifecycle
+  state, no pre-launch probe, no projection change.
+- **Q2 — login surface: CONFIRMED, editor-tab terminal.** It is the only candidate where the human
+  types directly, and Claude's login blocks waiting for a pasted code.
+- **Q3 — after a successful login: EXPLICIT RETRY (option A).** The agent waits with a `Retry`
+  control; Tachyon does not start it. This is the owner's call made against his own live case, which
+  had wanted the automatic start — the standing rule that Tachyon never restarts anything unasked
+  won. Do not "improve" this into an auto-start later without asking him again.
+
 ## Open questions
 
-_These are the owner's decisions. Each is answerable in one sentence; none blocks writing the plan._
+_Q4, Q5 and Q6 below. Each is answerable in one sentence; none blocks the first slice._
 
 1. **Q1 — Is the first slice small enough, or too small?** The proposed first slice is *"the launch
    refusal stops going to the status bar, and carries a `Log in` button that runs the runtime's own
