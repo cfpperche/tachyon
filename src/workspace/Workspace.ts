@@ -153,7 +153,7 @@ import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
 import { initRun, type PipelineRun } from "../pipeline/runState.js";
 import { createHash, randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
-import { HarnessManager, defaultRealOpencodeDataHome, measureDirUsage, realConfigHome, seedPrivateHomeGitIdentity } from "../harness/HarnessManager.js";
+import { HarnessManager, defaultRealOpencodeDataHome, measureDirUsage, realConfigHome, realRuntimeAuthHomeEnv, seedPrivateHomeGitIdentity } from "../harness/HarnessManager.js";
 import { humanBytes } from "../humanInbox/loadArtifact.js";
 import { materializePiSessionDir, removePiSessionDir } from "../agents/piSession.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
@@ -170,7 +170,9 @@ import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
 import { contextRenewalGesture, type ContextRenewalMode } from "../anchor/compaction.js";
-import { describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { authRequiredOf, describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { authRequiredLaunchNotice, loginFinishedNotice } from "./authRequiredNotice.js";
+import { LoginRunner } from "../commands/LoginRunner.js";
 import { isNativeSuppressionConfirmed } from "../runtime/nativeLaneSuppression.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { TemporaryBackstopMonitor, idleNotifyThresholdMs } from "./TemporaryBackstopMonitor.js";
@@ -621,6 +623,16 @@ export class Workspace {
   readonly continuityState: ContinuityState;
   readonly commandRunner: CommandRunner;
   readonly runbookRunner: RunbookRunner;
+  /** t-2656d7 — the governed per-runtime login pane the `Log in` action opens. */
+  readonly loginRunner: LoginRunner;
+  /**
+   * t-2656d7 — who was refused, per runtime, since that runtime's login pane was opened.
+   *
+   * A set because the credential is per config home: N agents on one runtime are refused for one
+   * reason and are all served by one login. When the pane exits, every one of them is offered its
+   * own explicit `Retry` — Tachyon starts none of them (SDD 495 Q3, the owner's decision).
+   */
+  private readonly awaitingLogin = new Map<string, Set<string>>();
   readonly scheduler: Scheduler;
   readonly proposals: ProposalStore;
   readonly bridge: Bridge;
@@ -1168,6 +1180,9 @@ export class Workspace {
         return row ? { sessionId: row.sessionId, transcriptPath: row.transcriptPath } : undefined;
       },
       notify: (message, level) => this.host.notify(message, level),
+      // t-2656d7 — the launch-boundary auth refusal gets a surface it can be ACTED on, instead of the
+      // action-less `notify` above, whose VS Code rendering is an 8-second status-bar flash.
+      onAuthRequired: (name, evidence) => this.presentAuthRequiredLaunch(name, evidence),
 
       getConfig: () => this.config,
       getRefusedAgents: () => this.refusedAgents(),
@@ -1749,6 +1764,15 @@ export class Workspace {
           ]);
         }
       },
+    });
+    // t-2656d7 — its own tmux namespace, for the same reason CommandRunner has one: a pane whose job
+    // is to EXIT must not be read by the agent lifecycle as an agent that died.
+    this.loginRunner = new LoginRunner({
+      tmux: this.tmux,
+      wsHash: this.wsHash,
+      workspaceRoot,
+      realHomeEnv: (runtime) => realRuntimeAuthHomeEnv(runtime),
+      onFinished: (runtime) => this.onLoginPaneFinished(runtime),
     });
     this.runbookRunner = new RunbookRunner({
       tmux: this.tmux,
@@ -6207,6 +6231,7 @@ export class Workspace {
     this.lifecycleTrigger = setTimeout(() => {
       void this.lifecycle.tick();
       void this.commandRunner.tick();
+      void this.loginRunner.tick();
       this.refreshAgentsViews();
       this.deps.onViewsChanged("commands");
     }, 250);
@@ -6624,6 +6649,9 @@ export class Workspace {
   async tick(): Promise<void> {
     void this.lifecycle.tick();
     void this.commandRunner.tick();
+    // t-2656d7 — a login pane finishing is otherwise eventless: nothing else in the fleet moves when
+    // a human finishes a device flow, so the offer of an explicit Retry would never be made.
+    void this.loginRunner.tick();
     this.scheduler.tick(); // fires anything due (workspace-open scope)
     // t-a53dd9 — the notice queue's TTL is enforced on the heartbeat, not only when something else
     // happens to touch the queue. Every other sweep point rides an event (a new notice, an idle
@@ -7029,6 +7057,13 @@ export class Workspace {
     // which is precisely how a gate run could claim success while emitting no `new-session` at all.
     let started = 0;
     const autostartFailures: string[] = [];
+    // t-2656d7 — kept apart from `autostartFailures` on purpose. An agent refused for credentials
+    // has already produced its own actioned notice (naming the runtime and carrying `Log in`) via
+    // AgentManager's `onAuthRequired` port, and it is not "failed to start" in the sense the summary
+    // below means: nothing is broken, a human has something to do. Folding it into that count is
+    // exactly how the recovery instruction used to disappear on this path — worse than the owner's
+    // case, because here the sentence was never even printed.
+    const awaitingLogin: string[] = [];
     for (const agent of pending) {
       try {
         await this.manager.spawn(agent);
@@ -7037,7 +7072,9 @@ export class Workspace {
         // Benign race with resume/re-entry/rebind: session can be live before spawn runs.
         // Same swallow as autostartNewlyDeclared — do not toast "already running" as a failure.
         const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes("already running")) {
+        if (authRequiredOf(err)) {
+          awaitingLogin.push(agent);
+        } else if (!msg.includes("already running")) {
           autostartFailures.push(agent);
           this.host.notify(this.t("autostart of '{0}' failed: {1}", agent, msg), "error");
         }
@@ -7054,6 +7091,12 @@ export class Workspace {
     // is read — the per-agent error above only reaches whoever is watching notifications live.
     if (autostartFailures.length > 0) {
       parts.push(this.t("{0} failed to start ({1})", autostartFailures.length, autostartFailures.join(", ")));
+    }
+    // t-2656d7 — named as its own outcome, with the recovery in the words rather than in a count.
+    // The per-agent notice carries the button; this line only makes the shortfall readable where the
+    // summary is read, and says what kind of shortfall it is.
+    if (awaitingLogin.length > 0) {
+      parts.push(this.t("{0} waiting for a runtime login ({1})", awaitingLogin.length, awaitingLogin.join(", ")));
     }
     if (parts.length > 0) this.host.notify(parts.join(", "));
     if (this.resumable.length > 0) this.offerResume();
@@ -7074,7 +7117,11 @@ export class Workspace {
         this.refreshAgentsViews();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes("already running")) {
+        // t-2656d7 — a credential refusal already reached the human as its own actioned notice
+        // (runtime named, `Log in` attached) through AgentManager's `onAuthRequired` port. Repeating
+        // it here as an action-less error would put the same sentence back in the status bar, where
+        // it gets clipped — one condition, one presentation.
+        if (!msg.includes("already running") && !authRequiredOf(err)) {
           this.host.notify(this.t("autostart of '{0}' failed: {1}", name, msg), "error");
         }
       }
@@ -7671,6 +7718,116 @@ export class Workspace {
 
   openRunbookStepPane(runbook: string, index: number): void {
     this.terminals.open(`rb:${runbook}:${index}`, this.runbookRunner.stepSession(runbook, index), undefined, `$ ${runbook}#${index + 1}`);
+  }
+
+  /**
+   * t-2656d7 (SDD 495, first slice) — present a launch refused because the runtime is not logged in.
+   *
+   * Reached from `AgentManager`'s `onAuthRequired` port, which every launch door converges on, and
+   * from the autostart loop below. It replaces nothing structural: the notice goes through the same
+   * `host.notify(message, level, actions)` the mid-run auth hold has always used. The change is that
+   * the launch boundary now supplies actions, and an actions array is what decides whether a notice
+   * becomes a durable, pressable attention row or an 8-second status-bar flash.
+   *
+   * The refusal is NOT swallowed here — the caller still throws, and the start still fails. This
+   * only makes the failure legible.
+   */
+  private presentAuthRequiredLaunch(agent: string, evidence: AuthRequiredEvidence): void {
+    const notice = authRequiredLaunchNotice(
+      agent,
+      evidence,
+      {
+        // Returned, not fire-and-forget: `NotificationService.dispatch` and
+        // `DaemonEngineHost.invokeNoticeAction` both await what a picked action returns, so a
+        // swallowed promise would report the button as done while the work was still in flight.
+        retry: () => this.retryAfterLogin(agent),
+        ...(runtimeLoginCommand(evidence.runtime)
+          ? { login: () => this.startRuntimeLogin(evidence.runtime, agent) }
+          : {}),
+      },
+      (message, ...args) => this.t(message, ...args),
+    );
+    this.host.notify(notice.message, notice.level, notice.actions);
+  }
+
+  /**
+   * t-2656d7 — run the runtime's own login in a governed editor-tab terminal (SDD 495 Q2).
+   *
+   * Interface-initiated only, and deliberately so (SDD 495 Q5, still open and NOT anticipated here):
+   * this is reachable from a notice action a human pressed, and no Bridge tool creates one. A login
+   * pane nobody is sitting at is a device code expiring unseen.
+   *
+   * Tachyon allocates the PTY and stops. It never writes to the pane, never captures it, and never
+   * touches the credential the runtime writes.
+   */
+  private async startRuntimeLogin(runtime: string, agent: string): Promise<void> {
+    const waiting = this.awaitingLogin.get(runtime) ?? new Set<string>();
+    waiting.add(agent);
+    this.awaitingLogin.set(runtime, waiting);
+    try {
+      // One live session per runtime: a second refused agent JOINS this login rather than racing a
+      // competing device flow for the same account. `LoginRunner.run` answers `already-running`, and
+      // the next line reveals the pane that already exists — which is the right move either way.
+      await this.loginRunner.run(runtime as Parameters<LoginRunner["run"]>[0]);
+      this.openLoginPane(runtime);
+    } catch (error) {
+      waiting.delete(agent);
+      if (waiting.size === 0) this.awaitingLogin.delete(runtime);
+      this.host.notify(
+        this.t("could not open the {0} login pane: {1}", runtime, error instanceof Error ? error.message : String(error)),
+        "error",
+      );
+    }
+  }
+
+  openLoginPane(runtime: string): void {
+    this.terminals.open(
+      `login:${runtime}`,
+      this.loginRunner.session(runtime as Parameters<LoginRunner["session"]>[0]),
+      undefined,
+      this.t("Log in: {0}", runtime),
+    );
+  }
+
+  /**
+   * t-2656d7 — the EXPLICIT retry (SDD 495 Q3).
+   *
+   * The owner decided this against his own live case, which wanted the automatic start: Tachyon does
+   * not start an agent because a login finished. A human presses this. Nothing else calls it.
+   */
+  private async retryAfterLogin(agent: string): Promise<void> {
+    try {
+      await this.manager.spawn(agent);
+      this.refreshAgentsViews();
+    } catch (error) {
+      // A second refusal re-presents itself through `onAuthRequired`; anything else is reported
+      // plainly rather than swallowed, so a retry never fails silently.
+      if (authRequiredOf(error)) return;
+      this.host.notify(
+        this.t("retry of '{0}' failed: {1}", agent, error instanceof Error ? error.message : String(error)),
+        "error",
+      );
+    }
+  }
+
+  /**
+   * t-2656d7 — a login pane exited.
+   *
+   * The exit code is NOT a verdict: a cancelled Codex flow can exit non-zero while a previous
+   * credential is still perfectly valid, and a zero exit proves only that the process ended. This
+   * slice deliberately does not probe the runtime (SDD 495 Q1 — no pre-launch probe), so the notice
+   * says what is actually known — the pane finished — and offers the human their explicit retry.
+   */
+  private onLoginPaneFinished(runtime: string): void {
+    const waiting = [...(this.awaitingLogin.get(runtime) ?? [])].sort();
+    this.awaitingLogin.delete(runtime);
+    const notice = loginFinishedNotice(
+      runtime,
+      waiting,
+      { retry: (agent) => this.retryAfterLogin(agent), openPane: () => this.openLoginPane(runtime) },
+      (message, ...args) => this.t(message, ...args),
+    );
+    this.host.notify(notice.message, notice.level, notice.actions);
   }
 
   /** Folder removed from the window (or extension deactivating). tmux sessions survive. */

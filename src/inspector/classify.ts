@@ -6,12 +6,13 @@
  *   tachyon-ctl-<hash>              → control-mode engine anchor (internal)
  *   tachyon-cmd-<hash>-<command>…   → one-shot command run
  *   tachyon-rb-<hash>-<runbook>-<n> → runbook step
+ *   tachyon-login-<hash>-<runtime>  → runtime login pane (t-2656d7)
  *   tachyon-<hash>-<name>           → agent or terminal (indistinguishable by name)
  *
  * No tmux access here — just string parsing, fully unit-tested.
  */
 
-export type SessionKind = "anchor" | "command" | "runbook" | "session" | "unknown";
+export type SessionKind = "anchor" | "command" | "runbook" | "login" | "session" | "unknown";
 
 export interface ClassifiedSession {
   /** Kind inferred from the namespace segment. */
@@ -44,6 +45,12 @@ export function classifySession(session: string): ClassifiedSession {
   // tachyon-rb-<hash>-<runbook>-<n>
   if (rest.startsWith("rb-")) {
     return namespaced("runbook", rest.slice("rb-".length), session);
+  }
+
+  // tachyon-login-<hash>-<runtime> (t-2656d7) — a governed runtime login pane. Named here so the
+  // inspector reports it as what it is instead of falling through to `unknown`.
+  if (rest.startsWith("login-")) {
+    return namespaced("login", rest.slice("login-".length), session);
   }
 
   // tachyon-<hash>-<name> (agent or terminal)

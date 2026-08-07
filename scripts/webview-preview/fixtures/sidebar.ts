@@ -214,6 +214,62 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
       }],
     },
   },
+  /**
+   * `t-2656d7` (SDD 495 first slice) — the notice that replaces the status-bar flash.
+   *
+   * The anchor, written from the problem statement before the slice was built: *a human who pressed
+   * ▶ on an unauthenticated agent can read, without hovering, scrolling or waiting, which runtime is
+   * unauthenticated, which agent it blocked, and what to press next — and the thing to press is
+   * visible as a control, not as the tail of a sentence.*
+   *
+   * That is why this fixture carries the real message verbatim rather than a short placeholder: the
+   * sentence is LONG, and its length is what the incident was made of. The row has to stay readable
+   * with the buttons still reachable at 360 as well as 880. The second row is the runtime with no
+   * measured login command — it must lose the button and keep everything else.
+   *
+   * The neighbour to not regress is the `auth-required` fixture above: the mid-run hold renders
+   * through this same notice path and must look unchanged beside it.
+   */
+  "login-refused": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...base,
+      agents: [
+        { name: "grok-builder", model: "grok-4", status: "idle", kind: "agent" as const },
+        { name: "pi-scout", model: "pi", status: "idle", kind: "agent" as const },
+      ],
+      notices: [
+        {
+          id: "login-refused-1",
+          message: "agent 'grok-builder' cannot run: the grok runtime reports it is not authenticated"
+            + " — run `grok login --device-code`, or set XAI_API_KEY, then restart the agent explicitly."
+            + " Tachyon will not retry or restart it automatically.",
+          level: "warn" as const,
+          at: new Date(Date.UTC(2026, 7, 7, 22, 41)).toISOString(),
+          collapsedCount: 1,
+          actions: [
+            { id: "login-refused-1-login", label: "Log in" },
+            { id: "login-refused-1-retry", label: "Retry" },
+          ],
+          read: false,
+          actionsLive: true,
+        },
+        {
+          id: "login-refused-2",
+          message: "agent 'pi-scout' cannot run: the pi runtime reports it is not authenticated"
+            + " — run /login in Pi, or set the provider API-key environment variable, then restart the agent explicitly."
+            + " Tachyon will not retry or restart it automatically.",
+          level: "warn" as const,
+          at: new Date(Date.UTC(2026, 7, 7, 22, 42)).toISOString(),
+          collapsedCount: 1,
+          actions: [{ id: "login-refused-2-retry", label: "Retry" }],
+          read: false,
+          actionsLive: true,
+        },
+      ],
+    } as FleetVM,
+  },
+
   "attention-overflow": {
     provenance: "synthetic-edge",
     vm: {
