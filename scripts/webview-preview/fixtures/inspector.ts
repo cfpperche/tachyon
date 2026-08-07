@@ -7,7 +7,7 @@
  */
 
 import type { InspectorModel } from "../../../src/inspector/model";
-import type { InspectorStrings } from "../../../src/webview/inspector/messages";
+import type { InspectorScope, InspectorStrings } from "../../../src/webview/inspector/messages";
 import type { Fixture } from "../routes";
 
 export const strings: InspectorStrings = {
@@ -29,6 +29,8 @@ export const strings: InspectorStrings = {
   total: "Total", orphaned: "Orphaned", socket: "Socket", path: "Path", health: "Health", version: "tmux version",
   serverPids: "Server PIDs", diagnostics: "Process diagnostics", noDiagnostics: "No process diagnostics available.",
   refreshCapture: "Refresh capture", close: "Close", bulkActions: "Bulk actions",
+  scopeNote: "Showing {0}, the project selected in the sidebar — {1} session(s) in other workspaces are hidden.",
+  scopeShowAll: "Show every session",
 };
 
 const now = 1_750_000_000; // a fixed epoch (Date.now is unavailable in the generator; the App computes ago() live)
@@ -124,8 +126,32 @@ const volume: InspectorModel = {
   groups: volumeGroups,
 };
 
+/**
+ * t-6b5dea — the same machine as `volume`, seen from a window whose SIDEBAR has a project selected.
+ *
+ * It is a distinct model object rather than a flag on `volume` because that is what the scope map below
+ * keys on, and because the two states have to be measurable side by side: `volume` is the screen with no
+ * window scope (everything, as tmux always showed it) and `scoped` is the screen that opens narrowed —
+ * with a closed folder's four orphans among what the default holds back, which is exactly the pair the
+ * task's guard is about.
+ */
+const scoped: InspectorModel = { ...volume, groups: volumeGroups };
+
+/**
+ * Which fixture is seen under a window scope, and which is not.
+ *
+ * Keyed on the VM object because a route's `makeMessage` receives the VM and nothing else — the fixture's
+ * name never reaches it. The scope is host state, not part of `InspectorModel`, so it travels beside the
+ * model here exactly as it travels beside it on the wire (`init`, not `model`).
+ */
+const scopeByVm = new Map<InspectorModel, InspectorScope>([[scoped, { hash: "a1b2c3d4", label: "tachyon" }]]);
+
+/** the window scope the harness pushes with this fixture's `init`, if it has one. */
+export const scopeFor = (vm: InspectorModel): InspectorScope | undefined => scopeByVm.get(vm);
+
 export const inspectorFixtures: Record<string, Fixture<InspectorModel>> = {
   default: { provenance: "synthetic-edge", vm: model },
   empty: { provenance: "synthetic-edge", vm: empty },
+  scoped: { provenance: "synthetic-edge", vm: scoped },
   volume: { provenance: "synthetic-edge", vm: volume },
 };

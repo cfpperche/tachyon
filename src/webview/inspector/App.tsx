@@ -1,6 +1,6 @@
 import { useMemo, useState } from "preact/hooks";
 import type { InspectorGroup, InspectorModel, InspectorSession } from "../../inspector/model";
-import type { InspectorStrings } from "./messages";
+import type { InspectorScope, InspectorStrings } from "./messages";
 import { Badge, Button, EmptyState, Input, PageChrome, Select, Tabs } from "../shared/ui";
 
 function ageSeconds(epochSec?: number): number | undefined {
@@ -34,9 +34,23 @@ const kindLabel = (s: InspectorStrings, kind: InspectorSession["kind"]): string 
 
 type Action = { type: "refresh" | "reapDead" | "reapOrphans" } | { type: "open" | "kill"; session: string };
 
+/**
+ * t-6b5dea — which workspace the list is narrowed to, and the whole of the precedence rule.
+ *
+ * Exported because the rule is what the task's guard is about and a static render can only witness the
+ * `chosen === undefined` half of it: a picked value wins over the window scope INCLUDING when the pick is
+ * `"all"`, which is the case that keeps a human who deliberately asked for everything from being pulled
+ * back to the sidebar's project by the next 3s refresh.
+ */
+export function effectiveWorkspace(chosen: string | undefined, scope: InspectorScope | undefined): string {
+  return chosen ?? scope?.hash ?? "all";
+}
+
 export interface InspectorAppProps {
   model: InspectorModel | undefined;
   strings: InspectorStrings | undefined;
+  /** the project the sidebar has selected for this window; the DEFAULT this screen opens on. */
+  scope?: InspectorScope;
   captures: Record<string, string>;
   open: ReadonlySet<string>;
   auto: boolean;
@@ -50,12 +64,31 @@ export function App(p: InspectorAppProps) {
   const s = p.strings;
   const [tab, setTab] = useState<"overview" | "server">("overview");
   const [search, setSearch] = useState("");
-  const [workspace, setWorkspace] = useState("all");
+  /**
+   * t-6b5dea — the Workspace filter, and `undefined` is a THIRD state the other four filters do not have:
+   * "nobody has picked one, so follow the window scope the sidebar owns". Any pick — including "all" —
+   * moves this off `undefined` and the human's choice wins from then on, so a scope push arriving on the
+   * next 3s refresh can never yank a screen someone is reading back to the sidebar's project.
+   */
+  const [chosen, setChosen] = useState<string | undefined>(undefined);
   const [status, setStatus] = useState("all");
   const [kind, setKind] = useState("all");
   const [cpu, setCpu] = useState("all");
   const [details, setDetails] = useState<Set<string>>(new Set());
   const model = p.model;
+  const workspace = effectiveWorkspace(chosen, p.scope);
+
+  /**
+   * How many sessions the scope DEFAULT is holding back — the number that makes the note below honest.
+   *
+   * It counts what the workspace filter alone removes, ignoring search/status/kind/cpu: those are the
+   * human's own doing and the screen must not blame the scope for them. The tmux universe is wider than
+   * the attached projects (closed folders, other windows), so this is the count that says so.
+   */
+  const hiddenByScope = useMemo(() => {
+    if (!model || workspace === "all") return 0;
+    return model.groups.reduce((n, g) => ((g.wsHash ?? "unscoped") === workspace ? n : n + g.sessions.length), 0);
+  }, [model, workspace]);
 
   const groups = useMemo(() => {
     if (!model) return [];
@@ -176,10 +209,17 @@ export function App(p: InspectorAppProps) {
         <>
           <div class="filters">
             <Input aria-label={s.search} placeholder={s.search} value={search} onInput={(e) => setSearch((e.target as HTMLInputElement).value)} />
-            <Select aria-label={s.workspace} value={workspace} onChange={(e) => setWorkspace((e.target as HTMLSelectElement).value)}>
+            <Select aria-label={s.workspace} value={workspace} onChange={(e) => setChosen((e.target as HTMLSelectElement).value)}>
               <option value="all">
                 {s.workspace}: {s.all}
               </option>
+              {/* The scope's project may own no session on the socket, and a <select> whose value matches
+                  no option shows the wrong row as selected. It gets its own option, named by the host. */}
+              {p.scope && !model?.groups.some((g) => g.wsHash === p.scope?.hash) && (
+                <option value={p.scope.hash} key={p.scope.hash}>
+                  {p.scope.label}
+                </option>
+              )}
               {model?.groups.map((g) => (
                 <option value={g.wsHash ?? "unscoped"} key={g.wsHash ?? g.workspace}>
                   {g.workspace}
@@ -211,6 +251,19 @@ export function App(p: InspectorAppProps) {
               <option value="idle">{s.idle}</option>
             </Select>
           </div>
+          {/* t-6b5dea's non-negotiable half. A default nobody chose must SAY it is narrowing the screen and
+              carry the way out with it — the sessions this hides are closed-folder and other-window ones,
+              exactly what someone opens tmux to find when something went wrong. Shown only while the
+              default is in force: once a human picks a project, the dropdown already says which. */}
+          {chosen === undefined && p.scope && hiddenByScope > 0 && (
+            <div class="scope-note">
+              <span class="codicon codicon-filter" aria-hidden="true" />
+              <span>{s.scopeNote.replace("{0}", p.scope.label).replace("{1}", String(hiddenByScope))}</span>
+              <Button icon="eye" onClick={() => setChosen("all")}>
+                {s.scopeShowAll}
+              </Button>
+            </div>
+          )}
           <div id="body">
             {!model || groups.length === 0 ? (
               <EmptyState kind="empty" message={s.empty} />

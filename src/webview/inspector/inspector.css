@@ -44,6 +44,28 @@ input[type="checkbox"] {
   width: 100%;
   min-width: 0;
 }
+/* t-6b5dea — the scope default's disclosure: it says which project the screen narrowed to, how many
+   sessions that hides, and carries the way out. Muted rather than alarming (nothing is wrong), but never
+   silent. It wraps at a narrow width so the count and the button both stay on screen. */
+.scope-note {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ds-2);
+  margin: 0 0 var(--ds-3);
+  padding: var(--ds-2) var(--ds-3);
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: color-mix(in srgb, var(--ds-accent) 7%, transparent);
+  color: var(--ds-muted);
+  font-size: 12px;
+}
+/* The BASIS is what makes the 360 pass honest: with `flex: 1` alone the sentence shrank to a nine-line
+   ribbon beside a button that kept its intrinsic width. A basis wide enough to be a sentence makes the
+   line overflow instead, so the button wraps underneath and both stay readable. */
+.scope-note > span:nth-of-type(2) {
+  flex: 1 1 220px;
+}
 .group {
   margin: 0 0 14px;
 }

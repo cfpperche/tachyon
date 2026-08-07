@@ -57,9 +57,15 @@ interface Harness {
   killed: string[];
   opened: string[];
   captureText: (text: string) => void;
+  /** the window scope the sidebar owns; the panel READS it, so a test may move it between pushes. */
+  setScope: (hash: string | undefined) => void;
 }
 
-function harness(over: Partial<InspectorDeps> = {}, folders: Array<[string, string]> = [["a1b2c3d4", "tachyon"]]): Harness {
+function harness(
+  over: Partial<InspectorDeps> = {},
+  folders: Array<[string, string]> = [["a1b2c3d4", "tachyon"]],
+  scopeHash?: string,
+): Harness {
   const calls: string[] = [];
   const killed: string[] = [];
   const opened: string[] = [];
@@ -77,14 +83,16 @@ function harness(over: Partial<InspectorDeps> = {}, folders: Array<[string, stri
     reapOrphans: async () => { calls.push("reapOrphans"); return 2; },
     ...over,
   };
+  let scope = scopeHash;
   return {
-    manager: new TmuxPanelManager(extensionUri, deps),
+    manager: new TmuxPanelManager(extensionUri, deps, { get current() { return scope; } }),
     calls,
     get rows() { return rows; },
     setRows: (next) => { rows = next; },
     killed,
     opened,
     captureText: (text) => { captureText = text; },
+    setScope: (next) => { scope = next; },
   };
 }
 
@@ -387,6 +395,75 @@ describe("SDD 485 D1 — reload puts tmux back in its tab, with no migration ste
 
     expect(panel.disposed).toBe(true);
     expect(h.manager.openKeys).toEqual([]);
+  });
+});
+
+/**
+ * t-6b5dea — the host half: every door that repaints this screen tells it the CURRENT window scope.
+ *
+ * The doors are listed here rather than one representative one, because that is the shape this repository
+ * keeps paying for: a mechanism built for the door someone had in mind, reached later through another that
+ * skips it. For this app they are open+ready, revive (which never sends a second `ready`), and the
+ * client's own refresh — and the last one is what makes a sidebar selection taken AFTER this tab opened
+ * arrive without any subscription, which is why no fan-out door was invented for it.
+ *
+ * What the client does with the value — narrow by default, say so, and keep every session reachable — is
+ * `tmuxScopeDefault.test.ts`, against the real component.
+ */
+const inits = (panel: typeof __createdPanels[number]) =>
+  posted(panel, "init") as Array<{ scope?: { hash: string; label: string } }>;
+
+describe("t-6b5dea — the tmux app is told the window scope on every door that paints it", () => {
+  it("carries the selected project, NAMED, on the open+ready push", async () => {
+    const h = harness({}, [["a1b2c3d4", "tachyon"]], "a1b2c3d4");
+    const panel = await open(h);
+
+    expect(inits(panel).at(-1)?.scope).toEqual({ hash: "a1b2c3d4", label: "tachyon" });
+  });
+
+  it("carries nothing when no project is selected — the screen then shows the whole socket", async () => {
+    const h = harness();
+    const panel = await open(h);
+
+    expect(inits(panel).at(-1)?.scope).toBeUndefined();
+  });
+
+  it("falls back to the hash when the scope names a folder the snapshot cannot name", async () => {
+    // The scope is a folder hash; `folderByHash` only knows OPEN workspaces. A blank label would leave the
+    // client with an unnameable option, so the hash — which is a real handle — stands in for the name.
+    const h = harness({}, [["a1b2c3d4", "tachyon"]], "99999999");
+    const panel = await open(h);
+
+    expect(inits(panel).at(-1)?.scope).toEqual({ hash: "99999999", label: "99999999" });
+  });
+
+  it("re-reads it on the client's own refresh, so a selection taken later arrives without a subscription", async () => {
+    const h = harness({}, [["a1b2c3d4", "tachyon"], ["d4e5f6a7", "docs"]], "a1b2c3d4");
+    const panel = await open(h);
+    expect(inits(panel).at(-1)?.scope?.hash).toBe("a1b2c3d4");
+
+    h.setScope("d4e5f6a7");
+    panel.webview.__receive(refreshAction());
+    await flush();
+    await flush();
+
+    expect(inits(panel).at(-1)?.scope).toEqual({ hash: "d4e5f6a7", label: "docs" });
+  });
+
+  it("carries it through REVIVE, which never sends the `ready` an init could answer", async () => {
+    const h = harness({}, [["a1b2c3d4", "tachyon"]], "a1b2c3d4");
+    const context = { subscriptions: [] } as unknown as import("vscode").ExtensionContext;
+    registerTrustedPanelSerializer<SectionPanelState>(context, TMUX_VIEW_TYPE, (panel, state) => h.manager.deserialize(panel, state));
+    const registration = __registeredWebviewPanelSerializers.find((r) => r.viewType === TMUX_VIEW_TYPE)!;
+
+    const panel = makeRevivablePanel();
+    await registration.serializer.deserializeWebviewPanel(panel as never, { schemaVersion: 1, view: TMUX_VIEW_TYPE });
+    panel.webview.__receive(readyMessage());
+    await flush();
+    await flush();
+
+    const revivedInits = panel.webview.posted.filter((m) => (m as { type?: string }).type === "init") as Array<{ scope?: { hash: string } }>;
+    expect(revivedInits.at(-1)?.scope?.hash).toBe("a1b2c3d4");
   });
 });
 
