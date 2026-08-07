@@ -7077,9 +7077,13 @@ export class Workspace {
       // t-099be8 — validate the full resulting file BEFORE write (same gate as Studio submit / Bridge tool).
       // Never persist a config that loadConfig would reject; the delayed-detonation window (invalid on disk
       // until next reload) is the incident class this blocks for UI-driven edits.
+      // t-48dd8d — a DISCARD refuses the write too. Reading forgives a file a human already wrote;
+      // writing bytes we have just been told are partly unreadable is the delayed detonation this
+      // gate exists to stop, and it would be this surface writing them.
       const check = this.parseTrustedConfigText(text);
-      if (check.errors.length > 0) {
-        throw new Error(`invalid tachyon.yml (not saved): ${check.errors[0]}${check.errors.length > 1 ? ` (+${check.errors.length - 1} more)` : ""}`);
+      const refusals = [...check.errors, ...check.discarded];
+      if (refusals.length > 0) {
+        throw new Error(`invalid tachyon.yml (not saved): ${refusals[0]}${refusals.length > 1 ? ` (+${refusals.length - 1} more)` : ""}`);
       }
       fs.writeFileSync(file, text, "utf8");
       this.reloadConfig();
@@ -7099,7 +7103,12 @@ export class Workspace {
    */
   writeTachyonConfigText(yamlText: string): { ok: true; warnings: string[] } | { ok: false; errors: string[]; warnings: string[] } {
     const check = this.parseTrustedConfigText(yamlText);
-    if (check.errors.length > 0) return { ok: false, errors: check.errors, warnings: check.warnings };
+    // t-48dd8d — errors AND discards refuse the save. The loader forgives what it READS so a typo
+    // cannot take a workspace down; it does not follow that a caller may WRITE a file whose keys it
+    // has just been told are unreadable. Advisory warnings (a deprecation, a retired key) still ride
+    // along with a successful write, which is why they are a separate channel from `discarded`.
+    const refusals = [...check.errors, ...check.discarded];
+    if (refusals.length > 0) return { ok: false, errors: refusals, warnings: check.warnings };
     const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
     try {
       fs.writeFileSync(file, yamlText.endsWith("\n") ? yamlText : `${yamlText}\n`, "utf8");

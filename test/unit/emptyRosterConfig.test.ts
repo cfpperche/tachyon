@@ -148,9 +148,15 @@ describe("t-f67185 empty roster workspace", () => {
     }
   });
 
-  it("still kills the whole config on malformed agents (not empty)", () => {
-    const { config, errors } = parseConfig('agents: "olá"\ncommands:\n  build:\n    cmd: x\n');
-    expect(config).toBeUndefined();
-    expect(errors.some((e) => e.includes("'agents'") && e.includes("mapping"))).toBe(true);
+  // t-48dd8d — a malformed roster block no longer kills the file: it is discarded, the rest loads,
+  // and the difference from a genuinely empty roster is now the diagnostic rather than the outcome.
+  // Discarding is safe here in the only direction that matters — the entries it could not read are
+  // ABSENT, never half-built, so nothing is spawnable that the file did not successfully declare.
+  it("discards a malformed agents block and keeps the rest of the file", () => {
+    const { config, errors, warnings } = parseConfig('agents: "olá"\ncommands:\n  build:\n    cmd: x\n');
+    expect(errors).toEqual([]);
+    expect(config?.agents).toEqual({});
+    expect(config?.commands.build?.cmd).toBe("x");
+    expect(warnings.some((e) => e.includes("'agents'") && e.includes("mapping"))).toBe(true);
   });
 });

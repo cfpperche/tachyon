@@ -199,7 +199,7 @@ settings:
     maxConcurrentRebinds: 1
     circuitFailCount: 3
 `);
-    expect(ok.errors).toEqual([]);
+    expect(ok.warnings).toEqual([]);
     expect(ok.config?.settings.bridgeClientRebind).toEqual({
       onHostGenerationBump: "auto",
       graceMs: 0,
@@ -216,8 +216,8 @@ settings:
     onHostGenerationBump: maybe
     nope: 1
 `);
-    expect(bad.errors.some((e) => e.includes("onHostGenerationBump"))).toBe(true);
-    expect(bad.errors.some((e) => e.includes("unknown key"))).toBe(true);
+    expect(bad.warnings.some((e) => e.includes("onHostGenerationBump"))).toBe(true);
+    expect(bad.warnings.some((e) => e.includes("unknown key"))).toBe(true);
   });
 });
 
