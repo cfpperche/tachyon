@@ -8,7 +8,7 @@ import {
   writeApprovalRequest,
   type ApprovalRequest,
 } from "../../src/bridge/approvalRequest.js";
-import { buildApprovalViewModel, pendingApprovalRows } from "../../src/webview/approval/viewModel.js";
+import { buildApprovalViewModel, listApprovalViewItems, pendingApprovalRows } from "../../src/webview/approval/viewModel.js";
 import { buildCockpitModel, type CockpitWorkspaceBundle } from "../../src/cockpit/model.js";
 
 const roots: string[] = [];
@@ -107,6 +107,38 @@ describe("Overview's pending-approval counter (t-d85857)", () => {
       resolution: { decision: "denied", resolvedAt: "2026-07-27T02:00:00.000Z", injectedText: "[tachyon] human denied your approval request a-000006 — you may proceed accordingly" },
     });
     expect(pendingApprovalRows(resolvedOnly)).toEqual([]);
+  });
+
+  it("keeps authoritative resolved and cancelled records available for audit", () => {
+    const root = workspace();
+    writeApprovalRequest(root, {
+      ...request("a-000007", "ada"),
+      status: "resolved",
+      resolution: {
+        decision: "approved",
+        resolvedAt: "2026-07-27T03:00:00.000Z",
+        resolvedBy: "unattributed:vscode-command",
+        injectedText: "fixed receipt",
+      },
+    });
+    writeApprovalRequest(root, {
+      ...request("a-000008", "bea"),
+      status: "cancelled",
+      cancellation: { cancelledAt: "2026-07-27T04:00:00.000Z", cancelledBy: "bea", reason: "obsolete" },
+    });
+
+    expect(listApprovalViewItems(root)).toMatchObject([
+      {
+        id: "a-000007",
+        status: "resolved",
+        resolution: { decision: "approved", resolvedBy: "unattributed:vscode-command" },
+      },
+      {
+        id: "a-000008",
+        status: "cancelled",
+        cancellation: { cancelledBy: "bea" },
+      },
+    ]);
   });
 
   it("keeps the shell's Control bundle on that shared read", () => {

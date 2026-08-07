@@ -37,6 +37,17 @@
   color: var(--ds-warn);
 }
 
+.hi-root .hi-filters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, auto)) minmax(12rem, 1fr);
+  gap: var(--ds-2);
+  margin-bottom: var(--ds-3);
+}
+
+.hi-root .hi-filters > * {
+  min-width: 0;
+}
+
 /* ── list ───────────────────────────────────────────────────────────────────────────────────── */
 
 .hi-root .hi-list {
@@ -94,12 +105,18 @@
 }
 
 .hi-root .hi-id,
-.hi-root .hi-requester {
+.hi-root .hi-requester,
+.hi-root .hi-resolver {
   font-family: var(--ds-mono);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+
+.hi-root .hi-resolver strong {
+  color: var(--ds-fg);
+  font-weight: var(--tachyon-weight-medium);
 }
 
 .hi-root .hi-trust {
@@ -225,6 +242,30 @@
   margin: 0;
   padding-left: var(--ds-4);
   font-size: var(--ds-small);
+}
+
+.hi-root .hi-resolution {
+  display: grid;
+  gap: var(--ds-1);
+  padding: var(--ds-3);
+  border: var(--ds-border-width) solid var(--ds-border);
+  border-radius: var(--ds-radius);
+  background: var(--ds-card);
+  font-size: var(--ds-small);
+}
+
+.hi-root .hi-resolution p {
+  margin: var(--ds-1) 0 0;
+}
+
+@media (max-width: 620px) {
+  .hi-root .hi-filters {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .hi-root .hi-filters input {
+    grid-column: 1 / -1;
+  }
 }
 
 /* ── Saved Agent proposal ───────────────────────────────────────────────────────────────────── */
