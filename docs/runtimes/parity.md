@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-06 (SDD 488 F3 / `t-dd46a4` — `design_mode_chat_reply` runtime call matrix; prior 2026-08-05 SDD 490 Fatia C native lane suppression; 2026-08-02 `t-0db8cb` codex idle attention)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-07 (SDD 495 / `t-9b5457` — auth status probe + native login surface, rows 20/21 and §3.8, measured on claude 2.1.224 / codex 0.146.1 / grok 1.0.0 / opencode 1.18.9; prior 2026-08-06 SDD 488 F3 `t-dd46a4` `design_mode_chat_reply` runtime call matrix; 2026-08-05 SDD 490 Fatia C native lane suppression; 2026-08-02 `t-0db8cb` codex idle attention)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/runtime/nativeLaneSuppression.ts`, `src/runtime/nativeMemory.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 **Native-config / Runtime Config seams:** `src/config/agentNativeConfigPolicy.ts` (family definitions + SDD 471/472 `authorize`), `src/config/agentNativeConfigSchema.ts` (`AGENT_NATIVE_CONFIG_FAMILIES`), `src/config/codexNativeConfigProjection.ts`, `src/config/claudeNativeConfigProjection.ts`, `src/config/grokNativeConfigProjection.ts`, `src/runtimeConfig/codexInventory.ts`, `src/runtimeConfig/claudeInventory.ts`, `src/runtimeConfig/grokInventory.ts`, `src/runtimeObservability/claudeStatusLineCapture.ts` (host-written Claude `statusLine` wrapper into `spawn-settings`)
 
@@ -55,6 +55,8 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 17 | **Temporary Agent (`spawn_agent`)** | The runtime may be handed a DELEGATION through the lighter Temporary path — no durable Agent Profile required — and can honor it: it resumes as the same entity, it can receive the spec 246 brief, and it can answer through the Bridge. `✓` needs all three; `~` means the runtime is admitted with a declared, task-owned shortfall; `✗` means a command of that shape is refused as an Agent and belongs to `spawn_terminal`. This is a SEPARATE axis from Agent Profile attestation — see §3.6.1. |
 | 18 | **Internal checklist telemetry** | Runtime has a native structured execution checklist and Tachyon can observe it through a measured structured protocol/event/transcript path. This is ephemeral telemetry only: it never becomes a Board Task or proves Delivery completion. `✓` requires structured read plus correlation and provenance; `~` means native mechanism with weaker observation/control; `✗` means no built-in mechanism. See the [2026-07-28 research](../research/runtime-internal-checklist-capabilities.md). |
 | 19 | **Design Mode chat reply (`design_mode_chat_reply`)** | Under the current tool-only Design Mode prompt (`formatDmChatPrompt`, post-`t-181925` turn id), the runtime **lists** the Bridge tool and the model **calls** it (not pane markers). `✓` needs a dated headless or live dogfood that shows a real MCP tool call on a stated binary version. `~` means listed only, or called without turn bind / panel land. `✗` means the model refuses the tool path and falls back to markers or pane text. Panel land (IDE Browser Bridge online + chat JSONL) is a separate cell in §3.1.3 — tool-call green does **not** imply F1 may delete markers without a land dogfood. Research: [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md). |
+| 20 | **Auth status probe (pre-launch)** | Runtime answers "is this config home authenticated?" through a **local, non-interactive** command, measured on a stated version, whose output separates authenticated from unauthenticated **before** any work is attempted. Distinct from row 16, which is about recognizing a FAILURE after one. `✓` needs the probe measured in BOTH states AND consumed by Tachyon; `~` means measured but not consumed; `?` means unmeasured; `✗` means the runtime offers no such command. A file existence check never qualifies — it proves bytes exist, not that a session is live. Neither does an exit code alone: Grok exits 0 signed out (§3.8). |
+| 21 | **Native login surface** | What the runtime's own login actually requires of a human, measured by running it — an interactive TUI/paste-back, a device code, or a browser loopback — and whether Tachyon can offer it **from inside the product** without an external terminal. `✓` needs the surface measured on a stated version AND a governed in-product path; `~` means the surface is measured but the human still leaves Tachyon; `?` means unmeasured. Driving a non-interactive key path (stdin API key, token env var) never qualifies and is explicitly out of bounds — see §3.8. |
 
 For the Codex marks in rows 7, 9, and 12, **✓** is scoped to durable Agent Profiles: Tachyon regenerates
 the authored, allowlisted native policy in a private `CODEX_HOME` before fresh spawn, restart, and
@@ -127,6 +129,8 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 17 Temporary Agent (`spawn_agent`) | ✓ | ✓ | ✓ | ✓ | ✓ | **✗**# |
 | 18 Internal checklist telemetry | ~ | ~ | ~ | ~ | ✗ | **✗** / **~**¶ |
 | 19 Design Mode chat reply | ✓º | ✓º | **?** | ✓º | **?** | **?** |
+| 20 Auth status probe (pre-launch) | ~ᵃ | ~ᵃ | ✓ᵃ | ~ᵃ | **?** | **?** |
+| 21 Native login surface | ~ᵃ | ~ᵃ | **?** | ~ᵃ | **?** | **?** |
 
 º **Design Mode chat reply (2026-08-06, `t-dd46a4` / SDD 488 F3):** headless probe with the current
 tool-only `formatDmChatPrompt` shape (incl. `Turn id: dm-turn-…`). Claude 2.1.223, Codex 0.146.0,
@@ -138,6 +142,19 @@ Claude sent `{text}` only. Pi / OpenCode / Outros **?** unmeasured. Full matrix 
 [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md).
 **F1 (delete marker fallback) is unblocked for tool-compliance on claude/codex/grok, not for
 unconditional marker deletion** — re-dogfood with IDE bridge up first.
+
+ᵃ **Auth status probe / native login surface (2026-08-07, `t-9b5457` / SDD 495):** measured by
+running each CLI against an isolated, credential-free config home and against the real one, and by
+driving each login in a tmux pane and killing it before completion — no real credential was created
+or touched. Claude 2.1.224, codex-cli 0.146.1, grok **1.0.0**, opencode 1.18.9. Claude/Codex/Grok are
+`~` on **both** rows for the same reason: the probe and the login surface are now measured, and
+**Tachyon consumes neither** — `RUNTIME_AUTH_PREFLIGHT` (`src/runtime/authRequired.ts:188`) still
+declares OpenCode only, and no product surface offers a login action. OpenCode is `✓` on row 20
+(`opencode providers list`, consumed as a launch refusal by `OpencodeLaunchPreflight`, `t-0338fc`;
+re-measured here on 1.18.9) and `?` on row 21 (its login was not driven). Pi and Hermes are `?` on
+both by scope: `t-9b5457` names Claude, Codex and Grok as priority and asks that the others be
+**recorded**, not solved. Full measurement in §3.8 and in
+[`docs/specs/495-runtime-auth-login-recovery/notes.md`](../specs/495-runtime-auth-login-recovery/notes.md).
 
 ¶ **Internal checklist telemetry (2026-07-28, `t-c2209d`):** this row distinguishes
 runtime-native capability from current Tachyon integration. Claude has the richest native model
@@ -836,6 +853,9 @@ skipped rather than passed, because absence is not evidence about a runtime.
 | ~~Hermes Brief/Resume/Bridge/Harness contracts~~ | **Closed/hardened 2026-07-16** — forced TUI, isolated MCP inheritance, optional auth, fail-closed hooks and activity-based session selection. See [`hermes.md`](./hermes.md). |
 | ~~Hermes Activity reader~~ | **Closed/hardened 2026-07-16** — `state.db` reader now preserves source timestamp/model, follows live session switches and bounds cold backfill. Residual: visual dogfood, token/cost projection. |
 | Hermes active-runtime promotion | Measure composer/attention and graceful stop; implement or explicitly reject permission posture; native fork remains absent |
+| Auth status probe unconsumed (claude/codex/grok) | All three expose a local non-interactive probe (§3.8) and Tachyon reads none — `RUNTIME_AUTH_PREFLIGHT` declares OpenCode only. Proposal: SDD 495 / `t-9b5457`. Rows 20/21 stay `~` until a probe is consumed and a login action exists. |
+| No in-product login action, any runtime | Every path ends at "go run this in another terminal". Measured cost: a credential refusal is printed to the **status bar** for 8 s (`src/workspace/notify.ts:41`), which is how a correct diagnosis reached a human as an unreadable fragment. First slice named in [SDD 495](../specs/495-runtime-auth-login-recovery/tasks.md). |
+| Grok rows measured on 0.2.112/0.2.118, host runs 1.0.0 | Re-measure the Grok cells against 1.0.0. One declared behavior already broke: `grokLaunchPreflight.ts:179-188` (`t-5dcf47`, §3.8). |
 | RuntimeOps panel model column | still declared/profile-only (spec 378 exposes the observed model + declared-vs-observed `modelDivergence` fact in the snapshot payload for agent consumers; the panel's own Model cell doesn't render it yet — a small follow-up once the sidebar usage is dogfooded) |
 
 ---
@@ -871,6 +891,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-08-07 | **Authentication matrix extended with rows 20 (auth status probe) and 21 (native login surface) — new §3.8 (`t-9b5457` / SDD 495).** Row 16 answers "did this runtime already fail for auth reasons?"; the two new rows answer "can we ask before any work is attempted?" and "what does its own login require of a human?" Measured Claude 2.1.224, codex-cli 0.146.1, grok **1.0.0**, opencode 1.18.9 against isolated credential-free config homes and (for logins) in a tmux pane killed before completion; no real credential touched. All three priority runtimes now expose a local non-interactive status probe (`claude auth status --json`, `codex login status`, the `grok models` banner line) and **Tachyon consumes none of them** — `RUNTIME_AUTH_PREFLIGHT` still declares OpenCode only. Two asymmetries pinned: Grok exits `0` in both states (its signal is a line, never the exit code) and Claude's login **blocks on a typed paste-back** while Grok's prints **nothing on a pipe** — jointly, the only login surface all three permit is a real terminal. Version drift recorded: this host runs grok 1.0.0 while the Grok rows elsewhere still state 0.2.112/0.2.118, and `grokLaunchPreflight.ts:179-188`'s declared "a logged-out CLI prints a sign-in notice instead of a listing" is **false on 1.0.0** — the catalog prints while signed out and the preflight answers `supported` for a credential-free CLI (`t-5dcf47`). Proposal: [`docs/specs/495-runtime-auth-login-recovery/`](../specs/495-runtime-auth-login-recovery/). |
 | 2026-08-06 | **Design Mode `design_mode_chat_reply` runtime matrix (`t-dd46a4` / SDD 488 F3):** measured Claude 2.1.223, Codex 0.146.0, Grok 0.2.118 headless against the live Bridge with the current tool-only Design Mode prompt (incl. turn id). All three **listed** and **called** the tool; none used pane markers. Panel land **unmeasured** (IDE Browser Bridge offline). Live `tools/list` omitted `turnId` while source 0.62.0 declares it. Capability row 19 + §3.1.3; research [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md). F1 (delete markers) unblocked for tool-compliance on those three, not for unconditional deletion. Pi left **?** unmeasured. |
 | 2026-08-05 | **`spawn_agent` stopped answering `ready` for a runtime the CLI itself refused (`t-d501fc`):** measured incident — `spawn_agent({cmd: "claude --model sonnet-5"})` (the correct id is `claude-sonnet-5`) answered `state: "ready"`; the CLI had actually booted, printed the whole primer, then refused the model and sat at an empty prompt, never starting work. The coordinator found out ten minutes later, from an idle poke, only because it inspected the pane instead of acknowledging. Root cause traced to `GenericLaunchReadiness.classify()` (`src/runtime/launchReadiness.ts`): the model-rejection regex existed and ran BEFORE the composer-readiness check (rejection was always meant to win), but it did not match the CLI's actual words, so classify() fell through to the composer check — which DOES match, because the CLI settles at its ordinary empty `❯ ` prompt right under the refusal, indistinguishable from a healthy idle agent. Measured by running each CLI directly with a bogus model (`<cli> --model <bogus> -p "hi"`, never through `spawn_agent` — the workspace was capped at 3 parallel agents after a RAM crash), answering the task's three questions: (1) **timing** — Claude ~2.3–2.7s, Grok ~0.6–0.8s, both fast and CLI-side; Codex ~2–9s, network-bound (a live API round trip with retry), sometimes exceeding the existing 5s `LAUNCH_READINESS_WINDOW_MS` — noted as a residual gap, not fixed here, since Codex's primary defense is the preflight catalog below, not this window. (2) **shape** — each CLI refuses in its own words, confirmed NOT a shared phrase: Claude *"There's an issue with the selected model (X). It may not exist or you may not have access to it."*; Codex an `invalid_request_error` naming *"'X' model is not supported when using Codex with a ChatGPT account."*; Grok *`Couldn't set model 'X': Invalid params: "unknown model id"`* — Grok's shape already matched the pre-fix regex, which is exactly why the incident was Claude-specific. Detection is per-adapter (`MODEL_REJECTED_RE` in `launchReadiness.ts`, shared by `GenericLaunchReadiness` and `CodexLaunchReadiness`; see the Claude/Codex "Model preflight" and "Post-launch readiness" rows above for the full per-runtime picture — including that Codex already carries an undocumented, pre-existing authoritative preflight, `codex debug models`, which is the primary reason a bad Codex model rarely reaches this classify path at all). (3) **attention** — confirmed the coordinator's `idle` signal does not distinguish "finished a real turn" from "never got past boot": `AttentionMonitor` seeds every agent `working` on first observation, so the one candidate flag (`unseen`, meant for "finished, awaiting eyes") fires identically on a boot-to-blank-prompt as on a genuine completed turn, and `AgentManager`'s own `readyAgents`/`provisionalAgents` latch (the thing that DOES know, via `isReady`) is never plumbed into `list()`/`ManagedEntryInfo` or `TemporaryBackstopMonitor`'s idle-poke text. That gap is real but NOT what this fix closes — the guard names two independent-either options, and this fix takes the first: `spawn_agent` now answers success only when the runtime was observed to accept the launch, because a caught rejection makes `AgentManager.spawn()` throw (`observeLaunchReadiness` → `RuntimeLaunchReadinessError`), so `spawn_agent` returns a Bridge tool failure instead of `{state: "ready"}`. Nothing here validates a Tachyon-held model list — the fix only widens what a real, measured refusal SENTENCE is recognized as, which is the direction the task required (the runtime's catalog changes without telling us; a copied list errs in both directions). Evidence: `test/unit/launchReadinessRecovery.test.ts` (three new per-runtime classify() cases, using each measured sentence verbatim — the Claude and Codex cases fail against the pre-fix regex) and `test/unit/agentManager.test.ts` ("the REAL classify pipeline rejects a spawn against Claude's measured refusal pane, not a stubbed one" — the existing `runtime_model_rejected` coverage stubbed `launchReadiness.wait` directly and so never actually exercised the classify() regex against real text; this one replays the incident's own pane). The attention idle-vs-never-started gap is filed as a follow-up rather than fixed here (out of scope: `src/attention/*` and `TemporaryBackstopMonitor` were not this task's owned files, and the guard's other exit — this one — already closes the measured incident). |
 | 2026-08-05 | **Native lane suppression measured for formation (SDD 490 Fatia C):** `nativeSuppressionConfirmed` stopped being hard-coded `false` and now reads `src/runtime/nativeLaneSuppression.ts`. Combined gate requires verified **instructions** *and* verified (or unsupported) **memory** disable — the formation receipt covers every enabled human lane at once. Measured on installed binaries: Claude 2.1.222 — project `CLAUDE.md` suppressed by `--setting-sources user` (marker NONE vs TOKEN with `user,project`); combined **✓** with existing memory disable. Codex 0.146.0 — `project_doc_max_bytes=0` suppresses `AGENTS.md` (marker NONE); `--ignore-rules` does **not**; combined **~** because memory disable remains declared. Grok 0.2.118 — no rules disable control (`inspect` always lists planted AGENTS.md; `--system-prompt-override` still returns marker); combined **~**. Evidence: [`native-lane-suppression-sdd490-fatia-c.md`](../research/native-lane-suppression-sdd490-fatia-c.md), `test/unit/runtimeNativeLaneSuppression.test.ts`. Does not wire Codex `project_doc_max_bytes=0` into launches or invent Grok verified. |
@@ -974,3 +995,72 @@ specific to this runtime: the probe was measured to be a *local* read (it works 
 home with the network black-holed, in under a second), so a failure means a broken environment, and
 the cost of guessing "probably fine" is precisely the invisible degradation the gate exists to stop.
 A refusal is loud, immediate and names the probe; the alternative failure is silent.
+
+### 3.8 Authentication: status probe and login surface (rows 20 / 21)
+
+**Measured 2026-08-07 (`t-9b5457`, SDD 495).** §3.7 answers *"how does Tachyon recognize a runtime
+that has already failed for auth reasons?"* This section answers two different questions that §3.7
+does not: **"can Tachyon ask, before any work is attempted, whether this config home is
+authenticated?"** and **"what does that runtime's own login actually require of a human?"** Both were
+measured by running the CLIs — against an isolated credential-free config home and against the real
+one for the probes, and in a tmux pane killed before completion for the logins. No real credential
+was created, read, copied or modified.
+
+#### Auth status probe (row 20)
+
+| Runtime | Probe | Authenticated | Unauthenticated | Exit | Machine-readable | Consumed by Tachyon |
+|---|---|---|---|---|---|---|
+| Claude 2.1.224 | `claude auth status --json` | `{"loggedIn":true,…}` | `{"loggedIn":false,"authMethod":"none","apiProvider":"firstParty"}` | `0`/`1` | **✓ JSON** | **no** |
+| codex-cli 0.146.1 | `codex login status` | `Logged in using ChatGPT` | `Not logged in` | `0`/`1` | ✗ one line | **no** |
+| grok 1.0.0 | `grok models` (banner line) | `You are logged in with grok.com.` | `You are not authenticated.` | **`0`/`0`** | ✗ banner line | **no** |
+| opencode 1.18.9 | `opencode providers list` | providers + counts | `└  0 credentials` | `0`/`0` | ✗ box-drawing | **yes** (`t-0338fc`) |
+| Pi 0.80.10 | unmeasured | — | — | — | — | no |
+| Hermes 0.18.2 | unmeasured | — | — | — | — | no |
+
+Three asymmetries this table exists to prevent anyone from smoothing over:
+
+- **Grok's exit code carries no information** — `grok models` exits `0` signed out. A shared
+  exit-code rule would report Grok authenticated forever. Its signal is a **line**. (`grok models
+  --json` does not exist: `error: unexpected argument '--json' found`. `grok doctor` reports
+  terminal/clipboard/colour/voice and says nothing about auth — checked, so the banner-line
+  dependency is a measured last resort rather than a first guess.)
+- **Claude's probe is the only structured one, and the only one that carries account identity** —
+  the logged-in payload holds `email`, `orgId`, `orgName`, `subscriptionType`. Anything consuming it
+  must read `loggedIn` and drop the rest **at the parse boundary**, not at the render boundary.
+- **Every probe proves READABLE, not VALID.** The bound `t-0338fc` states for OpenCode generalizes to
+  all four: a probe answering "authenticated" must never suppress a real downstream failure.
+
+**A version-drift finding worth reading as a warning, not a footnote.** This host runs **grok
+1.0.0**; the Grok rows elsewhere in this document still state 0.2.112 / 0.2.118, and one behavior the
+source declares in prose stopped holding somewhere in between:
+`src/runtime/adapters/grokLaunchPreflight.ts:179-188` returns `unverifiable` for an unparseable
+catalog and justifies it with *"A logged-out CLI prints a sign-in notice instead of a listing."* On
+1.0.0 a logged-out `grok models` prints the sign-in notice **and** the full `Available models:`
+listing, so `parseGrokModelCatalog` succeeds and the preflight answers `supported` for a CLI with no
+credential. Filed as **`t-5dcf47`**. The Grok rows in this document need re-measurement against 1.0.0
+generally, not only here.
+
+#### Native login surface (row 21)
+
+| Runtime | Login command(s) | Surface | Blocks on typed input? | Prints to a pipe? |
+|---|---|---|---|---|
+| Claude 2.1.224 | `claude auth login` (`--claudeai` default, `--console`, `--sso`, `--email`) | browser OAuth **+ paste-back** | **YES** — ends at `Paste code here if prompted >` | needs a PTY |
+| codex-cli 0.146.1 | `codex login` (loopback browser); `codex login --device-auth` | device code, display-only | no — the CLI polls | ✓ |
+| grok 1.0.0 | `grok login --oauth`; `grok login --device-auth` (alias `--device-code`) | device code, display-only | no — the CLI polls | **NO — silent on a pipe, PTY only** |
+| opencode 1.18.9 | `opencode providers login` (declared, `t-0338fc`) | unmeasured | — | — |
+| Pi 0.80.10 | `/login` inside Pi (declared) | unmeasured | — | — |
+| Hermes 0.18.2 | `hermes model`, or a key in `~/.hermes/.env` (declared) | unmeasured | — | — |
+
+**The asymmetry that decides any login UI:** Claude's login *stops and waits for a human to type*, and
+Grok's login *emits nothing at all on a pipe*. So a "show the device code in a Tachyon panel" design
+serves Codex and Grok and cannot serve Claude, while a "run it headlessly and capture the code"
+design cannot serve Grok. The only surface all three permit is a **real terminal the human can type
+into** — which, in this product, is a governed tmux pane. See
+[`docs/specs/495-runtime-auth-login-recovery/plan.md`](../specs/495-runtime-auth-login-recovery/plan.md) §2.2.
+
+**Out of bounds, recorded so nobody proposes it as a shortcut.** All three priority runtimes also
+document a non-interactive credential path — `claude setup-token`, `codex login --with-api-key` /
+`--with-access-token` (both read **stdin**), and `XAI_API_KEY` for Grok. Each requires a process to
+hold raw key bytes. Tachyon drives none of them, and a runtime is not `✓` on row 21 for having one.
+A login pane is also never scraped: the device code is a bearer secret for the duration of the flow,
+and Grok's own screen says so (*"Don't share it with anyone."*).
