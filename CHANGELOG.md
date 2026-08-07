@@ -6,6 +6,82 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.65.0 — The screens say what they know, and stop hiding what they don't
+
+Every change here shortens the distance between something being true and you being able to see it.
+A refusal that names the field. A merge command that shows what proved it. A history that admits
+when nobody can prove a human decided.
+
+### Added
+- **The tmux app opens on the project you selected in the sidebar** (`t-6b5dea`), and says what it
+  hid. Its universe is larger than the other apps': it lists sessions from closed folders and other
+  windows, which no attached-project selector can name — and those are exactly the ones you open
+  tmux to find when something went wrong. So a default nobody chose declares that it narrowed the
+  screen, names the project, counts what is held back, and carries the way out with it. The
+  disclosure disappears the moment you pick a project by hand.
+- **The Human Inbox shows what you already decided** (`t-cede16`), filtered by state, type, result,
+  period and search. Each line names who resolved it — including when the honest answer is
+  `unattributed:vscode-command`, which means nobody could prove a human did. The screen does not
+  invent a name.
+- **The worktrees panel hands you the land command, already checked** (`t-7cb971`). Five
+  preconditions, each showing what proved it. When one is unproved the command is withheld, because
+  one that would fail wastes your time and one that would succeed would land something nobody
+  verified. Each refusal carries a Fix line, and distinguishes *not measured* from *not true* — a
+  refusal that names the wrong reason sends you to fix the wrong thing. The product still never
+  moves the trunk, and a source guard refuses any `git` call under `src/` that passes `merge` or
+  `--ff-only`.
+- **`npm run runtime:remeasure`** (`t-0ac2e9`) re-measures four runtime facts compiled into the
+  product. Three hold; native-memory suppression reports **NOT MEASURED**, with the reason — proving
+  it needs two authenticated, quota-consuming sessions, and feature status is not evidence of
+  consequence.
+- **Design Mode edits are persisted** (`t-9d3919`). When the agent proposes a change it can send the
+  patch — summary, files, diff — and the host validates and records it, so what changed outlives the
+  page.
+
+### Fixed
+- **The sidebar names the field that overflowed** (`t-74274c`). It used to show eighty characters of
+  clipped JSON; now the status bar reads `fleet.agents[3].focus.full is too_big` and the full issue
+  goes to an Output channel. The measurement behind this was taken on the coordinator: a whole
+  session spent grepping for a field the error already knew.
+- **Whoever you declared owner of a Saved Agent can stop it again** (`t-b5f896`). Lifecycle scope
+  read runtime lineage only, and activating a Saved Agent does not create a parent edge. Roster
+  ownership is now a separate question, never converted into lineage, so the governance that refuses
+  siblings and unrelated members is unchanged.
+- **With two windows or two folders, the Integrated Browser stops picking the wrong one**
+  (`t-464e2d`). Five measured breaks, including one that mattered: the window singleton was pinned
+  to the first workspace folder while config followed the active one, so you could enable and open
+  in B while it published and used A.
+- **Dismissing an agent stops leaving its runtime home on disk** (`t-7bc276`). Grok and hermes
+  materialize that home as a directory while claude and opencode write a file, and both sweeps only
+  knew about files — so 35 dismissed agents had reached 2.2 GB. One constant now feeds both the path
+  where a home is created and the scan that finds it, and dismissal reports the size it removed.
+- **The documented onboarding path loads again** (`t-fe772a`). `tachyon.yml.example` declared an
+  agent in a retired inline form, so copying it produced a config the loader refuses. The durable
+  fix is the test: the example is now loaded through the production loader on every run.
+- **The Saved Agent proposal screen is a decision document** (`t-d343ab`). The digest is shown in
+  full instead of truncated — a clipped digest verifies nothing — the facts align in a column, and
+  "created enabled; **not** started" has its own callout instead of being lost in prose.
+- **The product stops promising a backup it never wrote** (`t-173b96`). Nothing in the codebase ever
+  created or read `~/.local/share/tachyon-backups/`; two comments advertised it as if it were a
+  feature. The comments now declare the absence, because `tachyon.yml` is not versioned, the product
+  writes to it, and losing it costs the whole roster.
+
+### Internal
+- **A source guard stops a script from killing the fleet's tmux server** (`t-6ef951`, `t-9713ff`).
+  tmux resolves the server from `$TMUX` before it looks at `$TMUX_TMPDIR`, so a script running
+  inside a fleet pane that sets only the tmpdir and believes it isolated takes every live agent down
+  — which happened three times in three hours. The rule the guard enforces: an invocation is safe if
+  it passes `-L <its own socket>` **or** clears `TMUX`; neither reaches the fleet. It parses the
+  syntax tree rather than matching text, because the mold it followed matches identifiers inside
+  comments and broke `main` twice the same day.
+- **The `resolvedBy` guard stops counting reads as writes** (`t-45db7d`). It scanned for the field
+  name and flagged a view model that only displays the value; it now finds the write doors through
+  the `resolveApproval` import, which also tells a port from a door.
+- **`docs/specs/488-ide-browser-design-mode/hybrid-d-path.md`** (`t-d49ef0`) plans the route to the
+  ratified destination, and settles the argument with a measurement: nine of the ten pieces of
+  visible Design Mode state are destroyed by any in-page link click, and the host sends none of them
+  back. Seven decisions are named for the maintainer rather than taken.
+
 ## 0.64.0 — What the product creates, it can now read, show and undo
 
 The theme of this release is one class of defect, found four times in one day: Tachyon could
