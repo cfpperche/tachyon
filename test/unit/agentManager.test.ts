@@ -8256,3 +8256,182 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
     });
   });
 });
+
+/**
+ * t-9d76b1 — a stop TACHYON ASKED FOR must not be reported as a crash, in any runtime, and a real
+ * crash must still be one even when it exits 130.
+ *
+ * The whole family of measurements this rests on: asked with `stopGracefully`, grok and hermes exit
+ * 130 (128+SIGINT — the CORRECT exit of a process that honoured the Ctrl-C Tachyon sent) while codex,
+ * opencode and pi exit 0 (`npm run dogfood -- stop-exit-codes`). So the exit code cannot carry the
+ * intent, and no special case for one code could: it would fix two runtimes and break on the next.
+ *
+ * WHO CAN REACH THIS, and why the tests sit at `stopGracefully` rather than at each caller: every door
+ * that asks a runtime to exit funnels through it — the sidebar's Stop (`agent.stop` in engineService),
+ * a graceful `restart` (UI and Bridge `restart_agent`), and the Bridge-client rebind
+ * (`clientRebind` → `deps.stopGracefully`). A forced Kill removes the whole tmux session, so it leaves
+ * no dead pane and no row to misjudge. The door that stays uncovered by construction is a human typing
+ * Ctrl-C into the pane themselves: Tachyon never asked, cannot observe the intent, and the row honestly
+ * reads `crashed` — which is the second test below, from the other side.
+ */
+describe("AgentManager — a requested stop is not a crash (t-9d76b1)", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
+  });
+
+  function stopHarness(yaml = "agents:\n  grok:\n    cmd: grok\n") {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-stopclean-"));
+    dirs.push(ws);
+    const hash = workspaceHash(ws);
+    const { sessions, dead, tmux } = fakeTmux();
+    const config = configOf(yaml);
+    const ledger = new SessionLedger(ws);
+    const executions: Array<{ state: string; detail: Record<string, string> }> = [];
+    const manager = new AgentManager({
+      tmux,
+      wsHash: hash,
+      workspaceRoot: ws,
+      getConfig: () => config,
+      ledger,
+      launchPreflight: HERMETIC_PREFLIGHT,
+      recordExecution: (event) => executions.push({ state: event.state, detail: event.detail }),
+    });
+    const row = async (name: string) => (await manager.list()).find((entry) => entry.name === name)!;
+    return {
+      manager,
+      ledger,
+      sessions,
+      dead,
+      tmux,
+      config,
+      executions,
+      ws,
+      hash,
+      row,
+      session: (name: string) => sessionName(hash, name),
+    };
+  }
+
+  // The exit codes six real runtimes actually return to one identical requested stop. `undefined` is
+  // the "we did not see the code" case, which is not assumed clean anywhere else either.
+  const REQUESTED_STOP_EXITS = [
+    { runtime: "grok", exitCode: 130 },
+    { runtime: "hermes", exitCode: 130 },
+    { runtime: "codex", exitCode: 0 },
+    { runtime: "opencode", exitCode: 0 },
+    { runtime: "pi", exitCode: 0 },
+    { runtime: "other", exitCode: 143 },
+    { runtime: "unknown-code", exitCode: undefined },
+  ] as const;
+
+  it("no requested stop is reported as a crash, whatever code the runtime chose", async () => {
+    for (const { runtime, exitCode } of REQUESTED_STOP_EXITS) {
+      const h = stopHarness(`agents:\n  ${runtime}:\n    cmd: grok\n`);
+      await h.manager.spawn(runtime);
+      await h.manager.stopGracefully(runtime);
+      h.dead.set(h.session(runtime), exitCode as number); // fakeTmux omits the code when NaN/undefined
+
+      const row = await h.row(runtime);
+      expect(row.dead, runtime).toBe(true);
+      expect(row.crashed, `${runtime} exit ${exitCode}`).toBe(false);
+      expect(row.stopRequested, runtime).toBe(true);
+      // The measured code is never hidden and never invented — it stays exactly what the pane said.
+      expect(row.exitCode, runtime).toBe(exitCode);
+    }
+  });
+
+  it("a crash nobody asked for is still a crash — including one that exits 130", async () => {
+    for (const exitCode of [1, 130, 137]) {
+      const h = stopHarness();
+      await h.manager.spawn("grok");
+      h.dead.set(h.session("grok"), exitCode); // died on its own; no stop was requested
+
+      const row = await h.row("grok");
+      expect(row.crashed, `exit ${exitCode}`).toBe(true);
+      expect(row.stopRequested).toBeUndefined();
+      expect(row.exitCode).toBe(exitCode);
+    }
+  });
+
+  it("the intent belongs to the stopped instance, not to the name: a restart drops it", async () => {
+    const h = stopHarness();
+    await h.manager.spawn("grok");
+    await h.manager.stopGracefully("grok");
+    h.dead.set(h.session("grok"), 130);
+    expect((await h.row("grok")).crashed).toBe(false);
+
+    await h.manager.restart("grok", { stop: "force", session: "new" });
+    expect(h.manager.wasStopRequested("grok")).toBe(false);
+    // The NEW instance then dies on its own with the very same code — that is a crash.
+    h.dead.set(h.session("grok"), 130);
+    expect((await h.row("grok")).crashed).toBe(true);
+  });
+
+  it("survives a host reload: the durable row remembers what the dead pane cannot", async () => {
+    const h = stopHarness();
+    await h.manager.spawn("grok");
+    await h.manager.stopGracefully("grok");
+    h.dead.set(h.session("grok"), 130);
+    await h.manager.list(); // the death is observed here — the one moment the intent is still in memory
+
+    expect(h.ledger.get("grok")?.lifecycle).toMatchObject({ state: "stopped" });
+
+    // A window reload: a brand-new manager with no memory of the request, and the dead pane still
+    // there (remain-on-exit keeps it until dismiss/restart). This is where the row used to lie again.
+    const reloaded = new AgentManager({
+      tmux: h.tmux,
+      wsHash: h.hash,
+      workspaceRoot: h.ws,
+      getConfig: () => h.config,
+      ledger: h.ledger,
+      launchPreflight: HERMETIC_PREFLIGHT,
+    });
+    const row = (await reloaded.list()).find((entry) => entry.name === "grok")!;
+    expect(row.dead).toBe(true);
+    expect(row.crashed).toBe(false);
+    expect(row.stopRequested).toBe(true);
+    expect(reloaded.wasStopRequested("grok")).toBe(true);
+  });
+
+  it("a restart clears the durable stamp too, so the next instance is judged on its own", async () => {
+    const h = stopHarness();
+    await h.manager.spawn("grok");
+    await h.manager.stopGracefully("grok");
+    h.dead.set(h.session("grok"), 130);
+    await h.manager.list();
+    expect(h.ledger.get("grok")?.lifecycle?.state).toBe("stopped");
+
+    await h.manager.restart("grok", { stop: "force", session: "new" });
+    expect(h.ledger.get("grok")?.lifecycle).toBeUndefined();
+  });
+
+  it("the activity record calls a requested stop `killed`, not `failed`", async () => {
+    const h = stopHarness();
+    await h.manager.spawn("grok");
+    await h.manager.stopGracefully("grok");
+    h.dead.set(h.session("grok"), 130);
+    await h.manager.list();
+
+    const exit = h.executions.filter((event) => event.detail.seam === "AgentManager.readAgentStates");
+    expect(exit).toHaveLength(1);
+    expect(exit[0].state).toBe("killed");
+    expect(exit[0].detail).toMatchObject({ stopRequested: "true", exitCode: "130" });
+  });
+
+  it("the activity record still fails an unrequested non-zero exit, and completes a clean one", async () => {
+    const crash = stopHarness();
+    await crash.manager.spawn("grok");
+    await crash.manager.list(); // observe it ALIVE first — the alive→dead transition is the event
+    crash.dead.set(crash.session("grok"), 130);
+    await crash.manager.list();
+    expect(crash.executions.at(-1)).toMatchObject({ state: "failed", detail: { exitCode: "130" } });
+
+    const clean = stopHarness();
+    await clean.manager.spawn("grok");
+    await clean.manager.list();
+    clean.dead.set(clean.session("grok"), 0);
+    await clean.manager.list();
+    expect(clean.executions.at(-1)).toMatchObject({ state: "completed" });
+  });
+});

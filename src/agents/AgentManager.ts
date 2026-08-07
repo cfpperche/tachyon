@@ -326,8 +326,19 @@ export interface ManagedEntryInfo {
   instance?: AgentInstancePolicy;
   /** dead pane present (process ended on its own; postmortem kept until dismiss/restart) */
   dead: boolean;
-  /** dead with a NON-ZERO exit — a clean exit (0) is dead but not crashed */
+  /**
+   * t-9d76b1 — died and NOBODY ASKED IT TO. Two independent facts, never one:
+   * `stopRequested` answers "did Tachyon ask?", the exit code answers "did it exit cleanly?".
+   *
+   * It used to be `dead && exitCode !== 0` alone, which answered the intent question with the code —
+   * so a runtime that honours Ctrl-C by exiting 130 (128+SIGINT: the CORRECT exit for the interrupt
+   * Tachyon itself sent) was reported as a crash. Measured: grok and hermes return 130, codex,
+   * opencode and pi return 0, so no exit code — and no special case for one of them — could have
+   * carried the intent.
+   */
   crashed: boolean;
+  /** t-9d76b1 — Tachyon requested this exit (graceful Stop / restart / rebind), so it is not a crash. */
+  stopRequested?: boolean;
   exitCode?: number;
   /** process exited 0 and Tachyon already cleared the tmux postmortem pane */
   cleanExited?: boolean;
@@ -1097,6 +1108,19 @@ export class AgentManager {
   /** Detail for rows in `stopFailed` — cleared with the flag. */
   private stopFailureDetail = new Map<string, NonNullable<ManagedEntryInfo["stopFailure"]>>();
   private cleanExited = new Set<string>();
+  /**
+   * t-9d76b1 — TACHYON ASKED THIS PROCESS TO EXIT. The one fact an exit code cannot carry.
+   *
+   * `stoppingSince` above cannot answer this: it is the "stopping…" badge, and `list()` deletes it the
+   * moment the pane goes dead — exactly when the question "did it die, or did I stop it?" is finally
+   * being asked. So this is a second, longer-lived record of the same request, and it deliberately
+   * survives the death.
+   *
+   * INSTANCE-scoped, not name-scoped: cleared wherever `cleanExited` is (spawn / restart / resume /
+   * kill / dismiss), because those are the doors that begin a new process or collect the dead one.
+   * Nothing clears it at the death observation — the row is read long after that.
+   */
+  private stopRequestedAt = new Map<string, number>();
   /** Runtime occupancy observations keyed by the worktree's canonical realpath.
    *  Process-local (no lock files); `pending` = grant reserved but the spawn hasn't landed yet, `live` =
    *  occupant confirmed running, `dirty` = the last live occupant died without a clean cleanup probe. No
@@ -1714,7 +1738,7 @@ export class AgentManager {
       //
       // Guarded by `seq` for the same reason the cache is: a read dispatched earlier must not resolve
       // later and re-announce a death against a newer inventory.
-      this.recordAgentExits(this.lastAgentStates, out);
+      this.observeAgentDeaths(this.lastAgentStates, out);
       this.lastAgentStates = out;
       this.tmuxReadAppliedSeq = seq;
     }
@@ -1722,39 +1746,74 @@ export class AgentManager {
   }
 
   /**
-   * Emit an `exit` for every agent that was alive in `previous` and is dead in `next`.
+   * Every agent that was alive in `previous` and is dead in `next` — the ONE seam where a death is an
+   * event rather than a standing condition. Two things happen here, and both need this exact moment:
+   *
+   *  1. t-9d76b1 — a stop Tachyon ASKED FOR is stamped on the durable row while we still know it was
+   *     asked. The in-memory intent dies with the extension host; the dead pane does not (remain-on-exit
+   *     keeps it until dismiss/restart), so without this a window reload would re-read a requested stop
+   *     as a crash. `lifecycle` is the row's terminal state, and spawn (fresh record), restart and
+   *     resume all drop it, so a stamp can never leak into the next instance.
+   *  2. SDD 480 §3.4 gap 3 — the execution `exit` event.
    *
    * Correlates to the execution minted at spawn when this process still remembers it. When it does not
    * — the engine restarted while the agent kept running — the death is STILL recorded, against the
    * agent, with a fresh id and `unproven`. That is not an orphan: the agent is known, so the event
    * attaches to something real. Dropping it would let a graph that never saw the exit look complete.
    */
-  private recordAgentExits(
+  private observeAgentDeaths(
     previous: ReadonlyMap<string, { dead: boolean; exitCode?: number }>,
     next: ReadonlyMap<string, { dead: boolean; exitCode?: number }>,
   ): void {
-    if (!this.opts.recordExecution) return;
     for (const [agent, state] of next) {
       const before = previous.get(agent);
       if (!before || before.dead || !state.dead) continue;
+      const requested = this.stopRequestedAt.has(agent);
+      if (requested) this.stampRequestedStop(agent);
+      if (!this.opts.recordExecution) continue;
       const live = this.liveExecutions.get(agent);
       const correlation = live ?? mintExecution({ agentId: agent, carrier: "absent" }).correlation;
       this.liveExecutions.delete(agent);
       this.emitExecution({
         kind: "exit",
         node: "Process",
-        // A clean exit is `completed`; anything else is `failed`. An unknown code is not assumed clean —
-        // "we did not see the code" and "the code was 0" are different facts.
-        state: state.exitCode === 0 ? "completed" : "failed",
+        // t-9d76b1 — a stop Tachyon asked for is `killed`: deliberate termination, which is what the
+        // graph's own vocabulary already calls it. Calling it `failed` said the run broke, and it said
+        // so for grok and hermes only, because they answer SIGINT with 130 while codex/opencode/pi
+        // answer 0 — the record disagreed with itself across runtimes about one identical action.
+        // Otherwise unchanged: a clean exit is `completed`, anything else `failed`, and an unknown code
+        // is not assumed clean — "we did not see the code" and "the code was 0" are different facts.
+        state: requested ? "killed" : state.exitCode === 0 ? "completed" : "failed",
         provenance: live ? "measured" : "unproven",
         correlation,
         at: new Date().toISOString(),
         detail: {
           seam: "AgentManager.readAgentStates",
           agent,
+          ...(requested ? { stopRequested: "true" } : {}),
           ...(state.exitCode !== undefined ? { exitCode: state.exitCode } : {}),
         },
       });
+    }
+  }
+
+  /**
+   * t-9d76b1 — persist "Tachyon asked for this exit" on the row, once, at the death.
+   *
+   * Best-effort by construction: an agent with no ledger row (a declared terminal with no adapter,
+   * worktree, parent or evolution snapshot never gets one) has nowhere to keep this, so its intent
+   * lives only as long as this process does. Silent rather than warned — a durability side-channel must
+   * never turn a stop the human asked for into an error report.
+   */
+  private stampRequestedStop(name: string): void {
+    const ledger = this.opts.ledger;
+    if (!ledger) return;
+    try {
+      const rec = ledger.get(name);
+      if (!rec || rec.lifecycle?.state === "stopped") return;
+      ledger.record(name, { ...rec, lifecycle: { state: "stopped", exitedAt: new Date().toISOString() } });
+    } catch {
+      /* best-effort: the row may be gone (a Temporary collected by a concurrent dismiss) */
     }
   }
 
@@ -1873,6 +1932,18 @@ export class AgentManager {
   }
 
   /**
+   * t-9d76b1 — did Tachyon ask this agent's CURRENT instance to exit?
+   *
+   * The same two sources `list()` reads, in the same order: this process's own record of the request,
+   * then the durable terminal state a reload would otherwise have lost. Sync and cheap enough for the
+   * lifecycle tick, which is the caller that must not announce a crash the human ordered.
+   */
+  wasStopRequested(name: string): boolean {
+    if (this.stopRequestedAt.has(name)) return true;
+    return this.opts.ledger?.get(name)?.lifecycle?.state === "stopped";
+  }
+
+  /**
    * t-6d09e6 — best-effort sync liveness from the last successful tmux inventory (no I/O).
    * Used by sync config writers (Agent Studio) that cannot await agentStates(). Prefer
    * runningAgents() when async is available; unknown → false (not running).
@@ -1938,6 +2009,9 @@ export class AgentManager {
       }
       const recordedInstance = this.opts.ledger?.get(name)?.instance;
       const hasStartedTurn = this.opts.hasStartedTurn?.(name);
+      // t-9d76b1 — the intent, from this process if it made the request and from the row if a reload
+      // lost it. Read off the ONE ledger snapshot this listing already took, so it costs no extra I/O.
+      const stopRequested = this.stopRequestedAt.has(name) || rows?.get(name)?.lifecycle?.state === "stopped";
       return {
         name,
         session: this.session(name),
@@ -1966,7 +2040,11 @@ export class AgentManager {
         ...(stopFailure ? { stopFailure } : {}),
         ...(recordedInstance ? { instance: recordedInstance } : {}),
         dead: state?.dead ?? false,
-        crashed: (state?.dead ?? false) && state?.exitCode !== 0,
+        // t-9d76b1 — TWO questions, two sources. `exitCode !== 0` still answers its own ("did it exit
+        // cleanly?"); `stopRequested` answers the one it was being made to answer ("did it die, or did
+        // I stop it?"). A crash that happens to exit 130 has no request behind it and stays a crash.
+        crashed: (state?.dead ?? false) && state?.exitCode !== 0 && !stopRequested,
+        ...(stopRequested ? { stopRequested: true } : {}),
         exitCode: state?.exitCode,
         ...(!state && this.cleanExited.has(name) ? { cleanExited: true } : {}),
         // Same answer as `definitionOf(name)?.kind`, read from the snapshot above: a Saved definition
@@ -2655,6 +2733,7 @@ export class AgentManager {
       this.stoppingSince.delete(name);
       this.clearStopFailed(name);
       this.cleanExited.delete(name);
+      this.stopRequestedAt.delete(name); // t-9d76b1 — a new instance is not the stopped one
       this.postmortemOutput.delete(name);
     };
     let def = this.definitionOf(name);
@@ -3715,6 +3794,7 @@ export class AgentManager {
     this.clearStopFailed(name);
     this.readinessCache.delete(name); // spec 221: kill refreshes ownership (sessionId may change) → drop cache
     this.cleanExited.delete(name);
+    this.stopRequestedAt.delete(name); // t-9d76b1 — a new instance is not the stopped one
     this.postmortemOutput.delete(name);
     const session = this.session(name);
     if (!(await this.opts.tmux.hasSession(session))) throw new AgentNotRunningError(name);
@@ -3760,6 +3840,10 @@ export class AgentManager {
     const stoppingAt = this.stoppingSince.get(name);
     if (stoppingAt !== undefined && Date.now() - stoppingAt < AgentManager.STOPPING_FALLBACK_MS) return;
     this.stoppingSince.set(name, Date.now());
+    // t-9d76b1 — recorded BEFORE the first key, for the same reason every seam mints before it acts:
+    // the process can be gone before `sendKey` even returns, and an intent recorded afterwards would
+    // miss exactly the fastest exits. Unlike `stoppingSince` this is not cleared when the pane dies.
+    this.stopRequestedAt.set(name, Date.now());
     this.clearStopFailed(name);
     this.opts.onStopping?.(name);
     try {
@@ -3782,6 +3866,11 @@ export class AgentManager {
     } catch (err) {
       this.stoppingSince.delete(name);
       this.clearStopFailed(name);
+      // t-9d76b1 — `stopRequestedAt` deliberately SURVIVES this: some keys may already have landed, and
+      // a process that dies from them a moment later was still stopped on request. The residue is a
+      // stop that never reached the pane at all, after which a genuine crash of that same instance
+      // would read as stopped — which is why the row keeps PAINTING the non-zero exit code beside
+      // "stopped" instead of hiding it (see `deadSubline`).
       throw err;
     }
   }
@@ -4073,6 +4162,7 @@ export class AgentManager {
     this.stoppingSince.delete(name);
     this.clearStopFailed(name);
     this.cleanExited.delete(name);
+    this.stopRequestedAt.delete(name); // t-9d76b1 — a new instance is not the stopped one
     this.postmortemOutput.delete(name);
   }
 
@@ -4176,6 +4266,7 @@ export class AgentManager {
     // NOT done in list()'s clean-exit ledger-reap (the postmortem pane is still viewable then) and NOT in
     // forgetTemporary (promotion to a declared tachyon.yml agent KEEPS the log — it's now a persistent agent).
     this.cleanExited.delete(name);
+    this.stopRequestedAt.delete(name); // t-9d76b1 — a new instance is not the stopped one
     this.postmortemOutput.delete(name);
     this.removeEphemeralFootprint(name); // durable: ledger row + activity log (spec 247)
     this.opts.revokeAgentToken?.(name); // spec 351 — idempotent if kill() already revoked it
@@ -4546,6 +4637,7 @@ export class AgentManager {
     this.clearStopFailed(name);
     this.readinessCache.delete(name); // spec 221: restart is a new session → drop the cached badge
     this.cleanExited.delete(name);
+    this.stopRequestedAt.delete(name); // t-9d76b1 — a new instance is not the stopped one
     this.postmortemOutput.delete(name);
     // A3: capture an in-TUI /resume before the process is replaced (respawn or kill).
     if (await this.opts.tmux.hasSession(session)) {
@@ -5027,6 +5119,7 @@ export class AgentManager {
     await this.observeLaunchReadiness(name, cmd, session);
     const { lifecycle: _terminalLifecycle, ...activeRecord } = record;
     this.cleanExited.delete(name);
+    this.stopRequestedAt.delete(name); // t-9d76b1 — a new instance is not the stopped one
     this.postmortemOutput.delete(name);
     this.opts.ledger?.record(name, { ...activeRecord, resume: this.withConfigHome(name, this.definitionOf(name), { ...record.resume, runtime, sessionId: id }) }); // spec 240 — preserve persisted configHome
     // spec 364 — stamp bound_generation at resume time (rebind + human resume both land here).

@@ -233,4 +233,30 @@ describe("t-f6aa7c — a crash must not cost an agent its memory", () => {
       ws.dispose();
     }
   });
+
+  it("an agent STOPPED on request is not resumed — it is not restarted at all", async () => {
+    // The seam between this change and t-9d76b1, asserted where the two actually meet. t-9d76b1 owns
+    // WHETHER a death restarts (`wasStopRequested` short-circuits in `tick`, upstream of the only
+    // caller of `scheduleRestart`); this change owns HOW one that does comes back. Teaching crash
+    // recovery to resume must not turn a deliberate Stop into a relaunch with the memory re-attached
+    // — that would be worse than the defect either change fixed. `stopclean` pins this at the monitor
+    // with a fake `scheduleRestart`; here it runs through the real Workspace, manager and policy.
+    const { ws, calls, dead } = await makeWorkspace();
+    try {
+      await ws.manager.spawn("worker");
+      seedTranscriptOfLastSession(ws, "worker"); // resumable — so a relaunch WOULD resume if one ran
+      const launchesBefore = launchCount(calls);
+
+      await ws.manager.stopGracefully("worker"); // Tachyon asked; the human ordered it
+      dead.set(ws.manager.session("worker"), 130); // grok/hermes honour ^C with 130 — a non-zero exit
+
+      vi.useFakeTimers(); // only now: the graceful stop above has its own real waits
+      await ws.tick();
+      await vi.advanceTimersByTimeAsync(15_000); // past every backoff delay, not just the first
+
+      expect(launchCount(calls)).toBe(launchesBefore);
+    } finally {
+      ws.dispose();
+    }
+  });
 });

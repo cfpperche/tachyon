@@ -6,6 +6,27 @@ Marketplace release notes.
 
 ## Unreleased
 
+### Fixed
+
+- **Stopping an agent no longer looks like it crashed** (`t-9d76b1`). You stopped `grok` and the row
+  went red: `exited (130)`, the same badge an agent that died on its own gets — with `resumable`
+  right beside it, one badge saying it broke and the other saying everything is fine. 130 is
+  128+SIGINT: the *correct* exit of a process that honoured the Ctrl+C Tachyon itself sent. The
+  product was asking one question — "was the exit code zero?" — and using the answer for a different
+  one: "did this die, or did I stop it?". The intent was never in the number, and no adjustment to
+  the number could put it there. Tachyon now *remembers* asking. A stop you ordered reads `stopped`,
+  keeps the real exit code beside it instead of a fabricated `exited (0)`, and keeps its pane open
+  for inspection; the memory survives a window reload, and the next start forgets it, so one
+  instance's ending never describes the next. A genuine crash still reads as a crash — including one
+  that happens to exit 130, which is exactly what a special case for that number would have erased.
+  The Activity record stops calling an ordered stop a *failure*, and — the part that was worse than
+  cosmetic — an agent with `restart: on-crash` is no longer resurrected seconds after you stopped it.
+  Measured on all six runtimes rather than assumed symmetric (`npm run dogfood -- stop-exit-codes`):
+  grok and hermes answer a requested stop with 130, codex, opencode and pi with 0. One more finding
+  came out of running it more than once: claude's stop only *sometimes* stops claude — three failures
+  in four runs — which is why a single earlier measurement called it fine. Filed as `t-ab2682`, marked
+  honestly in `docs/runtimes/parity.md` row 7, and not papered over here.
+
 ## 0.66.0 — Nothing is left behind, and nothing you cannot undo
 
 An operation that fails in the middle used to leave state nobody cleans and nobody can name. Six

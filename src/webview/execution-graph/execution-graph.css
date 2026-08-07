@@ -14,6 +14,8 @@
 .ck-eg-node--ok rect { stroke: var(--vscode-testing-iconPassed, var(--vscode-panel-border)); }
 .ck-eg-node--err rect { stroke: var(--vscode-testing-iconFailed, var(--vscode-panel-border)); }
 .ck-eg-node--warn rect { stroke: var(--vscode-editorWarning-foreground, var(--vscode-panel-border)); }
+/* t-9d76b1 — a deliberate termination (`killed`) is neither a pass nor a failure: quiet, not red. */
+.ck-eg-node--stopped rect { stroke: var(--vscode-descriptionForeground, var(--vscode-panel-border)); }
 .ck-eg-node--shared rect { stroke-dasharray: 4 3; }
 .ck-eg-node-label { font-size: 11px; fill: var(--vscode-foreground); }
 .ck-eg-node-sub { font-size: 9px; fill: var(--vscode-descriptionForeground); }

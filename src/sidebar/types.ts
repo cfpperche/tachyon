@@ -82,7 +82,12 @@ export interface AgentVM {
    *  may still exist internally. The UI should route through Activity/Resume/Restart instead of reopening
    *  that dead terminal. Distinguishes it from killed/never-run. */
   exited?: boolean;
-  /** false when the process exited cleanly but Tachyon already cleared the dead terminal pane */
+  /**
+   * Whether a tmux pane EXISTS for this row — measured, and the authority over the status-shaped guess
+   * `hasPane` falls back to. `false` when the process exited cleanly and Tachyon already cleared the
+   * dead terminal; `true` for any dead pane still held for postmortem (t-9d76b1, where a requested stop
+   * became `stopped` and the fallback would have denied its own pane).
+   */
   pane?: boolean;
   /** this agent IS a forked sibling (spec 225 — `def.fork`); drives the ⑂ fork badge. */
   forked?: boolean;
@@ -338,6 +343,11 @@ export const SAMPLE: FleetVM = {
     { name: "docs-writer", status: "idle", liveBranch: "main", worktreePath: "/ws", kind: "agent" },
     { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", liveBranch: "feat/billing-wip", branchDrift: true, worktreePath: "/cache/feature-billing", verify: "stale", verifiable: true, kind: "agent" },
     { name: "migration", status: "crashed", sub: "exited (1)", liveBranch: "main", worktreePath: "/ws", verify: "fail", verifiable: true, kind: "agent" },
+    // t-9d76b1 — a stop the HUMAN asked for, on a runtime that acknowledges SIGINT by exiting 130
+    // (grok, hermes). It sits next to `migration` on purpose: these two rows are the pair a person has
+    // to be able to tell apart, and while this state was absent from the sample it was absent from
+    // every preview and every visual check too.
+    { name: "grok-builder", status: "stopped", sub: "stopped (exit 130)", pane: true, resumable: true, liveBranch: "main", worktreePath: "/ws", kind: "agent" },
     { name: "old-spike", status: "stopped", resumable: true, liveBranch: "main", worktreePath: "/ws", kind: "agent", adhoc: true },
     { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", liveBranch: "tachyon/qa", worktreePath: "/cache/qa", verifiable: true, kind: "agent" },
   ],

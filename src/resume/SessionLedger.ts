@@ -157,13 +157,25 @@ export interface SessionRecord {
   instance?: AgentInstancePolicy;
   /** Immutable human-approved Agent Evolution snapshot offered to this exact session. */
   evolution?: EvolutionStartupSnapshot;
-  /** Explicit terminal state for a Temporary row that remains visible until dismiss. */
+  /** Explicit terminal state for a row that remains visible until dismiss/restart. */
   lifecycle?: SessionLifecycle;
   updatedAt: string;
 }
 
+/**
+ * How THIS instance ended, durably — the fact the tmux pane cannot carry.
+ *
+ * `clean-exited`: the process exited 0 and Tachyon collected its postmortem pane.
+ * `stopped` (t-9d76b1): TACHYON ASKED IT TO EXIT — a graceful Stop, a graceful restart, a Bridge-client
+ * rebind. Written at the observed death, because the exit code cannot say who asked and the in-memory
+ * record of the request dies with the extension host while the dead pane outlives it. Without it a
+ * window reload turns a stop the human ordered back into `crashed`.
+ *
+ * Terminal, and instance-scoped: spawn writes a fresh record, restart and resume strip this field, so
+ * one instance's ending can never describe the next one.
+ */
 export interface SessionLifecycle {
-  state: "clean-exited";
+  state: "clean-exited" | "stopped";
   exitedAt: string;
 }
 
@@ -430,9 +442,9 @@ function normalize(r: unknown): SessionRecord | null {
 function parseLifecycle(value: unknown): SessionLifecycle | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const o = value as Record<string, unknown>;
-  if (o.state !== "clean-exited") return undefined;
+  if (o.state !== "clean-exited" && o.state !== "stopped") return undefined;
   if (typeof o.exitedAt !== "string" || !Number.isFinite(Date.parse(o.exitedAt))) return undefined;
-  return { state: "clean-exited", exitedAt: o.exitedAt };
+  return { state: o.state, exitedAt: o.exitedAt };
 }
 
 /**

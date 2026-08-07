@@ -10,6 +10,11 @@ export interface LifecycleIO {
   policyOf(agent: string): RestartPolicy;
   /** wire to setTimeout(manager.restart) in the extension */
   scheduleRestart(agent: string, delayMs: number): void;
+  /**
+   * t-9d76b1 — did TACHYON ask this agent to exit? Optional so a caller that cannot answer keeps the
+   * previous behaviour exactly; absent means "no request known", never "it crashed".
+   */
+  wasStopRequested?(agent: string): boolean;
   now(): number;
 }
 
@@ -18,6 +23,11 @@ export interface LifecycleEvents {
   onCrash?(agent: string, exitCode: number | undefined, willRestart: boolean, delayMs?: number): void;
   /** process exited cleanly (code 0) — informational, never auto-restarted */
   onCleanExit?(agent: string): void;
+  /**
+   * t-9d76b1 — the process exited because Tachyon asked it to, whatever code it chose to say so with.
+   * Never auto-restarted and never announced as a crash: the human already knows, they ordered it.
+   */
+  onRequestedStop?(agent: string, exitCode: number | undefined): void;
   /** crash-loop guard tripped: too many restarts inside the window */
   onGiveUp?(agent: string, attempts: number): void;
   /** the session vanished (intentional kill or external) — silent in the UI, used by waiters */
@@ -28,6 +38,11 @@ export interface LifecycleEvents {
  * Watches session liveness transitions. Crash vs intentional kill is structural:
  * a Tachyon kill removes the whole session (it just disappears), while a process
  * dying on its own leaves a dead pane (remain-on-exit) carrying the exit code.
+ *
+ * t-9d76b1 — that structure covers a forced Kill and nothing else. A GRACEFUL stop leaves the same
+ * dead pane as a crash, because it works by asking the runtime to exit, so the pane cannot tell the
+ * two apart and neither can the code it carries. `wasStopRequested` is the third input, and it is the
+ * only one that answers "did I ask for this?".
  */
 export class LifecycleMonitor {
   private prev = new Map<string, "alive" | "dead">();
@@ -58,7 +73,15 @@ export class LifecycleMonitor {
       const current = state.dead ? "dead" : "alive";
       if (current === "dead" && before !== "dead") {
         // Death observed (including a dead pane discovered on activation).
-        if (state.exitCode === 0) {
+        //
+        // t-9d76b1 — the REQUEST is asked about first, and it decides on its own. Reading the exit code
+        // first is what made a stopped grok crash-loop-eligible: 130 is the correct exit of a process
+        // that honoured the Ctrl-C Tachyon sent, so `on-crash` would restart the agent the human just
+        // stopped, and announce it in red on the way. Codex and pi answer the same Stop with 0 and were
+        // never affected — one action, two outcomes, decided by a number that means neither.
+        if (this.io.wasStopRequested?.(agent)) {
+          this.events.onRequestedStop?.(agent, state.exitCode);
+        } else if (state.exitCode === 0) {
           this.events.onCleanExit?.(agent);
         } else {
           this.handleCrash(agent, state.exitCode, now);
