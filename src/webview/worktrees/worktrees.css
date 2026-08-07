@@ -34,9 +34,12 @@
 /* The mark keeps its column at every width so the sentences stay aligned when they wrap. */
 .ck-land-mark { flex: none; width: 1em; text-align: center; font-weight: 700; }
 .ck-land-check-body { min-width: 0; }
+/* The verdict colours the whole line, not just the mark: a proved check reads quiet, an unproved one
+   reads loud, and the ✓/✕ then carries the stronger accent on top of it. */
+.ck-land-ok { color: var(--ds-muted); }
+.ck-land-bad { color: var(--ds-warn); }
 .ck-land-ok .ck-land-mark { color: var(--ds-ok); }
 .ck-land-bad .ck-land-mark { color: var(--ds-err); }
-.ck-land-bad .ck-land-check-body { color: var(--ds-warn); }
 .ck-land-fix { display: block; color: var(--ds-muted); }
 /* Column, not a row: at 360 a command and its button side by side leave the command a few characters
    wide, and a land command is the one string on this surface that must be readable in full. */

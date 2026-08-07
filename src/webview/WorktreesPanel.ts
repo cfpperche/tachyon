@@ -123,7 +123,10 @@ function worktreesStrings(): Record<string, string> {
     landIntro: t("Tachyon never moves the trunk. When every precondition below is proved, this is the exact command — you run it."),
     landCommandLabel: t("Land command"),
     landCopyCommand: t("Copy command"),
-    landBlocked: t("Not ready to land — {0} precondition(s) not proved. No command is offered: one that would fail wastes your time, and one that would succeed here would land something nobody verified."),
+    landBlocked: t(
+      "Not ready to land — {0} precondition(s) not proved. No command is offered: one that would fail"
+      + " wastes your time, and one that would succeed here would land something nobody verified.",
+    ),
     landCheckWorktreeClean: t("Worktree clean"),
     landCheckVerifiedTree: t("Verified tree"),
     landCheckFastForward: t("Fast-forward"),
