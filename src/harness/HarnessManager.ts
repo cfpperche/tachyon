@@ -28,6 +28,7 @@ import { withGrokProjectSkillsIgnored } from "../config/grokSkillIsolation.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
 import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
+import { authRequiredFromHarness, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import type { ResumeAdapter } from "../resume/adapters.js";
 import {
   buildCodexSessionStartHookConfig,
@@ -807,20 +808,23 @@ export function reconcileWorkspaceClaudeAuth(
 export function assertUsableClaudeAuth(agent: string, privateHome: string, realAuth: string, nowMs: number = Date.now()): void {
   const state = claudeCredentialState(privateHome, realAuth, nowMs);
   if (state.projection === "absent") {
-    throw new HarnessUnavailableError(
+    throw credentialRefusal(
       agent,
+      "claude",
       `no Claude credential projected into ${privateHome} (authority ${realAuth}) — a redirected CLAUDE_CONFIG_DIR starts logged out; run claude /login, then restart this agent`,
     );
   }
   if (state.health === "unreadable") {
-    throw new HarnessUnavailableError(
+    throw credentialRefusal(
       agent,
+      "claude",
       `Claude credential for '${agent}' is not readable JSON at ${state.source ?? privateHome} — run claude /login to rewrite it, then restart this agent`,
     );
   }
   if (state.health === "expired") {
-    throw new HarnessUnavailableError(
+    throw credentialRefusal(
       agent,
+      "claude",
       `Claude session for '${agent}' is expired at ${state.source ?? privateHome}: both the access and refresh windows have closed, so this is a real re-login and not a stale projection — run claude /login, then restart this agent`,
     );
   }
@@ -1217,6 +1221,39 @@ export function defaultRealHermesHome(env: NodeJS.ProcessEnv = process.env, home
   return path.join(homeDir, ".hermes");
 }
 
+/**
+ * t-2656d7 — the environment a NATIVE login must run under: the runtime's REAL config home.
+ *
+ * The login writes the AUTHORITY that every private home is a projection of, so it has to be pointed
+ * at the same directory `materializeRuntimeHarness` reads its credential from — otherwise the human
+ * completes a login and the next launch is refused by the same message, which is a worse outcome
+ * than no button at all.
+ *
+ * Setting these explicitly also neutralises an inherited redirect. Tachyon's own process can be
+ * running with `GROK_HOME`/`CODEX_HOME`/`CLAUDE_CONFIG_DIR` pointing at a private home; sending a
+ * login there would write a credential into a Tachyon-managed directory that
+ * `defaultRealGrokHome`/`defaultRealHermesHome` already refuse to treat as an auth source
+ * (`t-303f2b`). The resolvers below carry that refusal, so the login inherits it.
+ *
+ * A runtime with no measured login command (`RUNTIME_LOGIN`) never reaches here.
+ */
+export function realRuntimeAuthHomeEnv(
+  runtime: string,
+  env: NodeJS.ProcessEnv = process.env,
+  homeDir: string = os.homedir(),
+): Record<string, string> {
+  switch (runtime) {
+    case "claude":
+      return { CLAUDE_CONFIG_DIR: realConfigHome(env, homeDir) };
+    case "codex":
+      return { CODEX_HOME: defaultRealCodexHome(env, homeDir) };
+    case "grok":
+      return { GROK_HOME: defaultRealGrokHome(env, homeDir) };
+    default:
+      return {};
+  }
+}
+
 /** Fail-closed: private HERMES_HOME must resolve to a readable auth.json object. */
 export function assertReadableHermesAuth(agent: string, privateHome: string, realAuthTarget: string): void {
   const authPath = path.join(privateHome, "auth.json");
@@ -1227,8 +1264,9 @@ export function assertReadableHermesAuth(agent: string, privateHome: string, rea
     }
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    throw new HarnessUnavailableError(
+    throw credentialRefusal(
       agent,
+      "hermes",
       `hermes credentials unreadable at ${authPath} (source ${realAuthTarget}): ${detail} — run hermes auth / hermes model first (a redirected HERMES_HOME starts logged out)`,
     );
   }
@@ -1342,10 +1380,33 @@ export function parseEnvFile(text: string): Record<string, string> {
 
 /** Raised when a harness can't be materialized (no auth, or a referenced secret isn't in the env). */
 export class HarnessUnavailableError extends Error {
-  constructor(readonly agent: string, reason: string) {
+  /**
+   * t-2656d7 — present ONLY when the refusal is "this runtime is not authenticated", so a caller can
+   * tell that condition from the other dozen reasons a harness fails to materialize (an unsafe
+   * projection path, a missing secret ref, a malformed capability snapshot). Those are Tachyon's
+   * problems; this one is the human's, and it is the only one with a recovery a button can run.
+   *
+   * The class carried nothing but a string until now, which is why `extension.ts` could only turn a
+   * launch refusal into `notify(err.message, "error")` — and an action-less notify is the branch
+   * that routes to `setStatusBarMessage` (`workspace/notify.ts:41`), where the recovery instruction
+   * was clipped by the width of one status-bar cell and erased eight seconds later.
+   */
+  constructor(readonly agent: string, reason: string, readonly authRequired?: AuthRequiredEvidence) {
     super(`isolated harness for '${agent}': ${reason}`);
     this.name = "HarnessUnavailableError";
   }
+}
+
+/**
+ * t-2656d7 — build a credential refusal that carries its own recovery.
+ *
+ * Every credential throw site in this file goes through here so the evidence is attached at the
+ * throw rather than reconstructed downstream by matching on the message text — the reconstruction
+ * this repository has paid for before, and the reason `HarnessUnavailableError` has zero handlers
+ * outside this file today.
+ */
+function credentialRefusal(agent: string, runtime: string, reason: string): HarnessUnavailableError {
+  return new HarnessUnavailableError(agent, reason, authRequiredFromHarness(runtime, reason));
 }
 
 /** Read a workspace `.mcp.json`'s `mcpServers` map, or null if absent/unreadable/malformed. */
@@ -1430,8 +1491,9 @@ export function assertReadableGrokAuth(agent: string, privateHome: string, realA
     }
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    throw new HarnessUnavailableError(
+    throw credentialRefusal(
       agent,
+      "grok",
       `grok credentials unreadable at ${authPath} (source ${realAuthTarget}): ${detail} — run grok login first (a redirected GROK_HOME starts logged out)`,
     );
   }
@@ -2295,8 +2357,9 @@ export class HarnessManager {
         const authLink = path.join(dirs.data, authFile); // relative to XDG_DATA_HOME
         const authTarget = path.join(this.realOpencodeDataHome, authFile); // real source (~/.local/share/<authFile>)
         if (!fs.existsSync(authTarget)) {
-          throw new HarnessUnavailableError(
+          throw credentialRefusal(
             agent,
+            "opencode",
             `no credentials at ${authTarget} — run 'opencode auth login' first (a redirected XDG_DATA_HOME starts unauthenticated → opencode silently degrades to a fallback model with no error)`,
           );
         }
@@ -2353,7 +2416,7 @@ export class HarnessManager {
             : adapter.runtime === "grok"
               ? "grok login"
               : "claude /login";
-        throw new HarnessUnavailableError(agent, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
+        throw credentialRefusal(agent, adapter.runtime, `no credentials at ${authTarget} — run ${login} first (a redirected config home starts logged out)`);
       }
       // t-de73e0 / t-1e67b4 — Grok and Hermes can write the credential they are handed, so each
       // private home gets its own copy. Claude and Codex retain their measured symlink posture until
@@ -3297,8 +3360,9 @@ export class HarnessManager {
     // private home; promoting only this agent can re-symlink it to a revoked sibling token.
     this.reconcileGrokAuthFromWorkspace();
     if (!fs.existsSync(authTarget)) {
-      throw new HarnessUnavailableError(
+      throw credentialRefusal(
         agent,
+        "grok",
         `no credentials at ${authTarget} — run grok login first (a redirected GROK_HOME starts logged out)`,
       );
     }

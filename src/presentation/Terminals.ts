@@ -24,6 +24,9 @@ const ENTRY_ICON: Record<EntryKind, string> = { agent: "hubot", terminal: "termi
 function sessionIcon(agent: string, kind: EntryKind): vscode.ThemeIcon {
   if (agent.startsWith("cmd:")) return new vscode.ThemeIcon("play");
   if (agent.startsWith("rb:")) return new vscode.ThemeIcon("list-ordered");
+  // t-2656d7 — a runtime login pane. Distinct from an agent tab on purpose: this is the one tab
+  // where the human is expected to TYPE a credential step, and it must not be mistaken for a robot.
+  if (agent.startsWith("login:")) return new vscode.ThemeIcon("key");
   return new vscode.ThemeIcon(ENTRY_ICON[kind]);
 }
 

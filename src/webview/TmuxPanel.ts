@@ -283,6 +283,7 @@ export function inspectorStrings(): InspectorStrings {
     kindSession: t("Agents & terminals"),
     kindCommand: t("Commands"),
     kindRunbook: t("Runbook steps"),
+    kindLogin: t("Runtime logins"),
     kindAnchor: t("Engine internals"),
     kindUnknown: t("Other"),
     captureEmpty: t("(no output)"),

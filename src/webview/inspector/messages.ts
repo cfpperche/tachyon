@@ -13,7 +13,7 @@ export interface InspectorStrings {
   title: string; subtitle: string; refresh: string; auto: string; empty: string; summary: string;
   foreignNote: string; pid: string; live: string; dead: string; exit: string; busy: string; idle: string;
   open: string; capture: string; kill: string; reapDead: string; reapOrphans: string; killConfirm: string;
-  kindSession: string; kindCommand: string; kindRunbook: string; kindAnchor: string; kindUnknown: string;
+  kindSession: string; kindCommand: string; kindRunbook: string; kindLogin: string; kindAnchor: string; kindUnknown: string;
   captureEmpty: string; ageSeconds: string; ageMinutes: string; ageHours: string; ageDays: string;
   overview: string; server: string; all: string; search: string; workspace: string; status: string; kind: string; cpu: string;
   details: string; fullName: string; hash: string; command: string; startCommand: string; uptime: string;

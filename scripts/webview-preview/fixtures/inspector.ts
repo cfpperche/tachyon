@@ -21,6 +21,7 @@ export const strings: InspectorStrings = {
   open: "Open", capture: "Capture", kill: "Kill", reapDead: "Kill {0} dead", reapOrphans: "Reap {0} orphaned",
   killConfirm: "Kill session {0}? This stops the process and removes the pane.",
   kindSession: "Agents & terminals", kindCommand: "Commands", kindRunbook: "Runbook steps",
+  kindLogin: "Runtime logins",
   kindAnchor: "Engine internals", kindUnknown: "Other", captureEmpty: "(no output)",
   ageSeconds: "{0}s", ageMinutes: "{0}m", ageHours: "{0}h", ageDays: "{0}d",
   overview: "Overview", server: "Server", all: "All", search: "Search sessions, commands, or labels",
