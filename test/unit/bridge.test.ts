@@ -193,7 +193,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "write_tachyon_config",
     ]);
     const description = (name: string) => tools.find((tool) => tool.name === name)?.description ?? "";
-    expect(description("kill_agent")).toContain("Runtime-native caches may remain");
+    // t-7bc276 — both descriptions must SAY that the private bridge-mcp runtime home dies with the
+    // agent, and must not go back to promising a blanket cache retention the product no longer honours.
+    expect(description("kill_agent")).toContain("the private runtime home under .tachyon/bridge-mcp");
+    expect(description("dismiss_agent")).toContain("the private runtime home under .tachyon/bridge-mcp");
     expect(description("dismiss_agent")).toContain("Tachyon activity and pane transcripts are deleted");
     expect(description("worktree_process_hygiene")).toContain("does not terminate reported processes automatically");
   });

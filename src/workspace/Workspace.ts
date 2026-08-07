@@ -153,7 +153,8 @@ import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
 import { initRun, type PipelineRun } from "../pipeline/runState.js";
 import { createHash, randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
-import { HarnessManager, defaultRealOpencodeDataHome, realConfigHome, seedPrivateHomeGitIdentity } from "../harness/HarnessManager.js";
+import { HarnessManager, defaultRealOpencodeDataHome, measureDirUsage, realConfigHome, seedPrivateHomeGitIdentity } from "../harness/HarnessManager.js";
+import { humanBytes } from "../humanInbox/loadArtifact.js";
 import { materializePiSessionDir, removePiSessionDir } from "../agents/piSession.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
 import { adapterFor, binaryOf, harnessable, managesOwnSession, runtimeOf } from "../resume/adapters.js";
@@ -1396,6 +1397,7 @@ export class Workspace {
       },
       completePreparedWorktree: (rec) => this.worktrees.completePreparation(rec),
       removeHarnessHome: (name) => this.harness.retireCredentials(name),
+      removeBridgeRuntimeHome: (name) => this.retireBridgeRuntimeHome(name),
       removePiSessionDir: (name) => removePiSessionDir(this.workspaceRoot, name),
     });
 
@@ -4093,6 +4095,7 @@ export class Workspace {
       workspaceRoot: this.workspaceRoot,
       ledger: this.ledger,
       removeHarnessHome: (agent) => this.harness.retireCredentials(agent),
+      removeBridgeRuntimeHome: (agent) => this.retireBridgeRuntimeHome(agent),
       removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
     });
     this.removeContinuity(name);
@@ -5146,6 +5149,7 @@ export class Workspace {
             workspaceRoot: this.workspaceRoot,
             ledger: this.ledger,
             removeHarnessHome: (agent) => this.harness.retireCredentials(agent),
+            removeBridgeRuntimeHome: (agent) => this.retireBridgeRuntimeHome(agent),
             removePiSessionDir: (agent) => removePiSessionDir(this.workspaceRoot, agent),
           });
         } catch (error) {
@@ -5196,9 +5200,64 @@ export class Workspace {
       for (const name of this.harness.listBridgeMcp()) {
         if (!declared.has(name) && !tracked.has(name)) this.harness.removeBridgeMcp(name);
       }
+      this.reportOrphanBridgeRuntimeHomes(declared, tracked);
     } catch {
       /* GC is best-effort — a stale home is harmless, never block start */
     }
+  }
+
+  /**
+   * t-7bc276 — name the private runtime homes nobody owns any more. REPORT ONLY, deliberately:
+   * `worktree_process_hygiene` reports an orphan process and never kills one, and orphan BYTES had no
+   * equivalent at all until here. Removal belongs to the end-of-life door somebody actually opened
+   * (`forgetAgent`), not to a sweep that runs on its own at start — the homes this finds are the ones
+   * that predate that door or whose agent vanished without passing through it, and deleting them
+   * unasked would be exactly the irreversible-without-being-asked shape this fix exists to end.
+   *
+   * The keep-set is the sweep's own: declared in tachyon.yml (plus profile-forget retention) or still
+   * carried by a ledger row.
+   */
+  private reportOrphanBridgeRuntimeHomes(declared: Set<string>, tracked: Set<string>): void {
+    const orphans = this.harness.listBridgeRuntimeHomes()
+      .filter((home) => !declared.has(home.agent) && !tracked.has(home.agent))
+      .map((home) => ({ ...home, ...measureDirUsage(home.path) }));
+    if (orphans.length === 0) return;
+    const bytes = orphans.reduce((total, home) => total + home.bytes, 0);
+    const files = orphans.reduce((total, home) => total + home.files, 0);
+    const worst = [...orphans].sort((a, b) => b.bytes - a.bytes).slice(0, 3)
+      .map((home) => `${home.agent}.${home.runtime} (${humanBytes(home.bytes)})`).join(", ");
+    this.host.notify(this.t(
+      "{0} private runtime home(s) under .tachyon/bridge-mcp belong to no agent: {1}, {2} file(s). Largest: {3}. Nothing reads them; dismissing an agent now removes its own.",
+      String(orphans.length),
+      humanBytes(bytes),
+      String(files),
+      worst,
+    ), "warn");
+  }
+
+  /**
+   * t-7bc276 — the end-of-life removal of an agent's private `bridge-mcp` runtime home, with the
+   * receipt that makes the disk visible: a dismissed grok agent used to leave ~12.9 MB behind
+   * silently, and 35 of them reached 2.2 GB before anyone looked. Says what left, and says what it
+   * declined to take and why.
+   */
+  private retireBridgeRuntimeHome(agent: string): void {
+    this.harness.retireBridgeRuntimeHomes(agent, {
+      onOutcome: (outcome) => {
+        this.host.notify(
+          outcome.removed
+            ? this.t(
+              "Removed {0}'s private {1} home at end of life: {2}, {3} file(s).",
+              outcome.agent, outcome.runtime, humanBytes(outcome.bytes), String(outcome.files),
+            )
+            : this.t(
+              "Kept {0}'s private {1} home ({2}, {3} file(s)): it is still in use, or could not be removed.",
+              outcome.agent, outcome.runtime, humanBytes(outcome.bytes), String(outcome.files),
+            ),
+          outcome.removed ? "info" : "warn",
+        );
+      },
+    });
   }
 
   reloadConfig(): boolean {
