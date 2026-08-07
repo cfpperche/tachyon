@@ -291,6 +291,31 @@ describe("Agent Studio domain dispatch (t-610705 Phase D, D1b)", () => {
     expect(findType(ctx.posted, "soulProfileError").at(-1)).toMatchObject({ code: "soul/path-invalid" });
   });
 
+  /**
+   * t-359469 — ACTORS A1/A2 at the layer that decides what a human actually READS.
+   *
+   * `postProfileError` never forwards the engine's message: it looks the code up in a fixed table and
+   * posts that string, so the truthful refusal written in `soulProfileTransactions` reaches this
+   * surface only if the code carries it. Under the old `soul/path-invalid` the human saw "The profile
+   * action or canonical path is invalid." — which points at a typo that does not exist.
+   */
+  it("t-359469 tells the human WHICH block declares the name instead of calling the action invalid", async () => {
+    const target = ws({
+      createSoulProfile: async () => {
+        throw new SoulError("soul/not-an-agent", "'shell' is declared in tachyon.yml under 'terminals:', not 'agents:'");
+      },
+    } as never);
+    const ctx = { ...fakeCtx(), entityId: "shell" };
+
+    handleAgentStudioDomainMessage(target, ctx, envelope({ type: "createSoul" as const, agent: "shell" }));
+    await flush();
+
+    const posted = findType(ctx.posted, "soulProfileError").at(-1) as { code: string; message: string };
+    expect(posted.code).toBe("soul/not-an-agent");
+    expect(posted.message).toMatch(/terminals:/);
+    expect(posted.message).not.toMatch(/could not be completed|path is invalid/);
+  });
+
   it("imports webview-selected bytes without invoking a VS Code file path or reflecting payload data", async () => {
     const body = "# Private identity\n";
     const contentBase64 = Buffer.from(body).toString("base64");

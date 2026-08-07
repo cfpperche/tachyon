@@ -588,6 +588,9 @@ function postProfileError(ctx: StudioDomainContext, agent: string, error: unknow
       "soul/profile-transaction-degraded": "The profile transaction is degraded and blocks further actions.",
       "soul/profile-enabled": "Disable Soul before permanently deleting its identity files.",
       "soul/path-invalid": "The profile action or canonical path is invalid.",
+      // t-359469 — the generic "invalid" string was the whole defect at this layer: the name is
+      // declared, in the wrong block, and a reader told "invalid" goes looking for a typo.
+      "soul/not-an-agent": "This name is declared under 'terminals:' in tachyon.yml, not 'agents:'. Soul belongs to an agent; a terminal has none.",
     };
     ctx.post(soulProfileErrorMessage(agent, error.code, safeMessage[error.code] ?? "The profile action could not be completed."));
     return;

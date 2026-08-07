@@ -12,6 +12,7 @@ import {
   setIdeBrowserEnabled,
   setCompanionLanAccess,
   setCompanionAllowedHosts,
+  agentStanzaSection,
   agentStanzaSourceSlice,
   replaceAgentStanzaValue,
 } from "../../src/config/YamlConfigEditor.js";
@@ -427,5 +428,26 @@ describe("setCompanionLanAccess (SDD 422)", () => {
 
   it("refuses empty yml", () => {
     expect(() => setCompanionLanAccess(undefined, true)).toThrow("existing tachyon.yml");
+  });
+});
+
+/**
+ * t-359469 — the two blocks are one namespace to `sectionOf`, and every caller that treats them
+ * differently needs to ask which one. `agentStanzaCasToken` deliberately does not answer that: it is
+ * persisted inside profile-transaction journals and compared field by field, so a new field on it
+ * would fail validation or CAS for every journal written before the change.
+ */
+describe("agentStanzaSection", () => {
+  const yml = "agents:\n  Ada:\n    cmd: codex\nterminals:\n  shell:\n    cmd: bash\n";
+
+  it("names the block that declares a name, and undefined for one that is declared nowhere", () => {
+    expect(agentStanzaSection(yml, "Ada")).toBe("agents");
+    expect(agentStanzaSection(yml, "shell")).toBe("terminals");
+    expect(agentStanzaSection(yml, "Ghost")).toBeUndefined();
+  });
+
+  it("treats an absent or empty tachyon.yml as declaring nothing rather than throwing", () => {
+    expect(agentStanzaSection(undefined, "Ada")).toBeUndefined();
+    expect(agentStanzaSection("   \n", "Ada")).toBeUndefined();
   });
 });

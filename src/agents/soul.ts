@@ -243,6 +243,11 @@ export const SOUL_ERROR_CODES = [
   // or repairing bytes cannot make it succeed, and the operator needs to be told that rather than
   // handed `soul/io-error` from deep inside the config writer.
   "soul/canonical-profile-unsupported",
+  // t-359469 — the name IS declared in tachyon.yml, under `terminals:` rather than `agents:`.
+  // Its own code for the same reason as the one above, plus one more: the refusal it replaces
+  // (`soul/path-invalid`, "Agent 'x' is not declared in tachyon.yml") was FALSE for this case and
+  // sent the reader to look for a missing entry that is sitting right there in the other block.
+  "soul/not-an-agent",
 ] as const;
 
 export type SoulErrorCode = typeof SOUL_ERROR_CODES[number];
