@@ -9,11 +9,11 @@ import { makeTempDir } from "../helpers/tempDir.js";
 describe("container-generated delegation behavior", () => {
   it("agent soul profile foundation closure", async () => {
     const parsed = parseConfig("agents:\n  Ada:\n    cmd: env FOO=1 opencode\n    soul: true\n  ada:\n    cmd: codex\n    soul: true\n");
-    // t-48dd8d — the file loads now, but the colliding capability does NOT: two agents folding to one
-    // name would otherwise share the profile SOUL.md is keyed by, each able to read and write the
-    // other's identity. Neither keeps it, because nothing in the file says which one was meant.
+    // t-48dd8d — the file loads now, and the COLLIDING declaration is the one discarded: two agents
+    // folding to one name would otherwise share the profile SOUL.md is keyed by. File order decides,
+    // so 'Ada' keeps its soul and the later 'ada' loses the key the message already named.
     expect(parsed.errors).toEqual([]);
-    expect(asAgent(parsed.config?.agents.Ada)?.soul).toBeUndefined();
+    expect(asAgent(parsed.config?.agents.Ada)?.soul).toBe(true);
     expect(asAgent(parsed.config?.agents.ada)?.soul).toBeUndefined();
     expect(parsed.warnings.some((warning) =>
       warning.startsWith("agents.ada.soul: conflicts with soul-enabled agent 'Ada' after ASCII case folding"))).toBe(true);

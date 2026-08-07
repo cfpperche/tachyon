@@ -17,7 +17,6 @@ import { parseLaunchCommand } from "../runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import { parseCardTemplate, type CardTemplateConfig } from "../sidebar/cardTemplate.js";
 import { parseArgvCommand } from "./argvCommand.js";
-import { closeWarnedSettingsDoors, SETTINGS_KEYS, settingsBlockKeys } from "./settingsSafeSide.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
@@ -655,10 +654,10 @@ export interface ParseResult {
    * t-48dd8d — the subset of `warnings` that names something the parser DROPPED.
    *
    * Reading and writing are different doors and this is what separates them. READING a file a human
-   * already wrote must forgive: a key that cannot be read is discarded, the safe side is installed,
-   * and the workspace keeps running. WRITING text a program proposed must not — persisting bytes we
-   * already know are partly unreadable is the delayed-detonation the self-edit gate exists to stop
-   * (t-099be8), and the owner's decision was explicitly about the reading rule.
+   * already wrote must forgive: the key that cannot be read is discarded, its default runs, and the
+   * workspace keeps going. WRITING text a program proposed must not — persisting bytes we have just
+   * been told are partly unreadable is the delayed detonation the self-edit gate exists to stop
+   * (t-099be8), and the decision here was about how the file is READ.
    *
    * Advisory warnings (a deprecation, a retired key accepted and ignored) are NOT here, so they keep
    * travelling with a successful write instead of blocking it.
@@ -811,13 +810,6 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
     unsupportedKeys.add("instructions");
     discarded.push(`agents.${name}.harness.instructions: only supported for codex agents; use 'rules' for claude`);
   }
-  /**
-   * t-48dd8d — `inherit` decides whether the workspace base config is SEEDED into the private home,
-   * so `workspace` is the wider side and `none` the narrower one. A value that could not be read must
-   * not land on the wider side. Pi is the exception in the other direction: `none` is not a state its
-   * resource harness supports at all, so for pi the readable side IS `workspace`.
-   */
-  const inheritOnDiscard: HarnessDef["inherit"] = binary === "pi" ? "workspace" : "none";
   let inherit: HarnessDef["inherit"] = "workspace";
   if (raw.inherit !== undefined) {
     if (raw.inherit === "none" || raw.inherit === "workspace") {
@@ -829,10 +821,8 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
       }
     } else if (raw.inherit === "global") {
       discarded.push(`agents.${name}.harness.inherit: 'global' is not supported yet (use 'none' or 'workspace')`);
-      inherit = inheritOnDiscard;
     } else {
       discarded.push(`agents.${name}.harness.inherit: must be 'none' or 'workspace'`);
-      inherit = inheritOnDiscard;
     }
   }
   const harness: HarnessDef = { inherit };
@@ -1019,18 +1009,6 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   // were merely unread on a terminal are now dropped instead of stored. Turning those drops into
   // refusals that name the block to move to is M6.
   const agentEntry = asAgent(agent);
-  /**
-   * t-48dd8d — the declarations that CONTAIN an agent: its own git worktree, its own runtime config
-   * home, its own transcript namespace. These are the entry-level half of the safe-side rule, and
-   * they are the one place where discarding is not a smaller version of the same thing: a discarded
-   * `worktree: true` puts the agent in the PRIMARY CHECKOUT, and a discarded `harness` gives it the
-   * workspace's own MCP servers and credentials. Neither is a default to fall back to — both are the
-   * opposite of what the file asked for, so the entry falls with the declaration.
-   *
-   * Terminals are deliberately outside this: these keys are already refused for a terminal, and
-   * refusing them takes away nothing a terminal ever had.
-   */
-  let containmentDiscarded: string | undefined;
   if (def.cwd !== undefined) {
     if (typeof def.cwd !== "string") discarded.push(`${section}.${name}.cwd: must be a string`);
     else agent.cwd = def.cwd;
@@ -1149,10 +1127,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     }
   }
   if (def.worktree !== undefined) {
-    if (typeof def.worktree !== "boolean") {
-      discarded.push(`${section}.${name}.worktree: must be a boolean`);
-      if (agentEntry) containmentDiscarded = "worktree";
-    }
+    if (typeof def.worktree !== "boolean") discarded.push(`${section}.${name}.worktree: must be a boolean`);
     else if (agentEntry) agentEntry.worktree = def.worktree;
     else discarded.push(agentOnlyKeyRefusal(section, name, "worktree", "this entry is a terminal — it gets no git worktree"));
   }
@@ -1188,7 +1163,6 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   if (def.harness !== undefined) {
     const harness = parseHarness(section, name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", discarded);
     if (harness && agentEntry) agentEntry.harness = harness;
-    else if (agentEntry) containmentDiscarded = "harness";
   }
   if (def.isolate !== undefined) {
     // spec 358 phase 2 — read-compat only. New configs should use the two-axis model:
@@ -1197,16 +1171,13 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     // migrate their local secondaries.
     if (def.isolate !== "transcript") {
       discarded.push(`${section}.${name}.isolate: deprecated; the only legacy-compatible value is 'transcript'`);
-      if (agentEntry) containmentDiscarded = "isolate";
     } else if (forceTerminal || agent.kind === "terminal") {
       discarded.push(agentOnlyKeyRefusal(section, name, "isolate", "this entry is a terminal — it has no transcript"));
     } else if (binaryOf(agent.cmd) !== "claude" && binaryOf(agent.cmd) !== "codex") {
       discarded.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(agent.cmd) || agent.cmd}')`);
-      if (agentEntry) containmentDiscarded = "isolate";
     } else if (agent.env?.[binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
       const ownedEnv = binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
       discarded.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for this deprecated legacy mode`);
-      if (agentEntry) containmentDiscarded = "isolate";
     } else {
       warnings.push(`agents.${name}: ${ISOLATE_TRANSCRIPT_DEPRECATION}`);
       agent.isolate = "transcript";
@@ -1225,15 +1196,6 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   // the generic "unknown key" error — only genuinely-unrecognized keys do.
   for (const key of Object.keys(def)) {
     if (!AGENT_KEYS.includes(key)) discarded.push(`${section}.${name}: unknown key '${key}'`);
-  }
-  // Reported last so the human still sees every other problem with the entry before it goes.
-  if (containmentDiscarded !== undefined) {
-    discarded.push(
-      `${section}.${name}: '${containmentDiscarded}' could not be read, so the whole entry was dropped rather than ` +
-      `started without it — an agent that asked to be contained (its own worktree, config home or transcript) ` +
-      `would otherwise run in the primary checkout with the workspace's own configuration`,
-    );
-    return null;
   }
   return agent;
 }
@@ -1330,8 +1292,15 @@ export function parseConfig(yamlText: string): ParseResult {
    * Nothing about HOW the body validates had to change for that, which is the point: every push here
    * already sits next to an `else` that does not store the value, or a `continue` that skips the
    * entry. The sanitized config was always being built alongside the complaints; the only thing that
-   * threw it away was the return at the bottom. What DID have to change is where absence is the wider
-   * state — see `settingsSafeSide.ts` and `containmentDiscarded` above.
+   * threw it away was the return at the bottom.
+   *
+   * The rule has NO exception. A discarded key whose default exists simply gets its default; one
+   * without a default is only reported. Nothing here changes the state of a door because something
+   * else in the file was unreadable — not even the agent permission line, and the owner chose that
+   * with the measurement in front of him: a mistyped `sandboxMode` on a delegated codex agent falls
+   * to the class default, which is `danger-full-access`. The warning names it and the human fixes it.
+   * A rule with one special case is a rule that rots. The full survey of which way every `settings:`
+   * key falls when discarded is measured and kept in the t-48dd8d journal.
    */
   const discarded: string[] = [];
   const warnings: string[] = [];
@@ -1349,17 +1318,6 @@ export function parseConfig(yamlText: string): ParseResult {
     return { errors: ["tachyon.yml must be a YAML mapping"], warnings, discarded: [] };
   }
 
-  /**
-   * Which `settings:` paths produced a warning, dotted and relative to `settings:`. A block that
-   * warned is untrustworthy, and `closeWarnedSettingsDoors` uses this to shut the doors whose absent
-   * state is the WIDE one. Recorded by comparing `discarded.length` around each block rather than at
-   * every push: the same before/after idiom `settings.projectGuidance` already used, and it cannot
-   * drift out of sync with a message someone adds later.
-   */
-  const warnedSettingsPaths = new Set<string>();
-  const markSettingsWarned = (path: string, discardedBefore: number): void => {
-    if (discarded.length > discardedBefore) warnedSettingsPaths.add(path);
-  };
 
   for (const key of Object.keys(raw)) {
     if (!["agents", "terminals", "layouts", "commands", "runbooks", "schedules", "settings"].includes(key)) {
@@ -1393,24 +1351,20 @@ export function parseConfig(yamlText: string): ParseResult {
       const folded = asciiFoldAgentName(name);
       const agent = asAgent(entry);
       /**
-       * t-48dd8d — a fold collision takes the CAPABILITY from BOTH agents, not just the second one.
-       *
-       * While any complaint refused the file this was only a message; discarding it would instead
-       * leave two agents each declaring `soul: true` on one folded name, sharing the profile the
-       * canonical SOUL.md is keyed by — one agent's identity readable and writable as the other's.
-       * There is no way to tell which of the two the author meant, so neither gets it: absence of a
-       * soul is the closed side, and the warning names both agents so the fix is one rename.
+       * t-48dd8d — the COLLIDING declaration is discarded; the one already registered keeps its
+       * capability. While any complaint refused the file this was only a message, and leaving both
+       * would let two agents claim the one profile that `SOUL.md` is keyed by. Dropping the second is
+       * the smallest discard that resolves it, and it is the one the message already named — file
+       * order decides, exactly as it does for the `agents:`/`terminals:` namespace.
        */
       if (agent?.soul === true) {
         const prior = enabledByFold.get(folded);
         if (prior !== undefined) {
           discarded.push(
             `agents.${name}.soul: conflicts with soul-enabled agent '${prior}' after ASCII case folding` +
-            ` — soul was dropped from BOTH so neither agent claims the other's profile; rename one of them`,
+            ` — dropped from '${name}'; rename one of them`,
           );
           delete agent.soul;
-          const priorAgent = asAgent(agents[prior]);
-          if (priorAgent) delete priorAgent.soul;
         } else {
           enabledByFold.set(folded, name);
         }
@@ -1420,11 +1374,9 @@ export function parseConfig(yamlText: string): ParseResult {
         if (prior !== undefined) {
           discarded.push(
             `agents.${name}.selfEvolution: conflicts with evolution-enabled agent '${prior}' after ASCII case folding` +
-            ` — selfEvolution was dropped from BOTH; rename one of them`,
+            ` — dropped from '${name}'; rename one of them`,
           );
           delete agent.selfEvolution;
-          const priorAgent = asAgent(agents[prior]);
-          if (priorAgent) delete priorAgent.selfEvolution;
         } else {
           evolutionEnabledByFold.set(folded, name);
         }
@@ -1634,10 +1586,6 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.auth = raw.settings.auth;
         }
       }
-      // The domain is this key alone, never the whole `settings:` block: discarding it is what turns
-      // the shared legacy token OFF, and a typo in an unrelated setting must not revoke the identity
-      // the agents already running are authenticating with.
-      const legacyBridgeAuthAt = discarded.length;
       if (raw.settings.legacyBridgeAuth !== undefined) {
         if (typeof raw.settings.legacyBridgeAuth !== "boolean") {
           discarded.push("settings.legacyBridgeAuth: must be a boolean");
@@ -1645,7 +1593,6 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.legacyBridgeAuth = raw.settings.legacyBridgeAuth;
         }
       }
-      markSettingsWarned("legacyBridgeAuth", legacyBridgeAuthAt);
       if (raw.settings.tmux !== undefined) {
         // Free-form tmux server options, applied as `set -g <key> <value>` on
         // Tachyon's dedicated socket. Tachyon's defaults (mouse/focus-events/
@@ -1688,7 +1635,6 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.tmux = tmux;
         }
       }
-      const worktreeAt = discarded.length;
       if (raw.settings.worktree !== undefined) {
         if (!isPlainObject(raw.settings.worktree)) {
           discarded.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
@@ -1732,12 +1678,11 @@ export function parseConfig(yamlText: string): ParseResult {
             else out.shareDependencies = wt.shareDependencies;
           }
           for (const key of Object.keys(wt)) {
-            if (!settingsBlockKeys("worktree").includes(key)) discarded.push(`settings.worktree: unknown key '${key}'`);
+            if (!["base", "branch", "verify", "revealInWorkspace", "shareDependencies"].includes(key)) discarded.push(`settings.worktree: unknown key '${key}'`);
           }
           settings.worktree = out;
         }
       }
-      markSettingsWarned("worktree", worktreeAt);
       if (raw.settings.verify !== undefined) {
         if (!isPlainObject(raw.settings.verify)) {
           discarded.push("settings.verify: must be a mapping with project-owned verification commands");
@@ -1825,10 +1770,9 @@ export function parseConfig(yamlText: string): ParseResult {
             }
             /**
              * t-48dd8d — accepted PATH BY PATH, where it used to be dropped whole on any complaint.
-             * Guidance is the one place in this block where MORE is the closed side: an agent told
-             * fewer rules is an agent operating under fewer constraints, so keeping the readable
-             * paths is safer than discarding all of them over one that was not. `errorCountBefore`
-             * stays, but only to decide whether an over-long list was truncated rather than accepted.
+             * Discarding the whole list over one bad entry would drop paths that are perfectly
+             * readable, which is not what "discard what is wrong" means. `errorCountBefore` stays,
+             * but only to decide whether an over-long list was truncated rather than accepted.
              */
             const kept = files.slice(0, PROJECT_GUIDANCE_MAX_FILES);
             if (kept.length > 0) settings.projectGuidance = { files: kept };
@@ -1854,7 +1798,6 @@ export function parseConfig(yamlText: string): ParseResult {
           settings.anchor = out;
         }
       }
-      const companionAt = discarded.length;
       if (raw.settings.companion !== undefined) {
         if (!isPlainObject(raw.settings.companion)) {
           discarded.push("settings.companion: must be a mapping with 'tabTools'");
@@ -1877,14 +1820,13 @@ export function parseConfig(yamlText: string): ParseResult {
             else out.lanAccess = c.lanAccess;
           }
           for (const key of Object.keys(c)) {
-            if (!settingsBlockKeys("companion").includes(key)) {
+            if (key !== "tabTools" && key !== "allowedHosts" && key !== "lanAccess") {
               discarded.push(`settings.companion: unknown key '${key}'`);
             }
           }
           if (Object.keys(out).length > 0) settings.companion = out;
         }
       }
-      markSettingsWarned("companion", companionAt);
       if (raw.settings.ideBrowser !== undefined) {
         if (!isPlainObject(raw.settings.ideBrowser)) {
           discarded.push("settings.ideBrowser: must be a mapping with optional 'enabled' and 'homeUrl'");
@@ -2036,32 +1978,25 @@ export function parseConfig(yamlText: string): ParseResult {
         const root = raw.settings.agentPermissionProjection;
         if (!isPlainObject(root)) {
           discarded.push("settings.agentPermissionProjection: must be a mapping of agent name → { runtime, … }");
-          // No agent names to read, so no posture can be closed by name. Recorded anyway so the door
-          // is not silently absent from the warned set.
-          warnedSettingsPaths.add("agentPermissionProjection");
         } else {
           const modes = GROK_PERMISSION_MODES;
           const out: NonNullable<TachyonConfig["settings"]["agentPermissionProjection"]> = {};
           /**
-           * t-48dd8d — the AGENT is recorded, not just the block. This is the door where absence is
-           * widest: a delegated codex agent with nothing projected is launched with
-           * `approval_policy="never"` and `sandbox_mode="danger-full-access"`, so dropping an entry
-           * that asked for `read-only` hands out full access. Closing that needs the agent's name and
-           * its runtime, which is why the block alone is not enough information.
-           *
-           * Acceptance is per agent for the same reason. The block used to be stored only if EVERY
-           * entry parsed, which meant one agent's typo also discarded the postures its neighbours had
-           * written correctly — widening the door for agents whose declaration was never in question.
+           * t-48dd8d — acceptance is per AGENT. The block used to be stored only if EVERY entry
+           * parsed, so one agent's typo also discarded the postures its neighbours had written
+           * correctly; discarding a line that is not wrong is not what "discard the invalid" means.
            * Each entry below is already gated on its own validity before it reaches `out`.
+           *
+           * A discarded entry projects NOTHING, and the owner chose that with the number in hand: for
+           * a delegated codex agent, nothing projected means the class default, which is
+           * `approval_policy="never"` + `sandbox_mode="danger-full-access"` (AgentManager.ts:385-386).
+           * The warning names the key and the human fixes it. One rule with one special case is a rule
+           * that rots — see the measurement in the t-48dd8d journal for the full survey.
            */
-          const postureDiscarded = (agentName: string): void => {
-            warnedSettingsPaths.add(`agentPermissionProjection.${agentName}`);
-          };
           for (const [agent, value] of Object.entries(root)) {
             const prefix = `settings.agentPermissionProjection.${agent}`;
             if (!isPlainObject(value)) {
               discarded.push(`${prefix}: must be a mapping with a runtime`);
-              postureDiscarded(agent);
               continue;
             }
             if (value.runtime === "codex") {
@@ -2072,7 +2007,6 @@ export function parseConfig(yamlText: string): ParseResult {
               const unknown = Object.keys(value).filter((key) => !codexKeys.includes(key));
               if (unknown.length > 0) {
                 discarded.push(`${prefix}: unknown ${unknown.length === 1 ? "key" : "keys"} ${unknown.map((key) => `'${key}'`).join(", ")}`);
-                postureDiscarded(agent);
               }
               const doors: Array<[string, readonly string[]]> = [
                 ["approvalPolicy", CODEX_APPROVAL_POLICIES],
@@ -2086,7 +2020,6 @@ export function parseConfig(yamlText: string): ParseResult {
                 if (raw === undefined) continue;
                 if (typeof raw !== "string" || !allowed.includes(raw)) {
                   discarded.push(`${prefix}.${key}: must be one of ${allowed.join(", ")}`);
-                  postureDiscarded(agent);
                   ok = false;
                   continue;
                 }
@@ -2094,7 +2027,6 @@ export function parseConfig(yamlText: string): ParseResult {
               }
               if (Object.keys(entry).length === 0) {
                 discarded.push(`${prefix}: a codex entry must set at least one of approvalPolicy, sandboxMode, bridgeToolApproval`);
-                postureDiscarded(agent);
                 ok = false;
               }
               if (ok) out[agent] = { runtime: "codex", ...entry } as AgentPermissionProjectionEntry;
@@ -2103,15 +2035,12 @@ export function parseConfig(yamlText: string): ParseResult {
             const unknown = Object.keys(value).filter((key) => key !== "runtime" && key !== "mode");
             if (unknown.length > 0) {
               discarded.push(`${prefix}: unknown ${unknown.length === 1 ? "key" : "keys"} ${unknown.map((key) => `'${key}'`).join(", ")}`);
-              postureDiscarded(agent);
             }
             if (value.runtime !== "grok") {
               discarded.push(`${prefix}.runtime: must be 'grok' or 'codex'`);
-              postureDiscarded(agent);
             }
             if (!modes.includes(value.mode as typeof modes[number])) {
               discarded.push(`${prefix}.mode: must be one of ${modes.join(", ")}`);
-              postureDiscarded(agent);
             }
             if (value.runtime === "grok" && modes.includes(value.mode as typeof modes[number]) && unknown.length === 0) {
               out[agent] = { runtime: "grok", mode: value.mode as typeof modes[number] };
@@ -2251,20 +2180,12 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!SETTINGS_KEYS.includes(key)) discarded.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) discarded.push(`settings: unknown key '${key}'`);
       }
     }
   }
 
   const declaredOwner = buildDeclaredOwner(agents, discarded, warnings);
-  /**
-   * The safe-side half of the rule, applied once the whole `settings:` block has been read: for the
-   * doors whose ABSENT state is the wide one, a block that warned closes instead of falling to its
-   * default. The closure warnings come after the discards so the human reads the mistake and its
-   * consequence together rather than having to connect them.
-   */
-  const closed = closeWarnedSettingsDoors(settings, { warnedPaths: warnedSettingsPaths, agents });
-  discarded.push(...closed);
   warnings.push(...discarded);
   return { config: { agents, commands, runbooks, schedules, declaredOwner, settings }, errors: [], warnings, discarded };
 }
