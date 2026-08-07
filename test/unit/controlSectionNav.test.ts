@@ -3,13 +3,21 @@ import { COCKPIT_SECTION_ORDER } from "../../src/cockpit/model.js";
 import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
 
 describe("CONTROL_SECTION_NAV (t-6e2952)", () => {
-  it("lists twelve top-level tiles, covering every section Control renders", () => {
+  it("lists eleven top-level tiles, covering every section Control renders", () => {
     // SDD 485 C5 — the launcher is no longer a projection of COCKPIT_SECTION_ORDER: it lists what a human
-    // can OPEN, and one of the twelve (the Board) now opens a standalone app instead of navigating Control.
+    // can OPEN, and one of them (the Board) now opens a standalone app instead of navigating Control.
     // The containment direction is what must hold — a section Control renders with no tile is unreachable.
-    expect(CONTROL_SECTION_NAV).toHaveLength(12);
+    //
+    // t-5f2b5b — twelve became ELEVEN: the Fleet tile was deleted by owner decision (2026-08-07), because
+    // the app behind it was deleted and the sidebar Agents tab is the only fleet. The count is not the
+    // claim; the two containment/order assertions below are, and they are unchanged.
+    expect(CONTROL_SECTION_NAV).toHaveLength(11);
     const tiles = CONTROL_SECTION_NAV.map((t) => t.id);
     for (const id of COCKPIT_SECTION_ORDER) expect(tiles, `section '${id}' has no launcher tile`).toContain(id);
+    // t-5f2b5b — and the deletion is pinned, not merely reflected in a number: `fleet` is STILL a
+    // CockpitSectionId (parent of agent-activity/agent-probes and of five studios, so it must keep
+    // decoding), which is exactly what would let a tile for it drift back in unnoticed.
+    expect(tiles, "the Fleet tile was deleted — it must not come back").not.toContain("fleet");
     // and the order the sections DO share is unchanged — a tile did not move, one changed destination.
     expect(tiles.filter((id) => COCKPIT_SECTION_ORDER.includes(id))).toEqual([...COCKPIT_SECTION_ORDER]);
   });
