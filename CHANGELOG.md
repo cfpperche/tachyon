@@ -6,6 +6,69 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.66.0 — Nothing is left behind, and nothing you cannot undo
+
+An operation that fails in the middle used to leave state nobody cleans and nobody can name. Six
+of them are closed here, found by one measurement that went looking for the shape rather than for
+a bug. The rule that closes most of them is the same: let the thing that owns the state say no —
+`rmdir` refuses a directory that is not empty, and `git worktree remove` refuses a checkout with
+work inside. A refusal from the kernel or from Git cannot be raced; a check written in front of a
+delete can.
+
+### Fixed
+
+- **A launch that fails no longer strands the agent, and you can unstick it yourself** (`t-d29398`).
+  Starting an agent creates its checkout and locks it while it prepares. When preparation failed —
+  a missing runtime credential, say — the lock stayed. Fixing the real cause was not enough: every
+  later attempt was refused because of the first attempt's own residue, with an instruction to
+  "unlock explicitly" that the product offered no way to carry out. Now the failing launch discards
+  the checkout it just created and never delivered, and Control → Worktrees has **Release lock**,
+  which shows what is inside — commits, uncommitted changes — before anything is released. The five
+  refusals that used to give an impossible order now point there, and they distinguish Tachyon's own
+  interrupted-launch quarantine from a lock a human placed.
+- **Removing an agent stops leaving the shell of its folder behind** (`t-4a1f85`, `t-8b58b3`). Two
+  removal paths deleted the contents of a profile home and left the directory: one unlinked
+  `agent.yml`, the other removed only the `evolution/` subfolder. And the one sweep that reads that
+  directory *enumerated* it and then *measured a file inside it*, so residue it had just listed came
+  back as "absent: there is nothing to remove" — a false negative delivered as proof. The sweep now
+  names it, and the refusal hands over the one command that tells empty residue from real work by
+  refusing.
+- **Deleting a declared terminal cleans its footprint** (`t-af4a5f`). The roster row was deleted
+  first and the footprint second, with no journal between them, and no startup reconcile that could
+  ever revisit it. The order is inverted: the footprint goes first and the address goes last, so an
+  interruption leaves an entry that is still listed and still removable instead of debris nobody can
+  name.
+- **One attempt to give a Soul to a terminal no longer freezes Soul for the whole workspace**
+  (`t-359469`). The gate asked "is this name declared?" instead of "is this an agent?", so a
+  `terminals:` entry passed. It then died in a place that left a transaction folder with no record
+  inside, which the product reads as a broken transaction belonging to *everyone* — and nothing ever
+  clears it. Every Soul change in the workspace was refused from then on. The gate now sits at the
+  single funnel every mutation passes through, runs before anything touches disk, and its refusal
+  says what is actually wrong instead of "not declared in tachyon.yml", which was false.
+
+### Changed
+
+- **An invalid `tachyon.yml` warns instead of taking the fleet down** (`t-48dd8d`). One mistyped key
+  anywhere in the file used to make the whole workspace refuse to load. Now the bad key is discarded,
+  a warning names it, and everything else loads. Two failures remain fatal, and only because they
+  leave nothing to salvage: bytes that are not YAML, and a root that is not a mapping. Reading
+  forgives; writing does not — the product still refuses to save bytes it has just called unreadable.
+  There is no exception to the rule: a discarded key falls to its normal default, including where
+  that default is the permissive one. That was an explicit decision, and it is pinned by a test so it
+  cannot be quietly reversed.
+
+### Internal
+
+- **SDD 495 — runtime login and auth recovery** (`t-9b5457`). A measured proposal, not an
+  implementation. It traces why a launch refusal that contained the exact fix never reached the
+  human: that branch sends the message to the status bar, which truncates it and then erases it. The
+  same condition mid-run passes a button and survives as a dialog. It also corrects a standing
+  assumption — the per-runtime "preflight" files check the model catalog, not authentication — and
+  measures what each of the three main runtimes really needs to log in.
+- **The orphan hunt** (`t-bbe760`). The measurement that found the four residue sources above, with
+  every origin traced to a line, a verdict in three lists including "could not decide", and two
+  reproductions that run.
+
 ## 0.65.0 — The screens say what they know, and stop hiding what they don't
 
 Every change here shortens the distance between something being true and you being able to see it.
