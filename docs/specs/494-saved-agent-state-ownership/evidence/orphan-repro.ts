@@ -30,14 +30,25 @@ function tree(root: string): string[] {
   return out;
 }
 
-/** The exact four facts the roster reconciler measures (`Workspace.ts:4139-4149`). */
+/**
+ * The exact facts the roster reconciler measures (`Workspace.savedAgentPresenceFacts`).
+ *
+ * Four when this file was written, five since `t-8b58b3` added `profileHomeOnDisk`. Keeping this in
+ * step with production is the whole point of the script: measuring one fact fewer than the product
+ * is exactly the defect it was written to reproduce.
+ */
 function facts(ws: string, name: string, rosterRow: boolean, authorityRecord: boolean) {
   return {
     rosterRow,
-    // Workspace.ts:4145 — the expression under test: the FILE, not the directory.
+    // The expression that WAS under test: the FILE, not the directory.
     profileOnDisk: fs.existsSync(path.join(ws, ".tachyon", "agents", name, "agent.yml")),
     authorityRecord,
     projection: false,
+    // t-8b58b3 — the fact that was missing. Measured by `lstat`, the way the sweep enumerates.
+    profileHomeOnDisk: fs.lstatSync(
+      path.join(ws, ".tachyon", "agents", name),
+      { throwIfNoEntry: false },
+    )?.isDirectory() === true,
   };
 }
 

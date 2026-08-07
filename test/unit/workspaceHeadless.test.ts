@@ -380,7 +380,7 @@ async function refusedSavedAgentWorkspace() {
  * every record present, the runtime projection refused by spec 471.
  */
 async function savedAgentStateWorkspace(
-  withheld: "refused" | "roster-row" | "profile" | "authority" | "roster-row-and-profile",
+  withheld: "refused" | "roster-row" | "profile" | "authority" | "roster-row-and-profile" | "everything-but-the-home",
 ): Promise<{ root: string; ws: Workspace }> {
   const root = mkdir();
   const homeDir = mkdir();
@@ -403,11 +403,16 @@ async function savedAgentStateWorkspace(
     writeSavedAgent(root, "claude23", { runtime: "claude", extra: { nativeConfig: { permissions } } }),
   ];
   const withoutSubject = fixtures.filter((entry) => entry.name !== "claude23");
-  const rosterHidden = withheld === "roster-row" || withheld === "roster-row-and-profile";
+  const homeOnly = withheld === "everything-but-the-home";
+  const rosterHidden = withheld === "roster-row" || withheld === "roster-row-and-profile" || homeOnly;
   const profileHidden = withheld === "profile" || withheld === "roster-row-and-profile";
   fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(rosterHidden ? withoutSubject : fixtures), "utf8");
   if (profileHidden) fs.rmSync(path.join(root, ".tachyon", "agents", "claude23"), { recursive: true, force: true });
-  const secrets = savedAgentSecrets(root, withheld === "authority" ? withoutSubject : fixtures);
+  // t-8b58b3 — the residue O1/O2/O3 leave: the DIRECTORY survives and everything that names it does
+  // not. Unlinking only `agent.yml` is exactly what `removeAgentProfileIfExact` used to do, so this
+  // fixture is the rolled-back create as it reached disk, not a shape invented for the assertion.
+  if (homeOnly) fs.unlinkSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"));
+  const secrets = savedAgentSecrets(root, withheld === "authority" || homeOnly ? withoutSubject : fixtures);
   const host = new SharedSecretHost(mkdir(), secrets, {});
   const ws = await Workspace.createForTest(
     root,
@@ -1137,7 +1142,7 @@ describe("SDD 494 Part 4 — the five disagreement states", () => {
       const row = doorOf(report, "claude23");
       expect(row.state).toBe("unprojectable");
       expect(row.member).toBe(true);
-      expect(row.facts).toEqual({ rosterRow: true, profileOnDisk: true, authorityRecord: true, projection: false });
+      expect(row.facts).toEqual({ rosterRow: true, profileOnDisk: true, authorityRecord: true, projection: false, profileHomeOnDisk: true });
       expect(row.removal.door).toBe("Agent Studio -> Forget (Bridge: propose_saved_agent_removal)");
       expect(row.refusal).toContain("'bypassPermissions' is not projectable");
       // The healthy neighbour is reported as consistent, so the state is a measurement rather than a
@@ -1183,7 +1188,7 @@ describe("SDD 494 Part 4 — the five disagreement states", () => {
       const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
       expect(row.state).toBe("unattested");
       expect(row.member).toBe(true);
-      expect(row.facts).toEqual({ rosterRow: true, profileOnDisk: true, authorityRecord: false, projection: false });
+      expect(row.facts).toEqual({ rosterRow: true, profileOnDisk: true, authorityRecord: false, projection: false, profileHomeOnDisk: true });
       expect(row.removal.door).toContain("Forget");
       expect(row.refusal).toContain("host profile authority is missing");
     } finally {
@@ -1216,8 +1221,46 @@ describe("SDD 494 Part 4 — the five disagreement states", () => {
       const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
       expect(row.state).toBe("stranded-authority");
       expect(row.member).toBe(false);
-      expect(row.facts).toEqual({ rosterRow: false, profileOnDisk: false, authorityRecord: true, projection: false });
+      expect(row.facts).toEqual({ rosterRow: false, profileOnDisk: false, authorityRecord: true, projection: false, profileHomeOnDisk: false });
       expect(row.removal.door).toBeNull();
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  /**
+   * t-8b58b3 — the sweep enumerates `.tachyon/agents/` to find its subjects, then measured only the
+   * FILE inside each one. A directory-only residue therefore came back with four false facts,
+   * derived to `absent`, and answered "there is nothing to remove" about a directory the same
+   * function had just listed. That is worse than not looking: a false negative delivered as proof.
+   *
+   * The fix is the fifth fact, not a new arm of the derivation — given all-false, `absent` was the
+   * only honest answer available to it.
+   */
+  it("orphan-home: a directory the sweep just enumerated is reported, not called absent", async () => {
+    const { root, ws } = await savedAgentStateWorkspace("everything-but-the-home");
+    try {
+      const home = path.join(root, ".tachyon", "agents", "claude23");
+      expect(fs.readdirSync(home)).toEqual([]);
+      const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
+      expect(row.state).toBe("orphan-home");
+      expect(row.member).toBe(false);
+      expect(row.facts).toEqual({
+        rosterRow: false,
+        profileOnDisk: false,
+        authorityRecord: false,
+        projection: false,
+        profileHomeOnDisk: true,
+      });
+      // No door, and a reason that carries the human the rest of the way instead of denying the
+      // residue exists. `rmdir` is the same policy the removal helpers apply on the write side.
+      expect(row.removal.door).toBeNull();
+      expect(row.removal.reason).toContain("rmdir");
+      expect(row.removal.reason).not.toContain("there is nothing to remove");
+      // Read-only, like every other state: the sweep reports the directory, it never removes it.
+      expect(fs.existsSync(home)).toBe(true);
+      // The healthy neighbour still classifies, so this is a measurement and not a blanket label.
+      expect(doorOf(await ws.reconcileSavedAgentRoster(), "claude").state).toBe("consistent");
     } finally {
       ws.dispose();
     }
@@ -1374,6 +1417,10 @@ it("moves Evolution on rename while disable and profile edits retain the same ca
 
   await ws.forgetAgent("maintainer");
   expect(fs.existsSync(ws.evolutionStore.rootFor("maintainer"))).toBe(false);
+  // t-4a1f85 — `Workspace.forgetAgent` is the UNGOVERNED tail (the declared delete and the startup
+  // ledger GC both reach it), and it must never take a canonical Saved Agent's home with it. The
+  // `rmdir` refuses because `agent.yml` is still inside; only the governed forget quarantines a home.
+  expect(fs.existsSync(path.join(ws.workspaceRoot, ".tachyon", "agents", "maintainer", "agent.yml"))).toBe(true);
   const recreated = await ws.evolutionStore.ensureProfile("maintainer");
   expect(recreated.profileId).not.toBe(profile.profileId);
   await ws.dispose();
