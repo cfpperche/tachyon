@@ -249,7 +249,7 @@ function optionsArgument(call: ts.CallExpression): ts.Expression | undefined {
 }
 
 /** Raw text of a string or template literal, with `${…}` holes replaced by an opaque sentinel. */
-const HOLE = " ";
+const HOLE = "\u0000"; // escaped, never a raw NUL byte (check:source-diffable)
 function literalCommandText(node: ts.Expression): string | undefined {
   if (ts.isStringLiteralLike(node)) return node.text;
   if (ts.isTemplateExpression(node)) return node.getText().slice(1, -1).replace(/\$\{[^}]*\}/g, HOLE);
