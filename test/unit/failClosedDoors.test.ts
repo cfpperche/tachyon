@@ -31,8 +31,8 @@ const AGENT_ONLY_KEYS: ReadonlyArray<[key: string, yaml: string]> = [
 
 describe("door: terminals: in tachyon.yml", () => {
   it.each(AGENT_ONLY_KEYS)("refuses '%s' and names where the entry belongs", (key, yaml) => {
-    const { errors } = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n${yaml}`);
-    const refusal = errors.find((error) => error.includes(`'${key}' applies only to agents`));
+    const { warnings } = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n${yaml}`);
+    const refusal = warnings.find((error) => error.includes(`'${key}' applies only to agents`));
     expect(refusal, `'${key}' must be refused for a terminal`).toBeDefined();
     expect(refusal).toContain("terminals.dev");
     expect(refusal).toContain("Agent Studio");
@@ -41,14 +41,14 @@ describe("door: terminals: in tachyon.yml", () => {
   it("no longer points at the retired inline shape", () => {
     // The old text said "declare it under agents: with kind: agent" — advice the product refuses,
     // which is the failure mode this door exists to stop.
-    const { errors } = parseConfig("terminals:\n  dev:\n    cmd: npm run dev\n    soul: true\n    verify: npm test\n");
-    expect(errors.length).toBeGreaterThan(0);
-    for (const error of errors) expect(error).not.toContain("with kind: agent");
+    const { warnings } = parseConfig("terminals:\n  dev:\n    cmd: npm run dev\n    soul: true\n    verify: npm test\n");
+    expect(warnings.length).toBeGreaterThan(0);
+    for (const warning of warnings) expect(warning).not.toContain("with kind: agent");
   });
 
   it("refuses the same keys under agents: when the entry declares kind: terminal", () => {
-    const { errors } = parseConfig("agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    worktree: true\n");
-    const refusal = errors.find((error) => error.includes("'worktree' applies only to agents"));
+    const { warnings } = parseConfig("agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    worktree: true\n");
+    const refusal = warnings.find((error) => error.includes("'worktree' applies only to agents"));
     expect(refusal).toContain("agents.dev");
     expect(refusal).toContain("Agent Studio");
   });

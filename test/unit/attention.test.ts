@@ -766,7 +766,7 @@ describe("attention config", () => {
     expect(config?.agents.g.kind).toBe("terminal"); // explicit override beats inference
     expect(config?.agents.f.attention.enabled).toBe(true); // kind drives the default
     expect(config?.agents.g.attention.enabled).toBe(false);
-    expect(parseConfig("agents:\n  a:\n    cmd: x\n    kind: robot\n").errors[0]).toContain("kind");
+    expect(parseConfig("agents:\n  a:\n    cmd: x\n    kind: robot\n").warnings[0]).toContain("kind");
   });
 
   it("boolean and object forms parse; watched agent can opt back in", () => {
@@ -790,12 +790,12 @@ describe("attention config", () => {
   });
 
   it("rejects invalid attention shapes with path-qualified errors", () => {
-    expect(parseConfig("agents:\n  a:\n    cmd: x\n    attention: 5\n").errors[0]).toContain("agents.a.attention");
+    expect(parseConfig("agents:\n  a:\n    cmd: x\n    attention: 5\n").warnings[0]).toContain("agents.a.attention");
     expect(
-      parseConfig("agents:\n  a:\n    cmd: x\n    attention:\n      silenceSec: 0\n").errors[0],
+      parseConfig("agents:\n  a:\n    cmd: x\n    attention:\n      silenceSec: 0\n").warnings[0],
     ).toContain("silenceSec");
     expect(
-      parseConfig("agents:\n  a:\n    cmd: x\n    attention:\n      nope: 1\n").errors[0],
+      parseConfig("agents:\n  a:\n    cmd: x\n    attention:\n      nope: 1\n").warnings[0],
     ).toContain("unknown key 'nope'");
   });
 });

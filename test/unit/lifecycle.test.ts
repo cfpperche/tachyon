@@ -150,7 +150,7 @@ describe("restart config", () => {
   });
 
   it("rejects invalid policies", () => {
-    expect(parseConfig("agents:\n  a:\n    cmd: x\n    restart: always\n").errors[0]).toContain(
+    expect(parseConfig("agents:\n  a:\n    cmd: x\n    restart: always\n").warnings[0]).toContain(
       "agents.a.restart",
     );
   });

@@ -622,18 +622,33 @@ it("t-6f0377 refuses an unmeasured runtime by name", async () => {
   ws.dispose();
 });
 
-it("rejects an invalid reload and retains the prior known-good config", async () => {
-  // SDD 478 M7 — this used to prove the point with `soul: SOUL.md` on an inline agent. Neither half
-  // of that is expressible now: `agents:` takes a profile pointer, and a canonical profile cannot
-  // carry `soul` at all (the projection refuses it: Soul is a formation lane, not a projected prompt field — t-50bbd4). The guarantee under test is the
-  // reload boundary itself — a rejected edit must leave the last known-good config live — so it is
-  // proven with an invalid key on the arm that does accept one.
+it("discards an unreadable key on reload instead of taking the workspace down", async () => {
+  // SDD 478 M7 — this used to prove that a rejected edit leaves the last known-good config live, with
+  // an unreadable `restart` standing in for the retired inline `soul:`.
+  //
+  // t-48dd8d moved that boundary. A key the loader cannot read no longer refuses the FILE: it is
+  // discarded, the rest of the workspace loads, and `restart` falls to `never` — the closed side,
+  // since an agent that does not restart itself is the conservative reading of a broken policy. That
+  // is the whole owner decision of 2026-08-07, and this is where a reader will look for it.
   const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: on-crash\n" });
   expect(ws.config?.agents.dev.restart).toBe("on-crash");
   fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: sometimes\n", "utf8");
 
+  expect(ws.reloadConfig()).toBe(true);
+  expect(ws.configFailure).toBeUndefined();
+  expect(ws.config?.agents.dev.restart).toBe("never");
+  ws.dispose();
+});
+
+it("still retains the prior known-good config when the file cannot be read at all", async () => {
+  // The other half of the same boundary, and the reason the LKG snapshot still exists: bytes that are
+  // not YAML leave nothing to salvage, so the reload is refused and the live config is untouched.
+  const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: on-crash\n" });
+  expect(ws.config?.agents.dev.restart).toBe("on-crash");
+  fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "terminals: [unclosed\n", "utf8");
+
   expect(ws.reloadConfig()).toBe(false);
-  expect(ws.configFailure?.errors).toContain("terminals.dev.restart: must be 'never' or 'on-crash'");
+  expect(ws.configFailure?.errors[0]).toContain("invalid YAML");
   expect(ws.config?.agents.dev.restart).toBe("on-crash");
   expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("dev");
   ws.dispose();

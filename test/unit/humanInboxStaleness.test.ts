@@ -55,22 +55,22 @@ describe("the threshold a project writes", () => {
     // `0` reads literally as "stale the moment it arrives" — the opposite of the off some author
     // means by it. Guessing which they meant is exactly what this loader does not do.
     const parsed = parseConfig(yaml("  humanInbox:\n    staleAfterHours: 0\n"));
-    expect(parsed.errors).toHaveLength(1);
-    expect(parsed.errors[0]).toContain("settings.humanInbox.staleAfterHours");
-    expect(parsed.errors[0]).toContain("positive number of hours");
-    expect(parsed.errors[0]).toContain("never");
+    expect(parsed.warnings).toHaveLength(1);
+    expect(parsed.warnings[0]).toContain("settings.humanInbox.staleAfterHours");
+    expect(parsed.warnings[0]).toContain("positive number of hours");
+    expect(parsed.warnings[0]).toContain("never");
   });
 
   it("refuses a negative, a non-number and a non-mapping", () => {
-    expect(parseConfig(yaml("  humanInbox:\n    staleAfterHours: -1\n")).errors[0]).toContain("staleAfterHours");
-    expect(parseConfig(yaml('  humanInbox:\n    staleAfterHours: "soon"\n')).errors[0]).toContain("staleAfterHours");
-    expect(parseConfig(yaml("  humanInbox: 24\n")).errors[0]).toContain("settings.humanInbox: must be a mapping");
+    expect(parseConfig(yaml("  humanInbox:\n    staleAfterHours: -1\n")).warnings[0]).toContain("staleAfterHours");
+    expect(parseConfig(yaml('  humanInbox:\n    staleAfterHours: "soon"\n')).warnings[0]).toContain("staleAfterHours");
+    expect(parseConfig(yaml("  humanInbox: 24\n")).warnings[0]).toContain("settings.humanInbox: must be a mapping");
   });
 
   it("refuses an unknown key by name rather than ignoring it", () => {
     const parsed = parseConfig(yaml("  humanInbox:\n    staleAfterDays: 2\n"));
-    expect(parsed.errors[0]).toContain("settings.humanInbox: unknown key 'staleAfterDays'");
-    expect(parsed.errors[0]).toContain("allowed: staleAfterHours");
+    expect(parsed.warnings[0]).toContain("settings.humanInbox: unknown key 'staleAfterDays'");
+    expect(parsed.warnings[0]).toContain("allowed: staleAfterHours");
   });
 
   it("leaves the setting absent when nothing is written", () => {

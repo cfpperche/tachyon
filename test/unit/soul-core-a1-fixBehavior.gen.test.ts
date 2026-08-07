@@ -3,14 +3,20 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { importSoulProfile, resolveSoul, SoulError } from "../../src/agents/soul.js";
 import { openingPromptCapability } from "../../src/agents/openingPromptCapability.js";
-import { composeCommand, instructionsDeliverable, parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, composeCommand, instructionsDeliverable, parseConfig } from "../../src/config/loadConfig.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
   it("agent soul profile foundation closure", async () => {
     const parsed = parseConfig("agents:\n  Ada:\n    cmd: env FOO=1 opencode\n    soul: true\n  ada:\n    cmd: codex\n    soul: true\n");
-    expect(parsed.config).toBeUndefined();
-    expect(parsed.errors).toContain("agents.ada.soul: conflicts with soul-enabled agent 'Ada' after ASCII case folding");
+    // t-48dd8d — the file loads now, but the colliding capability does NOT: two agents folding to one
+    // name would otherwise share the profile SOUL.md is keyed by, each able to read and write the
+    // other's identity. Neither keeps it, because nothing in the file says which one was meant.
+    expect(parsed.errors).toEqual([]);
+    expect(asAgent(parsed.config?.agents.Ada)?.soul).toBeUndefined();
+    expect(asAgent(parsed.config?.agents.ada)?.soul).toBeUndefined();
+    expect(parsed.warnings.some((warning) =>
+      warning.startsWith("agents.ada.soul: conflicts with soul-enabled agent 'Ada' after ASCII case folding"))).toBe(true);
 
     expect(openingPromptCapability("env -u TOKEN opencode")).toEqual({ status: "prompt", runtime: "opencode", channel: "tui-prefill" });
     expect(openingPromptCapability("bash -lc codex").status).toBe("unsupported");

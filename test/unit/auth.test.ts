@@ -306,6 +306,6 @@ describe("settings.auth config", () => {
     const base = "agents:\n  a:\n    cmd: x\n";
     expect(parseConfig(`${base}settings:\n  auth: false\n`).config?.settings.auth).toBe(false);
     expect(parseConfig(base).config?.settings.auth).toBeUndefined(); // default decided by the extension (true)
-    expect(parseConfig(`${base}settings:\n  auth: "no"\n`).errors[0]).toContain("settings.auth");
+    expect(parseConfig(`${base}settings:\n  auth: "no"\n`).warnings[0]).toContain("settings.auth");
   });
 });

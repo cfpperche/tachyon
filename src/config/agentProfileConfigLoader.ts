@@ -71,7 +71,7 @@ export interface LoadProfileAwareConfigInput {
  */
 export function parseProfileAwareConfigSyntax(yamlText: string): ParseResult {
   const scan = scanAgentProfilePointers(yamlText);
-  if (scan.errors.length > 0) return { errors: scan.errors, warnings: [] };
+  if (scan.errors.length > 0) return { errors: scan.errors, warnings: [], discarded: [] };
   const doc = parseDocument(yamlText, { uniqueKeys: true });
   const inlineAgents = declaredAgentNames(doc).filter((name) => !scan.pointers.has(name));
   if (inlineAgents.length > 0) {
@@ -79,6 +79,7 @@ export function parseProfileAwareConfigSyntax(yamlText: string): ParseResult {
       errors: inlineAgents.map((name) =>
         `agents.${name}: inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio`),
       warnings: [],
+      discarded: [],
     };
   }
   for (const agentName of scan.pointers.keys()) {
@@ -109,7 +110,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   const scan = scanAgentProfilePointers(input.yamlText);
   // Pointer syntax is a property of the FILE, not of any one agent: nothing here can be isolated,
   // because the declaration that names the agents is itself unreadable.
-  if (scan.errors.length > 0) return { errors: scan.errors, warnings: [], profileErrors: [] };
+  if (scan.errors.length > 0) return { errors: scan.errors, warnings: [], discarded: [], profileErrors: [] };
 
   const doc = parseDocument(input.yamlText, { uniqueKeys: true });
   const errors: string[] = [];
@@ -173,7 +174,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   // per-agent refusal reasons. Isolation is for saving a healthy remainder; with no remainder the
   // honest answer is the original failure.
   if (errors.length > profileErrors.length || (errors.length > 0 && projected.size === 0)) {
-    return { errors, warnings: [], profileErrors };
+    return { errors, warnings: [], discarded: [], profileErrors };
   }
   // A refused agent's pointer entry must leave the document before the legacy parser sees it: that
   // parser knows `cmd`, not `profile`, and would report the pointer as a malformed agent — turning
@@ -198,7 +199,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   }
 
   const parsed = parseConfig(String(doc));
-  if (!parsed.config) return { errors: parsed.errors, warnings: parsed.warnings, profileErrors };
+  if (!parsed.config) return { errors: parsed.errors, warnings: parsed.warnings, discarded: parsed.discarded, profileErrors };
   const warnings = [...profileWarnings, ...parsed.warnings.filter((warning) => {
     const profileName = [...projected.keys()].find((name) => warning.startsWith(`agents.${name}: isolate: transcript is deprecated`));
     return profileName === undefined;
@@ -208,7 +209,7 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
     // through — so this narrowing always succeeds. If it ever did not, the internal projections
     // below would have no arm to land on, which is a refusal rather than a silent drop.
     const entry = asAgent(parsed.config.agents[agentName]);
-    if (!entry) return { errors: [`agents.${agentName}.profile: canonical projection did not reload as an agent`], warnings: [], profileErrors };
+    if (!entry) return { errors: [`agents.${agentName}.profile: canonical projection did not reload as an agent`], warnings: [], discarded: [], profileErrors };
     if (definition.profileCapabilities) entry.profileCapabilities = definition.profileCapabilities;
     if (definition.profileWithheldCapabilities) entry.profileWithheldCapabilities = definition.profileWithheldCapabilities;
     if (definition.profileNativeConfig) entry.profileNativeConfig = definition.profileNativeConfig;

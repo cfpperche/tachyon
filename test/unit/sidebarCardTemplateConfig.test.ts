@@ -130,7 +130,7 @@ describe("SDD 479 phase 2 — settings.sidebar.cardTemplate", () => {
 `);
     // This one DOES go to errors: an unknown settings key is the loader's existing contract, and unlike
     // a malformed template it means the file says something Tachyon does not understand at all.
-    expect(result.errors.join("\n")).toContain("settings.sidebar: unknown key 'options'");
+    expect(result.warnings.join("\n")).toContain("settings.sidebar: unknown key 'options'");
   });
 
   it("refuses an unknown key inside the template, listing what is allowed", () => {
