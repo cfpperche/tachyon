@@ -30,7 +30,7 @@ function SessionStatus({ s, sess }: { s: InspectorStrings; sess: InspectorSessio
 }
 
 const kindLabel = (s: InspectorStrings, kind: InspectorSession["kind"]): string =>
-  ({ session: s.kindSession, command: s.kindCommand, runbook: s.kindRunbook, anchor: s.kindAnchor, unknown: s.kindUnknown }[kind] ?? kind);
+  ({ session: s.kindSession, command: s.kindCommand, runbook: s.kindRunbook, login: s.kindLogin, anchor: s.kindAnchor, unknown: s.kindUnknown }[kind] ?? kind);
 
 type Action = { type: "refresh" | "reapDead" | "reapOrphans" } | { type: "open" | "kill"; session: string };
 

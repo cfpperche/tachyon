@@ -61,7 +61,7 @@ const FOREIGN = "(closed / other workspace)";
 const NO_HASH = "(unscoped)";
 
 /** Stable display order within a group. */
-const KIND_ORDER: SessionKind[] = ["session", "command", "runbook", "anchor", "unknown"];
+const KIND_ORDER: SessionKind[] = ["session", "command", "runbook", "login", "anchor", "unknown"];
 
 export function buildInspectorModel(
   snapshot: PaneSnapshot[],

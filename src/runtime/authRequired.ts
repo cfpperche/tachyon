@@ -201,6 +201,101 @@ export const RUNTIME_AUTH_PREFLIGHT: Partial<Record<ResumeRuntime, RuntimeAuthPr
   },
 };
 
+/**
+ * `t-2656d7` (SDD 495, first slice) — the runtime's OWN login command: the single action Tachyon
+ * offers when a launch is refused for credentials.
+ *
+ * Declared here, beside the turn matchers and the pre-launch probe, for the reason `t-0338fc`
+ * already gave: "which runtimes can report auth-required, and by what measured signal" stays one
+ * list to read. This is the RECOVERY half of that same list.
+ *
+ * Absence is a declaration, exactly as above. A runtime with no entry gets no `Log in` control —
+ * the refusal still reaches the human as a persistent, actioned notice, it simply carries no
+ * command nobody measured. Guessing one opens a pane that fails in a way a human cannot tell apart
+ * from being logged out, which is worse than offering nothing.
+ *
+ * Two measurements (SDD 495 `plan.md` §2.2, 2026-08-07) decide that the surface has to be a real
+ * terminal the human types into, and they are why this is a `command` for a PTY rather than
+ * something Tachyon could capture and render itself:
+ *
+ *  1. **Claude's login blocks on typed input.** It ends at `Paste code here if prompted >`, so a
+ *     webview that merely displays a device code cannot serve it.
+ *  2. **Grok's login prints nothing on a pipe.** Two captures (plain pipe; `script` with the
+ *     typescript discarded) produced zero bytes; only the tmux capture carried the URL and code.
+ *
+ * Tachyon never writes to that pane. The human types; Tachyon allocates the PTY and gets out of the
+ * way — the same rule that forbids a blind Enter into a runtime CLI, applied to the one pane where a
+ * stray keystroke would land on a credential prompt.
+ */
+export interface RuntimeLoginProfile {
+  /** The command line, run in a governed PTY. Tachyon never writes to its stdin. */
+  command: string;
+  /**
+   * Measured: does the human TYPE into this pane, or only read a code and confirm elsewhere? Both
+   * need a PTY (see above); the distinction is recorded because it is the property a future
+   * non-terminal surface would have to satisfy, and it must be re-measured rather than assumed.
+   */
+  surface: "interactive-pty" | "device-code-pty";
+  source: "measured";
+  verified: true;
+  verifiedAt: string;
+  notes: string;
+}
+
+export const RUNTIME_LOGIN: Partial<Record<ResumeRuntime, RuntimeLoginProfile>> = {
+  claude: {
+    // `claude auth login` is a real subcommand on 2.1.224 and runs OUTSIDE the agent TUI, which is
+    // what makes a short-lived login pane possible at all. The `/login` slash command named by
+    // `RUNTIME_AUTH_PROFILES.claude.humanAction` is typed INSIDE a running Claude, so it cannot be a
+    // pane command. Whether the recommended human wording should switch to this subcommand is SDD
+    // 495 Q4 and is still open — this entry does not answer it and does not touch `humanAction`.
+    command: "claude auth login",
+    surface: "interactive-pty",
+    source: "measured",
+    verified: true,
+    verifiedAt: "2026-08-07",
+    notes:
+      "Claude Code 2.1.224. Browser OAuth followed by a paste-back prompt: the flow ends at "
+      + "'Paste code here if prompted >' and waits, so this pane must accept typed input.",
+  },
+  codex: {
+    command: "codex login",
+    surface: "device-code-pty",
+    source: "measured",
+    verified: true,
+    verifiedAt: "2026-08-07",
+    notes:
+      "codex-cli 0.146.1. Loopback-browser sign-in; the CLI polls and needs no typed input. "
+      + "`codex login --device-auth` is the browserless variant. The stdin key paths "
+      + "(--with-api-key / --with-access-token) are deliberately NOT offered: driving one would make "
+      + "Tachyon a process holding raw key bytes.",
+  },
+  grok: {
+    // The device-code variant, matching the wording `RUNTIME_AUTH_PROFILES.grok.humanAction` has
+    // already been telling humans since 2026-07-28, so the button runs what the sentence says.
+    command: "grok login --device-code",
+    surface: "device-code-pty",
+    source: "measured",
+    verified: true,
+    verifiedAt: "2026-08-07",
+    notes:
+      "grok 1.0.0. `--device-code` is an alias of `--device-auth`. Display-only (the CLI polls), but "
+      + "it renders NOTHING on a pipe — measured silent across two capture styles — so it needs a PTY "
+      + "even though nobody types into it.",
+  },
+  // opencode / pi / hermes: deliberately absent, and the absence is the honest answer rather than a
+  // gap nobody noticed. `opencode auth login` was not measured by SDD 495; Pi authenticates through
+  // `/login` INSIDE Pi (no standalone subcommand to put in a pane); Hermes takes a provider key in
+  // `~/.hermes/.env` or a `hermes model` selection, which is not a login flow. Each still gets the
+  // persistent, readable refusal — just no button. `docs/runtimes/parity.md` carries the gaps.
+};
+
+/** The measured native login for a runtime, or undefined when nobody measured one. */
+export function runtimeLoginCommand(runtime: ResumeRuntime | null | undefined): string | undefined {
+  if (!runtime) return undefined;
+  return RUNTIME_LOGIN[runtime]?.command;
+}
+
 export interface AuthRequiredEvidence {
   runtime: ResumeRuntime;
   /** The matched line, trimmed and bounded. Never carries credential material — these are CLI notices. */
@@ -235,6 +330,43 @@ export function authRequiredFromPreflight(
     runtime: declared,
     matchedLine: trimmed.length > MAX_EVIDENCE_CHARS ? `${trimmed.slice(0, MAX_EVIDENCE_CHARS)}…` : trimmed,
     humanAction: profile.humanAction,
+  };
+}
+
+/**
+ * `t-2656d7` — launch-boundary evidence from a HARNESS credential refusal.
+ *
+ * The harness refuses before any pane exists: the runtime's credential is absent, unreadable or
+ * expired in the home the private one is projected from (`HarnessManager`'s credential throw sites).
+ * That is the same condition `classifyAuthRequired` reports mid-run and `authRequiredFromPreflight`
+ * reports for OpenCode — so it produces the same value, travels the same channel, and reads in the
+ * same words. One condition, one vocabulary; the owner's case was two presentations of one state.
+ *
+ * The human action is read from whichever declaration measured that runtime, never composed here: a
+ * second source of wording is a second thing to go stale, and the sentence a human acts on must be
+ * the measured one. A runtime declared by neither returns undefined — the same refusal every other
+ * constructor in this module makes when nobody measured the runtime.
+ *
+ * `reportedLine` is the harness's own refusal text: a path and an instruction, never credential
+ * content. It is bounded like every other echoed line.
+ */
+export function authRequiredFromHarness(
+  runtime: string | null | undefined,
+  reportedLine: string,
+): AuthRequiredEvidence | undefined {
+  if (!runtime) return undefined;
+  // The lookups ARE the narrowing, as in `authRequiredFromPreflight`: a key present in either record
+  // is a declared ResumeRuntime by construction, and an unknown name falls out as undefined.
+  const declared = runtime as ResumeRuntime;
+  const profile = RUNTIME_AUTH_PROFILES[declared];
+  const humanAction = profile?.humanAction ?? RUNTIME_AUTH_PREFLIGHT[declared]?.humanAction;
+  if (!humanAction) return undefined;
+  const trimmed = reportedLine.trim();
+  return {
+    runtime: declared,
+    matchedLine: trimmed.length > MAX_EVIDENCE_CHARS ? `${trimmed.slice(0, MAX_EVIDENCE_CHARS)}…` : trimmed,
+    humanAction,
+    ...(profile?.nonInteractiveRefresh ? { nonInteractiveRefresh: profile.nonInteractiveRefresh } : {}),
   };
 }
 
@@ -285,6 +417,27 @@ export function classifyAuthRequired(
     };
   }
   return undefined;
+}
+
+/**
+ * `t-2656d7` — read the auth-required evidence an error carries, if any.
+ *
+ * Structural rather than `instanceof`, and that is a decision with a reason: two unrelated classes
+ * already carry this field for the same meaning — `HarnessUnavailableError` (the launch boundary,
+ * before a pane) and `RuntimeLaunchReadinessError` (a rejected launch, after one) — and they live in
+ * layers that must not import each other. The alternative a caller would otherwise reach for is
+ * matching the message text, which is the failure mode this repository has paid for.
+ *
+ * Validation is deliberately narrow: this reads a value Tachyon itself attached one call earlier, so
+ * the check is "is this the shape we write?", not a parser for untrusted input.
+ */
+export function authRequiredOf(error: unknown): AuthRequiredEvidence | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const candidate = (error as { authRequired?: unknown }).authRequired;
+  if (typeof candidate !== "object" || candidate === null) return undefined;
+  const { runtime, humanAction } = candidate as { runtime?: unknown; humanAction?: unknown };
+  if (typeof runtime !== "string" || typeof humanAction !== "string") return undefined;
+  return candidate as AuthRequiredEvidence;
 }
 
 /** The human-facing sentence. Names runtime, agent and the safe action; never a credential. */
