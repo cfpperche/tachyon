@@ -807,7 +807,7 @@ async function confirmAndRemoveWorktree(
       ? vscode.l10n.t("Branch: {0} (created by Tachyon)", rec.branch)
       : vscode.l10n.t("Branch: {0} (pre-existing — will be kept)", rec.branch),
     vscode.l10n.t(
-      "Tachyon activity and pane transcripts are deleted. Runtime-native caches may remain and are not a uniform archive.",
+      "Tachyon activity, pane transcripts, and the agent private runtime home are deleted. A harness home keeps its runtime-native caches, which are not a uniform archive.",
     ),
   ];
   if (dirty > 0) lines.push(vscode.l10n.t("⚠ {0} uncommitted change(s) will be lost", dirty));
@@ -3577,7 +3577,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
       } else if (!forceArg) {
         const retention = vscode.l10n.t(
-          "Tachyon activity and pane transcripts are deleted. Runtime-native caches may remain and are not a uniform archive.",
+          "Tachyon activity, pane transcripts, and the agent private runtime home are deleted. A harness home keeps its runtime-native caches, which are not a uniform archive.",
         );
         const effects = temporary
           ? (hasSession

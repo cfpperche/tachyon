@@ -295,6 +295,12 @@ export function detectRuntimes(workspaceRoot: string): Set<Runtime> {
   // observed activity instead of every runtime the spawn API could hypothetically launch: dismiss/
   // forget owns removal of these homes, so this signal is transient and a workspace that never uses
   // Grok does not acquire an idle plugin block merely because Grok is supported by the product.
+  //
+  // t-7bc276 — "dismiss/forget owns removal of these homes" was an ASSERTION, not a fact, on the day
+  // it was written: nothing removed them, so this scan was the one reader whose answer a dead agent
+  // silently changed — one dismissed home kept a workspace classified as a Grok workspace forever.
+  // `forgetAgent`'s bridge-runtime-home footprint is what makes the sentence above true, and homes
+  // that predate it are reported by `reportOrphanBridgeRuntimeHomes` rather than removed unasked.
   try {
     const bridgeHomes = path.join(workspaceRoot, ".tachyon", "bridge-mcp");
     if (fs.readdirSync(bridgeHomes, { withFileTypes: true }).some((entry) => entry.isDirectory() && entry.name.endsWith(".grok"))) {

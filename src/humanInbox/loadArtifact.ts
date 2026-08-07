@@ -41,7 +41,8 @@ const IMAGE_MIME: Record<string, string> = {
   ".bmp": "image/bmp",
 };
 
-function humanBytes(bytes: number): string {
+/** One size, rounded the way a person reads it. Shared with the end-of-life disk receipts (t-7bc276). */
+export function humanBytes(bytes: number): string {
   return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 

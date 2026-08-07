@@ -743,6 +743,8 @@ export interface AgentManagerOptions {
   materializeHarness?: (ctx: { name: string; def: AgentEntry; cwd: string; delegated?: boolean }) => MaterializedHarness | null;
   /** Remove a materialized per-agent runtime config home at the agent's end-of-life. */
   removeHarnessHome?: (name: string) => void;
+  /** t-7bc276 — remove the private `bridge-mcp/<name>.<runtime>/` home at the agent's end-of-life. */
+  removeBridgeRuntimeHome?: (name: string) => void;
   /** Remove a managed Pi agent's private transcript namespace at ephemeral end-of-life. */
   removePiSessionDir?: (name: string) => void;
   /** Runtime-native, non-inference capability validation performed before tmux or worktree creation. */
@@ -4075,6 +4077,7 @@ export class AgentManager {
       workspaceRoot: this.opts.workspaceRoot,
       ledger: this.opts.ledger,
       removeHarnessHome: this.opts.removeHarnessHome,
+      removeBridgeRuntimeHome: this.opts.removeBridgeRuntimeHome,
       removePiSessionDir: this.opts.removePiSessionDir,
     });
   }

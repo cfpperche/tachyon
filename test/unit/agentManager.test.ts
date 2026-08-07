@@ -20,7 +20,7 @@ import {
   POST_CUT_SESSION_ATTESTATION_ENV,
   withPostCutAttestation,
 } from "../../src/agents/legacyFleetGate.js";
-import { HarnessManager, bridgeGrokHome, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
+import { HarnessManager, bridgeGrokHome, bridgeHermesHome, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
 import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
@@ -2063,6 +2063,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       mintAgentToken?: (name: string) => Record<string, string>;
       revokeAgentToken?: (name: string) => void;
       removeHarnessHome?: (name: string) => void;
+      removeBridgeRuntimeHome?: (name: string) => void;
       removePiSessionDir?: (name: string) => void;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prepareDeliveryJoin?: (name: string, request: any) => Promise<any>;
@@ -2200,6 +2201,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       mintAgentToken: opts.mintAgentToken,
       revokeAgentToken: opts.revokeAgentToken,
       removeHarnessHome: opts.removeHarnessHome,
+      removeBridgeRuntimeHome: opts.removeBridgeRuntimeHome,
       removePiSessionDir: opts.removePiSessionDir,
       launchPreflight: opts.launchPreflight ?? HERMETIC_PREFLIGHT,
     });
@@ -3870,6 +3872,38 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(fs.existsSync(logFile)).toBe(false); // gone with the row — no unreachable orphan
   });
 
+  // t-7bc276 — the door PRODUCTION uses. Bridge `dismiss_agent` and the UI dismiss both land on
+  // dismissTemporary, which is why this asserts there and not on forgetAgent: the removal existed in
+  // HarnessManager all along and simply never got called from here, so wiring is the whole defect.
+  it("dismissTemporary removes the private bridge-mcp runtime home a non-harness grok/hermes agent ran out of", async () => {
+    const { manager, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {
+      // Exactly how Workspace wires it — a fake would prove the test's own wiring, not the product's.
+      removeBridgeRuntimeHome: (name) => { new HarnessManager(ws).retireBridgeRuntimeHomes(name, { procRoot: path.join(ws, "no-proc") }); },
+    });
+    await manager.spawn("oneshot", { cmd: "grok", parent: "main" }); // Temporary → ledger row
+
+    // What grok actually writes there (measured 2026-08-07): a resumable session directory, plus the
+    // ~12.8 MB `bundled/` tree that is 98% of the cost and identical in every home.
+    const grokHome = bridgeGrokHome(ws, "oneshot");
+    const hermesHome = bridgeHermesHome(ws, "oneshot");
+    fs.mkdirSync(path.join(grokHome, "sessions", "s1"), { recursive: true });
+    fs.writeFileSync(path.join(grokHome, "sessions", "s1", "chat_history.jsonl"), '{"type":"system"}\n', "utf8");
+    fs.mkdirSync(path.join(grokHome, "bundled"), { recursive: true });
+    fs.writeFileSync(path.join(grokHome, "bundled", "asset.bin"), "x".repeat(1024), "utf8");
+    fs.mkdirSync(hermesHome, { recursive: true });
+    fs.writeFileSync(path.join(hermesHome, "state.db"), "db", "utf8");
+    // A sibling's home proves the removal is keyed by name and does not sweep the neighbours.
+    const sibling = bridgeGrokHome(ws, "survivor");
+    fs.mkdirSync(sibling, { recursive: true });
+    fs.writeFileSync(path.join(sibling, "config.toml"), "", "utf8");
+
+    manager.dismissTemporary("oneshot");
+
+    expect(fs.existsSync(grokHome)).toBe(false);
+    expect(fs.existsSync(hermesHome)).toBe(false);
+    expect(fs.existsSync(sibling)).toBe(true);
+  });
+
   it("removeEphemeralFootprint routes through canonical forgetAgent cleanup, idempotently (spec 247)", async () => {
     const removedHomes: string[] = [];
     const { manager, ledger, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", { removeHarnessHome: (name) => removedHomes.push(name) });
@@ -3929,6 +3963,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "activity log and writer state",
       "session-owner ledger rows",
       "private runtime-home credentials",
+      "private bridge-mcp runtime home",
       "legacy/idempotent Pi session subtree",
       "per-spawn settings file",
       "generated spawn brief and soul anchor",

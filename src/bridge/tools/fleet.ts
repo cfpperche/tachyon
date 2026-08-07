@@ -358,7 +358,8 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "in the roster — never a sibling, a parent, or an unrelated fleet member. An out-of-scope target is refused with a structured error naming " +
         "the target's owner. For a Temporary that owns a checkout this call also removes its worktree and branch, " +
         "which is why the scope is narrower than read-only tools'. For a Temporary, end-of-life removes " +
-        "Tachyon activity and pane transcripts. Runtime-native caches may remain and are not a uniform archive.",
+        "Tachyon activity, pane transcripts, and the private runtime home under .tachyon/bridge-mcp. A harness home " +
+        "under .tachyon/harness keeps its runtime-native caches, which are not a uniform archive.",
       inputSchema: { name: AGENT_NAME },
     },
     async ({ name }) => {
@@ -408,8 +409,10 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Dismiss a stopped Temporary managed entry from this workspace. This removes the ephemeral row and its durable " +
         "Temporary footprint; it is only valid for Temporary entries that are no longer running. Use kill_agent first for " +
-        "a running Temporary instance. Tachyon activity and pane transcripts are deleted. Runtime-native caches may remain " +
-        "and are not a uniform archive. Declared tachyon.yml agents cannot be dismissed through the Bridge.",
+        "a running Temporary instance. Tachyon activity and pane transcripts are deleted, and so is the private runtime " +
+        "home under .tachyon/bridge-mcp (grok/hermes) — with a receipt naming its size. A harness home under " +
+        ".tachyon/harness keeps its runtime-native caches, which are not a uniform archive. Declared tachyon.yml agents " +
+        "cannot be dismissed through the Bridge.",
       inputSchema: { name: AGENT_NAME },
     },
     async ({ name }) => {

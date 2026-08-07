@@ -458,7 +458,7 @@ export function listWorkspaceGrokPrivateHomes(workspaceRoot: string): string[] {
   const bridgeRoot = bridgeMcpRoot(workspaceRoot);
   try {
     for (const ent of fs.readdirSync(bridgeRoot, { withFileTypes: true })) {
-      if (ent.isDirectory() && ent.name.endsWith(".grok")) {
+      if (ent.isDirectory() && ent.name.endsWith(BRIDGE_RUNTIME_HOME_SUFFIXES.grok)) {
         homes.push(path.join(bridgeRoot, ent.name));
       }
     }
@@ -846,6 +846,39 @@ export function bridgeMcpRoot(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "bridge-mcp");
 }
 
+/**
+ * t-7bc276 — the runtimes whose private home under `bridge-mcp` is a DIRECTORY, keyed by the suffix
+ * that names it. Claude and opencode put a FILE there instead (`<agent>.json`, `<agent>.opencode.json`),
+ * which is exactly why the ownerless sweep never saw these: both enumerators feeding `removeBridgeMcp`
+ * are blind to a directory (`list()` reads `.tachyon/harness/`, `listBridgeMcp()` filters `isFile()`),
+ * and a NON-harness grok/hermes agent creates neither. Measured 2026-08-07: 35 dismissed `*.grok`
+ * homes had reached 2.2 GB, ~12.9 MB apiece the moment each agent took its first turn.
+ *
+ * This constant is the single source for BOTH halves — the path a home is materialized at and the
+ * scan that later finds it — so a third private-home runtime cannot be added on one side only. That
+ * one-sided addition IS the defect: `bridgeGrokHome` arrived with t-843576 and never joined a sweep.
+ */
+export const BRIDGE_RUNTIME_HOME_SUFFIXES = { grok: ".grok", hermes: ".hermes" } as const;
+
+export type BridgeRuntimeHomeRuntime = keyof typeof BRIDGE_RUNTIME_HOME_SUFFIXES;
+
+/** One private runtime home materialized under `bridge-mcp`, decoded back to its (agent, runtime). */
+export interface BridgeRuntimeHome {
+  agent: string;
+  runtime: BridgeRuntimeHomeRuntime;
+  path: string;
+}
+
+/** The private home path for one (agent, runtime) pair — the only place the suffix is applied. */
+export function bridgeRuntimeHome(workspaceRoot: string, agent: string, runtime: BridgeRuntimeHomeRuntime): string {
+  return path.join(bridgeMcpRoot(workspaceRoot), `${agent}${BRIDGE_RUNTIME_HOME_SUFFIXES[runtime]}`);
+}
+
+/** Every runtime that owns a private `bridge-mcp` home — the enumeration every sweep must walk. */
+export function bridgeRuntimeHomeRuntimes(): BridgeRuntimeHomeRuntime[] {
+  return Object.keys(BRIDGE_RUNTIME_HOME_SUFFIXES) as BridgeRuntimeHomeRuntime[];
+}
+
 /** The per-agent Bridge-only `--mcp-config` file appended (additively, no `--strict`) to a NON-harness
  *  claude agent so it reaches the Tachyon Bridge with zero workspace-file config (spec 236). */
 export function bridgeMcpPath(workspaceRoot: string, agent: string): string {
@@ -868,7 +901,7 @@ export function bridgeOpencodeMcpPath(workspaceRoot: string, agent: string): str
  * agent name never collides across runtimes.
  */
 export function bridgeGrokHome(workspaceRoot: string, agent: string): string {
-  return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.grok`);
+  return bridgeRuntimeHome(workspaceRoot, agent, "grok");
 }
 
 /**
@@ -1065,7 +1098,107 @@ function escapeRegExp(value: string): string {
  * Distinct dirname so a shared agent name never collides with grok/claude bridge files.
  */
 export function bridgeHermesHome(workspaceRoot: string, agent: string): string {
-  return path.join(bridgeMcpRoot(workspaceRoot), `${agent}.hermes`);
+  return bridgeRuntimeHome(workspaceRoot, agent, "hermes");
+}
+
+/**
+ * Every private runtime home under `bridge-mcp`, live or orphaned. Pure path scan — creates nothing.
+ * The directory NAME is the only index these homes have once the ledger row is gone, so decoding it
+ * back to (agent, runtime) is what makes an orphan nameable instead of merely large.
+ */
+export function listBridgeRuntimeHomes(workspaceRoot: string): BridgeRuntimeHome[] {
+  const root = bridgeMcpRoot(workspaceRoot);
+  const homes: BridgeRuntimeHome[] = [];
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch (e) {
+    if (!isErrnoCode(e, "ENOENT")) throw e;
+    return homes;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    for (const runtime of bridgeRuntimeHomeRuntimes()) {
+      const suffix = BRIDGE_RUNTIME_HOME_SUFFIXES[runtime];
+      // `.grok` alone is not `<agent>.grok`: an empty agent name would decode to "" and then let a
+      // keep-set miss match it, so a suffix-only directory is left to the human rather than claimed.
+      if (!entry.name.endsWith(suffix) || entry.name.length === suffix.length) continue;
+      homes.push({ agent: entry.name.slice(0, -suffix.length), runtime, path: path.join(root, entry.name) });
+      break;
+    }
+  }
+  return homes.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** What `retireBridgeRuntimeHomes` did to one private home, and what it weighed at that moment. */
+export interface BridgeRuntimeHomeRetirement extends BridgeRuntimeHome {
+  bytes: number;
+  files: number;
+  removed: boolean;
+  /** cwd of the live process that held the home, when removal was withheld for that reason. */
+  heldBy?: string;
+}
+
+/**
+ * Bytes on disk (apparent size) and file count of a subtree. Best-effort: unreadable entries are skipped.
+ *
+ * `maxFiles` bounds the walk because the caller on the startup path is measuring exactly the tree that
+ * motivated this — the real one held 41,948 files, and a report is not worth 42k stat calls before the
+ * workspace opens. A bounded answer says so through `truncated` so the reader knows it is a floor.
+ */
+export function measureDirUsage(dir: string, maxFiles = Number.POSITIVE_INFINITY): { bytes: number; files: number; truncated: boolean } {
+  let bytes = 0;
+  let files = 0;
+  let truncated = false;
+  const walk = (current: string): void => {
+    if (truncated) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (truncated) return;
+      const child = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        walk(child);
+        continue;
+      }
+      if (files >= maxFiles) {
+        truncated = true;
+        return;
+      }
+      files += 1;
+      try {
+        bytes += fs.lstatSync(child).size;
+      } catch {
+        /* vanished mid-walk — the count still reports it existed */
+      }
+    }
+  };
+  walk(dir);
+  return { bytes, files, truncated };
+}
+
+/**
+ * The cwd of a live process sitting inside one of `roots`, or undefined when every root is quiesced.
+ * `/proc/<pid>/cwd` is the only evidence available that a runtime still owns a private home; an
+ * absent `/proc` yields NO evidence and reads as quiesced, which is the pre-existing behaviour of
+ * the credential retirement this was extracted from.
+ */
+function liveProcessCwdInside(roots: readonly string[], procRoot: string): string | undefined {
+  try {
+    for (const entry of fs.readdirSync(procRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^\d+$/.test(entry.name) || Number(entry.name) === process.pid) continue;
+      let cwd: string;
+      try { cwd = fs.realpathSync(path.join(procRoot, entry.name, "cwd")); } catch { continue; }
+      if (roots.some((root) => cwd === root || cwd.startsWith(`${root}${path.sep}`))) return cwd;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return undefined;
 }
 
 /** True when `p` is a Tachyon-managed private Hermes home (bridge-mcp or harness). */
@@ -2927,29 +3060,21 @@ export class HarnessManager {
   }
 
   /**
-   * End-of-life security cleanup. Runtime caches are deliberately retained: unlike the ownerless
-   * GC above, a forget has no reliable way to prove that every cache writer has quiesced. Removing
-   * the credential leaves reinstall cache intact while ensuring a dead agent keeps no authority.
+   * End-of-life security cleanup: the dead agent keeps no authority. This removes the CREDENTIAL
+   * only and fails loud when it cannot, because authority left behind is the worse outcome; the
+   * bytes around it are `retireBridgeRuntimeHomes`' problem and it is allowed to give up quietly.
+   *
+   * t-7bc276 — an older comment here read "runtime caches are deliberately retained: a forget has no
+   * reliable way to prove that every cache writer has quiesced". The proof was already in this
+   * function: `liveProcessCwdInside` is exactly that evidence, and it now serves both callers.
    */
   retireCredentials(agent: string, test?: { procRoot?: string; beforeDelete?: (credential: string) => void }): void {
     const roots = [
       this.home(agent),
-      path.join(bridgeMcpRoot(this.workspaceRoot), `${agent}.grok`),
-      path.join(bridgeMcpRoot(this.workspaceRoot), `${agent}.hermes`),
+      ...bridgeRuntimeHomeRuntimes().map((runtime) => bridgeRuntimeHome(this.workspaceRoot, agent, runtime)),
     ];
-    const procRoot = test?.procRoot ?? "/proc";
-    try {
-      for (const entry of fs.readdirSync(procRoot, { withFileTypes: true })) {
-        if (!entry.isDirectory() || !/^\d+$/.test(entry.name) || Number(entry.name) === process.pid) continue;
-        let cwd: string;
-        try { cwd = fs.realpathSync(path.join(procRoot, entry.name, "cwd")); } catch { continue; }
-        if (roots.some((root) => cwd === root || cwd.startsWith(`${root}${path.sep}`))) {
-          throw new Error(`credential cleanup refused occupied runtime home: ${cwd}`);
-        }
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
+    const occupied = liveProcessCwdInside(roots, test?.procRoot ?? "/proc");
+    if (occupied) throw new Error(`credential cleanup refused occupied runtime home: ${occupied}`);
     for (const root of roots) {
       for (const relative of ["auth.json", path.join("data", "opencode", "auth.json")]) {
         const credential = path.join(root, relative);
@@ -2974,20 +3099,64 @@ export class HarnessManager {
     }
   }
 
+  /** Every private `bridge-mcp` runtime home in this workspace, live or orphaned (read-only). */
+  listBridgeRuntimeHomes(): BridgeRuntimeHome[] {
+    return listBridgeRuntimeHomes(this.workspaceRoot);
+  }
+
+  /**
+   * t-7bc276 — end-of-life removal of the private runtime homes under `bridge-mcp`. Measured before
+   * removal so the outcome can SAY what disappeared: a grok home costs ~12.9 MB the moment its first
+   * turn runs (`bundled/` alone is 12.84 MB and is identical in every home), and nothing reads any of
+   * it once the agent is gone — the two survivors that still touch the directory read the dirent name
+   * (`detectRuntimes`) and an `auth.json` this call's sibling already deleted.
+   *
+   * Removal is best-effort ON PURPOSE. A dismissal must not fail over garbage collection, and a
+   * directory a live process is still sitting in must not be pulled out from under it, so an occupied
+   * home is REPORTED and left standing rather than removed or thrown over. It stays nameable through
+   * `listBridgeRuntimeHomes`.
+   */
+  retireBridgeRuntimeHomes(
+    agent: string,
+    opts: { procRoot?: string; onOutcome?: (outcome: BridgeRuntimeHomeRetirement) => void } = {},
+  ): BridgeRuntimeHomeRetirement[] {
+    const outcomes: BridgeRuntimeHomeRetirement[] = [];
+    for (const runtime of bridgeRuntimeHomeRuntimes()) {
+      const home = bridgeRuntimeHome(this.workspaceRoot, agent, runtime);
+      try {
+        if (!fs.statSync(home).isDirectory()) continue;
+      } catch {
+        continue; // absent — nothing to retire, and never report a home that was never materialized
+      }
+      const usage = measureDirUsage(home);
+      const heldBy = liveProcessCwdInside([home], opts.procRoot ?? "/proc");
+      let removed = false;
+      if (!heldBy) {
+        try {
+          removeDirByRenameThenRm(home);
+          removed = true;
+        } catch {
+          /* reported as not removed; the orphan sweep names it again next start */
+        }
+      }
+      const outcome: BridgeRuntimeHomeRetirement = { agent, runtime, path: home, ...usage, removed, heldBy };
+      outcomes.push(outcome);
+      opts.onOutcome?.(outcome);
+    }
+    return outcomes;
+  }
+
   /** Names whose private runtime homes still contain credentials. Read-only reconciliation input. */
   credentialHomeNames(): string[] {
     const names = new Set<string>();
-    const collect = (root: string, decode: (entry: string) => string | undefined) => {
-      try {
-        for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-          if (!entry.isDirectory()) continue;
-          const name = decode(entry.name);
-          if (name) names.add(name);
-        }
-      } catch { /* absent root */ }
-    };
-    collect(harnessRoot(this.workspaceRoot), (entry) => entry);
-    collect(bridgeMcpRoot(this.workspaceRoot), (entry) => entry.endsWith(".grok") ? entry.slice(0, -5) : entry.endsWith(".hermes") ? entry.slice(0, -7) : undefined);
+    try {
+      for (const entry of fs.readdirSync(harnessRoot(this.workspaceRoot), { withFileTypes: true })) {
+        if (entry.isDirectory()) names.add(entry.name);
+      }
+    } catch { /* absent root */ }
+    // t-7bc276 — the same decoder the end-of-life sweep uses, rather than a second hand-rolled one
+    // that spelled the suffix lengths as -5 / -7 and would have to be found again for a third runtime.
+    for (const home of listBridgeRuntimeHomes(this.workspaceRoot)) names.add(home.agent);
     return [...names].filter((name) => {
       const roots = [this.home(name), bridgeGrokHome(this.workspaceRoot, name), bridgeHermesHome(this.workspaceRoot, name)];
       return roots.some((root) => ["auth.json", path.join("data", "opencode", "auth.json")].some((rel) => fs.existsSync(path.join(root, rel))));
