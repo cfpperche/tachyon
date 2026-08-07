@@ -69,6 +69,7 @@ describe("parseConfig", () => {
   });
 
   it("rejects a non-mapping document", () => {
+    // t-48dd8d — one of the two failures that stays a failure: there is no "rest of the file" to keep.
     expect(parseConfig("- just\n- a list\n").errors[0]).toContain("YAML mapping");
   });
 
@@ -89,36 +90,45 @@ describe("parseConfig", () => {
     }
   });
 
-  it("t-f67185: malformed agents/terminals still refuse (empty ≠ malformed)", () => {
-    const scalar = parseConfig('agents: "olá"\n');
-    expect(scalar.config).toBeUndefined();
-    expect(scalar.errors.some((e) => e.includes("'agents'") && e.includes("mapping"))).toBe(true);
-    expect(scalar.errors.some((e) => e.includes("non-empty"))).toBe(false);
+  /**
+   * t-48dd8d — this used to prove "empty ≠ malformed" by OUTCOME: an empty roster loaded and a
+   * malformed one took the file down. Since the owner's 2026-08-07 decision the two outcomes are the
+   * same empty roster, so the distinction moved to the DIAGNOSTIC — which is where it belongs, and is
+   * still the thing the guard was protecting. Discarding a malformed roster block is safe in the
+   * direction that matters: the entries it could not read are absent, never half-built.
+   */
+  it("t-f67185: a malformed agents/terminals block is discarded and SAYS so (empty ≠ malformed)", () => {
+    const empty = parseConfig("agents: {}\n");
+    expect(empty.warnings).toEqual([]);
 
-    const list = parseConfig("agents:\n  - one\n");
-    expect(list.config).toBeUndefined();
-    expect(list.errors.some((e) => e.includes("'agents'") && e.includes("mapping"))).toBe(true);
-
-    const termScalar = parseConfig("agents: {}\nterminals: oops\n");
-    expect(termScalar.config).toBeUndefined();
-    expect(termScalar.errors.some((e) => e.includes("'terminals'") && e.includes("mapping"))).toBe(true);
+    for (const [yaml, block] of [
+      ['agents: "olá"\n', "'agents'"],
+      ["agents:\n  - one\n", "'agents'"],
+      ["agents: {}\nterminals: oops\n", "'terminals'"],
+    ] as const) {
+      const result = parseConfig(yaml);
+      expect(result.errors, yaml).toEqual([]);
+      expect(result.config?.agents, yaml).toEqual({});
+      expect(result.warnings.some((e) => e.includes(block) && e.includes("mapping")), yaml).toBe(true);
+      expect(result.warnings.some((e) => e.includes("non-empty")), yaml).toBe(false);
+    }
   });
 
   it("requires cmd and validates field types with paths in messages", () => {
-    const { errors } = parseConfig(`agents:\n  bad:\n    cwd: 3\n`);
-    expect(errors.some((e) => e.includes("agents.bad.cmd"))).toBe(true);
+    const { warnings } = parseConfig(`agents:\n  bad:\n    cwd: 3\n`);
+    expect(warnings.some((e) => e.includes("agents.bad.cmd"))).toBe(true);
 
-    const { errors: e2 } = parseConfig(`agents:\n  a:\n    cmd: x\n    autostart: "yes"\n`);
+    const { warnings: e2 } = parseConfig(`agents:\n  a:\n    cmd: x\n    autostart: "yes"\n`);
     expect(e2[0]).toContain("agents.a.autostart");
 
-    const { errors: e3 } = parseConfig(`agents:\n  a:\n    cmd: x\n    env:\n      N: 1\n`);
+    const { warnings: e3 } = parseConfig(`agents:\n  a:\n    cmd: x\n    env:\n      N: 1\n`);
     expect(e3[0]).toContain("agents.a.env");
   });
 
   it("rejects invalid agent names and unknown keys", () => {
-    expect(parseConfig(`agents:\n  "1bad":\n    cmd: x\n`).errors[0]).toContain("invalid name");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    nope: 1\n`).errors[0]).toContain("unknown key 'nope'");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\ntypo: 1\n`).errors[0]).toContain("unknown top-level key 'typo'");
+    expect(parseConfig(`agents:\n  "1bad":\n    cmd: x\n`).warnings[0]).toContain("invalid name");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    nope: 1\n`).warnings[0]).toContain("unknown key 'nope'");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\ntypo: 1\n`).warnings[0]).toContain("unknown top-level key 'typo'");
   });
 
   it("spec 352 — parses subagents and derives child-side declaredOwner metadata", () => {
@@ -145,7 +155,7 @@ describe("parseConfig", () => {
       ["agents:\n  a:\n    cmd: claude\n    subagents: [b]\n  b:\n    cmd: codex\n    subagents: [c]\n  c:\n    cmd: claude\n", "agents.a.subagents: 'b' declares its own subagents"],
     ];
     for (const [yaml, expected] of cases) {
-      expect(parseConfig(yaml).errors.some((e) => e.includes(expected))).toBe(true);
+      expect(parseConfig(yaml).warnings.some((e) => e.includes(expected))).toBe(true);
     }
   });
 
@@ -185,9 +195,9 @@ describe("parseConfig", () => {
   });
 
   it("spec 352 — rejects subagents on terminal entries and malformed lists before semantic validation", () => {
-    expect(parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    subagents: [a]\n`).errors.some((e) => e.includes("'subagents' applies only to agents"))).toBe(true);
-    expect(parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    subagents: [a]\n`).errors.some((e) => e.includes("'subagents' applies only to agents"))).toBe(true);
-    expect(parseConfig(`agents:\n  a:\n    cmd: claude\n    subagents: ghost\n`).errors.some((e) => e.includes("subagents: must be a non-empty list"))).toBe(true);
+    expect(parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    subagents: [a]\n`).warnings.some((e) => e.includes("'subagents' applies only to agents"))).toBe(true);
+    expect(parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    subagents: [a]\n`).warnings.some((e) => e.includes("'subagents' applies only to agents"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: claude\n    subagents: ghost\n`).warnings.some((e) => e.includes("subagents: must be a non-empty list"))).toBe(true);
   });
 
   it("tolerates a legacy layouts: block + settings.layout (feature retired — recognized, ignored, no error)", () => {
@@ -202,49 +212,49 @@ describe("parseConfig", () => {
 
   it("validates settings.maxAgents", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
-    expect(parseConfig(`${base}settings:\n  maxAgents: 0\n`).errors[0]).toContain("maxAgents");
-    expect(parseConfig(`${base}settings:\n  maxAgents: 2.5\n`).errors[0]).toContain("maxAgents");
-    expect(parseConfig(`${base}settings:\n  other: 1\n`).errors[0]).toContain("unknown key 'other'");
+    expect(parseConfig(`${base}settings:\n  maxAgents: 0\n`).warnings[0]).toContain("maxAgents");
+    expect(parseConfig(`${base}settings:\n  maxAgents: 2.5\n`).warnings[0]).toContain("maxAgents");
+    expect(parseConfig(`${base}settings:\n  other: 1\n`).warnings[0]).toContain("unknown key 'other'");
   });
 
   it("parses settings.companion.tabTools (SDD 414 tool list opt-in)", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     const on = parseConfig(`${base}settings:\n  companion:\n    tabTools: true\n`);
-    expect(on.errors).toEqual([]);
+    expect(on.warnings).toEqual([]);
     expect(on.config?.settings.companion?.tabTools).toBe(true);
     const off = parseConfig(`${base}settings:\n  companion:\n    tabTools: false\n`);
-    expect(off.errors).toEqual([]);
+    expect(off.warnings).toEqual([]);
     expect(off.config?.settings.companion?.tabTools).toBe(false);
     const absent = parseConfig(`${base}settings:\n  maxAgents: 2\n`);
     expect(absent.config?.settings.companion).toBeUndefined();
-    expect(parseConfig(`${base}settings:\n  companion:\n    tabTools: yes\n`).errors[0]).toContain("tabTools");
-    expect(parseConfig(`${base}settings:\n  companion:\n    nope: true\n`).errors[0]).toContain("unknown key");
+    expect(parseConfig(`${base}settings:\n  companion:\n    tabTools: yes\n`).warnings[0]).toContain("tabTools");
+    expect(parseConfig(`${base}settings:\n  companion:\n    nope: true\n`).warnings[0]).toContain("unknown key");
   });
 
   it("parses settings.ideBrowser.enabled + homeUrl (SDD 488 F4 GA gate)", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     const on = parseConfig(`${base}settings:\n  ideBrowser:\n    enabled: true\n    homeUrl: https://app.local\n`);
-    expect(on.errors).toEqual([]);
+    expect(on.warnings).toEqual([]);
     expect(on.config?.settings.ideBrowser?.enabled).toBe(true);
     expect(on.config?.settings.ideBrowser?.homeUrl).toBe("https://app.local");
     const off = parseConfig(`${base}settings:\n  ideBrowser:\n    enabled: false\n`);
-    expect(off.errors).toEqual([]);
+    expect(off.warnings).toEqual([]);
     expect(off.config?.settings.ideBrowser?.enabled).toBe(false);
     const absent = parseConfig(`${base}settings:\n  maxAgents: 2\n`);
     expect(absent.config?.settings.ideBrowser).toBeUndefined();
-    expect(parseConfig(`${base}settings:\n  ideBrowser:\n    enabled: yes\n`).errors[0]).toContain("enabled");
-    expect(parseConfig(`${base}settings:\n  ideBrowser:\n    nope: true\n`).errors[0]).toContain("unknown key");
+    expect(parseConfig(`${base}settings:\n  ideBrowser:\n    enabled: yes\n`).warnings[0]).toContain("enabled");
+    expect(parseConfig(`${base}settings:\n  ideBrowser:\n    nope: true\n`).warnings[0]).toContain("unknown key");
   });
 
   it("parses settings.companion.lanAccess (SDD 422 phone LAN reachability)", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     const on = parseConfig(`${base}settings:\n  companion:\n    lanAccess: true\n`);
-    expect(on.errors).toEqual([]);
+    expect(on.warnings).toEqual([]);
     expect(on.config?.settings.companion?.lanAccess).toBe(true);
     const off = parseConfig(`${base}settings:\n  companion:\n    lanAccess: false\n`);
-    expect(off.errors).toEqual([]);
+    expect(off.warnings).toEqual([]);
     expect(off.config?.settings.companion?.lanAccess).toBe(false);
-    expect(parseConfig(`${base}settings:\n  companion:\n    lanAccess: yes\n`).errors[0]).toContain("lanAccess");
+    expect(parseConfig(`${base}settings:\n  companion:\n    lanAccess: yes\n`).warnings[0]).toContain("lanAccess");
   });
 
   it("parses settings.tmux: bool -> on/off, number -> string, string literal", () => {
@@ -256,24 +266,24 @@ describe("parseConfig", () => {
 
   it("rejects a bad tmux option name and the reserved remain-on-exit", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
-    expect(parseConfig(`${base}settings:\n  tmux:\n    "Bad Key": on\n`).errors[0]).toContain("invalid option name");
-    expect(parseConfig(`${base}settings:\n  tmux:\n    remain-on-exit: off\n`).errors[0]).toContain("reserved");
+    expect(parseConfig(`${base}settings:\n  tmux:\n    "Bad Key": on\n`).warnings[0]).toContain("invalid option name");
+    expect(parseConfig(`${base}settings:\n  tmux:\n    remain-on-exit: off\n`).warnings[0]).toContain("reserved");
   });
 
   // t-9713ff — a workspace file must not be able to let the fleet's server end itself when idle.
   it("rejects the reserved exit-empty", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
-    const errs = parseConfig(`${base}settings:\n  tmux:\n    exit-empty: on\n`).errors[0];
-    expect(errs).toContain("reserved");
-    expect(errs).toContain("exit-empty");
+    const warned = parseConfig(`${base}settings:\n  tmux:\n    exit-empty: on\n`).warnings[0];
+    expect(warned).toContain("reserved");
+    expect(warned).toContain("exit-empty");
   });
 
   it("validates settings.bridgePort", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     expect(parseConfig(`${base}settings:\n  bridgePort: 45123\n`).config?.settings.bridgePort).toBe(45123);
-    expect(parseConfig(`${base}settings:\n  bridgePort: 80\n`).errors[0]).toContain("bridgePort");
-    expect(parseConfig(`${base}settings:\n  bridgePort: 99999\n`).errors[0]).toContain("bridgePort");
-    expect(parseConfig(`${base}settings:\n  bridgePort: "4000"\n`).errors[0]).toContain("bridgePort");
+    expect(parseConfig(`${base}settings:\n  bridgePort: 80\n`).warnings[0]).toContain("bridgePort");
+    expect(parseConfig(`${base}settings:\n  bridgePort: 99999\n`).warnings[0]).toContain("bridgePort");
+    expect(parseConfig(`${base}settings:\n  bridgePort: "4000"\n`).warnings[0]).toContain("bridgePort");
   });
 
   // spec 210 — worktree config surface
@@ -297,19 +307,19 @@ describe("parseConfig", () => {
 
   it("validates agent worktree fields (type + branch chars)", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
-    expect(parseConfig(`${base.replace("cmd: x", 'cmd: x\n    worktree: "yes"')}`).errors[0]).toContain("worktree: must be a boolean");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    branch: "bad branch"\n`).errors[0]).toContain("branch: must not contain whitespace");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    branch: "feat/..hack"\n`).errors[0]).toContain("'..'");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    worktreeSetup: []\n`).errors[0]).toContain("worktreeSetup");
+    expect(parseConfig(`${base.replace("cmd: x", 'cmd: x\n    worktree: "yes"')}`).warnings[0]).toContain("worktree: must be a boolean");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    branch: "bad branch"\n`).warnings[0]).toContain("branch: must not contain whitespace");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    branch: "feat/..hack"\n`).warnings[0]).toContain("'..'");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    worktreeSetup: []\n`).warnings[0]).toContain("worktreeSetup");
   });
 
   it("parses settings.worktree.{base,branch} and requires {agent} in the template", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     const ok = parseConfig(`${base}settings:\n  worktree:\n    base: ~/.cache/tachyon/worktrees\n    branch: "tachyon/{agent}"\n`);
-    expect(ok.errors).toEqual([]);
+    expect(ok.warnings).toEqual([]);
     expect(ok.config?.settings.worktree).toEqual({ base: "~/.cache/tachyon/worktrees", branch: "tachyon/{agent}" });
-    expect(parseConfig(`${base}settings:\n  worktree:\n    branch: "tachyon/fixed"\n`).errors[0]).toContain("{agent}");
-    expect(parseConfig(`${base}settings:\n  worktree:\n    nope: 1\n`).errors[0]).toContain("unknown key 'nope'");
+    expect(parseConfig(`${base}settings:\n  worktree:\n    branch: "tachyon/fixed"\n`).warnings[0]).toContain("{agent}");
+    expect(parseConfig(`${base}settings:\n  worktree:\n    nope: 1\n`).warnings[0]).toContain("unknown key 'nope'");
   });
 
   // spec 214 — verify-gate config surface
@@ -323,9 +333,9 @@ describe("parseConfig", () => {
   });
 
   it("rejects an empty / non-string verify (agent + global)", () => {
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    verify: "   "\n`).errors[0]).toContain("verify");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    verify: 3\n`).errors[0]).toContain("verify");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  worktree:\n    verify: ""\n`).errors[0]).toContain("settings.worktree.verify");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    verify: "   "\n`).warnings[0]).toContain("verify");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    verify: 3\n`).warnings[0]).toContain("verify");
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  worktree:\n    verify: ""\n`).warnings[0]).toContain("settings.worktree.verify");
   });
 
   it("parses the closed project-owned settings.verify contract without touching spec-214 worktree verify", () => {
@@ -360,11 +370,11 @@ describe("parseConfig", () => {
 
   it("keeps settings.verify closed and rejects empty full, typecheck, and affected commands", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
-    expect(parseConfig(`${base}settings:\n  verify: nope\n`).errors[0]).toContain("settings.verify");
-    expect(parseConfig(`${base}settings:\n  verify:\n    full: ""\n`).errors[0]).toContain("settings.verify.full");
-    expect(parseConfig(`${base}settings:\n  verify:\n    typecheck: 3\n`).errors[0]).toContain("settings.verify.typecheck");
-    expect(parseConfig(`${base}settings:\n  verify:\n    affected: "   "\n`).errors[0]).toContain("settings.verify.affected");
-    expect(parseConfig(`${base}settings:\n  verify:\n    extra: true\n`).errors[0]).toContain("settings.verify: unknown key 'extra'");
+    expect(parseConfig(`${base}settings:\n  verify: nope\n`).warnings[0]).toContain("settings.verify");
+    expect(parseConfig(`${base}settings:\n  verify:\n    full: ""\n`).warnings[0]).toContain("settings.verify.full");
+    expect(parseConfig(`${base}settings:\n  verify:\n    typecheck: 3\n`).warnings[0]).toContain("settings.verify.typecheck");
+    expect(parseConfig(`${base}settings:\n  verify:\n    affected: "   "\n`).warnings[0]).toContain("settings.verify.affected");
+    expect(parseConfig(`${base}settings:\n  verify:\n    extra: true\n`).warnings[0]).toContain("settings.verify: unknown key 'extra'");
   });
 
 
@@ -379,17 +389,17 @@ describe("parseConfig", () => {
 
   it("keeps settings.projectGuidance a closed mapping with a required non-empty files list", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
-    expect(parseConfig(`${base}settings:\n  projectGuidance: docs/guide.md\n`).errors[0]).toContain("must be a mapping");
-    expect(parseConfig(`${base}settings:\n  projectGuidance: {}\n`).errors.some((error) => error.includes("non-empty list"))).toBe(true);
-    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: []\n`).errors.some((error) => error.includes("non-empty list"))).toBe(true);
-    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: [docs/guide.md]\n    inline: nope\n`).errors.some((error) => error.includes("unknown key 'inline'"))).toBe(true);
-    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: [3]\n`).errors.some((error) => error.includes("files[0]") && error.includes("path string"))).toBe(true);
+    expect(parseConfig(`${base}settings:\n  projectGuidance: docs/guide.md\n`).warnings[0]).toContain("must be a mapping");
+    expect(parseConfig(`${base}settings:\n  projectGuidance: {}\n`).warnings.some((error) => error.includes("non-empty list"))).toBe(true);
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: []\n`).warnings.some((error) => error.includes("non-empty list"))).toBe(true);
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: [docs/guide.md]\n    inline: nope\n`).warnings.some((error) => error.includes("unknown key 'inline'"))).toBe(true);
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files: [3]\n`).warnings.some((error) => error.includes("files[0]") && error.includes("path string"))).toBe(true);
   });
 
   it("validates project-guidance count, uniqueness, and conservative POSIX-relative path syntax", () => {
     const base = `agents:\n  a:\n    cmd: x\n`;
     const parsePath = (sourcePath: string) =>
-      parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n      - ${JSON.stringify(sourcePath)}\n`).errors;
+      parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n      - ${JSON.stringify(sourcePath)}\n`).warnings;
 
     for (const sourcePath of [
       "/outside.md",
@@ -413,13 +423,13 @@ describe("parseConfig", () => {
     const duplicate = parseConfig(
       `${base}settings:\n  projectGuidance:\n    files:\n      - docs/guide.md\n      - " docs/guide.md "\n`,
     );
-    expect(duplicate.errors.some((error) => error.includes("duplicate path"))).toBe(true);
+    expect(duplicate.warnings.some((error) => error.includes("duplicate path"))).toBe(true);
 
     const tooMany = Array.from({ length: PROJECT_GUIDANCE_MAX_FILES + 1 }, (_, index) => `      - docs/${index}.md`).join("\n");
-    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n${tooMany}\n`).errors.some((error) => error.includes("at most 8 paths"))).toBe(true);
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n${tooMany}\n`).warnings.some((error) => error.includes("at most 8 paths"))).toBe(true);
 
     const maximum = Array.from({ length: PROJECT_GUIDANCE_MAX_FILES }, (_, index) => `      - docs/${index}.md`).join("\n");
-    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n${maximum}\n`).errors).toEqual([]);
+    expect(parseConfig(`${base}settings:\n  projectGuidance:\n    files:\n${maximum}\n`).warnings).toEqual([]);
   });
 
   // spec 215 — the terminals: block
@@ -442,16 +452,16 @@ describe("parseConfig", () => {
   });
 
   it("rejects kind / instructions inside terminals: (kind implied, no AI) — single clear error, no 'unknown key' dup", () => {
-    const k = parseConfig(`terminals:\n  dev:\n    cmd: x\n    kind: agent\n`).errors;
+    const k = parseConfig(`terminals:\n  dev:\n    cmd: x\n    kind: agent\n`).warnings;
     expect(k.some((e) => e.includes("remove 'kind'"))).toBe(true);
     expect(k.some((e) => e.includes("unknown key 'kind'"))).toBe(false); // #4 review fix: not double-reported
-    expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    instructions: hi\n`).errors[0]).toContain("instructions");
-    expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    nope: 1\n`).errors[0]).toContain("unknown key 'nope'");
+    expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    instructions: hi\n`).warnings[0]).toContain("instructions");
+    expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    nope: 1\n`).warnings[0]).toContain("unknown key 'nope'");
   });
 
   it("rejects an agents↔terminals name collision (one namespace)", () => {
-    const { errors } = parseConfig(`agents:\n  dev:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n`);
-    expect(errors[0]).toContain("already declared under agents");
+    const { warnings } = parseConfig(`agents:\n  dev:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n`);
+    expect(warnings[0]).toContain("already declared under agents");
   });
 
   it("t-f67185: empty agents: and empty terminals: are both valid empty rosters", () => {
@@ -474,16 +484,16 @@ describe("parseConfig", () => {
     expect(asAgent(config?.agents.rev)?.role).toBe("reviewer");
   });
   it("rejects an unknown role", () => {
-    const { errors } = parseConfig(`agents:\n  a:\n    cmd: claude\n    role: architect\n`);
-    expect(errors.some((e) => e.includes("role: must be one of"))).toBe(true);
+    const { warnings } = parseConfig(`agents:\n  a:\n    cmd: claude\n    role: architect\n`);
+    expect(warnings.some((e) => e.includes("role: must be one of"))).toBe(true);
   });
   it("rejects role under terminals:", () => {
-    const { errors } = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    role: coder\n`);
-    expect(errors.some((e) => e.includes("'role' applies only to agents"))).toBe(true);
+    const { warnings } = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    role: coder\n`);
+    expect(warnings.some((e) => e.includes("'role' applies only to agents"))).toBe(true);
   });
   it("rejects role on an agents: entry with kind: terminal (old-style)", () => {
-    const { errors } = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    role: coder\n`);
-    expect(errors.some((e) => e.includes("'role' applies only to agents"))).toBe(true);
+    const { warnings } = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    role: coder\n`);
+    expect(warnings.some((e) => e.includes("'role' applies only to agents"))).toBe(true);
   });
   it("no role = no role field (today's behavior)", () => {
     const { config } = parseConfig(`agents:\n  a:\n    cmd: claude\n`);
@@ -496,9 +506,9 @@ describe("parseConfig", () => {
     expect(config?.settings.bridgeGuidance).toBe(false);
   });
   it("rejects bad anchor/bridgeGuidance types and unknown anchor keys", () => {
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    auto: "yes"\n`).errors.some((e) => e.includes("anchor.auto: must be a boolean"))).toBe(true);
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: 1\n`).errors.some((e) => e.includes("bridgeGuidance: must be a boolean"))).toBe(true);
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    foo: true\n`).errors.some((e) => e.includes("anchor: unknown key 'foo'"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    auto: "yes"\n`).warnings.some((e) => e.includes("anchor.auto: must be a boolean"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: 1\n`).warnings.some((e) => e.includes("bridgeGuidance: must be a boolean"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    foo: true\n`).warnings.some((e) => e.includes("anchor: unknown key 'foo'"))).toBe(true);
   });
 
   // t-09edf2 — settings.agentHookProjection: which installed plugins' hooks reach an agent's own session
@@ -510,13 +520,13 @@ describe("parseConfig", () => {
   it("refuses an unknown hook class WHOLE rather than keeping the entries it understood", () => {
     // Half a policy is the failure mode this key exists to prevent: the human would read a green load as
     // "the gate is on" while the plugin they typo'd projects nothing.
-    const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  agentHookProjection:\n    secrets-guard: enforcement\n    other: gate\n`);
-    expect(errors.some((e) => e.includes("agentHookProjection.other: must be one of"))).toBe(true);
+    const { config, warnings } = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  agentHookProjection:\n    secrets-guard: enforcement\n    other: gate\n`);
+    expect(warnings.some((e) => e.includes("agentHookProjection.other: must be one of"))).toBe(true);
     expect(config?.settings.agentHookProjection).toBeUndefined();
   });
   it("rejects a non-mapping settings.agentHookProjection", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  agentHookProjection: enforcement\n`)
-      .errors.some((e) => e.includes("agentHookProjection: must be a mapping"))).toBe(true);
+      .warnings.some((e) => e.includes("agentHookProjection: must be a mapping"))).toBe(true);
   });
 
   it("t-84f0eb: parses an authored per-agent Grok permission projection and stays off when absent", () => {
@@ -536,7 +546,7 @@ describe("parseConfig", () => {
     ]) {
       const result = parseConfig(`agents:\n  boss:\n    cmd: claude\nsettings:\n  agentPermissionProjection:\n    reader:\n      ${entry}\n`);
       expect(result.config?.settings.agentPermissionProjection).toBeUndefined();
-      expect(result.errors.join("\n")).toContain("settings.agentPermissionProjection.reader");
+      expect(result.warnings.join("\n")).toContain("settings.agentPermissionProjection.reader");
     }
   });
 
@@ -564,7 +574,7 @@ describe("parseConfig", () => {
     ]) {
       const result = parseConfig(`agents:\n  boss:\n    cmd: claude\nsettings:\n  agentPermissionProjection:\n    writer:\n      ${entry}\n`);
       expect(result.config?.settings.agentPermissionProjection).toBeUndefined();
-      expect(result.errors.join("\n")).toContain("settings.agentPermissionProjection.writer");
+      expect(result.warnings.join("\n")).toContain("settings.agentPermissionProjection.writer");
     }
   });
 
@@ -572,7 +582,7 @@ describe("parseConfig", () => {
   it("parses settings.clipboard auto/off and rejects other values", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: auto\n`).config?.settings.clipboard).toBe("auto");
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: off\n`).config?.settings.clipboard).toBe("off");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: yes\n`).errors.some((e) => e.includes("clipboard: must be 'auto' or 'off'"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  clipboard: yes\n`).warnings.some((e) => e.includes("clipboard: must be 'auto' or 'off'"))).toBe(true);
   });
 
   // spec 245 — settings.handoff (path + nudgeEvery)
@@ -580,17 +590,20 @@ describe("parseConfig", () => {
     const ok = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    path: docs/HANDOFF.md\n    nudgeEvery: 1h\n`);
     expect(ok.config?.settings.handoff).toEqual({ path: "docs/HANDOFF.md", nudgeEvery: "1h" });
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    nudgeEvery: off\n`).config?.settings.handoff?.nudgeEvery).toBe("off");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    path: ""\n`).errors.some((e) => e.includes("handoff.path: must be a non-empty string"))).toBe(true);
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    nudgeEvery: soon\n`).errors.some((e) => e.includes("handoff.nudgeEvery"))).toBe(true);
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    bogus: 1\n`).errors.some((e) => e.includes("handoff: unknown key 'bogus'"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    path: ""\n`).warnings.some((e) => e.includes("handoff.path: must be a non-empty string"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    nudgeEvery: soon\n`).warnings.some((e) => e.includes("handoff.nudgeEvery"))).toBe(true);
+    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  handoff:\n    bogus: 1\n`).warnings.some((e) => e.includes("handoff: unknown key 'bogus'"))).toBe(true);
   });
 
   // t-7bcba6 — obsolete silentHooks kill switch is rejected (cannot disable silent hooks)
   it("rejects obsolete settings.persistence / silentHooks", () => {
     const r = parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  persistence:\n    silentHooks: false\n`);
-    expect(r.config).toBeUndefined();
-    expect(r.errors.some((e) => e.includes("settings.persistence is obsolete"))).toBe(true);
-    expect(r.errors.some((e) => e.includes("silentHooks"))).toBe(true);
+    // The key is obsolete, not dangerous: absence is the only state the product has, so it is
+    // discarded by name and the rest of the file loads.
+    expect(r.config).toBeDefined();
+    expect(r.config?.settings).not.toHaveProperty("persistence");
+    expect(r.warnings.some((e) => e.includes("settings.persistence is obsolete"))).toBe(true);
+    expect(r.warnings.some((e) => e.includes("silentHooks"))).toBe(true);
   });
 
   // spec 358 phase 2 — deprecated transcript isolation config remains read-compatible
@@ -604,8 +617,8 @@ describe("parseConfig", () => {
       ]);
     });
     it("rejects an unknown value", () => {
-      const { errors } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: full\n");
-      expect(errors.some((e) => /isolate: deprecated; the only legacy-compatible value is 'transcript'/.test(e))).toBe(true);
+      const { warnings } = parseConfig("agents:\n  reviewer:\n    cmd: claude\n    isolate: full\n");
+      expect(warnings.some((e) => /isolate: deprecated; the only legacy-compatible value is 'transcript'/.test(e))).toBe(true);
     });
     it("loads on a codex agent with the same warning", () => {
       const { config, errors, warnings } = parseConfig("agents:\n  c:\n    cmd: codex\n    isolate: transcript\n");
@@ -614,25 +627,25 @@ describe("parseConfig", () => {
       expect(warnings[0]).toContain("codex is private-home by default");
     });
     it("rejects non-claude/codex agents", () => {
-      const { errors } = parseConfig("agents:\n  c:\n    cmd: opencode\n    isolate: transcript\n");
-      expect(errors.some((e) => /deprecated legacy mode is only compatible with claude\/codex agents/.test(e))).toBe(true);
+      const { warnings } = parseConfig("agents:\n  c:\n    cmd: opencode\n    isolate: transcript\n");
+      expect(warnings.some((e) => /deprecated legacy mode is only compatible with claude\/codex agents/.test(e))).toBe(true);
     });
     it("rejects terminals", () => {
-      const { errors } = parseConfig("terminals:\n  sh:\n    cmd: claude\n    isolate: transcript\n");
-      expect(errors.some((e) => /'isolate' applies only to agents/.test(e))).toBe(true);
+      const { warnings } = parseConfig("terminals:\n  sh:\n    cmd: claude\n    isolate: transcript\n");
+      expect(warnings.some((e) => /'isolate' applies only to agents/.test(e))).toBe(true);
     });
     it("rejects a user-set env.CLAUDE_CONFIG_DIR (Tachyon owns the home)", () => {
-      const { errors } = parseConfig("agents:\n  r:\n    cmd: claude\n    isolate: transcript\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n");
-      expect(errors.some((e) => /isolate: remove 'env.CLAUDE_CONFIG_DIR'/.test(e))).toBe(true);
+      const { warnings } = parseConfig("agents:\n  r:\n    cmd: claude\n    isolate: transcript\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n");
+      expect(warnings.some((e) => /isolate: remove 'env.CLAUDE_CONFIG_DIR'/.test(e))).toBe(true);
     });
     it("rejects a user-set env.CODEX_HOME (Tachyon owns the home)", () => {
-      const { errors } = parseConfig("agents:\n  r:\n    cmd: codex\n    isolate: transcript\n    env:\n      CODEX_HOME: /tmp/x\n");
-      expect(errors.some((e) => /isolate: remove 'env.CODEX_HOME'/.test(e))).toBe(true);
+      const { warnings } = parseConfig("agents:\n  r:\n    cmd: codex\n    isolate: transcript\n    env:\n      CODEX_HOME: /tmp/x\n");
+      expect(warnings.some((e) => /isolate: remove 'env.CODEX_HOME'/.test(e))).toBe(true);
     });
 
     it.each(["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"])("SDD 401: rejects Pi-owned env %s", (owned) => {
-      const { errors } = parseConfig(`agents:\n  pi:\n    cmd: pi\n    env:\n      ${owned}: /tmp/user-owned\n`);
-      expect(errors.some((e) => e.includes(`remove '${owned}'`) && e.includes("Tachyon owns Pi"))).toBe(true);
+      const { warnings } = parseConfig(`agents:\n  pi:\n    cmd: pi\n    env:\n      ${owned}: /tmp/user-owned\n`);
+      expect(warnings.some((e) => e.includes(`remove '${owned}'`) && e.includes("Tachyon owns Pi"))).toBe(true);
     });
   });
 
@@ -663,11 +676,11 @@ describe("parseConfig", () => {
     });
 
     it("rejects inherit: global (v1 follow pass)", () => {
-      expect(parseConfig(harnessYml(`      inherit: global\n      mcp:\n        s:\n          command: x\n`)).errors.some((e) => e.includes("inherit: 'global' is not supported"))).toBe(true);
+      expect(parseConfig(harnessYml(`      inherit: global\n      mcp:\n        s:\n          command: x\n`)).warnings.some((e) => e.includes("inherit: 'global' is not supported"))).toBe(true);
     });
 
     it("rejects a literal (non-${VAR}) env value (H7 — no secret on disk)", () => {
-      expect(parseConfig(harnessYml(`      mcp:\n        s:\n          command: x\n          env:\n            FAL_KEY: sk-literal-secret\n`)).errors.some((e) => e.includes("exact ${VAR} reference"))).toBe(true);
+      expect(parseConfig(harnessYml(`      mcp:\n        s:\n          command: x\n          env:\n            FAL_KEY: sk-literal-secret\n`)).warnings.some((e) => e.includes("exact ${VAR} reference"))).toBe(true);
     });
 
     it("accepts harness on a codex agent", () => {
@@ -691,18 +704,18 @@ describe("parseConfig", () => {
     });
 
     it("spec 311: rejects codex harness rules and points to instructions", () => {
-      const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`);
-      expect(errors.some((e) => e.includes("use 'instructions'"))).toBe(true);
+      const { warnings } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`);
+      expect(warnings.some((e) => e.includes("use 'instructions'"))).toBe(true);
     });
 
     it("rejects a codex harness with no accepted capability", () => {
-      const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      inherit: none\n`);
-      expect(errors.some((e) => e.includes("declare at least one"))).toBe(true);
+      const { warnings } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      inherit: none\n`);
+      expect(warnings.some((e) => e.includes("declare at least one"))).toBe(true);
     });
 
     it("rejects codex harness env aliases because Codex env_vars forwards keys", () => {
-      const { errors } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n          env:\n            API_KEY: \${SECRET}\n`);
-      expect(errors.some((e) => e.includes("codex requires the env key to match its reference"))).toBe(true);
+      const { warnings } = parseConfig(`agents:\n  c:\n    cmd: codex\n    harness:\n      mcp:\n        s:\n          command: x\n          env:\n            API_KEY: \${SECRET}\n`);
+      expect(warnings.some((e) => e.includes("codex requires the env key to match its reference"))).toBe(true);
     });
 
     it("spec 406: parses Pi's workspace-local resource allowlists", () => {
@@ -729,9 +742,9 @@ describe("parseConfig", () => {
 
     it("spec 406: rejects empty Pi harnesses and inherit:none", () => {
       const empty = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness: {}\n`);
-      expect(empty.errors.some((e) => e.includes("declare at least one of extensions"))).toBe(true);
+      expect(empty.warnings.some((e) => e.includes("declare at least one of extensions"))).toBe(true);
       const noInherit = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness:\n      inherit: none\n      skills: skills/review\n`);
-      expect(noInherit.errors.some((e) => e.includes("pi resource harnesses do not support 'none'"))).toBe(true);
+      expect(noInherit.warnings.some((e) => e.includes("pi resource harnesses do not support 'none'"))).toBe(true);
     });
 
     it.each(["mcp", "hooks", "rules", "instructions"])("spec 406: rejects Pi harness capability %s", (key) => {
@@ -740,8 +753,8 @@ describe("parseConfig", () => {
         : key === "hooks"
           ? "      hooks:\n        SessionStart: []\n"
           : `      ${key}: guidance.md\n`;
-      const { errors } = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness:\n${value}      skills: skills/review\n`);
-      expect(errors.some((e) => e.includes("pi does not support") && e.includes(key))).toBe(true);
+      const { warnings } = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness:\n${value}      skills: skills/review\n`);
+      expect(warnings.some((e) => e.includes("pi does not support") && e.includes(key))).toBe(true);
     });
 
     it.each([
@@ -751,8 +764,8 @@ describe("parseConfig", () => {
       ["themes", "C:\\\\themes\\\\dark.json"],
       ["packages", "git+https://example.test/package.git"],
     ])("spec 406: rejects unsafe or remote Pi %s path", (key, resourcePath) => {
-      const { errors } = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness:\n      ${key}: [\"${resourcePath}\"]\n`);
-      expect(errors.some((e) => e.includes(`harness.${key}`) && e.includes("workspace-relative local paths"))).toBe(true);
+      const { warnings } = parseConfig(`agents:\n  p:\n    cmd: pi\n    harness:\n      ${key}: [\"${resourcePath}\"]\n`);
+      expect(warnings.some((e) => e.includes(`harness.${key}`) && e.includes("workspace-relative local paths"))).toBe(true);
     });
 
     it.each([
@@ -761,8 +774,8 @@ describe("parseConfig", () => {
       "--prompt-template prompts/a.md", "--no-prompt-templates", "-np",
       "--theme themes/a.json", "--no-themes",
     ])("spec 406: rejects Pi native resource flag in cmd: %s", (flag) => {
-      const { errors } = parseConfig(`agents:\n  p:\n    cmd: pi ${flag}\n    harness:\n      skills: skills/review\n`);
-      expect(errors.some((e) => e.includes("Tachyon manages Pi resource flags"))).toBe(true);
+      const { warnings } = parseConfig(`agents:\n  p:\n    cmd: pi ${flag}\n    harness:\n      skills: skills/review\n`);
+      expect(warnings.some((e) => e.includes("Tachyon manages Pi resource flags"))).toBe(true);
     });
 
     it.each([
@@ -772,20 +785,20 @@ describe("parseConfig", () => {
       "pi $(printf evil)",
       "pi | tee /tmp/pi",
     ])("spec 406: quoted flags or non-literal shell structure cannot bypass Pi resource ownership: %s", (cmd) => {
-      const { errors } = parseConfig(`agents:\n  p:\n    cmd: ${JSON.stringify(cmd)}\n    harness:\n      skills: skills/review\n`);
-      expect(errors.some((e) => e.includes("Tachyon manages Pi resource flags") || e.includes("structurally literal argv"))).toBe(true);
+      const { warnings } = parseConfig(`agents:\n  p:\n    cmd: ${JSON.stringify(cmd)}\n    harness:\n      skills: skills/review\n`);
+      expect(warnings.some((e) => e.includes("Tachyon manages Pi resource flags") || e.includes("structurally literal argv"))).toBe(true);
     });
 
     it("spec 406: rejects Pi-only resource keys on other runtimes", () => {
       for (const runtime of ["claude", "codex", "opencode", "grok", "hermes"]) {
-        const { errors } = parseConfig(`agents:\n  a:\n    cmd: ${runtime}\n    harness:\n      extensions: tools/review.ts\n      skills: skills/review\n`);
-        expect(errors.some((e) => e.includes("extensions is a Pi-only resource key"))).toBe(true);
+        const { warnings } = parseConfig(`agents:\n  a:\n    cmd: ${runtime}\n    harness:\n      extensions: tools/review.ts\n      skills: skills/review\n`);
+        expect(warnings.some((e) => e.includes("extensions is a Pi-only resource key"))).toBe(true);
       }
     });
 
     it("rejects harness on a non-harnessable agent (v1)", () => {
       expect(
-        parseConfig(`agents:\n  c:\n    cmd: gemini\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) =>
+        parseConfig(`agents:\n  c:\n    cmd: gemini\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) =>
           e.includes("only supported for claude/codex/opencode/grok/hermes/pi"),
         ),
       ).toBe(true);
@@ -794,23 +807,23 @@ describe("parseConfig", () => {
     it("accepts harness on grok and hermes (private home + mcp/skills)", () => {
       for (const bin of ["grok", "hermes"]) {
         const empty = parseConfig(`agents:\n  a:\n    cmd: ${bin}\n    harness: {}\n`);
-        expect(empty.errors).toEqual([]);
+        expect(empty.warnings).toEqual([]);
         expect(asAgent(empty.config?.agents.a)?.harness).toEqual({ inherit: "workspace" });
 
         const withMcp = parseConfig(
           `agents:\n  a:\n    cmd: ${bin}\n    harness:\n      mcp:\n        s:\n          command: x\n      skills: ["skills/research"]\n`,
         );
-        expect(withMcp.errors).toEqual([]);
+        expect(withMcp.warnings).toEqual([]);
         expect(asAgent(withMcp.config?.agents.a)?.harness?.mcp?.s.command).toBe("x");
         expect(asAgent(withMcp.config?.agents.a)?.harness?.skills).toEqual(["skills/research"]);
 
         const bad = parseConfig(`agents:\n  a:\n    cmd: ${bin}\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`);
-        expect(bad.errors.some((e) => e.includes("does not support 'rules'/'instructions'"))).toBe(true);
+        expect(bad.warnings.some((e) => e.includes("does not support 'rules'/'instructions'"))).toBe(true);
 
         const owned = parseConfig(
           `agents:\n  a:\n    cmd: ${bin}\n    env:\n      ${bin === "grok" ? "GROK_HOME" : "HERMES_HOME"}: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`,
         );
-        expect(owned.errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
+        expect(owned.warnings.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
       }
     });
 
@@ -819,7 +832,7 @@ describe("parseConfig", () => {
         const parsed = parseConfig(
           `agents:\n  a:\n    cmd: ${bin}\n    harness:\n      hooks:\n        SessionStart: []\n`,
         );
-        expect(parsed.errors.some((e) => e.includes(`${bin} does not support 'hooks'`))).toBe(true);
+        expect(parsed.warnings.some((e) => e.includes(`${bin} does not support 'hooks'`))).toBe(true);
       }
     });
 
@@ -833,8 +846,8 @@ describe("parseConfig", () => {
       for (const k of ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "OPENCODE_CONFIG"]) {
         const env: Record<string, string> = {};
         env[k] = `/tmp/${k.toLowerCase()}`;
-        const { errors } = parseConfig(`agents:\n  oc:\n    cmd: opencode\n    env:\n${Object.entries(env).map(([kk, vv]) => `      ${kk}: ${vv}\n`).join("")}    harness:\n      mcp:\n        s:\n          command: x\n`);
-        expect(errors.some((e) => e.includes(`remove 'env.${k}'`))).toBe(true);
+        const { warnings } = parseConfig(`agents:\n  oc:\n    cmd: opencode\n    env:\n${Object.entries(env).map(([kk, vv]) => `      ${kk}: ${vv}\n`).join("")}    harness:\n      mcp:\n        s:\n          command: x\n`);
+        expect(warnings.some((e) => e.includes(`remove 'env.${k}'`))).toBe(true);
       }
     });
 
@@ -845,39 +858,39 @@ describe("parseConfig", () => {
     });
 
     it("spec t-e2ebe3: rejects opencode harness rules/instructions in v1", () => {
-      expect(parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("opencode does not support 'rules'/'instructions'"))).toBe(true);
-      expect(parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness:\n      instructions: ["a.md"]\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("opencode does not support 'rules'/'instructions'"))).toBe(true);
+      expect(parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness:\n      rules: ["r.md"]\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("opencode does not support 'rules'/'instructions'"))).toBe(true);
+      expect(parseConfig(`agents:\n  oc:\n    cmd: opencode\n    harness:\n      instructions: ["a.md"]\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("opencode does not support 'rules'/'instructions'"))).toBe(true);
     });
 
     it("rejects harness on a terminal entry", () => {
-      expect(parseConfig(`terminals:\n  t:\n    cmd: claude\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("applies only to agents"))).toBe(true);
+      expect(parseConfig(`terminals:\n  t:\n    cmd: claude\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("applies only to agents"))).toBe(true);
     });
 
     it("rejects a cmd that already owns the harness plumbing (H4)", () => {
-      expect(parseConfig(`agents:\n  r:\n    cmd: claude --strict-mcp-config\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
+      expect(parseConfig(`agents:\n  r:\n    cmd: claude --strict-mcp-config\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
     });
 
     it("rejects the equals-form of a reserved flag too (H4 — --settings=path)", () => {
-      expect(parseConfig(`agents:\n  r:\n    cmd: claude --settings=/tmp/x.json\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
-      expect(parseConfig(`agents:\n  r:\n    cmd: claude --mcp-config=/tmp/x.json\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
+      expect(parseConfig(`agents:\n  r:\n    cmd: claude --settings=/tmp/x.json\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
+      expect(parseConfig(`agents:\n  r:\n    cmd: claude --mcp-config=/tmp/x.json\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("Tachyon manages MCP config"))).toBe(true);
     });
 
     it("rejects a user-declared env.CLAUDE_CONFIG_DIR (H4)", () => {
-      expect(parseConfig(`agents:\n  r:\n    cmd: claude\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
+      expect(parseConfig(`agents:\n  r:\n    cmd: claude\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
     });
 
     it("rejects a user-declared env.CODEX_HOME (spec 298)", () => {
-      expect(parseConfig(`agents:\n  r:\n    cmd: codex\n    env:\n      CODEX_HOME: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`).errors.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
+      expect(parseConfig(`agents:\n  r:\n    cmd: codex\n    env:\n      CODEX_HOME: /tmp/x\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("Tachyon owns the config home"))).toBe(true);
     });
 
 
     it("rejects an empty mcp map", () => {
-      expect(parseConfig(harnessYml(`      mcp: {}\n`)).errors.some((e) => e.includes("non-empty mapping of server"))).toBe(true);
+      expect(parseConfig(harnessYml(`      mcp: {}\n`)).warnings.some((e) => e.includes("non-empty mapping of server"))).toBe(true);
     });
 
     it("spec 236: rejects the reserved Bridge server names (tachyon / tachyon_bridge)", () => {
-      expect(parseConfig(harnessYml(`      mcp:\n        tachyon:\n          command: x\n`)).errors.some((e) => e.includes("reserved for the Tachyon Bridge"))).toBe(true);
-      expect(parseConfig(harnessYml(`      mcp:\n        tachyon_bridge:\n          command: x\n`)).errors.some((e) => e.includes("reserved for the Tachyon Bridge"))).toBe(true);
+      expect(parseConfig(harnessYml(`      mcp:\n        tachyon:\n          command: x\n`)).warnings.some((e) => e.includes("reserved for the Tachyon Bridge"))).toBe(true);
+      expect(parseConfig(harnessYml(`      mcp:\n        tachyon_bridge:\n          command: x\n`)).warnings.some((e) => e.includes("reserved for the Tachyon Bridge"))).toBe(true);
     });
 
     // spec 228 — hooks/rules/skills + at-least-one
@@ -900,23 +913,23 @@ describe("parseConfig", () => {
     });
 
     it("rejects an empty harness (no capability declared)", () => {
-      expect(parseConfig(harnessYml(`      inherit: none\n`)).errors.some((e) => e.includes("at least one of mcp"))).toBe(true);
+      expect(parseConfig(harnessYml(`      inherit: none\n`)).warnings.some((e) => e.includes("at least one of mcp"))).toBe(true);
     });
 
     it("rejects bad rules/skills/hooks shapes", () => {
-      expect(parseConfig(harnessYml(`      rules: []\n`)).errors.some((e) => e.includes("rules"))).toBe(true);
-      expect(parseConfig(harnessYml(`      skills: [1]\n`)).errors.some((e) => e.includes("skills"))).toBe(true);
-      expect(parseConfig(harnessYml(`      hooks: {}\n`)).errors.some((e) => e.includes("hooks"))).toBe(true);
+      expect(parseConfig(harnessYml(`      rules: []\n`)).warnings.some((e) => e.includes("rules"))).toBe(true);
+      expect(parseConfig(harnessYml(`      skills: [1]\n`)).warnings.some((e) => e.includes("skills"))).toBe(true);
+      expect(parseConfig(harnessYml(`      hooks: {}\n`)).warnings.some((e) => e.includes("hooks"))).toBe(true);
     });
 
     it("still rejects inherit: global (follow pass)", () => {
-      expect(parseConfig(harnessYml(`      inherit: global\n      rules: ["./r.md"]\n`)).errors.some((e) => e.includes("'global' is not supported"))).toBe(true);
+      expect(parseConfig(harnessYml(`      inherit: global\n      rules: ["./r.md"]\n`)).warnings.some((e) => e.includes("'global' is not supported"))).toBe(true);
     });
 
     it("rejects absolute / traversal rules-skills paths (codex M4)", () => {
-      expect(parseConfig(harnessYml(`      rules: ["/etc/passwd"]\n`)).errors.some((e) => e.includes("workspace-relative"))).toBe(true);
-      expect(parseConfig(harnessYml(`      skills: ["../../x"]\n`)).errors.some((e) => e.includes("workspace-relative"))).toBe(true);
-      expect(parseConfig(harnessYml(`      rules: ["sub/../ok.md"]\n`)).errors.some((e) => e.includes("workspace-relative"))).toBe(true);
+      expect(parseConfig(harnessYml(`      rules: ["/etc/passwd"]\n`)).warnings.some((e) => e.includes("workspace-relative"))).toBe(true);
+      expect(parseConfig(harnessYml(`      skills: ["../../x"]\n`)).warnings.some((e) => e.includes("workspace-relative"))).toBe(true);
+      expect(parseConfig(harnessYml(`      rules: ["sub/../ok.md"]\n`)).warnings.some((e) => e.includes("workspace-relative"))).toBe(true);
     });
   });
 });
@@ -995,11 +1008,11 @@ describe("agent soul config (spec 377)", () => {
   });
 
   it("rejects non-booleans, terminals, and folded enabled-name collisions", () => {
-    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    soul: SOUL.md\n").errors).toContain("agents.a.soul: must be a boolean");
-    expect(parseConfig("terminals:\n  shell:\n    cmd: bash\n    soul: true\n").errors.some((error) => error.includes("'soul' applies only to agents"))).toBe(true);
+    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    soul: SOUL.md\n").warnings).toContain("agents.a.soul: must be a boolean");
+    expect(parseConfig("terminals:\n  shell:\n    cmd: bash\n    soul: true\n").warnings.some((error) => error.includes("'soul' applies only to agents"))).toBe(true);
     const collision = parseConfig("agents:\n  Reviewer:\n    cmd: codex\n    soul: true\n  reviewer:\n    cmd: claude\n    soul: true\n");
-    expect(collision.errors.some((error) => error.includes("ASCII case folding"))).toBe(true);
-    expect(parseConfig("agents:\n  Reviewer:\n    cmd: codex\n  reviewer:\n    cmd: claude\n").errors).toEqual([]);
+    expect(collision.warnings.some((error) => error.includes("ASCII case folding"))).toBe(true);
+    expect(parseConfig("agents:\n  Reviewer:\n    cmd: codex\n  reviewer:\n    cmd: claude\n").warnings).toEqual([]);
   });
 });
 
@@ -1013,17 +1026,17 @@ describe("agent evolution config (spec 421)", () => {
   });
 
   it("rejects malformed, open, and terminal declarations", () => {
-    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: true\n").errors)
+    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: true\n").warnings)
       .toContain("agents.a.selfEvolution: must be a mapping with enabled: boolean");
-    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: {}\n").errors)
+    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: {}\n").warnings)
       .toContain("agents.a.selfEvolution.enabled: must be a boolean");
-    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: {enabled: true, mode: auto}\n").errors)
+    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: {enabled: true, mode: auto}\n").warnings)
       .toContain("agents.a.selfEvolution: unknown key 'mode'");
-    expect(parseConfig("terminals:\n  shell:\n    cmd: bash\n    selfEvolution: {enabled: true}\n").errors
+    expect(parseConfig("terminals:\n  shell:\n    cmd: bash\n    selfEvolution: {enabled: true}\n").warnings
       .some((error) => error.includes("'selfEvolution' applies only to agents"))).toBe(true);
-    expect(parseConfig("agents:\n  shell:\n    cmd: bash\n    kind: terminal\n    selfEvolution: {enabled: true}\n").errors
+    expect(parseConfig("agents:\n  shell:\n    cmd: bash\n    kind: terminal\n    selfEvolution: {enabled: true}\n").warnings
       .some((error) => error.includes("'selfEvolution' applies only to agents"))).toBe(true);
     const collision = parseConfig("agents:\n  Reviewer:\n    cmd: codex\n    selfEvolution: {enabled: true}\n  reviewer:\n    cmd: claude\n    selfEvolution: {enabled: true}\n");
-    expect(collision.errors.some((error) => error.includes("evolution-enabled agent") && error.includes("ASCII case folding"))).toBe(true);
+    expect(collision.warnings.some((error) => error.includes("evolution-enabled agent") && error.includes("ASCII case folding"))).toBe(true);
   });
 });

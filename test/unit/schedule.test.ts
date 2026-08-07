@@ -5,8 +5,8 @@ import { parseConfig, parseEvery, parseAt, type TachyonConfig } from "../../src/
 const AGENTS = "agents:\n  claude: {cmd: claude}\ncommands:\n  test: {cmd: npm test}\nrunbooks:\n  ship:\n    steps: [test]\n";
 
 function configOf(extra: string): TachyonConfig {
-  const { config, errors } = parseConfig(AGENTS + extra);
-  if (!config) throw new Error(errors.join("; "));
+  const { config, warnings } = parseConfig(AGENTS + extra);
+  if (!config) throw new Error(warnings.join("; "));
   return config;
 }
 
@@ -34,19 +34,19 @@ describe("config: schedules", () => {
     expect(c.schedules.standup).toMatchObject({ at: "09:00", spawn: "claude", instructions: "summarize" });
 
     const both = parseConfig(AGENTS + "schedules:\n  x: {every: 1h, at: \"09:00\", run: test}\n");
-    expect(both.errors[0]).toContain("exactly one of 'every' or 'at'");
+    expect(both.warnings[0]).toContain("exactly one of 'every' or 'at'");
     const neither = parseConfig(AGENTS + "schedules:\n  x: {every: 1h}\n");
-    expect(neither.errors[0]).toContain("exactly one of 'run' or 'spawn'");
+    expect(neither.warnings[0]).toContain("exactly one of 'run' or 'spawn'");
     const badRun = parseConfig(AGENTS + "schedules:\n  x: {every: 1h, run: ghost}\n");
-    expect(badRun.errors[0]).toContain("declared command or runbook");
+    expect(badRun.warnings[0]).toContain("declared command or runbook");
     const badSpawn = parseConfig(AGENTS + "schedules:\n  x: {at: \"09:00\", spawn: ghost}\n");
-    expect(badSpawn.errors[0]).toContain("declared agent");
+    expect(badSpawn.warnings[0]).toContain("declared agent");
     const badEvery = parseConfig(AGENTS + "schedules:\n  x: {every: 5s, run: test}\n");
-    expect(badEvery.errors[0]).toContain("30m");
+    expect(badEvery.warnings[0]).toContain("30m");
   });
   it("run can reference a runbook; instructions only with spawn", () => {
     expect(configOf("schedules:\n  s: {every: 2h, run: ship}\n").schedules.s.run).toBe("ship");
-    expect(parseConfig(AGENTS + "schedules:\n  s: {every: 1h, run: test, instructions: hi}\n").errors[0]).toContain("only valid with 'spawn'");
+    expect(parseConfig(AGENTS + "schedules:\n  s: {every: 1h, run: test, instructions: hi}\n").warnings[0]).toContain("only valid with 'spawn'");
   });
 });
 

@@ -992,9 +992,33 @@ async function deleteConfiguredAgent(
     if (workspace.config.agents[agent]?.kind !== "terminal") {
       throw new Error(`'${agent}' is not a canonical agent or declared terminal`);
     }
-    const changed = workspace.mutateConfig((text) => deleteAgent(text ?? "", agent));
-    if (!changed) throw new Error(`could not remove '${agent}' from tachyon.yml`);
+    // t-af4a5f — the FOOTPRINT goes first and the ROSTER ROW goes last. This order used to be the
+    // other way round, and between the two lines there is no journal, no lock and no barrier: a
+    // crash there left the row already deleted and the whole footprint intact, unreachable by any
+    // door. Measured, not assumed — a declared terminal holds NO session-ledger row, so `gcLedger`
+    // (the only startup sweep that runs this cleanup for a name that left `tachyon.yml`) never fires
+    // for it, and this door writes no journal, so no reconcile ever revisits it. The sweep does
+    // report the leftover home as `orphan-home`, and it then hands the human an `rmdir` that the
+    // surviving `evolution/` makes refuse.
+    //
+    // Reversed, the same crash leaves a name that is still declared, still listed and still
+    // addressable, with the footprint of a terminal that has never been launched — which is not
+    // residue, and which the human's next Remove finishes, because every step of `forgetAgent` is
+    // idempotent. Deleting the ADDRESS last is the same trailing-edge property the project guidance
+    // states for suppression: never drop the handle to the thing you still have to clean.
+    //
+    // The trade, stated: if the config edit refuses AFTER the footprint is cleared, the activity
+    // log, transcript and Evolution profile are gone while the terminal stays declared. That loss
+    // was already this door's shape before the edit — `removeAgentWorktree` and
+    // `stopAgentSessionForDelete` above destroy far more, irreversibly, ahead of the same line — and
+    // it leaves a working entry rather than an orphan nobody can name.
     await workspace.forgetAgent(agent);
+    const changed = workspace.mutateConfig((text) => deleteAgent(text ?? "", agent));
+    if (!changed) {
+      throw new Error(
+        `could not remove '${agent}' from tachyon.yml; its per-agent footprint is already cleared and the entry is still declared — run the removal again`,
+      );
+    }
     onViewsChanged("agents");
   }
   return json({ changed: true });

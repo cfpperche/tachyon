@@ -569,13 +569,15 @@ export interface TachyonConfig {
     /**
      * SDD 479 — the sidebar agent card's layout, owned by the project (it travels with the repo).
      *
-     * A malformed template is refused WHOLE and recorded in `cardTemplateRefusal` rather than pushed
-     * onto `errors`, and that difference is deliberate: in this loader ANY error refuses the whole
-     * file (`if (errors.length > 0) return { errors, warnings }`), which drops the workspace to
-     * ledger/last-known-good and makes spawning read-only. Bricking a workspace over a cosmetic layout
-     * typo is a worse failure than the one being prevented — and the ratified acceptance criterion
-     * says the SIDEBAR renders the default template, which presumes a config that still loads. The
-     * refusal travels to the sidebar so the fallback can explain itself.
+     * A malformed template is refused WHOLE and recorded in `cardTemplateRefusal` rather than being
+     * half-applied: the sidebar renders the DEFAULT card and says why, instead of a layout built from
+     * the lines that happened to parse.
+     *
+     * t-48dd8d — this key used to be the ONE exception to a loader that refused the whole file over
+     * any complaint, because bricking a workspace over a cosmetic layout typo was a worse failure
+     * than the one being prevented. Every key is treated that way now, so what was an exception is
+     * simply the rule; the reason it was carved out first is still worth reading. What stays specific
+     * to this key is the refusal TRAVELLING to the sidebar so the fallback can explain itself.
      */
     sidebar?: { cardTemplate?: CardTemplateConfig; cardTemplateRefusal?: string[] };
     /**
@@ -641,8 +643,26 @@ export function parseAt(value: string): { h: number; m: number } | null {
 
 export interface ParseResult {
   config?: TachyonConfig;
+  /**
+   * The file could not be loaded AT ALL. t-48dd8d left exactly two: bytes that are not YAML, and a
+   * root that is not a mapping. Anything else degrades — `config` is defined whenever this is empty.
+   */
   errors: string[];
+  /** everything a human should be told about the file: advisory notices AND every discard below. */
   warnings: string[];
+  /**
+   * t-48dd8d — the subset of `warnings` that names something the parser DROPPED.
+   *
+   * Reading and writing are different doors and this is what separates them. READING a file a human
+   * already wrote must forgive: the key that cannot be read is discarded, its default runs, and the
+   * workspace keeps going. WRITING text a program proposed must not — persisting bytes we have just
+   * been told are partly unreadable is the delayed detonation the self-edit gate exists to stop
+   * (t-099be8), and the decision here was about how the file is READ.
+   *
+   * Advisory warnings (a deprecation, a retired key accepted and ignored) are NOT here, so they keep
+   * travelling with a successful write instead of blocking it.
+   */
+  discarded: string[];
 }
 
 export const CONFIG_FILENAMES = ["tachyon.yml", "tachyon.yaml"];
@@ -666,12 +686,15 @@ const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skill
  * rejects a `cmd`/`env` that already owns the harness plumbing. Claude accepts `harness: {}` as the explicit
  * replacement for deprecated `isolate: transcript`: private config home, no custom rules/skills/hooks/MCP.
  * Codex already has a private home by default, so its harness still needs at least one capability.
- * Returns the def or undefined (errors pushed). `cmd`/`env` are the agent's, for the H4 ownership checks.
+ * Returns the def or undefined, with what it dropped pushed onto `discarded`. An agent whose harness
+ * comes back undefined is dropped WHOLE by the caller (t-48dd8d): running it without the private
+ * config home it asked for would hand it the workspace's own MCP servers and credentials.
+ * `cmd`/`env` are the agent's, for the H4 ownership checks.
  */
-function parseHarness(section: "agents" | "terminals", name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, errors: string[]): HarnessDef | undefined {
+function parseHarness(section: "agents" | "terminals", name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, discarded: string[]): HarnessDef | undefined {
   if (isTerminal) {
     // Prefixed with the REAL section — this used to say `agents.<name>` even for a terminals: entry.
-    errors.push(agentOnlyKeyRefusal(section, name, "harness", "this entry is a terminal — it has no runtime harness"));
+    discarded.push(agentOnlyKeyRefusal(section, name, "harness", "this entry is a terminal — it has no runtime harness"));
     return undefined;
   }
   const binary = binaryOf(cmd);
@@ -680,7 +703,7 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
   // Others fail closed (gemini/agy/… have no private-home materializer yet).
   const HARNESS_BINS = new Set(["claude", "codex", "opencode", "grok", "hermes", "pi"]);
   if (!HARNESS_BINS.has(binary)) {
-    errors.push(
+    discarded.push(
       `agents.${name}.harness: only supported for claude/codex/opencode/grok/hermes/pi agents (got '${binary || cmd}')`,
     );
     return undefined;
@@ -692,7 +715,7 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
     const tokens = cmd.trim().split(/\s+/);
     for (const flag of HARNESS_RESERVED_FLAGS) {
       if (tokens.some((t) => t === flag || t.startsWith(`${flag}=`))) {
-        errors.push(`agents.${name}.harness: remove '${flag}' from cmd — Tachyon manages MCP config for a harness agent`);
+        discarded.push(`agents.${name}.harness: remove '${flag}' from cmd — Tachyon manages MCP config for a harness agent`);
         return undefined;
       }
     }
@@ -702,7 +725,7 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
   if (binary === "pi") {
     const parsed = parseLaunchCommand(cmd);
     if (!parsed || !parsed.allWordsLiteral) {
-      errors.push(`agents.${name}.harness: Pi resource harness commands must have a structurally literal argv (no shell composition, substitution, expansion, or globbing)`);
+      discarded.push(`agents.${name}.harness: Pi resource harness commands must have a structurally literal argv (no shell composition, substitution, expansion, or globbing)`);
       return undefined;
     }
     const tokens = parsed.argv;
@@ -714,7 +737,7 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
     ];
     const conflict = resourceFlags.find((flag) => tokens.some((token) => token === flag || token.startsWith(`${flag}=`)));
     if (conflict) {
-      errors.push(`agents.${name}.harness: remove '${conflict}' from cmd — Tachyon manages Pi resource flags for a harness agent`);
+      discarded.push(`agents.${name}.harness: remove '${conflict}' from cmd — Tachyon manages Pi resource flags for a harness agent`);
       return undefined;
     }
   }
@@ -735,104 +758,117 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
     if (env) {
       for (const k of opencodeOwned) {
         if (k in env) {
-          errors.push(`agents.${name}.harness: remove 'env.${k}' — Tachyon owns the XDG config/data/state dirs for an opencode harness agent`);
+          discarded.push(`agents.${name}.harness: remove 'env.${k}' — Tachyon owns the XDG config/data/state dirs for an opencode harness agent`);
           return undefined;
         }
       }
     }
   } else if (ownedEnv && env && ownedEnv in env) {
-    errors.push(`agents.${name}.harness: remove 'env.${ownedEnv}' — Tachyon owns the config home for a harness agent`);
+    discarded.push(`agents.${name}.harness: remove 'env.${ownedEnv}' — Tachyon owns the config home for a harness agent`);
     return undefined;
   }
   if (!isPlainObject(raw)) {
-    errors.push(`agents.${name}.harness: must be a mapping with 'mcp' (and optional 'inherit')`);
+    discarded.push(`agents.${name}.harness: must be a mapping with 'mcp' (and optional 'inherit')`);
     return undefined;
   }
   for (const key of Object.keys(raw)) {
-    if (!HARNESS_KEYS.includes(key)) errors.push(`agents.${name}.harness: unknown key '${key}'`);
+    if (!HARNESS_KEYS.includes(key)) discarded.push(`agents.${name}.harness: unknown key '${key}'`);
   }
   const piOnly = ["extensions", "prompts", "themes", "packages"].filter((key) => raw[key] !== undefined);
   if (binary !== "pi" && piOnly.length > 0) {
-    errors.push(`agents.${name}.harness: ${piOnly.join(", ")} ${piOnly.length === 1 ? "is a Pi-only resource key" : "are Pi-only resource keys"}`);
+    discarded.push(`agents.${name}.harness: ${piOnly.join(", ")} ${piOnly.length === 1 ? "is a Pi-only resource key" : "are Pi-only resource keys"}`);
   }
+  /**
+   * t-48dd8d — the keys this runtime cannot honor. They used to be recorded and then stored ANYWAY;
+   * while any error refused the whole file that was unobservable, but once a refusal becomes a
+   * discard it would materialize a harness carrying a capability the runtime does not support. An
+   * unsupported key is dropped, not merely reported.
+   */
+  const unsupportedKeys = new Set<string>();
   if (binary === "codex") {
     const unsupported = ["rules"].filter((key) => raw[key] !== undefined);
     if (unsupported.length > 0) {
-      errors.push(`agents.${name}.harness: codex does not support 'rules'; use 'instructions' for AGENTS.md guidance`);
+      for (const key of unsupported) unsupportedKeys.add(key);
+      discarded.push(`agents.${name}.harness: codex does not support 'rules'; use 'instructions' for AGENTS.md guidance`);
     }
   } else if (binary === "opencode" || binary === "grok" || binary === "hermes") {
     // opencode/grok/hermes v1 harness: mcp/skills only (no CLAUDE.md `rules` or codex AGENTS.md `instructions`).
     const unsupported = ["rules", "instructions"].filter((key) => raw[key] !== undefined);
     if (unsupported.length > 0) {
-      errors.push(
+      for (const key of unsupported) unsupportedKeys.add(key);
+      discarded.push(
         `agents.${name}.harness: ${binary} does not support 'rules'/'instructions' in v1 (use 'mcp'/'skills')`,
       );
     }
   } else if (binary === "pi") {
     const unsupported = ["mcp", "hooks", "rules", "instructions"].filter((key) => raw[key] !== undefined);
     if (unsupported.length > 0) {
-      errors.push(`agents.${name}.harness: pi does not support ${unsupported.join(", ")} (use extensions/skills/prompts/themes/packages)`);
+      for (const key of unsupported) unsupportedKeys.add(key);
+      discarded.push(`agents.${name}.harness: pi does not support ${unsupported.join(", ")} (use extensions/skills/prompts/themes/packages)`);
     }
   } else if (raw.instructions !== undefined) {
-    errors.push(`agents.${name}.harness.instructions: only supported for codex agents; use 'rules' for claude`);
+    unsupportedKeys.add("instructions");
+    discarded.push(`agents.${name}.harness.instructions: only supported for codex agents; use 'rules' for claude`);
   }
   let inherit: HarnessDef["inherit"] = "workspace";
   if (raw.inherit !== undefined) {
     if (raw.inherit === "none" || raw.inherit === "workspace") {
-      inherit = raw.inherit;
       if (binary === "pi" && raw.inherit === "none") {
-        errors.push(`agents.${name}.harness.inherit: pi resource harnesses do not support 'none' (omit inherit or use 'workspace')`);
+        discarded.push(`agents.${name}.harness.inherit: pi resource harnesses do not support 'none' (omit inherit or use 'workspace')`);
+        inherit = "workspace";
+      } else {
+        inherit = raw.inherit;
       }
     } else if (raw.inherit === "global") {
-      errors.push(`agents.${name}.harness.inherit: 'global' is not supported yet (use 'none' or 'workspace')`);
+      discarded.push(`agents.${name}.harness.inherit: 'global' is not supported yet (use 'none' or 'workspace')`);
     } else {
-      errors.push(`agents.${name}.harness.inherit: must be 'none' or 'workspace'`);
+      discarded.push(`agents.${name}.harness.inherit: must be 'none' or 'workspace'`);
     }
   }
   const harness: HarnessDef = { inherit };
 
   // mcp (optional) — stdio servers; each env value must be an exact ${VAR} reference (H7).
-  if (raw.mcp !== undefined) {
+  if (raw.mcp !== undefined && !unsupportedKeys.has("mcp")) {
     if (!isPlainObject(raw.mcp) || Object.keys(raw.mcp).length === 0) {
-      errors.push(`agents.${name}.harness.mcp: must be a non-empty mapping of server name -> definition`);
+      discarded.push(`agents.${name}.harness.mcp: must be a non-empty mapping of server name -> definition`);
     } else {
       const mcp: Record<string, HarnessMcpServer> = {};
       for (const [server, sdef] of Object.entries(raw.mcp)) {
         if (!NAME_RE.test(server)) {
-          errors.push(`agents.${name}.harness.mcp.${server}: invalid server name (must match ${NAME_RE})`);
+          discarded.push(`agents.${name}.harness.mcp.${server}: invalid server name (must match ${NAME_RE})`);
           continue;
         }
         if (server === "tachyon" || server === "tachyon_bridge") {
-          errors.push(`agents.${name}.harness.mcp.${server}: '${server}' is reserved for the Tachyon Bridge (injected automatically); use a different name`);
+          discarded.push(`agents.${name}.harness.mcp.${server}: '${server}' is reserved for the Tachyon Bridge (injected automatically); use a different name`);
           continue;
         }
         if (!isPlainObject(sdef) || typeof sdef.command !== "string" || sdef.command.trim().length === 0) {
-          errors.push(`agents.${name}.harness.mcp.${server}: must be a mapping with a non-empty 'command' (stdio servers only)`);
+          discarded.push(`agents.${name}.harness.mcp.${server}: must be a mapping with a non-empty 'command' (stdio servers only)`);
           continue;
         }
         const server_def: HarnessMcpServer = { command: sdef.command };
         if (sdef.args !== undefined) {
           if (!Array.isArray(sdef.args) || sdef.args.some((a) => typeof a !== "string")) {
-            errors.push(`agents.${name}.harness.mcp.${server}.args: must be a list of strings`);
+            discarded.push(`agents.${name}.harness.mcp.${server}.args: must be a list of strings`);
             continue;
           }
           server_def.args = sdef.args as string[];
         }
         if (sdef.env !== undefined) {
           if (!isPlainObject(sdef.env) || Object.values(sdef.env).some((v) => typeof v !== "string")) {
-            errors.push(`agents.${name}.harness.mcp.${server}.env: must be a mapping of string -> string`);
+            discarded.push(`agents.${name}.harness.mcp.${server}.env: must be a mapping of string -> string`);
             continue;
           }
           const senv: Record<string, string> = {};
           let bad = false;
           for (const [k, v] of Object.entries(sdef.env as Record<string, string>)) {
             if (!ENV_REF_RE.test(v)) {
-              errors.push(`agents.${name}.harness.mcp.${server}.env.${k}: must be an exact \${VAR} reference (a literal value would write a secret to disk)`);
+              discarded.push(`agents.${name}.harness.mcp.${server}.env.${k}: must be an exact \${VAR} reference (a literal value would write a secret to disk)`);
               bad = true;
               continue;
             }
             if (binary === "codex" && v !== `\${${k}}`) {
-              errors.push(`agents.${name}.harness.mcp.${server}.env.${k}: codex requires the env key to match its reference ('\${${k}}')`);
+              discarded.push(`agents.${name}.harness.mcp.${server}.env.${k}: codex requires the env key to match its reference ('\${${k}}')`);
               bad = true;
               continue;
             }
@@ -843,7 +879,7 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
         }
         for (const key of Object.keys(sdef)) {
           if (!["command", "args", "env"].includes(key)) {
-            errors.push(`agents.${name}.harness.mcp.${server}: unknown key '${key}' (stdio command/args/env; url/headers is a follow pass)`);
+            discarded.push(`agents.${name}.harness.mcp.${server}: unknown key '${key}' (stdio command/args/env; url/headers is a follow pass)`);
           }
         }
         mcp[server] = server_def;
@@ -853,11 +889,11 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
   }
 
   // spec 228 — hooks (a claude settings.json `hooks` object; shape pass-through, claude validates contents)
-  if (raw.hooks !== undefined) {
+  if (raw.hooks !== undefined && !unsupportedKeys.has("hooks")) {
     if (binary === "opencode" || binary === "grok" || binary === "hermes") {
-      errors.push(`agents.${name}.harness: ${binary} does not support 'hooks' until a native user-hook materializer exists`);
+      discarded.push(`agents.${name}.harness: ${binary} does not support 'hooks' until a native user-hook materializer exists`);
     } else if (!isPlainObject(raw.hooks) || Object.keys(raw.hooks).length === 0) {
-      errors.push(`agents.${name}.harness.hooks: must be a non-empty mapping (the claude settings.json 'hooks' shape)`);
+      discarded.push(`agents.${name}.harness.hooks: must be a non-empty mapping (the claude settings.json 'hooks' shape)`);
     } else {
       harness.hooks = raw.hooks;
     }
@@ -872,14 +908,14 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
   const isRemoteSource = (p: string): boolean => /^[A-Za-z][A-Za-z0-9+.-]*:/.test(p) || /^[^/\\\s]+@[^/\\\s]+:/.test(p);
   const parsePathList = (key: HarnessPathKey): string[] | undefined => {
     const rawVal = raw[key];
-    if (rawVal === undefined) return undefined;
+    if (rawVal === undefined || unsupportedKeys.has(key)) return undefined;
     const list = typeof rawVal === "string" ? [rawVal] : rawVal;
     if (!Array.isArray(list) || list.length === 0 || list.some((p) => typeof p !== "string" || p.trim().length === 0)) {
-      errors.push(`agents.${name}.harness.${key}: must be a non-empty path or list of non-empty paths`);
+      discarded.push(`agents.${name}.harness.${key}: must be a non-empty path or list of non-empty paths`);
       return undefined;
     }
     if ((list as string[]).some((p) => !isContained(p.trim()) || (binary === "pi" && isRemoteSource(p.trim())))) {
-      errors.push(`agents.${name}.harness.${key}: paths must be workspace-relative local paths (no absolute paths, '..', URLs, or package specs)`);
+      discarded.push(`agents.${name}.harness.${key}: paths must be workspace-relative local paths (no absolute paths, '..', URLs, or package specs)`);
       return undefined;
     }
     return list as string[];
@@ -913,7 +949,7 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
     ) {
       return harness;
     }
-    errors.push(binary === "pi"
+    discarded.push(binary === "pi"
       ? `agents.${name}.harness: declare at least one of extensions, skills, prompts, themes, packages`
       : `agents.${name}.harness: declare at least one of mcp, skills, rules, instructions, hooks`);
     return undefined;
@@ -944,10 +980,10 @@ function agentOnlyKeyRefusal(section: "agents" | "terminals", name: string, key:
   return `${section}.${name}: '${key}' applies only to agents (${why}) — ${MOVE_TO_AN_AGENT}`;
 }
 
-function parseAgentEntry(section: "agents" | "terminals", name: string, def: Record<string, unknown>, errors: string[], warnings: string[]): AgentDef | null {
+function parseAgentEntry(section: "agents" | "terminals", name: string, def: Record<string, unknown>, discarded: string[], warnings: string[]): AgentDef | null {
   const forceTerminal = section === "terminals";
   if (typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
-    errors.push(`${section}.${name}.cmd: required non-empty string`);
+    discarded.push(`${section}.${name}.cmd: required non-empty string`);
     return null;
   }
   const agent: AgentDef = {
@@ -959,12 +995,12 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     kind: forceTerminal ? "terminal" : suggestKindForCommand(def.cmd),
   };
   if (forceTerminal) {
-    if (def.kind !== undefined) errors.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
-    if (def.instructions !== undefined) errors.push(agentOnlyKeyRefusal(section, name, "instructions", "a terminal receives no brief"));
-    if (def.soul !== undefined) errors.push(agentOnlyKeyRefusal(section, name, "soul", "a terminal has no AI identity"));
-    if (def.selfEvolution !== undefined) errors.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "a terminal has no AI to evolve"));
+    if (def.kind !== undefined) discarded.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
+    if (def.instructions !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "instructions", "a terminal receives no brief"));
+    if (def.soul !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "soul", "a terminal has no AI identity"));
+    if (def.selfEvolution !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "a terminal has no AI to evolve"));
   } else if (def.kind !== undefined) {
-    if (def.kind !== "agent" && def.kind !== "terminal") errors.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
+    if (def.kind !== "agent" && def.kind !== "terminal") discarded.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
     else agent.kind = def.kind;
   }
   // SDD 478 M2 — the kind is settled above and does not change below, so this is the entry's single
@@ -974,31 +1010,31 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   // refusals that name the block to move to is M6.
   const agentEntry = asAgent(agent);
   if (def.cwd !== undefined) {
-    if (typeof def.cwd !== "string") errors.push(`${section}.${name}.cwd: must be a string`);
+    if (typeof def.cwd !== "string") discarded.push(`${section}.${name}.cwd: must be a string`);
     else agent.cwd = def.cwd;
   }
   if (def.env !== undefined) {
     if (!isPlainObject(def.env) || Object.values(def.env).some((v) => typeof v !== "string")) {
-      errors.push(`${section}.${name}.env: must be a mapping of string -> string`);
+      discarded.push(`${section}.${name}.env: must be a mapping of string -> string`);
     } else {
       agent.env = def.env as Record<string, string>;
       if (binaryOf(agent.cmd) === "pi") {
         for (const owned of ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"]) {
           if (owned in agent.env) {
-            errors.push(`${section}.${name}.env: remove '${owned}' — Tachyon owns Pi's private runtime and session homes`);
+            discarded.push(`${section}.${name}.env: remove '${owned}' — Tachyon owns Pi's private runtime and session homes`);
           }
         }
       }
     }
   }
   if (def.autostart !== undefined) {
-    if (typeof def.autostart !== "boolean") errors.push(`${section}.${name}.autostart: must be a boolean`);
+    if (typeof def.autostart !== "boolean") discarded.push(`${section}.${name}.autostart: must be a boolean`);
     else agent.autostart = def.autostart;
   }
   if (def.watch !== undefined) {
     const globs = typeof def.watch === "string" ? [def.watch] : def.watch;
     if (!Array.isArray(globs) || globs.length === 0 || globs.some((g) => typeof g !== "string" || g.length === 0)) {
-      errors.push(`${section}.${name}.watch: must be a non-empty glob string or list of globs`);
+      discarded.push(`${section}.${name}.watch: must be a non-empty glob string or list of globs`);
     } else {
       agent.watch = globs as string[];
     }
@@ -1010,30 +1046,30 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       agent.attention.enabled = true;
       const att = def.attention;
       if (att.enabled !== undefined) {
-        if (typeof att.enabled !== "boolean") errors.push(`${section}.${name}.attention.enabled: must be a boolean`);
+        if (typeof att.enabled !== "boolean") discarded.push(`${section}.${name}.attention.enabled: must be a boolean`);
         else agent.attention.enabled = att.enabled;
       }
       if (att.silenceSec !== undefined) {
         if (typeof att.silenceSec !== "number" || !Number.isInteger(att.silenceSec) || att.silenceSec < 1) {
-          errors.push(`${section}.${name}.attention.silenceSec: must be an integer >= 1`);
+          discarded.push(`${section}.${name}.attention.silenceSec: must be an integer >= 1`);
         } else {
           agent.attention.silenceSec = att.silenceSec;
         }
       }
       if (att.patterns !== undefined) {
         if (!Array.isArray(att.patterns) || att.patterns.some((p) => typeof p !== "string" || p.length === 0)) {
-          errors.push(`${section}.${name}.attention.patterns: must be a list of non-empty regex strings`);
+          discarded.push(`${section}.${name}.attention.patterns: must be a list of non-empty regex strings`);
         } else {
           agent.attention.patterns = att.patterns as string[];
         }
       }
       for (const key of Object.keys(att)) {
         if (!["enabled", "silenceSec", "patterns"].includes(key)) {
-          errors.push(`${section}.${name}.attention: unknown key '${key}'`);
+          discarded.push(`${section}.${name}.attention: unknown key '${key}'`);
         }
       }
     } else {
-      errors.push(`${section}.${name}.attention: must be a boolean or a mapping`);
+      discarded.push(`${section}.${name}.attention: must be a boolean or a mapping`);
     }
   } else if (agent.kind === "terminal") {
     // Terminals (servers, shells, builds) are silent by nature — attention defaults off.
@@ -1041,7 +1077,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   }
   if (!forceTerminal && def.instructions !== undefined) {
     if (typeof def.instructions !== "string") {
-      errors.push(`agents.${name}.instructions: must be a string`);
+      discarded.push(`agents.${name}.instructions: must be a string`);
     } else if (agentEntry && def.instructions.trim().length > 0) {
       agentEntry.instructions = def.instructions;
     }
@@ -1050,82 +1086,82 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     // role is agents-only — reject under terminals: AND under agents: with kind: terminal
     // (codex r1 m5: the old terminal-declaration style must honor the same contract).
     if (forceTerminal || agent.kind === "terminal") {
-      errors.push(agentOnlyKeyRefusal(section, name, "role", "this entry is a terminal — it has no AI to take a role"));
+      discarded.push(agentOnlyKeyRefusal(section, name, "role", "this entry is a terminal — it has no AI to take a role"));
     } else if (typeof def.role !== "string" || !isRole(def.role)) {
-      errors.push(`agents.${name}.role: must be one of ${ROLES.join(", ")}`);
+      discarded.push(`agents.${name}.role: must be one of ${ROLES.join(", ")}`);
     } else {
       agent.role = def.role;
     }
   }
   if (def.soul !== undefined) {
     if (forceTerminal || agent.kind === "terminal") {
-      if (!forceTerminal) errors.push(agentOnlyKeyRefusal(section, name, "soul", "this entry is a terminal — it has no AI identity"));
+      if (!forceTerminal) discarded.push(agentOnlyKeyRefusal(section, name, "soul", "this entry is a terminal — it has no AI identity"));
     } else if (typeof def.soul !== "boolean") {
-      errors.push(`agents.${name}.soul: must be a boolean`);
+      discarded.push(`agents.${name}.soul: must be a boolean`);
     } else {
       agent.soul = def.soul;
     }
   }
   if (def.selfEvolution !== undefined) {
     if (forceTerminal || agent.kind === "terminal") {
-      if (!forceTerminal) errors.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "this entry is a terminal — it has no AI to evolve"));
+      if (!forceTerminal) discarded.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "this entry is a terminal — it has no AI to evolve"));
     } else if (!isPlainObject(def.selfEvolution)) {
-      errors.push(`agents.${name}.selfEvolution: must be a mapping with enabled: boolean`);
+      discarded.push(`agents.${name}.selfEvolution: must be a mapping with enabled: boolean`);
     } else {
       const evolution = def.selfEvolution;
       if (typeof evolution.enabled !== "boolean") {
-        errors.push(`agents.${name}.selfEvolution.enabled: must be a boolean`);
+        discarded.push(`agents.${name}.selfEvolution.enabled: must be a boolean`);
       } else {
         agent.selfEvolution = { enabled: evolution.enabled };
       }
       for (const key of Object.keys(evolution)) {
-        if (key !== "enabled") errors.push(`agents.${name}.selfEvolution: unknown key '${key}'`);
+        if (key !== "enabled") discarded.push(`agents.${name}.selfEvolution: unknown key '${key}'`);
       }
     }
   }
   if (def.restart !== undefined) {
     if (def.restart !== "never" && def.restart !== "on-crash") {
-      errors.push(`${section}.${name}.restart: must be 'never' or 'on-crash'`);
+      discarded.push(`${section}.${name}.restart: must be 'never' or 'on-crash'`);
     } else {
       agent.restart = def.restart;
     }
   }
   if (def.worktree !== undefined) {
-    if (typeof def.worktree !== "boolean") errors.push(`${section}.${name}.worktree: must be a boolean`);
+    if (typeof def.worktree !== "boolean") discarded.push(`${section}.${name}.worktree: must be a boolean`);
     else if (agentEntry) agentEntry.worktree = def.worktree;
-    else errors.push(agentOnlyKeyRefusal(section, name, "worktree", "this entry is a terminal — it gets no git worktree"));
+    else discarded.push(agentOnlyKeyRefusal(section, name, "worktree", "this entry is a terminal — it gets no git worktree"));
   }
   if (def.branch !== undefined) {
     if (typeof def.branch !== "string") {
-      errors.push(`${section}.${name}.branch: must be a string`);
+      discarded.push(`${section}.${name}.branch: must be a string`);
     } else {
       const bad = validateBranchLiteral(def.branch);
-      if (bad) errors.push(`${section}.${name}.branch: ${bad}`);
+      if (bad) discarded.push(`${section}.${name}.branch: ${bad}`);
       else if (agentEntry) agentEntry.branch = def.branch;
-      else errors.push(agentOnlyKeyRefusal(section, name, "branch", "this entry is a terminal — it gets no worktree branch"));
+      else discarded.push(agentOnlyKeyRefusal(section, name, "branch", "this entry is a terminal — it gets no worktree branch"));
     }
   }
   if (def.worktreeSetup !== undefined) {
     const list = typeof def.worktreeSetup === "string" ? [def.worktreeSetup] : def.worktreeSetup;
     if (!Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== "string" || c.trim().length === 0)) {
-      errors.push(`${section}.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
+      discarded.push(`${section}.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
     } else if (agentEntry) {
       agentEntry.worktreeSetup = list as string[];
     } else {
-      errors.push(agentOnlyKeyRefusal(section, name, "worktreeSetup", "this entry is a terminal — it gets no worktree to set up"));
+      discarded.push(agentOnlyKeyRefusal(section, name, "worktreeSetup", "this entry is a terminal — it gets no worktree to set up"));
     }
   }
   if (def.verify !== undefined) {
     if (typeof def.verify !== "string" || def.verify.trim().length === 0) {
-      errors.push(`${section}.${name}.verify: must be a non-empty command/runbook name or inline command string`);
+      discarded.push(`${section}.${name}.verify: must be a non-empty command/runbook name or inline command string`);
     } else if (agentEntry) {
       agentEntry.verify = def.verify.trim();
     } else {
-      errors.push(agentOnlyKeyRefusal(section, name, "verify", "this entry is a terminal — a verify gate proves an agent's work shippable"));
+      discarded.push(agentOnlyKeyRefusal(section, name, "verify", "this entry is a terminal — a verify gate proves an agent's work shippable"));
     }
   }
   if (def.harness !== undefined) {
-    const harness = parseHarness(section, name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", errors);
+    const harness = parseHarness(section, name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", discarded);
     if (harness && agentEntry) agentEntry.harness = harness;
   }
   if (def.isolate !== undefined) {
@@ -1134,14 +1170,14 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     // config/MCP/rules/skills/hooks boundary. Existing `isolate: transcript` must keep loading until maintainers
     // migrate their local secondaries.
     if (def.isolate !== "transcript") {
-      errors.push(`${section}.${name}.isolate: deprecated; the only legacy-compatible value is 'transcript'`);
+      discarded.push(`${section}.${name}.isolate: deprecated; the only legacy-compatible value is 'transcript'`);
     } else if (forceTerminal || agent.kind === "terminal") {
-      errors.push(agentOnlyKeyRefusal(section, name, "isolate", "this entry is a terminal — it has no transcript"));
+      discarded.push(agentOnlyKeyRefusal(section, name, "isolate", "this entry is a terminal — it has no transcript"));
     } else if (binaryOf(agent.cmd) !== "claude" && binaryOf(agent.cmd) !== "codex") {
-      errors.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(agent.cmd) || agent.cmd}')`);
+      discarded.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(agent.cmd) || agent.cmd}')`);
     } else if (agent.env?.[binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
       const ownedEnv = binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
-      errors.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for this deprecated legacy mode`);
+      discarded.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for this deprecated legacy mode`);
     } else {
       warnings.push(`agents.${name}: ${ISOLATE_TRANSCRIPT_DEPRECATION}`);
       agent.isolate = "transcript";
@@ -1149,9 +1185,9 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   }
   if (def.subagents !== undefined) {
     if (forceTerminal || agent.kind === "terminal") {
-      errors.push(agentOnlyKeyRefusal(section, name, "subagents", "this entry is a terminal — ownership can only target agents"));
+      discarded.push(agentOnlyKeyRefusal(section, name, "subagents", "this entry is a terminal — ownership can only target agents"));
     } else if (!Array.isArray(def.subagents) || def.subagents.length === 0 || def.subagents.some((s) => typeof s !== "string" || s.trim().length === 0)) {
-      errors.push(`agents.${name}.subagents: must be a non-empty list of agent names`);
+      discarded.push(`agents.${name}.subagents: must be a non-empty list of agent names`);
     } else {
       agent.subagents = (def.subagents as string[]).map((s) => s.trim());
     }
@@ -1159,7 +1195,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   // kind/instructions are recognized keys (rejected above for terminals:) so they don't also trip
   // the generic "unknown key" error — only genuinely-unrecognized keys do.
   for (const key of Object.keys(def)) {
-    if (!AGENT_KEYS.includes(key)) errors.push(`${section}.${name}: unknown key '${key}'`);
+    if (!AGENT_KEYS.includes(key)) discarded.push(`${section}.${name}: unknown key '${key}'`);
   }
   return agent;
 }
@@ -1167,13 +1203,18 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
 /**
  * Build the child→owner map from `agents.*.subagents`.
  *
- * t-099be8 — a *dangling* subagents name (referenced but not declared) is a **warning**, not a fatal
- * error: drop the unknown name, keep the rest of the roster. Hard errors remain for self-ref, terminal
- * targets, multi-owner, cycles, and nested trees (those make ownership unloadable, not merely stale).
+ * t-099be8 — a *dangling* subagents name (referenced but not declared) is a warning, not a fatal
+ * error: drop the unknown name, keep the rest of the roster.
+ *
+ * t-48dd8d — the remaining cases (self-ref, terminal targets, multi-owner, cycles, nested trees) now
+ * behave the same way, because that is the file-wide rule. They already dropped only the offending
+ * EDGE; what changed is that they no longer take the file with them. Ownership metadata is display
+ * and lineage only, so a dropped edge leaves a roster that is stale in one direction and never one
+ * that grants an agent authority the file did not give it.
  */
 function buildDeclaredOwner(
   agents: Record<string, ManagedEntryDef>,
-  errors: string[],
+  discarded: string[],
   warnings: string[],
 ): Record<string, string> {
   const declaredOwner: Record<string, string> = {};
@@ -1186,7 +1227,7 @@ function buildDeclaredOwner(
     for (const child of def.subagents) {
       const target = agents[child];
       if (child === owner) {
-        errors.push(`agents.${owner}.subagents: '${child}' cannot reference itself`);
+        discarded.push(`agents.${owner}.subagents: '${child}' cannot reference itself`);
         continue;
       }
       if (!target) {
@@ -1197,16 +1238,16 @@ function buildDeclaredOwner(
         continue;
       }
       if (target.kind !== "agent") {
-        errors.push(`agents.${owner}.subagents: '${child}' resolves to a terminal; subagents must reference kind: agent entries`);
+        discarded.push(`agents.${owner}.subagents: '${child}' resolves to a terminal; subagents must reference kind: agent entries`);
         continue;
       }
       const existing = declaredOwner[child];
       if (existing && existing !== owner) {
-        errors.push(`agents.${owner}.subagents: '${child}' is already declared as a subagent of '${existing}'`);
+        discarded.push(`agents.${owner}.subagents: '${child}' is already declared as a subagent of '${existing}'`);
         continue;
       }
       if (asAgent(target)?.subagents?.includes(owner)) {
-        errors.push(`agents.${owner}.subagents: '${child}' creates a direct ownership cycle with '${owner}'`);
+        discarded.push(`agents.${owner}.subagents: '${child}' creates a direct ownership cycle with '${owner}'`);
         continue;
       }
       declaredOwner[child] = owner;
@@ -1217,7 +1258,7 @@ function buildDeclaredOwner(
   }
   for (const [child, owner] of Object.entries(declaredOwner)) {
     if ((asAgent(agents[child])?.subagents?.length ?? 0) > 0) {
-      errors.push(`agents.${owner}.subagents: '${child}' declares its own subagents; nested subagent trees are not supported in v1`);
+      discarded.push(`agents.${owner}.subagents: '${child}' declares its own subagents; nested subagent trees are not supported in v1`);
       delete declaredOwner[child];
     }
   }
@@ -1225,39 +1266,62 @@ function buildDeclaredOwner(
 }
 
 /** Validates the parsed YAML by hand — keeps the extension dependency-light; the JSON Schema covers editor-time validation. */
-function normalizedArgvCommand(value: unknown, field: string, errors: string[]): string | undefined {
+function normalizedArgvCommand(value: unknown, field: string, discarded: string[]): string | undefined {
   if (typeof value !== "string" || value.trim().length === 0) {
-    errors.push(`${field}: must be a non-empty argv command string`);
+    discarded.push(`${field}: must be a non-empty argv command string`);
     return undefined;
   }
   const normalized = value.trim();
   try {
     parseArgvCommand(normalized);
   } catch (error) {
-    errors.push(`${field}: invalid argv command (${error instanceof Error ? error.message : String(error)})`);
+    discarded.push(`${field}: invalid argv command (${error instanceof Error ? error.message : String(error)})`);
     return undefined;
   }
   return normalized;
 }
 
 export function parseConfig(yamlText: string): ParseResult {
-  const errors: string[] = [];
+  /**
+   * t-48dd8d — every message collected here names something the parser DROPPED, not a reason to
+   * refuse the file. It used to be `errors`, and a non-empty `errors` meant no `config` at all: one
+   * mistyped letter anywhere took the whole workspace down to its degraded roster. The owner's
+   * decision on 2026-08-07 is that the file warns instead — the wrong or unrecognized part goes, the
+   * rest loads.
+   *
+   * Nothing about HOW the body validates had to change for that, which is the point: every push here
+   * already sits next to an `else` that does not store the value, or a `continue` that skips the
+   * entry. The sanitized config was always being built alongside the complaints; the only thing that
+   * threw it away was the return at the bottom.
+   *
+   * The rule has NO exception. A discarded key whose default exists simply gets its default; one
+   * without a default is only reported. Nothing here changes the state of a door because something
+   * else in the file was unreadable — not even the agent permission line, and the owner chose that
+   * with the measurement in front of him: a mistyped `sandboxMode` on a delegated codex agent falls
+   * to the class default, which is `danger-full-access`. The warning names it and the human fixes it.
+   * A rule with one special case is a rule that rots. The full survey of which way every `settings:`
+   * key falls when discarded is measured and kept in the t-48dd8d journal.
+   */
+  const discarded: string[] = [];
   const warnings: string[] = [];
 
+  // The two failures that survive as failures, because neither leaves anything to salvage: bytes that
+  // are not YAML, and a document that is not a mapping. There is no "rest of the file" to keep.
   let raw: unknown;
   try {
     raw = parseYaml(yamlText);
   } catch (err) {
-    return { errors: [`invalid YAML: ${err instanceof Error ? err.message : String(err)}`], warnings };
+    return { errors: [`invalid YAML: ${err instanceof Error ? err.message : String(err)}`], warnings, discarded: [] };
   }
 
   if (!isPlainObject(raw)) {
-    return { errors: ["tachyon.yml must be a YAML mapping"], warnings };
+    return { errors: ["tachyon.yml must be a YAML mapping"], warnings, discarded: [] };
   }
+
 
   for (const key of Object.keys(raw)) {
     if (!["agents", "terminals", "layouts", "commands", "runbooks", "schedules", "settings"].includes(key)) {
-      errors.push(`unknown top-level key '${key}' (expected agents, terminals, layouts, commands, runbooks, schedules, settings)`);
+      discarded.push(`unknown top-level key '${key}' (expected agents, terminals, layouts, commands, runbooks, schedules, settings)`);
     }
   }
 
@@ -1266,19 +1330,19 @@ export function parseConfig(yamlText: string): ParseResult {
   // workspaces do not need a declared agent or terminal. Malformed blocks still refuse.
   const agents: Record<string, ManagedEntryDef> = {};
   if (raw.agents !== undefined && !isPlainObject(raw.agents)) {
-    errors.push("'agents' must be a mapping of agent name -> definition");
+    discarded.push("'agents' must be a mapping of agent name -> definition");
   }
   if (isPlainObject(raw.agents)) {
     for (const [name, def] of Object.entries(raw.agents)) {
       if (!NAME_RE.test(name)) {
-        errors.push(`agents.${name}: invalid name (must match ${NAME_RE})`);
+        discarded.push(`agents.${name}: invalid name (must match ${NAME_RE})`);
         continue;
       }
       if (!isPlainObject(def)) {
-        errors.push(`agents.${name}: must be a mapping with at least 'cmd'`);
+        discarded.push(`agents.${name}: must be a mapping with at least 'cmd'`);
         continue;
       }
-      const agent = parseAgentEntry("agents", name, def, errors, warnings);
+      const agent = parseAgentEntry("agents", name, def, discarded, warnings);
       if (agent) agents[name] = agent;
     }
     const enabledByFold = new Map<string, string>();
@@ -1286,10 +1350,21 @@ export function parseConfig(yamlText: string): ParseResult {
     for (const [name, entry] of Object.entries(agents)) {
       const folded = asciiFoldAgentName(name);
       const agent = asAgent(entry);
+      /**
+       * t-48dd8d — the COLLIDING declaration is discarded; the one already registered keeps its
+       * capability. While any complaint refused the file this was only a message, and leaving both
+       * would let two agents claim the one profile that `SOUL.md` is keyed by. Dropping the second is
+       * the smallest discard that resolves it, and it is the one the message already named — file
+       * order decides, exactly as it does for the `agents:`/`terminals:` namespace.
+       */
       if (agent?.soul === true) {
         const prior = enabledByFold.get(folded);
         if (prior !== undefined) {
-          errors.push(`agents.${name}.soul: conflicts with soul-enabled agent '${prior}' after ASCII case folding`);
+          discarded.push(
+            `agents.${name}.soul: conflicts with soul-enabled agent '${prior}' after ASCII case folding` +
+            ` — dropped from '${name}'; rename one of them`,
+          );
+          delete agent.soul;
         } else {
           enabledByFold.set(folded, name);
         }
@@ -1297,7 +1372,11 @@ export function parseConfig(yamlText: string): ParseResult {
       if (agent?.selfEvolution?.enabled === true) {
         const prior = evolutionEnabledByFold.get(folded);
         if (prior !== undefined) {
-          errors.push(`agents.${name}.selfEvolution: conflicts with evolution-enabled agent '${prior}' after ASCII case folding`);
+          discarded.push(
+            `agents.${name}.selfEvolution: conflicts with evolution-enabled agent '${prior}' after ASCII case folding` +
+            ` — dropped from '${name}'; rename one of them`,
+          );
+          delete agent.selfEvolution;
         } else {
           evolutionEnabledByFold.set(folded, name);
         }
@@ -1307,22 +1386,29 @@ export function parseConfig(yamlText: string): ParseResult {
 
   if (raw.terminals !== undefined) {
     if (!isPlainObject(raw.terminals)) {
-      errors.push("'terminals' must be a mapping of terminal name -> definition");
+      discarded.push("'terminals' must be a mapping of terminal name -> definition");
     } else {
       for (const [name, def] of Object.entries(raw.terminals)) {
         if (!NAME_RE.test(name)) {
-          errors.push(`terminals.${name}: invalid name (must match ${NAME_RE})`);
+          discarded.push(`terminals.${name}: invalid name (must match ${NAME_RE})`);
           continue;
         }
         if (!isPlainObject(def)) {
-          errors.push(`terminals.${name}: must be a mapping with at least 'cmd'`);
+          discarded.push(`terminals.${name}: must be a mapping with at least 'cmd'`);
           continue;
         }
         if (name in agents) {
-          errors.push(`terminals.${name}: name already declared under agents: — agents and terminals share one namespace`);
+          // t-48dd8d — BOTH entries go. Keeping the `agents:` one would resolve the ambiguity toward
+          // the more capable entity: someone who meant a plain process would silently get an agent,
+          // with a worktree, a harness and an AI. One name cannot name two things, so it names none.
+          delete agents[name];
+          discarded.push(
+            `terminals.${name}: name already declared under agents: — agents and terminals share one namespace, ` +
+            `so BOTH entries were dropped rather than guessing which one was meant`,
+          );
           continue;
         }
-        const terminal = parseAgentEntry("terminals", name, def, errors, warnings);
+        const terminal = parseAgentEntry("terminals", name, def, discarded, warnings);
         if (terminal) agents[name] = terminal;
       }
     }
@@ -1333,31 +1419,31 @@ export function parseConfig(yamlText: string): ParseResult {
   const commands: Record<string, CommandDef> = {};
   if (raw.commands !== undefined) {
     if (!isPlainObject(raw.commands)) {
-      errors.push("'commands' must be a mapping of command name -> definition");
+      discarded.push("'commands' must be a mapping of command name -> definition");
     } else {
       for (const [name, def] of Object.entries(raw.commands)) {
         if (!NAME_RE.test(name)) {
-          errors.push(`commands.${name}: invalid name (must match ${NAME_RE})`);
+          discarded.push(`commands.${name}: invalid name (must match ${NAME_RE})`);
           continue;
         }
         if (!isPlainObject(def) || typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
-          errors.push(`commands.${name}: must be a mapping with a non-empty 'cmd'`);
+          discarded.push(`commands.${name}: must be a mapping with a non-empty 'cmd'`);
           continue;
         }
         const command: CommandDef = { cmd: def.cmd };
         if (def.cwd !== undefined) {
-          if (typeof def.cwd !== "string") errors.push(`commands.${name}.cwd: must be a string`);
+          if (typeof def.cwd !== "string") discarded.push(`commands.${name}.cwd: must be a string`);
           else command.cwd = def.cwd;
         }
         if (def.env !== undefined) {
           if (!isPlainObject(def.env) || Object.values(def.env).some((v) => typeof v !== "string")) {
-            errors.push(`commands.${name}.env: must be a mapping of string -> string`);
+            discarded.push(`commands.${name}.env: must be a mapping of string -> string`);
           } else {
             command.env = def.env as Record<string, string>;
           }
         }
         for (const key of Object.keys(def)) {
-          if (!["cmd", "cwd", "env"].includes(key)) errors.push(`commands.${name}: unknown key '${key}'`);
+          if (!["cmd", "cwd", "env"].includes(key)) discarded.push(`commands.${name}: unknown key '${key}'`);
         }
         commands[name] = command;
       }
@@ -1367,11 +1453,11 @@ export function parseConfig(yamlText: string): ParseResult {
   const runbooks: Record<string, RunbookDef> = {};
   if (raw.runbooks !== undefined) {
     if (!isPlainObject(raw.runbooks)) {
-      errors.push("'runbooks' must be a mapping of runbook name -> definition");
+      discarded.push("'runbooks' must be a mapping of runbook name -> definition");
     } else {
       for (const [name, def] of Object.entries(raw.runbooks)) {
         if (!NAME_RE.test(name)) {
-          errors.push(`runbooks.${name}: invalid name (must match ${NAME_RE})`);
+          discarded.push(`runbooks.${name}: invalid name (must match ${NAME_RE})`);
           continue;
         }
         if (
@@ -1380,11 +1466,11 @@ export function parseConfig(yamlText: string): ParseResult {
           def.steps.length === 0 ||
           def.steps.some((st) => typeof st !== "string" || st.trim().length === 0)
         ) {
-          errors.push(`runbooks.${name}: must declare a non-empty 'steps' list of strings`);
+          discarded.push(`runbooks.${name}: must declare a non-empty 'steps' list of strings`);
           continue;
         }
         for (const key of Object.keys(def)) {
-          if (key !== "steps") errors.push(`runbooks.${name}: unknown key '${key}'`);
+          if (key !== "steps") discarded.push(`runbooks.${name}: unknown key '${key}'`);
         }
         runbooks[name] = { steps: def.steps as string[] };
       }
@@ -1394,58 +1480,58 @@ export function parseConfig(yamlText: string): ParseResult {
   const schedules: Record<string, ScheduleDef> = {};
   if (raw.schedules !== undefined) {
     if (!isPlainObject(raw.schedules)) {
-      errors.push("'schedules' must be a mapping of schedule name -> definition");
+      discarded.push("'schedules' must be a mapping of schedule name -> definition");
     } else {
       for (const [name, def] of Object.entries(raw.schedules)) {
         if (!NAME_RE.test(name)) {
-          errors.push(`schedules.${name}: invalid name (must match ${NAME_RE})`);
+          discarded.push(`schedules.${name}: invalid name (must match ${NAME_RE})`);
           continue;
         }
         if (!isPlainObject(def)) {
-          errors.push(`schedules.${name}: must be a mapping`);
+          discarded.push(`schedules.${name}: must be a mapping`);
           continue;
         }
         for (const key of Object.keys(def)) {
           if (!["every", "at", "run", "spawn", "instructions", "catchUp"].includes(key)) {
-            errors.push(`schedules.${name}: unknown key '${key}'`);
+            discarded.push(`schedules.${name}: unknown key '${key}'`);
           }
         }
         const hasEvery = def.every !== undefined;
         const hasAt = def.at !== undefined;
         if (hasEvery === hasAt) {
-          errors.push(`schedules.${name}: exactly one of 'every' or 'at' is required`);
+          discarded.push(`schedules.${name}: exactly one of 'every' or 'at' is required`);
           continue;
         }
         if (hasEvery && (typeof def.every !== "string" || parseEvery(def.every) === null)) {
-          errors.push(`schedules.${name}.every: must be like '30m', '1h', '2h'`);
+          discarded.push(`schedules.${name}.every: must be like '30m', '1h', '2h'`);
           continue;
         }
         if (hasAt && (typeof def.at !== "string" || parseAt(def.at) === null)) {
-          errors.push(`schedules.${name}.at: must be 'HH:MM' (24h)`);
+          discarded.push(`schedules.${name}.at: must be 'HH:MM' (24h)`);
           continue;
         }
         const hasRun = def.run !== undefined;
         const hasSpawn = def.spawn !== undefined;
         if (hasRun === hasSpawn) {
-          errors.push(`schedules.${name}: exactly one of 'run' or 'spawn' is required`);
+          discarded.push(`schedules.${name}: exactly one of 'run' or 'spawn' is required`);
           continue;
         }
         if (hasRun) {
           if (typeof def.run !== "string" || (!(def.run in commands) && !(def.run in runbooks))) {
-            errors.push(`schedules.${name}.run: must reference a declared command or runbook`);
+            discarded.push(`schedules.${name}.run: must reference a declared command or runbook`);
             continue;
           }
         }
         if (hasSpawn && (typeof def.spawn !== "string" || !(def.spawn in agents))) {
-          errors.push(`schedules.${name}.spawn: must reference a declared agent`);
+          discarded.push(`schedules.${name}.spawn: must reference a declared agent`);
           continue;
         }
         if (def.instructions !== undefined && (typeof def.instructions !== "string" || !hasSpawn)) {
-          errors.push(`schedules.${name}.instructions: only valid with 'spawn' and must be a string`);
+          discarded.push(`schedules.${name}.instructions: only valid with 'spawn' and must be a string`);
           continue;
         }
         if (def.catchUp !== undefined && typeof def.catchUp !== "boolean") {
-          errors.push(`schedules.${name}.catchUp: must be a boolean`);
+          discarded.push(`schedules.${name}.catchUp: must be a boolean`);
           continue;
         }
         const entry: ScheduleDef = hasEvery ? { every: def.every as string } : { at: def.at as string };
@@ -1461,12 +1547,12 @@ export function parseConfig(yamlText: string): ParseResult {
   const settings: TachyonConfig["settings"] = {};
   if (raw.settings !== undefined) {
     if (!isPlainObject(raw.settings)) {
-      errors.push("'settings' must be a mapping");
+      discarded.push("'settings' must be a mapping");
     } else {
       if (raw.settings.maxAgents !== undefined) {
         const n = raw.settings.maxAgents;
         if (typeof n !== "number" || !Number.isInteger(n) || n < 1) {
-          errors.push("settings.maxAgents: must be an integer >= 1");
+          discarded.push("settings.maxAgents: must be an integer >= 1");
         } else {
           settings.maxAgents = n;
         }
@@ -1478,7 +1564,7 @@ export function parseConfig(yamlText: string): ParseResult {
         } else {
           const parsed = parseAgentMemoryMax(rawMax);
           if (!parsed && rawMax !== "" && rawMax !== 0 && rawMax !== "0") {
-            errors.push('settings.agentMemoryMax: must be systemd MemoryMax like "2G", "512M", "50%", or "off"');
+            discarded.push('settings.agentMemoryMax: must be systemd MemoryMax like "2G", "512M", "50%", or "off"');
           } else if (parsed) {
             settings.agentMemoryMax = parsed;
           }
@@ -1487,7 +1573,7 @@ export function parseConfig(yamlText: string): ParseResult {
       if (raw.settings.bridgePort !== undefined) {
         const n = raw.settings.bridgePort;
         if (typeof n !== "number" || !Number.isInteger(n) || n < 1024 || n > 65535) {
-          errors.push("settings.bridgePort: must be an integer between 1024 and 65535");
+          discarded.push("settings.bridgePort: must be an integer between 1024 and 65535");
         } else {
           settings.bridgePort = n;
         }
@@ -1495,14 +1581,14 @@ export function parseConfig(yamlText: string): ParseResult {
       // spec 234 — settings.layout is recognized but ignored (layouts feature retired; no error on a legacy value).
       if (raw.settings.auth !== undefined) {
         if (typeof raw.settings.auth !== "boolean") {
-          errors.push("settings.auth: must be a boolean");
+          discarded.push("settings.auth: must be a boolean");
         } else {
           settings.auth = raw.settings.auth;
         }
       }
       if (raw.settings.legacyBridgeAuth !== undefined) {
         if (typeof raw.settings.legacyBridgeAuth !== "boolean") {
-          errors.push("settings.legacyBridgeAuth: must be a boolean");
+          discarded.push("settings.legacyBridgeAuth: must be a boolean");
         } else {
           settings.legacyBridgeAuth = raw.settings.legacyBridgeAuth;
         }
@@ -1514,16 +1600,16 @@ export function parseConfig(yamlText: string): ParseResult {
         // reserved (crash detection depends on it). The user's ~/.tmux.conf is
         // never loaded (the -f /dev/null isolation), so this is the only door.
         if (!isPlainObject(raw.settings.tmux)) {
-          errors.push("settings.tmux: must be a mapping of tmux option -> value");
+          discarded.push("settings.tmux: must be a mapping of tmux option -> value");
         } else {
           const tmux: Record<string, string> = {};
           for (const [k, v] of Object.entries(raw.settings.tmux)) {
             if (!/^[a-z][a-z0-9-]*$/.test(k)) {
-              errors.push(`settings.tmux: invalid option name '${k}' (lowercase letters, digits, '-')`);
+              discarded.push(`settings.tmux: invalid option name '${k}' (lowercase letters, digits, '-')`);
               continue;
             }
             if (k === "remain-on-exit") {
-              errors.push("settings.tmux: 'remain-on-exit' is reserved by Tachyon (crash detection depends on it)");
+              discarded.push("settings.tmux: 'remain-on-exit' is reserved by Tachyon (crash detection depends on it)");
               continue;
             }
             // t-9713ff — tmux defaults `exit-empty` to `on`, which lets a server end itself the moment
@@ -1531,17 +1617,17 @@ export function parseConfig(yamlText: string): ParseResult {
             // be reachable from a workspace file. Reserved for the same reason as the line above: the
             // option is not a preference, it is a promise other code depends on.
             if (k === "exit-empty") {
-              errors.push("settings.tmux: 'exit-empty' is reserved by Tachyon (the fleet server must not end itself when idle)");
+              discarded.push("settings.tmux: 'exit-empty' is reserved by Tachyon (the fleet server must not end itself when idle)");
               continue;
             }
             // YAML on/off/true/false -> tmux on/off; numbers -> string; strings literal.
             const s = typeof v === "boolean" ? (v ? "on" : "off") : typeof v === "number" ? String(v) : v;
             if (typeof s !== "string") {
-              errors.push(`settings.tmux.${k}: must be a string, number, or boolean`);
+              discarded.push(`settings.tmux.${k}: must be a string, number, or boolean`);
               continue;
             }
             if (/[\n\r]/.test(s)) {
-              errors.push(`settings.tmux.${k}: value must not contain newlines`);
+              discarded.push(`settings.tmux.${k}: value must not contain newlines`);
               continue;
             }
             tmux[k] = s;
@@ -1551,26 +1637,26 @@ export function parseConfig(yamlText: string): ParseResult {
       }
       if (raw.settings.worktree !== undefined) {
         if (!isPlainObject(raw.settings.worktree)) {
-          errors.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
+          discarded.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
         } else {
           const wt = raw.settings.worktree;
           const out: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean; shareDependencies?: boolean } = {};
           if (wt.base !== undefined) {
-            if (typeof wt.base !== "string" || wt.base.trim().length === 0) errors.push("settings.worktree.base: must be a non-empty path string");
+            if (typeof wt.base !== "string" || wt.base.trim().length === 0) discarded.push("settings.worktree.base: must be a non-empty path string");
             else out.base = wt.base;
           }
           if (wt.branch !== undefined) {
             if (typeof wt.branch !== "string" || wt.branch.trim().length === 0) {
-              errors.push("settings.worktree.branch: must be a non-empty branch template string");
+              discarded.push("settings.worktree.branch: must be a non-empty branch template string");
             } else if (!wt.branch.includes("{agent}")) {
-              errors.push("settings.worktree.branch: template must contain '{agent}' (else every agent collides on one branch)");
+              discarded.push("settings.worktree.branch: template must contain '{agent}' (else every agent collides on one branch)");
             } else {
               out.branch = wt.branch;
             }
           }
           if (wt.verify !== undefined) {
             if (typeof wt.verify !== "string" || wt.verify.trim().length === 0) {
-              errors.push("settings.worktree.verify: must be a non-empty command/runbook name or inline command string");
+              discarded.push("settings.worktree.verify: must be a non-empty command/runbook name or inline command string");
             } else {
               out.verify = wt.verify.trim();
             }
@@ -1579,7 +1665,7 @@ export function parseConfig(yamlText: string): ParseResult {
           // here, which is strictly better than the window-scoped key it replaces: in a multi-root
           // window two projects can legitimately disagree about revealing their worktrees.
           if (wt.revealInWorkspace !== undefined) {
-            if (typeof wt.revealInWorkspace !== "boolean") errors.push("settings.worktree.revealInWorkspace: must be a boolean");
+            if (typeof wt.revealInWorkspace !== "boolean") discarded.push("settings.worktree.revealInWorkspace: must be a boolean");
             else out.revealInWorkspace = wt.revealInWorkspace;
           }
           // t-3f93b4 — link a fresh worktree's `node_modules` to the primary checkout's when the two
@@ -1588,35 +1674,35 @@ export function parseConfig(yamlText: string): ParseResult {
           // workspace whose tooling writes INTO node_modules per-checkout can say no here without
           // having to give up worktree isolation itself.
           if (wt.shareDependencies !== undefined) {
-            if (typeof wt.shareDependencies !== "boolean") errors.push("settings.worktree.shareDependencies: must be a boolean");
+            if (typeof wt.shareDependencies !== "boolean") discarded.push("settings.worktree.shareDependencies: must be a boolean");
             else out.shareDependencies = wt.shareDependencies;
           }
           for (const key of Object.keys(wt)) {
-            if (!["base", "branch", "verify", "revealInWorkspace", "shareDependencies"].includes(key)) errors.push(`settings.worktree: unknown key '${key}'`);
+            if (!["base", "branch", "verify", "revealInWorkspace", "shareDependencies"].includes(key)) discarded.push(`settings.worktree: unknown key '${key}'`);
           }
           settings.worktree = out;
         }
       }
       if (raw.settings.verify !== undefined) {
         if (!isPlainObject(raw.settings.verify)) {
-          errors.push("settings.verify: must be a mapping with project-owned verification commands");
+          discarded.push("settings.verify: must be a mapping with project-owned verification commands");
         } else {
           const vf = raw.settings.verify;
           const out: NonNullable<TachyonConfig["settings"]["verify"]> = {};
           if (vf.full !== undefined) {
-            const command = normalizedArgvCommand(vf.full, "settings.verify.full", errors);
+            const command = normalizedArgvCommand(vf.full, "settings.verify.full", discarded);
             if (command) out.full = command;
           }
           if (vf.typecheck !== undefined) {
-            const command = normalizedArgvCommand(vf.typecheck, "settings.verify.typecheck", errors);
+            const command = normalizedArgvCommand(vf.typecheck, "settings.verify.typecheck", discarded);
             if (command) out.typecheck = command;
           }
           if (vf.prepare !== undefined) {
-            const command = normalizedArgvCommand(vf.prepare, "settings.verify.prepare", errors);
+            const command = normalizedArgvCommand(vf.prepare, "settings.verify.prepare", discarded);
             if (command) out.prepare = command;
           }
           if (vf.affected !== undefined) {
-            const command = normalizedArgvCommand(vf.affected, "settings.verify.affected", errors);
+            const command = normalizedArgvCommand(vf.affected, "settings.verify.affected", discarded);
             if (command) out.affected = command;
           }
           /**
@@ -1635,7 +1721,7 @@ export function parseConfig(yamlText: string): ParseResult {
           }
           for (const key of Object.keys(vf)) {
             if (!["full", "typecheck", "prepare", "affected", "behavior"].includes(key)) {
-              errors.push(`settings.verify: unknown key '${key}'`);
+              discarded.push(`settings.verify: unknown key '${key}'`);
             }
           }
           settings.verify = out;
@@ -1643,89 +1729,99 @@ export function parseConfig(yamlText: string): ParseResult {
       }
       if (raw.settings.projectGuidance !== undefined) {
         if (!isPlainObject(raw.settings.projectGuidance)) {
-          errors.push("settings.projectGuidance: must be a mapping with a non-empty 'files' list");
+          discarded.push("settings.projectGuidance: must be a mapping with a non-empty 'files' list");
         } else {
           const projectGuidance = raw.settings.projectGuidance;
-          const errorCountBefore = errors.length;
+          const errorCountBefore = discarded.length;
           for (const key of Object.keys(projectGuidance)) {
-            if (key !== "files") errors.push(`settings.projectGuidance: unknown key '${key}'`);
+            if (key !== "files") discarded.push(`settings.projectGuidance: unknown key '${key}'`);
           }
 
           if (!Array.isArray(projectGuidance.files) || projectGuidance.files.length === 0) {
-            errors.push("settings.projectGuidance.files: must be a non-empty list of workspace-relative path strings");
+            discarded.push("settings.projectGuidance.files: must be a non-empty list of workspace-relative path strings");
           } else {
             if (projectGuidance.files.length > PROJECT_GUIDANCE_MAX_FILES) {
-              errors.push(`settings.projectGuidance.files: must contain at most ${PROJECT_GUIDANCE_MAX_FILES} paths`);
+              discarded.push(`settings.projectGuidance.files: must contain at most ${PROJECT_GUIDANCE_MAX_FILES} paths`);
             }
             const files: string[] = [];
             const seen = new Set<string>();
             for (let index = 0; index < projectGuidance.files.length; index++) {
               const rawPath = projectGuidance.files[index];
               if (typeof rawPath !== "string") {
-                errors.push(`settings.projectGuidance.files[${index}]: must be a path string`);
+                discarded.push(`settings.projectGuidance.files[${index}]: must be a path string`);
                 continue;
               }
               if (containsUnsafeFramingCharacter(rawPath)) {
-                errors.push(`settings.projectGuidance.files[${index}]: must not contain control characters`);
+                discarded.push(`settings.projectGuidance.files[${index}]: must not contain control characters`);
                 continue;
               }
               const sourcePath = rawPath.trim();
               const reason = projectGuidancePathError(sourcePath);
               if (reason) {
-                errors.push(`settings.projectGuidance.files[${index}] (${JSON.stringify(sourcePath)}): ${reason}`);
+                discarded.push(`settings.projectGuidance.files[${index}] (${JSON.stringify(sourcePath)}): ${reason}`);
                 continue;
               }
               if (seen.has(sourcePath)) {
-                errors.push(`settings.projectGuidance.files[${index}]: duplicate path ${JSON.stringify(sourcePath)}`);
+                discarded.push(`settings.projectGuidance.files[${index}]: duplicate path ${JSON.stringify(sourcePath)}`);
                 continue;
               }
               seen.add(sourcePath);
               files.push(sourcePath);
             }
-            if (errors.length === errorCountBefore) settings.projectGuidance = { files };
+            /**
+             * t-48dd8d — accepted PATH BY PATH, where it used to be dropped whole on any complaint.
+             * Discarding the whole list over one bad entry would drop paths that are perfectly
+             * readable, which is not what "discard what is wrong" means. `errorCountBefore` stays,
+             * but only to decide whether an over-long list was truncated rather than accepted.
+             */
+            const kept = files.slice(0, PROJECT_GUIDANCE_MAX_FILES);
+            if (kept.length > 0) settings.projectGuidance = { files: kept };
+            else if (discarded.length > errorCountBefore) {
+              discarded.push("settings.projectGuidance: no usable path remained, so no project guidance is transported");
+            }
           }
         }
       }
       if (raw.settings.anchor !== undefined) {
         if (!isPlainObject(raw.settings.anchor)) {
-          errors.push("settings.anchor: must be a mapping with 'auto'");
+          discarded.push("settings.anchor: must be a mapping with 'auto'");
         } else {
           const an = raw.settings.anchor;
           const out: { auto?: boolean } = {};
           if (an.auto !== undefined) {
-            if (typeof an.auto !== "boolean") errors.push("settings.anchor.auto: must be a boolean");
+            if (typeof an.auto !== "boolean") discarded.push("settings.anchor.auto: must be a boolean");
             else out.auto = an.auto;
           }
           for (const key of Object.keys(an)) {
-            if (key !== "auto") errors.push(`settings.anchor: unknown key '${key}'`);
+            if (key !== "auto") discarded.push(`settings.anchor: unknown key '${key}'`);
           }
           settings.anchor = out;
         }
       }
       if (raw.settings.companion !== undefined) {
         if (!isPlainObject(raw.settings.companion)) {
-          errors.push("settings.companion: must be a mapping with 'tabTools'");
+          discarded.push("settings.companion: must be a mapping with 'tabTools'");
         } else {
           const c = raw.settings.companion;
           const out: { tabTools?: boolean; allowedHosts?: string[]; lanAccess?: boolean } = {};
           if (c.tabTools !== undefined) {
-            if (typeof c.tabTools !== "boolean") errors.push("settings.companion.tabTools: must be a boolean");
+            if (typeof c.tabTools !== "boolean") discarded.push("settings.companion.tabTools: must be a boolean");
             else out.tabTools = c.tabTools;
           }
           if (c.allowedHosts !== undefined) {
             if (!Array.isArray(c.allowedHosts) || !c.allowedHosts.every((x: unknown) => typeof x === "string")) {
-              errors.push("settings.companion.allowedHosts: must be a string array of host globs");
+              discarded.push("settings.companion.allowedHosts: must be a string array of host globs");
             } else {
               (out as { allowedHosts?: string[] }).allowedHosts = c.allowedHosts as string[];
             }
           }
           if (c.lanAccess !== undefined) {
-            if (typeof c.lanAccess !== "boolean") errors.push("settings.companion.lanAccess: must be a boolean");
+            if (typeof c.lanAccess !== "boolean") discarded.push("settings.companion.lanAccess: must be a boolean");
             else out.lanAccess = c.lanAccess;
           }
           for (const key of Object.keys(c)) {
             if (key !== "tabTools" && key !== "allowedHosts" && key !== "lanAccess") {
-              errors.push(`settings.companion: unknown key '${key}'`);
+              discarded.push(`settings.companion: unknown key '${key}'`);
             }
           }
           if (Object.keys(out).length > 0) settings.companion = out;
@@ -1733,45 +1829,45 @@ export function parseConfig(yamlText: string): ParseResult {
       }
       if (raw.settings.ideBrowser !== undefined) {
         if (!isPlainObject(raw.settings.ideBrowser)) {
-          errors.push("settings.ideBrowser: must be a mapping with optional 'enabled' and 'homeUrl'");
+          discarded.push("settings.ideBrowser: must be a mapping with optional 'enabled' and 'homeUrl'");
         } else {
           const ib = raw.settings.ideBrowser;
           const out: { enabled?: boolean; homeUrl?: string } = {};
           if (ib.enabled !== undefined) {
             if (typeof ib.enabled !== "boolean") {
-              errors.push("settings.ideBrowser.enabled: must be a boolean");
+              discarded.push("settings.ideBrowser.enabled: must be a boolean");
             } else {
               out.enabled = ib.enabled;
             }
           }
           if (ib.homeUrl !== undefined) {
             if (typeof ib.homeUrl !== "string" || !ib.homeUrl.trim()) {
-              errors.push("settings.ideBrowser.homeUrl: must be a non-empty string (http(s) URL or host)");
+              discarded.push("settings.ideBrowser.homeUrl: must be a non-empty string (http(s) URL or host)");
             } else {
               out.homeUrl = ib.homeUrl.trim();
             }
           }
           for (const key of Object.keys(ib)) {
             if (key !== "enabled" && key !== "homeUrl") {
-              errors.push(`settings.ideBrowser: unknown key '${key}'`);
+              discarded.push(`settings.ideBrowser: unknown key '${key}'`);
             }
           }
           if (Object.keys(out).length > 0) settings.ideBrowser = out;
         }
       }
       // SDD 479 phase 2 — the project's agent-card layout. Same SHAPE of validation as `companion`
-      // above (unknown key refused by name, block dropped whole, errors accumulated); a DIFFERENT
+      // above (unknown key refused by name, block dropped whole, discards accumulated); a DIFFERENT
       // severity, for the reason recorded on `settings.sidebar` in the type above.
       if (raw.settings.sidebar !== undefined) {
         if (!isPlainObject(raw.settings.sidebar)) {
-          errors.push("settings.sidebar: must be a mapping with 'cardTemplate'");
+          discarded.push("settings.sidebar: must be a mapping with 'cardTemplate'");
         } else {
           const sb = raw.settings.sidebar;
           for (const key of Object.keys(sb)) {
             // `options:` is NOT accepted yet: per-component options are named in the ratified schema
             // but no component implements one, and accepting a key we cannot honor would be a promise
             // the card does not keep. Refused by name, with where it went.
-            if (key !== "cardTemplate") errors.push(`settings.sidebar: unknown key '${key}' (allowed: cardTemplate)`);
+            if (key !== "cardTemplate") discarded.push(`settings.sidebar: unknown key '${key}' (allowed: cardTemplate)`);
           }
           if (sb.cardTemplate !== undefined) {
             const parsed = parseCardTemplate(sb.cardTemplate);
@@ -1787,16 +1883,16 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       // t-e4f662 — the Human Inbox's staleness threshold. Same validation SHAPE as the blocks above
-      // (unknown key refused by name, value checked, errors accumulated) and the same off-vocabulary
+      // (unknown key refused by name, value checked, discards accumulated) and the same off-vocabulary
       // `agentMemoryMax` already established, so a person who knows one knows the other.
       if (raw.settings.humanInbox !== undefined) {
         if (!isPlainObject(raw.settings.humanInbox)) {
-          errors.push("settings.humanInbox: must be a mapping with 'staleAfterHours'");
+          discarded.push("settings.humanInbox: must be a mapping with 'staleAfterHours'");
         } else {
           const inbox = raw.settings.humanInbox;
           for (const key of Object.keys(inbox)) {
             if (key !== "staleAfterHours") {
-              errors.push(`settings.humanInbox: unknown key '${key}' (allowed: staleAfterHours)`);
+              discarded.push(`settings.humanInbox: unknown key '${key}' (allowed: staleAfterHours)`);
             }
           }
           const value = inbox.staleAfterHours;
@@ -1807,7 +1903,7 @@ export function parseConfig(yamlText: string): ParseResult {
               // `0` lands here on purpose: it reads literally as "stale the moment it arrives", which
               // is the opposite of the "off" some author would mean by it. Refused by name, with the
               // spelling that does mean off.
-              errors.push(
+              discarded.push(
                 "settings.humanInbox.staleAfterHours: must be a positive number of hours, or \"never\" to stop marking",
               );
             } else {
@@ -1817,16 +1913,16 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       // t-585d5c — the idle-nudge threshold. Same validation SHAPE as `humanInbox` directly above
-      // (unknown key refused by name, value checked, errors accumulated) and the same off-vocabulary,
+      // (unknown key refused by name, value checked, discards accumulated) and the same off-vocabulary,
       // so the two read as one idea rather than two conventions.
       if (raw.settings.agentNotifications !== undefined) {
         if (!isPlainObject(raw.settings.agentNotifications)) {
-          errors.push("settings.agentNotifications: must be a mapping with 'idleAfterMinutes'");
+          discarded.push("settings.agentNotifications: must be a mapping with 'idleAfterMinutes'");
         } else {
           const notifications = raw.settings.agentNotifications;
           for (const key of Object.keys(notifications)) {
             if (key !== "idleAfterMinutes") {
-              errors.push(`settings.agentNotifications: unknown key '${key}' (allowed: idleAfterMinutes)`);
+              discarded.push(`settings.agentNotifications: unknown key '${key}' (allowed: idleAfterMinutes)`);
             }
           }
           const value = notifications.idleAfterMinutes;
@@ -1836,13 +1932,13 @@ export function parseConfig(yamlText: string): ParseResult {
             } else if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
               // `0`, negatives and NaN land here together: none of them names a waiting period, and
               // `0` in particular would mean "nudge instantly", which is not the off it looks like.
-              errors.push(
+              discarded.push(
                 "settings.agentNotifications.idleAfterMinutes: must be a positive number of minutes, or \"never\" to stop notifying",
               );
             } else if (value > MAX_IDLE_NOTIFY_MINUTES) {
               // Refused rather than clamped: a clamp would leave the file asking for one thing while
               // the product does another, with nothing on screen to say which won.
-              errors.push(
+              discarded.push(
                 `settings.agentNotifications.idleAfterMinutes: ${value} is longer than the ${MAX_IDLE_NOTIFY_MINUTES}-minute maximum — use "never" to stop notifying`,
               );
             } else {
@@ -1852,24 +1948,24 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       if (raw.settings.bridgeGuidance !== undefined) {
-        if (typeof raw.settings.bridgeGuidance !== "boolean") errors.push("settings.bridgeGuidance: must be a boolean");
+        if (typeof raw.settings.bridgeGuidance !== "boolean") discarded.push("settings.bridgeGuidance: must be a boolean");
         else settings.bridgeGuidance = raw.settings.bridgeGuidance;
       }
       if (raw.settings.clipboard !== undefined) {
-        if (raw.settings.clipboard !== "auto" && raw.settings.clipboard !== "off") errors.push("settings.clipboard: must be 'auto' or 'off'");
+        if (raw.settings.clipboard !== "auto" && raw.settings.clipboard !== "off") discarded.push("settings.clipboard: must be 'auto' or 'off'");
         else settings.clipboard = raw.settings.clipboard;
       }
       if (raw.settings.agentHookProjection !== undefined) {
         // t-09edf2 — refused, never partially accepted: this key decides whether a gate reaches an agent
         // session, and a half-parsed policy would silently drop the plugin the human named.
         if (!isPlainObject(raw.settings.agentHookProjection)) {
-          errors.push("settings.agentHookProjection: must be a mapping of plugin name → hook class");
+          discarded.push("settings.agentHookProjection: must be a mapping of plugin name → hook class");
         } else {
           const out: Record<string, ProjectedHookClass> = {};
           let sound = true;
           for (const [plugin, value] of Object.entries(raw.settings.agentHookProjection)) {
             if (!AGENT_HOOK_PROJECTION_CLASSES.includes(value as ProjectedHookClass)) {
-              errors.push(`settings.agentHookProjection.${plugin}: must be one of ${AGENT_HOOK_PROJECTION_CLASSES.join(", ")}`);
+              discarded.push(`settings.agentHookProjection.${plugin}: must be one of ${AGENT_HOOK_PROJECTION_CLASSES.join(", ")}`);
               sound = false;
               continue;
             }
@@ -1881,16 +1977,26 @@ export function parseConfig(yamlText: string): ParseResult {
       if (raw.settings.agentPermissionProjection !== undefined) {
         const root = raw.settings.agentPermissionProjection;
         if (!isPlainObject(root)) {
-          errors.push("settings.agentPermissionProjection: must be a mapping of agent name → { runtime, … }");
+          discarded.push("settings.agentPermissionProjection: must be a mapping of agent name → { runtime, … }");
         } else {
           const modes = GROK_PERMISSION_MODES;
           const out: NonNullable<TachyonConfig["settings"]["agentPermissionProjection"]> = {};
-          let sound = true;
+          /**
+           * t-48dd8d — acceptance is per AGENT. The block used to be stored only if EVERY entry
+           * parsed, so one agent's typo also discarded the postures its neighbours had written
+           * correctly; discarding a line that is not wrong is not what "discard the invalid" means.
+           * Each entry below is already gated on its own validity before it reaches `out`.
+           *
+           * A discarded entry projects NOTHING, and the owner chose that with the number in hand: for
+           * a delegated codex agent, nothing projected means the class default, which is
+           * `approval_policy="never"` + `sandbox_mode="danger-full-access"` (AgentManager.ts:385-386).
+           * The warning names the key and the human fixes it. One rule with one special case is a rule
+           * that rots — see the measurement in the t-48dd8d journal for the full survey.
+           */
           for (const [agent, value] of Object.entries(root)) {
             const prefix = `settings.agentPermissionProjection.${agent}`;
             if (!isPlainObject(value)) {
-              errors.push(`${prefix}: must be a mapping with a runtime`);
-              sound = false;
+              discarded.push(`${prefix}: must be a mapping with a runtime`);
               continue;
             }
             if (value.runtime === "codex") {
@@ -1900,8 +2006,7 @@ export function parseConfig(yamlText: string): ParseResult {
               const codexKeys = ["runtime", "approvalPolicy", "sandboxMode", "bridgeToolApproval"];
               const unknown = Object.keys(value).filter((key) => !codexKeys.includes(key));
               if (unknown.length > 0) {
-                errors.push(`${prefix}: unknown ${unknown.length === 1 ? "key" : "keys"} ${unknown.map((key) => `'${key}'`).join(", ")}`);
-                sound = false;
+                discarded.push(`${prefix}: unknown ${unknown.length === 1 ? "key" : "keys"} ${unknown.map((key) => `'${key}'`).join(", ")}`);
               }
               const doors: Array<[string, readonly string[]]> = [
                 ["approvalPolicy", CODEX_APPROVAL_POLICIES],
@@ -1914,16 +2019,14 @@ export function parseConfig(yamlText: string): ParseResult {
                 const raw = (value as Record<string, unknown>)[key];
                 if (raw === undefined) continue;
                 if (typeof raw !== "string" || !allowed.includes(raw)) {
-                  errors.push(`${prefix}.${key}: must be one of ${allowed.join(", ")}`);
-                  sound = false;
+                  discarded.push(`${prefix}.${key}: must be one of ${allowed.join(", ")}`);
                   ok = false;
                   continue;
                 }
                 entry[key] = raw;
               }
               if (Object.keys(entry).length === 0) {
-                errors.push(`${prefix}: a codex entry must set at least one of approvalPolicy, sandboxMode, bridgeToolApproval`);
-                sound = false;
+                discarded.push(`${prefix}: a codex entry must set at least one of approvalPolicy, sandboxMode, bridgeToolApproval`);
                 ok = false;
               }
               if (ok) out[agent] = { runtime: "codex", ...entry } as AgentPermissionProjectionEntry;
@@ -1931,93 +2034,90 @@ export function parseConfig(yamlText: string): ParseResult {
             }
             const unknown = Object.keys(value).filter((key) => key !== "runtime" && key !== "mode");
             if (unknown.length > 0) {
-              errors.push(`${prefix}: unknown ${unknown.length === 1 ? "key" : "keys"} ${unknown.map((key) => `'${key}'`).join(", ")}`);
-              sound = false;
+              discarded.push(`${prefix}: unknown ${unknown.length === 1 ? "key" : "keys"} ${unknown.map((key) => `'${key}'`).join(", ")}`);
             }
             if (value.runtime !== "grok") {
-              errors.push(`${prefix}.runtime: must be 'grok' or 'codex'`);
-              sound = false;
+              discarded.push(`${prefix}.runtime: must be 'grok' or 'codex'`);
             }
             if (!modes.includes(value.mode as typeof modes[number])) {
-              errors.push(`${prefix}.mode: must be one of ${modes.join(", ")}`);
-              sound = false;
+              discarded.push(`${prefix}.mode: must be one of ${modes.join(", ")}`);
             }
             if (value.runtime === "grok" && modes.includes(value.mode as typeof modes[number]) && unknown.length === 0) {
               out[agent] = { runtime: "grok", mode: value.mode as typeof modes[number] };
             }
           }
-          if (sound && Object.keys(out).length > 0) settings.agentPermissionProjection = out;
+          if (Object.keys(out).length > 0) settings.agentPermissionProjection = out;
         }
       }
       if (raw.settings.handoff !== undefined) {
         if (!isPlainObject(raw.settings.handoff)) {
-          errors.push("settings.handoff: must be a mapping with 'path'");
+          discarded.push("settings.handoff: must be a mapping with 'path'");
         } else {
           const ho = raw.settings.handoff;
           const h: { path?: string; nudgeEvery?: string } = {};
           if (ho.path !== undefined) {
-            if (typeof ho.path !== "string" || ho.path.trim() === "") errors.push("settings.handoff.path: must be a non-empty string");
+            if (typeof ho.path !== "string" || ho.path.trim() === "") discarded.push("settings.handoff.path: must be a non-empty string");
             else h.path = ho.path;
           }
           if (ho.nudgeEvery !== undefined) {
-            if (ho.nudgeEvery !== "off" && parseEvery(String(ho.nudgeEvery)) === null) errors.push("settings.handoff.nudgeEvery: must be 'off' or an interval like '30m' / '1h'");
+            if (ho.nudgeEvery !== "off" && parseEvery(String(ho.nudgeEvery)) === null) discarded.push("settings.handoff.nudgeEvery: must be 'off' or an interval like '30m' / '1h'");
             else h.nudgeEvery = String(ho.nudgeEvery);
           }
           if (Object.keys(h).length > 0) settings.handoff = h;
-          for (const key of Object.keys(ho)) if (key !== "path" && key !== "nudgeEvery") errors.push(`settings.handoff: unknown key '${key}'`);
+          for (const key of Object.keys(ho)) if (key !== "path" && key !== "nudgeEvery") discarded.push(`settings.handoff: unknown key '${key}'`);
         }
       }
       // t-7bcba6 — reject obsolete persistence kill switch so a false override cannot silently disable hooks.
       if (raw.settings.persistence !== undefined) {
-        errors.push(
+        discarded.push(
           "settings.persistence is obsolete: silent hooks are always enabled for eligible declared Claude/Codex agents. Remove settings.persistence (including silentHooks) from tachyon.yml — there is no visible-legacy fallback.",
         );
       }
       // spec 364 — Bridge-client rebind policy (host generation bump after reload).
       if (raw.settings.bridgeClientRebind !== undefined) {
         if (!isPlainObject(raw.settings.bridgeClientRebind)) {
-          errors.push("settings.bridgeClientRebind: must be a mapping");
+          discarded.push("settings.bridgeClientRebind: must be a mapping");
         } else {
           const br = raw.settings.bridgeClientRebind;
           const out: NonNullable<TachyonConfig["settings"]["bridgeClientRebind"]> = {};
           if (br.onHostGenerationBump !== undefined) {
             if (br.onHostGenerationBump !== "auto" && br.onHostGenerationBump !== "notify" && br.onHostGenerationBump !== "off") {
-              errors.push("settings.bridgeClientRebind.onHostGenerationBump: must be 'auto', 'notify', or 'off'");
+              discarded.push("settings.bridgeClientRebind.onHostGenerationBump: must be 'auto', 'notify', or 'off'");
             } else {
               out.onHostGenerationBump = br.onHostGenerationBump;
             }
           }
           if (br.graceMs !== undefined) {
             if (typeof br.graceMs !== "number" || !Number.isFinite(br.graceMs) || br.graceMs < 0 || !Number.isInteger(br.graceMs)) {
-              errors.push("settings.bridgeClientRebind.graceMs: must be an integer >= 0");
+              discarded.push("settings.bridgeClientRebind.graceMs: must be an integer >= 0");
             } else {
               out.graceMs = br.graceMs;
             }
           }
           if (br.stopTimeoutMs !== undefined) {
             if (typeof br.stopTimeoutMs !== "number" || !Number.isFinite(br.stopTimeoutMs) || br.stopTimeoutMs < 0 || !Number.isInteger(br.stopTimeoutMs)) {
-              errors.push("settings.bridgeClientRebind.stopTimeoutMs: must be an integer >= 0");
+              discarded.push("settings.bridgeClientRebind.stopTimeoutMs: must be an integer >= 0");
             } else {
               out.stopTimeoutMs = br.stopTimeoutMs;
             }
           }
           if (br.maxConcurrentRebinds !== undefined) {
             if (typeof br.maxConcurrentRebinds !== "number" || !Number.isInteger(br.maxConcurrentRebinds) || br.maxConcurrentRebinds < 1) {
-              errors.push("settings.bridgeClientRebind.maxConcurrentRebinds: must be an integer >= 1");
+              discarded.push("settings.bridgeClientRebind.maxConcurrentRebinds: must be an integer >= 1");
             } else {
               out.maxConcurrentRebinds = br.maxConcurrentRebinds;
             }
           }
           if (br.circuitFailCount !== undefined) {
             if (typeof br.circuitFailCount !== "number" || !Number.isInteger(br.circuitFailCount) || br.circuitFailCount < 1) {
-              errors.push("settings.bridgeClientRebind.circuitFailCount: must be an integer >= 1");
+              discarded.push("settings.bridgeClientRebind.circuitFailCount: must be an integer >= 1");
             } else {
               out.circuitFailCount = br.circuitFailCount;
             }
           }
           for (const key of Object.keys(br)) {
             if (!["onHostGenerationBump", "graceMs", "stopTimeoutMs", "maxConcurrentRebinds", "circuitFailCount"].includes(key)) {
-              errors.push(`settings.bridgeClientRebind: unknown key '${key}'`);
+              discarded.push(`settings.bridgeClientRebind: unknown key '${key}'`);
             }
           }
           if (Object.keys(out).length > 0) settings.bridgeClientRebind = out;
@@ -2049,45 +2149,45 @@ export function parseConfig(yamlText: string): ParseResult {
       }
       if (raw.settings.taskNotifications !== undefined) {
         if (!isPlainObject(raw.settings.taskNotifications)) {
-          errors.push("settings.taskNotifications: must be a mapping");
+          discarded.push("settings.taskNotifications: must be a mapping");
         } else {
           const tn = raw.settings.taskNotifications;
           const out: TaskNotificationSettingsInput = {};
           for (const key of ["enabled", "suppressOwnChanges"] as const) {
             if (tn[key] !== undefined) {
-              if (typeof tn[key] !== "boolean") errors.push(`settings.taskNotifications.${key}: must be a boolean`);
+              if (typeof tn[key] !== "boolean") discarded.push(`settings.taskNotifications.${key}: must be a boolean`);
               else out[key] = tn[key];
             }
           }
           if (tn.events !== undefined) {
             if (!Array.isArray(tn.events) || tn.events.some((event) => typeof event !== "string" || !(TASK_NOTIFICATION_EVENT_IDS as readonly string[]).includes(event))) {
-              errors.push(`settings.taskNotifications.events: must be a list containing only ${TASK_NOTIFICATION_EVENT_IDS.join(", ")}`);
+              discarded.push(`settings.taskNotifications.events: must be a list containing only ${TASK_NOTIFICATION_EVENT_IDS.join(", ")}`);
             } else {
               out.events = tn.events as TaskNotificationSettingsInput["events"];
             }
           }
           if (tn.dedupeWindowMs !== undefined) {
             if (typeof tn.dedupeWindowMs !== "number" || !Number.isInteger(tn.dedupeWindowMs) || tn.dedupeWindowMs < 0) {
-              errors.push("settings.taskNotifications.dedupeWindowMs: must be an integer >= 0");
+              discarded.push("settings.taskNotifications.dedupeWindowMs: must be an integer >= 0");
             } else {
               out.dedupeWindowMs = tn.dedupeWindowMs;
             }
           }
           for (const key of Object.keys(tn)) {
-            if (!["enabled", "events", "suppressOwnChanges", "dedupeWindowMs"].includes(key)) errors.push(`settings.taskNotifications: unknown key '${key}'`);
+            if (!["enabled", "events", "suppressOwnChanges", "dedupeWindowMs"].includes(key)) discarded.push(`settings.taskNotifications: unknown key '${key}'`);
           }
           if (Object.keys(out).length > 0) settings.taskNotifications = out;
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) errors.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) discarded.push(`settings: unknown key '${key}'`);
       }
     }
   }
 
-  const declaredOwner = buildDeclaredOwner(agents, errors, warnings);
-  if (errors.length > 0) return { errors, warnings };
-  return { config: { agents, commands, runbooks, schedules, declaredOwner, settings }, errors: [], warnings };
+  const declaredOwner = buildDeclaredOwner(agents, discarded, warnings);
+  warnings.push(...discarded);
+  return { config: { agents, commands, runbooks, schedules, declaredOwner, settings }, errors: [], warnings, discarded };
 }
 
 export function loadConfigFile(path: string): ParseResult {
@@ -2095,7 +2195,7 @@ export function loadConfigFile(path: string): ParseResult {
   try {
     text = fs.readFileSync(path, "utf8");
   } catch (err) {
-    return { errors: [`cannot read ${path}: ${err instanceof Error ? err.message : String(err)}`], warnings: [] };
+    return { errors: [`cannot read ${path}: ${err instanceof Error ? err.message : String(err)}`], warnings: [], discarded: [] };
   }
   return parseConfig(text);
 }

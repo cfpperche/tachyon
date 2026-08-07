@@ -28,6 +28,7 @@ import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../.
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, enableSavedAgentSelfEvolution, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 import { asAgent } from "../../src/config/loadConfig.js";
 import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
+import { parseExtensionCommandV1, type ExtensionCommandV1 } from "../../src/runtime-api/extensionOperations.js";
 import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
 
 /**
@@ -628,18 +629,33 @@ it("t-6f0377 refuses an unmeasured runtime by name", async () => {
   ws.dispose();
 });
 
-it("rejects an invalid reload and retains the prior known-good config", async () => {
-  // SDD 478 M7 — this used to prove the point with `soul: SOUL.md` on an inline agent. Neither half
-  // of that is expressible now: `agents:` takes a profile pointer, and a canonical profile cannot
-  // carry `soul` at all (the projection refuses it: Soul is a formation lane, not a projected prompt field — t-50bbd4). The guarantee under test is the
-  // reload boundary itself — a rejected edit must leave the last known-good config live — so it is
-  // proven with an invalid key on the arm that does accept one.
+it("discards an unreadable key on reload instead of taking the workspace down", async () => {
+  // SDD 478 M7 — this used to prove that a rejected edit leaves the last known-good config live, with
+  // an unreadable `restart` standing in for the retired inline `soul:`.
+  //
+  // t-48dd8d moved that boundary. A key the loader cannot read no longer refuses the FILE: it is
+  // discarded, the rest of the workspace loads, and `restart` falls to `never` — the closed side,
+  // since an agent that does not restart itself is the conservative reading of a broken policy. That
+  // is the whole owner decision of 2026-08-07, and this is where a reader will look for it.
   const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: on-crash\n" });
   expect(ws.config?.agents.dev.restart).toBe("on-crash");
   fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: sometimes\n", "utf8");
 
+  expect(ws.reloadConfig()).toBe(true);
+  expect(ws.configFailure).toBeUndefined();
+  expect(ws.config?.agents.dev.restart).toBe("never");
+  ws.dispose();
+});
+
+it("still retains the prior known-good config when the file cannot be read at all", async () => {
+  // The other half of the same boundary, and the reason the LKG snapshot still exists: bytes that are
+  // not YAML leave nothing to salvage, so the reload is refused and the live config is untouched.
+  const { ws } = await makeWorkspace(() => {}, { tachyonYaml: "agents: {}\nterminals:\n  dev:\n    cmd: npm run dev\n    restart: on-crash\n" });
+  expect(ws.config?.agents.dev.restart).toBe("on-crash");
+  fs.writeFileSync(path.join(ws.workspaceRoot, "tachyon.yml"), "terminals: [unclosed\n", "utf8");
+
   expect(ws.reloadConfig()).toBe(false);
-  expect(ws.configFailure?.errors).toContain("terminals.dev.restart: must be 'never' or 'on-crash'");
+  expect(ws.configFailure?.errors[0]).toContain("invalid YAML");
   expect(ws.config?.agents.dev.restart).toBe("on-crash");
   expect(ws.readConfigLkg()?.agents.map((agent) => agent.name)).toContain("dev");
   ws.dispose();
@@ -1119,6 +1135,179 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
       fs.writeFileSync(file, text.replace(/  claude23:\n    profile: .tachyon\/agents\/claude23\/agent.yml\n/u, ""));
       expect(fs.readFileSync(file, "utf8")).not.toContain("claude23:");
       expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+});
+
+/**
+ * t-af4a5f — the same question one row down: who can remove a roster row whose row is a DECLARED
+ * TERMINAL, and what does each of them leave behind?
+ *
+ * The enumeration came before the code, and it is this list of case names:
+ *
+ *  - **A1 Human, sidebar x config.agent.delete** — `extension.ts:3632` reaches the third arm of
+ *    `deleteConfiguredAgent`, the only arm with no governed transaction behind it.
+ *  - **A2 Agent or API client, extension.invoke x config.agent.delete** — the SAME arm, reached
+ *    without the sidebar and with no section filter. `t-359469` measured this asymmetry on the Soul
+ *    door: the human path never renders for a terminal and the API path does, so a case that only
+ *    drives the button measures the door nobody uses.
+ *  - **A3 Agent, Bridge x dismiss_agent** — refused ahead of every side effect.
+ *  - **A4 Human or Agent, text editor / write_tachyon_config x edit tachyon.yml** — no door runs at
+ *    all. The deliberate escape hatch, and the reason the sweep has to name what it leaves.
+ *  - **A5 Tachyon, interruption x between this door's two writes** — the window with no journal, no
+ *    lock and no reconcile. Two cases, one per write, because the order between them IS the fix.
+ *
+ * The removal policy itself is `removeEmptyAgentProfileHome` (`src/config/agentProfileHome.ts`) and
+ * is not re-stated here: these cases drive the production door and assert what it leaves on disk,
+ * which is the only thing that proves the door reaches the policy at all.
+ */
+describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", () => {
+  const homeOf = (root: string) => path.join(root, ".tachyon", "agents", "b");
+
+  /** A declared terminal `b` that has run once and owns an Evolution profile inside its home. */
+  async function terminalWithFootprint() {
+    const made = await makeWorkspace();
+    const root = made.ws.workspaceRoot;
+    await made.ws.manager.spawn("b");
+    await made.ws.evolutionStore.ensureProfile("b");
+    expect(made.ws.config?.agents.b?.kind).toBe("terminal");
+    expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+    // Measured, and the reason `gcLedger` can never finish this door's work: a declared terminal
+    // holds no session-ledger row, so the one startup sweep that runs `forgetAgent` for a name that
+    // left `tachyon.yml` never sees this name.
+    expect(made.ws.ledger.get("b")).toBeUndefined();
+    return { ...made, root };
+  }
+
+  const deleteCommand = { action: "config.agent.delete", agent: "b", removeWorktree: false } as const;
+
+  const runDoor = (ws: Workspace, command: ExtensionCommandV1) => executeExtensionCommand(
+    { workspace: ws, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0],
+    command,
+  );
+
+  /**
+   * A5's interruption, injected at exactly the write the measurement names. A crash cannot be staged
+   * in-process, and a helper called directly would prove nothing about this door — so the door runs
+   * for real and one of its two writes refuses.
+   */
+  const interruptedAt = (ws: Workspace, method: "forgetAgent" | "mutateConfig"): Workspace =>
+    new Proxy(ws, {
+      get(target, property, receiver) {
+        if (property === method) return () => { throw new Error(`interrupted at ${String(property)}`); };
+        const value = Reflect.get(target, property, target);
+        void receiver;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as Workspace;
+
+  const sweepState = async (ws: Workspace) =>
+    (await ws.reconcileSavedAgentRoster()).agents.find((row) => row.agent === "b")?.state;
+
+  it("A1 Human, sidebar x config.agent.delete", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      await runDoor(ws, deleteCommand);
+      expect(ws.config?.agents.b).toBeUndefined();
+      expect(fs.existsSync(homeOf(root))).toBe(false);
+      expect(fs.existsSync(path.join(root, ".tachyon", "pane-transcripts", "b.log"))).toBe(false);
+      expect(await sweepState(ws)).toBeUndefined();
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A1 Human, sidebar x config.agent.delete, over a home holding a human's SOUL.md", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      fs.writeFileSync(path.join(homeOf(root), "SOUL.md"), "# a human wrote this\n");
+      await runDoor(ws, deleteCommand);
+      expect(ws.config?.agents.b).toBeUndefined();
+      // The `rmdir` refuses, which is the guard rather than a check in front of one, so the bytes
+      // stay — and since t-8b58b3 what stays is named instead of reported as `absent`.
+      expect(fs.readFileSync(path.join(homeOf(root), "SOUL.md"), "utf8")).toContain("a human wrote this");
+      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(false);
+      expect(await sweepState(ws)).toBe("orphan-home");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A2 Agent or API client, extension.invoke x config.agent.delete", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      // Through the runtime-api parser an untrusted caller actually goes through: the action is in
+      // EXTENSION_COMMAND_ACTIONS and its schema takes any agent name, terminal or not.
+      await runDoor(ws, parseExtensionCommandV1({ action: "config.agent.delete", agent: "b", removeWorktree: false }));
+      expect(ws.config?.agents.b).toBeUndefined();
+      expect(fs.existsSync(homeOf(root))).toBe(false);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A3 Agent, Bridge x dismiss_agent", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    const tools = new Map<string, (args: Record<string, unknown>) => Promise<{ content: Array<{ text: string }>; isError?: boolean }>>();
+    registerTools(
+      { registerTool: (name: string, _schema: unknown, handler: unknown) => { tools.set(name, handler as never); } } as never,
+      { workspaceRoot: root, caller: { kind: "agent", name: "a" }, manager: ws.manager } as never,
+    );
+    try {
+      expect((await tools.get("dismiss_agent")!({ name: "b" })).isError).toBe(true);
+      expect(ws.config?.agents.b?.kind).toBe("terminal");
+      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A4 Human or Agent, text editor x edit tachyon.yml", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      const file = path.join(root, "tachyon.yml");
+      fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace("  b:\n    cmd: sh\n", ""));
+      expect(fs.readFileSync(file, "utf8")).not.toContain("  b:");
+      // Nothing runs, by design — and the whole footprint stays. What the product owes this shape is
+      // a name for it, which the sweep gives.
+      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+      expect(await sweepState(ws)).toBe("orphan-home");
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A5 Tachyon, interruption x the footprint write, which must be the FIRST one", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      await expect(runDoor(interruptedAt(ws, "forgetAgent"), deleteCommand)).rejects.toThrow("interrupted at forgetAgent");
+      // The whole point of the order: an interruption here may not have spent the roster row. While
+      // the entry is still declared the name is listed, addressable, and the retry finishes it —
+      // whereas a row deleted first strands the footprint below with no journal and no door.
+      expect(ws.config?.agents.b?.kind).toBe("terminal");
+      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+      await runDoor(ws, deleteCommand);
+      expect(ws.config?.agents.b).toBeUndefined();
+      expect(fs.existsSync(homeOf(root))).toBe(false);
+    } finally {
+      ws.dispose();
+    }
+  });
+
+  it("A5 Tachyon, interruption x the roster-row write, which must be the LAST one", async () => {
+    const { ws, root } = await terminalWithFootprint();
+    try {
+      await expect(runDoor(interruptedAt(ws, "mutateConfig"), deleteCommand)).rejects.toThrow("interrupted at mutateConfig");
+      // The residue this leaves is not residue: a declared terminal with the footprint of one that
+      // has never been launched. Nothing on disk needs a door, and the sweep has nothing to report.
+      expect(ws.config?.agents.b?.kind).toBe("terminal");
+      expect(fs.existsSync(homeOf(root))).toBe(false);
+      expect(await sweepState(ws)).toBeUndefined();
+      // Idempotent: the second attempt converges instead of failing on the already-cleared half.
+      await runDoor(ws, deleteCommand);
+      expect(ws.config?.agents.b).toBeUndefined();
     } finally {
       ws.dispose();
     }

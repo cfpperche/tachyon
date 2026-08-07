@@ -139,8 +139,8 @@ describe("t-585d5c — the config surface, fail-closed", () => {
   it("refuses zero, negatives and NaN — naming the spelling that does mean off", () => {
     for (const bad of ["0", "-5", "not-a-number"]) {
       const result = load(`settings:\n  agentNotifications:\n    idleAfterMinutes: ${bad}\n`);
-      expect(result.errors.join("\n"), `accepted ${bad}`).toContain("must be a positive number of minutes");
-      expect(result.errors.join("\n")).toContain("never");
+      expect(result.warnings.join("\n"), `accepted ${bad}`).toContain("must be a positive number of minutes");
+      expect(result.warnings.join("\n")).toContain("never");
     }
   });
 
@@ -148,18 +148,18 @@ describe("t-585d5c — the config surface, fail-closed", () => {
     // A clamp would leave the file asking for one thing while the product does another, with nothing
     // on screen to say which won. `6000` for `60` is the typo this catches.
     const result = load(`settings:\n  agentNotifications:\n    idleAfterMinutes: ${MAX_IDLE_NOTIFY_MINUTES + 1}\n`);
-    expect(result.errors.join("\n")).toContain(`${MAX_IDLE_NOTIFY_MINUTES}-minute maximum`);
-    expect(result.errors.join("\n")).toContain("never");
+    expect(result.warnings.join("\n")).toContain(`${MAX_IDLE_NOTIFY_MINUTES}-minute maximum`);
+    expect(result.warnings.join("\n")).toContain("never");
   });
 
   it("refuses an unknown key by name", () => {
     const result = load("settings:\n  agentNotifications:\n    idleAfterMinuts: 5\n");
-    expect(result.errors.join("\n")).toContain("unknown key 'idleAfterMinuts'");
-    expect(result.errors.join("\n")).toContain("allowed: idleAfterMinutes");
+    expect(result.warnings.join("\n")).toContain("unknown key 'idleAfterMinuts'");
+    expect(result.warnings.join("\n")).toContain("allowed: idleAfterMinutes");
   });
 
   it("refuses a non-mapping block", () => {
-    expect(load("settings:\n  agentNotifications: 5\n").errors.join("\n"))
+    expect(load("settings:\n  agentNotifications: 5\n").warnings.join("\n"))
       .toContain("settings.agentNotifications: must be a mapping");
   });
 });

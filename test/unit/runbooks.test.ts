@@ -65,8 +65,8 @@ const YML = [
 ].join("\n");
 
 function configOf(yaml: string): TachyonConfig {
-  const { config, errors } = parseConfig(yaml);
-  if (!config) throw new Error(errors.join("; "));
+  const { config, warnings } = parseConfig(yaml);
+  if (!config) throw new Error(warnings.join("; "));
   return config;
 }
 
@@ -87,8 +87,8 @@ function makeRunner(exitFor: (cmd: string) => number) {
 describe("runbooks config", () => {
   it("parses and validates", () => {
     expect(configOf(YML).runbooks.deploy.steps).toEqual(["lint", "test", "./deploy.sh"]);
-    expect(parseConfig("agents:\n  a: {cmd: x}\nrunbooks:\n  r:\n    steps: []\n").errors[0]).toContain("non-empty");
-    expect(parseConfig("agents:\n  a: {cmd: x}\nrunbooks:\n  r:\n    steps: [ok]\n    extra: 1\n").errors[0]).toContain("unknown key");
+    expect(parseConfig("agents:\n  a: {cmd: x}\nrunbooks:\n  r:\n    steps: []\n").warnings[0]).toContain("non-empty");
+    expect(parseConfig("agents:\n  a: {cmd: x}\nrunbooks:\n  r:\n    steps: [ok]\n    extra: 1\n").warnings[0]).toContain("unknown key");
   });
 });
 
