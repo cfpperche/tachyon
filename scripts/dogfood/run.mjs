@@ -61,6 +61,7 @@ const scenarios = [
   "runtime-launch-preflight",
   "runtime-observability",
   "runtime-remeasure",
+  "stop-exit-codes",
   "ui-shortlist",
   "worktree-plugin-projection",
 ];

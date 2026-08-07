@@ -36,7 +36,11 @@ function attributionLabel(s: ExecutionGraphStrings, attribution: ExecutionGraphR
 
 /** State drives a class, never a bare colour: colour alone is not an accessible signal. */
 function stateTone(state: string): string {
-  if (state === "failed" || state === "killed") return "err";
+  if (state === "failed") return "err";
+  // t-9d76b1 — `killed` is a DELIBERATE termination (a stop Tachyon asked for is recorded as one), so it
+  // is not an error. It shared the failure tone while nothing emitted it; the first emitter would have
+  // painted every human-ordered stop red.
+  if (state === "killed") return "stopped";
   if (state === "completed") return "ok";
   if (state === "shared") return "shared";
   if (state === "orphaned" || state === "unproven") return "warn";
