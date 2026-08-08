@@ -24,7 +24,7 @@ describe("container-generated delegation behavior", () => {
         taskStore: new TaskStore(root),
         validationStore: new ValidationStore(root),
         config: { agents: { codex: {} } },
-        manager: { list: () => new Promise<never>(() => {}) },
+        manager: { list: () => new Promise<never>(() => {}), listAgents: () => new Promise<never>(() => {}) },
       } as unknown as Workspace;
       const task = await ws.taskStore.create({ title: "Task data wins", author: "human" });
       const targetWs = legacyMissionControlTarget(ws);

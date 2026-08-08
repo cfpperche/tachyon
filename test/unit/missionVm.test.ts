@@ -45,7 +45,7 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, op
     validationStore: new ValidationStore(root),
     config: { agents },
     manager: {
-      list: async () => (opts.managedEntries ?? []).map((a) => ({
+      listAgents: async () => (opts.managedEntries ?? []).filter((a) => (a.kind ?? "agent") === "agent").map((a) => ({
         session: `tachyon-test-${a.name}`,
         dead: false,
         crashed: false,
@@ -75,7 +75,7 @@ describe("buildMissionVm (bounded agent liveness)", () => {
   it("renders the task snapshot with liveness unavailable when the list never resolves — and a late rejection stays observed", async () => {
     const pending = deferred<never>();
     const ws = fakeWorkspace();
-    ws.manager.list = () => pending.promise;
+    ws.manager.listAgents = () => pending.promise;
     await ws.taskStore.create({ title: "task store survives", author: "human" });
 
     const vmPromise = buildMissionVm(target(ws), new MissionAgentLists(), () => {});
@@ -92,7 +92,7 @@ describe("buildMissionVm (bounded agent liveness)", () => {
 
   it("rejection before the timeout also falls back to unavailable without gating the snapshot", async () => {
     const ws = fakeWorkspace();
-    ws.manager.list = async () => { throw new Error("tmux down"); };
+    ws.manager.listAgents = async () => { throw new Error("tmux down"); };
     await ws.taskStore.create({ title: "still renders", author: "human" });
 
     const vmPromise = buildMissionVm(target(ws), new MissionAgentLists(), () => {});

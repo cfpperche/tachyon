@@ -89,7 +89,7 @@ export async function buildMissionVm(
 ): Promise<MissionControlVM> {
   const declared = new Set(ws.declaredAgentNames());
   const { agents, status } = await lists.bounded(ws.wsHash, () => ws.listMissionControlAgents(), onTrailingRetry);
-  const liveManaged = agents.filter((a) => a.kind === "agent" && a.running);
+  const liveManaged = agents.filter((a) => a.running);
   const liveTemporary = liveManaged
     // SDD 482 phase 3 — "which live instances are Temporary?" `declared.has(name)` stays as the
     // second guard: it answers a different question (is this name owned by config right now?).

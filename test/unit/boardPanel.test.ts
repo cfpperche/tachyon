@@ -52,7 +52,7 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, op
     taskStore: new TaskStore(root),
     validationStore: new ValidationStore(root),
     config: { agents },
-    manager: { list: async () => [] },
+    manager: { list: async () => [], listAgents: async () => [] },
   } as unknown as Workspace;
 }
 
