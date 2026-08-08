@@ -1,4 +1,5 @@
 import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
+import { terminalsOf } from "../config/loadConfig.js";
 import { mapStudioSubmitResult } from "./studioSubmit.js";
 import { FLAG_SUGGESTIONS, fromDef } from "./formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
@@ -38,8 +39,8 @@ export class TerminalStudioAdapter implements StudioHostAdapter<TerminalStudioEn
     if (entityId === undefined) {
       return { status: "ok", entity: { fields: blankTerminalFields() }, referenceData };
     }
-    const def = this.ws.config?.agents[entityId];
-    if (!def || def.kind !== "terminal") return { status: "not-found" };
+    const def = terminalsOf(this.ws.config)[entityId];
+    if (!def) return { status: "not-found" };
     return { status: "ok", entity: { name: entityId, fields: fromDef(entityId, def) }, referenceData };
   }
 
