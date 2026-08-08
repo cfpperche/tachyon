@@ -10,10 +10,11 @@ function source(): SidebarFleetSource {
     folderName: "workspace",
     bridge: { port: 4317, url: "http://127.0.0.1:4317" },
     manager: {
-      list: async () => [
+      listAgents: async () => [
         { name: "healthy", running: true, dead: false, crashed: false, kind: "agent", lifetime: "saved", resumePolicy: "restartable" },
         { name: "broken", running: false, dead: false, crashed: false, kind: "agent", lifetime: "saved", resumePolicy: "restartable", refused: REASON },
       ],
+      listTerminals: async () => [],
       defOf: (name: string) => name === "healthy" ? { cmd: "codex", kind: "agent" } : undefined,
       resumeReadiness: async () => true,
       session: (name: string) => `tachyon-ws-${name}`,

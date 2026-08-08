@@ -35,7 +35,7 @@ export interface SidebarFleetSource {
   wsHash: string;
   folderName: string;
   bridge: { port?: number; url?: string };
-  manager: Pick<AgentManager, "list" | "defOf" | "resumeReadiness" | "session">;
+  manager: Pick<AgentManager, "listAgents" | "listTerminals" | "defOf" | "resumeReadiness" | "session">;
   ledger: Pick<SessionLedger, "all" | "get">;
   tmux: Pick<TmuxService, "panePid">;
   worktrees: Pick<WorktreeManager, "currentBranch">;
@@ -103,7 +103,11 @@ export async function buildSidebarFleet(
   source: SidebarFleetSource,
   options: SidebarFleetServiceOptions = {},
 ): Promise<FleetVM> {
-  const all = await source.manager.list();
+  const [agentRows, terminalRows] = await Promise.all([
+    source.manager.listAgents(),
+    source.manager.listTerminals(),
+  ]);
+  const all = [...agentRows, ...terminalRows];
   const ledger = [...source.ledger.all()];
   const resumable = new Set(ledger.filter(([, record]) => isResumable(record)).map(([name]) => name));
   const worktrees = new Map(ledger.filter(([, record]) => record.worktree).map(([name, record]) => [name, record.worktree!.branch]));
@@ -126,7 +130,7 @@ export async function buildSidebarFleet(
 
   type LiveGit = { liveBranch?: string; worktreePath: string; branchDrift?: boolean };
   const liveGitOf = new Map<string, LiveGit>();
-  await Promise.all(all.filter((agent) => agent.kind === "agent").map(async (agent) => {
+  await Promise.all(agentRows.map(async (agent) => {
     const record = ledgerByName.get(agent.name);
     const cwd = record?.cwd || record?.worktree?.path || source.workspaceRoot;
     let liveBranch: string | undefined;
@@ -142,7 +146,7 @@ export async function buildSidebarFleet(
   const engineLogHasError = options.engineLogHasError?.();
   const running = new Set(all.filter((agent) => agent.running).map((agent) => agent.name));
   const externalTools = source.externalTools ?? new ExternalToolRegistry();
-  const liveAgents = all.filter((agent) => agent.kind === "agent" && agent.running && !agent.dead);
+  const liveAgents = agentRows.filter((agent) => agent.running && !agent.dead);
   const paneRoots = (await Promise.all(liveAgents.map(async (agent) => {
     try {
       return { agent: agent.name, panePid: await source.tmux.panePid(source.manager.session(agent.name)) };
@@ -177,8 +181,7 @@ export async function buildSidebarFleet(
   const configFailure = source.configFailure;
   // spec 390 — load task list once per fleet build for focus resolution.
   const focusTasks = source.focusTasks?.() ?? [];
-  const agents: AgentVM[] = all
-    .filter((agent) => agent.kind === "agent")
+  const agents: AgentVM[] = agentRows
     .map((agent) => {
       const definition = source.manager.defOf(agent.name);
       const live = agent.running ? source.attentionOf(agent.name) : undefined;
@@ -251,8 +254,7 @@ export async function buildSidebarFleet(
       });
     });
 
-  const terminals: AgentVM[] = all
-    .filter((agent) => agent.kind === "terminal")
+  const terminals: AgentVM[] = terminalRows
     .map((agent) => {
       const view = toAgentVM(agent, {
         kind: "terminal",
