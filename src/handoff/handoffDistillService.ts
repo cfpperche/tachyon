@@ -14,6 +14,7 @@ import {
 
 export interface WorkspaceHandoffDistillSource extends ManagedAgentInputSource {
   manager: ManagedAgentInputSource["manager"] & {
+    listAgents(): Promise<ManagedEntryInfo[]>;
     spawn(agent: string, options?: SpawnOptions): Promise<unknown>;
   };
   ledger: {

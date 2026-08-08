@@ -228,6 +228,7 @@ describe("legacyMissionControlTarget.closeValidation wakes the author once", () 
             declared: true,
           },
         ],
+        listAgents: async () => [],
       },
       taskStore: { reorderLane: async () => {} } as never,
       validationStore: store,
@@ -267,6 +268,7 @@ describe("legacyMissionControlTarget.closeValidation wakes the author once", () 
         list: async () => [
           { name: "codex-canonico", session: "tachyon-h-codex", running: false, kind: "agent" as const, declared: true },
         ],
+        listAgents: async () => [],
       },
       taskStore: { reorderLane: async () => {} } as never,
       validationStore: store,
