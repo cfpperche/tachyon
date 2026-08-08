@@ -142,6 +142,25 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
   const sessions = new Set<string>();
   const dead = new Map<string, number>(); // session -> exit code (remain-on-exit dead pane)
   const panes = new Map<string, string>();
+  // t-ab2682 — an actual composer, for the paths that READ the pane before acting on it. A fixed
+  // frame cannot express "occupied, then cleared", and counting captures is brittle because
+  // `refreshOwnership` and `interruptActiveTurn` read the pane too. So sessions listed here model
+  // the measured editor instead: Ctrl-C clears the draft, literal text is appended to it, and Enter
+  // submits it. Sessions absent from this map keep reading `panes` and are untouched.
+  const composerDrafts = new Map<string, string>();
+  /** Sessions whose runtime really exits when a submitted draft is `/exit` (claude's measured behaviour). */
+  const exitsOnExitCommand = new Set<string>();
+  /** Text that lands in the composer alongside literal text as it is typed — a notice or a human
+   *  keystroke arriving in the same beat, which is what makes a later Enter submit THEIR content. */
+  const composerInterloper = new Map<string, string>();
+  /** t-ab2682 — a draft that lands ONCE just after a Ctrl-C clears the composer: the spawn brief
+   *  winning the race against the stop. This is what makes the defect reproducible in a fake — a
+   *  draft that is simply present before the stop is cleared by the profile's own Ctrl-C and never
+   *  reaches the typing step. */
+  const composerArrival = new Map<string, string>();
+  /** What each Enter actually submitted. The defect is visible only here: the old delivery submitted
+   *  the staged line WITH `/exit` appended to it, as a prompt. */
+  const submittedLines: Array<{ session: string; text: string }> = [];
   const sessionEnv = new Map<string, Record<string, string>>(); // launch env from -e / set-environment
   const sentKeys: Array<{ session: string; key: string }> = [];
   const sentTexts: Array<{ session: string; text: string; submit: boolean }> = [];
@@ -221,13 +240,34 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
         }
         return { stdout: "", stderr: "" };
       }
-      case "send-keys":
-        sentKeys.push({ session: target(), key: args[args.length - 1] });
-        if (args.includes("-l")) sentTexts.push({ session: target(), text: args[args.length - 1], submit: false });
+      case "send-keys": {
+        const t = target();
+        const key = args[args.length - 1];
+        sentKeys.push({ session: t, key });
+        if (args.includes("-l")) sentTexts.push({ session: t, text: key, submit: false });
+        if (composerDrafts.has(t)) {
+          if (args.includes("-l")) composerDrafts.set(t, composerDrafts.get(t)! + key + (composerInterloper.get(t) ?? ""));
+          else if (key === "C-c") {
+            const arriving = composerArrival.get(t);
+            composerArrival.delete(t);
+            composerDrafts.set(t, arriving ?? "");
+          }
+          else if (key === "C-m") {
+            const submitted = composerDrafts.get(t)!;
+            submittedLines.push({ session: t, text: submitted });
+            composerDrafts.set(t, "");
+            if (submitted.trim() === "/exit" && exitsOnExitCommand.has(t)) dead.set(t, 0);
+          }
+        }
         return { stdout: "", stderr: "" };
-      case "capture-pane":
-        if (!sessions.has(target())) throw new Error("can't find session");
-        return { stdout: panes.get(target()) ?? "", stderr: "" };
+      }
+      case "capture-pane": {
+        const t = target();
+        if (!sessions.has(t)) throw new Error("can't find session");
+        const draft = composerDrafts.get(t);
+        if (draft !== undefined) return { stdout: `${panes.get(t) ?? ""}\n❯ ${draft}`, stderr: "" };
+        return { stdout: panes.get(t) ?? "", stderr: "" };
+      }
       case "list-sessions":
         if (sessions.size === 0) throw new Error("no server running");
         return { stdout: [...sessions].join("\n") + "\n", stderr: "" };
@@ -241,7 +281,7 @@ function fakeTmux(opts: { failRespawn?: boolean; failShowEnvironment?: boolean }
         return { stdout: "", stderr: "" };
     }
   };
-  return { sessions, dead, panes, sessionEnv, sentKeys, sentTexts, respawnArgs, newSessionArgs, pipedSessions, pipePaneArgs, opLog, tmux: new TmuxService(exec) };
+  return { sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sessionEnv, sentKeys, sentTexts, respawnArgs, newSessionArgs, pipedSessions, pipePaneArgs, opLog, tmux: new TmuxService(exec) };
 }
 
 function configOf(yaml: string): TachyonConfig {
@@ -251,7 +291,7 @@ function configOf(yaml: string): TachyonConfig {
 }
 
 function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEnvironment?: boolean } = {}) {
-  const { sessions, dead, panes, sentKeys, sentTexts, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
+  const { sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, tmux } = fakeTmux(tmuxOpts);
   const config = configOf(yaml);
   const spawned: string[] = [];
   const killed: string[] = [];
@@ -270,7 +310,7 @@ function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEn
     materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
     launchPreflight: HERMETIC_PREFLIGHT,
   });
-  return { manager, sessions, dead, panes, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
+  return { manager, sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
 
 skipTestsWithoutOptionalRuntimeAuth({
@@ -1299,44 +1339,95 @@ describe("AgentManager", () => {
     ]);
   });
 
+  const CLAUDE = `tachyon-${HASH}-claude`;
+
   it("stopGracefully sends Claude's local exit command when the pane stays alive", async () => {
-    const { manager, sessions, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    const { manager, sessions, composerDrafts, exitsOnExitCommand, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
+    composerDrafts.set(CLAUDE, ""); // an idle, free composer
+    exitsOnExitCommand.add(CLAUDE);
     await manager.stopGracefully("claude");
     expect(sentKeys).toEqual([
-      { session: `tachyon-${HASH}-claude`, key: "C-c" },
-      { session: `tachyon-${HASH}-claude`, key: "/exit" },
-      { session: `tachyon-${HASH}-claude`, key: "C-m" },
+      { session: CLAUDE, key: "C-c" },
+      { session: CLAUDE, key: "/exit" },
+      { session: CLAUDE, key: "C-m" },
     ]);
-    expect(sentTexts).toEqual([{ session: `tachyon-${HASH}-claude`, text: "/exit", submit: false }]);
-    expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
+    expect(sentTexts).toEqual([{ session: CLAUDE, text: "/exit", submit: false }]);
+    expect(sessions.has(CLAUDE)).toBe(true);
   });
 
   it("stopGracefully interrupts an active claude turn before local exit", async () => {
-    const { manager, panes, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    const { manager, panes, composerDrafts, exitsOnExitCommand, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
-    panes.set(`tachyon-${HASH}-claude`, "esc to interrupt");
+    panes.set(CLAUDE, "esc to interrupt");
+    composerDrafts.set(CLAUDE, "");
+    exitsOnExitCommand.add(CLAUDE);
     await manager.stopGracefully("claude");
     expect(sentKeys).toEqual([
-      { session: `tachyon-${HASH}-claude`, key: "Escape" },
-      { session: `tachyon-${HASH}-claude`, key: "C-c" },
-      { session: `tachyon-${HASH}-claude`, key: "/exit" },
-      { session: `tachyon-${HASH}-claude`, key: "C-m" },
+      { session: CLAUDE, key: "Escape" },
+      { session: CLAUDE, key: "C-c" },
+      { session: CLAUDE, key: "/exit" },
+      { session: CLAUDE, key: "C-m" },
     ]);
-    expect(sentTexts).toEqual([{ session: `tachyon-${HASH}-claude`, text: "/exit", submit: false }]);
+    expect(sentTexts).toEqual([{ session: CLAUDE, text: "/exit", submit: false }]);
   });
 
-  it("stopGracefully clears a leftover composer draft on an idle claude agent before local exit", async () => {
+  /**
+   * t-ab2682 — the regression, and the reason the text step reads before it types. `/exit` typed
+   * onto a staged line becomes part of THAT line, and the Enter behind it submits the pair to the
+   * model as a prompt instead of running the command. Measured on claude 2.1.224 through the dogfood
+   * door, 3 of 4 stops left the process alive with the pane reading `── END BEFORE FINISHING ──/exit`.
+   *
+   * Here the draft is the spawn brief, still being delivered when the stop arrives. Ctrl-C — the
+   * profile's own clear step — frees the composer, and only then is the command typed. Run against
+   * the old blind `sendKeys(text, true)` this fails: `/exit` is appended to the brief.
+   */
+  it("stopGracefully types its exit command only into a freed claude composer", async () => {
+    const { manager, composerDrafts, composerArrival, exitsOnExitCommand, submittedLines, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    composerDrafts.set(CLAUDE, "");
+    // The spawn brief lands just after the profile's Ctrl-C — the race the owner keeps losing.
+    composerArrival.set(CLAUDE, "a spawn brief still being delivered");
+    exitsOnExitCommand.add(CLAUDE);
+    await manager.stopGracefully("claude");
+    // The whole defect in one assertion: what the Enter submitted. The old blind delivery submitted
+    // "a spawn brief still being delivered/exit" — a PROMPT — and the process stayed alive.
+    expect(submittedLines).toEqual([{ session: CLAUDE, text: "/exit" }]);
+    expect(sentTexts).toEqual([{ session: CLAUDE, text: "/exit", submit: false }]);
+  });
+
+  /**
+   * The guard has to stay RED when the composer never frees: typing there is the defect itself. The
+   * stop then reaches STOPPING_FALLBACK_MS and surfaces as `stop-failed` — a true statement, and
+   * better than submitting whatever was staged to the model. This one burns the real
+   * free-composer budget, hence the explicit timeout.
+   */
+  it("stopGracefully never types its exit command onto a claude composer that stays occupied", async () => {
     const { manager, panes, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
-    panes.set(`tachyon-${HASH}-claude`, "› queued draft text that is not yet submitted");
+    // Not a modelled composer: this draft survives Ctrl-C, so the pane never reads free.
+    panes.set(CLAUDE, "❯ a human draft nobody submitted");
     await manager.stopGracefully("claude");
-    expect(sentKeys).toEqual([
-      { session: `tachyon-${HASH}-claude`, key: "C-c" },
-      { session: `tachyon-${HASH}-claude`, key: "/exit" },
-      { session: `tachyon-${HASH}-claude`, key: "C-m" },
-    ]);
-    expect(sentTexts).toEqual([{ session: `tachyon-${HASH}-claude`, text: "/exit", submit: false }]);
+    expect(sentTexts).toEqual([]);
+    expect(sentKeys.map((k) => k.key)).not.toContain("/exit");
+    expect(sentKeys.map((k) => k.key)).not.toContain("C-m");
+  }, 10_000);
+
+  /**
+   * The Enter is guarded the same way the typing is: it goes out only while the composer provably
+   * holds exactly the text we typed. Anything else means the press would be blind, and a blind Enter
+   * answers whatever selector happens to be focused.
+   */
+  it("stopGracefully withholds the submit when the claude composer no longer holds exactly its text", async () => {
+    const { manager, composerDrafts, composerInterloper, sentKeys, sentTexts } = makeManager("agents:\n  claude:\n    cmd: claude\n");
+    await manager.spawn("claude");
+    composerDrafts.set(CLAUDE, "");
+    // Something lands on the composer line in the same beat the command is typed.
+    composerInterloper.set(CLAUDE, " and a draft that arrived beside it");
+    await manager.stopGracefully("claude");
+    // Typed, but never submitted: that Enter would have sent the other content to the model.
+    expect(sentTexts).toEqual([{ session: CLAUDE, text: "/exit", submit: false }]);
+    expect(sentKeys.map((k) => k.key)).not.toContain("C-m");
   });
 
   it("cannot restart a re-discovered Temporary agent (no stored definition)", async () => {

@@ -28,6 +28,7 @@ import {
   moveActivityLog,
   type ActivityRenameSnapshot,
 } from "../activity/logStore.js";
+import { composerProfileFor, composerText, findComposerRegion, isComposerOccupied } from "../runtime/composerRegion.js";
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
@@ -3848,7 +3849,8 @@ export class AgentManager {
     this.opts.onStopping?.(name);
     try {
       await this.refreshOwnership(name); // capture an in-TUI /resume before asking the process to exit
-      const gracefulStop = gracefulStopForCommand(this.definitionOf(name)?.cmd ?? "");
+      const cmd = this.definitionOf(name)?.cmd ?? "";
+      const gracefulStop = gracefulStopForCommand(cmd);
       for (const step of gracefulStop.steps) {
         if (step.type === "interruptActiveTurn") {
           await this.interruptActiveTurn(session);
@@ -3859,7 +3861,7 @@ export class AgentManager {
           const state = (await this.opts.tmux.sessionStates(session))?.get(session);
           if (state && !state.dead) {
             if (step.type === "sendKeyIfAliveAfterDelay") await this.opts.tmux.sendKey(session, step.key);
-            else await this.opts.tmux.sendKeys(session, step.text, true);
+            else await this.sendStopText(session, step.text, cmd);
           }
         }
       }
@@ -3873,6 +3875,120 @@ export class AgentManager {
       // "stopped" instead of hiding it (see `deadSubline`).
       throw err;
     }
+  }
+
+  /** t-ab2682 — the text step's own budget. All of it has to fit inside STOPPING_FALLBACK_MS, which
+   *  is what turns a stop that never landed into the visible `stop-failed` row. Worst case here is
+   *  ~9.7s against that 15s; the measured ordinary case is one capture and ~800ms to a dead pane. */
+  private static readonly STOP_TEXT_FREE_TIMEOUT_MS = 5_000;
+  private static readonly STOP_TEXT_POLL_MS = 100;
+  private static readonly STOP_TEXT_CLEAR_ATTEMPTS = 2;
+  private static readonly STOP_TEXT_RENDER_MS = 150;
+  private static readonly STOP_TEXT_SUBMIT_ATTEMPTS = 3;
+  private static readonly STOP_TEXT_EXIT_GRACE_MS = 1_500;
+
+  /**
+   * t-ab2682 — deliver a graceful-stop TEXT step (claude's `/exit`) without typing blind.
+   *
+   * The old delivery was `tmux.sendKeys(session, text, true)`: `send-keys -l "/exit"` with `C-m`
+   * immediately behind it. Measured on claude 2.1.224 through the door production uses, that stop
+   * left the process alive in 3 of 4 runs.
+   *
+   * The cause is NOT the missing gap between the text and its Enter, which is what the task
+   * predicted. With a free composer the back-to-back pair exits 0 — 13 of 13 runs at a 6-13ms gap,
+   * including 3 of 3 against an agent stopped mid-turn — and re-measuring with the proposed fixed
+   * 600ms gap failed at exactly the old rate, 3 of 4. The cause is WHAT the composer held when the
+   * text was typed: `/exit` typed onto a staged line becomes part of THAT line, and the Enter behind
+   * it submits the pair to the model as a prompt. The spawn brief is the line that loses this race —
+   * the pane read `── END BEFORE FINISHING ──/exit` and claude answered it in prose. That is also
+   * why the composer looks EMPTY afterwards, which is what made this look like a swallowed Enter:
+   * the Enter was never eaten, it submitted the wrong thing.
+   *
+   * So the guard is composer occupancy, not a delay. Type only into a composer that is provably
+   * free, and press Enter only while the composer provably holds exactly this text. A capture costs
+   * p50 4ms / p95 23ms, which is cheaper than the fixed delay that does not work anyway.
+   */
+  private async sendStopText(session: string, text: string, cmd: string): Promise<void> {
+    const composer = composerProfileFor(cmd);
+    // No measured composer for this runtime means there is no evidence to read. The honest fallback
+    // is the old blind delivery rather than an invented verdict — the same rule `sendSubmittedLine`
+    // follows when a runtime declares no composer.
+    if (!composer) {
+      await this.opts.tmux.sendKeys(session, text, true);
+      return;
+    }
+
+    const deadline = Date.now() + AgentManager.STOP_TEXT_FREE_TIMEOUT_MS;
+    let freed = false;
+    let clears = 0;
+    while (Date.now() < deadline) {
+      if (await this.sessionIsDead(session)) return;
+      const pane = await this.captureForStop(session);
+      if (pane !== null && findComposerRegion(pane.split("\n"), composer) && !isComposerOccupied(pane, composer)) {
+        freed = true;
+        break;
+      }
+      // Occupied, or no composer region in this frame. Ctrl+C is this profile's OWN clear-the-draft
+      // step (claude 2.1.224: it clears an unsubmitted draft), so asking again is the sequence's own
+      // remedy rather than a new authority over the pane — a stop already consents to losing a draft.
+      if (clears < AgentManager.STOP_TEXT_CLEAR_ATTEMPTS) {
+        await this.sendKeyForStop(session, "C-c");
+        clears++;
+      }
+      await sleep(AgentManager.STOP_TEXT_POLL_MS);
+    }
+    // The composer was never proved free. Typing anyway is the defect this method exists to prevent:
+    // it would append to whatever is staged and submit the pair. Returning leaves the stop to time
+    // out into the visible `stop-failed` row, which is a true statement about what happened.
+    if (!freed) return;
+
+    await this.opts.tmux.sendKeys(session, text, false); // typed exactly once; never re-typed below
+    await sleep(AgentManager.STOP_TEXT_RENDER_MS);
+
+    for (let attempt = 0; attempt < AgentManager.STOP_TEXT_SUBMIT_ATTEMPTS; attempt++) {
+      if (await this.sessionIsDead(session)) return;
+      const pane = await this.captureForStop(session);
+      // Enter goes out only while the composer provably holds exactly our text. Unreadable, already
+      // cleared, or our text with something else beside it all mean a press would be blind, and a
+      // blind Enter answers whatever happens to be focused. The measured slash-command menu does not
+      // trip this: its rows carry no prompt glyph, so the region still reads exactly `/exit`.
+      if (pane === null || composerText(pane, composer) !== text.trim()) return;
+      await this.sendKeyForStop(session, "C-m");
+      if (await this.waitForSessionDeath(session, AgentManager.STOP_TEXT_EXIT_GRACE_MS)) return;
+    }
+  }
+
+  private async sessionIsDead(session: string): Promise<boolean> {
+    return (await this.opts.tmux.sessionStates(session))?.get(session)?.dead === true;
+  }
+
+  /** Colour-preserving capture for the stop path: an unreadable pane is `null`, never a guess. The
+   *  colours are what separate claude's dim suggestion from a real staged draft (t-c5f29b). */
+  private async captureForStop(session: string): Promise<string | null> {
+    try {
+      return await this.opts.tmux.capturePane(session, { joinWrapped: true, preserveColors: true });
+    } catch {
+      return null;
+    }
+  }
+
+  /** A key aimed at a process that is already exiting is expected to fail; that is the outcome this
+   *  step wants, so the failure must not surface as the stop's own error. */
+  private async sendKeyForStop(session: string, key: string): Promise<void> {
+    try {
+      await this.opts.tmux.sendKey(session, key);
+    } catch {
+      /* the pane may already be gone */
+    }
+  }
+
+  private async waitForSessionDeath(session: string, budgetMs: number): Promise<boolean> {
+    const deadline = Date.now() + budgetMs;
+    while (Date.now() < deadline) {
+      if (await this.sessionIsDead(session)) return true;
+      await sleep(AgentManager.STOP_TEXT_POLL_MS);
+    }
+    return this.sessionIsDead(session);
   }
 
   private async interruptActiveTurn(session: string): Promise<void> {

@@ -10,7 +10,11 @@ describe("container-generated delegation behavior", () => {
       const session = `tachyon-${wsHash}-agent`;
       const sessions = new Set<string>([session]);
       const sentKeys: string[] = [];
-      const panes = new Map<string, string>([[session, "• Working (1m 02s • esc to interrupt)"]]);
+      const base = "• Working (1m 02s • esc to interrupt)";
+      // t-ab2682 — claude's text step READS the composer before it types and before it submits, so
+      // this fake models the editor: Ctrl-C clears the draft, literal text is appended, Enter submits.
+      // A static frame would leave the composer never provably free and the command never typed.
+      let draft = "";
 
       const exec = async (args: string[]): Promise<ExecResult> => {
         const cmdName = args[2];
@@ -26,10 +30,14 @@ describe("container-generated delegation behavior", () => {
           case "list-panes":
             return { stdout: [...sessions].map((s) => `${s}\t0\t`).join("\n") + "\n", stderr: "" };
           case "capture-pane":
-            return { stdout: panes.get(targetSession()) ?? "", stderr: "" };
-          case "send-keys":
-            sentKeys.push(args.at(-1) ?? "");
+            return { stdout: `${base}\n❯ ${draft}`, stderr: "" };
+          case "send-keys": {
+            const key = args.at(-1) ?? "";
+            sentKeys.push(key);
+            if (args.includes("-l")) draft += key;
+            else if (key === "C-c" || key === "C-m") draft = "";
             return { stdout: "", stderr: "" };
+          }
           default:
             return { stdout: "", stderr: "" };
         }
