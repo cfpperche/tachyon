@@ -6,6 +6,71 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.68.0 — The fleet leaves the config file, and the form stops lying
+
+`tachyon.yml` is closer to being only configuration: your agents are the directories under
+`.tachyon/agents/`, not a list in a file. And four controls in Agent Studio that looked usable and
+were not — a field that discarded what you typed, two that were permanently greyed out, one whose
+runtime the save would refuse — now either work or are gone. Every one of these was found by asking
+the same question of a screen: is there anything here that promises something the code behind it
+does not do?
+
+### Changed
+
+- **Your fleet is the directory, not the file** (`t-ae221c`). A folder under `.tachyon/agents/` with
+  a readable `agent.yml` **is** an agent. The `agents:` block in `tachyon.yml` is no longer the
+  source; a file that still has one loads normally, with a warning saying the block is ignored and
+  can be deleted. Nothing rewrites your file for you. The pointer it replaced carried no information
+  — it was required to be exactly the path derived from the name — so reading the directory gives the
+  same answer with 174 fewer lines of code. Creating, renaming and forgetting an agent stopped being
+  two-file transactions, and the whole class of failure "the profile was written but the pointer was
+  not" no longer exists. One cost, stated rather than buried: deleting `.tachyon/agents/<name>/` by
+  hand used to remove an orphan pointer that had a Forget door; now it deletes **the agent**, and
+  what remains is a stranded authority with no door. That is inherent to "the directory is the
+  agent".
+
+### Fixed
+
+- **Verify and Setup can finally be set on an agent** (`t-afc86e`). Both fields were rendered
+  permanently read-only under a hint promising a binding that no work item carried. They now hold a
+  per-agent verify command and per-agent setup commands. This nearly went the other way: the
+  recommendation was to delete the controls, which was reasoning from this repository — one test
+  suite, and dependency-linking that makes setup unnecessary. In a monorepo a per-agent verify is
+  close to mandatory, and outside Node — venv, compilation, module download, codegen, migrations —
+  setup is the mechanism, not a luxury. Fixing it exposed something older: the channel that writes
+  profile files was **write-once**. Every artifact had been new by construction, so the second save
+  of the same field threw. It is now a CAS-guarded replace whose rollback restores the previous
+  bytes instead of deleting them.
+- **The self-evolution toggle works, and can be switched back off** (`t-f96b2f`). It was greyed out
+  while the machinery behind it was complete and had no callers at all. Wiring it up revealed that
+  the **off** path did not exist anywhere — and it is not optional: leaving the reference behind
+  makes the profile refuse to load, so an agent that enabled evolution and changed its mind would
+  stop loading. Turning it on without being able to turn it off would have shipped exactly the defect
+  this release exists to remove. A proposal, separately, can never grant evolution: creation refuses
+  it explicitly instead of granting it silently.
+- **Creating an agent on a runtime Tachyon cannot attest is refused, not offered** (`t-d68b8b`).
+  Quick Add showed the chip and the save then refused it, sending you back to the form you were
+  already in. Creation is limited to the attested runtimes — claude, codex, grok, pi — and the
+  refusal says the limit belongs to the creation path, not to the runtime. The list is read, never
+  copied, so attesting a runtime opens the form with no further edit. There were **two** doors, not
+  one: an agent proposing a saved agent could name any runtime as free text.
+- **Watch patterns is gone from agents** (`t-bd14d8`). It restarts the process when files change,
+  which is what a terminal wants and the opposite of what an agent wants: a file save killed the
+  session outright and started a new one, with no resume. Removing the field was not enough — a value
+  already stored survived every subsequent edit untouched, so the first save now clears it.
+- **A terminal is no longer matched against Claude Code's prompts** (`t-c59600`). Terminals declare
+  no runtime, and the default filled in `claude`, so `npm install` asking `Ok to proceed? (y)` was
+  compared against the patterns of an LLM interface. Neutral is now a scope of its own rather than a
+  runtime with fewer patterns. Measured loss: none. Measured gain: eight real shell prompts.
+
+### Internal
+
+- **SDD 496 — the agent/terminal split, planned** (`t-91564a`). The measurement overturned the
+  premise: the two types were separated a while ago, and what was never separated is the
+  *collection*, which hands out both and makes every consumer ask again. 76 live branches, sorted
+  into 28 that become dispatch, 20 that are dead code, and 28 that are legitimate. Five slices, each
+  shippable alone.
+
 ## 0.67.0 — Stopping, starting, and being told what to do about it
 
 Four things you press and one thing you read. Stop now stops, and stops looking like a crash. A
