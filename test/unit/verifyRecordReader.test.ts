@@ -5,6 +5,8 @@ import type { GitExec } from "../../src/worktree/WorktreeManager.js";
 const TREE = "a".repeat(40);
 const COMMON = "/repo/.git";
 const SINCE = "2026-07-01T00:00:00.000Z";
+const NOW = Date.parse("2026-07-03T00:00:00.000Z");
+const FINGERPRINT = "f".repeat(64);
 
 /**
  * A fake `GitExec` rather than a real repository: the reader must be async (the wedge invariant
@@ -35,16 +37,16 @@ describe("verification record reader (t-5e9bf8)", () => {
     // The path assertion IS the point: the common dir is shared by every worktree, which is how the
     // host reads a record the agent's own checkout wrote.
     const record = await readVerificationRecord("/wt/agent", "HEAD", git(), reader({
-      schema: 2, tree: TREE, commit: "c", at: "2026-07-02T00:00:00.000Z", summary: "619 files",
-    }));
+      schema: 2, tree: TREE, commit: "c", at: "2026-07-02T00:00:00.000Z", fingerprint: FINGERPRINT, summary: "619 files",
+    }), () => NOW);
     expect(record).toMatchObject({ tree: TREE, at: "2026-07-02T00:00:00.000Z", summary: "619 files" });
   });
 
   it("answers the since question on both sides of the cutoff", async () => {
-    const read = reader({ schema: 2, tree: TREE, at: "2026-07-02T00:00:00.000Z" });
-    await expect(isVerifiedSince("/wt/agent", "HEAD", SINCE, git(), read)).resolves.toBe(true);
+    const read = reader({ schema: 2, tree: TREE, at: "2026-07-02T00:00:00.000Z", fingerprint: FINGERPRINT });
+    await expect(isVerifiedSince("/wt/agent", "HEAD", SINCE, git(), read, () => NOW)).resolves.toBe(true);
     // A green recorded BEFORE the task was assigned is evidence about earlier work, not this task.
-    await expect(isVerifiedSince("/wt/agent", "HEAD", "2026-07-03T00:00:00.000Z", git(), read)).resolves.toBe(false);
+    await expect(isVerifiedSince("/wt/agent", "HEAD", "2026-07-03T00:00:00.000Z", git(), read, () => NOW)).resolves.toBe(false);
   });
 
   it("fails closed on every unreadable shape", async () => {

@@ -7,9 +7,10 @@
  * primary checkout, reads the same file. Without that property this whole signal would be invisible
  * to the host and the feature would need a second channel.
  *
- * This is a READER only. It never writes, never prunes, and never decides reuse — `verify-record.mjs`
- * owns all of that (t-5d0e9d). It answers exactly one question: is the tree at this commit recorded
- * as verified, at or after a given moment?
+ * This is a READER only. It never writes, never prunes, and never decides environment-relative reuse
+ * — `verify-record.mjs` still owns fingerprint equality (t-5d0e9d). It does enforce the shared,
+ * environment-independent validity contract before returning a record: schema 2, a present
+ * fingerprint, and a usable timestamp from no more than seven days ago and no later than now.
  *
  * ASYNC git, deliberately. A first cut shelled out synchronously and the wedge invariant in
  * `cxWedgeBehavior.gen.test.ts` caught it, correctly: this runs on the workspace's 3s tick inside the
@@ -17,13 +18,16 @@
  * injected `GitExec` the worktree layer already uses, so it also needs no real repository to test.
  *
  * Fail-closed everywhere. A missing record, an unreadable one, a record whose `tree` disagrees with
- * its own filename, an unparseable timestamp, or any git failure all answer `false`. "Cannot tell" is
- * never "verified" — which matters more here than in `check`, because this answer arms an automatic
- * message to a coordinator.
+ * its own filename, an unparseable/stale/future timestamp, an unattributable schema, or any git
+ * failure all answer `false`. "Cannot tell" is never "verified" — which matters more here than in
+ * `check`, because this answer arms an automatic message to a coordinator or a land command.
  */
 import fs from "node:fs";
 import path from "node:path";
 import type { GitExec } from "../worktree/WorktreeManager.js";
+import validityContract from "../../scripts/verify-record-validity.cjs";
+
+const { verificationRecordValidity } = validityContract;
 
 /** Must match `DIR_NAME` in `scripts/verify-record.mjs`, which owns the record layout. */
 const RECORD_DIR_NAME = "tachyon-verify";
@@ -32,6 +36,7 @@ export interface VerificationRecord {
   tree: string;
   commit?: string | null;
   at: string;
+  fingerprint: string;
   command?: string;
   summary?: string;
 }
@@ -53,6 +58,7 @@ export async function readVerificationRecord(
   commitish: string,
   git: GitExec,
   readFile: (file: string) => string = (file) => fs.readFileSync(file, "utf8"),
+  now: () => number = () => Date.now(),
 ): Promise<VerificationRecord | undefined> {
   const tree = await gitLine(git, ["rev-parse", `${commitish}^{tree}`], worktreePath);
   if (!tree || !/^[0-9a-f]{40}$/.test(tree)) return undefined;
@@ -63,11 +69,13 @@ export async function readVerificationRecord(
       Partial<VerificationRecord> & { schema?: number };
     // A record that does not name the tree it is filed under proves nothing about that tree.
     if (!record || record.tree !== tree || typeof record.at !== "string") return undefined;
-    if (record.schema !== 1 && record.schema !== 2) return undefined;
+    const validity = verificationRecordValidity(record, { now });
+    if (!validity.valid) return undefined;
     return {
       tree,
       commit: record.commit ?? null,
       at: record.at,
+      fingerprint: record.fingerprint as string,
       ...(record.command ? { command: record.command } : {}),
       ...(record.summary ? { summary: record.summary } : {}),
     };
@@ -89,8 +97,9 @@ export async function isVerifiedSince(
   sinceIso: string,
   git: GitExec,
   readFile?: (file: string) => string,
+  now?: () => number,
 ): Promise<boolean> {
-  const record = await readVerificationRecord(worktreePath, commitish, git, readFile);
+  const record = await readVerificationRecord(worktreePath, commitish, git, readFile, now);
   if (!record) return false;
   const at = Date.parse(record.at);
   const since = Date.parse(sinceIso);
