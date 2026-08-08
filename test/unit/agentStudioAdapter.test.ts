@@ -281,7 +281,17 @@ describe("AgentStudioAdapter — save", () => {
     expect(submits).toEqual([]);
   });
 
-  it("keeps unsupported Quick Add runtimes on the legacy creation path", async () => {
+  /**
+   * t-d68b8b — this test used to assert the dead end and pass, which is why it is worth keeping as a
+   * record rather than deleting. It named the legacy diversion "the legacy creation path" and proved
+   * `save()` returned `{status:"ok"}` — true only of the FAKE workspace here. In production
+   * `Workspace.studioSubmit` refuses `kind === "agent"` outright, so the same patch produced a toast
+   * telling the human to create the agent in Agent Studio, which is the form they had just filled in.
+   *
+   * A green test measuring a stubbed door is the failure mode; the assertion now follows the patch to
+   * the door production actually uses.
+   */
+  it("never diverts an unattested new agent to the retired legacy writer", async () => {
     const { ws, submits } = fakeWorkspace({ submitResult: undefined });
     const fields = canonicalAgentFields();
     fields.name = "opencode-helper";
@@ -289,10 +299,12 @@ describe("AgentStudioAdapter — save", () => {
     fields.kind = "agent";
 
     const patch = serializeAgentPatch(fields, true)!;
+    expect(patch).toMatchObject({ kind: "agent-instance" });
     expect(patch).not.toHaveProperty("canonical");
-    expect(patch).not.toHaveProperty("editable");
-    expect(await new AgentStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok", entityId: "opencode-helper" });
-    expect(submits).toEqual([{ state: expect.objectContaining({ name: "opencode-helper", cmd: "opencode" }), editingName: undefined }]);
+    // `studioSubmit` — the retired writer — is never reached. The refusal the human sees comes from
+    // `newAgentRuntimeRefusal` before Save is enabled at all, and the host create door backs it up.
+    await Promise.resolve(new AgentStudioAdapter(ws).save(undefined, patch)).catch(() => undefined);
+    expect(submits).toEqual([]);
   });
 
   it.each(["claude", "grok"])("creates measured %s runtimes through canonical mutation", (runtime) => {

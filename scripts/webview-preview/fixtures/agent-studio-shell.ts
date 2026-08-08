@@ -9,6 +9,7 @@ import { blankAgentFields, canonicalAgentFields, createAgentEvolutionLabels, cre
 import type { AgentProfileStudioSnapshotV1 } from "../../../src/config/agentProfileStudio";
 import type { AgentForgetPlanResultV1 } from "../../../src/config/agentForgetPlan";
 import type { Fixture, Route } from "../routes";
+import { ATTESTED_RUNTIMES } from "../../../src/runtime/attestedRuntimes";
 
 interface AgentStudioShellFixtureVM {
   entity: AgentStudioEntity;
@@ -124,12 +125,24 @@ const blockedForgetPlan: AgentForgetPlanResultV1 = {
   },
 };
 
-const chips = [
-  { bin: "claude", label: "Claude Code", detected: true },
-  { bin: "codex", label: "OpenAI Codex", detected: true },
-  { bin: "agy", label: "Antigravity CLI", detected: false, installHint: "curl -fsSL https://antigravity.google/cli/install.sh | bash" },
-  { bin: "gemini", label: "Gemini CLI (legacy)", detected: false, installHint: "npm install -g @google/gemini-cli" },
-];
+/**
+ * t-d68b8b — the chip row a real host would now send, with the SET derived from `ATTESTED_RUNTIMES`
+ * rather than hand-listed. This fixture used to name `agy` and `gemini`, which `quickAddChips` no
+ * longer offers: a preview showing an offer the form has stopped making is a screenshot of a screen
+ * that does not exist, and `t-d68b8b`'s browser guard reads this row.
+ *
+ * `quickAddChips` itself cannot be imported here — this module is bundled into the browser preview
+ * and formLogic pulls `node:fs` through loadConfig — so only the labels are mirrored from
+ * `AGENT_CATALOG`, and only for realism. The membership is the part that has to be true.
+ */
+const CHIP_LABELS: Record<string, string> = { claude: "Claude Code", codex: "OpenAI Codex", grok: "grok", pi: "Pi" };
+const chips = ATTESTED_RUNTIMES.map((bin, index) => ({
+  bin,
+  label: CHIP_LABELS[bin] ?? bin,
+  // Two detected, the rest not: the row has to show both chip states side by side to be worth a look.
+  detected: index < 2,
+  ...(index < 2 ? {} : { installHint: `install ${bin}` }),
+}));
 
 const flagMap = { claude: ["--dangerously-skip-permissions", "--model sonnet", "--model haiku", "--permission-mode plan", "--continue"] };
 const evolutionLabels = createAgentEvolutionLabels();
@@ -296,8 +309,26 @@ function codexCanonicalEntity(authorize?: string[]): AgentStudioEntity {
   return { ...denseEntity, storage: "canonical", profile, fields: canonicalAgentFields(profile) };
 }
 
+/**
+ * t-d68b8b — a New Agent whose command names a runtime the creation path does not cover.
+ *
+ * Reachable by typing, not by clicking: the chip is gone, but the Command field is free text, and
+ * this is the screen that has to explain itself when someone types `opencode` into it. Its whole
+ * point is the blocking refusal above the fields and the disabled Save, so a visual pass that only
+ * ever loaded `new` would never see either.
+ */
+const unattestedRuntimeEntity: AgentStudioEntity = {
+  ...newEntity,
+  // `storage: "canonical"` + `canonicalAgentFields()` is exactly what `AgentStudioAdapter.load(undefined)`
+  // sends for a brand-new agent; the refusal only speaks for a canonical creation, so a fixture built
+  // on `blankAgentFields()` would render the legacy form and show nothing.
+  storage: "canonical",
+  fields: { ...canonicalAgentFields(), name: "helper", cmd: "opencode" },
+};
+
 export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFixtureVM>> = {
   new: { provenance: "synthetic-edge", vm: { entity: newEntity } },
+  "new-unattested-runtime": { provenance: "synthetic-edge", vm: { entity: unattestedRuntimeEntity } },
   "dense-edit": { provenance: "synthetic-edge", vm: { entity: denseEntity } },
   "canonical-disabled": { provenance: "synthetic-edge", vm: { entity: canonicalEntity } },
   "canonical-claude-bypass-off": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity() } },

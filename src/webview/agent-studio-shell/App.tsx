@@ -23,6 +23,7 @@ import {
   setNativeConfigAuthorized,
   computeAgentDirty,
   createAgentProfileLabels,
+  newAgentRuntimeRefusal,
   serializeAgentPatch,
   setNativeConfigChoice,
   isAllowedSoulImportFileName,
@@ -78,6 +79,8 @@ import type {
 } from "./types";
 import type { AgentOwnershipViewV1 } from "../../config/agentProfileStudio";
 import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates";
+// Node-free by construction — same reason domain.ts may import it into this browser bundle.
+import { ATTESTED_RUNTIMES } from "../../runtime/attestedRuntimes";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
@@ -615,8 +618,20 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     );
   }
 
-  const errors: StudioError[] = hostError ? [hostError] : [];
-  const canSave = computeCanSave({ dirty, blockingErrorCount: hostError?.blocking ? 1 : 0, saveInFlight, concurrencyStale: false });
+  // t-d68b8b — the only client-side blocking error this studio raises. It has to be here rather than
+  // in `AgentStudioAdapter.validate()` (which stays NO_VALIDATION_ERRORS): the host validates on save,
+  // and "you cannot create this" is the one answer the human needs BEFORE filling the rest of the form.
+  const runtimeRefusal = newAgentRuntimeRefusal(fields);
+  const runtimeRefusalError: StudioError | undefined = runtimeRefusal
+    ? { code: "validation/agent-runtime-not-attested", message: runtimeRefusal, source: "validation", blocking: true }
+    : undefined;
+  const errors: StudioError[] = [...(hostError ? [hostError] : []), ...(runtimeRefusalError ? [runtimeRefusalError] : [])];
+  const canSave = computeCanSave({
+    dirty,
+    blockingErrorCount: (hostError?.blocking ? 1 : 0) + (runtimeRefusalError ? 1 : 0),
+    saveInFlight,
+    concurrencyStale: false,
+  });
   const updateFields = (updater: (fields: AgentStudioFields) => AgentStudioFields) => {
     if (frozenRef.current) return;
     setHostError(undefined);
@@ -1308,7 +1323,11 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
 
             <div class="ash-group">
               <label class="ash-label" for="ash-cmd">Command</label>
-              <Input id="ash-cmd" value={fields.cmd} placeholder="claude · codex · agy · npm run dev" onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
+              {/* t-d68b8b — a canonical agent's placeholder is the attested list itself. It used to
+                * read "claude · codex · agy · npm run dev", offering by example the two things this
+                * door cannot create: an unattested runtime and a generic process. A legacy entry keeps
+                * the old text — that form still edits whatever is already written in `agents:`. */}
+              <Input id="ash-cmd" value={fields.cmd} placeholder={canonical ? ATTESTED_RUNTIMES.join(" · ") : "claude · codex · agy · npm run dev"} onInput={(e) => set("cmd", (e.currentTarget as HTMLInputElement).value)} />
               {!canonical && <div class="ash-chips">
                 {flags.map((flag) => (
                   <Chip key={flag} active={fields.cmd.includes(flag)} onClick={() => toggleFlag(flag)}>{flag}</Chip>
