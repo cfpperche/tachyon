@@ -15,7 +15,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
+import { agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "../config/agentForgetPlan.js";
 import {
@@ -6991,26 +6991,32 @@ export class Workspace {
     // and refuses. That is the fail-closed direction on purpose: refusing on a roster we cannot read
     // beats activating and guessing.
     const canonicalRoster = new Set(scanAgentRosterDirectory(this.workspaceRoot).members);
-    const evaluateLegacyFleet = async () => inspectLegacyFleet({
+    const evaluateLegacyFleet = async () => {
+      const liveAgentNames = new Set((await this.manager.listAgents()).map((entry) => entry.name));
+      return inspectLegacyFleet({
       wsHash: this.wsHash,
       ledger: [...this.ledger.all()].map(([name, row]) => [name, row] as const),
-      rosterEntries: Object.keys(this.config?.agents ?? {}).map((name) => ({
+      rosterEntries: Object.keys(agentsOf(this.config)).map((name) => ({
         name,
-        kind: this.manager.kindOf(name),
+        kind: "agent" as const,
         hasProfilePointer: canonicalRoster.has(name),
       })),
-      liveSessions: await Promise.all(surviving.map(async (session) => {
+      liveSessions: await Promise.all(surviving.filter((session) => {
+        const name = session.slice(`${SESSION_PREFIX}-${this.wsHash}-`.length);
+        return liveAgentNames.has(name);
+      }).map(async (session) => {
         const name = session.slice(`${SESSION_PREFIX}-${this.wsHash}-`.length);
         return {
           session,
           name,
-          kind: this.manager.kindOf(name),
+          kind: "agent" as const,
           // Proof is read off the SESSION, not the ledger. An unreadable session yields undefined,
           // which the gate refuses — a failed read must never admit.
           attestation: await this.tmux.sessionEnvValue(session, POST_CUT_SESSION_ATTESTATION_ENV),
         };
       })),
-    });
+      });
+    };
 
     // t-1129e1 — give a SELF-CLEARING refusal a bounded chance to clear before reporting it.
     //
