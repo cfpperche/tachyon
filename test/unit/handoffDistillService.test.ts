@@ -114,7 +114,8 @@ describe("handoff distillation service", () => {
 
 function fakeOperations(rows: ManagedEntryInfo[], resumable = new Set<string>()): HandoffDistillOperations {
   return {
-    listAgents: vi.fn(async () => rows.map((row) => ({ ...row }))),
+    listEntries: vi.fn(async () => rows.map((row) => ({ ...row }))),
+    listAgents: vi.fn(async () => rows.filter((row) => row.kind === "agent").map((row) => ({ ...row }))),
     resumableAgentNames: vi.fn(() => new Set(resumable)),
     startDeclaredAgent: vi.fn(async () => undefined),
     resumeAgent: vi.fn(async () => undefined),

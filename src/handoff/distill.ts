@@ -118,7 +118,6 @@ export function buildDistillTargets(
   const resumable = resumableNames instanceof Set ? resumableNames : new Set(resumableNames);
   const out: HandoffDistillTargetRow[] = [];
   for (const a of rows) {
-    if (a.kind !== "agent") continue;
     const live = a.running && !a.dead && !a.stopping;
     // t-04052d — BOTH AXES, because one cannot answer this.
     //

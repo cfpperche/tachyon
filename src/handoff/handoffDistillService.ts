@@ -24,6 +24,7 @@ export interface WorkspaceHandoffDistillSource extends ManagedAgentInputSource {
 }
 
 export interface HandoffDistillOperations {
+  listEntries(): Promise<ManagedEntryInfo[]>;
   listAgents(): Promise<ManagedEntryInfo[]>;
   resumableAgentNames(): ReadonlySet<string>;
   startDeclaredAgent(agent: string): Promise<void>;
@@ -53,7 +54,8 @@ export function workspaceHandoffDistillOperations(
   options: { reveal: boolean },
 ): HandoffDistillOperations {
   return {
-    listAgents: () => source.manager.list(),
+    listEntries: () => source.manager.list(),
+    listAgents: () => source.manager.listAgents(),
     resumableAgentNames: () => {
       const names = new Set(source.resumableAgents());
       for (const [name, record] of source.ledger.all()) if (record.resume) names.add(name);
@@ -109,7 +111,7 @@ async function ensureAgentLive(
   agent: string,
   options: HandoffDistillServiceOptions,
 ): Promise<void> {
-  const current = (await operations.listAgents()).find((candidate) => candidate.name === agent);
+  const current = (await operations.listEntries()).find((candidate) => candidate.name === agent);
   if (!current || current.kind !== "agent") throw new Error(`agent '${agent}' is not a managed AI agent`);
   if (isLive(current)) return;
   if (operations.resumableAgentNames().has(agent)) await operations.resumeAgent(agent);
@@ -129,7 +131,7 @@ async function ensureAgentLive(
   const deadline = now() + timeoutMs;
   do {
     const row = (await operations.listAgents()).find((candidate) => candidate.name === agent);
-    if (row && row.kind === "agent" && isLive(row)) return;
+    if (row && isLive(row)) return;
     if (now() >= deadline) break;
     await sleep(pollMs);
   } while (true);

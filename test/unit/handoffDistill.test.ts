@@ -73,7 +73,6 @@ describe("buildDistillTargets (t-1ba76d)", () => {
       { name: "zeta", kind: "agent", running: false, lifetime: "saved", resumePolicy: "restartable" },
       { name: "alpha", kind: "agent", running: true, lifetime: "saved", resumePolicy: "restartable" },
       { name: "beta", kind: "agent", running: false, lifetime: "saved", resumePolicy: "restartable" },
-      { name: "dev", kind: "terminal", running: true, lifetime: "saved", resumePolicy: "restartable" },
       { name: "worker", kind: "agent", running: false, lifetime: "temporary", resumePolicy: "collected" },
       { name: "live-adhoc", kind: "agent", running: true, lifetime: "temporary", resumePolicy: "collected" },
     ];
