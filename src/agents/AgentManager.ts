@@ -2060,6 +2060,14 @@ export class AgentManager {
     return infos;
   }
 
+  async listAgents(): Promise<ManagedEntryInfo[]> {
+    return (await this.list()).filter(({ kind }) => kind === "agent");
+  }
+
+  async listTerminals(): Promise<ManagedEntryInfo[]> {
+    return (await this.list()).filter(({ kind }) => kind === "terminal");
+  }
+
   /**
    * spec 216 — the launch command with role + Bridge guidance applied. The role template
    * composes with the agent's instructions (template first); a child spawned via the Bridge
