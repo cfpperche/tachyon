@@ -138,6 +138,16 @@ const promptSchema = z.object({
 const lifecycleSchema = z.object({
   enabled: z.boolean().optional(),
   autostart: z.boolean().optional(),
+  /**
+   * t-bd14d8 — READ-COMPAT ONLY. Nothing authors this any more and nothing acts on it: a file watch
+   * force-restarts the process on a fresh session, which is a Terminal capability, so
+   * `projectDefinition` drops it and `projectCanonicalAgentProfile` warns.
+   *
+   * It stays in the schema because this object is `.strict()`: removing the key would turn every
+   * profile already carrying one into a profile that fails to load, and an agent that vanishes from
+   * the roster is a far worse answer than a watch that stopped firing (t-48dd8d — invalid config
+   * warns, it does not trap). It leaves the file on the next Agent Studio save.
+   */
   watch: z.array(boundedText("watch pattern", 1024)).max(128).optional(),
   attention: attentionSchema.optional(),
   restart: z.enum(["never", "on-crash"]).optional(),

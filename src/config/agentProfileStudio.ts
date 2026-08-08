@@ -10,6 +10,7 @@ import {
 } from "./agentNativeConfigPolicy.js";
 import { adapterForRuntime, forkable, runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile, type CanonicalRuntimeLimitation } from "../runtime/runtimeProfile.js";
+import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../runtime/attestedRuntimes.js";
 
 const ID = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const REVISION = /^[a-f0-9]{64}$/;
@@ -62,11 +63,21 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
   }).strict(),
   role: z.enum(["", "coder", "reviewer", "tester", "orchestrator", "custom"]),
   cwd: text(4096),
+  /**
+   * t-bd14d8 — no `watch` here, and the object is `.strict()`, so a mutation that carries one is
+   * REFUSED rather than ignored. A watch restarts the process on a file change, and
+   * `Workspace.rebuildWatches` runs that as `{ stop: "force", session: "new" }` — force-kill plus a
+   * fresh session. That is what a dev server wants and the opposite of what an Agent can survive.
+   *
+   * `agentProfileSchemaV1.lifecycle` still ACCEPTS `watch` on read, deliberately: a profile already
+   * on disk with one must keep loading. It is stripped with a warning at projection instead
+   * (`projectCanonicalAgentProfile`), and the first edit-and-save through this door drops it from the
+   * file — the same shape t-b54ead used for the terminal form's agent-only keys, in reverse.
+   */
   lifecycle: z.object({
     autostart: z.boolean(),
     restart: z.enum(["never", "on-crash"]),
     attention: z.boolean(),
-    watch: z.array(text(1024).min(1)).max(128),
   }).strict(),
   worktree: z.object({
     enabled: z.boolean(),
@@ -341,11 +352,14 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       runtime: { ...profile.runtime },
       role: profile.prompt?.role ?? "",
       cwd: profile.workspace?.cwd ?? "",
+      // t-bd14d8 — a stored `lifecycle.watch` is NOT projected into the editable view. The form has
+      // no control for it, so surfacing it would offer a value with nowhere to render and no way to
+      // clear. The human is told about it once per load by the projection warning, and the first save
+      // through this door removes it from the file.
       lifecycle: {
         autostart: profile.lifecycle?.autostart ?? false,
         restart: profile.lifecycle?.restart ?? "never",
         attention: profile.lifecycle?.attention?.enabled ?? true,
-        watch: [...(profile.lifecycle?.watch ?? [])],
       },
       worktree: {
         enabled: profile.workspace?.worktree?.enabled ?? false,
@@ -411,11 +425,40 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
   });
 }
 
+/**
+ * t-d68b8b — creation is limited to a runtime Tachyon attests, refused HERE because this is the one
+ * door both actors arrive through.
+ *
+ * The Interface reaches it by saving Agent Studio's New Agent form; an Agent reaches it through
+ * `propose_saved_agent`, whose `runtime_adapter` is a free-form string that lands in
+ * `savedAgentProposal.recordSavedAgentProposal` and is validated by calling this function. A guard
+ * placed only in the form would leave the second door open — and it would open onto the same dead
+ * end, since `agentProfileProjection` refuses to project a non-attested profile and the agent would
+ * be created and then unusable.
+ *
+ * `patchProfileFromStudioMutation` deliberately does NOT call this. An existing profile that somehow
+ * names a non-attested runtime is already written; refusing to edit it would trap it, and the
+ * projection still declines to run it. Only minting a new one is blocked.
+ *
+ * Reversible by decision, not by accident: the owner narrowed the creation path on 2026-08-07 "for
+ * now". Widening `ATTESTED_RUNTIMES` widens this with no edit here, which is the whole point of
+ * reading the list rather than restating it.
+ */
+function assertAttestedCreationRuntime(adapter: string): void {
+  if (isAttestedRuntime(adapter)) return;
+  throw new Error(
+    `runtime '${adapter}' cannot back a new canonical agent: creation covers only the runtimes Tachyon `
+    + `attests (${ATTESTED_RUNTIMES.join(", ")}). This is a limit of the creation path, not a verdict on `
+    + "the runtime — the block lifts as soon as the runtime is attested.",
+  );
+}
+
 export function createProfileFromStudioMutation(
   mutation: AgentProfileStudioMutationV1,
 ): Omit<AgentProfileV1, "schemaVersion" | "agentId"> {
   const parsed = agentProfileStudioMutationSchemaV1.parse(mutation);
   assertStudioNativeConfig(parsed.editable);
+  assertAttestedCreationRuntime(parsed.editable.runtime.adapter);
   if (parsed.expectedRevision !== undefined) throw new Error("new canonical profile must not carry an expected revision");
   if (Object.values(parsed.editable.capabilities ?? {}).some((entries) => entries.length > 0)) {
     throw new Error("new canonical profile cannot select capability references before host authorization");
@@ -433,7 +476,7 @@ export function createProfileFromStudioMutation(
       ...(parsed.editable.lifecycle.autostart ? { autostart: true } : {}),
       ...(parsed.editable.lifecycle.restart !== "never" ? { restart: parsed.editable.lifecycle.restart } : {}),
       ...(!parsed.editable.lifecycle.attention ? { attention: { enabled: false } } : {}),
-      ...(parsed.editable.lifecycle.watch.length > 0 ? { watch: [...parsed.editable.lifecycle.watch] } : {}),
+      // t-bd14d8 — a newly created Agent never gets a `watch`; there is no editable field to read.
     },
     ...((parsed.editable.cwd || parsed.editable.worktree.enabled || parsed.editable.worktree.branch) ? {
       workspace: {
@@ -472,8 +515,12 @@ export function patchProfileFromStudioMutation(
       ...(current.profile.lifecycle?.attention ?? {}),
       enabled: parsed.editable.lifecycle.attention,
     },
-    watch: [...parsed.editable.lifecycle.watch],
   };
+  // t-bd14d8 — the spread above carries the STORED lifecycle forward, so a legacy `watch` would
+  // survive every edit untouched and keep force-restarting the agent. Deleting it here is what makes
+  // the strip land on disk: the first save through Agent Studio is the repair, exactly as the first
+  // Terminal Studio save cleaned the four agent-only keys in t-b54ead.
+  delete (lifecycle as { watch?: unknown }).watch;
   const worktree = {
     ...(current.profile.workspace?.worktree ?? {}),
     enabled: parsed.editable.worktree.enabled,

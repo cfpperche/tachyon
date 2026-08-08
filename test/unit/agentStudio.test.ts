@@ -17,6 +17,7 @@ import {
   type FormState,
 } from "../../src/webview/formLogic.js";
 import { detectInstalledClis } from "../../src/webview/cliDetect.js";
+import { isAttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
 import { composeCommand, shellQuote, instructionsDeliverable, parseConfig } from "../../src/config/loadConfig.js";
 import { upsertAgent } from "../../src/config/YamlConfigEditor.js";
 
@@ -349,32 +350,38 @@ describe("upsertAgent (Agent Studio writes)", () => {
   });
 });
 
+/**
+ * t-d68b8b narrowed this surface: a chip is now offered only for a runtime the canonical creation
+ * path accepts, so both rules below are read through `isAttestedRuntime` instead of naming binaries.
+ * What the FILTER guarantees lives in `agentStudioAttestedCreation.test.ts`; these keep measuring the
+ * catalog-merge rules (always-visible vs detected-only, install hint) on top of it.
+ */
 describe("quickAddChips (catalog merge)", () => {
-  it("majors are always visible; undetected ones carry the install hint", () => {
+  it("attested majors are always visible; undetected ones carry the install hint", () => {
     const chips = quickAddChips(["claude"]);
-    const majors = AGENT_CATALOG.filter((e) => e.alwaysVisible).map((e) => e.bin);
+    const majors = AGENT_CATALOG.filter((e) => e.alwaysVisible && isAttestedRuntime(e.bin)).map((e) => e.bin);
+    expect(majors.length).toBeGreaterThan(0);
     for (const bin of majors) expect(chips.map((c) => c.bin)).toContain(bin);
     expect(chips.find((c) => c.bin === "claude")).toMatchObject({ detected: true, installHint: undefined });
     const codex = chips.find((c) => c.bin === "codex")!;
     expect(codex.detected).toBe(false);
     expect(codex.installHint).toContain("npm install");
-    const agy = chips.find((c) => c.bin === "agy")!;
-    expect(agy).toMatchObject({ label: "Antigravity CLI", detected: false });
-    expect(agy.installHint).toContain("antigravity.google/cli/install.sh");
-    // gemini/aider are long-tail (legacy / less common) — not in the always-visible row
-    expect(chips.map((c) => c.bin)).not.toContain("gemini");
-    expect(chips.map((c) => c.bin)).not.toContain("aider");
+    // An always-visible entry the creation path cannot accept is NOT a chip — that offer was the
+    // dead end t-d68b8b closed (the form showed it, the save sent the human back to the form).
+    const blockedMajors = AGENT_CATALOG.filter((e) => e.alwaysVisible && !isAttestedRuntime(e.bin)).map((e) => e.bin);
+    for (const bin of blockedMajors) expect(chips.map((c) => c.bin)).not.toContain(bin);
   });
 
-  it("long-tail CLIs appear only when detected", () => {
-    expect(quickAddChips([]).map((c) => c.bin)).not.toContain("qwen");
-    const withQwen = quickAddChips(["qwen"]);
-    expect(withQwen.find((c) => c.bin === "qwen")).toMatchObject({ detected: true });
-    expect(quickAddChips(["gemini"]).find((c) => c.bin === "gemini")).toMatchObject({
-      detected: true,
-      label: expect.stringContaining("legacy"),
-    });
-    expect(quickAddChips(["aider"]).find((c) => c.bin === "aider")).toMatchObject({ detected: true });
+  it("long-tail CLIs appear only when detected — and only while attested", () => {
+    const longTail = AGENT_CATALOG.filter((e) => !e.alwaysVisible);
+    for (const entry of longTail) {
+      expect(quickAddChips([]).map((c) => c.bin)).not.toContain(entry.bin);
+      const found = quickAddChips([entry.bin]).find((c) => c.bin === entry.bin);
+      if (isAttestedRuntime(entry.bin)) expect(found, entry.bin).toMatchObject({ detected: true });
+      else expect(found, entry.bin).toBeUndefined();
+    }
+    // grok is this repo's attested long-tail entry today; qwen/gemini/aider are the blocked side.
+    expect(quickAddChips(["grok"]).map((c) => c.bin)).toContain("grok");
   });
 
   it("every always-visible entry has an install hint (discovery contract)", () => {

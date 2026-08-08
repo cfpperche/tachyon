@@ -22,6 +22,12 @@ export interface CatalogEntry {
  * The quick-add catalog: majors are always shown (disabled+install hint when not
  * installed — product discovery); the long tail of KNOWN_AI_CLIS appears only
  * when actually detected on the machine.
+ *
+ * t-d68b8b — this list is deliberately WIDER than what `quickAddChips` offers today. It is the
+ * authoring catalog (label, install hint, logo) for every runtime this repo knows how to name; the
+ * chip filter below decides which of them the Agent form may currently create. Trimming an entry
+ * here would mean re-authoring it the day its runtime becomes attested, which is exactly the copy
+ * this task exists to remove.
  */
 export const AGENT_CATALOG: CatalogEntry[] = [
   { bin: "claude", label: "Claude Code", installHint: "npm install -g @anthropic-ai/claude-code", alwaysVisible: true },
@@ -48,10 +54,23 @@ export interface QuickAddChip {
   installHint?: string;
 }
 
-/** Merges the catalog with what's installed: majors always, long-tail only when detected. */
+/**
+ * Merges the catalog with what's installed: majors always, long-tail only when detected — and only
+ * for a runtime Tachyon attests.
+ *
+ * t-d68b8b — the attestation filter closes a dead end rather than adding a rule. Agent Studio's only
+ * writer is the canonical profile door, and that door refuses a runtime outside `ATTESTED_RUNTIMES`
+ * (`agentProfileProjection`); a chip for one of the other six offered the human a path whose save
+ * then told them to go to Agent Studio — where they already were. Five of those six were
+ * `alwaysVisible`, so this was the loudest half of the form.
+ *
+ * Read from `isAttestedRuntime`, never from a second list here: the day a runtime is attested its
+ * chip comes back with no edit to this file, and the day one is withdrawn the chip leaves with it.
+ * The block is on the creation path, not a verdict on the runtimes — see `newAgentRuntimeRefusal`.
+ */
 export function quickAddChips(detected: string[]): QuickAddChip[] {
   const have = new Set(detected);
-  return AGENT_CATALOG.filter((e) => e.alwaysVisible || have.has(e.bin)).map((e) => ({
+  return AGENT_CATALOG.filter((e) => isAttestedRuntime(e.bin) && (e.alwaysVisible || have.has(e.bin))).map((e) => ({
     bin: e.bin,
     label: e.label,
     detected: have.has(e.bin),

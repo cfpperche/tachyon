@@ -52,7 +52,7 @@ function profileSnapshot(agentName = "Ada", revision = "a".repeat(64)): AgentPro
     readiness: { state: "limited", limitations: ["fork-unavailable"] },
     editable: {
       displayName: agentName, runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
-      cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+      cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "" }, isolation: "",
       nativeConfig: {},
     },

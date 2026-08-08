@@ -746,6 +746,63 @@ it("loads a canonical agent profile only after host-custodied authority is avail
   }
 });
 
+/**
+ * t-bd14d8 — a file watch is a Terminal capability, measured through the door that ACTS on it.
+ *
+ * `rebuildWatches` turns every glob it finds into `restart(agent, { stop: "force", session: "new" })`
+ * — force-kill plus a fresh session, which is the feature for `bun run dev` and the erasure of an
+ * agent's transcript for anything else. The loop reads `config.agents`, the UNIFIED map, and had no
+ * arm for kind, so a `lifecycle.watch` left in an older profile reached the terminal behaviour.
+ *
+ * Asserted on `host.watches`, not on a config field: what matters is whether a WATCHER exists, and a
+ * projection that stripped the value while some other producer re-added it would still register one.
+ * The terminal half is in the same case on purpose — a guard that silences both kinds would pass
+ * every agent assertion here and break the feature it was told not to touch.
+ *
+ * Watched fail on the pre-fix tree: `src/**` was watched for the agent too, and the roster carried
+ * `watch: ["src/**"]` on it.
+ */
+it("t-bd14d8: an agent's legacy lifecycle.watch registers no watcher and is warned about; a terminal's still does", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.mkdirSync(path.join(homeDir, ".codex"), { recursive: true });
+  const { host } = canonicalHost(
+    root,
+    [{ name: "codex", spec: { extra: { lifecycle: { watch: ["src/**", "package.json"] } } } }],
+    "terminals:\n  dev:\n    cmd: npm run dev\n    watch: \"src/**\"\nsettings:\n  auth: false\n",
+  );
+  const fake = fakeTmux();
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    expect(ws.configFailure).toBeUndefined();
+    // The agent still LOADS — the stale key is stripped, never a refusal (t-48dd8d: invalid config
+    // warns and does not trap). An agent that vanished from the roster would be the worse answer.
+    expect(asAgent(ws.config?.agents.codex)).toMatchObject({ cmd: "codex", watch: [] });
+    // Read raw, not through `asAgent`: that helper narrows to an AgentEntry and answers undefined
+    // for a terminal, which would pass this assertion for the wrong reason.
+    expect(ws.config?.agents.dev).toMatchObject({ kind: "terminal", watch: ["src/**"] });
+
+    // The real registrar, called by every config-load path (`start`, the tachyon.yml change hook,
+    // `mutateConfig`). `createForTest` stops short of `start()`, so the case drives it directly
+    // rather than asserting on a config field that no watcher was ever built from.
+    ws.rebuildWatches();
+    const watched = host.watches.filter((watch) => watch.glob === "src/**" || watch.glob === "package.json");
+    // Exactly one: the terminal's. The agent contributed two globs to the pre-fix tree.
+    expect(watched.map((watch) => watch.glob)).toEqual(["src/**"]);
+
+    const warning = host.notices.find((notice) => notice.message.includes("lifecycle.watch is ignored"));
+    expect(warning, "a dropped watch must be named, not silently ignored").toBeTruthy();
+    expect(warning!.message).toContain("src/**, package.json");
+    expect(warning!.message).toContain("terminals:");
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("creates, edits and disables a canonical profile through the Workspace lifecycle boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
@@ -804,7 +861,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       agentName: "reviewer",
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
-        cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+        cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
         worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
       },
     });
@@ -820,7 +877,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       expectedRevision: created.revision,
       editable: {
         displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" }, role: "tester",
-        cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+        cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
         worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
       },
     });
@@ -832,7 +889,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       expectedRevision: created.revision,
       editable: {
         displayName: "Stale", runtime: { adapter: "codex", executable: "codex" }, role: "coder",
-        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "" }, isolation: "",
       },
     })).rejects.toThrow("revision conflict");
@@ -858,7 +915,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
       agentName: "reviewer",
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
-        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "" }, isolation: "",
       },
     });

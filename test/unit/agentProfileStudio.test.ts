@@ -63,7 +63,7 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
       role: "tester",
       cwd: "apps/tester",
-      lifecycle: { autostart: false, restart: "never", attention: true, watch: ["test/**"] },
+      lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "" },
       isolation: "",
       nativeConfig: {
@@ -86,7 +86,7 @@ describe("canonical Agent Studio projection", () => {
       runtime: { adapter: "codex", executable: "codex", model: "gpt-example" },
       role: "reviewer",
       cwd: "apps/reviewer",
-      lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+      lifecycle: { autostart: true, restart: "on-crash", attention: false },
       worktree: { enabled: true, branch: "feature/reviewer" },
       isolation: "transcript",
       nativeConfig: {},
@@ -132,7 +132,9 @@ describe("canonical Agent Studio projection", () => {
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
       prompt: { role: "tester" },
-      lifecycle: { enabled: true, watch: ["test/**"] },
+      // t-bd14d8 — no `watch`: a created Agent has none, and the editable mutation has no field to
+      // carry one (the strict schema refuses it outright rather than dropping it silently).
+      lifecycle: { enabled: true },
       workspace: { cwd: "apps/tester" },
       nativeConfig: {
         selectors: {
@@ -265,9 +267,13 @@ describe("canonical Agent Studio projection", () => {
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
       prompt: { soul: "soul", evolution: "evolution", role: "tester" },
+      // t-bd14d8 — the stored profile in `lifecycleSnapshot()` carries `watch: ["src/**"]`, and this
+      // patch has no `watch` key at all: the edit STRIPS it from disk rather than carrying it forward
+      // through the lifecycle spread. That is what makes the first Agent Studio save the repair for a
+      // legacy profile, and it is the assertion that fails if the delete is ever removed.
       lifecycle: {
         enabled: false, autostart: false, restart: "never",
-        attention: { enabled: true, silenceSec: 12 }, watch: ["test/**"],
+        attention: { enabled: true, silenceSec: 12 },
       },
       workspace: { cwd: "apps/tester", worktree: { enabled: false, branch: undefined } },
       isolation: undefined,
