@@ -197,7 +197,12 @@ function isCodexTurnActive(pane: string): boolean {
 export class ResumeUnavailableError extends Error {
   constructor(
     readonly agent: string,
-    reason: string,
+    /**
+     * t-f6aa7c — kept as a field, not only baked into `message`. A caller that has to TELL a human
+     * why continuity was lost needs the reason without the `cannot resume 'x':` prefix, and
+     * re-deriving it by slicing the message is how the two accounts drift apart.
+     */
+    readonly reason: string,
   ) {
     super(`cannot resume '${agent}': ${reason}`);
     this.name = "ResumeUnavailableError";
@@ -250,6 +255,16 @@ export interface RestartResult {
   resumed: boolean;
   /** True when graceful stop timed out and a session-only hard kill ran. */
   forcedAfterGracefulTimeout: boolean;
+  /**
+   * t-f6aa7c — WHY a `session: "resume"` restart came back on a new section instead. Present only
+   * when resume was asked for and did not happen; absent on `session: "new"` (nothing was asked for)
+   * and on a successful resume.
+   *
+   * `resumed: false` says continuity was lost; it never says whether that was a first crash, an
+   * aged-out transcript, or a runtime with no resume adapter. A caller whose job is to keep the
+   * human from discovering the loss by behaviour cannot do it from the boolean alone.
+   */
+  resumeUnavailable?: string;
 }
 
 /** spec 225 — fork couldn't proceed (runtime not forkable, live id unresolved, or worktree create failed). Fail-closed: never guesses a running agent's session id. */
@@ -4542,11 +4557,12 @@ export class AgentManager {
           if (await this.opts.tmux.hasSession(this.session(name))) {
             await this.refreshOwnership(name);
           }
-          if (await this.tryResumeAfterStop(name)) {
+          const attempt = await this.tryResumeAfterStop(name);
+          if (attempt.resumed) {
             return { stop, session, resumed: true, forcedAfterGracefulTimeout };
           }
           await this.restartFresh(name);
-          return { stop, session, resumed: false, forcedAfterGracefulTimeout };
+          return { stop, session, resumed: false, forcedAfterGracefulTimeout, resumeUnavailable: attempt.reason };
         }
       }
 
@@ -4554,11 +4570,12 @@ export class AgentManager {
       // cannot leave a live pane stuck in the graceful-stop UI state.
       this.clearStoppingState(name);
 
-      if (session === "resume" && (await this.tryResumeAfterStop(name))) {
+      const attempt = session === "resume" ? await this.tryResumeAfterStop(name) : undefined;
+      if (attempt?.resumed) {
         return { stop, session, resumed: true, forcedAfterGracefulTimeout };
       }
       await this.restartFresh(name);
-      return { stop, session, resumed: false, forcedAfterGracefulTimeout };
+      return { stop, session, resumed: false, forcedAfterGracefulTimeout, ...(attempt ? { resumeUnavailable: attempt.reason } : {}) };
     } catch (error) {
       // Start failed after a graceful stop attempt — don't leave a permanent "stopping" badge.
       this.clearStoppingState(name);
@@ -4613,15 +4630,23 @@ export class AgentManager {
     await this.opts.tmux.killSession(session);
   }
 
-  /** Attempt resume after stop; false when no resumable record / ResumeUnavailableError. */
-  private async tryResumeAfterStop(name: string): Promise<boolean> {
+  /**
+   * Attempt resume after stop.
+   *
+   * t-f6aa7c — answers with the REASON on failure rather than a bare false. Every branch here is a
+   * different fact about the world (nothing was ever recorded / the record carries no resume block /
+   * the runtime or its transcript is gone), and the caller that has to explain the loss to a human
+   * needs which one it was.
+   */
+  private async tryResumeAfterStop(name: string): Promise<{ resumed: true } | { resumed: false; reason: string }> {
     const record = this.opts.ledger?.get(name);
-    if (!record?.resume) return false;
+    if (!record) return { resumed: false, reason: "no session record for this agent (nothing was captured to resume)" };
+    if (!record.resume) return { resumed: false, reason: "session record has no resume block (no prior session was captured)" };
     try {
       await this.resume(name, record);
-      return true;
+      return { resumed: true };
     } catch (err) {
-      if (err instanceof ResumeUnavailableError) return false;
+      if (err instanceof ResumeUnavailableError) return { resumed: false, reason: err.reason };
       throw err;
     }
   }

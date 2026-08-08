@@ -552,7 +552,13 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         });
         const mode = `${result.stop}+${result.session}`;
         const detail = [
-          result.resumed ? "resumed prior session" : "new section",
+          // t-f6aa7c — a caller that ASKED to resume and got a new section is told why here too.
+          // The same silence that let a human discover a crashed agent's memory loss by behaviour
+          // would let an agent discover its own the same way; `resumeUnavailable` is present only on
+          // that path, so an ordinary `session: "new"` receipt is unchanged.
+          result.resumed
+            ? "resumed prior session"
+            : `new section${result.resumeUnavailable ? ` (${result.resumeUnavailable})` : ""}`,
           result.forcedAfterGracefulTimeout ? "graceful timed out → session hard-kill" : undefined,
         ].filter(Boolean).join("; ");
         return ok(`agent '${name}' restarted (${mode}; ${detail})`);
