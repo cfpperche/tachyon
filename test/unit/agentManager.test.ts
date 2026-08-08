@@ -8339,6 +8339,13 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
       expect(rows.find((row) => row.name === "healthy")!.refused).toBeUndefined();
     });
 
+    it("keeps a declared-but-refused agent in listAgents()", async () => {
+      const manager = withRefused({ broken: "profile/digest-mismatch: .tachyon/plugins/x: expected aa, consumed bb" });
+
+      expect((await manager.listAgents()).map((row) => row.name)).toContain("broken");
+      expect((await manager.listTerminals()).map((row) => row.name)).toContain("healthy");
+    });
+
     it("adds no row and no marker when nothing was refused", async () => {
       const rows = await withRefused({}).list();
 

@@ -246,6 +246,19 @@ export function asAgent(entry: ManagedEntryDef | null | undefined): AgentEntry |
   return entry?.kind === "agent" ? entry : undefined;
 }
 
+/** Typed views over the compatibility managed-entry map. */
+export function agentsOf(config: TachyonConfig | null | undefined): Record<string, AgentEntry> {
+  return Object.fromEntries(
+    Object.entries(config?.agents ?? {}).filter((entry): entry is [string, AgentEntry] => entry[1].kind === "agent"),
+  );
+}
+
+export function terminalsOf(config: TachyonConfig | null | undefined): Record<string, TerminalEntry> {
+  return Object.fromEntries(
+    Object.entries(config?.agents ?? {}).filter((entry): entry is [string, TerminalEntry] => entry[1].kind === "terminal"),
+  );
+}
+
 /**
  * spec 210 — cheap parse-time pre-filter for an obviously-bad literal branch name.
  * The authoritative check is `git check-ref-format` at worktree creation; this just
