@@ -1584,7 +1584,7 @@ export class Workspace {
 
     this.temporaryBackstop = new TemporaryBackstopMonitor(
       {
-        listEntries: () => this.manager.list(),
+        listAgents: () => this.manager.listAgents(),
         attentionOf: (agent) => this.attentionOf(agent),
         now: () => Date.now(),
         deliverNotice: (parent, line, metadata) => this.deliverNotice(parent, line, metadata),
@@ -1602,13 +1602,13 @@ export class Workspace {
     // cannot drift into two accounts of one runtime.
     this.runtimeSlack = new RuntimeSlackMonitor({
       condition: () => this.runtimeCondition(),
-      listEntries: () => this.manager.list(),
+      listAgents: () => this.manager.listAgents(),
       deliverNotice: (agent, line, metadata) => this.deliverNotice(agent, line, metadata),
     });
 
     this.gatedCompletion = new GatedCompletionMonitor({
       listGatedFacts: () => this.listGatedCompletionFacts(),
-      listEntries: () => this.manager.list(),
+      listAgents: () => this.manager.listAgents(),
       attentionOf: (agent) => this.attentionOf(agent),
       headState: async (worktreePath) => {
         try {

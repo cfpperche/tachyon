@@ -67,7 +67,7 @@ function harness(opts: {
   const monitor = new GatedCompletionMonitor(
     {
       listGatedFacts: async () => facts,
-      listEntries: async () => entries,
+      listAgents: async () => entries,
       attentionOf: (a) => attention[a],
       headState: async () => opts.head ?? { headRef: "newnewnewnew", dirty: false },
       hasDoorbellRung: () => doorbell,

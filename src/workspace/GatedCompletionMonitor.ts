@@ -56,7 +56,7 @@ export interface GatedCompletionFacts {
 
 export interface GatedCompletionDeps {
   listGatedFacts(): Promise<GatedCompletionFacts[]>;
-  listEntries(): Promise<ManagedEntryInfo[]>;
+  listAgents(): Promise<ManagedEntryInfo[]>;
   attentionOf(agent: string): AgentAttention | undefined;
   headState(worktreePath: string): Promise<{ headRef: string; dirty: boolean } | null>;
   /**
@@ -196,7 +196,7 @@ export function resolveAssignedCompletionWorktree(
 export function assignedCompletionFacts(input: AssignedCompletionInput): GatedCompletionFacts[] {
   const out: GatedCompletionFacts[] = [];
   for (const entry of input.entries) {
-    if (entry.kind !== "agent" || entry.delegator) continue;
+    if (entry.delegator) continue;
     if (!input.declared.has(entry.name)) continue;
     const owner = entry.declaredOwner ?? entry.parent;
     if (!owner || owner === entry.name) continue;
@@ -229,7 +229,7 @@ export class GatedCompletionMonitor {
     let dirty = false;
 
     const facts = await this.deps.listGatedFacts();
-    const entries = await this.deps.listEntries();
+    const entries = await this.deps.listAgents();
     const entryByName = new Map(entries.map((e) => [e.name, e]));
 
     for (const fact of facts) {

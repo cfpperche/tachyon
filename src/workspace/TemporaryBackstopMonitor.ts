@@ -67,7 +67,7 @@ export function idleNotifyThresholdMs(configured: number | "never" | undefined):
 }
 
 export interface TemporaryBackstopDeps {
-  listEntries(): Promise<ManagedEntryInfo[]>;
+  listAgents(): Promise<ManagedEntryInfo[]>;
   attentionOf(agent: string): AgentAttention | undefined;
   now(): number;
   deliverNotice(parent: string, line: string, metadata?: NoticeQueueMetadata): Promise<unknown>;
@@ -175,7 +175,7 @@ export class TemporaryBackstopMonitor {
     // agent had simply been quiet, not like its nudge was already spent.
     if (thresholdMs === null) return;
     const now = this.deps.now();
-    const entries = await this.deps.listEntries();
+    const entries = await this.deps.listAgents();
     const byName = new Map(entries.map((entry) => [entry.name, entry]));
     const liveNames = new Set(entries.filter((entry) => entry.running).map((entry) => entry.name));
 
@@ -184,7 +184,7 @@ export class TemporaryBackstopMonitor {
     }
 
     for (const entry of entries) {
-      if (entry.kind !== "agent" || !entry.parent || !entry.running) continue;
+      if (!entry.parent || !entry.running) continue;
       const parent = byName.get(entry.parent);
       if (!parent?.running) continue;
 

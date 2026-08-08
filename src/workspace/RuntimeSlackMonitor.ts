@@ -59,7 +59,7 @@ export const QUOTA_RELIEF_PERCENT = 75;
 export interface RuntimeSlackDeps {
   /** the SAME projection the Bridge tool answers from; must be a cached read, never a collection */
   condition(): RuntimeConditionReportV1 | undefined;
-  listEntries(): Promise<ManagedEntryInfo[]>;
+  listAgents(): Promise<ManagedEntryInfo[]>;
   deliverNotice(agent: string, line: string, metadata?: NoticeQueueMetadata): Promise<unknown>;
 }
 
@@ -152,9 +152,9 @@ export class RuntimeSlackMonitor {
    * to whoever hands work out.
    */
   private async coordinators(): Promise<string[]> {
-    const entries = await this.deps.listEntries().catch(() => [] as ManagedEntryInfo[]);
+    const entries = await this.deps.listAgents().catch(() => [] as ManagedEntryInfo[]);
     return entries
-      .filter((entry) => entry.kind === "agent" && entry.running && !entry.dead && !entry.parent)
+      .filter((entry) => entry.running && !entry.dead && !entry.parent)
       .map((entry) => entry.name);
   }
 }

@@ -41,7 +41,7 @@ function fixture(opts: { completionHinted?: (name: string) => boolean } = {}) {
   const delivered: Array<{ parent: string; line: string }> = [];
   const monitor = new TemporaryBackstopMonitor(
     {
-      listEntries: async () => [...entries.values()],
+      listAgents: async () => [...entries.values()],
       attentionOf: (name) => attention.get(name),
       now: () => now,
       deliverNotice: async (parent, line) => {
