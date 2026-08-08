@@ -861,6 +861,7 @@ function canonicalAgentCreate(agentName: string) {
           lifecycle: { autostart: false, restart: "never" as const, attention: true },
           worktree: { enabled: false, branch: "", setup: [] },
           verify: "",
+          selfEvolution: false,
           isolation: "" as const,
         },
       },

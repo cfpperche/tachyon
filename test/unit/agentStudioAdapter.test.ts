@@ -40,7 +40,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     editable: {
       displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" }, role: "reviewer",
       cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-      worktree: { enabled: true, branch: "feature/web", setup: [] }, verify: "",
+      worktree: { enabled: true, branch: "feature/web", setup: [] }, verify: "", selfEvolution: false,
       isolation: "transcript",
     },
     bindings: {
@@ -284,9 +284,36 @@ describe("AgentStudioAdapter — save", () => {
       // is what CLEARING them looks like too, and why they are always sent rather than omitted.
       worktree: { enabled: true, branch: "feature/web", setup: [] },
       verify: "",
+      // t-f96b2f — the toggle travels on every save for the same reason: `false` is how the human
+      // turns Evolution OFF, so an omitted field would be indistinguishable from "leave it alone".
+      selfEvolution: false,
       isolation: "transcript",
     }));
     expect(submits).toEqual([]);
+  });
+
+  /**
+   * t-f96b2f — the WEBVIEW half of the Evolution round trip: an agent that HAS Evolution must have it
+   * again after a save that renamed something else.
+   *
+   * The host half is proven end-to-end in `workspaceHeadless.test.ts`. This is the other place the
+   * state can be lost, and it loses it silently: the form rebuilds its fields from the snapshot on
+   * every open, so a toggle read from anywhere the save does not write back renders OFF for an
+   * evolving agent, and the next save turns the capability off without anyone asking.
+   */
+  it("carries an ENABLED Evolution toggle back out of a save that renamed something else", async () => {
+    const mutations: AgentProfileStudioMutationV1[] = [];
+    const { ws } = fakeWorkspace({ commit: async (mutation) => { mutations.push(mutation); return profileSnapshot(mutation.agentName); } });
+    const adapter = new AgentStudioAdapter(ws);
+    const snapshot = profileSnapshot();
+    const evolving = { ...snapshot, editable: { ...snapshot.editable, selfEvolution: true } };
+
+    const fields = canonicalAgentFields(evolving);
+    expect(fields.selfEvolution).toBe(true);
+    fields.role = "tester";
+
+    expect(await adapter.save("frontend", serializeAgentPatch(fields, true)!)).toEqual({ status: "ok" });
+    expect(mutations[0]?.editable.selfEvolution).toBe(true);
   });
 
   /**

@@ -924,7 +924,10 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   fields.cmd = snapshot?.editable.runtime.executable ?? "";
   fields.role = snapshot?.editable.role ?? "";
   fields.soul = snapshot?.bindings.prompt.soul ?? false;
-  fields.selfEvolution = snapshot?.bindings.prompt.evolution ?? false;
+  // t-f96b2f — read from the EDITABLE view, not from `bindings.prompt.evolution`. Both report the
+  // same fact today (the projection computes them from one expression), and reading the one the form
+  // saves back is what keeps them from becoming a display that disagrees with its own payload.
+  fields.selfEvolution = snapshot?.editable.selfEvolution ?? false;
   fields.cwd = snapshot?.editable.cwd ?? "";
   fields.autostart = snapshot?.editable.lifecycle.autostart ?? false;
   fields.restartOnCrash = snapshot?.editable.lifecycle.restart === "on-crash";
@@ -1220,6 +1223,11 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
         setup: fields.worktreeSetup.split("\n").map((line) => line.trim()).filter(Boolean),
       },
       verify: fields.verify.trim(),
+      // t-f96b2f — Evolution travels as the toggle's own state, on every save. Sending it only when
+      // it changed would make "off" and "don't touch" the same payload, and off has to be able to
+      // remove a binding that exists — the host turns it into the selector bytes, the pinned
+      // reference and `prompt.evolution`, or removes all three.
+      selfEvolution: fields.selfEvolution,
       isolation: fields.isolate ? "transcript" : "",
       nativeConfig,
       capabilities: structuredClone(fields.canonical.capabilities),

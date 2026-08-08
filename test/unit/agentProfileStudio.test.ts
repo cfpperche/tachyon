@@ -66,6 +66,7 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
       verify: "",
+      selfEvolution: false,
       isolation: "",
       nativeConfig: {
         selectors: {
@@ -93,6 +94,11 @@ describe("canonical Agent Studio projection", () => {
       // is the round trip in `agentWorkspaceCommands.test.ts`, which is what proves the read-back.
       worktree: { enabled: true, branch: "feature/reviewer", setup: [] },
       verify: "",
+      // t-f96b2f — this fixture pins `prompt.evolution`, so the toggle projects ON. It is the same
+      // fact `bindings.prompt.evolution` asserts below, deliberately: the form saves the editable
+      // view back, so a snapshot whose toggle disagreed with its own binding would write the
+      // opposite of what it displayed.
+      selfEvolution: true,
       isolation: "transcript",
       nativeConfig: {},
       capabilities: { skills: [], mcp: [], hooks: [] },

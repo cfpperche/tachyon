@@ -1517,7 +1517,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               labels={entity.evolutionLabels}
               savedAgent={savedAgent}
               enabled={fields.selfEvolution}
-              toggleDisabled={canonical}
+              // t-f96b2f — this was `toggleDisabled={canonical}`, and `canonical` is always true, so
+              // the control could never be used: `Workspace.enableAgentSelfEvolution` had been
+              // complete since t-d185e1 with zero callers. It is wired now, and stays read-only for
+              // exactly one case — an agent that does not exist yet. Evolution pins a selector naming
+              // a profile id the Evolution store mints, so it needs the profile the save is about to
+              // create; the section already says "Save agent first" for everything else it offers.
+              toggleDisabled={canonical && !canonicalSnapshot}
               summary={evolutionSummary}
               candidates={evolutionCandidates}
               detail={evolutionDetail}

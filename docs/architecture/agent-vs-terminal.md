@@ -67,6 +67,15 @@ agent runs its own package's tests instead of the whole suite, and per-agent set
 mechanism a Python venv, a Rust build or a Go module download has — the shared-`node_modules` link
 that makes setup feel optional here is specific to Node.
 
+**Self-evolution became authorable on 2026-08-08 (`t-f96b2f`), and its story is the opposite one.**
+Nothing under it was missing: `Workspace.enableAgentSelfEvolution` had written the selector, the pin
+and `prompt.evolution` in one transaction since `t-d185e1` — with ZERO callers, because the Studio's
+toggle was rendered permanently disabled beside the two controls above. The capability was complete
+and simply never connected to the control. Turning it OFF is the half that did not exist anywhere:
+the pinned reference has to leave with the field, or the projection refuses the whole profile over a
+reference nothing points at. Creation still cannot grant it — the selector names a `profileId` the
+Evolution store mints, so the agent has to exist first.
+
 ## The three rules that keep it true
 
 1. **Kind is declared and stored, never inferred.** No layer may decide Agent vs Terminal from a

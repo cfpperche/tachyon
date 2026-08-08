@@ -188,6 +188,11 @@ export function savedAgentCreateMutation(
       // agent, and workspace-local build steps are the human's to add after approval.
       worktree: { enabled: proposedWorktreeEnabled(spec), branch: "", setup: [] },
       verify: "",
+      // t-f96b2f — a proposal never grants Evolution. Creation refuses it outright (the selector
+      // names a profile id the store mints for an agent that already exists), and letting an agent
+      // ASK for a self-evolving agent would be a capability arriving through the one door whose
+      // whole point is that a human decides what gets created.
+      selfEvolution: false,
       isolation: "",
       ...(nativeConfig ? { nativeConfig } : {}),
       capabilities: { skills: [], mcp: [], hooks: [] },

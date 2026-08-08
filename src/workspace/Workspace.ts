@@ -127,9 +127,12 @@ import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAut
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../config/agentWorkspaceCommandWrite.js";
-
-/** t-d185e1 — the reference id the selector is pinned under; local to this writer. */
-const EVOLUTION_SELECTOR_REFERENCE_ID = "evolution";
+import {
+  evolutionSelectorNeedsProfileId,
+  evolutionSelectorWriteFor,
+  mergedEvolutionSelectorReferences,
+  promptWithEvolutionSelector,
+} from "../config/agentEvolutionSelectorWrite.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration } from "../resume/SessionLedger.js";
 import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
@@ -149,7 +152,7 @@ import { RunLedger } from "../pipeline/RunLedger.js";
 import { loadPipeline, nodeSpawnName } from "../pipeline/loadPipeline.js";
 import { assembleNodePrompt } from "../pipeline/nodePrompt.js";
 import { initRun, type PipelineRun } from "../pipeline/runState.js";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { isWorktreeDirty } from "../worktree/pr.js";
 import { HarnessManager, defaultRealOpencodeDataHome, measureDirUsage, realConfigHome, realRuntimeAuthHomeEnv, seedPrivateHomeGitIdentity } from "../harness/HarnessManager.js";
 import { humanBytes } from "../humanInbox/loadArtifact.js";
@@ -5632,6 +5635,7 @@ export class Workspace {
     }
     const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
     const write = workspaceCommandWriteFor(mutation.editable, current.profile.workspace);
+    const evolution = await this.evolutionSelectorWriteFor(current, mutation.editable.selfEvolution);
     const patch = patchProfileFromStudioMutation(mutation, current);
     const result = await this.commitAgentProfileLifecycle({
       agentName: mutation.agentName,
@@ -5639,10 +5643,38 @@ export class Workspace {
       expectedRevision: mutation.expectedRevision,
       // `references` is rebuilt whole rather than appended to: clearing a field must REMOVE its
       // entry, or the profile would keep a pin nothing points at and fail its own `requireKind`.
-      patch: { ...patch, references: mergedWorkspaceCommandReferences(current.profile, write) },
-      ...(write.artifacts.length > 0 ? { artifacts: write.artifacts } : {}),
+      // The two writers CHAIN over one list — the evolution merge edits what the workspace-command
+      // merge produced, because rebuilding from the stored list twice would drop the first one.
+      patch: {
+        ...patch,
+        prompt: promptWithEvolutionSelector(patch.prompt, evolution),
+        references: mergedEvolutionSelectorReferences(
+          current.profile,
+          evolution,
+          mergedWorkspaceCommandReferences(current.profile, write),
+        ),
+      },
+      ...(write.artifacts.length + evolution.artifacts.length > 0
+        ? { artifacts: [...write.artifacts, ...evolution.artifacts] }
+        : {}),
     });
     return projectAgentProfileStudioSnapshot(result.snapshot);
+  }
+
+  /**
+   * t-f96b2f — resolve the Studio's Evolution toggle, minting a store profile only when the save is
+   * actually granting the capability.
+   *
+   * The mint is conditional and that is load-bearing in both directions: an agent that already
+   * carries a selector keeps the id it has (so a save that does not touch the toggle writes back
+   * exactly what it read), and a save that turns Evolution OFF must not create an Evolution profile
+   * on its way out.
+   */
+  private async evolutionSelectorWriteFor(current: AgentProfileLifecycleSnapshot, enabled: boolean) {
+    const minted = evolutionSelectorNeedsProfileId(current.profile, enabled)
+      ? (await this.evolutionStore.ensureProfile(current.agentName)).profileId
+      : undefined;
+    return evolutionSelectorWriteFor(current.profile, enabled, minted);
   }
 
   /**
@@ -5900,43 +5932,33 @@ export class Workspace {
    * is re-signed over the profile alone. Publishing them separately would leave a window where the
    * profile pins a digest nothing on disk satisfies, which is precisely the fail-closed state the
    * projection is built to refuse.
+   *
+   * t-f96b2f — this is no longer the only door: Agent Studio's toggle reaches the same effect through
+   * `commitAgentProfileStudio`. The BYTES, the pin and the field now come from
+   * `agentEvolutionSelectorWrite`, shared by both, so the two cannot drift. What stays here is what
+   * is genuinely this door's own: it is a bare enable, so meeting an agent that already has Evolution
+   * is a mistake worth refusing, where a form save is idempotent by design.
    */
   async enableAgentSelfEvolution(agentName: string): Promise<AgentProfileLifecycleCommitResult> {
     const snapshot = await this.inspectAgentProfileLifecycle(agentName);
-    const existing = snapshot.profile.references ?? [];
     if (snapshot.profile.prompt?.evolution) {
       throw new Error(`agent '${agentName}' already selects an Evolution profile`);
     }
-    if (existing.some((reference) => reference.path === EVOLUTION_SELECTOR_PATH)) {
+    if ((snapshot.profile.references ?? []).some((reference) => reference.path === EVOLUTION_SELECTOR_PATH)) {
       throw new Error(`agent '${agentName}' already carries an Evolution selector reference`);
     }
     // The store mints the id; this is the only source of truth for what the selector may name.
     const profile = await this.evolutionStore.ensureProfile(agentName);
-    const selector = `${JSON.stringify({ profileId: profile.profileId, schemaVersion: 1 })}\n`;
+    const write = evolutionSelectorWriteFor(snapshot.profile, true, profile.profileId);
     return this.commitAgentProfileLifecycle({
       agentName,
       operation: "edit",
       expectedRevision: snapshot.revision,
       patch: {
-        prompt: { ...(snapshot.profile.prompt ?? {}), evolution: EVOLUTION_SELECTOR_REFERENCE_ID },
-        references: [
-          ...existing,
-          {
-            id: EVOLUTION_SELECTOR_REFERENCE_ID,
-            kind: "evolution",
-            scope: "profile",
-            owner: snapshot.agentId,
-            path: EVOLUTION_SELECTOR_PATH,
-            mode: "pinned",
-            sha256: createHash("sha256").update(selector).digest("hex"),
-          },
-        ],
+        prompt: promptWithEvolutionSelector(snapshot.profile.prompt, write),
+        references: mergedEvolutionSelectorReferences(snapshot.profile, write),
       },
-      artifacts: [{
-        path: EVOLUTION_SELECTOR_PATH,
-        text: selector,
-        sha256: createHash("sha256").update(selector).digest("hex"),
-      }],
+      artifacts: write.artifacts,
     });
   }
 
