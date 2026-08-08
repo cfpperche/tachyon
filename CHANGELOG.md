@@ -6,8 +6,27 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.67.0 — Stopping, starting, and being told what to do about it
+
+Four things you press and one thing you read. Stop now stops, and stops looking like a crash. A
+crash-restart comes back remembering. A launch refused for a missing login hands you the login
+instead of a line in the status bar. Three of the four defects here were diagnosed wrong before they
+were fixed — the corrections are recorded beside them, because a wrong cause that produces a working
+fix is a trap for whoever reads this next.
+
 ### Fixed
 
+- **The Stop button now stops Claude** (`t-ab2682`). Three graceful stops in four left the process
+  alive, and thirty seconds later Tachyon forced a kill — which takes the session down instead of
+  letting the runtime close itself. It exits cleanly in 11 of 11 runs now. The recorded cause was
+  wrong and the measurement overturned it: the slash-command menu never swallowed the Enter. `/exit`
+  was typed into a composer that still held the agent's spawn brief, and the pair went to the model
+  as a prompt. The composer looking empty afterwards — the thing that made this read as a lost Enter
+  — was the brief losing the race. The obvious fix was tried and **rejected on evidence**: a fixed
+  600 ms delay failed at exactly the old rate, 3 in 4, while a 6–13 ms gap into a free composer
+  succeeded 13 of 13. Time was never the variable. The rule is now composer occupancy: type only
+  into a composer proven free, press Enter only while it proves it holds exactly that text. The
+  defect was in the delivery mechanism, not in Claude's stop profile, which was right all along.
 - **Stopping an agent no longer looks like it crashed** (`t-9d76b1`). You stopped `grok` and the row
   went red: `exited (130)`, the same badge an agent that died on its own gets — with `resumable`
   right beside it, one badge saying it broke and the other saying everything is fine. 130 is
@@ -26,6 +45,34 @@ Marketplace release notes.
   came out of running it more than once: claude's stop only *sometimes* stops claude — three failures
   in four runs — which is why a single earlier measurement called it fine. Filed as `t-ab2682`, marked
   honestly in `docs/runtimes/parity.md` row 7, and not papered over here.
+- **An agent that crashes and restarts comes back remembering** (`t-f6aa7c`). With `restart: on-crash`
+  it used to come back on a brand-new session: hours of context gone, and you found out when it asked
+  something already answered. It now resumes. When there is nothing to resume — a first crash, an
+  aged-out transcript, a runtime with no resume — it opens a fresh session **and says which of those
+  it was**, instead of leaving you to infer it from behaviour. A terminal still comes back blank,
+  which is correct: `bun run dev` has no memory to keep. The prior choice turned out not to be a
+  choice: spec 389 recorded the crash case as "unchanged" and listed auto-resume on crash as a
+  non-goal, so nobody decided this — it was deferred and became behaviour by omission.
+- **A launch refused for a missing login hands you the login** (`t-2656d7`, SDD 495). You started a
+  Grok agent and the status bar said `no credentials at /home/gc` before erasing itself. The rest of
+  that sentence — `run grok login first` — was past the clip, so you concluded Grok was unsupported.
+  Tachyon knew the answer and printed it where sentences cannot be read. The refusal is now a
+  persistent notice naming the runtime and the agent, carrying a **Log in** button that runs that
+  runtime's own login in an editor-tab terminal you can type into, and a **Retry** you press when you
+  are ready — Tachyon does not start the agent for you. The whole defect was an empty actions array:
+  with one, the same channel produces a notice that waits; with none, it produces eight seconds of
+  status bar. That invariant is now a pure function asserted for every runtime, so an edit that drops
+  the actions fails a test instead of quietly returning to the status bar.
+
+### Internal
+
+- **Tests that pin an address instead of a rule** (`t-60fcfc`, `t-c189ba`). A test pinned
+  `Workspace.ts:3527`. That file has ~6900 lines, so any edit above that point — on any subject —
+  turned it red, and in one day it produced two false failures and a merge conflict between two
+  agents working in unrelated regions. A test states a rule; a line number is the rule's address
+  today. 776 tests were swept; one more was genuinely broken and is fixed: it counted three
+  occurrences of a crash-reporter switch, which went red on a correct fourth configuration and stayed
+  green on one that dropped the switch — wrong in both directions at once.
 
 ## 0.66.0 — Nothing is left behind, and nothing you cannot undo
 
