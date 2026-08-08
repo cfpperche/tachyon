@@ -14,10 +14,9 @@ describe("Activity Runtime API", () => {
       },
       manager: {
         transcriptPathOf: async () => undefined,
-        list: async () => [
+        listAgents: async () => [
           row("codex", { attention: undefined }),
           row("reviewer", { running: true, lifetime: "temporary", resumePolicy: "collected" }),
-          row("terminal", { running: true, kind: "terminal" }),
           row("stopped"),
         ],
       },

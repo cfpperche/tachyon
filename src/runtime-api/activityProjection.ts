@@ -49,7 +49,7 @@ export type ActivityContextViewV1 = z.infer<typeof view>;
 
 export interface ActivityContextSource extends ActivityAttributionWorkspace {
   manager: ActivityAttributionWorkspace["manager"] & {
-    list(): Promise<ManagedEntryInfo[]>;
+    listAgents(): Promise<ManagedEntryInfo[]>;
   };
   attentionOf(agent: string): { state: "working" | "idle" | "needs-input" | "throttled" } | undefined;
 }
@@ -68,11 +68,10 @@ export async function projectActivityContext(
 ): Promise<ActivityContextProjectionV1> {
   if (!AGENT_NAME_RE.test(agent)) throw new Error(`invalid Activity agent '${agent}'`);
   const [rows, sharedCwd] = await Promise.all([
-    source.manager.list(),
+    source.manager.listAgents(),
     hasSharedCwdAttributionGap(source, agent),
   ]);
   const targets = rows.filter((row) => row.name !== agent
-    && row.kind === "agent"
     && row.running
     && !row.dead
     && !row.stopping);
