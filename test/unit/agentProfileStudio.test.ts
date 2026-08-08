@@ -405,6 +405,8 @@ describe("declared subagents authoring (t-4c113c)", () => {
       kind: entry.kind ?? "agent",
       subagents: entry.subagents ?? [],
     }));
+  const agents = (entries: AgentOwnershipRosterV1): AgentOwnershipRosterV1 =>
+    entries.filter((entry) => entry.kind === "agent");
 
   const ownerSnapshot = (subagents?: string[]): AgentProfileLifecycleSnapshot => {
     const base = lifecycleSnapshot();
@@ -461,7 +463,7 @@ describe("declared subagents authoring (t-4c113c)", () => {
       .toThrow("nested subagent trees are not supported");
     // Clearing stays possible — an over-strict refusal would strand a profile nobody can repair.
     expect(ownershipPatchFromStudioMutation(setSubagents([]), ownerSnapshot(), owned)).toEqual({ ownership: undefined });
-    expect(agentOwnershipView(owner, owned)).toEqual({ subagents: [], candidates: [], ownedBy: "claude-builder" });
+    expect(agentOwnershipView(owner, agents(owned))).toEqual({ subagents: [], candidates: [], ownedBy: "claude-builder" });
   });
 
   it("offers only targets the transaction would accept, and never drops what is already declared", () => {
@@ -473,7 +475,7 @@ describe("declared subagents authoring (t-4c113c)", () => {
       taken: {},
       shell: { kind: "terminal" },
     });
-    expect(agentOwnershipView(owner, current)).toEqual({
+    expect(agentOwnershipView(owner, agents(current))).toEqual({
       subagents: ["claude-builder", "claude-runtime"],
       // `other` owns something, `taken` is owned, `shell` is a terminal — none may be declared here.
       candidates: ["claude-builder", "claude-reviewer", "claude-runtime"],

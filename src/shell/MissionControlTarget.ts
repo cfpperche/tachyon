@@ -10,6 +10,7 @@ import { wakeValidationClosedAuthors, type ValidationCloseLiveEntry } from "../v
 import { ValidationStore } from "../validations/ValidationStore.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
+import { isAgentRow } from "../sidebar/types.js";
 
 export interface MissionControlAgentRow {
   name: string;
@@ -31,7 +32,10 @@ export interface WorkspaceMissionControlTarget extends WorkspacePresentationTarg
 
 export interface LegacyMissionControlSource extends WorkspacePresentationTarget {
   readonly config?: { agents?: Record<string, unknown> };
-  readonly manager: { list(): Promise<Array<MissionControlAgentRow | ValidationCloseLiveEntry>> };
+  readonly manager: {
+    list(): Promise<Array<MissionControlAgentRow | ValidationCloseLiveEntry>>;
+    listAgents(): Promise<Array<MissionControlAgentRow | ValidationCloseLiveEntry>>;
+  };
   readonly taskStore: TaskStore;
   readonly validationStore: ValidationStore;
   /**
@@ -49,7 +53,7 @@ export function legacyMissionControlTarget(source: LegacyMissionControlSource): 
     wsHash: source.wsHash,
     folderName: source.folderName,
     declaredAgentNames: () => Object.keys(source.config?.agents ?? {}),
-    listMissionControlAgents: () => source.manager.list() as Promise<MissionControlAgentRow[]>,
+    listMissionControlAgents: () => source.manager.listAgents() as Promise<MissionControlAgentRow[]>,
     boardSnapshot: async (liveTemporaryAgents) => buildBoardSnapshot({
       store: source.taskStore,
       declaredAgents: Object.keys(source.config?.agents ?? {}),
@@ -92,7 +96,7 @@ export function workspaceMissionControlTarget(client: WorkspaceClient): Workspac
     listMissionControlAgents: async () => {
       const agents = client.presentation.agents;
       if (agents.truncated) throw new Error("Mission Control agent projection is truncated");
-      return agents.items.map((agent) => ({
+      return agents.items.filter(isAgentRow).map((agent) => ({
         name: agent.name,
         kind: agent.kind,
         running: agent.running,

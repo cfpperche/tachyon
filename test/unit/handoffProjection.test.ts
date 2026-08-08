@@ -34,7 +34,6 @@ describe("Project Handoff Runtime API projection", () => {
         listAgents: async () => [
           { name: "codex", session: "s1", running: true, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "agent" },
           { name: "reviewer", session: "s2", running: false, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "agent" },
-          { name: "terminal", session: "s3", running: true, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "terminal" },
         ],
         resumableAgentNames: () => new Set(["reviewer"]),
       },

@@ -15,7 +15,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "../config/agentForgetPlan.js";
 import {
@@ -1569,7 +1569,7 @@ export class Workspace {
 
     this.temporaryBackstop = new TemporaryBackstopMonitor(
       {
-        listEntries: () => this.manager.list(),
+        listAgents: () => this.manager.listAgents(),
         attentionOf: (agent) => this.attentionOf(agent),
         now: () => Date.now(),
         deliverNotice: (parent, line, metadata) => this.deliverNotice(parent, line, metadata),
@@ -1587,13 +1587,13 @@ export class Workspace {
     // cannot drift into two accounts of one runtime.
     this.runtimeSlack = new RuntimeSlackMonitor({
       condition: () => this.runtimeCondition(),
-      listEntries: () => this.manager.list(),
+      listAgents: () => this.manager.listAgents(),
       deliverNotice: (agent, line, metadata) => this.deliverNotice(agent, line, metadata),
     });
 
     this.gatedCompletion = new GatedCompletionMonitor({
       listGatedFacts: () => this.listGatedCompletionFacts(),
-      listEntries: () => this.manager.list(),
+      listAgents: () => this.manager.listAgents(),
       attentionOf: (agent) => this.attentionOf(agent),
       headState: async (worktreePath) => {
         try {
@@ -3479,10 +3479,10 @@ export class Workspace {
 
   /** Mark only live canonical agents whose native projection selects this runtime source. */
   async markRuntimeConfigPending(runtime: "codex" | "claude" | "grok", scope: "global" | "workspace", revision: string): Promise<string[]> {
-    const live = await this.manager.list();
+    const live = await this.manager.listAgents();
     const affected: string[] = [];
     for (const agent of live) {
-      if (!agent.running || agent.kind !== "agent") continue;
+      if (!agent.running) continue;
       const def = asAgent(this.config?.agents[agent.name]);
       if (!def) continue;
       // SDD 481 — Grok's WORKSPACE source is not a profile projection and cannot be one: Grok
@@ -5826,7 +5826,12 @@ export class Workspace {
   }
 
   async agentOwnershipView(agentName: string): Promise<AgentOwnershipViewV1> {
-    return agentOwnershipView(agentName, this.agentOwnershipRoster());
+    const agents: AgentOwnershipRosterV1 = Object.entries(agentsOf(this.config)).map(([name, entry]) => ({
+      name,
+      kind: "agent",
+      subagents: [...(entry.subagents ?? [])],
+    }));
+    return agentOwnershipView(agentName, agents);
   }
 
   /**
@@ -6730,7 +6735,7 @@ export class Workspace {
       sinceIso: string;
     }>
   > {
-    const entries = await this.manager.list();
+    const entries = await this.manager.listAgents();
     const out: Array<{
       agent: string;
       delegator: string;
@@ -6740,7 +6745,7 @@ export class Workspace {
       sinceIso: string;
     }> = [];
     for (const entry of entries) {
-      if (entry.kind !== "agent" || !entry.delegator) continue;
+      if (!entry.delegator) continue;
       const rec = this.ledger.get(entry.name);
       const wtPath = rec?.worktree?.path ?? rec?.cwd;
       if (!wtPath) continue;
@@ -6772,7 +6777,7 @@ export class Workspace {
    * they declare — `verified-since` instead of `beyond-base`, because a persistent agent's worktree
    * sits past its spawn base permanently and `beyond-base` there would fire on ordinary idle.
    */
-  private listAssignedCompletionFacts(entries: readonly ManagedEntryInfo[]): GatedCompletionFacts[] {
+  private listAssignedCompletionFacts(agents: readonly ManagedEntryInfo[]): GatedCompletionFacts[] {
     let tasks: ReturnType<TaskStore["listRaw"]>;
     try {
       tasks = this.taskStore.listRaw();
@@ -6780,7 +6785,7 @@ export class Workspace {
       return []; // no board readable → no facts, never a guess
     }
     return assignedCompletionFacts({
-      entries,
+      agents,
       declared: new Set(Object.keys(this.config?.agents ?? {})),
       tasks,
       locate: (agent, taskId) => {
@@ -6939,13 +6944,12 @@ export class Workspace {
         this.host.notify(this.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
       }
     });
-    for (const [name, def] of Object.entries(this.config?.agents ?? {})) {
+    for (const [name, def] of Object.entries(terminalsOf(this.config))) {
       // t-bd14d8 — `config.agents` is the UNIFIED map: agents and terminals both live in it and this
       // loop had no arm for the difference, so a watch reaching an agent by any route got the
       // terminal behaviour above — force-kill, new session, triggered by a file save. The strip now
       // happens at projection, but the guarantee belongs HERE too: this is the consumer that acts,
       // and it must not depend on every producer upstream having been fixed.
-      if (def.kind === "agent") continue;
       for (const glob of def.watch) {
         this.watches.watch(name, (onChange) => {
           const watcher = this.host.watch(this.workspaceRoot, glob, { change: true, create: true, delete: true }, onChange);
@@ -6977,26 +6981,32 @@ export class Workspace {
     // and refuses. That is the fail-closed direction on purpose: refusing on a roster we cannot read
     // beats activating and guessing.
     const canonicalRoster = new Set(scanAgentRosterDirectory(this.workspaceRoot).members);
-    const evaluateLegacyFleet = async () => inspectLegacyFleet({
+    const evaluateLegacyFleet = async () => {
+      const liveAgentNames = new Set((await this.manager.listAgents()).map((entry) => entry.name));
+      return inspectLegacyFleet({
       wsHash: this.wsHash,
       ledger: [...this.ledger.all()].map(([name, row]) => [name, row] as const),
-      rosterEntries: Object.keys(this.config?.agents ?? {}).map((name) => ({
+      rosterEntries: Object.keys(agentsOf(this.config)).map((name) => ({
         name,
-        kind: this.manager.kindOf(name),
+        kind: "agent" as const,
         hasProfilePointer: canonicalRoster.has(name),
       })),
-      liveSessions: await Promise.all(surviving.map(async (session) => {
+      liveSessions: await Promise.all(surviving.filter((session) => {
+        const name = session.slice(`${SESSION_PREFIX}-${this.wsHash}-`.length);
+        return liveAgentNames.has(name);
+      }).map(async (session) => {
         const name = session.slice(`${SESSION_PREFIX}-${this.wsHash}-`.length);
         return {
           session,
           name,
-          kind: this.manager.kindOf(name),
+          kind: "agent" as const,
           // Proof is read off the SESSION, not the ledger. An unreadable session yields undefined,
           // which the gate refuses — a failed read must never admit.
           attestation: await this.tmux.sessionEnvValue(session, POST_CUT_SESSION_ATTESTATION_ENV),
         };
       })),
-    });
+      });
+    };
 
     // t-1129e1 — give a SELF-CLEARING refusal a bounded chance to clear before reporting it.
     //

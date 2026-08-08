@@ -79,7 +79,7 @@ function fixture() {
       },
       observations,
     }),
-    listEntries: async () => entries,
+    listAgents: async () => entries,
     deliverNotice: async (target, line) => {
       delivered.push({ agent: target, line });
     },

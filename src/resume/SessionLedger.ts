@@ -191,6 +191,19 @@ export function isResumable(rec: SessionRecord): boolean {
   return !!rec.resume?.runtime && adapterForRuntime(rec.resume.runtime) !== undefined;
 }
 
+/**
+ * Agent-side view of persisted session rows.
+ *
+ * A row without `def` is a declared agent's resume-only row, so it remains in this collection. This
+ * deliberately preserves the ledger consumers' existing fallback and does not settle the older
+ * kindless-record contradiction at the persistence boundary.
+ */
+export function agentSessionRecordsOf(
+  records: ReadonlyMap<string, SessionRecord>,
+): Map<string, SessionRecord> {
+  return new Map([...records].filter(([, record]) => record.def?.kind !== "terminal"));
+}
+
 type LedgerFile = { sessions?: Record<string, unknown> };
 
 export class SessionLedger {

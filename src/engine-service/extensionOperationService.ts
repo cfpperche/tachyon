@@ -215,7 +215,7 @@ export async function executeExtensionQuery(
           body: template.body,
           sha256: createHash("sha256").update(template.body, "utf8").digest("hex"),
         })),
-        targets: injectTargets(await workspace.manager.list()),
+        targets: injectTargets(await workspace.manager.listAgents()),
       });
     }
     case "worktrees.list": {

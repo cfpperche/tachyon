@@ -155,11 +155,9 @@ export function inspectLegacyFleet(input: {
     });
   }
 
-  // 2. Inline roster definitions. TERMINALS ARE NOT CHECKED: `terminals:` is an explicit product
-  //    surface with its own shape, it never carried the agent species, and blocking on one would be
-  //    this gate reaching outside the thing it is gating.
+  // 2. Inline agent roster definitions. The caller supplies the agent collection: `terminals:` is an
+  //    explicit product surface with its own shape and never reaches this gate.
   for (const entry of input.rosterEntries) {
-    if (entry.kind !== "agent") continue;
     if (entry.hasProfilePointer) continue;
     offenders.push({
       kind: "roster-entry",
@@ -190,7 +188,6 @@ export function inspectLegacyFleet(input: {
   //    claiming some other version. There is deliberately no ledger fallback here — "even without a
   //    ledger" is precisely the case this must still refuse.
   for (const entry of input.liveSessions) {
-    if (entry.kind !== "agent") continue;
     if (!isOwnedAgentSession(entry.session, input.wsHash)) continue;
     if (entry.attestation === POST_CUT_SESSION_ATTESTATION) continue;
     offenders.push({

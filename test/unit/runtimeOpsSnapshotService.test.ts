@@ -11,6 +11,43 @@ import { admitVitestRun } from "../../src/host/vitestBudget.js";
 import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "../../src/host/hostResources.js";
 
 describe("RuntimeOpsSnapshotService", () => {
+  it("dispatches through the agent collection without dropping agent membership", async () => {
+    const listAgents = vi.fn(async () => [{
+      name: "claude",
+      kind: "agent" as const,
+      running: true,
+      dead: false,
+      crashed: false,
+      stopping: false,
+      lifetime: "saved" as const,
+      resumePolicy: "restartable" as const,
+      session: "tachyon-ws-claude",
+    }]);
+    const service = new RuntimeOpsSnapshotService(() => [{
+      workspaceRoot: "/work",
+      wsHash: "ws",
+      folderName: "work",
+      ledger: { all: () => new Map<string, SessionRecord>([
+        ["claude", record("claude")],
+        ["dev", { ...record("claude"), def: { kind: "terminal", cmd: "bash" } }],
+      ]) },
+      manager: {
+        listAgents,
+        defOf: (name: string) => name === "claude" ? { cmd: "claude" } : { cmd: "bash" },
+        resumeReadiness: async () => true,
+      },
+    }], {
+      detect: async () => [],
+      readPathVersion: async () => null,
+      activityLog: () => staticActivityLog([]),
+    });
+
+    const snapshot = await service.snapshot();
+
+    expect(listAgents).toHaveBeenCalledOnce();
+    expect(snapshot.runtimes.flatMap((runtime) => runtime.agents.map((agent) => agent.name))).toContain("claude");
+  });
+
   it("preserves cumulative and delta semantics while observing activity timestamps and versions", async () => {
     const detector = vi.fn(async () => ["codex", "codex"]);
     const service = new RuntimeOpsSnapshotService(() => [workspace("/private/one/app", "ws-one", "app", [
@@ -121,7 +158,7 @@ describe("RuntimeOpsSnapshotService", () => {
     const session = record("codex");
     const source = workspace(root, "ws", "app", [["worker", session]]) as ReturnType<typeof workspace> & Record<string, unknown>;
     source.manager = {
-      list: async () => [{ name: "worker", session: "private-tmux", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      listAgents: async () => [{ name: "worker", session: "private-tmux", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
       defOf: () => ({ cmd: "codex --model gpt-5.1-codex" }),
       resumeReadiness: async () => true,
     };
@@ -153,7 +190,7 @@ describe("RuntimeOpsSnapshotService", () => {
   it("distinguishes a stopped resumable session from fresh-start-only", async () => {
     const source = workspace("/workspace", "ws", "app", [["stopped", record("claude")]]) as ReturnType<typeof workspace> & Record<string, unknown>;
     source.manager = {
-      list: async () => [{ name: "stopped", session: "pane", running: false, declared: true, dead: false, crashed: false, kind: "agent" }],
+      listAgents: async () => [{ name: "stopped", session: "pane", running: false, declared: true, dead: false, crashed: false, kind: "agent" }],
       defOf: () => ({ cmd: "claude" }),
       resumeReadiness: async () => false,
     };
@@ -169,7 +206,7 @@ describe("RuntimeOpsSnapshotService", () => {
     const terminal = { ...record("claude"), def: { cmd: "claude", kind: "terminal" as const } };
     const source = workspace("/workspace", "ws", "app", [["server", terminal]]) as ReturnType<typeof workspace> & Record<string, unknown>;
     source.manager = {
-      list: async () => [{ name: "server", session: "server-pane", running: true, declared: true, dead: false, crashed: false, kind: "terminal" }],
+      listAgents: async () => [],
       defOf: () => ({ cmd: "claude" }),
       resumeReadiness: async () => true,
     };
@@ -465,7 +502,7 @@ describe("RuntimeOpsSnapshotService — spec 378 observed model latch", () => {
     };
     const source = workspace("/workspace", "ws", "app", [["worker", record("codex")]]) as ReturnType<typeof workspace> & Record<string, unknown>;
     source.manager = {
-      list: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      listAgents: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
       defOf: () => ({ cmd: "codex" }),
       resumeReadiness: async () => true,
     };
@@ -484,7 +521,7 @@ describe("RuntimeOpsSnapshotService — spec 378 observed model latch", () => {
   it("projects divergence in snapshot() when the observed model differs from the declared/profile default", async () => {
     const source = workspace("/workspace", "ws", "app", [["worker", record("codex")]]) as ReturnType<typeof workspace> & Record<string, unknown>;
     source.manager = {
-      list: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
+      listAgents: async () => [{ name: "worker", session: "pane", running: true, declared: true, dead: false, crashed: false, kind: "agent" }],
       defOf: () => ({ cmd: "codex" }), // bare codex → declared "Codex default"
       resumeReadiness: async () => true,
     };

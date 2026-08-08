@@ -56,7 +56,7 @@ export interface GatedCompletionFacts {
 
 export interface GatedCompletionDeps {
   listGatedFacts(): Promise<GatedCompletionFacts[]>;
-  listEntries(): Promise<ManagedEntryInfo[]>;
+  listAgents(): Promise<ManagedEntryInfo[]>;
   attentionOf(agent: string): AgentAttention | undefined;
   headState(worktreePath: string): Promise<{ headRef: string; dirty: boolean } | null>;
   /**
@@ -137,7 +137,7 @@ export interface AssignedTaskFact {
 }
 
 export interface AssignedCompletionInput {
-  entries: readonly Pick<ManagedEntryInfo, "name" | "kind" | "delegator" | "declaredOwner" | "parent">[];
+  agents: readonly Pick<ManagedEntryInfo, "name" | "delegator" | "declaredOwner" | "parent">[];
   /** names present in `agents:` — declared only, so a Temporary sibling can never arm. */
   declared: ReadonlySet<string>;
   tasks: readonly AssignedTaskFact[];
@@ -195,8 +195,8 @@ export function resolveAssignedCompletionWorktree(
  */
 export function assignedCompletionFacts(input: AssignedCompletionInput): GatedCompletionFacts[] {
   const out: GatedCompletionFacts[] = [];
-  for (const entry of input.entries) {
-    if (entry.kind !== "agent" || entry.delegator) continue;
+  for (const entry of input.agents) {
+    if (entry.delegator) continue;
     if (!input.declared.has(entry.name)) continue;
     const owner = entry.declaredOwner ?? entry.parent;
     if (!owner || owner === entry.name) continue;
@@ -229,7 +229,7 @@ export class GatedCompletionMonitor {
     let dirty = false;
 
     const facts = await this.deps.listGatedFacts();
-    const entries = await this.deps.listEntries();
+    const entries = await this.deps.listAgents();
     const entryByName = new Map(entries.map((e) => [e.name, e]));
 
     for (const fact of facts) {

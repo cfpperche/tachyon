@@ -39,7 +39,7 @@ function fixture(threshold: number | null | (() => number | null)) {
   const delivered: string[] = [];
   const monitor = new TemporaryBackstopMonitor(
     {
-      listEntries: async () => entries,
+      listAgents: async () => entries,
       attentionOf: (name) => attention.get(name),
       now: () => now,
       deliverNotice: async (parent, line) => { delivered.push(`${parent}: ${line}`); },

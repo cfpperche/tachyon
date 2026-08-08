@@ -702,7 +702,7 @@ export type AgentOwnershipViewV1 = z.infer<typeof agentOwnershipViewSchemaV1>;
 
 function ownerOf(child: string, roster: AgentOwnershipRosterV1, exclude?: string): string | undefined {
   return roster.find((entry) =>
-    entry.kind === "agent" && entry.name !== exclude && entry.subagents.includes(child))?.name;
+    entry.name !== exclude && entry.subagents.includes(child))?.name;
 }
 
 /**
@@ -710,16 +710,15 @@ function ownerOf(child: string, roster: AgentOwnershipRosterV1, exclude?: string
  * `ownershipPatchFromStudioMutation` refuses on, so the UI cannot offer a target the transaction
  * would then reject.
  */
-export function agentOwnershipView(owner: string, roster: AgentOwnershipRosterV1): AgentOwnershipViewV1 {
-  const self = roster.find((entry) => entry.name === owner);
-  const subagents = [...(self?.kind === "agent" ? self.subagents : [])].sort();
-  const ownedBy = ownerOf(owner, roster, owner);
-  if (ownedBy !== undefined || self?.kind !== "agent") return { subagents, candidates: [], ...(ownedBy !== undefined ? { ownedBy } : {}) };
-  const candidates = roster
-    .filter((entry) => entry.kind === "agent"
-      && entry.name !== owner
+export function agentOwnershipView(owner: string, agents: AgentOwnershipRosterV1): AgentOwnershipViewV1 {
+  const self = agents.find((entry) => entry.name === owner);
+  const subagents = [...(self?.subagents ?? [])].sort();
+  const ownedBy = ownerOf(owner, agents, owner);
+  if (ownedBy !== undefined || !self) return { subagents, candidates: [], ...(ownedBy !== undefined ? { ownedBy } : {}) };
+  const candidates = agents
+    .filter((entry) => entry.name !== owner
       && entry.subagents.length === 0
-      && ownerOf(entry.name, roster, owner) === undefined)
+      && ownerOf(entry.name, agents, owner) === undefined)
     .map((entry) => entry.name)
     .sort()
     // Bounded to the wire schema's cap so an implausibly large roster degrades to a shorter picker

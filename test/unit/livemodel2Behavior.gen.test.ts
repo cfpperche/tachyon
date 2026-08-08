@@ -148,7 +148,7 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
 
     const source = fleetSource(root, { worker: "codex" }) as RuntimeOpsWorkspaceSource & Record<string, unknown>;
     source.manager = {
-      list: async () => [{ name: "worker", session: "pane", running: true, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "agent" as const }],
+      listAgents: async () => [{ name: "worker", session: "pane", running: true, lifetime: "saved", resumePolicy: "restartable", dead: false, crashed: false, kind: "agent" as const }],
       defOf: () => ({ cmd: "codex" }), // bare codex → declared "Codex default"
       resumeReadiness: async () => true,
     };

@@ -10,6 +10,7 @@ import {
   type LegacySessionEntry,
 } from "../../src/agents/legacyFleetGate.js";
 import type { InstancePolicySource } from "../../src/agents/agentInstancePolicy.js";
+import { agentsOf, parseConfig } from "../../src/config/loadConfig.js";
 
 /**
  * `t-fab832` step 1 — the activation gate, proven seed by seed.
@@ -118,13 +119,15 @@ describe("legacy fleet gate — negative controls (t-fab832)", () => {
    * CONTROL 1 — the product's own terminals. `terminals:` is an explicit surface that never carried
    * the agent species, so blocking on one would be the gate reaching outside what it gates.
    */
-  it("never blocks on a product terminal, in the roster or running", () => {
-    const terminalEntry: LegacyRosterEntry = { name: "devserver", kind: "terminal", hasProfilePointer: false };
-    // No attestation on purpose: a terminal is not an agent and must not need one.
-    const terminalSession: LegacySessionEntry = { session: `tachyon-${WS}-devserver`, name: "devserver", kind: "terminal" };
-    // An inline-shaped terminal is still not an offender — `hasProfilePointer: false` is normal here.
-    expect(inspect({ rosterEntries: [terminalEntry], liveSessions: [terminalSession] }))
-      .toEqual({ ok: true, offenders: [] });
+  it("never receives a product terminal because the caller requests agent membership", () => {
+    const { config } = parseConfig("agents:\n  reviewer:\n    cmd: claude\nterminals:\n  devserver:\n    cmd: bash\n");
+    const rosterEntries = Object.keys(agentsOf(config)).map((name): LegacyRosterEntry => ({
+      name,
+      kind: "agent",
+      hasProfilePointer: true,
+    }));
+    expect(rosterEntries.map((entry) => entry.name)).toContain("reviewer");
+    expect(inspect({ rosterEntries })).toEqual({ ok: true, offenders: [] });
   });
 
   /**

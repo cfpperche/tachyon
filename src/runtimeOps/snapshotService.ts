@@ -5,7 +5,7 @@ import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
 import type { AgentAttention } from "../attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
 import { runtimeOf } from "../resume/adapters.js";
-import { isResumable, type SessionRecord } from "../resume/SessionLedger.js";
+import { agentSessionRecordsOf, isResumable, type SessionRecord } from "../resume/SessionLedger.js";
 import { MEASURED_CLI_VERSIONS } from "../runtime/measuredCliVersions.js";
 import { buildRuntimeUsageSource, runtimeUsageSemantics, type RuntimeUsageUpdate } from "../runtimeUsage/model.js";
 import { modelFromCommand, resolveModelFact, type ObservedModelInput } from "../sidebar/agentModel.js";
@@ -26,7 +26,7 @@ export interface RuntimeOpsWorkspaceSource {
   folderName: string;
   ledger: { all(): Map<string, SessionRecord> };
   manager?: {
-    list(): Promise<ManagedEntryInfo[]>;
+    listAgents(): Promise<ManagedEntryInfo[]>;
     defOf(name: string): { cmd: string } | undefined;
     resumeReadiness(name: string, record: SessionRecord): Promise<boolean>;
     /** Required for t-e3bae0 resource sampling; optional so lean test doubles stay valid. */
@@ -140,14 +140,13 @@ export class RuntimeOpsSnapshotService {
     const activeActivityKeys = new Set<string>();
     const liveResourceKeys = new Set<string>();
     for (const workspace of workspaces) {
-      const records = workspace.ledger.all();
-      const entries = workspace.manager ? await workspace.manager.list() : [];
+      const records = agentSessionRecordsOf(workspace.ledger.all());
+      const entries = workspace.manager ? await workspace.manager.listAgents() : [];
       const entryByName = new Map(entries.map((entry) => [entry.name, entry]));
-      const names = new Set([...records.keys(), ...entries.filter((entry) => entry.kind === "agent").map((entry) => entry.name)]);
+      const names = new Set([...records.keys(), ...entries.map((entry) => entry.name)]);
       for (const agentName of names) {
         const record = records.get(agentName);
         const entry = entryByName.get(agentName);
-        if (entry?.kind === "terminal" || record?.def?.kind === "terminal") continue;
         const definition = workspace.manager?.defOf(agentName);
         const runtime = record?.resume?.runtime ?? (definition ? runtimeOf(definition.cmd) ?? undefined : undefined);
         if (!runtime) continue;

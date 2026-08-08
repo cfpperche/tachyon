@@ -3,7 +3,7 @@ import type { GitExec } from "../worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../config/loadConfig.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import type { ProbeView } from "../probe/probeView.js";
-import type { AgentStatus, FleetVM } from "../sidebar/types.js";
+import { isAgentRow, type AgentStatus, type FleetVM } from "../sidebar/types.js";
 import type { WorkspaceAgentProjectionV1 } from "../runtime-api/workspaceProjection.js";
 import type { SoulProfileStatusMessage } from "../webview/agent-studio-shell/domain.js";
 import type {
@@ -163,7 +163,7 @@ export function workspacePluginPresentationTarget(client: WorkspaceClient): Work
           folderName: presentation.workspace.folderName,
         },
         { port: presentation.bridge.port, connected: presentation.bridge.url !== null },
-        presentation.agents.items,
+        presentation.agents.items.filter(isAgentRow),
       );
     },
   };
@@ -178,9 +178,7 @@ export function pluginFleetPresentation(
   return {
     folder: { hash: workspace.wsHash, name: workspace.folderName },
     bridge: { port: bridge.port === undefined ? "-" : String(bridge.port), connected: bridge.connected },
-    agents: agents
-      .filter((agent) => agent.kind === "agent")
-      .map((agent) => ({
+    agents: agents.map((agent) => ({
         name: agent.name,
         status: pluginAgentStatus(agent.running, agent.attention, agent.unseen),
         ...(agent.attention ? { attention: agent.attention } : {}),
