@@ -5844,7 +5844,7 @@ export class Workspace {
     const agents: AgentOwnershipRosterV1 = Object.entries(agentsOf(this.config)).map(([name, entry]) => ({
       name,
       kind: "agent",
-      subagents: [...entry.subagents],
+      subagents: [...(entry.subagents ?? [])],
     }));
     return agentOwnershipView(agentName, agents);
   }
