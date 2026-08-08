@@ -39,7 +39,7 @@ inference; only a hand-written `kind: agent` had forced the third.
 | role, instructions, spawn brief | | |
 | task assignment | | |
 | lineage (parent, delegator) | | |
-| worktree, branch, verify gate | | |
+| worktree, branch, setup commands, verify gate | | |
 | harness, transcript isolation | | |
 | delivery join | | |
 | continuity, memory, handoff, re-anchor | | |
@@ -56,6 +56,16 @@ blank one because somebody saved a file, discarding transcript and work in progr
 gesture — so the two kinds were never sharing one behaviour, only one key. An Agent authors no
 `watch`, the Studio has no field for it, and a `lifecycle.watch` left in an older profile is stripped
 at projection with a warning (never a refusal — a stale key must not cost a workspace its roster).
+
+**The setup commands and the verify gate became authorable on 2026-08-08 (`t-afc86e`).** They had
+been Agent-only in the table and unreachable in practice: the Studio rendered both controls
+permanently disabled, and the projection refused any profile that declared them. They are stored as
+pinned profile-local documents (`workspace-verify`, `workspace-setup`) that `workspace.verify` and
+`workspace.worktree.setup` name by reference, published in the same lifecycle transaction as the
+profile that pins them. This matters most OUTSIDE this repository: per-agent verify is how a monorepo
+agent runs its own package's tests instead of the whole suite, and per-agent setup is the only
+mechanism a Python venv, a Rust build or a Go module download has — the shared-`node_modules` link
+that makes setup feel optional here is specific to Node.
 
 ## The three rules that keep it true
 

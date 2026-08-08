@@ -152,8 +152,8 @@ the capability out now; "made unrepresentable by" is the target mechanism.
 | Role / instructions / brief | A | `:780`, `:860-870`; delivery at `AgentManager.ts:1244,1269,1296` | fields absent from Terminal arm |
 | Task assignment | A | `bridge/tools.ts:3735` | assignee type accepts an Agent ref only |
 | Lineage / parent / delegator | A | `AgentManager.ts:2008`; lineage map `:789` | lineage keyed by Agent ref |
-| Worktree / branch / worktreeSetup | A | `ManagedEntryDef` fields — **unguarded today** | fields absent from Terminal arm |
-| Verify gate | A | `ManagedEntryDef.verify` — **unguarded today** | field absent from Terminal arm |
+| Worktree / branch / worktreeSetup | A | `ManagedEntryDef` fields; `worktreeSetup` authorable per agent since `t-afc86e` (pinned `workspace-setup` document) | fields absent from Terminal arm |
+| Verify gate | A | `ManagedEntryDef.verify`; authorable per agent since `t-afc86e` (pinned `workspace-verify` document) | field absent from Terminal arm |
 | Harness (private config home, MCP) | A | `ManagedEntryDef.harness` — **unguarded today** | field absent from Terminal arm |
 | Transcript isolation (`isolate`) | A | `ManagedEntryDef.isolate` — **unguarded today** | field absent from Terminal arm |
 | Delivery join | A | `AgentManager.ts:1500` (throws) | delivery binds an Agent ref |

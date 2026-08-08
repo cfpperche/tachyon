@@ -184,7 +184,10 @@ export function savedAgentCreateMutation(
       cwd: "",
       // t-bd14d8 — no `watch`: the editable schema is strict and an Agent has no file watch.
       lifecycle: { autostart: false, restart: "never", attention: true },
-      worktree: { enabled: proposedWorktreeEnabled(spec), branch: "" },
+      // t-afc86e — a proposal carries no verify gate or setup commands: the proposer describes an
+      // agent, and workspace-local build steps are the human's to add after approval.
+      worktree: { enabled: proposedWorktreeEnabled(spec), branch: "", setup: [] },
+      verify: "",
       isolation: "",
       ...(nativeConfig ? { nativeConfig } : {}),
       capabilities: { skills: [], mcp: [], hooks: [] },

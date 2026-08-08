@@ -23,6 +23,7 @@ import type { FormState } from "../../src/webview/formLogic.js";
 import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
 import { parse as parseYaml, stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
+import type { AgentProfileStudioMutationV1 } from "../../src/config/agentProfileStudio.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, enableSavedAgentSelfEvolution, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
@@ -853,6 +854,94 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
   }
 });
 
+/**
+ * t-afc86e — the ROUND TRIP, and the reason this slice exists at all.
+ *
+ * A verify gate and a setup list are stored as pinned profile-local documents and referenced by id.
+ * The form authors TEXT. So every save has to write bytes + digest + reference in one transaction,
+ * and every open has to read those bytes back — and the failure mode if the read-back is missing is
+ * silent and destructive: the field renders blank for an agent that HAS a gate, and the very next
+ * save writes the blank over it. Nothing throws, nothing warns, the gate is simply gone.
+ *
+ * That is the t-bd14d8 watch trap inverted. There a stale value survived every edit and could never
+ * leave; here a live value would leave on every edit without anyone asking for it. So the assertion
+ * that matters is not "a save can write a verify" — it is this one: write it, close, reopen, save
+ * again WITHOUT touching the field, and it is still there.
+ *
+ * Driven through `commitAgentProfileStudio` / `inspectAgentProfileStudio` — the doors the webview
+ * actually calls — and checked on DISK as well as in the projection, because a projection that
+ * happened to echo its input back would pass while the file said something else.
+ */
+it("t-afc86e: an agent's verify gate and setup commands survive a save that does not touch them", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  const editable = (over: Partial<AgentProfileStudioMutationV1["editable"]> = {}): AgentProfileStudioMutationV1["editable"] => ({
+    displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+    cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
+    worktree: { enabled: true, branch: "", setup: ["python -m venv .venv", "pip install -e ."] },
+    verify: "pytest packages/api", isolation: "",
+    ...over,
+  });
+
+  try {
+    const created = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", editable: editable(),
+    });
+    // 1. The save round-trips into the projection the form is rebuilt from.
+    expect(created.editable.verify).toBe("pytest packages/api");
+    expect(created.editable.worktree.setup).toEqual(["python -m venv .venv", "pip install -e ."]);
+
+    // 2. And it is really on disk, as pinned documents the profile names by reference.
+    const profileDir = path.join(root, ".tachyon", "agents", "reviewer");
+    expect(fs.readFileSync(path.join(profileDir, "workspace-verify"), "utf8")).toBe("pytest packages/api\n");
+    expect(fs.readFileSync(path.join(profileDir, "workspace-setup"), "utf8")).toBe("python -m venv .venv\npip install -e .\n");
+    const stored = parseYaml(fs.readFileSync(path.join(profileDir, "agent.yml"), "utf8")) as Record<string, never>;
+    expect(stored.workspace).toMatchObject({ verify: "workspace-verify", worktree: { setup: ["workspace-setup"] } });
+
+    // 3. The projection RUNS it: this is what `effectiveVerify` and `runWorktreeSetup` consume, and
+    //    the pair this whole slice was dead for.
+    expect(asAgent(ws.config?.agents.reviewer)).toMatchObject({
+      verify: "pytest packages/api",
+      worktreeSetup: ["python -m venv .venv", "pip install -e ."],
+    });
+
+    // 4. THE ONE THAT MATTERS. Reopen and save an unrelated edit, exactly as a human would: the form
+    //    refills itself from the snapshot, so whatever the snapshot did not carry gets written back
+    //    as blank. Nothing here mentions verify or setup except reading them out of the snapshot.
+    const reopened = await ws.inspectAgentProfileStudio("reviewer");
+    const untouched = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: reopened.revision,
+      editable: { ...reopened.editable, displayName: "Renamed Reviewer" },
+    });
+    expect(untouched.editable.displayName).toBe("Renamed Reviewer");
+    expect(untouched.editable.verify).toBe("pytest packages/api");
+    expect(untouched.editable.worktree.setup).toEqual(["python -m venv .venv", "pip install -e ."]);
+    expect(asAgent(ws.config?.agents.reviewer)?.verify).toBe("pytest packages/api");
+
+    // 5. Clearing is still possible — the field is editable, not merely persistent. The reference and
+    //    the workspace key both leave the profile; an unreferenced file on disk reads to nobody.
+    const cleared = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: untouched.revision,
+      editable: { ...untouched.editable, verify: "", worktree: { ...untouched.editable.worktree, setup: [] } },
+    });
+    expect(cleared.editable.verify).toBe("");
+    expect(cleared.editable.worktree.setup).toEqual([]);
+    const afterClear = parseYaml(fs.readFileSync(path.join(profileDir, "agent.yml"), "utf8")) as { workspace?: Record<string, unknown>; references?: unknown[] };
+    expect(afterClear.workspace?.verify).toBeUndefined();
+    expect(afterClear.references ?? []).toEqual([]);
+    expect(asAgent(ws.config?.agents.reviewer)?.verify).toBeUndefined();
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("creates and edits canonical Agent Studio profiles through a redacted CAS boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
@@ -871,7 +960,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-        worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
+        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, verify: "", isolation: "transcript",
       },
     });
     // t-ca9086: human-authorized Studio create writes enabled; start/autostart remain separate.
@@ -887,7 +976,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" }, role: "tester",
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-        worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
+        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, verify: "", isolation: "transcript",
       },
     });
     expect(edited.editable).toMatchObject({ displayName: "Review Agent", role: "tester", runtime: { adapter: "codex", executable: "codex" } });
@@ -899,7 +988,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Stale", runtime: { adapter: "codex", executable: "codex" }, role: "coder",
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "" }, isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, verify: "", isolation: "",
       },
     })).rejects.toThrow("revision conflict");
     expect((await ws.inspectAgentProfileStudio("reviewer")).editable.displayName).toBe("Review Agent");
@@ -925,7 +1014,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "" }, isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, verify: "", isolation: "",
       },
     });
     // t-05dff5 — a stale revision RESOLVES as a governed refusal instead of rejecting: it is an

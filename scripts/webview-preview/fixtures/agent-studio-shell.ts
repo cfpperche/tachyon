@@ -197,11 +197,13 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
   editable: {
     displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer",
     cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true },
-    worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
+    worktree: { enabled: true, branch: "feature/reviewer", setup: ["pnpm install", "pnpm --filter web build"] },
+    verify: "npm run typecheck", isolation: "transcript",
     capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },
   bindings: {
     grants: { proposeSavedAgent: false },
+    foreignWorkspaceCommands: false,
     environmentValueNames: ["NODE_ENV"], secretNames: ["GITHUB_TOKEN"],
     prompt: { soul: true, instructions: true, evolution: true, memoryPolicy: "human-approved" },
     capabilities: { skills: 3, mcp: 1, hooks: 1, pi: 0 }, externalReferences: 2,
@@ -224,6 +226,29 @@ const canonicalEntity: AgentStudioEntity = {
   storage: "canonical",
   profile: canonicalSnapshot,
   fields: canonicalAgentFields(canonicalSnapshot),
+};
+
+/**
+ * t-afc86e — an agent whose verify gate and setup commands were published by the WORKSPACE rather
+ * than by this profile.
+ *
+ * The one case where the two fields stay read-only after this task. It is worth a fixture of its own
+ * because the failure it guards against is invisible: a form that rendered those fields blank and
+ * editable would let the next save delete a value the human was never shown. The screen has to say
+ * who owns them instead.
+ */
+const foreignWorkspaceCommandsEntity: AgentStudioEntity = {
+  ...canonicalEntity,
+  profile: {
+    ...canonicalSnapshot,
+    editable: { ...canonicalSnapshot.editable, verify: "", worktree: { ...canonicalSnapshot.editable.worktree, setup: [] } },
+    bindings: { ...canonicalSnapshot.bindings, foreignWorkspaceCommands: true },
+  },
+  fields: canonicalAgentFields({
+    ...canonicalSnapshot,
+    editable: { ...canonicalSnapshot.editable, verify: "", worktree: { ...canonicalSnapshot.editable.worktree, setup: [] } },
+    bindings: { ...canonicalSnapshot.bindings, foreignWorkspaceCommands: true },
+  }),
 };
 
 /**
@@ -331,6 +356,7 @@ export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFi
   "new-unattested-runtime": { provenance: "synthetic-edge", vm: { entity: unattestedRuntimeEntity } },
   "dense-edit": { provenance: "synthetic-edge", vm: { entity: denseEntity } },
   "canonical-disabled": { provenance: "synthetic-edge", vm: { entity: canonicalEntity } },
+  "foreign-workspace-commands": { provenance: "synthetic-edge", vm: { entity: foreignWorkspaceCommandsEntity } },
   "canonical-claude-bypass-off": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity() } },
   "canonical-claude-bypass-on": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity(["bypassPermissions"]) } },
   "canonical-codex-danger-off": { provenance: "synthetic-edge", vm: { entity: codexCanonicalEntity() } },

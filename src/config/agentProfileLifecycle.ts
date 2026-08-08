@@ -23,7 +23,14 @@ import {
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
 import { AgentProfileRefusal } from "./agentProfileRefusal.js";
-import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath } from "./agentProfileReader.js";
+import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath, type CanonicalAgentProfileSource } from "./agentProfileReader.js";
+import {
+  WORKSPACE_SETUP_PATH,
+  WORKSPACE_SETUP_REFERENCE_ID,
+  WORKSPACE_VERIFY_PATH,
+  WORKSPACE_VERIFY_REFERENCE_ID,
+  parseWorkspaceCommandLines,
+} from "./agentWorkspaceCommands.js";
 import { isSupersededRuntimeInspector, profileRuntimeInspectorFor } from "./agentProfileProjection.js";
 
 const SCHEMA_VERSION = 1 as const;
@@ -34,8 +41,10 @@ const STAGED = "staged-agent.yml";
 const BACKUP = "backup-agent.yml";
 const COMPANION_BACKUP = "backup-companion-agent.yml";
 const ARTIFACTS = "artifacts";
+/** t-afc86e — prior bytes of any artifact this transaction REPLACES, so a rollback can restore them. */
+const ARTIFACT_BACKUPS = "artifact-backups";
 const DIGEST_RE = /^[a-f0-9]{64}$/;
-const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md"]);
+const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md", WORKSPACE_VERIFY_PATH, WORKSPACE_SETUP_PATH]);
 /**
  * `t-d185e1` — profile-local documents an EDIT may publish.
  *
@@ -48,10 +57,29 @@ const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md"]);
  * Keeping create's set separate stops an edit from re-publishing `SOUL.md` behind the soul
  * transaction's back, which owns that document under a different contract.
  */
-const EDIT_ARTIFACT_NAMES = new Set(["evolution-selector.json"]);
+/*
+ * t-afc86e adds the two workspace-command documents to BOTH sets. They are authored by the same
+ * gesture that writes the rest of the form, so an edit must be able to republish them — the reason
+ * `SOUL.md` is create-only does not apply: nothing else owns these bytes under another contract.
+ */
+const EDIT_ARTIFACT_NAMES = new Set(["evolution-selector.json", WORKSPACE_VERIFY_PATH, WORKSPACE_SETUP_PATH]);
 const ARTIFACT_NAMES_FOR = { create: CREATE_ARTIFACT_NAMES, edit: EDIT_ARTIFACT_NAMES } as const;
 const ALL_ARTIFACT_NAMES = new Set([...CREATE_ARTIFACT_NAMES, ...EDIT_ARTIFACT_NAMES]);
 const CREATE_ARTIFACT_MAX_BYTES = 64 * 1024;
+
+/**
+ * t-afc86e — one artifact this transaction publishes, and what was there before it.
+ *
+ * `priorSha256` absent means the transaction CREATED the file; present means it REPLACED one, and
+ * carries the digest a rollback must restore. Recording it in the journal rather than re-reading the
+ * directory at compensation time is what makes recovery work after a crash: the process that rolls
+ * back may not be the process that published.
+ */
+export interface LifecycleArtifactRecord {
+  path: string;
+  sha256: string;
+  priorSha256?: string;
+}
 
 export type AgentProfileLifecycleOperation = "create" | "edit" | "set-enabled";
 export type AgentProfileLifecyclePhase =
@@ -96,7 +124,7 @@ export interface AgentProfileLifecycleJournal {
    */
   priorConfigSha256?: string;
   targetConfigSha256?: string;
-  targetArtifacts?: Array<{ path: string; sha256: string }>;
+  targetArtifacts?: LifecycleArtifactRecord[];
   /**
    * SDD 482 phase 4 (`t-5e1113`) — a SECOND agent whose profile this same transaction edits.
    *
@@ -126,6 +154,20 @@ export interface AgentProfileLifecycleSnapshot {
   agentId: string;
   revision: string;
   profile: AgentProfileV1;
+  /**
+   * t-afc86e — the BYTES behind the Studio-owned workspace-command references, digest-checked while
+   * the profile directory was open.
+   *
+   * This is not convenience data, it is what makes the fields editable at all. `profile` carries only
+   * the reference IDS, so a form built from the snapshot alone would render an empty verify box for
+   * an agent that has one — and the next save would write that emptiness back. That failure mode is
+   * the t-bd14d8 watch trap inverted: there a stale value survived every edit and could never leave,
+   * here a live value would leave on every edit without anyone asking.
+   *
+   * Absent when the profile declares no such reference, or when it names one this Studio does not
+   * own (`bindings.foreignWorkspaceCommands` on the projected snapshot).
+   */
+  workspaceCommands?: { verify?: string; setup?: string[] };
   provenance: {
     canonical: { scope: "profile"; writable: true; sha256: string };
     authority: { scope: "host"; writable: false; revision: string; grants: number; /** Content-free IDs of grants eligible for Studio selection. */ capabilityReferenceIds?: string[] };
@@ -357,7 +399,20 @@ function validateCreateArtifacts(input: CommitAgentProfileLifecycleInput): Array
   });
 }
 
-function publishCreateArtifacts(workspaceRoot: string, agentName: string, txDir: string, artifacts: readonly { path: string; sha256: string }[]): void {
+/**
+ * Publish this transaction's artifacts into the profile directory.
+ *
+ * t-afc86e made these REPLACEABLE. Until then every artifact was new by construction — `SOUL.md` on
+ * create, the Evolution selector on a one-time enable — so `writeNew` was the whole story and a
+ * second publish of the same path threw. That is exactly what a verify gate does on its second save:
+ * the human edits the command, and the transaction has to overwrite bytes it published last time.
+ *
+ * The replacement is still CAS-guarded. `priorSha256` is what the file held when this transaction was
+ * staged; finding anything else means someone wrote to the profile directory underneath us, and that
+ * is a refusal rather than a silent overwrite — the prior bytes are what compensation would restore,
+ * so losing track of them would make the rollback a lie.
+ */
+function publishArtifacts(workspaceRoot: string, agentName: string, txDir: string, artifacts: readonly LifecycleArtifactRecord[]): void {
   if (artifacts.length === 0) return;
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) throw new Error(`canonical profile for '${agentName}' is missing while publishing artifacts`);
@@ -366,7 +421,90 @@ function publishCreateArtifacts(workspaceRoot: string, agentName: string, txDir:
     for (const artifact of artifacts) {
       const staged = readPrivateFile(path.join(txDir, ARTIFACTS, artifact.path));
       if (digest(staged) !== artifact.sha256) throw new Error(`staged lifecycle artifact '${artifact.path}' digest mismatch`);
-      writeNew(path.join(root, artifact.path), staged);
+      const file = path.join(root, artifact.path);
+      if (artifact.priorSha256 === undefined) {
+        writeNew(file, staged);
+        continue;
+      }
+      // Reading it through the fd-relative reader is the CAS: it refuses on a digest that is not the
+      // one staging recorded, and on a path that has become something other than a regular file.
+      readAgentProfileReference(source, artifact.path, artifact.priorSha256);
+      replacePrivate(file, staged);
+    }
+  } finally { closeCanonicalAgentProfile(source); }
+}
+
+/**
+ * t-afc86e — pair each staged artifact with the digest of whatever the profile directory already
+ * holds at that path, or nothing when the path is free.
+ *
+ * A `create` never has a prior (the directory does not exist yet), which is stated rather than
+ * probed: reading a directory that is about to be created would be a different failure to explain.
+ */
+function artifactRecordsFor(
+  workspaceRoot: string,
+  agentName: string,
+  profileExists: boolean,
+  artifacts: readonly { path: string; text: string; sha256: string }[],
+): LifecycleArtifactRecord[] {
+  if (artifacts.length === 0) return [];
+  if (!profileExists) return artifacts.map(({ path: file, sha256 }) => ({ path: file, sha256 }));
+  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
+  if (!source) return artifacts.map(({ path: file, sha256 }) => ({ path: file, sha256 }));
+  try {
+    const root = verifiedDescriptorPath(source.profileDirectoryFd, source.source);
+    return artifacts.map(({ path: file, sha256 }) => {
+      let bytes: Buffer;
+      try { bytes = readPrivateFile(path.join(root, file)); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path: file, sha256 };
+        throw error;
+      }
+      return { path: file, sha256, priorSha256: digest(bytes) };
+    });
+  } finally { closeCanonicalAgentProfile(source); }
+}
+
+/** The bytes currently at a REPLACED artifact's path, checked against the digest staging recorded. */
+function readExistingArtifact(workspaceRoot: string, agentName: string, record: LifecycleArtifactRecord): Buffer {
+  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
+  if (!source) throw new Error(`canonical profile for '${agentName}' is missing while staging artifact backups`);
+  try {
+    return Buffer.from(readAgentProfileReference(source, record.path, record.priorSha256!).bytes);
+  } finally { closeCanonicalAgentProfile(source); }
+}
+
+/**
+ * Undo `publishArtifacts`: restore what was there before, or remove what was not there at all.
+ *
+ * The asymmetry is the point. An artifact this transaction CREATED is removed, because the
+ * rolled-back profile no longer pins it and nothing would ever verify or delete those bytes again.
+ * An artifact it REPLACED is restored from the staged backup, because removing it would turn a
+ * failed edit into a deletion of content the human never asked to lose.
+ */
+function restoreArtifactsExact(
+  workspaceRoot: string,
+  agentName: string,
+  txDir: string,
+  artifacts: readonly LifecycleArtifactRecord[],
+): void {
+  if (artifacts.length === 0) return;
+  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
+  if (!source) return;
+  try {
+    const root = verifiedDescriptorPath(source.profileDirectoryFd, source.source);
+    for (const artifact of artifacts) {
+      const file = path.join(root, artifact.path);
+      try { fs.lstatSync(file); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; }
+      readAgentProfileReference(source, artifact.path, artifact.sha256);
+      if (artifact.priorSha256 === undefined) {
+        fs.unlinkSync(file);
+        continue;
+      }
+      const backup = readPrivateFile(path.join(txDir, ARTIFACT_BACKUPS, artifact.path));
+      if (digest(backup) !== artifact.priorSha256) throw new Error(`lifecycle artifact backup '${artifact.path}' digest mismatch`);
+      replacePrivate(file, backup);
     }
   } finally { closeCanonicalAgentProfile(source); }
 }
@@ -383,23 +521,12 @@ function artifactsMatch(workspaceRoot: string, agentName: string, artifacts: rea
   } finally { closeCanonicalAgentProfile(source); }
 }
 
-function removeCreateArtifactsExact(workspaceRoot: string, agentName: string, artifacts: readonly { path: string; sha256: string }[]): void {
-  if (artifacts.length === 0) return;
-  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
-  if (!source) return;
-  try {
-    const root = verifiedDescriptorPath(source.profileDirectoryFd, source.source);
-    for (const artifact of artifacts) {
-      const file = path.join(root, artifact.path);
-      try { fs.lstatSync(file); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; throw error; }
-      readAgentProfileReference(source, artifact.path, artifact.sha256);
-      fs.unlinkSync(file);
-    }
-  } finally { closeCanonicalAgentProfile(source); }
-}
-
-function savedAgentProfile(workspaceRoot: string, agentName: string): { profile: AgentProfileV1; text: string; sha256: string } | undefined {
+function savedAgentProfile(workspaceRoot: string, agentName: string): {
+  profile: AgentProfileV1;
+  text: string;
+  sha256: string;
+  workspaceCommands?: { verify?: string; setup?: string[] };
+} | undefined {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) return undefined;
   try {
@@ -407,10 +534,58 @@ function savedAgentProfile(workspaceRoot: string, agentName: string): { profile:
     if (doc.errors.length > 0) throw new Error(`canonical profile YAML is invalid: ${doc.errors[0]!.message}`);
     const parsed = agentProfileSchemaV1.safeParse(doc.toJS());
     if (!parsed.success) throw new Error(`canonical profile schema is invalid: ${parsed.error.issues[0]!.message}`);
-    return { profile: parsed.data, text: source.text, sha256: source.sha256 };
+    // t-afc86e — read the workspace-command bytes HERE, inside the same open directory handle that
+    // produced `source.sha256`. Reading them later, from a path, would be a second open against a
+    // directory that may have moved underneath — the exact race `readAgentProfileReference`'s
+    // fd-relative walk exists to close.
+    const workspaceCommands = readStudioWorkspaceCommands(source, parsed.data);
+    return {
+      profile: parsed.data,
+      text: source.text,
+      sha256: source.sha256,
+      ...(workspaceCommands ? { workspaceCommands } : {}),
+    };
   } finally {
     closeCanonicalAgentProfile(source);
   }
+}
+
+/**
+ * t-afc86e — the bytes behind the two references Agent Studio OWNS, or undefined when the profile
+ * declares neither.
+ *
+ * Ownership is the fixed reference id. A `workspace.verify` naming anything else belongs to whoever
+ * published it — a project-scoped verifier a workspace supplies, say — and is deliberately not read
+ * here: the Studio must not display, and therefore must not be able to overwrite, a value it does
+ * not own. The projected snapshot reports that case as `bindings.foreignWorkspaceCommands`.
+ *
+ * A digest mismatch throws, which fails the whole inspect. That is correct and deliberate: the
+ * alternative is opening a form on bytes that disagree with what the profile pins, and saving from
+ * it would launder the mismatch into a fresh pin.
+ */
+function readStudioWorkspaceCommands(
+  source: CanonicalAgentProfileSource,
+  profile: AgentProfileV1,
+): { verify?: string; setup?: string[] } | undefined {
+  const owned = (id: string | undefined, expected: string, kind: "verification" | "worktree-setup") => {
+    if (id !== expected) return undefined;
+    const reference = profile.references?.find((candidate) => candidate.id === expected);
+    if (!reference || reference.kind !== kind || reference.scope !== "profile"
+      || reference.owner !== profile.agentId || reference.mode !== "pinned" || !reference.sha256) {
+      return undefined;
+    }
+    return readAgentProfileReference(source, reference.path, reference.sha256).text;
+  };
+  const verifyText = owned(profile.workspace?.verify, WORKSPACE_VERIFY_REFERENCE_ID, "verification");
+  const setupIds = profile.workspace?.worktree?.setup ?? [];
+  const setupText = setupIds.length === 1
+    ? owned(setupIds[0], WORKSPACE_SETUP_REFERENCE_ID, "worktree-setup")
+    : undefined;
+  if (verifyText === undefined && setupText === undefined) return undefined;
+  return {
+    ...(verifyText !== undefined ? { verify: parseWorkspaceCommandLines(verifyText)[0] ?? "" } : {}),
+    ...(setupText !== undefined ? { setup: parseWorkspaceCommandLines(setupText) } : {}),
+  };
 }
 
 function replaceAgentProfileExact(workspaceRoot: string, agentName: string, expectedSha256: string, text: string): void {
@@ -444,6 +619,7 @@ export async function inspectAgentProfileLifecycle(input: {
     agentId: canonical.profile.agentId,
     revision,
     profile: structuredClone(canonical.profile),
+    ...(canonical.workspaceCommands ? { workspaceCommands: structuredClone(canonical.workspaceCommands) } : {}),
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: canonical.sha256 },
       authority: {
@@ -555,14 +731,16 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
     const profileSha = currentProfileDigest(input.workspaceRoot, input.agentName);
     if (profileSha === journal.targetProfileSha256) {
       if (journal.priorProfileSha256 === null) {
-        removeCreateArtifactsExact(input.workspaceRoot, input.agentName, journal.targetArtifacts ?? []);
+        restoreArtifactsExact(input.workspaceRoot, input.agentName, txDir, journal.targetArtifacts ?? []);
         removeAgentProfileIfExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256);
       }
       else {
-        // t-d185e1 — an EDIT can publish an artifact too, and it is new by construction (`writeNew`
-        // refuses an existing path). Restoring only the profile would strand it: the rolled-back
-        // profile no longer pins it, so nothing would ever verify or remove those bytes again.
-        removeCreateArtifactsExact(input.workspaceRoot, input.agentName, journal.targetArtifacts ?? []);
+        // t-d185e1 — an EDIT can publish an artifact too. Restoring only the profile would strand a
+        // created one: the rolled-back profile no longer pins it, so nothing would ever verify or
+        // remove those bytes again. t-afc86e — and an artifact the edit REPLACED is put back from its
+        // staged backup rather than removed, or a failed edit would delete content nobody asked to
+        // lose.
+        restoreArtifactsExact(input.workspaceRoot, input.agentName, txDir, journal.targetArtifacts ?? []);
         const backup = readPrivateFile(path.join(txDir, BACKUP));
         if (digest(backup) !== journal.priorProfileSha256) throw new Error("profile backup digest mismatch");
         replaceAgentProfileExact(input.workspaceRoot, input.agentName, journal.targetProfileSha256, backup.toString("utf8"));
@@ -669,9 +847,21 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     txDir = path.join(root, txid);
     ensureSafeDirectory(input.workspaceRoot, txDir);
     writeNew(path.join(txDir, STAGED), profileText);
+    // t-afc86e — stage the NEW bytes and, for any artifact that already exists, the OLD ones. Both
+    // reads happen here, before anything is published, so the journal's `priorSha256` is a fact about
+    // the tree this transaction started from rather than about whatever a later rollback happens to
+    // find.
+    const artifactRecords = artifactRecordsFor(input.workspaceRoot, input.agentName, canonical !== undefined, createArtifacts);
     if (createArtifacts.length > 0) {
       fs.mkdirSync(path.join(txDir, ARTIFACTS), { mode: 0o700 });
       for (const artifact of createArtifacts) writeNew(path.join(txDir, ARTIFACTS, artifact.path), artifact.text);
+      const replaced = artifactRecords.filter((record) => record.priorSha256 !== undefined);
+      if (replaced.length > 0) {
+        fs.mkdirSync(path.join(txDir, ARTIFACT_BACKUPS), { mode: 0o700 });
+        for (const record of replaced) {
+          writeNew(path.join(txDir, ARTIFACT_BACKUPS, record.path), readExistingArtifact(input.workspaceRoot, input.agentName, record));
+        }
+      }
     }
     if (canonical) writeNew(path.join(txDir, BACKUP), canonical.text);
     if (companion) writeNew(path.join(txDir, COMPANION_BACKUP), companion.priorText);
@@ -687,7 +877,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       targetProfileSha256: targetSha,
       priorAuthority: priorAuthority ? structuredClone(priorAuthority) : null,
       targetAuthority,
-      ...(createArtifacts.length > 0 ? { targetArtifacts: createArtifacts.map(({ path, sha256 }) => ({ path, sha256 })) } : {}),
+      ...(artifactRecords.length > 0 ? { targetArtifacts: artifactRecords } : {}),
       ...(companion ? {
         companion: {
           agentName: companion.agentName,
@@ -703,7 +893,7 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       journal = transition(txDir, journal, "staged", input.onPhase);
       if (canonical) replaceAgentProfileExact(input.workspaceRoot, input.agentName, canonical.sha256, profileText);
       else publishAgentProfile(input.workspaceRoot, input.agentName, profileText);
-      publishCreateArtifacts(input.workspaceRoot, input.agentName, txDir, journal.targetArtifacts ?? []);
+      publishArtifacts(input.workspaceRoot, input.agentName, txDir, journal.targetArtifacts ?? []);
       // The phase covers BOTH subjects, so compensation at this phase already knows to restore both.
       if (companion) replaceAgentProfileExact(input.workspaceRoot, companion.agentName, companion.priorSha, companion.text);
       journal = transition(txDir, journal, "profile-published", input.onPhase);

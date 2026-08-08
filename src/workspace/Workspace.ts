@@ -126,6 +126,7 @@ import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedu
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type ManagedEntryInfo, type RestartSessionMode } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
+import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../config/agentWorkspaceCommandWrite.js";
 
 /** t-d185e1 — the reference id the selector is pinned under; local to this writer. */
 const EVOLUTION_SELECTOR_REFERENCE_ID = "evolution";
@@ -5605,21 +5606,41 @@ export class Workspace {
     return projectAgentProfileStudioSnapshot(await this.inspectAgentProfileLifecycle(agentName));
   }
 
+  /**
+   * t-afc86e — the Studio save, now carrying the agent's own verify gate and worktree setup.
+   *
+   * The mutation holds those two as COMMAND TEXT; the profile holds them as pinned reference ids.
+   * This is where the two meet: `workspaceCommandWriteFor` turns the text into bytes plus digests
+   * plus reference entries, and they ride the SAME lifecycle transaction as the patch that names
+   * them. Publishing them separately would leave a window where the profile pins a digest nothing on
+   * disk satisfies — the fail-closed state the projection exists to refuse, and the reason
+   * `enableAgentSelfEvolution` was built this way first.
+   */
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
     if (mutation.expectedRevision === undefined) {
+      const write = workspaceCommandWriteFor(mutation.editable);
       const result = await this.commitAgentProfileLifecycle({
         agentName: mutation.agentName,
         operation: "create",
         createProfile: createProfileFromStudioMutation(mutation),
+        // A new agent's id is minted inside the transaction, and a profile-local reference is owned
+        // by it — so the entries go in without scope/owner and the transaction stamps both.
+        ...(write.localReferences.length > 0 ? { createProfileLocalReferences: write.localReferences } : {}),
+        ...(write.artifacts.length > 0 ? { artifacts: write.artifacts } : {}),
       });
       return projectAgentProfileStudioSnapshot(result.snapshot);
     }
     const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
+    const write = workspaceCommandWriteFor(mutation.editable, current.profile.workspace);
+    const patch = patchProfileFromStudioMutation(mutation, current);
     const result = await this.commitAgentProfileLifecycle({
       agentName: mutation.agentName,
       operation: "edit",
       expectedRevision: mutation.expectedRevision,
-      patch: patchProfileFromStudioMutation(mutation, current),
+      // `references` is rebuilt whole rather than appended to: clearing a field must REMOVE its
+      // entry, or the profile would keep a pin nothing points at and fail its own `requireKind`.
+      patch: { ...patch, references: mergedWorkspaceCommandReferences(current.profile, write) },
+      ...(write.artifacts.length > 0 ? { artifacts: write.artifacts } : {}),
     });
     return projectAgentProfileStudioSnapshot(result.snapshot);
   }
