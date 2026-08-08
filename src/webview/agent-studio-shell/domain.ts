@@ -28,7 +28,7 @@ import {
   type CodexScalarNativeConfigFamily,
 } from "../../config/agentNativeConfigPolicy.js";
 // Node-free by construction (a frozen list + a predicate) — safe for this browser bundle.
-import { isAttestedRuntime } from "../../runtime/attestedRuntimes.js";
+import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../../runtime/attestedRuntimes.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch
@@ -929,7 +929,9 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   fields.autostart = snapshot?.editable.lifecycle.autostart ?? false;
   fields.restartOnCrash = snapshot?.editable.lifecycle.restart === "on-crash";
   fields.attention = snapshot?.editable.lifecycle.attention ?? true;
-  fields.watch = snapshot?.editable.lifecycle.watch.join("\n") ?? "";
+  // t-bd14d8 — `fields.watch` stays at its blank default and is never read back from a snapshot: an
+  // Agent has no watch. The field survives on `FormState` because that type is shared with the
+  // Terminal form, where a watch is the whole point.
   // t-4071e4 — `enabled` is a required boolean on a snapshot, so the fallback fires only for a NEW
   // agent, where it must match every other creation door. Editing an existing agent still shows that
   // agent's real posture.
@@ -1131,20 +1133,57 @@ export function computeAgentDirty(entity: AgentStudioEntity | undefined, fields:
   return JSON.stringify(base) !== JSON.stringify(fields);
 }
 
+/** The runtime a NEW canonical agent would be minted for — the executable's last path segment. */
+function newAgentAdapter(fields: AgentStudioFields): string {
+  const executable = fields.cmd.trim();
+  return executable.split(/[\\/]/).pop() ?? executable;
+}
+
+/**
+ * t-d68b8b — why this form may not create the agent the human just described, or `undefined` when it
+ * may. Blocking, and evaluated live so the answer arrives while they are still typing the command.
+ *
+ * The refusal it replaces was worse than a missing one. `serializeAgentPatch` used to hand a
+ * non-attested NEW agent to the legacy writer, which `Workspace.studioSubmit` had already retired:
+ * the human filled the form, saved, and was told to "create or edit the canonical agent in Agent
+ * Studio" — the form they were looking at. Measured over the six Quick Add runtimes that reached it
+ * (opencode, copilot, agy, hermes, verboo, gemini), all six.
+ *
+ * The wording is load-bearing. The owner's decision on 2026-08-07 was to block creation for
+ * non-attested runtimes *for now* — a deliberate, reversible narrowing of the creation path, not a
+ * judgement that those runtimes are unfit. A message that read "unsupported runtime" would record
+ * the wrong reason and outlive the decision, so it names the path and says the block lifts on
+ * attestation. The list comes from `ATTESTED_RUNTIMES`, so it cannot drift from the door that
+ * enforces it (`createProfileFromStudioMutation`, then `agentProfileProjection`).
+ *
+ * Silent about an EXISTING profile (`expectedRevision`) and about a legacy entry (no `canonical`):
+ * neither is a creation, and refusing to save an agent that already exists would strand it.
+ */
+export function newAgentRuntimeRefusal(fields: AgentStudioFields): string | undefined {
+  if (!fields.canonical || fields.canonical.expectedRevision) return undefined;
+  const adapter = newAgentAdapter(fields);
+  // An empty command is "you have not chosen yet", which the save path already reports as its own
+  // missing-field error; answering it here would put a runtime refusal on a blank form.
+  if (adapter.length === 0 || isAttestedRuntime(adapter)) return undefined;
+  return (
+    `Tachyon cannot create an agent for '${adapter}' yet: canonical agent creation covers only the `
+    + `runtimes it attests (${ATTESTED_RUNTIMES.join(", ")}). This is a limit of the creation path, `
+    + "not a verdict on the runtime — the block lifts as soon as the runtime is attested."
+  );
+}
+
 export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): AgentStudioPatch | undefined {
   if (!dirty) return undefined;
   if (!fields.canonical) return fields;
   const executable = fields.cmd.trim();
   const adapter = fields.canonical.expectedRevision
     ? fields.canonical.runtime.adapter
-    : executable.split(/[\\/]/).pop() ?? executable;
-  // Keep unmeasured Quick Add runtimes on the legacy writer instead of minting partial authority.
-  // usable through Agent Studio's existing legacy writer instead of minting an authority the resolver
-  // cannot attest.
-  if (!fields.canonical.expectedRevision && !isAttestedRuntime(adapter)) {
-    const { canonical: _canonical, ...legacy } = fields;
-    return legacy;
-  }
+    : newAgentAdapter(fields);
+  // t-d68b8b — a non-attested NEW agent used to be diverted here to the legacy writer, which
+  // `Workspace.studioSubmit` refuses outright; the form's blocking `newAgentRuntimeRefusal` now stops
+  // it before this point, and what is left is the one honest serialization. Serializing anyway rather
+  // than returning `undefined` is deliberate: `undefined` means "nothing to save", which would turn a
+  // bypassed gate into a Save button that does nothing instead of a refusal that says why.
   const runtime = normalizedRuntime(fields, adapter, executable);
   const nativeConfig = normalizedNativeConfig(fields, adapter, runtime);
   return {
@@ -1157,11 +1196,13 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       runtime,
       role: fields.role as AgentProfileStudioMutationV1["editable"]["role"],
       cwd: fields.cwd.trim(),
+      // t-bd14d8 — no `watch`: the editable schema no longer carries one for an Agent, so sending it
+      // would be rejected outright rather than ignored. That is the intended shape — a key the
+      // product refuses to author should fail loudly at the door, not be dropped in silence.
       lifecycle: {
         autostart: fields.autostart,
         restart: fields.restartOnCrash ? "on-crash" : "never",
         attention: fields.attention,
-        watch: fields.watch.split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
       },
       worktree: {
         enabled: fields.worktree,

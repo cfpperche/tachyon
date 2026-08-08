@@ -267,7 +267,7 @@ describe("agent profile lifecycle kernel", () => {
         runtime: { adapter: "claude", executable: "claude" },
         role: "",
         cwd: "",
-        lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "" },
         isolation: "",
         capabilities: { skills: [], mcp: [], hooks: [] },

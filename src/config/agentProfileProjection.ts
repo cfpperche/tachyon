@@ -736,7 +736,12 @@ function projectDefinition(
   const projected: AgentEntry = {
     cmd: definition.runtime.executable,
     autostart: definition.lifecycle?.autostart ?? false,
-    watch: [...(definition.lifecycle?.watch ?? [])],
+    // t-bd14d8 — an Agent projects NO watch, whatever the profile stored. `Workspace.rebuildWatches`
+    // turns every glob here into `restart(agent, { stop: "force", session: "new" })`, so projecting a
+    // legacy value would force-kill the agent and open a blank session because a file changed.
+    // Stripped rather than refused (the owner's t-48dd8d rule: invalid config warns, it does not
+    // trap), and `projectCanonicalAgentProfile` says so out loud once per load.
+    watch: [],
     attention: {
       enabled: attention?.enabled ?? true,
       silenceSec: attention?.silenceSec ?? PROFILE_ATTENTION_DEFAULT_SILENCE_SEC,
@@ -785,6 +790,18 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   if (Array.isArray(attestation)) return { ok: false, errors: attestation };
   let nativeConfigProjection = projectAgentNativeConfig(parsed.profile);
   const warnings: string[] = [];
+  // t-bd14d8 — a profile written before watch became Terminal-only. Named, not silent: the human
+  // configured a behaviour that no longer happens, and a value that quietly stops working is the
+  // failure mode this warning exists to avoid. One line per load, and the next Agent Studio save
+  // removes the key from the file.
+  const legacyWatch = parsed.profile.lifecycle?.watch ?? [];
+  if (legacyWatch.length > 0) {
+    warnings.push(
+      `lifecycle.watch is ignored for an agent and was dropped (${legacyWatch.join(", ")}) — a file watch `
+      + "force-restarts the process on a new session, which is a Terminal capability; declare it on a "
+      + "terminals: entry instead. Saving this agent in Agent Studio removes the key.",
+    );
+  }
   if (parsed.profile.runtime.adapter === "codex") {
     const selectedSources = new Set(
       Object.values(parsed.profile.nativeConfig ?? {})

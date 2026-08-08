@@ -6912,6 +6912,12 @@ export class Workspace {
       }
     });
     for (const [name, def] of Object.entries(this.config?.agents ?? {})) {
+      // t-bd14d8 — `config.agents` is the UNIFIED map: agents and terminals both live in it and this
+      // loop had no arm for the difference, so a watch reaching an agent by any route got the
+      // terminal behaviour above — force-kill, new session, triggered by a file save. The strip now
+      // happens at projection, but the guarantee belongs HERE too: this is the consumer that acts,
+      // and it must not depend on every producer upstream having been fixed.
+      if (def.kind === "agent") continue;
       for (const glob of def.watch) {
         this.watches.watch(name, (onChange) => {
           const watcher = this.host.watch(this.workspaceRoot, glob, { change: true, create: true, delete: true }, onChange);

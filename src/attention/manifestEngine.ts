@@ -2,6 +2,14 @@ import { runtimeProfile } from "../runtime/runtimeProfile.js";
 import type { ResumeRuntime } from "../resume/adapters.js";
 import { parseRateLimitInfo, type RateLimitInfo } from "./patterns.js";
 
+/**
+ * t-c59600 — who a manifest is FOR. A declared runtime, or `neutral`: an entry that declared no
+ * runtime at all (today: `kind: terminal`, whose `cmdOf` returns null by design). Neutral is not a
+ * runtime and never resolves a runtime overlay — it exists so "no runtime declared" stops being
+ * spelled as "claude" by a default parameter.
+ */
+export type AttentionManifestScope = ResumeRuntime | "neutral";
+
 export type ManifestAttentionState = "idle" | "working" | "needs-input" | "unknown" | "throttled";
 export type ManifestMatchKind = "prompt" | "error" | "stall";
 export type ManifestRegion =
@@ -30,7 +38,7 @@ export interface AttentionManifestRule {
 
 export interface AttentionManifest {
   version: string;
-  runtime: ResumeRuntime;
+  runtime: AttentionManifestScope;
   evidence: string;
   rules: AttentionManifestRule[];
 }
@@ -89,7 +97,7 @@ function compareMatches(a: ManifestRuleMatch, aOrder: number, b: ManifestRuleMat
 }
 
 function matchRule(
-  runtime: ResumeRuntime,
+  runtime: AttentionManifestScope,
   paneText: string,
   rule: AttentionManifestRule,
   extraPromptPatterns: RegExp[],
@@ -149,7 +157,7 @@ function fallbackHit(lines: RegionLine[]): MatcherHit | null {
   return line ? { line: line.text, pattern: "not", distanceFromBottom: line.distanceFromBottom } : null;
 }
 
-function regionLines(runtime: ResumeRuntime, paneText: string, region: ManifestRegion): RegionLine[] {
+function regionLines(runtime: AttentionManifestScope, paneText: string, region: ManifestRegion): RegionLine[] {
   const allLines = paneText.split("\n").map((line) => line.trimEnd());
   if (region === "whole_recent") return withDistance(allLines.filter((line) => line.trim().length > 0));
   if (region === "prompt_box_body") return withDistance(promptBoxBody(runtime, allLines));
@@ -160,8 +168,9 @@ function withDistance(lines: string[]): RegionLine[] {
   return lines.map((text, index) => ({ text, distanceFromBottom: lines.length - 1 - index })).reverse();
 }
 
-function promptBoxBody(runtime: ResumeRuntime, lines: string[]): string[] {
-  const composer = runtimeProfile(runtime)?.composer;
+function promptBoxBody(runtime: AttentionManifestScope, lines: string[]): string[] {
+  // Neutral declares no runtime, so it has no composer region to bound: no prompt-box rule applies.
+  const composer = runtime === "neutral" ? undefined : runtimeProfile(runtime)?.composer;
   if (!composer) return [];
   const first = Math.max(0, lines.length - composer.tailLines);
   if (composer.frameLine) {

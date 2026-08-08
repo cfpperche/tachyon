@@ -764,6 +764,24 @@
   },
   {
     "view": "agent-studio-shell",
+    "fixture": "new-unattested-runtime",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=new-unattested-runtime",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
     "fixture": "dense-edit",
     "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=dense-edit",
     "frame": {
