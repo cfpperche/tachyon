@@ -196,8 +196,15 @@ describe("t-ae221c — a legacy agents: block loads with a warning and no migrat
 
 describe("loadProfileAwareConfig", () => {
   it("loads the tracked onboarding example through the production loader", () => {
-    const workspaceRoot = process.cwd();
-    const yamlText = fs.readFileSync(path.join(workspaceRoot, "tachyon.yml.example"), "utf8");
+    // t-3ab4b6 — the TRACKED example is the subject; the fleet on the runner's disk is not. Reading
+    // the file from the repository root is fine (it is tracked), but the workspace the loader reads
+    // state from has to be a disposable empty one. Since t-ae221c the roster comes from
+    // `.tachyon/agents/`, so pointing `workspaceRoot` at the checkout made this assert about whoever
+    // ran it: green in every agent worktree (`.tachyon/` is gitignored, so there is no roster there)
+    // and red in the primary checkout, where three real agents got refused against the empty
+    // authority map below.
+    const yamlText = fs.readFileSync(path.join(process.cwd(), "tachyon.yml.example"), "utf8");
+    const workspaceRoot = temporaryRoot("tachyon-onboarding-example-workspace-");
 
     const result = loadProfileAwareConfig({
       yamlText,
