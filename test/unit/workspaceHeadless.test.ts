@@ -886,7 +886,7 @@ it("t-afc86e: an agent's verify gate and setup commands survive a save that does
     displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
     cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
     worktree: { enabled: true, branch: "", setup: ["python -m venv .venv", "pip install -e ."] },
-    verify: "pytest packages/api", isolation: "",
+    verify: "pytest packages/api", selfEvolution: false, isolation: "",
     ...over,
   });
 
@@ -942,6 +942,148 @@ it("t-afc86e: an agent's verify gate and setup commands survive a save that does
   }
 });
 
+/**
+ * t-f96b2f — the Evolution toggle's ROUND TRIP, in BOTH directions.
+ *
+ * `Workspace.enableAgentSelfEvolution` had been complete since t-d185e1 and had zero callers: the
+ * form rendered the toggle `disabled={canonical}` with `canonical` always true, so the capability
+ * was built and never wired. Wiring it is the easy half. The half worth a test is that the state
+ * SURVIVES — and it has to survive symmetrically, because each direction fails in its own way:
+ *
+ * - ON must survive a save that does not touch the toggle. If the form read the toggle from
+ *   anywhere but the snapshot it saves back, or if the host rebuilt `references` from the stored
+ *   list after another writer had already rebuilt it, the next unrelated edit would unbind
+ *   Evolution. Nothing would throw: the agent would just quietly stop evolving.
+ * - OFF must survive the same save. `patchProfileFromStudioMutation` spreads the STORED prompt
+ *   forward, so an unresolved `prompt.evolution` would come back on its own — the t-bd14d8 watch
+ *   trap, where a value nobody re-authored outlives every edit.
+ *
+ * And turning it off is not the mirror of turning it on: the reference must leave with the field,
+ * or `projectCanonicalAgentProfile` refuses the WHOLE profile for a non-capability reference nothing
+ * points at. So "off" is asserted on the projection too, not only in the snapshot.
+ *
+ * Driven through `commitAgentProfileStudio` / `inspectAgentProfileStudio` — the doors the webview
+ * calls — and checked on disk, because a projection echoing its own input back would pass while the
+ * file said something else.
+ */
+it("t-f96b2f: the Evolution toggle survives a save that does not touch it, ON and OFF", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  const profileDir = path.join(root, ".tachyon", "agents", "reviewer");
+  const selectorFile = path.join(profileDir, "evolution-selector.json");
+  const storedProfile = () => parseYaml(fs.readFileSync(path.join(profileDir, "agent.yml"), "utf8")) as {
+    prompt?: Record<string, unknown>;
+    references?: Array<Record<string, unknown>>;
+  };
+  const editable = (over: Partial<AgentProfileStudioMutationV1["editable"]> = {}): AgentProfileStudioMutationV1["editable"] => ({
+    displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+    cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
+    // A verify gate rides along on purpose: the two writers CHAIN over one reference list, and a
+    // rebuild from the stored list instead of from the previous writer's output would drop this
+    // gate every time the Evolution toggle moved. Nothing else in this case would notice.
+    worktree: { enabled: true, branch: "", setup: [] }, verify: "npm test", selfEvolution: false, isolation: "",
+    ...over,
+  });
+  /** An edit that says nothing about Evolution: the form refills from the snapshot and renames. */
+  const saveUnrelatedEdit = async (displayName: string) => {
+    const reopened = await ws.inspectAgentProfileStudio("reviewer");
+    return ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: reopened.revision,
+      editable: { ...reopened.editable, displayName },
+    });
+  };
+
+  try {
+    const created = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", editable: editable(),
+    });
+    // 1. Creation cannot grant it: the selector names an id only the store mints, for an agent that
+    //    already exists. The refusal is explicit rather than a silent drop.
+    expect(created.editable.selfEvolution).toBe(false);
+    expect(fs.existsSync(selectorFile)).toBe(false);
+    await expect(ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "newcomer", editable: editable({ selfEvolution: true }),
+    })).rejects.toThrow(/save this agent first/);
+
+    // 2. Turning it ON writes all three halves in one transaction, and the bytes name the id the
+    //    STORE minted — never one the author chose.
+    // The verify gate is edited in the SAME save, which is what makes the chaining real: this patch
+    // carries a freshly digested workspace-verify reference, and an evolution merge that rebuilt from
+    // the STORED list would write the previous digest back over it.
+    const enabled = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: created.revision,
+      editable: editable({ selfEvolution: true, verify: "npm run typecheck" }),
+    });
+    expect(enabled.editable.selfEvolution).toBe(true);
+    const minted = (await ws.evolutionStore.readProfile("reviewer"))?.profileId;
+    expect(minted).toBeTruthy();
+    expect(JSON.parse(fs.readFileSync(selectorFile, "utf8"))).toEqual({ profileId: minted, schemaVersion: 1 });
+    const pinned = storedProfile().references!.find((reference) => reference.path === "evolution-selector.json")!;
+    expect(pinned).toMatchObject({ kind: "evolution", scope: "profile", mode: "pinned" });
+    expect(pinned.sha256).toBe(createHash("sha256").update(fs.readFileSync(selectorFile)).digest("hex"));
+    expect(storedProfile().prompt?.evolution).toBe(pinned.id);
+    // 3. The projection RUNS it — this is the fact the whole capability exists to produce.
+    expect(asAgent(ws.config?.agents.reviewer)?.selfEvolution).toEqual({ enabled: true });
+    expect(asAgent(ws.config?.agents.reviewer)?.profileEvolution?.profileId).toBe(minted);
+    // The other writer's reference survived the same patch.
+    expect(enabled.editable.verify).toBe("npm run typecheck");
+    expect(asAgent(ws.config?.agents.reviewer)?.verify).toBe("npm run typecheck");
+
+    // 4. THE FIRST ONE THAT MATTERS. An unrelated edit, exactly as a human makes it: the form refills
+    //    from the snapshot, so anything the snapshot did not carry is written back as its default.
+    const stillOn = await saveUnrelatedEdit("Renamed Reviewer");
+    expect(stillOn.editable.displayName).toBe("Renamed Reviewer");
+    expect(stillOn.editable.selfEvolution).toBe(true);
+    expect(storedProfile().prompt?.evolution).toBe(pinned.id);
+    expect(asAgent(ws.config?.agents.reviewer)?.selfEvolution).toEqual({ enabled: true });
+    // The id was not re-minted either: a save that changes nothing must publish nothing.
+    expect((await ws.evolutionStore.readProfile("reviewer"))?.profileId).toBe(minted);
+
+    // 5. Turning it OFF takes the reference with it. Leaving the entry behind would not be residue —
+    //    the projection refuses the entire profile over a reference nothing points at.
+    const off = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: stillOn.revision,
+      editable: { ...stillOn.editable, selfEvolution: false },
+    });
+    expect(off.editable.selfEvolution).toBe(false);
+    expect(storedProfile().prompt?.evolution).toBeUndefined();
+    expect(asAgent(ws.config?.agents.reviewer)?.selfEvolution).toBeUndefined();
+    // Only the selector entry left: this writer owns two ids and nothing else.
+    expect((storedProfile().references ?? []).map((reference) => reference.id)).toEqual(["workspace-verify"]);
+    expect(asAgent(ws.config?.agents.reviewer)?.verify).toBe("npm run typecheck");
+    // The selector FILE stays: nothing reads an unreferenced file, and deleting artifacts would add
+    // a compensation path with real failure modes. Stated as an assertion so it stays a decision.
+    expect(fs.existsSync(selectorFile)).toBe(true);
+    // Nor did turning it off discard what the agent learned — the store profile is untouched.
+    expect((await ws.evolutionStore.readProfile("reviewer"))?.profileId).toBe(minted);
+
+    // 6. THE SECOND ONE THAT MATTERS, and the one the stored-prompt spread would have failed: OFF has
+    //    to survive the same untouched save. A value nobody re-authored must not come back.
+    const stillOff = await saveUnrelatedEdit("Reviewer Again");
+    expect(stillOff.editable.selfEvolution).toBe(false);
+    expect(storedProfile().prompt?.evolution).toBeUndefined();
+    expect(asAgent(ws.config?.agents.reviewer)?.selfEvolution).toBeUndefined();
+
+    // 7. And it can be turned back on, which is a second publish of the same artifact path — the
+    //    write-once channel t-afc86e replaced with a CAS-guarded replacement.
+    const reEnabled = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: stillOff.revision,
+      editable: { ...stillOff.editable, selfEvolution: true },
+    });
+    expect(reEnabled.editable.selfEvolution).toBe(true);
+    expect(asAgent(ws.config?.agents.reviewer)?.profileEvolution?.profileId).toBe(minted);
+  } finally {
+    ws.dispose();
+  }
+});
+
 it("creates and edits canonical Agent Studio profiles through a redacted CAS boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
@@ -960,7 +1102,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, verify: "", isolation: "transcript",
+        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, verify: "", selfEvolution: false, isolation: "transcript",
       },
     });
     // t-ca9086: human-authorized Studio create writes enabled; start/autostart remain separate.
@@ -976,7 +1118,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" }, role: "tester",
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, verify: "", isolation: "transcript",
+        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, verify: "", selfEvolution: false, isolation: "transcript",
       },
     });
     expect(edited.editable).toMatchObject({ displayName: "Review Agent", role: "tester", runtime: { adapter: "codex", executable: "codex" } });
@@ -988,7 +1130,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Stale", runtime: { adapter: "codex", executable: "codex" }, role: "coder",
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "", setup: [] }, verify: "", isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, verify: "", selfEvolution: false, isolation: "",
       },
     })).rejects.toThrow("revision conflict");
     expect((await ws.inspectAgentProfileStudio("reviewer")).editable.displayName).toBe("Review Agent");
@@ -1014,7 +1156,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "", setup: [] }, verify: "", isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, verify: "", selfEvolution: false, isolation: "",
       },
     });
     // t-05dff5 — a stale revision RESOLVES as a governed refusal instead of rejecting: it is an

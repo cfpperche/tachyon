@@ -81,6 +81,7 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
       verify: "",
+      selfEvolution: false,
       isolation: "",
       capabilities: { skills: [], mcp: [], hooks: [] },
     },

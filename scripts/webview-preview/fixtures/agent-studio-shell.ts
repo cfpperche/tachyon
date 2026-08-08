@@ -198,7 +198,7 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer",
     cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true },
     worktree: { enabled: true, branch: "feature/reviewer", setup: ["pnpm install", "pnpm --filter web build"] },
-    verify: "npm run typecheck", isolation: "transcript",
+    verify: "npm run typecheck", selfEvolution: true, isolation: "transcript",
     capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },
   bindings: {

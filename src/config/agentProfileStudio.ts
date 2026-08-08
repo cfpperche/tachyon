@@ -97,6 +97,18 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
     setup: z.array(text(4096).min(1)).max(64),
   }).strict(),
   verify: text(4096),
+  /**
+   * t-f96b2f — Agent Evolution, authored as the plain fact a human toggles: on or off.
+   *
+   * The profile stores it as a pinned `evolution-selector.json` plus a `prompt.evolution` pointing
+   * at it, and — exactly like `verify` and `worktree.setup` above — that indirection stops here. The
+   * form authors intent; `agentEvolutionSelectorWrite` turns it into bytes, a digest and a reference
+   * inside the same transaction as the rest of the save.
+   *
+   * Required rather than optional for the same reason those two are: absent would be a third state
+   * between on and off, and this field's "off" has to be able to REMOVE a binding that exists.
+   */
+  selfEvolution: z.boolean(),
   isolation: z.enum(["", "transcript"]),
   nativeConfig: agentNativeConfigSchemaV1.optional(),
   /** Existing, authority-bound capability references only; Studio cannot author a new reference. */
@@ -362,6 +374,7 @@ export type AgentProfileStudioSnapshotV1 = z.infer<typeof agentProfileStudioSnap
 
 export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycleSnapshot): AgentProfileStudioSnapshotV1 {
   const profile = snapshot.profile;
+  const evolutionBound = profile.prompt?.evolution !== undefined;
   return agentProfileStudioSnapshotSchemaV1.parse({
     schemaVersion: 1,
     kind: "agent-instance",
@@ -394,6 +407,10 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
         setup: [...(snapshot.workspaceCommands?.setup ?? [])],
       },
       verify: snapshot.workspaceCommands?.verify ?? "",
+      // t-f96b2f — the same fact `bindings.prompt.evolution` reports, in the editable view the form
+      // saves back. One expression, read twice: a snapshot whose toggle disagreed with its own
+      // binding would be a form that shows one state and writes the other.
+      selfEvolution: evolutionBound,
       isolation: profile.isolation ?? "",
       nativeConfig: structuredClone(profile.nativeConfig ?? {}),
       capabilities: {
@@ -409,7 +426,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       prompt: {
         soul: profile.prompt?.soul !== undefined,
         instructions: profile.prompt?.instructions !== undefined,
-        evolution: profile.prompt?.evolution !== undefined,
+        evolution: evolutionBound,
         ...(profile.prompt?.memory ? { memoryPolicy: profile.prompt.memory.policy } : {}),
       },
       capabilities: {
@@ -496,6 +513,14 @@ export function createProfileFromStudioMutation(
   if (Object.values(parsed.editable.capabilities ?? {}).some((entries) => entries.length > 0)) {
     throw new Error("new canonical profile cannot select capability references before host authorization");
   }
+  // t-f96b2f — creation cannot grant Evolution, and the refusal is explicit rather than a silent
+  // drop. The selector must name a `profileId` only the Evolution store mints, and minting one for
+  // an agent whose transaction may still roll back would leave an Evolution profile behind for an
+  // agent that never existed. The form says the same thing where the human is standing: the whole
+  // Evolution section reads "Save agent first" until the profile exists.
+  if (parsed.editable.selfEvolution) {
+    throw new Error("Evolution is enabled on an existing agent: save this agent first, then turn it on");
+  }
   const createIds = studioWorkspaceCommandIds({
     verify: parsed.editable.verify,
     setup: parsed.editable.worktree.setup,
@@ -552,6 +577,11 @@ export function patchProfileFromStudioMutation(
   const prompt = { ...(current.profile.prompt ?? {}) };
   if (parsed.editable.role) prompt.role = parsed.editable.role;
   else delete prompt.role;
+  // t-f96b2f — `editable.selfEvolution` is NOT resolved here, and the spread above deliberately
+  // carries the stored `prompt.evolution` forward untouched. Binding it needs a profile id only the
+  // Evolution store can mint, which is async and host-owned, so the whole rule lives in
+  // `agentEvolutionSelectorWrite` and is applied by `Workspace.commitAgentProfileStudio` over this
+  // patch. Resolving the "off" half here and the "on" half there would be two records of one fact.
   const lifecycle = {
     ...(current.profile.lifecycle ?? {}),
     autostart: parsed.editable.lifecycle.autostart,

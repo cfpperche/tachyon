@@ -148,7 +148,7 @@ the capability out now; "made unrepresentable by" is the target mechanism.
 | Model identity & observed model | A | `sidebar/agentModel.ts:275` (`x.ai === false` → no model) | `model` on the Agent arm only |
 | Provider authentication (SDD 477) | A | `runtime/authRequired.ts` via `ResumeRuntime` | `authRequired` keyed by `runtime`, Agent-only |
 | Soul | A | `ManagedEntryDef.soul`, rejected for terminals at `loadConfig.ts:781` | field absent from Terminal arm |
-| Self-evolution | A | `ManagedEntryDef.selfEvolution`, rejected at `:782` | field absent from Terminal arm |
+| Self-evolution | A | `ManagedEntryDef.selfEvolution`, rejected at `:782`; authorable per agent since `t-f96b2f` (pinned `evolution-selector.json`, host writer existed unused since `t-d185e1`) | field absent from Terminal arm |
 | Role / instructions / brief | A | `:780`, `:860-870`; delivery at `AgentManager.ts:1244,1269,1296` | fields absent from Terminal arm |
 | Task assignment | A | `bridge/tools.ts:3735` | assignee type accepts an Agent ref only |
 | Lineage / parent / delegator | A | `AgentManager.ts:2008`; lineage map `:789` | lineage keyed by Agent ref |
