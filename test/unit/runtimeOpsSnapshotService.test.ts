@@ -12,7 +12,6 @@ import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "../../src/ho
 
 describe("RuntimeOpsSnapshotService", () => {
   it("dispatches through the agent collection without dropping agent membership", async () => {
-    const list = vi.fn(async () => { throw new Error("mixed collection must not be read"); });
     const listAgents = vi.fn(async () => [{
       name: "claude",
       kind: "agent" as const,
@@ -21,6 +20,8 @@ describe("RuntimeOpsSnapshotService", () => {
       crashed: false,
       stopping: false,
       lifetime: "saved" as const,
+      resumePolicy: "restartable" as const,
+      session: "tachyon-ws-claude",
     }]);
     const service = new RuntimeOpsSnapshotService(() => [{
       workspaceRoot: "/work",
@@ -31,7 +32,6 @@ describe("RuntimeOpsSnapshotService", () => {
         ["dev", { ...record("claude"), def: { kind: "terminal", cmd: "bash" } }],
       ]) },
       manager: {
-        list,
         listAgents,
         defOf: (name: string) => name === "claude" ? { cmd: "claude" } : { cmd: "bash" },
         resumeReadiness: async () => true,
