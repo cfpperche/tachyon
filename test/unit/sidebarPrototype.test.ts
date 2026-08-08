@@ -38,6 +38,8 @@ function fakeWorkspace(pins: Pin[] = [], opts: {
     bridge: { port: 42462, url: "http://127.0.0.1:42462/mcp" },
     manager: {
       list: async () => opts.agents ?? [],
+      listAgents: async () => (opts.agents ?? []).filter((entry) => entry.kind === "agent"),
+      listTerminals: async () => (opts.agents ?? []).filter((entry) => entry.kind === "terminal"),
       defOf: () => undefined,
       resumeReadiness: async () => true,
       session: (agent: string) => `tachyon-${opts.hash ?? "demohash"}-${agent}`,
