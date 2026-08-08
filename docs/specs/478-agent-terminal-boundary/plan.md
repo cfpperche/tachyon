@@ -160,7 +160,8 @@ the capability out now; "made unrepresentable by" is the target mechanism.
 | Continuity / memory / handoff | A | `Workspace.ts:1500` (`kindOf(agent) === "agent"`) | continuity keyed by Agent ref |
 | Compaction / re-anchor | A | `Workspace.ts:1404` (`cmdOf` returns null for terminals) | anchor keyed by Agent ref |
 | Process lifecycle: spawn / kill / restart policy | S | `AgentManager` + `LifecycleMonitor` | — stays shared, by design |
-| `autostart`, `watch` | S | `parseAgentEntry` accepts both under either block | — stays shared |
+| `autostart` | S | `parseAgentEntry` accepts it under either block | — stays shared |
+| `watch` (file-watch restart) | ~~S~~ **T** | `parseAgentEntry` accepts it under either block; `Workspace.rebuildWatches` skips agents | **decision revised 2026-08-07 (`t-bd14d8`)** — Terminal only |
 | Attention (pane polling, needs-input) | S | `AttentionMonitor`; terminals default off, can opt in | — stays shared (**open question**) |
 | Pane presentation / editor terminal | S | `Terminals.ts:18` (icon differs, surface does not) | — stays shared |
 | Crash exit code / postmortem pane | S | `LifecycleMonitor` | — stays shared |
@@ -182,7 +183,6 @@ interface ManagedEntryBase {              // genuinely shared process facts
   cwd?: string;
   env?: Record<string, string>;
   autostart: boolean;
-  watch: string[];
   restart: RestartPolicy;
   attention: AttentionDef;                // shared — see open question
 }
@@ -199,6 +199,7 @@ interface AgentEntry extends ManagedEntryBase {
 
 interface TerminalEntry extends ManagedEntryBase {
   kind: "terminal";
+  watch: string[];                        // t-bd14d8 — Terminal only; a watch hit is force + new session
   // deliberately nothing else — every agent-only field is ABSENT, not optional
 }
 ```

@@ -182,7 +182,8 @@ export function savedAgentCreateMutation(
       },
       role: "",
       cwd: "",
-      lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+      // t-bd14d8 — no `watch`: the editable schema is strict and an Agent has no file watch.
+      lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: proposedWorktreeEnabled(spec), branch: "" },
       isolation: "",
       ...(nativeConfig ? { nativeConfig } : {}),

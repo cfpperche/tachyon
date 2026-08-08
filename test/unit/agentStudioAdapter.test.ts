@@ -39,7 +39,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     readiness: { state: "limited", limitations: ["fork-unavailable"] },
     editable: {
       displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" }, role: "reviewer",
-      cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+      cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false },
       worktree: { enabled: true, branch: "feature/web" }, isolation: "transcript",
     },
     bindings: {
@@ -199,7 +199,9 @@ describe("AgentStudioAdapter — load", () => {
       autostart: true,
       restartOnCrash: true,
       attention: false,
-      watch: "src/**",
+      // t-bd14d8 — blank, never read back from the snapshot: the Agent form has no watch field, so a
+      // populated value here would be one the human can neither see nor clear.
+      watch: "",
       worktree: true,
       branch: "feature/web",
       isolate: true,
@@ -274,14 +276,24 @@ describe("AgentStudioAdapter — save", () => {
       role: "tester",
       runtime: expect.objectContaining({ executable: "codex" }),
       cwd: "apps/web",
-      lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+      lifecycle: { autostart: true, restart: "on-crash", attention: false },
       worktree: { enabled: true, branch: "feature/web" },
       isolation: "transcript",
     }));
     expect(submits).toEqual([]);
   });
 
-  it("keeps unsupported Quick Add runtimes on the legacy creation path", async () => {
+  /**
+   * t-d68b8b — this test used to assert the dead end and pass, which is why it is worth keeping as a
+   * record rather than deleting. It named the legacy diversion "the legacy creation path" and proved
+   * `save()` returned `{status:"ok"}` — true only of the FAKE workspace here. In production
+   * `Workspace.studioSubmit` refuses `kind === "agent"` outright, so the same patch produced a toast
+   * telling the human to create the agent in Agent Studio, which is the form they had just filled in.
+   *
+   * A green test measuring a stubbed door is the failure mode; the assertion now follows the patch to
+   * the door production actually uses.
+   */
+  it("never diverts an unattested new agent to the retired legacy writer", async () => {
     const { ws, submits } = fakeWorkspace({ submitResult: undefined });
     const fields = canonicalAgentFields();
     fields.name = "opencode-helper";
@@ -289,10 +301,12 @@ describe("AgentStudioAdapter — save", () => {
     fields.kind = "agent";
 
     const patch = serializeAgentPatch(fields, true)!;
+    expect(patch).toMatchObject({ kind: "agent-instance" });
     expect(patch).not.toHaveProperty("canonical");
-    expect(patch).not.toHaveProperty("editable");
-    expect(await new AgentStudioAdapter(ws).save(undefined, patch)).toEqual({ status: "ok", entityId: "opencode-helper" });
-    expect(submits).toEqual([{ state: expect.objectContaining({ name: "opencode-helper", cmd: "opencode" }), editingName: undefined }]);
+    // `studioSubmit` — the retired writer — is never reached. The refusal the human sees comes from
+    // `newAgentRuntimeRefusal` before Save is enabled at all, and the host create door backs it up.
+    await Promise.resolve(new AgentStudioAdapter(ws).save(undefined, patch)).catch(() => undefined);
+    expect(submits).toEqual([]);
   });
 
   it.each(["claude", "grok"])("creates measured %s runtimes through canonical mutation", (runtime) => {
