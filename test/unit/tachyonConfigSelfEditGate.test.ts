@@ -154,11 +154,15 @@ describe("t-099be8 tachyon.yml self-edit gate", () => {
     expect(host.notices.some((n) => n.level === "warn" && n.message.includes("reviewer"))).toBe(true);
   });
 
+  // t-ae221c — the bad text these two feed the gate used to be a self-referencing `subagents:` under
+  // `agents:`. That block is retired: it is dropped with a warning, so nothing written inside it can
+  // be invalid any more. The gate's guarantee is unchanged and is proven with a hard error the roster
+  // text can still express — the same one the accept/refuse pair above uses.
   it("mutateConfig does not persist a hard-invalid mutation", async () => {
-    const { ws, root } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, root } = await makeWs("terminals:\n  build:\n    cmd: sh\n");
     const before = fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
     const ok = ws.mutateConfig(() => ({
-      text: "agents:\n  claude:\n    cmd: claude\n    subagents: [claude]\n",
+      text: "terminals:\n  build:\n    cmd: sh\n    restart: sometimes\n",
       warnings: [],
     }));
     expect(ok).toBe(false);
@@ -166,11 +170,11 @@ describe("t-099be8 tachyon.yml self-edit gate", () => {
   });
 
   it("agent-path gate function refuses invalid text (same seam Bridge write_tachyon_config uses)", async () => {
-    const { ws, root } = await makeWs("agents:\n  claude:\n    cmd: claude\n");
+    const { ws, root } = await makeWs("terminals:\n  build:\n    cmd: sh\n");
     const before = fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
     // Mirrors the Bridge tool body: validate → refuse → never write.
     const gate = (text: string) => ws.writeTachyonConfigText(text);
-    const bad = gate("agents:\n  only:\n    cmd: claude\n    subagents: [only]\n");
+    const bad = gate("terminals:\n  only:\n    cmd: sh\n    restart: sometimes\n");
     expect(bad.ok).toBe(false);
     expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toBe(before);
   });

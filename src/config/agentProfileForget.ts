@@ -17,11 +17,9 @@ import {
   agentProfileTransactionsRoot,
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
-import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { AgentProfileRefusal } from "./agentProfileRefusal.js";
 import { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "./agentForgetPlan.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
-import { agentStanzaSourceSlice, deleteAgent as deleteAgentInYml } from "./YamlConfigEditor.js";
 
 const SCHEMA_VERSION = 1 as const;
 const FORGET_DIR = "forget";
@@ -37,6 +35,12 @@ export type AgentProfileForgetPhase =
   | "committing"
   | "evolution-retired"
   | "authority-retired"
+  /**
+   * t-ae221c — never entered again; still handled by `rollForward` so an in-flight journal from an
+   * older build finishes instead of degrading. Forget quarantined the home AND deleted the agent's
+   * `tachyon.yml` stanza; quarantining the home now removes the agent, and there is no stanza left
+   * whose deletion could fail on its own.
+   */
   | "locator-removed"
   | "home-quarantined"
   | "runtime-converged"
@@ -59,9 +63,10 @@ export interface AgentProfileForgetJournal {
   phase: AgentProfileForgetPhase;
   createdAt: string;
   sourceAuthority: AgentProfileAuthorityRecord;
-  sourceConfigSha256: string;
-  targetConfigSha256: string;
-  sourceStanzaSha256: string;
+  /** t-ae221c — legacy `tachyon.yml` digests. Read but never written, and never acted on. */
+  sourceConfigSha256?: string;
+  targetConfigSha256?: string;
+  sourceStanzaSha256?: string;
   profileManifest: TreeEntry[];
   evolutionProfileId: string | null;
   liveSnapshot: AgentProfileForgetSnapshot;
@@ -94,11 +99,6 @@ export interface AgentProfileForgetJournal {
  */
 export { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "./agentForgetPlan.js";
 
-export interface AgentProfileForgetConfigPort {
-  read(): string;
-  replace(expectedSha256: string, text: string): void;
-}
-
 export interface AgentProfileForgetEvolutionPort {
   readProfileId(agentName: string): Promise<string | undefined>;
   retire(agentName: string, expectedProfileId: string | null): Promise<void>;
@@ -111,7 +111,6 @@ export interface CommitAgentProfileForgetInput {
   /** Current declared owner, when the child is listed in another canonical profile. */
   ownerAgentName?: string;
   authority: AgentProfileAuthorityPort;
-  config: AgentProfileForgetConfigPort;
   evolution: AgentProfileForgetEvolutionPort;
   live: {
     prepare(agentName: string): Promise<AgentProfileForgetSnapshot>;
@@ -257,46 +256,6 @@ function transition(
   return next;
 }
 
-function plannedConfig(config: AgentProfileForgetConfigPort, agentName: string): {
-  sourceSha: string;
-  targetSha: string;
-  sourceStanzaSha: string;
-} {
-  const source = config.read();
-  const scan = scanAgentProfilePointers(source);
-  if (scan.errors.length > 0) throw new Error(scan.errors.join("; "));
-  if (scan.pointers.get(agentName)?.path !== canonicalAgentProfilePointer(agentName)) {
-    throw new Error(`agent '${agentName}' is not backed by its canonical profile pointer`);
-  }
-  const stanza = agentStanzaSourceSlice(source, agentName);
-  const target = deleteAgentInYml(source, agentName).text;
-  return { sourceSha: digest(source), targetSha: digest(target), sourceStanzaSha: stanza.valueSha256 };
-}
-
-function configState(config: AgentProfileForgetConfigPort, journal: AgentProfileForgetJournal): "source" | "target" | "conflict" {
-  const text = config.read();
-  const sha = digest(text);
-  if (sha === journal.targetConfigSha256) return "target";
-  if (sha !== journal.sourceConfigSha256) return "conflict";
-  try {
-    const scan = scanAgentProfilePointers(text);
-    if (scan.errors.length > 0 || scan.pointers.get(journal.agentName)?.path !== canonicalAgentProfilePointer(journal.agentName)) return "conflict";
-    if (agentStanzaSourceSlice(text, journal.agentName).valueSha256 !== journal.sourceStanzaSha256) return "conflict";
-    return "source";
-  } catch { return "conflict"; }
-}
-
-function removeLocator(config: AgentProfileForgetConfigPort, journal: AgentProfileForgetJournal): void {
-  const state = configState(config, journal);
-  if (state === "target") return;
-  if (state !== "source") throw new CustodyError("canonical profile locator changed outside the forget transaction");
-  const source = config.read();
-  const target = deleteAgentInYml(source, journal.agentName).text;
-  if (digest(target) !== journal.targetConfigSha256) throw new CustodyError("canonical profile forget target config changed");
-  config.replace(journal.sourceConfigSha256, target);
-  if (configState(config, journal) !== "target") throw new Error("canonical profile locator removal did not converge");
-}
-
 async function retireAuthority(authority: AgentProfileAuthorityPort, journal: AgentProfileForgetJournal): Promise<void> {
   const current = await authority.read(journal.agentName);
   if (current === undefined) return;
@@ -393,10 +352,10 @@ async function rollForward(
   }
   if (journal.phase === "authority-retired") {
     await convergeOwnership(input, journal);
-    removeLocator(input.config, journal);
-    journal = transition(txDir, journal, "locator-removed", input.onPhase);
   }
-  if (journal.phase === "locator-removed") {
+  // t-ae221c — quarantining the home IS the removal. `locator-removed` is still a door into this
+  // step so a journal written by the older two-file transaction lands here and finishes.
+  if (journal.phase === "authority-retired" || journal.phase === "locator-removed") {
     quarantineHome(input.workspaceRoot, journal);
     journal = transition(txDir, journal, "home-quarantined", input.onPhase);
   }
@@ -428,7 +387,6 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
       workspaceRoot: input.workspaceRoot,
       agentName: input.agentName,
       authority: input.authority,
-      config: input.config,
     });
     // t-05dff5 — every precondition from here to `input.live.prepare` is an `AgentProfileRefusal`:
     // each one is a decision handed back to the human, not a transaction that broke. They are the
@@ -446,7 +404,6 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
         `canonical authority for '${input.agentName}' is missing or stale`,
       );
     }
-    const config = plannedConfig(input.config, input.agentName);
     const oldRoot = profileRoot(input.workspaceRoot, input.agentName);
     const profileManifest = treeManifest(oldRoot);
     const evolutionProfileId = await input.evolution.readProfileId(input.agentName);
@@ -489,9 +446,6 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
       phase: "intent",
       createdAt: new Date().toISOString(),
       sourceAuthority,
-      sourceConfigSha256: config.sourceSha,
-      targetConfigSha256: config.targetSha,
-      sourceStanzaSha256: config.sourceStanzaSha,
       profileManifest,
       evolutionProfileId: evolutionProfileId ?? null,
       liveSnapshot,
@@ -502,7 +456,7 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
     input.onPhase?.("intent");
     const rechecked = await input.live.prepare(input.agentName);
     if (!isDeepStrictEqual(rechecked, liveSnapshot)) throw new Error("agent runtime state changed while forget intent was installed");
-    if (configState(input.config, journal) !== "source" || !sameTree(oldRoot, profileManifest)
+    if (!sameTree(oldRoot, profileManifest)
       || !isDeepStrictEqual(await input.authority.read(input.agentName), sourceAuthority)) {
       throw new Error("canonical profile state changed while forget intent was installed");
     }

@@ -27,6 +27,15 @@ describe("ClientWorkspaceStudioTarget", () => {
   it("keeps canonical profile pointers visible to the shell without legacy cmd", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-profile-pointer-"));
     roots.push(root);
+    // t-ae221c — the shell measures the roster off `.tachyon/agents/`, so the DIRECTORY is what puts
+    // `codex` in front of Agent Studio. The retired block below is left in deliberately: it must
+    // change nothing either way.
+    fs.mkdirSync(path.join(root, ".tachyon", "agents", "codex"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, ".tachyon", "agents", "codex", "agent.yml"),
+      "schemaVersion: 1\nagentId: 11111111-1111-4111-8111-111111111111\nruntime:\n  adapter: codex\n  executable: codex\n",
+      "utf8",
+    );
     fs.writeFileSync(
       path.join(root, "tachyon.yml"),
       "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n",

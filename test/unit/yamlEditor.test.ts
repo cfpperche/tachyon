@@ -17,7 +17,7 @@ import {
   replaceAgentStanzaValue,
 } from "../../src/config/YamlConfigEditor.js";
 import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
-import { parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
+import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
 import schema from "../../src/config/tachyon.schema.json";
 
 /**
@@ -140,11 +140,13 @@ settings:
   });
 
   it("promotion cannot write the retired inline-agent shape", () => {
-    // The shape the removed `addAgent` produced, spelled out so the refusal it now earns is visible.
+    // The shape the removed `addAgent` produced. t-ae221c retired the whole block rather than the
+    // shape: it is read, warned about and dropped, so it declares nothing whatever it spells.
     const retired = "agents:\n  rev:\n    cmd: claude\n    kind: terminal\n";
-    expect(parseProfileAwareConfigSyntax(retired).errors).toEqual([
-      "agents.rev: inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio",
-    ]);
+    const read = parseProfileAwareConfigSyntax(retired);
+    expect(read.errors).toEqual([]);
+    expect(read.warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(read.config?.agents).toEqual({});
     // What promotion writes instead lands in `terminals:`, where a terminal is readable.
     expect(promote(undefined, "rev", "claude").text).toContain("terminals:");
   });
@@ -225,15 +227,19 @@ settings:
     expect(config.agents["review-5"].cmd).toBe("codex");
   });
 
-  it("deleteAgent removes the agent; the last agent cannot be deleted", () => {
+  it("deleteAgent removes the agent, including the last declared entry", () => {
     // spec 234 — the YML fixture still carries a `layouts:` block: it must load fine (tolerated, ignored).
     const { text } = deleteAgent(YML, "dev");
     const config = expectValid(text);
     expect(config.agents.dev).toBeUndefined();
     expect(config.agents.frontend).toBeDefined();
 
-    // the last remaining agent cannot be deleted (would leave an invalid config)
-    expect(() => deleteAgent(text, "frontend")).toThrow("is the last agent");
+    // t-ae221c — the last declared entry goes too. The fleet is `.tachyon/agents/`, so an empty
+    // `tachyon.yml` roster is a workspace with no TERMINALS, not a workspace with no agents; and an
+    // empty roster has been a valid load since t-f67185. Refusing here made deleting the only
+    // terminal impossible in every workspace that had one.
+    const emptied = deleteAgent(text, "frontend").text;
+    expect(expectValid(emptied).agents).toEqual({});
   });
 
   it("renameAgent renames the key and preserves the definition", () => {

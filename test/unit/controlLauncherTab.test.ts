@@ -99,7 +99,14 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
     // and the grid lives INSIDE the one tabpanel, never above the tab strip.
     const app = read("src/webview/sidebar/App.tsx");
     expect(app.split('class="tabs"')[0] ?? "").not.toContain("<ControlGrid");
-    expect((app.match(/<ControlGrid/g) ?? []).length).toBe(1);
+    // t-374df3 — non-vacuity guard for the line above, nothing more: with no `<ControlGrid` in the
+    // file at all, that split assertion passes by being empty. It counted `=== 1` and so went red on
+    // rendering the grid from two branches (loading + loaded) — the current pattern in this very App
+    // (`appPagePad.test.ts:87` asserts that shape with a count of 2), which changes nothing about
+    // where the grid lives. How MANY get mounted is asserted on the rendered HTML above, not here.
+    expect((app.match(/<ControlGrid/g) ?? []).length,
+      "App.tsx mounts no <ControlGrid at all — the tab-strip assertion above passed vacuously")
+      .toBeGreaterThan(0);
   });
 });
 

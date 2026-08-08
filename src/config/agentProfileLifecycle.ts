@@ -22,8 +22,6 @@ import {
   removeAgentProfileIfExact,
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
-import { agentStanzaSourceSlice } from "./YamlConfigEditor.js";
-import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { AgentProfileRefusal } from "./agentProfileRefusal.js";
 import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath, type CanonicalAgentProfileSource } from "./agentProfileReader.js";
 import {
@@ -89,6 +87,16 @@ export type AgentProfileLifecyclePhase =
   | "staged"
   | "profile-published"
   | "authority-published"
+  /**
+   * t-ae221c — never entered again. `create` used to write a pointer into `tachyon.yml` after the
+   * authority landed; the roster now comes from `.tachyon/agents/`, so there is no second file and
+   * no phase between the authority and activation.
+   *
+   * Kept READABLE on purpose. A journal is deleted when its transaction commits, so the only ones
+   * that survive an upgrade are the in-flight ones — and a journal this build refuses to parse goes
+   * to `degraded`, which every reconcile skips FOREVER (the O6 failure in the orphan hunt). Accepting
+   * the old name costs one string and lets that transaction finish.
+   */
   | "locator-written"
   | "activated"
   | "committed"
@@ -107,8 +115,15 @@ export interface AgentProfileLifecycleJournal {
   targetProfileSha256: string;
   priorAuthority: AgentProfileAuthorityRecord | null;
   targetAuthority: AgentProfileAuthorityRecord;
-  priorConfigSha256: string;
-  targetConfigSha256: string;
+  /**
+   * t-ae221c — written by builds where `create` also wrote a pointer into `tachyon.yml`. This build
+   * writes neither, and ignores both when it recovers an older journal: the pointer it would restore
+   * is now an inert legacy block that loads with a warning, so leaving it is not a loss.
+   *
+   * Optional rather than gone so an in-flight journal still PARSES; see `locator-written` above.
+   */
+  priorConfigSha256?: string;
+  targetConfigSha256?: string;
   targetArtifacts?: LifecycleArtifactRecord[];
   /**
    * SDD 482 phase 4 (`t-5e1113`) — a SECOND agent whose profile this same transaction edits.
@@ -130,12 +145,6 @@ export interface AgentProfileLifecycleJournal {
     targetAuthority: AgentProfileAuthorityRecord;
   };
   degradedReason?: string;
-}
-
-export interface AgentProfileLifecycleConfigPort {
-  read(): string;
-  /** Replace the full file only when its current digest equals expectedSha256. */
-  replace(expectedSha256: string, text: string): void;
 }
 
 export interface AgentProfileLifecycleSnapshot {
@@ -206,7 +215,6 @@ export interface CommitAgentProfileLifecycleInput {
    */
   capabilityGrants?: readonly NonNullable<AgentProfileAuthorityRecord["capabilityGrants"]>[number][];
   authority: AgentProfileAuthorityPort;
-  config: AgentProfileLifecycleConfigPort;
   onPhase?: (phase: AgentProfileLifecyclePhase) => void;
   /** Host activation runs while the journal and lock still make launch fail closed. */
   activateState: (state: "target" | "prior" | "blocked") => void;
@@ -227,12 +235,20 @@ function sameAuthority(left: AgentProfileAuthorityRecord | undefined | null, rig
   return isDeepStrictEqual(left ?? null, right ?? null);
 }
 
-function revisionOf(profileSha256: string, authority: AgentProfileAuthorityRecord, stanzaSha256: string): string {
+/**
+ * t-ae221c — the revision is the profile and the authority, and there is nothing else in it.
+ *
+ * It used to fold in the sha of the agent's `tachyon.yml` stanza. That third input was the ONLY
+ * reason `inspectAgentProfileLifecycle` — and through it every CAS in rename and forget — had to
+ * read the config file at all. The stanza was a derived constant (`profile:` accepted exactly one
+ * string), so a revision that changed when it changed was a revision that could only change when
+ * somebody hand-edited a value the loader would have refused anyway.
+ */
+function revisionOf(profileSha256: string, authority: AgentProfileAuthorityRecord): string {
   return digest(JSON.stringify({
     canonicalizationVersion: CANONICALIZATION_VERSION,
     profileSha256,
     authority,
-    stanzaSha256,
   }));
 }
 
@@ -345,8 +361,10 @@ function readJournal(txDir: string): AgentProfileLifecycleJournal {
     || (value.expectedRevision !== null && (typeof value.expectedRevision !== "string" || !DIGEST_RE.test(value.expectedRevision)))
     || (value.priorProfileSha256 !== null && (typeof value.priorProfileSha256 !== "string" || !DIGEST_RE.test(value.priorProfileSha256)))
     || typeof value.targetProfileSha256 !== "string" || !DIGEST_RE.test(value.targetProfileSha256)
-    || typeof value.priorConfigSha256 !== "string" || !DIGEST_RE.test(value.priorConfigSha256)
-    || typeof value.targetConfigSha256 !== "string" || !DIGEST_RE.test(value.targetConfigSha256)
+    // t-ae221c — accepted when present (an in-flight journal from a build that wrote a pointer) and
+    // never required, because this build writes neither.
+    || (value.priorConfigSha256 !== undefined && (typeof value.priorConfigSha256 !== "string" || !DIGEST_RE.test(value.priorConfigSha256)))
+    || (value.targetConfigSha256 !== undefined && (typeof value.targetConfigSha256 !== "string" || !DIGEST_RE.test(value.targetConfigSha256)))
     || !value.targetAuthority || typeof value.createdAt !== "string"
     || (value.targetArtifacts !== undefined && (!Array.isArray(value.targetArtifacts)
       || value.targetArtifacts.some((artifact) => !artifact || typeof artifact.path !== "string"
@@ -570,24 +588,6 @@ function readStudioWorkspaceCommands(
   };
 }
 
-function pointerStanza(configText: string, agentName: string): { sha256: string } {
-  const scan = scanAgentProfilePointers(configText);
-  if (scan.errors.length > 0) throw new Error(scan.errors.join("; "));
-  if (!scan.pointers.has(agentName)) throw new Error(`agents.${agentName}: canonical profile pointer is missing`);
-  return { sha256: agentStanzaSourceSlice(configText, agentName).valueSha256 };
-}
-
-function addPointer(configText: string, agentName: string): string {
-  const doc = parseDocument(configText, { uniqueKeys: true });
-  if (doc.errors.length > 0) throw new Error(`tachyon.yml is invalid: ${doc.errors[0]!.message}`);
-  if (doc.hasIn(["agents", agentName]) || doc.hasIn(["terminals", agentName])) throw new Error(`agent '${agentName}' already exists`);
-  if (!doc.has("agents")) doc.set("agents", {});
-  doc.setIn(["agents", agentName], { profile: canonicalAgentProfilePointer(agentName) });
-  const text = String(doc);
-  pointerStanza(text, agentName);
-  return text;
-}
-
 function replaceAgentProfileExact(workspaceRoot: string, agentName: string, expectedSha256: string, text: string): void {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) throw new Error(`canonical profile for '${agentName}' is missing`);
@@ -604,7 +604,6 @@ export async function inspectAgentProfileLifecycle(input: {
   workspaceRoot: string;
   agentName: string;
   authority: AgentProfileAuthorityPort;
-  config: AgentProfileLifecycleConfigPort;
 }): Promise<AgentProfileLifecycleSnapshot> {
   const canonical = savedAgentProfile(input.workspaceRoot, input.agentName);
   if (!canonical) throw new Error(`canonical profile for '${input.agentName}' is missing`);
@@ -612,8 +611,7 @@ export async function inspectAgentProfileLifecycle(input: {
   if (!authority || authority.agentId !== canonical.profile.agentId || authority.canonicalSha256 !== canonical.sha256) {
     throw new Error(`canonical authority for '${input.agentName}' is missing or stale`);
   }
-  const stanza = pointerStanza(input.config.read(), input.agentName);
-  const revision = revisionOf(canonical.sha256, authority, stanza.sha256);
+  const revision = revisionOf(canonical.sha256, authority);
   return {
     schemaVersion: 1,
     canonicalizationVersion: CANONICALIZATION_VERSION,
@@ -707,35 +705,6 @@ export function agentProfileAuthorityFor(
   };
 }
 
-/**
- * t-07d05c — a roster with neither agents nor terminals is what an untouched workspace looks like.
- * t-f67185 made empty roster a valid load; this helper still swallows host reactivation failures
- * for that shape so rolling back the FIRST canonical agent reports a clean rollback instead of
- * degrading a transaction whose durable restore already succeeded.
- */
-function isEmptyRoster(configText: string): boolean {
-  let raw: unknown;
-  try {
-    raw = parseDocument(configText).toJS();
-  } catch {
-    return false;
-  }
-  // An empty document is the untouched workspace: both blocks are simply absent.
-  if (raw === null || raw === undefined) return true;
-  if (typeof raw !== "object" || Array.isArray(raw)) return false;
-  // Exactly two shapes count: the block is absent, or it is a real mapping with no entries. A
-  // present-but-malformed block (scalar, list, null) is a config error in its own right, so the
-  // reload failure it causes must keep degrading the transaction rather than being swallowed here.
-  const emptyBlock = (block: unknown): boolean => block === undefined || (
-    typeof block === "object"
-    && block !== null
-    && !Array.isArray(block)
-    && Object.keys(block as Record<string, unknown>).length === 0
-  );
-  const record = raw as Record<string, unknown>;
-  return emptyBlock(record.agents) && emptyBlock(record.terminals);
-}
-
 async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string, journal: AgentProfileLifecycleJournal): Promise<void> {
   journal = transition(txDir, journal, "compensating", input.onPhase);
   try {
@@ -784,22 +753,16 @@ async function compensate(input: CommitAgentProfileLifecycleInput, txDir: string
       else await input.authority.retire(input.agentName, journal.targetAuthority);
     } else if (!sameAuthority(authority, journal.priorAuthority)) throw new Error("authority changed outside lifecycle transaction");
 
-    const configText = input.config.read();
-    const configSha = digest(configText);
-    if (configSha === journal.targetConfigSha256 && journal.targetConfigSha256 !== journal.priorConfigSha256) {
-      const prior = readPrivateFile(path.join(txDir, "backup-tachyon.yml")).toString("utf8");
-      if (digest(prior) !== journal.priorConfigSha256) throw new Error("config backup digest mismatch");
-      input.config.replace(journal.targetConfigSha256, prior);
-    } else if (configSha !== journal.priorConfigSha256) throw new Error("config changed outside lifecycle transaction");
-    // Every durable artifact is restored by this point, so the rollback has already succeeded.
-    // Reactivating the restored state is the host's concern. Empty roster is valid (t-f67185),
-    // but a host-side failure on that shape must still not degrade a transaction that already
-    // restored cleanly — the workspace simply has no agents again (t-07d05c).
-    try {
-      input.activateState("prior");
-    } catch (error) {
-      if (!isEmptyRoster(input.config.read())) throw error;
-    }
+    // t-ae221c — `tachyon.yml` is not part of the tuple any more, so there is nothing to restore
+    // here and no `backup-tachyon.yml` to restore it from. The profile and the authority above ARE
+    // the durable state; when both are back, the rollback has already succeeded.
+    //
+    // The t-07d05c tolerance went with it. It existed because rolling back the FIRST canonical agent
+    // rewrote the config back to a roster with no agents, and a host reload of that shape could fail
+    // after the durable restore was complete. This transaction no longer touches the file, so the
+    // reload sees exactly the bytes it read before the transaction started; an empty roster is a
+    // valid load (t-f67185) and reaching it needs no exception.
+    input.activateState("prior");
     fs.rmSync(txDir, { recursive: true, force: true });
   } catch (error) {
     const degraded = { ...journal, phase: "degraded" as const, degradedReason: error instanceof Error ? error.message : String(error) };
@@ -819,13 +782,12 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
     : acquireAgentProfileTransactionLock(input.workspaceRoot, input.agentName, txid);
   let txDir: string | undefined;
   try {
-    const configBefore = input.config.read();
     const canonical = savedAgentProfile(input.workspaceRoot, input.agentName);
     const priorAuthority = await input.authority.read(input.agentName);
     if (input.operation === "create") {
+      // t-ae221c — one existence check, against the one record. The second one asked whether
+      // `tachyon.yml` already carried a pointer, which could only disagree with this by being wrong.
       if (canonical) throw new Error(`agent '${input.agentName}' already has canonical state`);
-      const scan = scanAgentProfilePointers(configBefore);
-      if (scan.pointers.has(input.agentName)) throw new Error(`agent '${input.agentName}' already has a profile pointer`);
     } else {
       if (!canonical || !priorAuthority) throw new Error(`agent '${input.agentName}' has incomplete canonical state`);
       const current = await inspectAgentProfileLifecycle(input);
@@ -881,7 +843,6 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
         targetAuthority: agentProfileAuthorityFor(input.companion.agentName, companionProfile, companionSha, companionPriorAuthority, txid),
       };
     }
-    const configTarget = input.operation === "create" ? addPointer(configBefore, input.agentName) : configBefore;
     const root = ensureLifecycleRoot(input.workspaceRoot);
     txDir = path.join(root, txid);
     ensureSafeDirectory(input.workspaceRoot, txDir);
@@ -902,7 +863,6 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
         }
       }
     }
-    writeNew(path.join(txDir, "backup-tachyon.yml"), configBefore);
     if (canonical) writeNew(path.join(txDir, BACKUP), canonical.text);
     if (companion) writeNew(path.join(txDir, COMPANION_BACKUP), companion.priorText);
     let journal: AgentProfileLifecycleJournal = {
@@ -917,8 +877,6 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       targetProfileSha256: targetSha,
       priorAuthority: priorAuthority ? structuredClone(priorAuthority) : null,
       targetAuthority,
-      priorConfigSha256: digest(configBefore),
-      targetConfigSha256: digest(configTarget),
       ...(artifactRecords.length > 0 ? { targetArtifacts: artifactRecords } : {}),
       ...(companion ? {
         companion: {
@@ -943,8 +901,6 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
       else await input.authority.publish(targetAuthority, undefined);
       if (companion) await input.authority.replace(companion.targetAuthority, companion.priorAuthority);
       journal = transition(txDir, journal, "authority-published", input.onPhase);
-      if (configTarget !== configBefore) input.config.replace(journal.priorConfigSha256, configTarget);
-      journal = transition(txDir, journal, "locator-written", input.onPhase);
       const snapshot = await inspectAgentProfileLifecycle(input);
       if (snapshot.profile.agentId !== profile.agentId || currentProfileDigest(input.workspaceRoot, input.agentName) !== targetSha) {
         throw new Error("lifecycle target tuple did not converge");
@@ -972,7 +928,6 @@ export async function commitAgentProfileLifecycle(input: CommitAgentProfileLifec
 export async function reconcileAgentProfileLifecycle(input: {
   workspaceRoot: string;
   authority: AgentProfileAuthorityPort;
-  config: AgentProfileLifecycleConfigPort;
   activateState: (agentName: string, state: "target" | "prior" | "blocked") => void;
 }): Promise<{ reconciled: string[]; degraded: string[] }> {
   const root = lifecycleRoot(input.workspaceRoot);
@@ -1001,7 +956,6 @@ export async function reconcileAgentProfileLifecycle(input: {
         const profileTarget = currentProfileDigest(input.workspaceRoot, journal.agentName) === journal.targetProfileSha256
           && artifactsMatch(input.workspaceRoot, journal.agentName, journal.targetArtifacts ?? []);
         const authorityTarget = sameAuthority(await input.authority.read(journal.agentName), journal.targetAuthority);
-        const configTarget = digest(input.config.read()) === journal.targetConfigSha256;
         // The companion is part of the target tuple. Without this, a crash that published the new
         // agent but not the ownership edge would look CONVERGED and commit — the exact half-state a
         // single transaction exists to make impossible.
@@ -1009,7 +963,7 @@ export async function reconcileAgentProfileLifecycle(input: {
           currentProfileDigest(input.workspaceRoot, journal.companion.agentName) === journal.companion.targetProfileSha256
           && sameAuthority(await input.authority.read(journal.companion.agentName), journal.companion.targetAuthority)
         );
-        if (profileTarget && authorityTarget && configTarget && companionTarget) {
+        if (profileTarget && authorityTarget && companionTarget) {
           input.activateState(journal.agentName, "target");
           const activated = transition(txDir, journal, "activated");
           transition(txDir, activated, "committed");
@@ -1020,7 +974,6 @@ export async function reconcileAgentProfileLifecycle(input: {
             agentName: journal.agentName,
             operation: journal.operation,
             authority: input.authority,
-            config: input.config,
             activateState: (state) => input.activateState(journal.agentName, state),
           }, txDir, journal);
         }

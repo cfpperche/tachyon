@@ -122,6 +122,20 @@ delete is the same rule with a race in the middle.
 switch this residue is a ghost agent in the sidebar rather than silent garbage, and until this state
 existed it could not be listed even once.
 
+**What `t-ae221c` then did to this table.** The roster row is now "a readable `agent.yml` under
+`.tachyon/agents/<name>/`", which is the same measurement `profileOnDisk` makes. Two consequences,
+both measured:
+
+- `orphan-locator` (roster row, no profile) has no producer left. Its arm stays in the derivation so
+  the truth table remains total over the five facts, and nothing in the product reaches it.
+- `unlisted-profile` (profile on disk, no roster row) is still reachable, through a narrower door: an
+  `agent.yml` whose bytes cannot be read. Its resolution is unchanged, and it is the reason the state
+  has to keep existing.
+
+The cost, stated: deleting `.tachyon/agents/<name>/` by hand used to leave a member with a Forget
+door. It now deletes the agent, and what survives is `stranded-authority` — no member, no door, and
+its reason already says why no product door retires an authority whose agent is already gone.
+
 ## Acceptance criteria
 
 _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bullets for static facts. If every box can be ticked, the spec is delivered. Each criterion should be verifiable without re-reading the plan._

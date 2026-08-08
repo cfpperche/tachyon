@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { parseDocument } from "yaml";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { agentProfileAuthorityFor, inspectAgentProfileLifecycle } from "./agentProfileLifecycle.js";
 import {
@@ -17,10 +16,8 @@ import {
   agentProfileTransactionsRoot,
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
-import { canonicalAgentProfilePointer, scanAgentProfilePointers } from "./agentProfilePointer.js";
 import { AgentProfileRefusal } from "./agentProfileRefusal.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
-import { agentStanzaSourceSlice, renameAgent as renameAgentInYml } from "./YamlConfigEditor.js";
 
 const SCHEMA_VERSION = 1 as const;
 const RENAME_DIR = "rename";
@@ -30,6 +27,12 @@ export type AgentProfileRenamePhase =
   | "intent"
   | "profile-moved"
   | "authority-moved"
+  /**
+   * t-ae221c — never entered again; kept readable so an in-flight journal from an older build still
+   * parses and rolls forward instead of degrading. The rename moved a directory AND rewrote the
+   * agent's `tachyon.yml` stanza; renaming the directory now renames the agent, so the second write
+   * has nothing left to say.
+   */
   | "locator-written"
   | "evolution-moved"
   | "live-converged"
@@ -54,8 +57,9 @@ export interface AgentProfileRenameJournal {
   profileManifest: TreeEntry[];
   sourceAuthority: AgentProfileAuthorityRecord;
   targetAuthority: AgentProfileAuthorityRecord;
-  sourceStanzaSha256: string;
-  targetStanzaSha256: string;
+  /** t-ae221c — legacy `tachyon.yml` stanza digests. Read but never written, and never acted on. */
+  sourceStanzaSha256?: string;
+  targetStanzaSha256?: string;
   evolutionProfileId: string | null;
   liveSnapshot: CanonicalLiveRenameSnapshot | null;
   /** Parent-side ownership edge updated in the same transaction as the child rename. */
@@ -67,11 +71,6 @@ export interface AgentProfileRenameJournal {
     targetAuthority: AgentProfileAuthorityRecord;
   };
   degradedReason?: string;
-}
-
-export interface AgentProfileRenameConfigPort {
-  read(): string;
-  replace(expectedSha256: string, text: string): void;
 }
 
 export interface AgentProfileRenameEvolutionPort {
@@ -87,7 +86,6 @@ export interface CommitAgentProfileRenameInput {
   /** Current declared owner, when the child is listed in another canonical profile. */
   ownerAgentName?: string;
   authority: AgentProfileAuthorityPort;
-  config: AgentProfileRenameConfigPort;
   evolution: AgentProfileRenameEvolutionPort;
   live?: {
     prepare(oldAgentName: string, newAgentName: string): Promise<CanonicalLiveRenameSnapshot>;
@@ -259,53 +257,6 @@ function moveProfileDirectory(
   }
 }
 
-function renamedConfig(text: string, oldName: string, newName: string): { text: string; sourceSha: string; targetSha: string } {
-  const source = agentStanzaSourceSlice(text, oldName);
-  const scan = scanAgentProfilePointers(text);
-  if (scan.errors.length > 0) throw new Error(scan.errors.join("; "));
-  if (scan.pointers.get(oldName)?.path !== canonicalAgentProfilePointer(oldName)) {
-    throw new Error(`agent '${oldName}' is not backed by its canonical profile pointer`);
-  }
-  if (scan.pointers.has(newName)) throw new Error(`agent '${newName}' already has a profile pointer`);
-  const renamed = renameAgentInYml(text, oldName, newName).text;
-  const doc = parseDocument(renamed, { uniqueKeys: true });
-  if (doc.errors.length > 0) throw new Error(`tachyon.yml is not parseable: ${doc.errors[0]!.message}`);
-  doc.setIn(["agents", newName, "profile"], canonicalAgentProfilePointer(newName));
-  const targetText = String(doc);
-  const target = agentStanzaSourceSlice(targetText, newName);
-  return { text: targetText, sourceSha: source.valueSha256, targetSha: target.valueSha256 };
-}
-
-function locatorState(
-  text: string,
-  journal: Pick<AgentProfileRenameJournal, "oldAgentName" | "newAgentName" | "sourceStanzaSha256" | "targetStanzaSha256">,
-): "source" | "target" | "conflict" {
-  const scan = scanAgentProfilePointers(text);
-  if (scan.errors.length > 0) return "conflict";
-  const sourcePointer = scan.pointers.get(journal.oldAgentName)?.path;
-  const targetPointer = scan.pointers.get(journal.newAgentName)?.path;
-  try {
-    if (sourcePointer === canonicalAgentProfilePointer(journal.oldAgentName) && targetPointer === undefined
-      && agentStanzaSourceSlice(text, journal.oldAgentName).valueSha256 === journal.sourceStanzaSha256) return "source";
-    if (sourcePointer === undefined && targetPointer === canonicalAgentProfilePointer(journal.newAgentName)
-      && agentStanzaSourceSlice(text, journal.newAgentName).valueSha256 === journal.targetStanzaSha256) return "target";
-  } catch { return "conflict"; }
-  return "conflict";
-}
-
-function writeTargetLocator(input: Pick<CommitAgentProfileRenameInput, "config">, journal: AgentProfileRenameJournal): void {
-  const current = input.config.read();
-  const state = locatorState(current, journal);
-  if (state === "target") return;
-  if (state !== "source") throw new Error("profile rename locator changed outside the transaction");
-  const next = renamedConfig(current, journal.oldAgentName, journal.newAgentName);
-  if (next.sourceSha !== journal.sourceStanzaSha256 || next.targetSha !== journal.targetStanzaSha256) {
-    throw new Error("profile rename locator target is not deterministic");
-  }
-  input.config.replace(digest(current), next.text);
-  if (locatorState(input.config.read(), journal) !== "target") throw new Error("profile rename locator write was not durable");
-}
-
 async function convergeEvolution(input: Pick<CommitAgentProfileRenameInput, "evolution">, journal: AgentProfileRenameJournal): Promise<void> {
   const oldProfileId = await input.evolution.readProfileId(journal.oldAgentName);
   const newProfileId = await input.evolution.readProfileId(journal.newAgentName);
@@ -330,8 +281,7 @@ function readJournal(txDir: string): AgentProfileRenameJournal {
   const value = JSON.parse(fs.readFileSync(path.join(txDir, JOURNAL), "utf8")) as Partial<AgentProfileRenameJournal>;
   if (value.schemaVersion !== SCHEMA_VERSION || typeof value.txid !== "string"
     || typeof value.oldAgentName !== "string" || typeof value.newAgentName !== "string"
-    || !Array.isArray(value.profileManifest) || !value.sourceAuthority || !value.targetAuthority
-    || typeof value.sourceStanzaSha256 !== "string" || typeof value.targetStanzaSha256 !== "string") {
+    || !Array.isArray(value.profileManifest) || !value.sourceAuthority || !value.targetAuthority) {
     throw new Error("invalid agent profile rename journal");
   }
   return value as AgentProfileRenameJournal;
@@ -388,11 +338,6 @@ async function rollForward(input: CommitAgentProfileRenameInput, txDir: string, 
   const oldRoot = profileRoot(input.workspaceRoot, journal.oldAgentName);
   const newRoot = profileRoot(input.workspaceRoot, journal.newAgentName);
   if (!sameManifestPart(newRoot, journal.profileManifest, "profile")) throw new Error("profile rename target tree changed");
-  writeTargetLocator(input, journal);
-  if (journal.phase !== "locator-written" && journal.phase !== "evolution-moved" && journal.phase !== "live-converged"
-    && journal.phase !== "activated" && journal.phase !== "committed") {
-    journal = transition(txDir, journal, "locator-written", input.onPhase);
-  }
   await convergeEvolution(input, journal);
   if (journal.phase !== "evolution-moved" && journal.phase !== "live-converged" && journal.phase !== "activated" && journal.phase !== "committed") {
     journal = transition(txDir, journal, "evolution-moved", input.onPhase);
@@ -463,7 +408,6 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
       workspaceRoot: input.workspaceRoot,
       agentName: input.oldAgentName,
       authority: input.authority,
-      config: input.config,
     });
     if (snapshot.revision !== input.expectedRevision) {
       throw new AgentProfileRefusal("agent-profile/revision-conflict", "agent profile revision changed before rename");
@@ -474,11 +418,13 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
       throw new Error(`canonical authority for '${input.oldAgentName}' is missing or stale`);
     }
     if (await input.authority.read(input.newAgentName)) throw new Error(`canonical authority for '${input.newAgentName}' already exists`);
-    const configTarget = renamedConfig(input.config.read(), input.oldAgentName, input.newAgentName);
     const oldEvolution = await input.evolution.readProfileId(input.oldAgentName);
     if (await input.evolution.readProfileId(input.newAgentName) !== undefined) throw new Error(`Agent Evolution Profile already exists for '${input.newAgentName}'`);
     const oldRoot = profileRoot(input.workspaceRoot, input.oldAgentName);
     const newRoot = profileRoot(input.workspaceRoot, input.newAgentName);
+    // t-ae221c — THE destination-conflict check. It used to be one of two: this one, and a scan
+    // asking whether `tachyon.yml` already carried a pointer for the new name. The directory IS the
+    // roster now, so a free name and a free directory are the same fact.
     if (exists(newRoot)) throw new Error(`canonical profile home for '${input.newAgentName}' already exists`);
     const profileManifest = treeManifest(oldRoot);
     const liveSnapshot = input.live ? await input.live.prepare(input.oldAgentName, input.newAgentName) : null;
@@ -513,8 +459,6 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
       profileManifest,
       sourceAuthority,
       targetAuthority,
-      sourceStanzaSha256: configTarget.sourceSha,
-      targetStanzaSha256: configTarget.targetSha,
       evolutionProfileId: oldEvolution ?? null,
       liveSnapshot,
       ...(ownership ? { ownership } : {}),
