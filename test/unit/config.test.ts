@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { asAgent, parseConfig, suggestKindForCommand, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability } from "../../src/config/loadConfig.js";
+import { agentsOf, asAgent, parseConfig, suggestKindForCommand, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability, terminalsOf } from "../../src/config/loadConfig.js";
 import { PROJECT_GUIDANCE_MAX_FILES } from "../../src/config/projectGuidance.js";
 
 const VALID = `
@@ -443,6 +443,14 @@ describe("parseConfig", () => {
     expect(dev).toMatchObject({ kind: "terminal", cmd: "npm run dev", watch: ["src/**"], restart: "on-crash" });
     expect(dev?.attention.enabled).toBe(false); // terminals default attention off
     expect(config?.agents.shell.kind).toBe("terminal");
+  });
+
+  it("exposes typed agent and terminal views without changing the compatibility record", () => {
+    const { config } = parseConfig(`agents:\n  claude:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n`);
+
+    expect(Object.keys(agentsOf(config))).toEqual(["claude"]);
+    expect(Object.keys(terminalsOf(config))).toEqual(["dev"]);
+    expect(Object.keys(config!.agents)).toEqual(["claude", "dev"]);
   });
 
   it("a terminals-only config is valid (agents: optional when terminals: has entries)", () => {
