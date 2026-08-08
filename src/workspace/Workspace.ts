@@ -6787,7 +6787,7 @@ export class Workspace {
    * they declare — `verified-since` instead of `beyond-base`, because a persistent agent's worktree
    * sits past its spawn base permanently and `beyond-base` there would fire on ordinary idle.
    */
-  private listAssignedCompletionFacts(entries: readonly ManagedEntryInfo[]): GatedCompletionFacts[] {
+  private listAssignedCompletionFacts(agents: readonly ManagedEntryInfo[]): GatedCompletionFacts[] {
     let tasks: ReturnType<TaskStore["listRaw"]>;
     try {
       tasks = this.taskStore.listRaw();
@@ -6795,7 +6795,7 @@ export class Workspace {
       return []; // no board readable → no facts, never a guess
     }
     return assignedCompletionFacts({
-      entries,
+      agents,
       declared: new Set(Object.keys(this.config?.agents ?? {})),
       tasks,
       locate: (agent, taskId) => {

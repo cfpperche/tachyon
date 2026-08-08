@@ -316,7 +316,7 @@ describe("assignedCompletionFacts selection (t-5e9bf8)", () => {
     id: "t-abc123", status: "active", assignee: "worker", updatedAt: "2026-07-01T00:00:00.000Z", ...over,
   });
   const select = (over: Record<string, unknown> = {}) => assignedCompletionFacts({
-    entries: [row()],
+    agents: [row()],
     declared: new Set(["worker"]),
     tasks: [task()],
     locate: () => ({ worktreePath: "/wt/worker", baseSha: "base" }),
@@ -336,21 +336,20 @@ describe("assignedCompletionFacts selection (t-5e9bf8)", () => {
   });
 
   it("falls back to the spawn parent when no owner is declared in config", () => {
-    const facts = select({ entries: [row({ declaredOwner: undefined, parent: "boss" })] });
+    const facts = select({ agents: [row({ declaredOwner: undefined, parent: "boss" })] });
     expect(facts).toHaveLength(1);
     expect(facts[0]!.delegator).toBe("boss");
   });
 
   it("does not emit without an owner, and never names the agent as its own coordinator", () => {
-    expect(select({ entries: [row({ declaredOwner: undefined, parent: undefined })] })).toEqual([]);
-    expect(select({ entries: [row({ declaredOwner: "worker" })] })).toEqual([]);
+    expect(select({ agents: [row({ declaredOwner: undefined, parent: undefined })] })).toEqual([]);
+    expect(select({ agents: [row({ declaredOwner: "worker" })] })).toEqual([]);
   });
 
-  it("does not emit for a Temporary agent, a terminal, or a gated row", () => {
+  it("does not emit for a Temporary agent or a gated row", () => {
     expect(select({ declared: new Set<string>() }), "ad-hoc").toEqual([]);
-    expect(select({ entries: [row({ kind: "terminal" })] }), "terminal").toEqual([]);
     // The delegation arm already owns gated rows; both sources emitting would double-notify.
-    expect(select({ entries: [row({ delegator: "boss" })] }), "gated").toEqual([]);
+    expect(select({ agents: [row({ delegator: "boss" })] }), "gated").toEqual([]);
   });
 
   it("does not emit without an ACTIVE task assigned to that agent", () => {

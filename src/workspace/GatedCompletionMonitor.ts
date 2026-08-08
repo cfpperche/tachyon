@@ -137,7 +137,7 @@ export interface AssignedTaskFact {
 }
 
 export interface AssignedCompletionInput {
-  entries: readonly Pick<ManagedEntryInfo, "name" | "kind" | "delegator" | "declaredOwner" | "parent">[];
+  agents: readonly Pick<ManagedEntryInfo, "name" | "delegator" | "declaredOwner" | "parent">[];
   /** names present in `agents:` — declared only, so a Temporary sibling can never arm. */
   declared: ReadonlySet<string>;
   tasks: readonly AssignedTaskFact[];
@@ -195,7 +195,7 @@ export function resolveAssignedCompletionWorktree(
  */
 export function assignedCompletionFacts(input: AssignedCompletionInput): GatedCompletionFacts[] {
   const out: GatedCompletionFacts[] = [];
-  for (const entry of input.entries) {
+  for (const entry of input.agents) {
     if (entry.delegator) continue;
     if (!input.declared.has(entry.name)) continue;
     const owner = entry.declaredOwner ?? entry.parent;
