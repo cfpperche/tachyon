@@ -23,7 +23,7 @@ import {
   type CanonicalAgentProfileSource,
 } from "./agentProfileReader.js";
 import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
-import { isAttestedRuntime, type AttestedRuntime } from "../runtime/attestedRuntimes.js";
+import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "../runtime/attestedRuntimes.js";
 import { inspectRuntimeWorkspaceInput, readRuntimeProjectionClaims } from "../plugins/projectedInputs.js";
 import {
   projectAgentNativeConfig,
@@ -442,7 +442,11 @@ function parseAgentProfile(workspaceRoot: string, agentName: string): { profile?
 
 function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: AgentProfileV1): NativeRuntimeAttestation | string[] {
   if (!isAttestedRuntime(profile.runtime.adapter) || profile.runtime.executable !== profile.runtime.adapter) {
-    return ["profile/native-attestation: measured profile projection supports only literal 'codex', 'pi', 'grok' and 'claude' executables"];
+    // t-defcd9 — the list is READ, never restated. The test for admission is `isAttestedRuntime`, so
+    // a runtime added to `ATTESTED_RUNTIMES` starts passing here the moment it is attested; a refusal
+    // that named the four runtimes in prose would keep naming them and start lying that same day.
+    const attested = ATTESTED_RUNTIMES.map((runtime) => `'${runtime}'`).join(", ");
+    return [`profile/native-attestation: measured profile projection supports only literal ${attested} executables`];
   }
   const hasRuntimeSelectors = Boolean(
     profile.runtime.model || profile.runtime.provider || profile.runtime.reasoningEffort || profile.runtime.serviceTier,
