@@ -115,7 +115,14 @@ export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
 //
 // Bumped in the same change as the rename, for the reason the 4 → 5 note gives: a peer has no way to
 // discover that a field moved, and a silent wire-shape change is the 0.56.110 failure with new bytes.
-export const ENGINE_SHELL_PROTOCOL = 6 as const;
+//
+// `t-aa06a8` — 6 → 7 for a payload-shape break: `WorkspaceStudioFormV1` drops the seven `harness*`
+// fields with the Agent Studio authoring door that was their only writer. Same reason as 5 → 6:
+// `isWorkspaceStudioSubmitInputV1` is a `hasOnlyKeys` validator, so a protocol-7 engine REFUSES a
+// `studio.submit` still carrying them, and a protocol-6 engine refuses one without them. The break
+// is real even though the fields were only ever meaningful for `kind: agent`, whose submit arm is
+// already retired — a protocol-6 CLIENT canonicalizes them onto every terminal/command submit too.
+export const ENGINE_SHELL_PROTOCOL = 7 as const;
 export type EngineReleaseChannel = "stable" | "dev";
 
 export interface EngineProtocolRangeV1 {
@@ -281,13 +288,6 @@ export interface WorkspaceStudioFormV1 {
   branch: string;
   worktreeSetup: string;
   verify: string;
-  harness: boolean;
-  harnessInherit: string;
-  harnessMcp: string;
-  harnessRules: string;
-  harnessInstructions: string;
-  harnessSkills: string;
-  harnessHooks: string;
   isolate: boolean;
   schedTiming: "every" | "at";
   schedEvery: string;
@@ -1291,11 +1291,10 @@ export function workspacePinStudioApplySuccessV1(
 
 const STUDIO_FORM_STRING_KEYS = [
   "name", "cmd", "instructions", "role", "watch", "steps", "cwd", "branch", "worktreeSetup",
-  "verify", "harnessInherit", "harnessMcp", "harnessRules", "harnessInstructions", "harnessSkills",
-  "harnessHooks", "schedEvery", "schedAt", "schedTarget",
+  "verify", "schedEvery", "schedAt", "schedTarget",
 ] as const;
 const STUDIO_FORM_BOOLEAN_KEYS = [
-  "autostart", "restartOnCrash", "attention", "soul", "selfEvolution", "worktree", "harness", "isolate", "catchUp",
+  "autostart", "restartOnCrash", "attention", "soul", "selfEvolution", "worktree", "isolate", "catchUp",
 ] as const;
 const STUDIO_FORM_KEYS = [
   ...STUDIO_FORM_STRING_KEYS,

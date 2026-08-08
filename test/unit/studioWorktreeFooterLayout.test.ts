@@ -15,22 +15,39 @@ function readSrc(rel: string): string {
 }
 
 describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions footer)", () => {
-  it("agent-studio-shell places worktree + harness in fields and omits sideActions", () => {
+  it("agent-studio-shell places the worktree section in fields and omits sideActions", () => {
     const src = readSrc("src/webview/agent-studio-shell/App.tsx");
     expect(src).toContain("Git worktree isolation");
-    expect(src).toContain("Isolated harness");
-    // harness form is not claude/codex-only — grok/hermes/opencode chips must surface the section
-    expect(src).toMatch(/HARNESS_STUDIO_BINS|grok.*hermes|\"grok\".*\"hermes\"/);
     expect(src).toContain("ash-cwd");
     // worktree markup is inside the fields region tree, not a sideActions prop
     expect(src).not.toMatch(/sideActions\s*:/);
     // ordering: Working directory input appears before the worktree summary in source
     const cwdAt = src.indexOf('for="ash-cwd"');
     const worktreeAt = src.indexOf("Git worktree isolation");
-    const harnessAt = src.indexOf("Isolated harness");
     expect(cwdAt).toBeGreaterThan(-1);
     expect(worktreeAt).toBeGreaterThan(cwdAt);
-    expect(harnessAt).toBeGreaterThan(worktreeAt);
+  });
+
+  /**
+   * t-aa06a8 — the "Isolated harness" section this case used to assert the POSITION of is gone: it
+   * rendered under `showHarness && !canonical`, `canonical` is true for every agent Agent Studio can
+   * load, and the canonical profile schema has no `harness` key to save into. The layout claim has no
+   * subject left, so what survives is the tripwire that it does not come back.
+   *
+   * Comments are stripped first, for the reason `terminalStudioAgentOnlyKeys.test.ts` gives about its
+   * own tripwire: App.tsx's header NAMES the removed section to explain why it went, and a check that
+   * trips on its own explanation teaches the next person to delete the explanation.
+   */
+  it("agent-studio-shell binds no isolated-harness control (t-aa06a8)", () => {
+    const src = readSrc("src/webview/agent-studio-shell/App.tsx")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(src).not.toContain("Isolated harness");
+    expect(src).not.toContain("ash-harness-title");
+    for (const field of ["harness", "harnessInherit", "harnessMcp", "harnessRules", "harnessInstructions", "harnessSkills", "harnessHooks"]) {
+      expect(src, `App.tsx writes '${field}', which no longer exists on the form state`).not.toContain(`set("${field}"`);
+      expect(src, `App.tsx reads fields.${field}, which no longer exists on the form state`).not.toContain(`fields.${field}`);
+    }
   });
 
   it("renders agent configuration blocks as always-expanded static sections", () => {
@@ -40,8 +57,6 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
     expect(src).not.toContain("<summary");
     expect(src).toContain('class="ash-static-section" aria-labelledby="ash-persistent-instructions-title"');
     expect(src).toContain('class="ash-static-section" aria-labelledby="ash-worktree-title"');
-    expect(src).toContain('class="ash-static-section" aria-labelledby="ash-harness-title"');
-    expect(src).toContain("{showHarness && !canonical && (");
     expect(css).toContain(".ash-static-section");
     expect(css).not.toContain(".ash-fields details");
   });

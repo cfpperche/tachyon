@@ -84,15 +84,21 @@ import { ATTESTED_RUNTIMES } from "../../runtime/attestedRuntimes";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
- * command + flag chips, role template, instructions, autostart/restart/attention,
- * worktree section, isolated-harness section) rendered inside StudioFrame's fields region (contiguous
- * document flow under Working directory — t-a1ba6c) instead of the old hand-rolled chrome. Faithful port
- * of the fields — same field names, same show/hide rules (harness for claude/codex/opencode/grok/hermes) —
- * just no kind tabs (this studio only ever creates/edits `kind: "agent"`).
+ * command + flag chips, role template, instructions, autostart/restart/attention and the
+ * worktree section, rendered inside StudioFrame's fields region (contiguous document flow under
+ * Working directory — t-a1ba6c) instead of the old hand-rolled chrome. Faithful port of the fields
+ * — same field names — just no kind tabs (this studio only ever creates/edits `kind: "agent"`).
  *
- * `firstToken`/`harnessRuntimeOfCmd` are deliberately reimplemented here (not imported from formLogic.ts) —
- * formLogic.ts's runtime exports transitively pull in `node:fs` (via config/loadConfig.ts), which this
- * browser bundle can't resolve (see agent-studio-shell/domain.ts's header for the empirical confirmation).
+ * t-aa06a8 — the "Isolated harness" section is GONE, and with it `harnessRuntimeOfCmd`. It rendered
+ * under `showHarness && !canonical`, and `canonical` is true for every agent this studio can load
+ * (`AgentStudioAdapter.load` only reaches its `storage: "legacy"` arm for an agent-kind entry with
+ * neither `profileLifecycle` nor `profilePointer`, and since t-ae221c no such entry exists). The
+ * canonical profile schema has no `harness` key either, so the section had no destination even if
+ * it had rendered. The harness MECHANISM is untouched — see src/harness/HarnessManager.ts.
+ *
+ * `firstToken` is deliberately reimplemented here (not imported from formLogic.ts) — formLogic.ts's
+ * runtime exports transitively pull in `node:fs` (via config/loadConfig.ts), which this browser
+ * bundle can't resolve (see agent-studio-shell/domain.ts's header for the empirical confirmation).
  *
  * t-610705 (Phase D, D1b) — Control-hosted now: props-driven, same split as every other migrated studio
  * (command-studio-shell/App.tsx's doc comment has the full rationale for routeKey/mountNonce/useStudioFreeze/
@@ -113,12 +119,6 @@ export interface AgentStudioAppProps {
 }
 
 const firstToken = (cmd: string): string => (cmd.trim().split(/\s+/)[0] || "").split("/").pop() || "";
-/** Keep in sync with formLogic.harnessRuntimeOf / loadConfig HARNESS_BINS. */
-const HARNESS_STUDIO_BINS = new Set(["claude", "codex", "opencode", "grok", "hermes"]);
-const harnessRuntimeOfCmd = (cmd: string): string | undefined => {
-  const bin = firstToken(cmd);
-  return HARNESS_STUDIO_BINS.has(bin) ? bin : undefined;
-};
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -679,21 +679,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   // Agent Studio. A NEW agent has no profile and therefore no foreign reference, so the fields are
   // editable from the first keystroke.
   const foreignWorkspaceCommands = canonicalSnapshot?.bindings.foreignWorkspaceCommands === true;
-  const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);
-  const showHarness = !!harnessRuntime;
-  const showHarnessRules = harnessRuntime === "claude";
-  const showHarnessInstructions = harnessRuntime === "codex";
-  const harnessCheckboxLabel =
-    harnessRuntime === "codex"
-      ? "Give this Codex agent its own config, skills, hooks, and MCP"
-      : harnessRuntime === "grok"
-        ? "Give this Grok agent its own GROK_HOME (config, skills, hooks, MCP)"
-        : harnessRuntime === "hermes"
-          ? "Give this Hermes agent its own HERMES_HOME (config, skills, hooks, MCP)"
-          : harnessRuntime === "opencode"
-            ? "Give this OpenCode agent its own XDG home (config, skills, hooks, MCP)"
-            : "Give this agent its own MCP / skills / rules / hooks";
-
   const savedAgent = entity.name;
   const profilePresent = !!soulStatus && soulStatus.lifecycle !== "missing";
   const readActionDisabled = !savedAgent || !!soulBusy;
@@ -1603,36 +1588,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </div>}
             </section>
 
-            {showHarness && !canonical && (
-              <section class="ash-static-section" aria-labelledby="ash-harness-title">
-                <div class="ash-label" id="ash-harness-title">Isolated harness</div>
-                <div class="hint">Project runtime resources are copied into a private harness for this agent.</div>
-                <label class="check"><input type="checkbox" checked={fields.harness} onChange={(e) => set("harness", (e.currentTarget as HTMLInputElement).checked)} /> {harnessCheckboxLabel}</label>
-                <label class="ash-label" for="ash-inherit">Inherit</label>
-                <Select id="ash-inherit" value={fields.harnessInherit} onChange={(e) => set("harnessInherit", (e.currentTarget as HTMLSelectElement).value)}>
-                  <option value="workspace">workspace</option>
-                  <option value="none">none</option>
-                </Select>
-                <label class="ash-label" for="ash-mcp">MCP servers (YAML)</label>
-                <Textarea id="ash-mcp" rows={6} value={fields.harnessMcp} onInput={(e) => set("harnessMcp", (e.currentTarget as HTMLTextAreaElement).value)} />
-                {showHarnessInstructions && (
-                  <>
-                    <label class="ash-label" for="ash-instructions">Instruction files — one path per line</label>
-                    <Textarea id="ash-instructions" rows={2} value={fields.harnessInstructions} onInput={(e) => set("harnessInstructions", (e.currentTarget as HTMLTextAreaElement).value)} />
-                  </>
-                )}
-                {showHarnessRules && (
-                  <>
-                    <label class="ash-label" for="ash-rules">Rule files — one path per line</label>
-                    <Textarea id="ash-rules" rows={2} value={fields.harnessRules} onInput={(e) => set("harnessRules", (e.currentTarget as HTMLTextAreaElement).value)} />
-                  </>
-                )}
-                <label class="ash-label" for="ash-skills">Skill dirs — one path per line</label>
-                <Textarea id="ash-skills" rows={2} value={fields.harnessSkills} onInput={(e) => set("harnessSkills", (e.currentTarget as HTMLTextAreaElement).value)} />
-                <label class="ash-label" for="ash-hooks">Hooks (YAML)</label>
-                <Textarea id="ash-hooks" rows={4} value={fields.harnessHooks} onInput={(e) => set("harnessHooks", (e.currentTarget as HTMLTextAreaElement).value)} />
-              </section>
-            )}</>
+            </>
           </div>
         ),
       }}

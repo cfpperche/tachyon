@@ -42,11 +42,17 @@ describe("task.board input across the 5 -> 6 rename", () => {
 });
 
 describe("the handshake is what should refuse first", () => {
-  it("declares protocol 6, so a protocol-5 peer cannot pair and never reaches the validator", () => {
+  it("declares at least protocol 6, so a protocol-5 peer cannot pair and never reaches the validator", () => {
     // Exact min === max negotiation: the engine advertises { min: N, max: N } (engineService.ts) and
     // the shell demands the same N (WorkspaceClient.ts). A peer one version out is refused at the
     // handshake, which is the only place a field rename can be caught BEFORE a query is attempted.
-    expect(ENGINE_SHELL_PROTOCOL).toBe(6);
+    //
+    // t-aa06a8 relaxed `toBe(6)` to this bound when the constant moved to 7 for a different payload
+    // break. What this file is about is the 5 -> 6 rename: the property that keeps it safe is that a
+    // protocol-5 peer cannot pair, and that holds for every N >= 6. Re-pinning the exact number here
+    // would make this case fail on a bump it says nothing about, which teaches the next person to
+    // edit the assertion rather than read it.
+    expect(ENGINE_SHELL_PROTOCOL).toBeGreaterThanOrEqual(6);
   });
 
   it("the bump is recorded beside the break it describes", () => {
