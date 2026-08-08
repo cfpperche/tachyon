@@ -60,7 +60,7 @@ describe("ClientWorkspaceStudioTarget", () => {
       readiness: { state: "limited", limitations: ["fork-unavailable"] },
       editable: {
         displayName: "Ada", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
-        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+        cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "" }, isolation: "",
       },
       bindings: { grants: { proposeSavedAgent: false }, environmentValueNames: [], secretNames: ["TOKEN"], prompt: { soul: false, instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, tooling: { skills: [], mcp: [], hooks: [] }, externalReferences: 0 },

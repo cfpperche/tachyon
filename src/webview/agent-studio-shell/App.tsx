@@ -1532,10 +1532,13 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               <label><input type="checkbox" checked={fields.attention} onChange={(e) => set("attention", (e.currentTarget as HTMLInputElement).checked)} /> Attention detection</label>
             </div>
 
-            <div class="ash-group">
-              <label class="ash-label" for="ash-watch">Watch patterns</label>
-              <Textarea id="ash-watch" rows={2} value={fields.watch} placeholder="src/** · package.json (one per line)" onInput={(e) => set("watch", (e.currentTarget as HTMLTextAreaElement).value)} />
-            </div>
+            {/* t-bd14d8 — there is deliberately NO "Watch patterns" field here, and re-adding one is a
+              * regression rather than a feature. A watch restarts the PROCESS when files change, and
+              * `Workspace.rebuildWatches` runs that restart as `{ stop: "force", session: "new" }` —
+              * "not resume", in the comment's own words. For `bun run dev` that is the feature; for an
+              * LLM agent it force-kills the session and opens a fresh one because somebody saved a file,
+              * discarding transcript and work in progress with no human gesture. Terminal Studio keeps
+              * its `Watch files` field, and that is where the capability lives. */}
 
             {/* t-da80ed — an isolated agent's working directory IS its worktree, and the runtime
              * already overwrites this field's value with the worktree path. Leaving it editable let a

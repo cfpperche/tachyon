@@ -858,7 +858,7 @@ function canonicalAgentCreate(agentName: string) {
           runtime: { adapter: "codex", executable: "codex" },
           role: "" as const,
           cwd: "",
-          lifecycle: { autostart: false, restart: "never" as const, attention: true, watch: [] },
+          lifecycle: { autostart: false, restart: "never" as const, attention: true },
           worktree: { enabled: false, branch: "" },
           isolation: "" as const,
         },

@@ -39,7 +39,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     readiness: { state: "limited", limitations: ["fork-unavailable"] },
     editable: {
       displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" }, role: "reviewer",
-      cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+      cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false },
       worktree: { enabled: true, branch: "feature/web" }, isolation: "transcript",
     },
     bindings: {
@@ -199,7 +199,9 @@ describe("AgentStudioAdapter — load", () => {
       autostart: true,
       restartOnCrash: true,
       attention: false,
-      watch: "src/**",
+      // t-bd14d8 — blank, never read back from the snapshot: the Agent form has no watch field, so a
+      // populated value here would be one the human can neither see nor clear.
+      watch: "",
       worktree: true,
       branch: "feature/web",
       isolate: true,
@@ -274,7 +276,7 @@ describe("AgentStudioAdapter — save", () => {
       role: "tester",
       runtime: expect.objectContaining({ executable: "codex" }),
       cwd: "apps/web",
-      lifecycle: { autostart: true, restart: "on-crash", attention: false, watch: ["src/**"] },
+      lifecycle: { autostart: true, restart: "on-crash", attention: false },
       worktree: { enabled: true, branch: "feature/web" },
       isolation: "transcript",
     }));

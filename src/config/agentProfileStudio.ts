@@ -63,11 +63,21 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
   }).strict(),
   role: z.enum(["", "coder", "reviewer", "tester", "orchestrator", "custom"]),
   cwd: text(4096),
+  /**
+   * t-bd14d8 — no `watch` here, and the object is `.strict()`, so a mutation that carries one is
+   * REFUSED rather than ignored. A watch restarts the process on a file change, and
+   * `Workspace.rebuildWatches` runs that as `{ stop: "force", session: "new" }` — force-kill plus a
+   * fresh session. That is what a dev server wants and the opposite of what an Agent can survive.
+   *
+   * `agentProfileSchemaV1.lifecycle` still ACCEPTS `watch` on read, deliberately: a profile already
+   * on disk with one must keep loading. It is stripped with a warning at projection instead
+   * (`projectCanonicalAgentProfile`), and the first edit-and-save through this door drops it from the
+   * file — the same shape t-b54ead used for the terminal form's agent-only keys, in reverse.
+   */
   lifecycle: z.object({
     autostart: z.boolean(),
     restart: z.enum(["never", "on-crash"]),
     attention: z.boolean(),
-    watch: z.array(text(1024).min(1)).max(128),
   }).strict(),
   worktree: z.object({
     enabled: z.boolean(),
@@ -342,11 +352,14 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       runtime: { ...profile.runtime },
       role: profile.prompt?.role ?? "",
       cwd: profile.workspace?.cwd ?? "",
+      // t-bd14d8 — a stored `lifecycle.watch` is NOT projected into the editable view. The form has
+      // no control for it, so surfacing it would offer a value with nowhere to render and no way to
+      // clear. The human is told about it once per load by the projection warning, and the first save
+      // through this door removes it from the file.
       lifecycle: {
         autostart: profile.lifecycle?.autostart ?? false,
         restart: profile.lifecycle?.restart ?? "never",
         attention: profile.lifecycle?.attention?.enabled ?? true,
-        watch: [...(profile.lifecycle?.watch ?? [])],
       },
       worktree: {
         enabled: profile.workspace?.worktree?.enabled ?? false,
@@ -463,7 +476,7 @@ export function createProfileFromStudioMutation(
       ...(parsed.editable.lifecycle.autostart ? { autostart: true } : {}),
       ...(parsed.editable.lifecycle.restart !== "never" ? { restart: parsed.editable.lifecycle.restart } : {}),
       ...(!parsed.editable.lifecycle.attention ? { attention: { enabled: false } } : {}),
-      ...(parsed.editable.lifecycle.watch.length > 0 ? { watch: [...parsed.editable.lifecycle.watch] } : {}),
+      // t-bd14d8 — a newly created Agent never gets a `watch`; there is no editable field to read.
     },
     ...((parsed.editable.cwd || parsed.editable.worktree.enabled || parsed.editable.worktree.branch) ? {
       workspace: {
@@ -502,8 +515,12 @@ export function patchProfileFromStudioMutation(
       ...(current.profile.lifecycle?.attention ?? {}),
       enabled: parsed.editable.lifecycle.attention,
     },
-    watch: [...parsed.editable.lifecycle.watch],
   };
+  // t-bd14d8 — the spread above carries the STORED lifecycle forward, so a legacy `watch` would
+  // survive every edit untouched and keep force-restarting the agent. Deleting it here is what makes
+  // the strip land on disk: the first save through Agent Studio is the repair, exactly as the first
+  // Terminal Studio save cleaned the four agent-only keys in t-b54ead.
+  delete (lifecycle as { watch?: unknown }).watch;
   const worktree = {
     ...(current.profile.workspace?.worktree ?? {}),
     enabled: parsed.editable.worktree.enabled,

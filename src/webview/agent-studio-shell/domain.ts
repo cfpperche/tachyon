@@ -929,7 +929,9 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   fields.autostart = snapshot?.editable.lifecycle.autostart ?? false;
   fields.restartOnCrash = snapshot?.editable.lifecycle.restart === "on-crash";
   fields.attention = snapshot?.editable.lifecycle.attention ?? true;
-  fields.watch = snapshot?.editable.lifecycle.watch.join("\n") ?? "";
+  // t-bd14d8 — `fields.watch` stays at its blank default and is never read back from a snapshot: an
+  // Agent has no watch. The field survives on `FormState` because that type is shared with the
+  // Terminal form, where a watch is the whole point.
   // t-4071e4 — `enabled` is a required boolean on a snapshot, so the fallback fires only for a NEW
   // agent, where it must match every other creation door. Editing an existing agent still shows that
   // agent's real posture.
@@ -1194,11 +1196,13 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       runtime,
       role: fields.role as AgentProfileStudioMutationV1["editable"]["role"],
       cwd: fields.cwd.trim(),
+      // t-bd14d8 — no `watch`: the editable schema no longer carries one for an Agent, so sending it
+      // would be rejected outright rather than ignored. That is the intended shape — a key the
+      // product refuses to author should fail loudly at the door, not be dropped in silence.
       lifecycle: {
         autostart: fields.autostart,
         restart: fields.restartOnCrash ? "on-crash" : "never",
         attention: fields.attention,
-        watch: fields.watch.split(/[\n,]/).map((value) => value.trim()).filter(Boolean),
       },
       worktree: {
         enabled: fields.worktree,

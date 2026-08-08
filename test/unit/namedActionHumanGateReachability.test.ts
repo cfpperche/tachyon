@@ -255,7 +255,7 @@ function agentInstanceMutation(agentName: string) {
       runtime: { adapter: "codex", executable: "codex" },
       role: "",
       cwd: "",
-      lifecycle: { autostart: false, restart: "never", attention: true, watch: [] },
+      lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "" },
       isolation: "",
     },

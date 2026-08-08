@@ -196,7 +196,7 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
   readiness: { state: "limited", limitations: ["fork-unavailable"] },
   editable: {
     displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer",
-    cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true, watch: ["src/**"] },
+    cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true },
     worktree: { enabled: true, branch: "feature/reviewer" }, isolation: "transcript",
     capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },

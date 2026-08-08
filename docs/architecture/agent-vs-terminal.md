@@ -32,7 +32,7 @@ inference; only a hand-written `kind: agent` had forced the third.
 | Agent only | Shared | Terminal only |
 |---|---|---|
 | runtime adapter, resume, fork | spawn / kill / restart policy | editor-terminal restore state |
-| canonical profile + host authority | `autostart`, `watch` | |
+| canonical profile + host authority | `autostart` | `watch` (file-watch restart) |
 | model identity, observed model | attention (terminals default off, may opt in) | |
 | provider authentication (SDD 477) | pane presentation | |
 | soul, self-evolution | crash exit code, postmortem pane | |
@@ -45,9 +45,17 @@ inference; only a hand-written `kind: agent` had forced the third.
 | continuity, memory, handoff, re-anchor | | |
 
 The shared column is small and deliberately so: it is the process facts, not the agent facts. A
-terminal restarts and can be watched because those are properties of *a process*, and a terminal can
-opt into attention because pane-watching is runtime-agnostic. Nothing in the shared column implies an
-identity.
+terminal restarts because that is a property of *a process*, and a terminal can opt into attention
+because pane-watching is runtime-agnostic. Nothing in the shared column implies an identity.
+
+**`watch` moved from Shared to Terminal only on 2026-08-07 (`t-bd14d8`), reversing SDD 478's original
+reading.** The measurement that moved it: `Workspace.rebuildWatches` runs a watch hit as
+`restart(agent, { stop: "force", session: "new" })` — the code comment says "not resume" in as many
+words. For `bun run dev` that IS the feature. For an Agent it force-kills the session and opens a
+blank one because somebody saved a file, discarding transcript and work in progress with no human
+gesture — so the two kinds were never sharing one behaviour, only one key. An Agent authors no
+`watch`, the Studio has no field for it, and a `lifecycle.watch` left in an older profile is stripped
+at projection with a warning (never a refusal — a stale key must not cost a workspace its roster).
 
 ## The three rules that keep it true
 
