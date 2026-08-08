@@ -29,6 +29,22 @@ function methodBody(signature: string): string {
   return rest.slice(0, next < 0 ? undefined : next);
 }
 
+/** Which methods contain a line matching `pattern` — the nearest signature at member indentation. */
+function methodsContaining(pattern: RegExp): string[] {
+  const lines = SOURCE.split("\n");
+  const found = new Set<string>();
+  for (const [index, line] of lines.entries()) {
+    if (!pattern.test(line)) continue;
+    let owner = "<top level>";
+    for (let above = index; above >= 0; above--) {
+      const signature = /^ {2}(?:private |public |protected )?(?:async )?([a-zA-Z_][\w]*)\(/.exec(lines[above]!);
+      if (signature) { owner = signature[1]!; break; }
+    }
+    found.add(owner);
+  }
+  return [...found].sort();
+}
+
 describe("owned session creation is shared (SDD 482 phase 1)", () => {
   it("only createOwnedSession calls tmux.newSession for an agent pane", () => {
     const callers = SOURCE.split("\n")
@@ -76,11 +92,18 @@ describe("owned session creation is shared (SDD 482 phase 1)", () => {
    * either calls it or is visibly missing it. Behavioural coverage per path — spawn, respawn and the
    * kill+new replacement — lives in agentManager.test.ts, asserted on observed tmux arguments.
    */
-  it("the attestation is applied only through the shared helper", () => {
+  it("the attestation is applied only through the shared helper, by the two doors that exist", () => {
     const inlineSpreads = SOURCE.match(/\[POST_CUT_SESSION_ATTESTATION_ENV\]\s*:/g) ?? [];
     expect(inlineSpreads).toHaveLength(0);
-    // Both doors: the owned-session door and the create/replace helper restart reaches.
-    expect(SOURCE.match(/withPostCutAttestation\(/g) ?? []).toHaveLength(2);
+    // t-374df3 — this asserted `=== 2` and stopped a third creation door WITHOUT naming it: "3 !== 2"
+    // leaves whoever collects the failure unable to tell a new hole from a correct new caller. Stopping
+    // is right (a new creation path is new behaviour, not a refactor, and t-e73e54 is why a human must
+    // look), so the doors are named instead of counted. A new door still fails here — and says which.
+    expect(methodsContaining(/withPostCutAttestation\(/)).toEqual([
+      // the owned-session door, and the create/replace helper restart/resume reaches.
+      "createOwnedSession",
+      "startSessionCommandUnlocked",
+    ]);
   });
 
   it("Pi admission is applied by the shared door, not per caller", () => {
