@@ -11,6 +11,7 @@ import {
 import { adapterForRuntime, forkable, runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile, type CanonicalRuntimeLimitation } from "../runtime/runtimeProfile.js";
 import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../runtime/attestedRuntimes.js";
+import { studioOwnsWorkspaceCommands, studioWorkspaceCommandIds } from "./agentWorkspaceCommands.js";
 
 const ID = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const REVISION = /^[a-f0-9]{64}$/;
@@ -79,10 +80,23 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
     restart: z.enum(["never", "on-crash"]),
     attention: z.boolean(),
   }).strict(),
+  /**
+   * t-afc86e — `setup` and `verify` are authored as COMMAND TEXT here, never as reference ids.
+   *
+   * The profile stores them as pinned profile-local references, and that indirection stops at this
+   * boundary on purpose: the form authors what a human types, and the writer below turns it into
+   * bytes, a digest and a reference. A webview that had to know about reference ids would be a
+   * webview that could author a dangling one.
+   *
+   * Blank means "no gate" and an empty list means "no setup" — both are how the fields are CLEARED,
+   * which is why they are plain values and not optionals.
+   */
   worktree: z.object({
     enabled: z.boolean(),
     branch: text(1024),
+    setup: z.array(text(4096).min(1)).max(64),
   }).strict(),
+  verify: text(4096),
   isolation: z.enum(["", "transcript"]),
   nativeConfig: agentNativeConfigSchemaV1.optional(),
   /** Existing, authority-bound capability references only; Studio cannot author a new reference. */
@@ -307,6 +321,15 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
     }).strict(),
     externalReferences: z.number().int().nonnegative().max(128),
     /**
+     * t-afc86e — true when `workspace.verify` or `worktree.setup` names a reference this Studio does
+     * not own (a project-scoped verifier a workspace publishes, for instance).
+     *
+     * The form disables both fields and says who owns them instead of rendering blank. Rendering
+     * blank would be the dangerous shape: the value is real, the human cannot see it, and the next
+     * save writes the blank back over it.
+     */
+    foreignWorkspaceCommands: z.boolean(),
+    /**
      * t-3bde32 — the profile's own `grants`, surfaced so Studio can show and change them.
      *
      * NOT `provenance.authority.grants`, which is a COUNT of host-custodied capability grants for
@@ -361,10 +384,16 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
         restart: profile.lifecycle?.restart ?? "never",
         attention: profile.lifecycle?.attention?.enabled ?? true,
       },
+      // t-afc86e — the workspace commands come back as TEXT, read from the pinned artifacts by
+      // `inspectAgentProfileLifecycle`. `profile` alone holds only reference ids, so projecting from
+      // it would hand the form an empty box for an agent that has a gate — and the next save would
+      // write that emptiness back over the real one.
       worktree: {
         enabled: profile.workspace?.worktree?.enabled ?? false,
         branch: profile.workspace?.worktree?.branch ?? "",
+        setup: [...(snapshot.workspaceCommands?.setup ?? [])],
       },
+      verify: snapshot.workspaceCommands?.verify ?? "",
       isolation: profile.isolation ?? "",
       nativeConfig: structuredClone(profile.nativeConfig ?? {}),
       capabilities: {
@@ -401,6 +430,10 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
           .sort((left, right) => left.id.localeCompare(right.id))];
       })),
       externalReferences: (profile.references ?? []).filter((reference) => reference.scope !== "profile").length,
+      foreignWorkspaceCommands: Object.values(studioOwnsWorkspaceCommands({
+        verify: profile.workspace?.verify,
+        setup: profile.workspace?.worktree?.setup,
+      })).some((owned) => !owned),
     },
     provenance: {
       canonical: { ...snapshot.provenance.canonical },
@@ -463,6 +496,10 @@ export function createProfileFromStudioMutation(
   if (Object.values(parsed.editable.capabilities ?? {}).some((entries) => entries.length > 0)) {
     throw new Error("new canonical profile cannot select capability references before host authorization");
   }
+  const createIds = studioWorkspaceCommandIds({
+    verify: parsed.editable.verify,
+    setup: parsed.editable.worktree.setup,
+  });
   return {
     ...(parsed.editable.displayName ? { displayName: parsed.editable.displayName } : {}),
     runtime: { ...parsed.editable.runtime },
@@ -478,13 +515,21 @@ export function createProfileFromStudioMutation(
       ...(!parsed.editable.lifecycle.attention ? { attention: { enabled: false } } : {}),
       // t-bd14d8 — a newly created Agent never gets a `watch`; there is no editable field to read.
     },
-    ...((parsed.editable.cwd || parsed.editable.worktree.enabled || parsed.editable.worktree.branch) ? {
+    // t-afc86e — the workspace-command REFERENCE IDS. Their bytes, digests and `references[]` entries
+    // are the host's half (`workspaceCommandWriteFor` → `createProfileLocalReferences` + `artifacts`),
+    // because a new agent's id is minted inside the transaction and a reference is owned by it.
+    // Declaring an id here with no entry to match is caught by `agentProfileSchemaV1`'s own
+    // `requireKind` refinement, so the two halves cannot silently disagree.
+    ...((parsed.editable.cwd || parsed.editable.worktree.enabled || parsed.editable.worktree.branch
+      || createIds.verify || createIds.setup.length > 0) ? {
       workspace: {
         ...(parsed.editable.cwd ? { cwd: parsed.editable.cwd } : {}),
-        ...((parsed.editable.worktree.enabled || parsed.editable.worktree.branch) ? {
+        ...(createIds.verify ? { verify: createIds.verify } : {}),
+        ...((parsed.editable.worktree.enabled || parsed.editable.worktree.branch || createIds.setup.length > 0) ? {
           worktree: {
             ...(parsed.editable.worktree.enabled ? { enabled: true } : {}),
             ...(parsed.editable.worktree.branch ? { branch: parsed.editable.worktree.branch } : {}),
+            ...(createIds.setup.length > 0 ? { setup: createIds.setup } : {}),
           },
         } : {}),
       },
@@ -521,10 +566,19 @@ export function patchProfileFromStudioMutation(
   // the strip land on disk: the first save through Agent Studio is the repair, exactly as the first
   // Terminal Studio save cleaned the four agent-only keys in t-b54ead.
   delete (lifecycle as { watch?: unknown }).watch;
+  // t-afc86e — the workspace-command ids the saved profile should carry. A field whose current id is
+  // FOREIGN (published by someone other than this Studio) is preserved verbatim: the form does not
+  // display it, so it must not be able to clear it either.
+  const commandIds = studioWorkspaceCommandIds({
+    verify: parsed.editable.verify,
+    setup: parsed.editable.worktree.setup,
+    current: { verify: current.profile.workspace?.verify, setup: current.profile.workspace?.worktree?.setup },
+  });
   const worktree = {
     ...(current.profile.workspace?.worktree ?? {}),
     enabled: parsed.editable.worktree.enabled,
     branch: parsed.editable.worktree.branch || undefined,
+    setup: commandIds.setup.length > 0 ? commandIds.setup : undefined,
   };
   // t-da80ed — an isolated agent's working directory IS its worktree. `AgentManager` already
   // overwrites the resolved cwd with the worktree path unconditionally, so accepting both here would
@@ -540,6 +594,7 @@ export function patchProfileFromStudioMutation(
   const workspace = {
     ...(current.profile.workspace ?? {}),
     cwd: parsed.editable.cwd || undefined,
+    verify: commandIds.verify,
     worktree,
   };
   const selected = parsed.editable.capabilities;

@@ -256,7 +256,8 @@ function agentInstanceMutation(agentName: string) {
       role: "",
       cwd: "",
       lifecycle: { autostart: false, restart: "never", attention: true },
-      worktree: { enabled: false, branch: "" },
+      worktree: { enabled: false, branch: "", setup: [] },
+        verify: "",
       isolation: "",
     },
   };

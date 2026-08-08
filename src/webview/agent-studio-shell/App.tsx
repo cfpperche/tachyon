@@ -675,6 +675,10 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     "stop-active-turn-unverified": profileLabels.runtimeLimitationStopActiveTurnUnverified,
     "oauth-concurrency-single-live": profileLabels.runtimeLimitationOauthConcurrencySingleLive,
   })[limitation];
+  // t-afc86e — only true when the profile's verify/setup reference belongs to someone other than
+  // Agent Studio. A NEW agent has no profile and therefore no foreign reference, so the fields are
+  // editable from the first keystroke.
+  const foreignWorkspaceCommands = canonicalSnapshot?.bindings.foreignWorkspaceCommands === true;
   const harnessRuntime = harnessRuntimeOfCmd(fields.cmd);
   const showHarness = !!harnessRuntime;
   const showHarnessRules = harnessRuntime === "claude";
@@ -1576,12 +1580,17 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               }} /> Run in its own git worktree + branch</label>
               <label class="ash-label" for="ash-branch">Branch (blank = tachyon/&lt;name&gt;)</label>
               <Input id="ash-branch" value={fields.branch} placeholder="feature/auth-redesign" onInput={(e) => set("branch", (e.currentTarget as HTMLInputElement).value)} />
+              {/* t-afc86e — these two were `disabled={canonical}`, and `canonical` is always true, so
+                * they were permanently read-only under a hint promising a binding that no task
+                * carried. The binding exists now: the text is published as a pinned profile-local
+                * document in the same transaction as the save. They stay read-only for exactly one
+                * case — a profile whose verify/setup reference was published by someone else. */}
               <label class="ash-label" for="ash-setup">Setup commands (run once on create)</label>
-              <Textarea id="ash-setup" disabled={canonical} rows={3} value={fields.worktreeSetup} onInput={(e) => set("worktreeSetup", (e.currentTarget as HTMLTextAreaElement).value)} />
+              <Textarea id="ash-setup" disabled={foreignWorkspaceCommands} rows={3} value={fields.worktreeSetup} placeholder="python -m venv .venv&#10;pip install -e . (one per line)" onInput={(e) => set("worktreeSetup", (e.currentTarget as HTMLTextAreaElement).value)} />
               <label class="ash-label" for="ash-verify">Verify gate (proves the branch is shippable)</label>
-              <Input id="ash-verify" disabled={canonical} value={fields.verify} placeholder="npm test · cargo test · a command/runbook name" onInput={(e) => set("verify", (e.currentTarget as HTMLInputElement).value)} />
-              {canonical && <div class="hint">Setup and verification require pinned profile references; they remain read-only until that binding is available.</div>}
-              {!canonical && <div class="ash-chips">
+              <Input id="ash-verify" disabled={foreignWorkspaceCommands} value={fields.verify} placeholder="npm test · cargo test · a command/runbook name" onInput={(e) => set("verify", (e.currentTarget as HTMLInputElement).value)} />
+              {foreignWorkspaceCommands && <div class="hint">This agent's setup and verification are published by the workspace, not by this profile — they are shown here as read-only so a save cannot overwrite them.</div>}
+              {!foreignWorkspaceCommands && <div class="ash-chips">
                 {entity.verifyCandidates.map((c) => (
                   <Chip key={c} active={c === fields.verify.trim()} onClick={() => set("verify", c)}>{c}</Chip>
                 ))}

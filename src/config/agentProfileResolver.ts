@@ -25,6 +25,7 @@ import {
 import { parseCodexHooksBlock } from "../plugins/adapters/codex.js";
 import { parseClaudeHooksBlock } from "../plugins/adapters/claude.js";
 import type { WithheldCapability } from "./withheldCapability.js";
+import { MATERIALIZED_WORKSPACE_REFERENCE_KINDS } from "./agentWorkspaceCommands.js";
 
 export type AgentProfileDiagnosticCode =
   | "profile/missing"
@@ -74,6 +75,16 @@ export interface ExternalProfileReference {
 export interface ResolvedProfileReference extends AgentProfileReferenceV1 {
   resolvedSha256: string;
   capturedCapability?: CapturedCapabilitySource;
+  /**
+   * t-afc86e — the resolved BYTES, carried only for the kinds the projection materializes into the
+   * runtime entry (`MATERIALIZED_WORKSPACE_REFERENCE_KINDS`).
+   *
+   * The file was already opened and digest-checked here; before this the text was read, verified and
+   * dropped, which is why `workspace.verify` could resolve to an id and still have no content to
+   * project. Excluded from the effective digest in `finalize` — `resolvedSha256` already binds these
+   * bytes, so digesting them twice would only make the same content look like two facts.
+   */
+  resolvedText?: string;
 }
 
 export type AgentCapabilityHookClass = "capability" | "prompt-transform" | "observability" | "enforcement";
@@ -468,7 +479,11 @@ function resolveReferences(
           continue;
         }
         const file = readAgentProfileReference(source, reference.path, reference.sha256!);
-        references.push({ ...reference, resolvedSha256: file.sha256 });
+        references.push({
+          ...reference,
+          resolvedSha256: file.sha256,
+          ...(MATERIALIZED_WORKSPACE_REFERENCE_KINDS.has(reference.kind) ? { resolvedText: file.text } : {}),
+        });
         provenance.push({
           field: `references.${reference.id}`,
           sourceKind: "profile",
@@ -1453,7 +1468,9 @@ function finalize(
     ...(profile ? { agentId: profile.agentId } : {}),
     authorityRevision: input.authority.revision,
     definition,
-    references: references.map(({ capturedCapability: _capturedCapability, ...reference }) => reference),
+    // t-afc86e — `resolvedText` joins `capturedCapability` in being excluded: both are resolved
+    // CONTENT, and each reference's `resolvedSha256` is already in this digest and already binds it.
+    references: references.map(({ capturedCapability: _capturedCapability, resolvedText: _resolvedText, ...reference }) => reference),
     ...(capabilityProjection ? { capabilityProjectionSha256: capabilityProjection.sha256 } : {}),
     provenance: orderedProvenance,
     nativeRuntime,

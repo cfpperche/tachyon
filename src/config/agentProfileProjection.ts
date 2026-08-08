@@ -24,6 +24,7 @@ import {
 } from "./agentProfileReader.js";
 import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
 import { isAttestedRuntime, type AttestedRuntime } from "../runtime/attestedRuntimes.js";
+import { MATERIALIZED_WORKSPACE_REFERENCE_KINDS, parseWorkspaceCommandLines } from "./agentWorkspaceCommands.js";
 import { inspectRuntimeWorkspaceInput, readRuntimeProjectionClaims } from "../plugins/projectedInputs.js";
 import {
   projectAgentNativeConfig,
@@ -590,10 +591,73 @@ function inspectMeasuredNativeInputs(input: ProjectAgentProfileInput, profile: A
 const CAPABILITY_REFERENCE_KINDS = new Set(["skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package"]);
 
 /**
+ * t-afc86e — turn an agent's `workspace.verify` / `worktree.setup` reference IDS into the command
+ * strings the runtime entry carries, or return the reasons it cannot.
+ *
+ * This is the materialization the projection used to refuse outright. The bytes come from
+ * `resolvedText`, which the resolver captured while it had the file open and digest-checked — so
+ * nothing is re-read here and nothing can be swapped between the check and the use.
+ *
+ * Every failure is a REFUSAL rather than a silent omission. A declared verify gate that quietly
+ * projects to nothing is the worst outcome available: `wait_for_agent` reads "ready AND green", so a
+ * gate that vanished would report a child as finished without ever having proved anything.
+ */
+function materializeWorkspaceCommands(
+  resolved: ResolvedAgentProfile,
+): { verify?: string; setup: string[] } | string[] {
+  const definition = resolved.definition;
+  const errors: string[] = [];
+  const byId = new Map(resolved.references.map((reference) => [reference.id, reference]));
+  const textOf = (id: string, kind: "verification" | "worktree-setup", field: string): string | undefined => {
+    const reference = byId.get(id);
+    if (!reference || reference.kind !== kind) {
+      errors.push(`profile/projection: ${field} names no pinned '${kind}' reference`);
+      return undefined;
+    }
+    if (reference.resolvedText === undefined) {
+      // Reached by a reference the resolver could not read bytes for — today that means a
+      // project-scoped one supplied from outside the profile. It is a refusal, not a fallback: the
+      // agent declared a gate, and running it without one would be a different agent.
+      errors.push(`profile/projection: ${field} reference '${id}' resolved to no content`);
+      return undefined;
+    }
+    return reference.resolvedText;
+  };
+
+  let verify: string | undefined;
+  if (definition.workspace?.verify) {
+    const text = textOf(definition.workspace.verify, "verification", "workspace.verify");
+    if (text !== undefined) {
+      const commands = parseWorkspaceCommandLines(text);
+      // One gate, one command. A file with two lines would silently run only the first, and the
+      // human would read a green badge that measured half of what they wrote.
+      if (commands.length !== 1) {
+        errors.push("profile/projection: workspace.verify must resolve to exactly one command line");
+      } else verify = commands[0];
+    }
+  }
+
+  const setup: string[] = [];
+  for (const [index, id] of (definition.workspace?.worktree?.setup ?? []).entries()) {
+    const text = textOf(id, "worktree-setup", `workspace.worktree.setup[${index}]`);
+    if (text === undefined) continue;
+    const commands = parseWorkspaceCommandLines(text);
+    if (commands.length === 0) {
+      errors.push(`profile/projection: workspace.worktree.setup[${index}] resolved to no commands`);
+      continue;
+    }
+    setup.push(...commands);
+  }
+
+  return errors.length > 0 ? errors : { ...(verify !== undefined ? { verify } : {}), setup };
+}
+
+/**
  * `t-d185e1` — the selector's profile-local path, shared with the writer so the two cannot drift.
  * The reader below refuses any reference pointing anywhere else.
  */
 export const EVOLUTION_SELECTOR_PATH = "evolution-selector.json";
+
 
 function readEvolutionSelector(
   workspaceRoot: string,
@@ -719,13 +783,17 @@ function projectDefinition(
   if (definition.prompt?.evolution && !evolutionSelector) {
     errors.push("profile/projection: Evolution selector is unavailable");
   }
+  // t-afc86e — verification and worktree-setup references are now MATERIALIZED below rather than
+  // refused here. Everything else non-capability still is: this list stays a refusal because a
+  // reference the projection does not understand is a fact about the agent it would be dropping.
   const nonCapabilityReferences = resolved.references.filter((reference) =>
-    !CAPABILITY_REFERENCE_KINDS.has(reference.kind) && reference.id !== definition.prompt?.evolution
+    !CAPABILITY_REFERENCE_KINDS.has(reference.kind)
+    && !MATERIALIZED_WORKSPACE_REFERENCE_KINDS.has(reference.kind)
+    && reference.id !== definition.prompt?.evolution
   );
   if (nonCapabilityReferences.length > 0) errors.push("profile/projection: referenced setup/prompt materialization is not available yet");
-  if (definition.workspace?.verify || definition.workspace?.worktree?.setup?.length) {
-    errors.push("profile/projection: verification/setup references are not materialized yet");
-  }
+  const workspaceCommands = materializeWorkspaceCommands(resolved);
+  if (Array.isArray(workspaceCommands)) errors.push(...workspaceCommands);
   if (definition.workspace?.worktree?.base) {
     errors.push("profile/projection: per-agent worktree.base is not representable by the current runtime");
   }
@@ -759,6 +827,13 @@ function projectDefinition(
   }
   if (definition.workspace?.worktree?.enabled !== undefined) projected.worktree = definition.workspace.worktree.enabled;
   if (definition.workspace?.worktree?.branch) projected.branch = definition.workspace.worktree.branch;
+  // t-afc86e — the two fields this projection used to refuse. `errors.length > 0` returned above, so
+  // reaching here means `materializeWorkspaceCommands` succeeded; the non-array narrowing is what
+  // says so to the compiler.
+  if (!Array.isArray(workspaceCommands)) {
+    if (workspaceCommands.verify !== undefined) projected.verify = workspaceCommands.verify;
+    if (workspaceCommands.setup.length > 0) projected.worktreeSetup = [...workspaceCommands.setup];
+  }
   if (definition.isolation) projected.isolate = definition.isolation;
   if (definition.ownership?.subagents) projected.subagents = [...definition.ownership.subagents];
   if (resolved.capabilityProjection) {

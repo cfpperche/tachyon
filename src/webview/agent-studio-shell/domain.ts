@@ -937,6 +937,11 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   // agent's real posture.
   fields.worktree = snapshot?.editable.worktree.enabled ?? DEFAULT_NEW_AGENT_WORKTREE_ENABLED;
   fields.branch = snapshot?.editable.worktree.branch ?? "";
+  // t-afc86e — read the workspace commands BACK into the form. This line is the whole reason the
+  // snapshot carries the artifact bytes: without it the field renders blank for an agent that has a
+  // gate, and the next save writes that blank over the real one.
+  fields.worktreeSetup = (snapshot?.editable.worktree.setup ?? []).join("\n");
+  fields.verify = snapshot?.editable.verify ?? "";
   fields.isolate = snapshot?.editable.isolation === "transcript";
   fields.canonical = {
     kind: "agent-instance",
@@ -1204,10 +1209,17 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
         restart: fields.restartOnCrash ? "on-crash" : "never",
         attention: fields.attention,
       },
+      // t-afc86e — the verify gate and the setup commands, as TEXT. The webview never learns that the
+      // profile stores them as pinned references; the host turns the text into bytes, a digest and a
+      // reference entry. Blank and empty are meaningful values here, not omissions — they are how a
+      // human CLEARS a gate, and sending nothing would make "no verify" indistinguishable from
+      // "don't touch verify".
       worktree: {
         enabled: fields.worktree,
         branch: fields.branch.trim(),
+        setup: fields.worktreeSetup.split("\n").map((line) => line.trim()).filter(Boolean),
       },
+      verify: fields.verify.trim(),
       isolation: fields.isolate ? "transcript" : "",
       nativeConfig,
       capabilities: structuredClone(fields.canonical.capabilities),

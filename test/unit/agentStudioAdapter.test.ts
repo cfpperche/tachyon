@@ -40,10 +40,12 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     editable: {
       displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" }, role: "reviewer",
       cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-      worktree: { enabled: true, branch: "feature/web" }, isolation: "transcript",
+      worktree: { enabled: true, branch: "feature/web", setup: [] }, verify: "",
+      isolation: "transcript",
     },
     bindings: {
       grants: { proposeSavedAgent: false },
+      foreignWorkspaceCommands: false,
       environmentValueNames: ["PUBLIC_VALUE"],
       secretNames: ["API_TOKEN"],
       prompt: { soul: true, instructions: false, evolution: true },
@@ -277,7 +279,11 @@ describe("AgentStudioAdapter — save", () => {
       runtime: expect.objectContaining({ executable: "codex" }),
       cwd: "apps/web",
       lifecycle: { autostart: true, restart: "on-crash", attention: false },
-      worktree: { enabled: true, branch: "feature/web" },
+      // t-afc86e — the mutation now carries the workspace commands as text. This fixture's snapshot
+      // declares none, so they serialize as the empty values that mean "no gate, no setup" — which
+      // is what CLEARING them looks like too, and why they are always sent rather than omitted.
+      worktree: { enabled: true, branch: "feature/web", setup: [] },
+      verify: "",
       isolation: "transcript",
     }));
     expect(submits).toEqual([]);

@@ -64,7 +64,8 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       role: "tester",
       cwd: "apps/tester",
       lifecycle: { autostart: false, restart: "never", attention: true },
-      worktree: { enabled: false, branch: "" },
+      worktree: { enabled: false, branch: "", setup: [] },
+      verify: "",
       isolation: "",
       nativeConfig: {
         selectors: {
@@ -87,7 +88,11 @@ describe("canonical Agent Studio projection", () => {
       role: "reviewer",
       cwd: "apps/reviewer",
       lifecycle: { autostart: true, restart: "on-crash", attention: false },
-      worktree: { enabled: true, branch: "feature/reviewer" },
+      // t-afc86e — `setup`/`verify` come back EMPTY here because this fixture's profile declares no
+      // workspace-command references, so the snapshot carries no artifact bytes. The populated case
+      // is the round trip in `agentWorkspaceCommands.test.ts`, which is what proves the read-back.
+      worktree: { enabled: true, branch: "feature/reviewer", setup: [] },
+      verify: "",
       isolation: "transcript",
       nativeConfig: {},
       capabilities: { skills: [], mcp: [], hooks: [] },
@@ -275,7 +280,9 @@ describe("canonical Agent Studio projection", () => {
         enabled: false, autostart: false, restart: "never",
         attention: { enabled: true, silenceSec: 12 },
       },
-      workspace: { cwd: "apps/tester", worktree: { enabled: false, branch: undefined } },
+      // t-afc86e — `verify`/`setup` are explicit `undefined` for the same reason `branch` already
+      // was: the patch states every field it owns, and absence is how a cleared one is written.
+      workspace: { cwd: "apps/tester", verify: undefined, worktree: { enabled: false, branch: undefined, setup: undefined } },
       isolation: undefined,
       nativeConfig: {
         selectors: {
@@ -297,7 +304,7 @@ describe("canonical Agent Studio projection", () => {
   it("REFUSES a working directory on an agent that runs in its own worktree", () => {
     const current = lifecycleSnapshot();
     const both = mutation(current.revision);
-    both.editable.worktree = { enabled: true, branch: "" };
+    both.editable.worktree = { enabled: true, branch: "", setup: [] };
 
     expect(() => patchProfileFromStudioMutation(both, current))
       .toThrow("the worktree IS its working directory");
@@ -306,7 +313,7 @@ describe("canonical Agent Studio projection", () => {
   it("still accepts a working directory when the agent is NOT isolated", () => {
     const current = lifecycleSnapshot();
     const only = mutation(current.revision);
-    only.editable.worktree = { enabled: false, branch: "" };
+    only.editable.worktree = { enabled: false, branch: "", setup: [] };
 
     expect(patchProfileFromStudioMutation(only, current).workspace)
       .toMatchObject({ cwd: "apps/tester", worktree: { enabled: false } });
@@ -318,7 +325,7 @@ describe("canonical Agent Studio projection", () => {
     const current = lifecycleSnapshot();
     const isolated = mutation(current.revision);
     isolated.editable.cwd = "";
-    isolated.editable.worktree = { enabled: true, branch: "feature/x" };
+    isolated.editable.worktree = { enabled: true, branch: "feature/x", setup: [] };
 
     expect(patchProfileFromStudioMutation(isolated, current).workspace)
       .toMatchObject({ cwd: undefined, worktree: { enabled: true, branch: "feature/x" } });
