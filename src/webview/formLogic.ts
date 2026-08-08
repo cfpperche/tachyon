@@ -1,7 +1,5 @@
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { asAgent, suggestKindForCommand, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, resolveBinary, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
 import { isAttestedRuntime } from "../runtime/attestedRuntimes.js";
-import { binaryOf } from "../resume/adapters.js";
 
 /**
  * Pure logic behind the Agent Studio form — everything testable lives here;
@@ -143,20 +141,6 @@ export interface FormState {
   worktreeSetup: string;
   /** spec 214 — verify-gate: a command/runbook name or inline shell run in the worktree to prove it shippable */
   verify: string;
-  /** spec 226/228 — isolated harness: scoped MCP/skills/rules/hooks in a private config home (agent kind, claude). */
-  harness: boolean;
-  /** "none" | "workspace" (default "workspace") */
-  harnessInherit: string;
-  /** YAML text of the `mcp:` server map ("" = none) */
-  harnessMcp: string;
-  /** newline-separated rule file paths */
-  harnessRules: string;
-  /** newline-separated codex instruction file paths */
-  harnessInstructions: string;
-  /** newline-separated skill dir paths */
-  harnessSkills: string;
-  /** YAML text of the `hooks:` object ("" = none) */
-  harnessHooks: string;
   /** Deprecated read-compat field; Agent Studio no longer writes isolate: transcript. */
   isolate: boolean;
   /** schedule kind: timing mode + value, action mode + target, catch-up */
@@ -178,26 +162,6 @@ export function parseSteps(raw: string): string[] {
   return raw.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
 }
 
-/** Parse a YAML/JSON textarea (the harness mcp/hooks fields) into a plain object, or undefined when
- *  blank. Throws on malformed input or a non-mapping — validateForm surfaces it; toEntry runs only
- *  after validation passes. */
-export function parseYamlObject(raw: string): Record<string, unknown> | undefined {
-  if (raw.trim().length === 0) return undefined;
-  const parsed = parseYaml(raw);
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("expected a mapping");
-  return parsed as Record<string, unknown>;
-}
-
-/** Non-throwing: does this harness YAML textarea parse to a mapping (or is blank)? (validateForm) */
-function harnessYamlOk(raw: string): boolean {
-  try {
-    parseYamlObject(raw);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /** Live hint for the Runbook tab: how each step line will resolve. */
 export function stepResolutions(raw: string, commandNames: string[]): Array<{ step: string; ref: boolean }> {
   return parseSteps(raw).map((step) => ({ step, ref: commandNames.includes(step) }));
@@ -216,35 +180,9 @@ export interface FormIssue {
     | "self-evolution-invalid"
     | "timing-invalid"
     | "target-required"
-    | "harness-claude-only"
-    | "codex-harness-mcp-only"
-    | "harness-home-config-only"
-    | "harness-empty"
-    | "harness-mcp-invalid"
-    | "harness-hooks-invalid"
     | "terminal-cmd-is-attested-runtime";
   blocking: boolean;
   param?: string;
-}
-
-/** Studio runtimes that expose Isolated harness (must match ResumeAdapter.harness + loadConfig). */
-export type HarnessStudioRuntime = "claude" | "codex" | "opencode" | "grok" | "hermes";
-
-const HARNESS_STUDIO_BINS = new Set<string>(["claude", "codex", "opencode", "grok", "hermes"]);
-
-export function harnessRuntimeOf(cmd: string): HarnessStudioRuntime | undefined {
-  const binary = binaryOf(cmd);
-  return HARNESS_STUDIO_BINS.has(binary) ? (binary as HarnessStudioRuntime) : undefined;
-}
-
-/** True when the studio may show CLAUDE.md-style rules for this harness runtime. */
-export function harnessShowsRules(runtime: HarnessStudioRuntime | undefined): boolean {
-  return runtime === "claude";
-}
-
-/** True when the studio may show Codex AGENTS.md instruction files for this harness runtime. */
-export function harnessShowsInstructions(runtime: HarnessStudioRuntime | undefined): boolean {
-  return runtime === "codex";
 }
 
 export function validateForm(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
@@ -286,37 +224,6 @@ export function validateForm(state: FormState, takenNames: string[], editingName
   }
   if (state.selfEvolution !== undefined && typeof state.selfEvolution !== "boolean") {
     issues.push({ code: "self-evolution-invalid", blocking: true });
-  }
-  // spec 226/228 — isolated harness (agent kind). The deep rules (${VAR}-only mcp env, reserved cmd
-  // flags) are enforced by loadConfig on write; the Studio catches the obvious mistakes early.
-  if (state.kind === "agent" && state.harness) {
-    const runtime = harnessRuntimeOf(state.cmd);
-    if (!runtime) issues.push({ code: "harness-claude-only", blocking: true });
-    if (!harnessYamlOk(state.harnessMcp)) issues.push({ code: "harness-mcp-invalid", blocking: true });
-    if (!harnessYamlOk(state.harnessHooks)) issues.push({ code: "harness-hooks-invalid", blocking: true });
-    if (runtime === "codex" && parseSteps(state.harnessRules).length > 0) {
-      issues.push({ code: "codex-harness-mcp-only", blocking: true });
-    }
-    // opencode/grok/hermes: mcp/skills/hooks only — rules/instructions fields are hidden but
-    // still validate if a stale form state carries them.
-    if (
-      runtime &&
-      !harnessShowsRules(runtime) &&
-      !harnessShowsInstructions(runtime) &&
-      (parseSteps(state.harnessRules).length > 0 || parseSteps(state.harnessInstructions).length > 0)
-    ) {
-      issues.push({ code: "harness-home-config-only", blocking: true, param: runtime });
-    }
-    const hasAny =
-      state.harnessMcp.trim().length > 0 ||
-      state.harnessHooks.trim().length > 0 ||
-      parseSteps(state.harnessInstructions).length > 0 ||
-      parseSteps(state.harnessRules).length > 0 ||
-      parseSteps(state.harnessSkills).length > 0;
-    // Codex already has a private home by default — empty harness is meaningless.
-    // Other harnessable runtimes allow `harness: {}` (private home + Bridge only) via yml;
-    // Studio still requires at least one field when the toggle is on (matches prior claude UX).
-    if (!hasAny) issues.push({ code: "harness-empty", blocking: true });
   }
   return issues;
 }
@@ -372,22 +279,6 @@ export function toEntry(state: FormState): Record<string, unknown> {
   else if (setup.length > 1) entry.worktreeSetup = setup;
   // spec 214 — verify-gate (worktree-scoped; written when set so a worktree agent can be verified)
   if (state.verify.trim().length > 0) entry.verify = state.verify.trim();
-  // spec 226/228 — isolated harness (agent kind). Runs only after validateForm passed, so the YAML
-  // fields parse. Omit empty sub-keys so the written block stays clean.
-  if (state.kind === "agent" && state.harness) {
-    const h: Record<string, unknown> = { inherit: state.harnessInherit.trim() || "workspace" };
-    const mcp = parseYamlObject(state.harnessMcp);
-    if (mcp) h.mcp = mcp;
-    const rules = parseSteps(state.harnessRules);
-    if (rules.length > 0) h.rules = rules;
-    const instructions = parseSteps(state.harnessInstructions);
-    if (instructions.length > 0) h.instructions = instructions;
-    const skills = parseSteps(state.harnessSkills);
-    if (skills.length > 0) h.skills = skills;
-    const hooks = parseYamlObject(state.harnessHooks);
-    if (hooks) h.hooks = hooks;
-    entry.harness = h;
-  }
   return entry;
 }
 
@@ -399,18 +290,6 @@ const SCHED_DEFAULTS = {
   schedAction: "run" as const,
   schedTarget: "",
   catchUp: false,
-};
-
-/** Blank isolated-harness fields (spec 226/228) — spread into every non-agent FormState literal. */
-const HARNESS_DEFAULTS = {
-  harness: false,
-  harnessInherit: "workspace",
-  harnessMcp: "",
-  harnessRules: "",
-  harnessInstructions: "",
-  harnessSkills: "",
-  harnessHooks: "",
-  isolate: false,
 };
 
 /** Pre-fills the form from an existing schedules: entry (edit mode, Schedule tab). */
@@ -439,7 +318,7 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     schedAction: def.spawn !== undefined ? "spawn" : "run",
     schedTarget: def.run ?? def.spawn ?? "",
     catchUp: def.catchUp ?? false,
-    ...HARNESS_DEFAULTS,
+    isolate: false,
   };
 }
 
@@ -464,7 +343,7 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     restartOnCrash: false,
     attention: false,
     ...SCHED_DEFAULTS,
-    ...HARNESS_DEFAULTS,
+    isolate: false,
   };
 }
 
@@ -489,7 +368,7 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     restartOnCrash: false,
     attention: false,
     ...SCHED_DEFAULTS,
-    ...HARNESS_DEFAULTS,
+    isolate: false,
   };
 }
 
@@ -498,7 +377,6 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
  *  the Agent arm and falls back to the blank default for a terminal. */
 export function fromDef(name: string, entry: AgentDef): FormState {
   const def = asAgent(entry);
-  const h = def?.harness;
   return {
     name,
     cmd: entry.cmd,
@@ -518,14 +396,6 @@ export function fromDef(name: string, entry: AgentDef): FormState {
     worktreeSetup: (def?.worktreeSetup ?? []).join("\n"),
     verify: def?.verify ?? "",
     ...SCHED_DEFAULTS,
-    // spec 226/228 — round-trip the harness into the form (mcp/hooks back to YAML text for editing).
-    harness: !!h,
-    harnessInherit: h?.inherit ?? "workspace",
-    harnessMcp: h?.mcp ? stringifyYaml(h.mcp).trimEnd() : "",
-    harnessRules: (h?.rules ?? []).join("\n"),
-    harnessInstructions: (h?.instructions ?? []).join("\n"),
-    harnessSkills: (h?.skills ?? []).join("\n"),
-    harnessHooks: h?.hooks ? stringifyYaml(h.hooks).trimEnd() : "",
     isolate: false,
   };
 }

@@ -174,8 +174,6 @@ const denseEntity: AgentStudioEntity = {
     branch: "feature/auth-redesign",
     worktreeSetup: 'pnpm install\ncp "$TACHYON_WORKSPACE_ROOT/.env.local" .env.local',
     verify: "npm test",
-    harness: true,
-    harnessMcp: "tavily:\n  command: npx\n  args: [\"-y\", \"tavily-mcp\"]",
   },
   chips,
   flagMap,

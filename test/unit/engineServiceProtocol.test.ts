@@ -403,6 +403,25 @@ describe("persistent engine protocol", () => {
     })).toBe(false);
   });
 
+  /**
+   * t-aa06a8 — the seven `harness*` fields left `WorkspaceStudioFormV1` with the Agent Studio
+   * authoring door. `isWorkspaceStudioSubmitInputV1` is a `hasOnlyKeys` validator, so this is a
+   * payload-shape break in BOTH directions, and `ENGINE_SHELL_PROTOCOL` was bumped 6 -> 7 in the
+   * same change for exactly the reason `boardQueryProtocolSkew.test.ts` documents for 5 -> 6: two
+   * peers that disagree about the field set must refuse to pair rather than reinterpret each other.
+   *
+   * The pair below is what makes that non-cosmetic — the retired keys are REFUSED on the wire, and
+   * a protocol-6 client's own canonicalizer would have put them on every terminal/command submit,
+   * not only the agent one whose domain arm is already retired.
+   */
+  it("REFUSES a studio.submit still carrying the retired harness fields (t-aa06a8)", () => {
+    const legacy = { ...studioForm(), harness: false, harnessInherit: "workspace", harnessMcp: "" };
+    expect(isWorkspaceCommandV1({ schemaVersion: 1, method: "studio.submit", input: { state: legacy } })).toBe(false);
+    expect(isWorkspaceCommandV1({ schemaVersion: 1, method: "studio.submit", input: { state: studioForm() } })).toBe(true);
+    // ...and the canonicalizer drops them, so a client on THIS build cannot produce that payload.
+    expect("harness" in canonicalWorkspaceStudioFormV1(legacy)).toBe(false);
+  });
+
   it("accepts only exact Mission Control reads and idempotency-keyed mutations", () => {
     const updatedAt = "2026-07-14T12:00:00.000Z";
     const update = {
@@ -797,13 +816,6 @@ function studioForm(): WorkspaceStudioFormV1 {
     branch: "",
     worktreeSetup: "",
     verify: "",
-    harness: false,
-    harnessInherit: "workspace",
-    harnessMcp: "",
-    harnessRules: "",
-    harnessInstructions: "",
-    harnessSkills: "",
-    harnessHooks: "",
     isolate: false,
     schedTiming: "every",
     schedEvery: "1h",
