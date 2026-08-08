@@ -15,7 +15,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, type TachyonConfig } from "../config/loadConfig.js";
+import { asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "../config/agentForgetPlan.js";
 import {
@@ -3494,10 +3494,10 @@ export class Workspace {
 
   /** Mark only live canonical agents whose native projection selects this runtime source. */
   async markRuntimeConfigPending(runtime: "codex" | "claude" | "grok", scope: "global" | "workspace", revision: string): Promise<string[]> {
-    const live = await this.manager.list();
+    const live = await this.manager.listAgents();
     const affected: string[] = [];
     for (const agent of live) {
-      if (!agent.running || agent.kind !== "agent") continue;
+      if (!agent.running) continue;
       const def = asAgent(this.config?.agents[agent.name]);
       if (!def) continue;
       // SDD 481 — Grok's WORKSPACE source is not a profile projection and cannot be one: Grok
@@ -6745,7 +6745,7 @@ export class Workspace {
       sinceIso: string;
     }>
   > {
-    const entries = await this.manager.list();
+    const entries = await this.manager.listAgents();
     const out: Array<{
       agent: string;
       delegator: string;
@@ -6755,7 +6755,7 @@ export class Workspace {
       sinceIso: string;
     }> = [];
     for (const entry of entries) {
-      if (entry.kind !== "agent" || !entry.delegator) continue;
+      if (!entry.delegator) continue;
       const rec = this.ledger.get(entry.name);
       const wtPath = rec?.worktree?.path ?? rec?.cwd;
       if (!wtPath) continue;
@@ -6954,13 +6954,12 @@ export class Workspace {
         this.host.notify(this.t("watch-restart of '{0}' failed: {1}", agent, err instanceof Error ? err.message : String(err)), "error");
       }
     });
-    for (const [name, def] of Object.entries(this.config?.agents ?? {})) {
+    for (const [name, def] of Object.entries(terminalsOf(this.config))) {
       // t-bd14d8 — `config.agents` is the UNIFIED map: agents and terminals both live in it and this
       // loop had no arm for the difference, so a watch reaching an agent by any route got the
       // terminal behaviour above — force-kill, new session, triggered by a file save. The strip now
       // happens at projection, but the guarantee belongs HERE too: this is the consumer that acts,
       // and it must not depend on every producer upstream having been fixed.
-      if (def.kind === "agent") continue;
       for (const glob of def.watch) {
         this.watches.watch(name, (onChange) => {
           const watcher = this.host.watch(this.workspaceRoot, glob, { change: true, create: true, delete: true }, onChange);
