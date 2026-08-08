@@ -25,11 +25,20 @@ const RELEASE_PRE_CUT_PROTOCOL: EngineProtocolRangeV1 = { min: 4, max: 4 };
  */
 const RELEASE_PRE_BOARD_RENAME_PROTOCOL: EngineProtocolRangeV1 = { min: 5, max: 5 };
 
+/**
+ * `t-aa06a8` — protocol 6, the last release before `WorkspaceStudioFormV1` dropped the seven
+ * `harness*` fields with the Agent Studio authoring door. Literal, like its neighbours.
+ */
+const RELEASE_PRE_HARNESS_FORM_PROTOCOL: EngineProtocolRangeV1 = { min: 6, max: 6 };
+
 const CURRENT: EngineProtocolRangeV1 = { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL };
 
 describe("engine cross-release compatibility", () => {
   it("refuses the 0.56.109 wire contract after the required Probe row fields changed", () => {
-    expect(CURRENT).toEqual({ min: 6, max: 6 });
+    // t-aa06a8 removed an `expect(CURRENT).toEqual({ min: 6, max: 6 })` that sat here: this case is
+    // about not overlapping the protocol-3 fixture, and re-pinning the current constant inside it
+    // added nothing to that claim while breaking on a bump the case says nothing about. The constant
+    // is still pinned where it belongs — beside the break that moved it, one fixture per release.
     const overlaps = RELEASE_0_56_109_PROTOCOL.min <= CURRENT.max
       && CURRENT.min <= RELEASE_0_56_109_PROTOCOL.max;
     expect(overlaps).toBe(false);
@@ -66,6 +75,18 @@ describe("engine cross-release compatibility", () => {
     expect(negotiateEngineShellProtocol(CURRENT, RELEASE_PRE_BOARD_RENAME_PROTOCOL)).toBeUndefined();
   });
 
+  /**
+   * `t-aa06a8` — the second payload-shape break, and the same shape as the rename above: the seven
+   * `harness*` fields left `WorkspaceStudioFormV1`, whose validator is `hasOnlyKeys`, so a protocol-6
+   * peer's submit is refused here and this build's submit is refused there. The fields were only ever
+   * meaningful for `kind: agent`, whose domain arm is already retired — but a protocol-6 CLIENT
+   * canonicalizes them onto every terminal/command/runbook submit too, so the break is real.
+   */
+  it("refuses BOTH directions across the studio-form field removal: 6 ↔ 7", () => {
+    expect(negotiateEngineShellProtocol(RELEASE_PRE_HARNESS_FORM_PROTOCOL, CURRENT)).toBeUndefined();
+    expect(negotiateEngineShellProtocol(CURRENT, RELEASE_PRE_HARNESS_FORM_PROTOCOL)).toBeUndefined();
+  });
+
   it("still pairs a peer that agrees exactly, so the gate is a gate and not a wall", () => {
     expect(negotiateEngineShellProtocol(CURRENT, CURRENT)).toBe(ENGINE_SHELL_PROTOCOL);
   });
@@ -81,5 +102,7 @@ describe("engine cross-release compatibility", () => {
     expect(RELEASE_PRE_CUT_PROTOCOL.max).toBeLessThan(ENGINE_SHELL_PROTOCOL);
     expect(RELEASE_PRE_BOARD_RENAME_PROTOCOL).toEqual({ min: 5, max: 5 });
     expect(RELEASE_PRE_BOARD_RENAME_PROTOCOL.max).toBeLessThan(ENGINE_SHELL_PROTOCOL);
+    expect(RELEASE_PRE_HARNESS_FORM_PROTOCOL).toEqual({ min: 6, max: 6 });
+    expect(RELEASE_PRE_HARNESS_FORM_PROTOCOL.max).toBeLessThan(ENGINE_SHELL_PROTOCOL);
   });
 });
