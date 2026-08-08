@@ -40,7 +40,8 @@ export function compileExtraPatterns(sources: string[]): RegExp[] {
 
 /** Scans the last TAIL_WINDOW non-empty lines for a prompt pattern; bottom-most match wins. */
 export function classifyTail(paneText: string, extras: RegExp[] = []): TailMatch | null {
-  const match = evaluateAttentionManifest(attentionManifestForRuntime("claude"), paneText, extras, new Set(["prompt"]));
+  // t-c59600 — this entry point takes no runtime, so by definition it classifies against neutral.
+  const match = evaluateAttentionManifest(attentionManifestForRuntime(undefined), paneText, extras, new Set(["prompt"]));
   return match?.kind === "prompt" ? { line: match.line, pattern: match.pattern } : null;
 }
 
@@ -65,11 +66,16 @@ const REAL_RATE_LIMIT_PATTERNS: RegExp[] = [
 /**
  * spec 306 — manifest evaluation preserves the original single bottom-up walk semantics:
  * recency beats category at equal priority, and manifest order breaks same-line ties.
+ *
+ * t-c59600 — `runtime` has NO default. It used to default to `"claude"`, which meant every caller
+ * that had no runtime to pass (the terminal path, and every test written without one) silently
+ * asked for Claude's manifest. Omitting it now says what those callers actually mean: classify
+ * against the neutral set.
  */
 export function classifyAttentionTail(
   paneText: string,
   extraPromptPatterns: RegExp[] = [],
-  runtime: ResumeRuntime = "claude",
+  runtime?: ResumeRuntime,
 ): TailClassification | null {
   const match = evaluateAttentionManifest(attentionManifestForRuntime(runtime), paneText, extraPromptPatterns);
   if (!match) return null;

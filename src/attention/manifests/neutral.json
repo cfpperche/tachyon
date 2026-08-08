@@ -1,0 +1,74 @@
+{
+  "version": "2026.08.08.1",
+  "evidence": "t-c59600 — the set for an entry that declares NO runtime (kind: terminal; cmdOf returns null by design, Workspace.ts:1468). Measured 2026-08-08 against a 25-prompt corpus of real shell consent prompts (npm/npx, apt, dpkg, ssh, sudo, git, gh, docker, pip, terraform, coreutils) plus a 6-pane quiet corpus. It EXTENDS the base rules rather than replacing them: every base rule was checked against the terminal corpus and each one earns its place there (provider_error fires on npm E429 and `gh: API rate limit exceeded`; stall_error on ECONNRESET/ETIMEDOUT from curl/git; default_prompt on apt/ssh/sudo/docker/pip). Dropping any of them would be a measured LOSS for terminals, so nothing is dropped — see the task journal for the full before/after table. The four rules below close the gaps that set left open, all of which are shell-shaped and none of which any LLM TUI needs.",
+  "rules": [
+    {
+      "id": "neutral_shell_confirm_affordance",
+      "state": "needs-input",
+      "kind": "prompt",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "A line ENDING in a bracketed answer affordance containing a `y`. Base only knew the two-letter slash forms ([y/n], (y/n), yes/no), so it missed npm/npx's `Ok to proceed? (y)` — the exact pane named in t-c59600 — and dpkg's `*** foo.conf (Y/I/N/O/D/Z) [default=N] ?`. Requiring a `y` inside the group is what keeps `(n/a)`, `12 package(s)` and `at Object (/app/x.js:1:2)` out; requiring end-of-line keeps prose that merely mentions an option out. The optional trailing bracket admits dpkg's `[default=N]` hint without loosening the anchor.",
+      "matcher": {
+        "any": [
+          {
+            "lineRegex": "[(\\[](?=[^)\\]\\n]{0,24}y)[a-z](?:\\s*[/,]\\s*[a-z?])*[)\\]]\\s*(?:\\[[^\\]\\n]{0,20}\\])?\\s*[?:.]?\\s*$",
+            "flags": "i"
+          }
+        ]
+      }
+    },
+    {
+      "id": "neutral_shell_input_request",
+      "state": "needs-input",
+      "kind": "prompt",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "An explicit request for typed input, ending in a colon at the bottom of the pane. Base covered only `password:`/`passphrase:` with at most 20 characters between the word and the colon, so it missed ssh's `Enter passphrase for key '/home/u/.ssh/id_ed25519':`, terraform's `Enter a value:`, git's `Username for 'https://github.com':` and `Type 'yes' to continue:`. Anchored at line start so `Entering directory '/x'` (no \\b after `enter`) and mid-line prose cannot reach it.",
+      "matcher": {
+        "any": [
+          {
+            "lineRegex": "^\\s*(?:please\\s+)?(?:enter|type|input|provide)\\b[^\\n]{0,60}:\\s*$",
+            "flags": "i"
+          },
+          {
+            "lineRegex": "^\\s*(?:username|user|login|email|account|token|api key)\\b[^\\n]{0,60}:\\s*$",
+            "flags": "i"
+          }
+        ]
+      }
+    },
+    {
+      "id": "neutral_press_any_key",
+      "state": "needs-input",
+      "kind": "prompt",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "Base has `press enter` but not `press any key`, which is the pause form installers and Windows-style scripts use. No LLM TUI in the fleet emits it.",
+      "matcher": {
+        "lineRegex": "\\bpress any key\\b",
+        "flags": "i"
+      }
+    },
+    {
+      "id": "neutral_destructive_confirm",
+      "state": "needs-input",
+      "kind": "prompt",
+      "priority": 100,
+      "region": {
+        "bottom_non_empty_lines": 8
+      },
+      "evidence": "coreutils-shaped confirmation: `<tool>: <destructive verb> …?` ending the pane — `cp: overwrite '/tmp/a.txt'?`, `rm: remove regular file 'notes.txt'?`, `mv: replace '/x/y', overriding mode 0644?`. Base's `are you sure` / `do you want to` phrasings never appear in these. The leading `<tool>:` prefix is load-bearing and was added after measurement, not before: without it the rule swallowed ordinary prose — the existing t-10771a fixture `Can I delete the generated file?` went needs-input, which is a question for a human, not a shell waiting on a keystroke.",
+      "matcher": {
+        "lineRegex": "^\\s*\\S+:\\s[^\\n]{0,80}\\b(?:overwrite|remove|replace|delete|discard)\\b[^\\n]{0,80}\\?\\s*$",
+        "flags": "i"
+      }
+    }
+  ]
+}
