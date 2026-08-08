@@ -2,13 +2,12 @@ import { describe, it, expect } from "vitest";
 import { injectTargets, previewBody, submitRefuseReason } from "../../src/prompts/injectFlow.js";
 
 describe("injectTargets", () => {
-  it("keeps only running AI agents", () => {
+  it("keeps the running member of the supplied agent collection", () => {
     const targets = injectTargets([
       { name: "codex", kind: "agent", running: true },
       { name: "claude", kind: "agent", running: true, stopping: true },
       { name: "dead", kind: "agent", running: false, dead: true },
       { name: "stopped", kind: "agent", running: false },
-      { name: "dev", kind: "terminal", running: true },
     ]);
     expect(targets.map((t) => t.name)).toEqual(["codex"]);
   });

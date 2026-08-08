@@ -16,10 +16,10 @@ export interface InjectTarget {
   description: string;
 }
 
-/** Running AI agents only — terminals, stopped, dead, stopping excluded. */
+/** Running AI agents only — the caller supplies the agent collection; stopped, dead, and stopping are excluded. */
 export function injectTargets(agents: readonly InjectAgentCandidate[]): InjectTarget[] {
   return agents
-    .filter((a) => a.kind === "agent" && a.running && !a.dead && !a.stopping)
+    .filter((a) => a.running && !a.dead && !a.stopping)
     .map((a) => ({
       name: a.name,
       description: a.running ? "running AI agent" : "agent",
