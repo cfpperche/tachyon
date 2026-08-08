@@ -84,6 +84,21 @@ function expectOk(envelope: unknown, method: string, extra: Record<string, unkno
   expect(envelope).toEqual({ schemaVersion: 1, method, status: "ok", ...extra });
 }
 
+/**
+ * t-29962c — the same lesson, for the `toMatchObject` assertions.
+ *
+ * `toMatchObject({status:"ok", …})` on an error envelope reports
+ * "expected { schemaVersion: 1, …(4) } to match object { status: 'ok', …(2) }" and then prints
+ * `+ "status": "error"` with `code` and `message` collapsed into "(4 matching properties omitted)".
+ * That is exactly the report this task was opened on: the flake was legible as a *shape* mismatch
+ * for three weeks while the envelope was carrying the reason the whole time.
+ */
+function expectOkMatching(envelope: unknown, label: string, shape: Record<string, unknown>): void {
+  const e = envelope as { status?: string; code?: string; message?: string };
+  expect(e?.status, `${label} failed: ${e?.code ?? "?"} — ${e?.message ?? "no message"}`).toBe("ok");
+  expect(envelope).toMatchObject(shape);
+}
+
 describe("daemon engine service", () => {
   it("owns a real Workspace and direct Bridge across shell replacement and no-shell time", async () => {
     const root = makeSocketTemp("tachyon-engine-service-");
@@ -108,7 +123,18 @@ describe("daemon engine service", () => {
     assertNoFleetLeak(childEnv);
     const testBin = path.join(root, "test-bin");
     fs.mkdirSync(testBin, { mode: 0o700 });
-    fs.writeFileSync(path.join(testBin, "codex"), "#!/bin/sh\nexec sh\n", { mode: 0o700 });
+    // t-29962c — the fixture runtime MUST answer `--version` and exit. `runtime-ops.view` probes
+    // `<runtime> --version` (src/runtimeOps/snapshotService.ts:401) with a 10_000ms timeout, and a
+    // bare `exec sh` DROPS the argument and then blocks reading execFile's still-open stdin pipe —
+    // so the probe burned the whole timeout. Measured: that single query was 10.4s of this test's
+    // ~15s, against the test's own 20_000ms cap. ~5s of headroom for a 16-worker gate is not
+    // headroom, and it is the second reason this file flaked. Answering costs ~5ms; the agent pane
+    // still gets its interactive shell from the `exec sh` below.
+    fs.writeFileSync(
+      path.join(testBin, "codex"),
+      "#!/bin/sh\ncase \"$1\" in --version) echo 'codex 0.0.0-fixture'; exit 0 ;; esac\nexec sh\n",
+      { mode: 0o700 },
+    );
     childEnv.PATH = `${testBin}:${childEnv.PATH ?? process.env.PATH ?? ""}`;
     const isolatedTmux = new TmuxService(tmuxExecutorForEnv(childEnv));
     const configPath = path.join(workspaceRoot, "tachyon.yml");
@@ -711,7 +737,7 @@ describe("daemon engine service", () => {
     });
     expect(await first.query({ schemaVersion: 1, method: "extension.query", input: { action: "prompt.catalog" } }))
       .toMatchObject({ value: { targets: [{ name: "worker", description: "running AI agent" }] } });
-    expect(await first.invoke("operation-prompt-submit-0001", {
+    expectOkMatching(await first.invoke("operation-prompt-submit-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
       input: {
@@ -721,7 +747,7 @@ describe("daemon engine service", () => {
         expectedSha256: promptSha256,
         submit: true,
       },
-    })).toMatchObject({
+    }), "prompt.inject", {
       status: "ok",
       action: "prompt.inject",
       value: { injected: true, title: "Persistent check", mode: "submit" },
@@ -734,11 +760,11 @@ describe("daemon engine service", () => {
     const inputSent = await first.invoke("operation-agent-input-0001", agentInput);
     expectOk(inputSent, "agent.input");
     expect(await first.invoke("operation-agent-input-0001", agentInput)).toEqual(inputSent);
-    expect(await first.invoke("operation-engine-restart-0001", {
+    expectOkMatching(await first.invoke("operation-engine-restart-0001", {
       schemaVersion: 1,
       method: "agent.restart",
       input: { agent: "worker" },
-    })).toMatchObject({ status: "ok", method: "agent.restart" });
+    }), "agent.restart", { status: "ok", method: "agent.restart" });
     await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
     expect(await first.snapshot()).toMatchObject({
       projections: { agents: { items: [{ name: "worker", running: true }] } },
@@ -748,7 +774,7 @@ describe("daemon engine service", () => {
       method: "extension.query",
       input: { action: "tmux.snapshot" },
     });
-    expect(tmuxView).toMatchObject({ status: "ok", action: "tmux.snapshot", value: expect.any(Array) });
+    expectOkMatching(tmuxView, "tmux.snapshot", { status: "ok", action: "tmux.snapshot", value: expect.any(Array) });
     if (tmuxView.status !== "ok" || tmuxView.method !== "extension.query" || tmuxView.action !== "tmux.snapshot") {
       throw new Error("unexpected tmux snapshot result");
     }
@@ -763,20 +789,20 @@ describe("daemon engine service", () => {
       startCommand: workerPane.startCommand,
       ...(workerPane.createdAt !== undefined ? { createdAt: workerPane.createdAt } : {}),
     };
-    expect(await first.invoke("operation-terminal-open-0001", {
+    expectOkMatching(await first.invoke("operation-terminal-open-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
       input: { action: "terminal.open", agent: "worker", session: workerPane.session },
-    })).toMatchObject({
+    }), "terminal.open", {
       status: "ok",
       action: "terminal.open",
       value: { opened: true, session: workerPane.session },
     });
-    expect(await first.invoke("operation-terminal-close-0001", {
+    expectOkMatching(await first.invoke("operation-terminal-close-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
       input: { action: "terminal.close", agent: "worker", session: workerPane.session },
-    })).toMatchObject({
+    }), "terminal.close", {
       status: "ok",
       action: "terminal.close",
       value: { closed: true, session: workerPane.session },
@@ -788,24 +814,28 @@ describe("daemon engine service", () => {
     })).toMatchObject({ status: "error", code: "COMMAND_FAILED", message: expect.stringMatching(/changed after confirmation/) });
     const directTmux = isolatedTmux;
     expect(await directTmux.hasSession(workerPane.session)).toBe(true);
-    expect(await first.invoke("operation-tmux-exact-kill-0001", {
+    expectOkMatching(await first.invoke("operation-tmux-exact-kill-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
       input: { action: "tmux.kill", expected: expectedPane },
-    })).toMatchObject({
+    }), "tmux.kill", {
       status: "ok",
       action: "tmux.kill",
       value: { killed: true, session: workerPane.session },
     });
     expect(await directTmux.hasSession(workerPane.session)).toBe(false);
-    expect(await first.invoke("operation-engine-start-after-inspector-0001", startCommand))
-      .toMatchObject({ status: "ok", method: "agent.start" });
+    // t-c289cf's ORIGINAL failing line. It reported a key count; now it reports the reason.
+    expectOkMatching(
+      await first.invoke("operation-engine-start-after-inspector-0001", startCommand),
+      "agent.start (after inspector kill)",
+      { status: "ok", method: "agent.start" },
+    );
     await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
-    expect(await first.invoke("operation-engine-kill-0001", {
+    expectOkMatching(await first.invoke("operation-engine-kill-0001", {
       schemaVersion: 1,
       method: "agent.kill",
       input: { agent: "worker" },
-    })).toMatchObject({ status: "ok", method: "agent.kill" });
+    }), "agent.kill", { status: "ok", method: "agent.kill" });
     await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
     expect(await first.snapshot()).toMatchObject({
       projections: { agents: { items: [{ name: "worker", running: false }] } },
@@ -843,6 +873,28 @@ describe("daemon engine service", () => {
   }, 20_000);
 });
 
+/**
+ * t-29962c — `attention: false` is the FIX for the three-week flake, and it is a measurement.
+ *
+ * This fixture's "codex" is `#!/bin/sh\nexec sh` (see `testBin` above): a bare shell with no runtime
+ * chrome for the attention monitor to read. What the monitor produces for it is therefore not an
+ * observation, it is the SYNTHETIC seed state — `AttentionMonitor.runTick` creates a fresh agent's
+ * snapshot at `state: "working"` (src/attention/AttentionMonitor.ts:447) and cannot leave it before
+ * `silenceSec` of pane stability (8s: src/config/loadConfig.ts:32, agentProfileProjection.ts:128),
+ * sampled on a 3s grid (ATTENTION_POLL_MS, src/workspace/Workspace.ts:317). `prompt.inject` with
+ * `submit: true` refuses while the state is `working` (extensionOperationService.ts:341 →
+ * injectFlow.ts:42).
+ *
+ * So with attention on, this test passed only by OUTRUNNING the daemon's first poll tick: under
+ * `verify:full`'s 16 workers the gap between `agent.start` and the injection stretched past 3s, the
+ * tick landed, and the injection was refused with `'worker' is working`. Measured, not inferred —
+ * inserting a 4s wait before the injection turns the failure from intermittent into 3/3 on an idle
+ * machine, and 20 CPU spinners reproduce it at ~1-in-5 with no source change at all.
+ *
+ * No coverage is lost: with attention on, this test never once observed a monitored state — it only
+ * ever won a race against the monitor's existence. The production behaviour that a freshly spawned
+ * agent reads `working` for ~10s with no evidence of work is real, still there, and filed separately.
+ */
 function canonicalAgentCreate(agentName: string) {
   return {
     schemaVersion: 1 as const,
@@ -858,7 +910,7 @@ function canonicalAgentCreate(agentName: string) {
           runtime: { adapter: "codex", executable: "codex" },
           role: "" as const,
           cwd: "",
-          lifecycle: { autostart: false, restart: "never" as const, attention: true },
+          lifecycle: { autostart: false, restart: "never" as const, attention: false },
           worktree: { enabled: false, branch: "", setup: [] },
           verify: "",
           selfEvolution: false,
