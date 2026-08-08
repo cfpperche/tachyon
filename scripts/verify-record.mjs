@@ -27,22 +27,14 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import validityContract from "./verify-record-validity.cjs";
+
+const { DEFAULT_MAX_RECORD_AGE_MS, verificationRecordValidity } = validityContract;
+export { DEFAULT_MAX_RECORD_AGE_MS };
 
 const DIR_NAME = "tachyon-verify";
 /** Records are ~300 bytes; this only stops unbounded growth over a long-lived clone. */
 const KEEP = 50;
-
-/**
- * t-5d0e9d — how long a green stays reusable.
- *
- * Age is a backstop, not the real control. The things that decide whether a green still means
- * something are the tree (which keys the record) and the verifier fingerprint (which is compared
- * below); both are exact. Age only bounds the blast radius of something neither of those can see —
- * an upgraded system library, a rotated credential, a machine that drifted. Seven days is long
- * enough that ordinary landing traffic always hits, and short enough that nothing reuses a green
- * from a materially different machine-week.
- */
-export const DEFAULT_MAX_RECORD_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * t-5d0e9d — the out-of-tree inputs a green depends on.
@@ -191,21 +183,12 @@ export function reuseDecision({
   if (!tree) return { reuse: false, reason: "no committed tree to attest (dirty working tree or not a git repo)" };
   const record = readRecord(tree, cwd);
   if (!record) return { reuse: false, reason: `no record for tree ${tree.slice(0, 12)}` };
-  // A pre-fingerprint record cannot say which environment produced it. Reusing it would be assuming
-  // the answer to the exact question the fingerprint was added to ask.
-  if (record.schema !== 2 || !record.fingerprint) {
-    return { reuse: false, reason: "record predates verifier fingerprinting", record };
-  }
-  if (record.fingerprint !== fingerprint) {
-    return { reuse: false, reason: "verifier or environment changed since that run", record };
-  }
-  const at = Date.parse(record.at ?? "");
-  if (!Number.isFinite(at)) return { reuse: false, reason: "record has no usable timestamp", record };
-  const ageMs = now() - at;
-  // A record from the future is a clock that moved, not a fresher proof. Treat it as unusable rather
-  // than letting it outrank every honest record.
-  if (ageMs < 0) return { reuse: false, reason: "record is dated in the future", record };
-  if (ageMs > maxAgeMs) return { reuse: false, reason: `record is stale (${Math.floor(ageMs / 86_400_000)}d old)`, record };
+  const validity = verificationRecordValidity(record, {
+    expectedFingerprint: fingerprint,
+    maxAgeMs,
+    now,
+  });
+  if (!validity.valid) return { reuse: false, reason: validity.reason, record };
   return { reuse: true, reason: `tree ${tree.slice(0, 12)} already verified at ${record.at}`, record };
 }
 

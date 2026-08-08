@@ -115,12 +115,27 @@ function git(over: Record<string, { code?: number; stdout?: string }> = {}): Git
   };
 }
 
-const record = JSON.stringify({ schema: 2, tree: TREE, at: "2026-08-07T16:41:09.220Z" });
+const fingerprint = "f".repeat(64);
+const currentRecord = () => JSON.stringify({
+  schema: 2,
+  tree: TREE,
+  at: new Date().toISOString(),
+  fingerprint,
+});
+
+async function expectVerificationRecordToBlockLanding(recordBody: Record<string, unknown>): Promise<void> {
+  const out = await probeLandSuggestion({
+    git: git(), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2,
+    readFile: () => JSON.stringify(recordBody),
+  });
+  expect(out.checks.find((c) => c.id === "verified-tree")!.ok).toBe(false);
+  expect(out.command).toBeUndefined();
+}
 
 describe("probeLandSuggestion", () => {
   it("composes a ready suggestion from live probes, reusing the tree verification record", async () => {
     const out = await probeLandSuggestion({
-      git: git(), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2, readFile: () => record,
+      git: git(), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2, readFile: currentRecord,
     });
     expect(out.primaryPath).toBe("/repo");
     expect(out.command).toBe(`git -C /repo merge --ff-only ${HEAD}`);
@@ -129,25 +144,25 @@ describe("probeLandSuggestion", () => {
 
   it("reads exit 1 from merge-base as 'not an ancestor' and any other exit as 'not measured'", async () => {
     const notAncestor = await probeLandSuggestion({
-      git: git({ ancestor: { code: 1 } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2, readFile: () => record,
+      git: git({ ancestor: { code: 1 } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2, readFile: currentRecord,
     });
     expect(notAncestor.checks.find((c) => c.id === "fast-forward")!.detail).toContain("has moved past");
     const broken = await probeLandSuggestion({
-      git: git({ ancestor: { code: 128 } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2, readFile: () => record,
+      git: git({ ancestor: { code: 128 } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2, readFile: currentRecord,
     });
     expect(broken.checks.find((c) => c.id === "fast-forward")!.detail).toContain("could not be measured");
   });
 
   it("treats a detached primary checkout as unknown rather than as a branch named HEAD", async () => {
     const out = await probeLandSuggestion({
-      git: git({ "primary-branch": { stdout: "HEAD" } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 1, readFile: () => record,
+      git: git({ "primary-branch": { stdout: "HEAD" } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 1, readFile: currentRecord,
     });
     expect(out.checks.find((c) => c.id === "primary-on-trunk")!.detail).toContain("detached");
   });
 
   it("refuses rather than guessing when the repository topology is not a plain clone", async () => {
     const out = await probeLandSuggestion({
-      git: git({ "common-dir": { stdout: "/somewhere/else" } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 1, readFile: () => record,
+      git: git({ "common-dir": { stdout: "/somewhere/else" } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 1, readFile: currentRecord,
     });
     expect(out.primaryPath).toBeNull();
     expect(out.command).toBeUndefined();
@@ -161,6 +176,30 @@ describe("probeLandSuggestion", () => {
     expect(out.command).toBeUndefined();
     expect(out.checks.find((c) => c.id === "verified-tree")!.ok).toBe(false);
   });
+
+  it("blocks a verification record that is thirty days old", async () => {
+    await expectVerificationRecordToBlockLanding({
+      schema: 2, tree: TREE, at: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(), fingerprint,
+    });
+  });
+
+  it("blocks a verification record dated in the future", async () => {
+    await expectVerificationRecordToBlockLanding({
+      schema: 2, tree: TREE, at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), fingerprint,
+    });
+  });
+
+  it("blocks a schema-1 verification record", async () => {
+    await expectVerificationRecordToBlockLanding({
+      schema: 1, tree: TREE, at: new Date().toISOString(),
+    });
+  });
+
+  it("blocks a schema-2 verification record without a fingerprint", async () => {
+    await expectVerificationRecordToBlockLanding({
+      schema: 2, tree: TREE, at: new Date().toISOString(),
+    });
+  });
 });
 
 describe("probePrimaryCheckout", () => {
@@ -172,7 +211,7 @@ describe("probePrimaryCheckout", () => {
 
     const before = calls.length;
     for (const worktreePath of ["/wt", "/wt2", "/wt3"]) {
-      await probeLandSuggestion({ git: counting, worktreePath, trunkRef: "main", primary, dirty: false, commits: 1, readFile: () => record });
+      await probeLandSuggestion({ git: counting, worktreePath, trunkRef: "main", primary, dirty: false, commits: 1, readFile: currentRecord });
     }
     // Three rows, and not one of them re-read the primary checkout's branch or status.
     expect(calls.slice(before).filter((a) => a[0] === "status")).toEqual([]);
