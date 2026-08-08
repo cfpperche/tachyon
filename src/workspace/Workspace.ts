@@ -36,8 +36,6 @@ import {
   type SavedAgentState,
 } from "../config/savedAgentState.js";
 import {
-  readAgentProfileConfigText,
-  replaceAgentProfileConfigIfDigest,
   type AgentProfileAuthorityPort,
 } from "../config/agentProfileTransactions.js";
 import {
@@ -45,7 +43,6 @@ import {
   commitAgentProfileLifecycle as commitCanonicalAgentProfileLifecycle,
   inspectAgentProfileLifecycle as inspectCanonicalAgentProfileLifecycle,
   reconcileAgentProfileLifecycle,
-  type AgentProfileLifecycleConfigPort,
   type AgentProfileLifecycleCommitResult,
   type AgentProfileLifecycleSnapshot,
   type CommitAgentProfileLifecycleInput,
@@ -101,7 +98,7 @@ import {
   inspectLegacyFleet,
   isTransientLegacyRefusal,
 } from "../agents/legacyFleetGate.js";
-import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
+import { scanAgentRosterDirectory } from "../config/agentRosterDirectory.js";
 import { AgentProfileRefusal, isAgentProfileRefusal } from "../config/agentProfileRefusal.js";
 import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
 import {
@@ -2862,14 +2859,6 @@ export class Workspace {
     };
   }
 
-  private agentProfileLifecycleConfigPort(): AgentProfileLifecycleConfigPort {
-    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
-    return {
-      read: () => readAgentProfileConfigText(file),
-      replace: (expectedSha256, text) => replaceAgentProfileConfigIfDigest(file, expectedSha256, text),
-    };
-  }
-
   private authorityHeadMapKey(identity: string): string {
     return `canonical:${identity}`;
   }
@@ -3239,12 +3228,14 @@ export class Workspace {
     } catch (err) {
       ws.host.notify(ws.t("agent profile authority custody unavailable: {0} (profile-backed agents remain fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
     }
-    const profileLifecycleConfig = ws.configPath();
-    if (profileLifecycleConfig) {
+    // t-ae221c — recovery used to be gated on `tachyon.yml` existing, because every one of these
+    // three transactions wrote a second durable copy of the roster into that file. None of them does
+    // now: the profile home is the only copy. Gating an unfinished create's rollback on a file it
+    // never touches would strand it exactly when the workspace has no config yet.
+    {
       const lifecycle = await reconcileAgentProfileLifecycle({
         workspaceRoot,
         authority: ws.profileAuthorityPort(),
-        config: ws.agentProfileLifecycleConfigPort(),
         activateState: (agentName, state) => ws.activateAgentProfileLifecycleState(agentName, state),
       });
       if (lifecycle.degraded.length > 0) {
@@ -3253,7 +3244,6 @@ export class Workspace {
       const renames = await reconcileAgentProfileRenames({
         workspaceRoot,
         authority: ws.profileAuthorityPort(),
-        config: ws.agentProfileLifecycleConfigPort(),
         evolution: {
           readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
           rename: (oldAgentName, newAgentName) => ws.evolutionStore.renameAgent(oldAgentName, newAgentName),
@@ -3272,7 +3262,6 @@ export class Workspace {
       const forgets = await reconcileAgentProfileForgets({
         workspaceRoot,
         authority: ws.profileAuthorityPort(),
-        config: ws.agentProfileLifecycleConfigPort(),
         evolution: {
           readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
           retire: (agentName, expectedProfileId) => ws.evolutionStore.retireAgent(agentName, expectedProfileId),
@@ -4442,8 +4431,7 @@ export class Workspace {
         ownerAgentName: this.config?.declaredOwner?.[name],
         expectedRevision: inspected.revision,
         authority: this.profileAuthorityPort(),
-        config: this.agentProfileLifecycleConfigPort(),
-        evolution: {
+          evolution: {
           readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
           retire: (agentName, expectedProfileId) => this.evolutionStore.retireAgent(agentName, expectedProfileId),
         },
@@ -5610,7 +5598,6 @@ export class Workspace {
       workspaceRoot: this.workspaceRoot,
       agentName,
       authority: this.profileAuthorityPort(),
-      config: this.agentProfileLifecycleConfigPort(),
     });
   }
 
@@ -5867,7 +5854,6 @@ export class Workspace {
       ...input,
       workspaceRoot: this.workspaceRoot,
       authority: this.profileAuthorityPort(),
-      config: this.agentProfileLifecycleConfigPort(),
       activateState: (state) => this.activateAgentProfileLifecycleState(input.agentName, state),
     });
     this.rebuildWatches();
@@ -6170,7 +6156,6 @@ export class Workspace {
       agentName,
       bundle,
       authority: this.profileAuthorityPort(),
-      config: this.agentProfileLifecycleConfigPort(),
       activateState: (state) => this.activateAgentProfileLifecycleState(agentName, state),
     });
     this.rebuildWatches();
@@ -6186,7 +6171,6 @@ export class Workspace {
       source,
       destinationAgentName,
       authority: this.profileAuthorityPort(),
-      config: this.agentProfileLifecycleConfigPort(),
       activateState: (state) => this.activateAgentProfileLifecycleState(destinationAgentName, state),
     });
     this.rebuildWatches();
@@ -6207,7 +6191,6 @@ export class Workspace {
       source,
       destinationAgentName,
       authority: this.profileAuthorityPort(),
-      config: this.agentProfileLifecycleConfigPort(),
       activateState: (state) => this.activateAgentProfileLifecycleState(destinationAgentName, state),
     });
     this.rebuildWatches();
@@ -6960,19 +6943,19 @@ export class Workspace {
     // It never stops or deletes anything — it reports and names the governed action. `start()` returns
     // without activating, so a running fleet is left exactly as it was for the operator to end.
     //
-    // The config text is read ONCE for the pointer scan, and an unreadable config yields an empty
-    // pointer set — which makes every agent look inline and refuses. That is the fail-closed
-    // direction on purpose: refusing on a config we cannot read beats activating and guessing.
-    const profilePointers = scanAgentProfilePointers(
-      (() => { try { return fs.readFileSync(this.configPath() ?? "", "utf8"); } catch { return ""; } })(),
-    ).pointers;
+    // t-ae221c — the same question, asked of the record that now answers it. "Backed by a canonical
+    // profile" was a pointer in `tachyon.yml`; it is a readable `.tachyon/agents/<name>/agent.yml`.
+    // An unreadable or absent directory yields an empty set — which makes every agent look inline
+    // and refuses. That is the fail-closed direction on purpose: refusing on a roster we cannot read
+    // beats activating and guessing.
+    const canonicalRoster = new Set(scanAgentRosterDirectory(this.workspaceRoot).members);
     const evaluateLegacyFleet = async () => inspectLegacyFleet({
       wsHash: this.wsHash,
       ledger: [...this.ledger.all()].map(([name, row]) => [name, row] as const),
       rosterEntries: Object.keys(this.config?.agents ?? {}).map((name) => ({
         name,
         kind: this.manager.kindOf(name),
-        hasProfilePointer: profilePointers.has(name),
+        hasProfilePointer: canonicalRoster.has(name),
       })),
       liveSessions: await Promise.all(surviving.map(async (session) => {
         const name = session.slice(`${SESSION_PREFIX}-${this.wsHash}-`.length);
@@ -7656,8 +7639,7 @@ export class Workspace {
         ownerAgentName: this.config?.declaredOwner?.[oldName],
         expectedRevision: inspected.revision,
         authority: this.profileAuthorityPort(),
-        config: this.agentProfileLifecycleConfigPort(),
-        evolution: {
+          evolution: {
           readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
           rename: (oldAgentName, newAgentName) => this.evolutionStore.renameAgent(oldAgentName, newAgentName),
         },

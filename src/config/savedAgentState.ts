@@ -91,6 +91,17 @@ export interface SavedAgentRemovalDoor {
  * may hold a human's Soul, an authority record holds nothing anyone can lose. The caller reads every
  * fact alongside the state, so nothing is hidden by the state that wins.
  */
+/**
+ * t-ae221c — what moving the roster into `.tachyon/agents/` did to the arms below.
+ *
+ * Membership is now "a readable `agent.yml` under `.tachyon/agents/<name>/`", which is the same
+ * thing `profileOnDisk` measures. So `orphan-locator` — a roster row with no profile — has no
+ * producer left in the product. Its arm stays because this function is TOTAL over five booleans and
+ * a missing arm is a silent default, not because anything still reaches it.
+ *
+ * `unlisted-profile` survives through a narrower door: an `agent.yml` that is on disk and cannot be
+ * READ is not a member, and its bytes are exactly what that state exists to protect.
+ */
 export function deriveSavedAgentState(facts: SavedAgentPresenceFacts): SavedAgentState {
   const { rosterRow, profileOnDisk, authorityRecord, projection, profileHomeOnDisk } = facts;
   if (!rosterRow) {

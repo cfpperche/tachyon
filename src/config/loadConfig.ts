@@ -194,7 +194,12 @@ export interface AgentEntry extends ManagedEntryBase {
   };
   /** Internal marker for a Temporary fork rematerialized from a canonical profile snapshot. */
   profileFork?: true;
-  /** Shell-only syntax marker: the stanza is a canonical profile pointer resolved by the engine. */
+  /**
+   * Shell-only syntax marker: this name is a canonical profile the engine resolves, not a terminal.
+   * t-ae221c moved the fact it reports from a `profile:` pointer in `tachyon.yml` to the presence of
+   * `.tachyon/agents/<name>/agent.yml`; the field keeps its name because it means the same thing to
+   * every reader of it.
+   */
   profilePointer?: true;
   /** spec 240 — lightweight per-agent isolation of the claude config HOME (its own transcript namespace) WITHOUT
    *  the harness MCP/skills isolation. Lets agents that share a cwd each get an attributable session + activity

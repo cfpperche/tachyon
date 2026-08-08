@@ -14,7 +14,6 @@ import {
 import {
   commitAgentProfileLifecycle,
   inspectAgentProfileLifecycle,
-  type AgentProfileLifecycleConfigPort,
 } from "../../src/config/agentProfileLifecycle.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
@@ -49,22 +48,10 @@ class MemoryAuthority implements AgentProfileAuthorityPort {
   }
 }
 
-function configPort(root: string): AgentProfileLifecycleConfigPort {
-  const file = path.join(root, "tachyon.yml");
-  return {
-    read: () => fs.readFileSync(file, "utf8"),
-    replace: (expected, text) => {
-      const current = fs.readFileSync(file, "utf8");
-      if (sha256(current) !== expected) throw new Error("config CAS conflict");
-      fs.writeFileSync(file, text);
-    },
-  };
-}
 
 async function sourceFixture() {
   const root = temporaryWorkspace();
   const authority = new MemoryAuthority();
-  const config = configPort(root);
   const soul = "# Soul\n\nBe exact.\n";
   const skillDigest = sha256("skill-contract");
   const created = await commitAgentProfileLifecycle({
@@ -92,11 +79,10 @@ async function sourceFixture() {
     ],
     artifacts: [{ path: "SOUL.md", text: soul, sha256: sha256(soul) }],
     authority,
-    config,
     activateState: () => undefined,
   });
   authority.records.get("source")!.capabilityGrants = [{ referenceId: "tool", sourceSha256: skillDigest, adapter: "codex", kind: "mcp" }];
-  return { root, authority, config, created, soul };
+  return { root, authority, created, soul };
 }
 
 afterEach(() => {
@@ -106,7 +92,7 @@ afterEach(() => {
 describe("portable agent profile bundle", () => {
   it("exports deterministic allowlisted bytes without identity, credentials, grants or machine bindings", async () => {
     const fixture = await sourceFixture();
-    const snapshot = await inspectAgentProfileLifecycle({ workspaceRoot: fixture.root, agentName: "source", authority: fixture.authority, config: fixture.config });
+    const snapshot = await inspectAgentProfileLifecycle({ workspaceRoot: fixture.root, agentName: "source", authority: fixture.authority });
 
     const first = exportPortableAgentProfileBundle({ workspaceRoot: fixture.root, snapshot });
     const second = exportPortableAgentProfileBundle({ workspaceRoot: fixture.root, snapshot });
@@ -137,12 +123,11 @@ describe("portable agent profile bundle", () => {
 
   it("imports and clones through canonical bytes into fresh disabled identities with empty authority", async () => {
     const fixture = await sourceFixture();
-    const source = await inspectAgentProfileLifecycle({ workspaceRoot: fixture.root, agentName: "source", authority: fixture.authority, config: fixture.config });
+    const source = await inspectAgentProfileLifecycle({ workspaceRoot: fixture.root, agentName: "source", authority: fixture.authority });
     const exported = exportPortableAgentProfileBundle({ workspaceRoot: fixture.root, snapshot: source });
     const dependencies = {
       workspaceRoot: fixture.root,
       authority: fixture.authority,
-      config: fixture.config,
       activateState: () => undefined,
     };
 

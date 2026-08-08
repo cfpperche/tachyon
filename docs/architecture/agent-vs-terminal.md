@@ -93,15 +93,13 @@ terminals:
     cmd: npm run dev
     autostart: true
 
-# An agent: a pointer to a canonical profile, backed by a host authority.
-# Created through Agent Studio — never hand-written inline.
-agents:
-  reviewer:
-    profile: .tachyon/agents/reviewer/agent.yml
 ```
 
-Inline agent definitions are retired. `agents.<name>: inline agent definitions are no longer supported`
-is the refusal, and it is correct.
+An agent is not in this file at all. `t-ae221c` moved the roster to the directory:
+`.tachyon/agents/reviewer/` with a readable `agent.yml` in it IS the agent `reviewer`, created
+through Agent Studio. A `tachyon.yml` that still carries an `agents:` block loads with a warning
+saying the block is ignored and can be deleted; nothing under it declares anything, so an inline
+definition is no longer refused by name — it is unreachable.
 
 ## Consequences for tests
 

@@ -150,12 +150,11 @@ export function buildStarterYaml(p: DetectedProject): string {
   L.push("# Docs & format reference: https://github.com/cfpperche/tachyon");
   L.push("");
   // SDD 478 M6 — Init used to write an inline `agents:` entry here, which the canonical loader
-  // REFUSES ("inline agent definitions are no longer supported"). So the very first config Tachyon
-  // generated could not be loaded, and the door that is supposed to fail closed was instead handing
-  // a new workspace an invalid file. Agents are created through Agent Studio, which mints the
-  // profile and the host authority behind it; the starter now says so instead of guessing a shape.
-  L.push("# Agents are NOT written here by hand: each agents: entry is a pointer to a canonical");
-  L.push("# profile under .tachyon/agents/<name>/agent.yml, created for you by Agent Studio.");
+  // refused, so the very first config Tachyon generated could not be loaded at all. t-ae221c settled
+  // it the other way round: there is no agent roster in this file to get wrong. Agents are created
+  // through Agent Studio, which mints the profile and the host authority behind it.
+  L.push("# Agents are NOT declared here: an agent IS the directory .tachyon/agents/<name>/ with an");
+  L.push("# agent.yml in it, created for you by Agent Studio.");
   L.push(`# Run "Tachyon: Agent Studio" to create your first agent${agent.detected ? ` (${agent.bin} was detected on this machine)` : ""}.`);
   if (!agent.detected) {
     L.push(`# NOTE: no supported AI CLI was detected on this machine — install one (e.g. '${agent.bin}') first.`);

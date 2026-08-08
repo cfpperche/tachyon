@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,7 +12,8 @@ import {
   retiredAgentProfileRoot,
   type AgentProfileForgetEvolutionPort,
 } from "../../src/config/agentProfileForget.js";
-import { commitAgentProfileLifecycle, type AgentProfileLifecycleConfigPort } from "../../src/config/agentProfileLifecycle.js";
+import { commitAgentProfileLifecycle } from "../../src/config/agentProfileLifecycle.js";
+import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
 import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
 
 const roots: string[] = [];
@@ -44,18 +44,6 @@ class MemoryAuthority implements AgentProfileAuthorityPort {
   }
 }
 
-function configPort(root: string): AgentProfileLifecycleConfigPort {
-  const file = path.join(root, "tachyon.yml");
-  return {
-    read: () => fs.readFileSync(file, "utf8"),
-    replace: (expected, text) => {
-      const current = fs.readFileSync(file, "utf8");
-      if (crypto.createHash("sha256").update(current).digest("hex") !== expected) throw new Error("config CAS conflict");
-      fs.writeFileSync(file, text);
-    },
-  };
-}
-
 class MemoryEvolution implements AgentProfileForgetEvolutionPort {
   readonly profiles = new Map<string, string>();
   readonly retired: string[] = [];
@@ -69,7 +57,6 @@ class MemoryEvolution implements AgentProfileForgetEvolutionPort {
 async function fixture() {
   const root = temporaryWorkspace();
   const authority = new MemoryAuthority();
-  const config = configPort(root);
   const evolution = new MemoryEvolution();
   const created = await commitAgentProfileLifecycle({
     workspaceRoot: root,
@@ -77,7 +64,6 @@ async function fixture() {
     operation: "create",
     createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     authority,
-    config,
     activateState: () => undefined,
   });
   evolution.profiles.set("reviewer", "evolution-1");
@@ -98,7 +84,7 @@ async function fixture() {
       converged.push(`${agentId}:${txid}`);
     },
   };
-  return { root, authority, config, evolution, created, home, live, converged };
+  return { root, authority, evolution, created, home, live, converged };
 }
 
 afterEach(() => {
@@ -114,14 +100,13 @@ describe("canonical agent profile forget", () => {
       agentName: "reviewer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
     });
 
     expect(input.authority.records.has("reviewer")).toBe(false);
-    expect(input.config.read()).not.toContain("reviewer:");
+    expect(scanAgentRosterDirectory(input.root).members).not.toContain("reviewer");
     expect(fs.existsSync(input.home)).toBe(false);
     const retired = retiredAgentProfileRoot(input.root, result.agentId, result.txid);
     expect(fs.readFileSync(path.join(retired, "plugins", "future-plugin", "plugin.json"), "utf8")).toBe("{}\n");
@@ -134,7 +119,6 @@ describe("canonical agent profile forget", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
     expect(replacement.snapshot.agentId).not.toBe(result.agentId);
@@ -149,7 +133,6 @@ describe("canonical agent profile forget", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
     await commitAgentProfileLifecycle({
@@ -159,7 +142,6 @@ describe("canonical agent profile forget", () => {
       expectedRevision: owner.revision,
       patch: { ownership: { subagents: ["reviewer"] } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
 
@@ -169,14 +151,13 @@ describe("canonical agent profile forget", () => {
       ownerAgentName: "boss",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
     });
 
     const ownerAfter = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }));
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }));
     expect(ownerAfter.profile.ownership).toBeUndefined();
     expect(input.authority.records.get("boss")?.revision).toBe(`lifecycle-${result.txid}`);
   });
@@ -189,7 +170,6 @@ describe("canonical agent profile forget", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
     await commitAgentProfileLifecycle({
@@ -199,7 +179,6 @@ describe("canonical agent profile forget", () => {
       expectedRevision: owner.revision,
       patch: { ownership: { subagents: ["reviewer"] } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
 
@@ -209,7 +188,6 @@ describe("canonical agent profile forget", () => {
       ownerAgentName: "boss",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
@@ -217,19 +195,18 @@ describe("canonical agent profile forget", () => {
     })).rejects.toThrow("interrupt");
 
     expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }))).profile.ownership?.subagents)
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }))).profile.ownership?.subagents)
       .toEqual(["reviewer"]);
 
     await expect(reconcileAgentProfileForgets({
       workspaceRoot: input.root,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
     })).resolves.toMatchObject({ reconciled: [expect.any(String)], degraded: [] });
     expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }))).profile.ownership)
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }))).profile.ownership)
       .toBeUndefined();
   });
 
@@ -241,7 +218,6 @@ describe("canonical agent profile forget", () => {
       agentName: "reviewer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live: {
         ...input.live,
@@ -268,7 +244,6 @@ describe("canonical agent profile forget", () => {
       agentName: "reviewer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
@@ -279,7 +254,6 @@ describe("canonical agent profile forget", () => {
     const recovered = await reconcileAgentProfileForgets({
       workspaceRoot: input.root,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
@@ -287,26 +261,33 @@ describe("canonical agent profile forget", () => {
     expect(recovered.reconciled).toHaveLength(1);
     expect(recovered.degraded).toEqual([]);
     expect(agentProfileForgetBlocked(input.root, "reviewer")).toBe(false);
-    expect(input.config.read()).not.toContain("reviewer:");
+    expect(scanAgentRosterDirectory(input.root).members).not.toContain("reviewer");
   });
 
-  it("degrades and retains changed config instead of deleting by name", async () => {
+  /**
+   * t-ae221c — the same promise, measured against the record that now carries membership.
+   *
+   * This used to change `tachyon.yml` mid-transaction and assert that forget degraded rather than
+   * deleting the stanza by name. The stanza is gone; the HOME is what removal takes, so the home is
+   * what an outside change has to stop. Retaining it is the whole point: a quarantine that ran on a
+   * tree it no longer recognizes would move bytes a human had just put there.
+   */
+  it("degrades and retains a home changed outside the transaction instead of quarantining by name", async () => {
     const input = await fixture();
     await expect(commitAgentProfileForget({
       workspaceRoot: input.root,
       agentName: "reviewer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
       onPhase: (phase) => {
-        if (phase === "authority-retired") fs.appendFileSync(path.join(input.root, "tachyon.yml"), "# external change\n");
+        if (phase === "authority-retired") fs.writeFileSync(path.join(input.home, "SOUL.md"), "# written mid-forget\n");
       },
-    })).rejects.toThrow("locator changed outside");
+    })).rejects.toThrow("canonical profile home changed outside the forget transaction");
     expect(agentProfileForgetBlocked(input.root, "reviewer")).toBe(true);
-    expect(input.config.read()).toContain("reviewer:");
     expect(fs.existsSync(input.home)).toBe(true);
+    expect(fs.readFileSync(path.join(input.home, "SOUL.md"), "utf8")).toBe("# written mid-forget\n");
   });
 });
