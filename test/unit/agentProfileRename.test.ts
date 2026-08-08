@@ -1,11 +1,11 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import { commitAgentProfileLifecycle, type AgentProfileLifecycleConfigPort } from "../../src/config/agentProfileLifecycle.js";
+import { commitAgentProfileLifecycle } from "../../src/config/agentProfileLifecycle.js";
 import {
   acquireAgentProfileTransactionLock,
   acquireAgentProfileTransactionLocks,
@@ -54,17 +54,9 @@ class MemoryAuthority implements AgentProfileAuthorityPort {
   }
 }
 
-function configPort(root: string): AgentProfileLifecycleConfigPort {
-  const file = path.join(root, "tachyon.yml");
-  return {
-    read: () => fs.readFileSync(file, "utf8"),
-    replace: (expected, text) => {
-      const current = fs.readFileSync(file, "utf8");
-      const actual = crypto.createHash("sha256").update(current).digest("hex");
-      if (actual !== expected) throw new Error("config CAS conflict");
-      fs.writeFileSync(file, text);
-    },
-  };
+/** t-ae221c — read-only: no profile transaction writes `tachyon.yml` any more. */
+function configText(root: string): string {
+  return fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
 }
 
 class MemoryEvolution implements AgentProfileRenameEvolutionPort {
@@ -87,7 +79,6 @@ class MemoryEvolution implements AgentProfileRenameEvolutionPort {
 async function fixture() {
   const root = temporaryWorkspace();
   const authority = new MemoryAuthority();
-  const config = configPort(root);
   const evolution = new MemoryEvolution(root);
   const created = await commitAgentProfileLifecycle({
     workspaceRoot: root,
@@ -95,14 +86,13 @@ async function fixture() {
     operation: "create",
     createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     authority,
-    config,
     activateState: () => undefined,
   });
   evolution.profiles.set("reviewer", "profile-1");
   const evolutionRoot = path.join(root, ".tachyon", "agents", "reviewer", "evolution");
   fs.mkdirSync(evolutionRoot);
   fs.writeFileSync(path.join(evolutionRoot, "profile.json"), '{"profileId":"profile-1"}\n');
-  return { root, authority, config, evolution, created };
+  return { root, authority, evolution, created };
 }
 
 afterEach(() => {
@@ -126,7 +116,7 @@ describe("canonical agent profile rename", () => {
     sourceAuthority.capabilityGrants = [{ referenceId: "docs", sourceSha256: "a".repeat(64), adapter: "codex", kind: "mcp" }];
     input.authority.records.set("reviewer", sourceAuthority);
     const refreshed = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority, config: input.config }));
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority }));
     fs.writeFileSync(path.join(input.root, ".tachyon", "agents", "reviewer", "owned.txt"), "preserve me\n");
 
     const result = await commitAgentProfileRename({
@@ -135,7 +125,6 @@ describe("canonical agent profile rename", () => {
       newAgentName: "maintainer",
       expectedRevision: refreshed.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
     });
@@ -145,7 +134,7 @@ describe("canonical agent profile rename", () => {
     expect(fs.readFileSync(path.join(input.root, ".tachyon", "agents", "maintainer", "owned.txt"), "utf8")).toBe("preserve me\n");
     expect(input.authority.records.get("reviewer")).toBeUndefined();
     expect(input.authority.records.get("maintainer")).toMatchObject({ agentId: refreshed.agentId, capabilityGrants: sourceAuthority.capabilityGrants });
-    expect(input.config.read()).toContain("profile: .tachyon/agents/maintainer/agent.yml");
+    expect(scanAgentRosterDirectory(input.root).members).toEqual(["maintainer"]);
     expect(input.evolution.profiles.get("maintainer")).toBe("profile-1");
   });
 
@@ -157,7 +146,6 @@ describe("canonical agent profile rename", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
     await commitAgentProfileLifecycle({
@@ -167,12 +155,11 @@ describe("canonical agent profile rename", () => {
       expectedRevision: owner.revision,
       patch: { ownership: { subagents: ["reviewer"] } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
 
     const reviewer = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority, config: input.config }));
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority }));
 
     const result = await commitAgentProfileRename({
       workspaceRoot: input.root,
@@ -181,13 +168,12 @@ describe("canonical agent profile rename", () => {
       ownerAgentName: "boss",
       expectedRevision: reviewer.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
     });
 
     const ownerAfter = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }));
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }));
     expect(ownerAfter.profile.ownership?.subagents).toEqual(["maintainer"]);
     expect(input.authority.records.get("boss")?.revision).toBe(`lifecycle-${result.txid}`);
   });
@@ -200,7 +186,6 @@ describe("canonical agent profile rename", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
     await commitAgentProfileLifecycle({
@@ -210,11 +195,10 @@ describe("canonical agent profile rename", () => {
       expectedRevision: owner.revision,
       patch: { ownership: { subagents: ["reviewer"] } },
       authority: input.authority,
-      config: input.config,
       activateState: () => undefined,
     });
     const reviewer = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority, config: input.config }));
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority }));
 
     await expect(commitAgentProfileRename({
       workspaceRoot: input.root,
@@ -223,25 +207,23 @@ describe("canonical agent profile rename", () => {
       ownerAgentName: "boss",
       expectedRevision: reviewer.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
       onPhase: (phase) => { if (phase === "authority-moved") throw new Error("interrupt"); },
     })).rejects.toThrow("interrupt");
 
     expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }))).profile.ownership?.subagents)
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }))).profile.ownership?.subagents)
       .toEqual(["reviewer"]);
 
     await expect(reconcileAgentProfileRenames({
       workspaceRoot: input.root,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
     })).resolves.toMatchObject({ reconciled: [expect.any(String)], degraded: [] });
     expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
-      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority, config: input.config }))).profile.ownership?.subagents)
+      inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }))).profile.ownership?.subagents)
       .toEqual(["maintainer"]);
   });
 
@@ -253,7 +235,6 @@ describe("canonical agent profile rename", () => {
       newAgentName: "maintainer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
       onPhase: (phase) => { if (phase === "profile-moved") throw new Error("interrupt"); },
@@ -273,7 +254,6 @@ describe("canonical agent profile rename", () => {
       newAgentName: "maintainer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
     })).resolves.toMatchObject({ newAgentName: "maintainer" });
@@ -290,7 +270,6 @@ describe("canonical agent profile rename", () => {
       newAgentName: "maintainer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
     });
@@ -306,7 +285,6 @@ describe("canonical agent profile rename", () => {
       newAgentName: "maintainer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
       onPhase: (phase) => {
@@ -320,13 +298,14 @@ describe("canonical agent profile rename", () => {
     const recovered = await reconcileAgentProfileRenames({
       workspaceRoot: input.root,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
     });
     expect(recovered.degraded).toEqual([]);
-    expect(input.config.read()).toContain("# unrelated");
-    expect(input.config.read()).toContain("profile: .tachyon/agents/maintainer/agent.yml");
+    // t-ae221c — "preserves unrelated YAML edits" is now trivially true and still worth asserting:
+    // the rename never opens the file, so an edit made mid-transaction survives untouched.
+    expect(configText(input.root)).toContain("# unrelated");
+    expect(scanAgentRosterDirectory(input.root).members).toEqual(["maintainer"]);
     expect(input.evolution.profiles.get("maintainer")).toBe("profile-1");
     expect(agentProfileRenameBlocked(input.root, "maintainer")).toBe(false);
   });
@@ -352,7 +331,6 @@ describe("canonical agent profile rename", () => {
       newAgentName: "maintainer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live,
       activateState: () => undefined,
@@ -362,7 +340,6 @@ describe("canonical agent profile rename", () => {
     const recovered = await reconcileAgentProfileRenames({
       workspaceRoot: input.root,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       live,
       activateState: () => undefined,
@@ -381,7 +358,6 @@ describe("canonical agent profile rename", () => {
       newAgentName: "maintainer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      config: input.config,
       evolution: input.evolution,
       activateState: () => undefined,
     })).rejects.toThrow("already exists");

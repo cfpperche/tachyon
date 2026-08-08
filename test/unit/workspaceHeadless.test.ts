@@ -406,10 +406,19 @@ async function savedAgentStateWorkspace(
   ];
   const withoutSubject = fixtures.filter((entry) => entry.name !== "claude23");
   const homeOnly = withheld === "everything-but-the-home";
-  const rosterHidden = withheld === "roster-row" || withheld === "roster-row-and-profile" || homeOnly;
   const profileHidden = withheld === "profile" || withheld === "roster-row-and-profile";
-  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(rosterHidden ? withoutSubject : fixtures), "utf8");
+  // t-ae221c — the `agents:` block is written in full every time on purpose. It is retired: it can
+  // no longer grant or withhold a roster row, and every fixture below proves that by producing its
+  // state through the DIRECTORY while this block still names claude23.
+  fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures), "utf8");
   if (profileHidden) fs.rmSync(path.join(root, ".tachyon", "agents", "claude23"), { recursive: true, force: true });
+  // The one way a roster row can still be withheld while the bytes stay: an `agent.yml` that is on
+  // disk and cannot be read. A directory in its place is the deterministic version of that.
+  if (withheld === "roster-row") {
+    const file = path.join(root, ".tachyon", "agents", "claude23", "agent.yml");
+    fs.rmSync(file);
+    fs.mkdirSync(file);
+  }
   // t-8b58b3 — the residue O1/O2/O3 leave: the DIRECTORY survives and everything that names it does
   // not. Unlinking only `agent.yml` is exactly what `removeAgentProfileIfExact` used to do, so this
   // fixture is the rolled-back create as it reached disk, not a shape invented for the assertion.
@@ -1358,15 +1367,28 @@ describe("SDD 494 Part 4 — the five disagreement states", () => {
     }
   });
 
-  it("orphan-locator: a roster row whose profile directory is gone stays a member with a door", async () => {
-    const { ws } = await savedAgentStateWorkspace("profile");
+  /**
+   * t-ae221c — this used to be `orphan-locator`: the `tachyon.yml` pointer survived the directory,
+   * so the agent stayed a member with a Forget door. The directory IS the agent now, so removing it
+   * removes the agent, and what is left is exactly what `stranded-authority` already names — a host
+   * record whose agent is gone.
+   *
+   * Stated because it costs the human something: there is no product door left for this shape, and
+   * the state's own reason says so rather than pretending one exists. `orphan-locator` keeps its arm
+   * in the truth table (the derivation stays total) and has no producer through this sweep any more:
+   * a roster row now implies a readable `agent.yml`, which is what `profileOnDisk` measures.
+   */
+  it("t-ae221c: removing the profile home removes the AGENT, leaving a stranded authority", async () => {
+    const { root, ws } = await savedAgentStateWorkspace("profile");
     try {
       const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
-      expect(row.state).toBe("orphan-locator");
-      expect(row.member).toBe(true);
-      expect(row.facts.profileOnDisk).toBe(false);
-      expect(row.removal.door).toContain("Forget");
-      expect(ws.refusedAgents().claude23).toContain("orphan-locator");
+      expect(row.state).toBe("stranded-authority");
+      expect(row.member).toBe(false);
+      expect(row.facts).toEqual({ rosterRow: false, profileOnDisk: false, authorityRecord: true, projection: false, profileHomeOnDisk: false });
+      expect(row.removal.door).toBeNull();
+      // The retired block still names it, and that changes nothing.
+      expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("claude23:");
+      expect(ws.isSavedAgentMember("claude23")).toBe(false);
     } finally {
       ws.dispose();
     }
@@ -1387,16 +1409,19 @@ describe("SDD 494 Part 4 — the five disagreement states", () => {
   });
 
   /**
-   * The third open question of `spec.md`, measured rather than argued: the state IS reachable. The
-   * text-editor door above produces exactly this shape, so its handling stays "report it, keep the
-   * profile" instead of becoming a defensive branch nobody reaches.
+   * The third open question of `spec.md`, measured rather than argued: the state IS reachable —
+   * t-ae221c only changed WHICH door produces it. Deleting a stanza by hand used to; membership is
+   * the directory now, so what is left is an `agent.yml` that is on disk and cannot be read. The
+   * handling is unchanged and is the reason the state has to keep existing: bytes are there, so it
+   * is reported and kept rather than swept.
    */
-  it("unlisted-profile: a profile with no roster row is not a member and has no door", async () => {
+  it("unlisted-profile: an unreadable profile is not a member, and its bytes are kept", async () => {
     const { root, ws } = await savedAgentStateWorkspace("roster-row");
     try {
       const row = doorOf(await ws.reconcileSavedAgentRoster(), "claude23");
       expect(row.state).toBe("unlisted-profile");
       expect(row.member).toBe(false);
+      expect(row.facts.profileOnDisk).toBe(true);
       expect(row.removal.door).toBeNull();
       expect(row.removal.reason).toContain("never deletes it automatically");
       expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"))).toBe(true);

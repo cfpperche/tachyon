@@ -239,7 +239,7 @@ export function exportPortableAgentProfileBundle(input: {
 }
 
 type BundleLifecycleDeps = Pick<CommitAgentProfileLifecycleInput,
-  "workspaceRoot" | "authority" | "config" | "activateState" | "onPhase">;
+  "workspaceRoot" | "authority" | "activateState" | "onPhase">;
 
 export interface ImportPortableAgentProfileResult {
   lifecycle: AgentProfileLifecycleCommitResult;
@@ -286,7 +286,6 @@ export async function importPortableAgentProfileBundle(input: BundleLifecycleDep
     ...(references.length > 0 ? { createProfileLocalReferences: references } : {}),
     ...(artifacts.length > 0 ? { artifacts } : {}),
     authority: input.authority,
-    config: input.config,
     activateState: input.activateState,
     ...(input.onPhase ? { onPhase: input.onPhase } : {}),
   });

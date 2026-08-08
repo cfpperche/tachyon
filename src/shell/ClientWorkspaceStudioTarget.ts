@@ -11,7 +11,7 @@ import {
 import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
 import { agentForgetPlanResultSchemaV1, type AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
 import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
-import { scanAgentProfilePointers } from "../config/agentProfilePointer.js";
+import { scanAgentRosterDirectory } from "../config/agentRosterDirectory.js";
 import { collectVerifyCandidates } from "../config/verifyCandidates.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
@@ -152,8 +152,9 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
 
   /**
    * t-4c113c — the editor-side config is a SYNTAX-only parse (`parseProfileAwareConfigSyntax` stubs
-   * every profile pointer), so `agents.<n>.subagents` does not exist here and the roster cannot be
-   * derived locally. The engine, which projects the canonical profiles, is the only place that knows.
+   * every name the roster directory yields), so `agents.<n>.subagents` does not exist here and the
+   * roster cannot be derived locally. The engine, which projects the canonical profiles, is the only
+   * place that knows.
    */
   async agentOwnershipView(agent: string): Promise<AgentOwnershipViewV1> {
     const result = await this.client.query({
@@ -631,12 +632,14 @@ function readWorkspaceConfig(workspaceRoot: string): WorkspaceConfigReadResult {
     const file = path.join(workspaceRoot, fileName);
     if (!fs.existsSync(file)) continue;
     const yamlText = fs.readFileSync(file, "utf8");
-    const loaded = parseProfileAwareConfigSyntax(yamlText);
+    // t-ae221c — the roster is measured off `.tachyon/agents/`, not read out of the file. The syntax
+    // pass takes no filesystem reads of its own on purpose, so the names are measured here and
+    // passed in; the retired `agents:` block, if the human still has one, is ignored with a warning.
+    const roster = scanAgentRosterDirectory(workspaceRoot).members;
+    const loaded = parseProfileAwareConfigSyntax(yamlText, roster);
     if (!loaded.config) return { status: "invalid" };
-    const pointers = scanAgentProfilePointers(yamlText);
-    if (pointers.errors.length > 0) return { status: "invalid" };
-    for (const name of pointers.pointers.keys()) {
-      // A profile pointer is an Agent-arm marker; a terminal entry can never carry one.
+    for (const name of roster) {
+      // A canonical profile is an Agent-arm marker; a terminal entry can never carry one.
       const def = asAgent(loaded.config.agents[name]);
       if (def) def.profilePointer = true;
     }

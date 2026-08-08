@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/config/loadConfig.js";
-import { parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
+import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
 import { validateForm, type FormState } from "../../src/webview/formLogic.js";
 import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/domain.js";
 import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
@@ -64,17 +64,23 @@ describe("door: terminals: in tachyon.yml", () => {
   });
 });
 
-describe("door: agents: in tachyon.yml (already correct — kept verbatim)", () => {
-  it("refuses an inline definition and names Agent Studio", () => {
-    const { errors } = parseProfileAwareConfigSyntax("agents:\n  rev:\n    cmd: claude\n");
-    expect(errors).toEqual([
-      "agents.rev: inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio",
-    ]);
-  });
-
-  it("accepts a profile pointer", () => {
-    const { errors } = parseProfileAwareConfigSyntax("agents:\n  rev:\n    profile: .tachyon/agents/rev/agent.yml\n");
+/**
+ * t-ae221c — this door MOVED rather than closing. `agents:` used to be refused when it held anything
+ * but a canonical pointer; the roster is `.tachyon/agents/` now, so nothing under `agents:` can
+ * declare an agent whatever it says. The fail-closed property is therefore stronger than the refusal
+ * it replaces — an inline definition is not rejected, it is unreachable — and the read stays
+ * forgiving (t-48dd8d) so the file a human already wrote keeps loading.
+ */
+describe("door: agents: in tachyon.yml (retired, and inert)", () => {
+  it.each([
+    ["an inline definition", "agents:\n  rev:\n    cmd: claude\n"],
+    ["a canonical pointer", "agents:\n  rev:\n    profile: .tachyon/agents/rev/agent.yml\n"],
+    ["a shape nothing ever wrote", "agents:\n  rev:\n    anything: at all\n"],
+  ])("loads with a warning and declares no agent for %s", (_label, yaml) => {
+    const { errors, warnings, config } = parseProfileAwareConfigSyntax(yaml);
     expect(errors).toEqual([]);
+    expect(warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(config?.agents).toEqual({});
   });
 });
 

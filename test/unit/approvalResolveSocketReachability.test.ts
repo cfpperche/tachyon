@@ -165,7 +165,9 @@ describe("t-6edd70 — what a same-uid control-socket speaker can reach", () => 
     } as never);
     expect(created).toMatchObject({ ok: true });
     expect((created as { result: { status: string; message?: string } }).result.status, JSON.stringify(created)).toBe("ok");
-    expect(fs.readFileSync(path.join(daemon.workspaceRoot, "tachyon.yml"), "utf8")).toContain("smuggled");
+    // t-ae221c — the agent lands in the roster DIRECTORY, not in `tachyon.yml`. The reachability
+    // defect this test names is unchanged; only where the created agent shows up moved.
+    expect(fs.existsSync(path.join(daemon.workspaceRoot, ".tachyon", "agents", "smuggled", "agent.yml"))).toBe(true);
   }, 120_000);
 });
 

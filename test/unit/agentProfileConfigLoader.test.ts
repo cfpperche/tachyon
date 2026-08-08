@@ -16,7 +16,8 @@ import {
 } from "../../src/config/agentProfileProjection.js";
 import { agentProfileSchemaV1 } from "../../src/config/agentProfileSchema.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import { scanAgentProfilePointers } from "../../src/config/agentProfilePointer.js";
+import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
+import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
 import { digestCapturedCapability, type CapturedCapabilityEntry } from "../../src/config/agentCapabilitySource.js";
 import { asAgent } from "../../src/config/loadConfig.js";
 
@@ -72,7 +73,7 @@ function authority(bytes: Buffer, overrides: Partial<AgentProfileAuthorityRecord
 function load(root: string, record: AgentProfileAuthorityRecord, extra: Partial<LoadProfileAwareConfigInput> = {}) {
   const homeDir = temporaryRoot("tachyon-agent-profile-home-");
   return loadProfileAwareConfig({
-    yamlText: "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n",
+    yamlText: "settings: {}\n",
     workspaceRoot: root,
     authorities: new Map([["codex", record]]),
     homeDir,
@@ -84,17 +85,112 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe("agent profile pointer syntax", () => {
-  it("accepts only the exact conventional pointer", () => {
-    const valid = scanAgentProfilePointers("agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n");
-    expect(valid.errors).toEqual([]);
-    expect(valid.pointers.get("codex")?.path).toBe(".tachyon/agents/codex/agent.yml");
+describe("t-ae221c — the roster is the directory", () => {
+  it("counts a directory with a readable agent.yml, and nothing else", () => {
+    const root = temporaryRoot("tachyon-roster-scan-");
+    writeProfile(root);
+    // Residue an interrupted create or a `forgetAgent` that took `evolution/` leaves behind.
+    fs.mkdirSync(path.join(root, ".tachyon", "agents", "ghost"), { recursive: true });
+    // A name the product could never have written; it is still a directory somebody made.
+    fs.mkdirSync(path.join(root, ".tachyon", "agents", "not a name"), { recursive: true });
+    // A FILE beside the directories is not a candidate at all.
+    fs.writeFileSync(path.join(root, ".tachyon", "agents", "README.md"), "notes\n");
 
-    const mixed = scanAgentProfilePointers("agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n    cmd: codex\n");
-    expect(mixed.errors).toContain("agents.codex: profile pointer cannot coexist with inline field(s): cmd");
+    const scan = scanAgentRosterDirectory(root);
+    expect(scan.members).toEqual(["codex"]);
+    expect(scan.nonMembers).toEqual([
+      { agentName: "ghost", reason: "no agent.yml" },
+      { agentName: "not a name", reason: "not a valid agent name" },
+    ]);
+  });
 
-    const arbitrary = scanAgentProfilePointers("agents:\n  codex:\n    profile: profiles/codex.yml\n");
-    expect(arbitrary.errors[0]).toContain("expected \".tachyon/agents/codex/agent.yml\"");
+  it("is an empty roster, not a failure, when .tachyon/agents does not exist", () => {
+    expect(scanAgentRosterDirectory(temporaryRoot("tachyon-roster-absent-"))).toEqual({ members: [], nonMembers: [] });
+  });
+
+  it("does not follow a symlink into the fleet", () => {
+    const root = temporaryRoot("tachyon-roster-symlink-");
+    writeProfile(root);
+    fs.symlinkSync(path.join(root, ".tachyon", "agents", "codex"), path.join(root, ".tachyon", "agents", "twin"));
+    const scan = scanAgentRosterDirectory(root);
+    expect(scan.members).toEqual(["codex"]);
+    expect(scan.nonMembers).toEqual([]);
+  });
+});
+
+describe("t-ae221c — a legacy agents: block loads with a warning and no migrator", () => {
+  /**
+   * The migration, and the whole of it. Every `tachyon.yml` in the world still carries the block;
+   * t-48dd8d's forgiving read is what lets it keep loading while it stops meaning anything.
+   */
+  it("keeps the settings, ignores the block, warns, and never rewrites the file", () => {
+    const root = temporaryRoot("tachyon-legacy-block-");
+    const bytes = writeProfile(root);
+    const yamlText = "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n"
+      + "  vanished:\n    profile: .tachyon/agents/vanished/agent.yml\n"
+      + "terminals:\n  shell:\n    cmd: bash\n"
+      + "settings:\n  maxAgents: 12\n";
+    const before = yamlText;
+
+    const result = loadProfileAwareConfig({
+      yamlText,
+      workspaceRoot: root,
+      authorities: new Map([["codex", authority(bytes)]]),
+      homeDir: temporaryRoot("tachyon-legacy-block-home-"),
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    // Advisory, never `discarded`: `discarded` blocks every programmatic write to this file.
+    expect(result.discarded).toEqual([]);
+    // The block named `vanished`; only the directory decides, so it is simply not there.
+    expect(Object.keys(result.config!.agents).sort()).toEqual(["codex", "shell"]);
+    expect(result.config!.agents.shell?.kind).toBe("terminal");
+    expect(result.config!.settings.maxAgents).toBe(12);
+    expect(yamlText).toBe(before);
+  });
+
+  it("admits an agent the block never mentioned", () => {
+    const root = temporaryRoot("tachyon-undeclared-member-");
+    const bytes = writeProfile(root);
+    const result = loadProfileAwareConfig({
+      yamlText: "settings:\n  maxAgents: 4\n",
+      workspaceRoot: root,
+      authorities: new Map([["codex", authority(bytes)]]),
+      homeDir: temporaryRoot("tachyon-undeclared-member-home-"),
+    });
+    expect(result.errors).toEqual([]);
+    expect(Object.keys(result.config!.agents)).toEqual(["codex"]);
+  });
+
+  it("reports a home with no agent.yml instead of admitting it to the fleet", () => {
+    const root = temporaryRoot("tachyon-orphan-home-load-");
+    const bytes = writeProfile(root);
+    fs.mkdirSync(path.join(root, ".tachyon", "agents", "ghost"), { recursive: true });
+    const result = loadProfileAwareConfig({
+      yamlText: "settings: {}\n",
+      workspaceRoot: root,
+      authorities: new Map([["codex", authority(bytes)]]),
+      homeDir: temporaryRoot("tachyon-orphan-home-load-home-"),
+    });
+    expect(result.errors).toEqual([]);
+    expect(Object.keys(result.config!.agents)).toEqual(["codex"]);
+    expect(result.warnings.some((warning) => warning.startsWith(".tachyon/agents/ghost/: no agent.yml"))).toBe(true);
+  });
+
+  it("the syntax pass stubs only the roster it is handed, and warns about the retired block", () => {
+    const withBlock = parseProfileAwareConfigSyntax(
+      "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n  legacy:\n    cmd: bash\nsettings:\n  auth: false\n",
+      ["measured"],
+    );
+    expect(withBlock.errors).toEqual([]);
+    expect(withBlock.warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(Object.keys(withBlock.config!.agents)).toEqual(["measured"]);
+    expect(withBlock.config!.settings.auth).toBe(false);
+
+    const withoutBlock = parseProfileAwareConfigSyntax("settings:\n  auth: true\n");
+    expect(withoutBlock.warnings).not.toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(withoutBlock.config!.agents).toEqual({});
   });
 });
 
@@ -864,7 +960,7 @@ describe("loadProfileAwareConfig", () => {
       runtimeInspector: { ...GROK_PRIVATE_HOME_INPUT_INSPECTOR },
     };
     const result = loadProfileAwareConfig({
-      yamlText: "agents:\n  grok-x:\n    profile: .tachyon/agents/grok-x/agent.yml\n",
+      yamlText: "settings: {}\n",
       workspaceRoot: root,
       authorities: new Map([["grok-x", record]]),
     });
@@ -915,7 +1011,7 @@ describe("loadProfileAwareConfig", () => {
       runtimeInspector: { ...GROK_PRIVATE_HOME_INPUT_INSPECTOR },
     };
     const options = {
-      yamlText: "agents:\n  grok-n:\n    profile: .tachyon/agents/grok-n/agent.yml\n",
+      yamlText: "settings: {}\n",
       workspaceRoot: root,
       authorities: new Map([["grok-n", record]]),
       homeDir: home,
@@ -1005,7 +1101,7 @@ describe("loadProfileAwareConfig", () => {
         root,
         payload,
         options: {
-          yamlText: "agents:\n  grok-p:\n    profile: .tachyon/agents/grok-p/agent.yml\n",
+          yamlText: "settings: {}\n",
           workspaceRoot: root,
           authorities: new Map([["grok-p", record]]),
         },
@@ -1137,7 +1233,7 @@ describe("loadProfileAwareConfig", () => {
     };
     expect(v1.sha256).not.toBe(GROK_PRIVATE_HOME_INPUT_INSPECTOR.sha256);
     const result = loadProfileAwareConfig({
-      yamlText: "agents:\n  grok-old:\n    profile: .tachyon/agents/grok-old/agent.yml\n",
+      yamlText: "settings: {}\n",
       workspaceRoot: root,
       authorities: new Map([["grok-old", {
         schemaVersion: 1 as const,
@@ -1154,7 +1250,7 @@ describe("loadProfileAwareConfig", () => {
 
     // Acceptance is per named sha, not "any older version": an unrecognized descriptor still refuses.
     const forged = loadProfileAwareConfig({
-      yamlText: "agents:\n  grok-old:\n    profile: .tachyon/agents/grok-old/agent.yml\n",
+      yamlText: "settings: {}\n",
       workspaceRoot: root,
       authorities: new Map([["grok-old", {
         schemaVersion: 1 as const,
@@ -1180,7 +1276,7 @@ describe("loadProfileAwareConfig", () => {
     }));
     fs.writeFileSync(path.join(directory, "agent.yml"), bytes);
     const result = loadProfileAwareConfig({
-      yamlText: "agents:\n  grok:\n    profile: .tachyon/agents/grok/agent.yml\n",
+      yamlText: "settings: {}\n",
       workspaceRoot: root,
       authorities: new Map([["grok", {
         schemaVersion: 1 as const,
@@ -1215,12 +1311,15 @@ describe("loadProfileAwareConfig", () => {
       skills: [{ name: "research" }],
     });
 
+    // t-ae221c — `profileCapabilities` stays unauthorable because the retired block is not read at
+    // all, so nothing a human types under `agents:` can reach a projected agent.
     const authored = loadProfileAwareConfig({
       yamlText: "agents:\n  codex:\n    cmd: codex\n    profileCapabilities: {}\n",
       workspaceRoot: temporaryRoot("tachyon-profile-authored-internal-"),
       authorities: new Map(),
     });
-    expect(authored.errors.join("\n")).toContain("inline agent definitions are no longer supported");
+    expect(authored.errors).toEqual([]);
+    expect(authored.config?.agents).toEqual({});
   });
 
   it("projects an authority-granted local MCP declaration without exposing an authorable harness field", () => {
@@ -1260,7 +1359,7 @@ describe("loadProfileAwareConfig", () => {
     }));
     fs.writeFileSync(path.join(directory, "agent.yml"), bytes);
     const result = loadProfileAwareConfig({
-      yamlText: "agents:\n  pi-a:\n    profile: .tachyon/agents/pi-a/agent.yml\n",
+      yamlText: "settings: {}\n",
       workspaceRoot: root,
       authorities: new Map([["pi-a", {
         schemaVersion: 1 as const,
@@ -1301,7 +1400,7 @@ describe("loadProfileAwareConfig", () => {
     }));
     fs.writeFileSync(path.join(directory, "agent.yml"), profile);
     const result = loadProfileAwareConfig({
-      yamlText: "agents:\n  pi-collision:\n    profile: .tachyon/agents/pi-collision/agent.yml\n",
+      yamlText: "settings: {}\n",
       workspaceRoot: root,
       authorities: new Map([["pi-collision", {
         schemaVersion: 1 as const,
@@ -1366,12 +1465,17 @@ describe("loadProfileAwareConfig", () => {
     });
     expect(result.config?.agentSources.helper?.mode).toBe("terminal");
 
+    // t-ae221c — an inline stanza used to be REFUSED by name. It is now a retired key: the block is
+    // ignored with a warning, and `profileLifecycle` stays unauthorable because the only thing that
+    // can produce it is a projected canonical profile, which this workspace has none of.
     const authored = loadProfileAwareConfig({
       yamlText: "agents:\n  codex:\n    cmd: codex\n    profileLifecycle:\n      enabled: false\n",
       workspaceRoot: temporaryRoot("tachyon-profile-authored-lifecycle-"),
       authorities: new Map(),
     });
-    expect(authored.errors.join("\n")).toContain("inline agent definitions are no longer supported");
+    expect(authored.errors).toEqual([]);
+    expect(authored.warnings).toContain(LEGACY_AGENTS_BLOCK_WARNING);
+    expect(authored.config?.agents).toEqual({});
   });
 
   it("fails closed when authority is absent, stale, or an effective native config is non-empty", () => {
@@ -1380,7 +1484,7 @@ describe("loadProfileAwareConfig", () => {
     const record = authority(bytes);
 
     const missing = loadProfileAwareConfig({
-      yamlText: "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n",
+      yamlText: "settings: {}\n",
       workspaceRoot: root,
       authorities: new Map(),
       homeDir: temporaryRoot("tachyon-agent-profile-home-"),
@@ -1410,7 +1514,13 @@ describe("loadProfileAwareConfig", () => {
     expect(emptyCapabilities.errors).toEqual([]);
   });
 
-  it("rejects inline agents even when canonical bytes exist", () => {
+  /**
+   * t-ae221c — an inline stanza cannot smuggle a definition past the profile, and it no longer has
+   * to be refused by name to be harmless: the block is not read at all. `cmd: codex` is ignored, and
+   * the name is a member because the DIRECTORY says so — which is why the refusal it earns is the
+   * one about its missing authority, not one about the way it was written.
+   */
+  it("ignores an inline stanza and lets the profile decide, even for the same name", () => {
     const root = temporaryRoot("tachyon-agent-profile-workspace-");
     writeProfile(root);
     const result = loadProfileAwareConfig({
@@ -1419,7 +1529,8 @@ describe("loadProfileAwareConfig", () => {
       authorities: new Map(),
       homeDir: temporaryRoot("tachyon-agent-profile-home-"),
     });
-    expect(result.errors.join("\n")).toContain("inline agent definitions are no longer supported");
+    expect(result.errors).toEqual(["agents.codex.profile: host profile authority is missing"]);
+    expect(result.config).toBeUndefined();
   });
 });
 
@@ -1476,7 +1587,7 @@ describe("t-588644 — a refused profile is not a refused config", () => {
       root,
       healthySha,
       input: {
-        yamlText: "agents:\n  healthy:\n    profile: .tachyon/agents/healthy/agent.yml\n  broken:\n    profile: .tachyon/agents/broken/agent.yml\n",
+        yamlText: "settings: {}\n",
         workspaceRoot: root,
         authorities: new Map([["healthy", healthy], ["broken", broken]]),
         homeDir,
@@ -1517,27 +1628,28 @@ describe("t-588644 — a refused profile is not a refused config", () => {
   });
 
   it("does not invent a refused entry when every agent projects", () => {
-    const { input } = twoAgents();
-    const healthyOnly = {
-      ...input,
-      yamlText: "agents:\n  healthy:\n    profile: .tachyon/agents/healthy/agent.yml\n",
-    };
+    const { root, input } = twoAgents();
+    // t-ae221c — narrowing the roster means removing the HOME, not the stanza: the file no longer
+    // decides who is in the fleet.
+    fs.rmSync(path.join(root, ".tachyon", "agents", "broken"), { recursive: true, force: true });
 
-    const result = loadProfileAwareConfig(healthyOnly);
+    const result = loadProfileAwareConfig(input);
 
     expect(Object.values(result.config!.agentSources).map((source) => source.mode)).toEqual(["profile"]);
   });
 
   it("still fails the whole file when the failure is not one agent's profile", () => {
-    // Pointer syntax describes the declaration itself: there is no healthy subset to salvage.
+    // t-ae221c — after the roster left the file, exactly one failure is still the FILE's: bytes that
+    // are not YAML. There is no healthy subset to salvage when the document cannot be read at all.
     const result = loadProfileAwareConfig({
       ...twoAgents().input,
-      yamlText: "agents:\n  healthy:\n    profile: not/a/canonical/pointer.yml\n",
+      yamlText: "agents:\n  healthy:\n   profile: [unclosed\n",
     });
 
     expect(result.config).toBeUndefined();
     expect(result.profileErrors).toEqual([]);
     expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.join("\n")).toContain("invalid YAML");
   });
 });
 
@@ -1590,7 +1702,7 @@ describe("t-b0cfd4 — a stale pin withholds one skill and leaves the agent stan
       root,
       digests: { authorizedSha, installedSha, sddSha },
       input: {
-        yamlText: "agents:\n  codex:\n    profile: .tachyon/agents/codex/agent.yml\n",
+        yamlText: "settings: {}\n",
         workspaceRoot: root,
         authorities: new Map([["codex", {
           schemaVersion: 1, agentName: "codex", agentId: AGENT, revision: "profile-r1",

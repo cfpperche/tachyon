@@ -1,10 +1,9 @@
-import { isMap, isScalar, parseDocument, type Scalar, type YAMLMap } from "yaml";
+import { isMap, parseDocument, type YAMLMap } from "yaml";
 import { asAgent, parseConfig, type AgentEntry, type ParseResult, type TachyonConfig } from "./loadConfig.js";
 import type { WorkspaceProfileDefaults } from "./agentProfileResolver.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
-import { scanAgentProfilePointers } from "./agentProfilePointer.js";
+import { agentRosterDirectoryWarning, scanAgentRosterDirectory } from "./agentRosterDirectory.js";
 import { projectCanonicalAgentProfile } from "./agentProfileProjection.js";
-import { isValidAgentName } from "./nameValidation.js";
 
 export type AgentConfigSource =
   | { mode: "terminal"; source: string }
@@ -66,40 +65,50 @@ export interface LoadProfileAwareConfigInput {
 }
 
 /**
- * Syntax-only compatibility pass for constructor-time settings. It proves the
- * pointer shape but deliberately does not claim that a profile is spawnable.
+ * t-ae221c — the ONE thing `tachyon.yml` still has to say about `agents:`, and it is a warning.
+ *
+ * Migration without a migrator. Every `tachyon.yml` in the world still carries the block, and under
+ * t-48dd8d a retired key is accepted and ignored rather than refused — so the file a human already
+ * wrote keeps loading, its terminals and settings keep working, and the block simply stops meaning
+ * anything. Nothing here rewrites the human's file; saying it can go is the whole product answer.
+ *
+ * Deliberately a WARNING and not a `discarded` entry: `discarded` blocks a programmatic write
+ * (t-099be8), and blocking Agent Studio from ever writing a terminal or a setting again until a human
+ * hand-edits an inert block would make the forgiving read pointless.
  */
-export function parseProfileAwareConfigSyntax(yamlText: string): ParseResult {
-  const scan = scanAgentProfilePointers(yamlText);
-  if (scan.errors.length > 0) return { errors: scan.errors, warnings: [], discarded: [] };
+export const LEGACY_AGENTS_BLOCK_WARNING =
+  "agents: is no longer the fleet roster — a directory under .tachyon/agents/ with a readable "
+  + "agent.yml is. The block was ignored and can be deleted from this file.";
+
+/**
+ * Strip the retired `agents:` block, warning when there was one, and stub the roster the caller
+ * measured. Returns the warnings; the document is mutated in place.
+ */
+function replaceAgentsBlock(doc: ReturnType<typeof parseDocument>, rosterNames: readonly string[]): string[] {
+  const warnings: string[] = [];
+  const declared = doc.get("agents", true);
+  if (declared !== undefined && declared !== null && (!isMap(declared) || (declared as YAMLMap).items.length > 0)) {
+    warnings.push(LEGACY_AGENTS_BLOCK_WARNING);
+  }
+  doc.delete("agents");
+  for (const agentName of rosterNames) doc.setIn(["agents", agentName], { cmd: "codex" });
+  return warnings;
+}
+
+/**
+ * Syntax-only compatibility pass for constructor-time settings. It reads no bytes off disk, so it
+ * cannot know the roster: a caller that needs the fleet in the result measures it with
+ * `scanAgentRosterDirectory` and passes the names in. A caller that only wants `settings:` — which is
+ * every constructor-time caller — passes nothing and gets an empty roster, which is honest.
+ */
+export function parseProfileAwareConfigSyntax(yamlText: string, rosterNames: readonly string[] = []): ParseResult {
   const doc = parseDocument(yamlText, { uniqueKeys: true });
-  const inlineAgents = declaredAgentNames(doc).filter((name) => !scan.pointers.has(name));
-  if (inlineAgents.length > 0) {
-    return {
-      errors: inlineAgents.map((name) =>
-        `agents.${name}: inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio`),
-      warnings: [],
-      discarded: [],
-    };
+  if (doc.errors.length > 0) {
+    return { errors: doc.errors.map((error) => `invalid YAML: ${error.message}`), warnings: [], discarded: [] };
   }
-  for (const agentName of scan.pointers.keys()) {
-    doc.setIn(["agents", agentName], { cmd: "codex" });
-  }
-  return parseConfig(String(doc));
-}
-
-function scalarText(value: unknown): string | undefined {
-  return isScalar(value) && typeof (value as Scalar).value === "string"
-    ? String((value as Scalar).value)
-    : undefined;
-}
-
-function declaredAgentNames(doc: ReturnType<typeof parseDocument>): string[] {
-  const agents = doc.get("agents", true);
-  if (!isMap(agents)) return [];
-  return (agents as YAMLMap).items
-    .map((pair) => scalarText(pair.key))
-    .filter((name): name is string => name !== undefined);
+  const warnings = replaceAgentsBlock(doc, rosterNames);
+  const parsed = parseConfig(String(doc));
+  return { ...parsed, warnings: [...warnings, ...parsed.warnings] };
 }
 
 /**
@@ -107,17 +116,23 @@ function declaredAgentNames(doc: ReturnType<typeof parseDocument>): string[] {
  * bytes, host authority and runtime-native inputs are resolved only here.
  */
 export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): ProfileAwareParseResult {
-  const scan = scanAgentProfilePointers(input.yamlText);
-  // Pointer syntax is a property of the FILE, not of any one agent: nothing here can be isolated,
-  // because the declaration that names the agents is itself unreadable.
-  if (scan.errors.length > 0) return { errors: scan.errors, warnings: [], discarded: [], profileErrors: [] };
-
   const doc = parseDocument(input.yamlText, { uniqueKeys: true });
+  // Unreadable YAML is a property of the FILE, not of any one agent: nothing here can be isolated,
+  // because the document that carries the terminals and the settings cannot be read at all.
+  if (doc.errors.length > 0) {
+    return {
+      errors: doc.errors.map((error) => `invalid YAML: ${error.message}`),
+      warnings: [], discarded: [], profileErrors: [],
+    };
+  }
+
+  // t-ae221c — THE roster, and the only place it is decided.
+  const roster = scanAgentRosterDirectory(input.workspaceRoot);
   const errors: string[] = [];
   // t-588644 — every string pushed here is ALSO pushed to `errors`. This is the isolatable subset,
   // not a second error channel; see the field docs on ProfileAwareParseResult.
   const profileErrors: string[] = [];
-  const profileWarnings: string[] = [];
+  const profileWarnings: string[] = roster.nonMembers.map(agentRosterDirectoryWarning);
   const profileSources: Record<string, AgentConfigSource> = {};
   const projected = new Map<string, AgentEntry>();
   // t-0ad300 — the refused names, kept so they can still be rendered as refused. Recorded here and
@@ -131,16 +146,11 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
     if (!refused.has(agentName)) refused.set(agentName, { source, reason: reason.replace(/^[.:]\s*/, "").replace(/^\.profile:\s*/, "") });
   };
 
-  for (const agentName of declaredAgentNames(doc)) {
-    if (!isValidAgentName(agentName)) continue;
-    const pointer = scan.pointers.get(agentName);
-    if (!pointer) {
-      refuse(agentName, `tachyon.yml#agents.${agentName}`, ": inline agent definitions are no longer supported; create or edit the canonical agent in Agent Studio");
-      continue;
-    }
+  for (const agentName of roster.members) {
+    const home = `.tachyon/agents/${agentName}/agent.yml`;
     const authority = input.authorities.get(agentName);
     if (!authority) {
-      refuse(agentName, pointer.path, ".profile: host profile authority is missing");
+      refuse(agentName, home, ".profile: host profile authority is missing");
       continue;
     }
     const result = projectCanonicalAgentProfile({
@@ -151,14 +161,14 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
       homeDir: input.homeDir,
     });
     if (!result.ok) {
-      for (const error of result.errors) refuse(agentName, pointer.path, `.profile: ${error}`);
+      for (const error of result.errors) refuse(agentName, home, `.profile: ${error}`);
       continue;
     }
     projected.set(agentName, result.definition);
     profileWarnings.push(...result.warnings.map((warning) => `agents.${agentName}.profile: ${warning}`));
     profileSources[agentName] = {
       mode: "profile",
-      source: pointer.path,
+      source: home,
       agentId: authority.agentId,
       profileSha256: result.resolved.sourceSha256,
       effectiveSha256: result.resolved.effectiveSha256,
@@ -176,12 +186,10 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   if (errors.length > profileErrors.length || (errors.length > 0 && projected.size === 0)) {
     return { errors, warnings: [], discarded: [], profileErrors };
   }
-  // A refused agent's pointer entry must leave the document before the legacy parser sees it: that
-  // parser knows `cmd`, not `profile`, and would report the pointer as a malformed agent — turning
-  // one refused profile back into a parse error for the whole file, which is what this fixes.
-  for (const agentName of declaredAgentNames(doc)) {
-    if (!projected.has(agentName)) doc.deleteIn(["agents", agentName]);
-  }
+  // t-ae221c — the retired block leaves the document before the legacy parser sees it, and the
+  // projected roster takes its place. A refused agent is simply never written back, which is what
+  // keeps it out of `config.agents` while `agentSources` still remembers its name (t-0ad300).
+  profileWarnings.unshift(...replaceAgentsBlock(doc, []));
   for (const [agentName, definition] of projected) {
     const {
       profileCapabilities: _profileCapabilities,

@@ -1063,10 +1063,9 @@ async function promoteAgent(
   }
   if (workspace.config?.agents[agent] !== undefined) throw new Error(`'${agent}' is already declared in tachyon.yml`);
   const changed = workspace.mutateConfig(
-    // t-c1ef82 — the `terminals:` block, because that is where a terminal entry is READABLE. The
-    // former `addAgent` wrote into `agents:` regardless of kind, which the profile-aware loader now
-    // refuses outright ("inline agent definitions are no longer supported"), so promotion used to
-    // save a config that failed on the very next load.
+    // t-c1ef82 — the `terminals:` block, because that is the only block this file still declares
+    // anything in. The former `addAgent` wrote into `agents:` regardless of kind; since t-ae221c that
+    // block is retired and read-and-dropped, so an entry written there would simply never come back.
     (text) => upsertAgent(text ?? "", agent, { cmd: definition.cmd }, undefined, "terminals"),
     () => onViewsChanged("agents"),
   );

@@ -5,13 +5,12 @@
 #
 # Format: https://github.com/cfpperche/tachyon
 
-# Agents are canonical profiles. Create the first one in Agent Studio; it will add its profile
-# pointer here. Keeping the initial roster empty makes this copied template load before that step.
-agents: {}
-# To add one by hand, replace the empty roster above with:
-# agents:
-#   codex:
-#     profile: .tachyon/agents/codex/agent.yml
+# t-ae221c — there is no agent roster in this file. The fleet is `.tachyon/agents/<name>/`: a
+# directory with a readable `agent.yml` in it IS an agent, and nothing here declares one. Create the
+# first one in Agent Studio.
+#
+# An older `tachyon.yml` still carries an `agents:` block. It loads, with a warning saying the block
+# is ignored and can be deleted. Nothing rewrites your file for you.
 
 settings:
   auth: true # require a Bearer token on the MCP Bridge (recommended)

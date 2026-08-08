@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
@@ -19,10 +18,6 @@ export interface AgentProfileAuthorityPort {
     expected: AgentProfileAuthorityRecord,
     target: AgentProfileAuthorityRecord,
   ): Promise<void>;
-}
-
-function digest(value: string | Buffer): string {
-  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 export function agentProfileTransactionsRoot(workspaceRoot: string): string {
@@ -219,61 +214,14 @@ export function acquireAgentProfileRecoveryLocks(
   };
 }
 
-interface FileSnapshot {
-  text: string;
-  stat: fs.BigIntStats;
-}
-
-function readRegularFileSnapshot(file: string): FileSnapshot {
-  const noFollow = process.platform === "win32" ? 0 : (fs.constants.O_NOFOLLOW ?? 0);
-  const fd = fs.openSync(file, fs.constants.O_RDONLY | noFollow);
-  try {
-    const before = fs.fstatSync(fd, { bigint: true });
-    if (!before.isFile()) throw new Error(`${file} is not a regular file`);
-    const text = fs.readFileSync(fd, "utf8");
-    const after = fs.fstatSync(fd, { bigint: true });
-    if (before.dev !== after.dev || before.ino !== after.ino || before.size !== after.size
-      || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) {
-      throw new Error(`${file} changed during read`);
-    }
-    return { text, stat: after };
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-function sameRevision(left: fs.BigIntStats, right: fs.BigIntStats): boolean {
-  return left.dev === right.dev && left.ino === right.ino && left.size === right.size
-    && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
-}
-
-function atomicReplaceIfUnchanged(file: string, snapshot: FileSnapshot, nextText: string): void {
-  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
-  let renamed = false;
-  try {
-    writeNewDurable(temporary, nextText);
-    const current = readRegularFileSnapshot(file).stat;
-    if (!sameRevision(snapshot.stat, current)) throw new Error(`${file} changed before commit`);
-    fs.chmodSync(temporary, Number(snapshot.stat.mode & 0o777n));
-    fs.renameSync(temporary, file);
-    renamed = true;
-    syncDirectory(path.dirname(file));
-  } finally {
-    if (!renamed) {
-      try { fs.unlinkSync(temporary); } catch { /* best-effort cleanup */ }
-    }
-  }
-}
-
-export function readAgentProfileConfigText(file: string): string {
-  return readRegularFileSnapshot(file).text;
-}
-
-export function replaceAgentProfileConfigIfDigest(file: string, expectedSha256: string, nextText: string): void {
-  const snapshot = readRegularFileSnapshot(file);
-  if (digest(snapshot.text) !== expectedSha256) throw new Error(`${file} changed (CAS mismatch)`);
-  atomicReplaceIfUnchanged(file, snapshot, nextText);
-}
+/**
+ * t-ae221c — the whole `tachyon.yml` read/CAS-replace path that lived here is gone.
+ *
+ * It existed for exactly one caller: the create/rename/forget transactions writing the agent's
+ * pointer stanza as their second durable file. The roster comes from `.tachyon/agents/` now, so no
+ * profile transaction touches the config at all — and a whole-file compare-and-swap that nothing
+ * calls is a door left standing in a wall that moved.
+ */
 
 function descriptorPath(fd: number): string {
   const expected = fs.fstatSync(fd, { bigint: true });

@@ -3,12 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
 import {
   commitAgentProfileLifecycle as commitLifecycleKernel,
   agentProfileLifecycleBlocked,
   inspectAgentProfileLifecycle,
   reconcileAgentProfileLifecycle as reconcileLifecycleKernel,
-  type AgentProfileLifecycleConfigPort,
   type CommitAgentProfileLifecycleInput,
 } from "../../src/config/agentProfileLifecycle.js";
 import {
@@ -55,16 +55,12 @@ class MemoryAuthority implements AgentProfileAuthorityPort {
   }
 }
 
-function configPort(root: string): AgentProfileLifecycleConfigPort {
-  const file = path.join(root, "tachyon.yml");
-  return {
-    read: () => fs.readFileSync(file, "utf8"),
-    replace: (expected, text) => {
-      const current = fs.readFileSync(file, "utf8");
-      if (sha256(current) !== expected) throw new Error("config CAS conflict");
-      fs.writeFileSync(file, text);
-    },
-  };
+/**
+ * t-ae221c — the config file is read ONLY to prove the transaction never touches it. It is not a
+ * port any more: nothing in create, edit or set-enabled writes `tachyon.yml`.
+ */
+function configText(root: string): string {
+  return fs.readFileSync(path.join(root, "tachyon.yml"), "utf8");
 }
 
 function commitAgentProfileLifecycle(input: Omit<CommitAgentProfileLifecycleInput, "activateState"> & {
@@ -77,8 +73,8 @@ function reconcileAgentProfileLifecycle(input: Parameters<typeof reconcileLifecy
   return reconcileLifecycleKernel(input);
 }
 
-function recoveryInput(root: string, authority: MemoryAuthority, config: AgentProfileLifecycleConfigPort) {
-  return { workspaceRoot: root, authority, config, activateState: () => undefined };
+function recoveryInput(root: string, authority: MemoryAuthority) {
+  return { workspaceRoot: root, authority, activateState: () => undefined };
 }
 
 const initialProfile = {
@@ -101,7 +97,6 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       authority,
-      config: configPort(root),
     });
 
     expect(authority.records.get("claude")?.runtimeInspector).toEqual(CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR);
@@ -132,7 +127,6 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       authority,
-      config: configPort(root),
     });
 
     expect(created.snapshot.profile.agentId).not.toBe(orphan.agentId);
@@ -159,19 +153,17 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       authority,
-      config: configPort(root),
       onPhase: (phase) => { if (phase === "authority-published") throw new Error("interrupt-orphan-recovery"); },
     })).rejects.toThrow("interrupt-orphan-recovery");
 
     expect(authority.records.get("claude")).toEqual(orphan);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "claude", "agent.yml"))).toBe(false);
-    expect(configPort(root).read()).toBe("agents: {}\n");
+    expect(configText(root)).toBe("agents: {}\n");
   });
 
   it("creates Grok authority with the measured private-home inspector", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
 
     await commitAgentProfileLifecycle({
       workspaceRoot: root,
@@ -179,24 +171,21 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: { runtime: { adapter: "grok", executable: "grok" } },
       authority,
-      config,
     });
 
     expect(authority.records.get("grok")?.runtimeInspector).toEqual(GROK_PRIVATE_HOME_INPUT_INSPECTOR);
-    expect(config.read()).toContain("profile: .tachyon/agents/grok/agent.yml");
+    expect(scanAgentRosterDirectory(root).members).toEqual(["grok"]);
   });
 
   it("t-26f508 review: an edit adopts the current inspector only when the prior one is superseded", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
     await commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "grok",
       operation: "create",
       createProfile: { runtime: { adapter: "grok", executable: "grok" } },
       authority,
-      config,
     });
 
     // Rewrite the record as it would look for a profile created under the shipped v1 contract.
@@ -218,10 +207,9 @@ describe("agent profile lifecycle kernel", () => {
       workspaceRoot: root,
       agentName: "grok",
       operation: "set-enabled",
-      expectedRevision: (await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "grok", authority, config })).revision,
+      expectedRevision: (await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "grok", authority })).revision,
       enabled: true,
       authority,
-      config,
     });
     // Re-attestation happens at the lifecycle boundary, so the stale descriptor does not persist.
     expect(authority.records.get("grok")?.runtimeInspector).toEqual(GROK_PRIVATE_HOME_INPUT_INSPECTOR);
@@ -234,10 +222,9 @@ describe("agent profile lifecycle kernel", () => {
       workspaceRoot: root,
       agentName: "grok",
       operation: "set-enabled",
-      expectedRevision: (await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "grok", authority, config })).revision,
+      expectedRevision: (await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "grok", authority })).revision,
       enabled: false,
       authority,
-      config,
     });
     expect(authority.records.get("grok")?.runtimeInspector).toEqual(foreign);
   });
@@ -245,7 +232,6 @@ describe("agent profile lifecycle kernel", () => {
   it("creates a canonical profile, authority and exact pointer as one inspectable tuple", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
 
     const committed = await commitAgentProfileLifecycle({
       workspaceRoot: root,
@@ -253,14 +239,13 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: initialProfile,
       authority,
-      config,
     });
 
     expect(committed.snapshot.profile.agentId).toMatch(/^[0-9a-f-]{36}$/);
     expect(committed.snapshot.provenance.authority).toMatchObject({ scope: "host", writable: false, grants: 0 });
-    expect(config.read()).toContain("profile: .tachyon/agents/codex/agent.yml");
+    expect(scanAgentRosterDirectory(root).members).toEqual(["codex"]);
     expect(authority.records.get("codex")?.canonicalSha256).toBe(committed.snapshot.provenance.canonical.sha256);
-    expect(await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority, config })).toEqual(committed.snapshot);
+    expect(await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority })).toEqual(committed.snapshot);
     expect(fs.readdirSync(path.join(root, ".tachyon", "canonical-agent-transactions", "lifecycle"))).toEqual([]);
   });
 
@@ -272,7 +257,6 @@ describe("agent profile lifecycle kernel", () => {
   it("t-ca9086: approve/Studio create persists enabled without autostart across reload", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
     // Exact editable the extension's saved-agent-create port sends.
     const createProfile = createProfileFromStudioMutation({
       schemaVersion: 1,
@@ -296,13 +280,12 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile,
       authority,
-      config,
     });
     expect(committed.snapshot.profile.lifecycle?.enabled).toBe(true);
     expect(committed.snapshot.profile.lifecycle?.autostart).toBeUndefined();
 
     const reloaded = await inspectAgentProfileLifecycle({
-      workspaceRoot: root, agentName: "importer", authority, config,
+      workspaceRoot: root, agentName: "importer", authority,
     });
     expect(reloaded.profile.lifecycle?.enabled).toBe(true);
     expect(reloaded.profile.lifecycle?.autostart).toBeUndefined();
@@ -313,7 +296,6 @@ describe("agent profile lifecycle kernel", () => {
   it("publishes digest-bound profile artifacts and compensates them with a failed create", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
     const content = "# Imported soul\n";
     const artifact = { path: "SOUL.md", text: content, sha256: sha256(content) };
 
@@ -325,21 +307,19 @@ describe("agent profile lifecycle kernel", () => {
       createProfileLocalReferences: [{ id: "portable-soul", kind: "soul", path: artifact.path, mode: "pinned", sha256: artifact.sha256 }],
       artifacts: [artifact],
       authority,
-      config,
       onPhase: (phase) => { if (phase === "profile-published") throw new Error("interrupt-artifact-create"); },
     })).rejects.toThrow("interrupt-artifact-create");
 
     expect(authority.records.has("codex")).toBe(false);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", artifact.path))).toBe(false);
-    expect(config.read()).toBe("agents: {}\n");
+    expect(configText(root)).toBe("agents: {}\n");
   });
 
   it("checks revisions under lock and preserves authority-owned grants during canonical edits", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    const created = await commitAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority, config });
+    const created = await commitAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority });
     const currentAuthority = authority.records.get("codex")!;
     currentAuthority.capabilityGrants = [{
       referenceId: "docs",
@@ -348,7 +328,7 @@ describe("agent profile lifecycle kernel", () => {
       kind: "mcp",
     }];
     authority.records.set("codex", currentAuthority);
-    const current = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority, config });
+    const current = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority });
 
     const edited = await commitAgentProfileLifecycle({
       workspaceRoot: root,
@@ -357,7 +337,6 @@ describe("agent profile lifecycle kernel", () => {
       expectedRevision: current.revision,
       patch: { displayName: "Reviewer" },
       authority,
-      config,
     });
     expect(edited.snapshot.profile.displayName).toBe("Reviewer");
     expect(authority.records.get("codex")?.capabilityGrants).toEqual(currentAuthority.capabilityGrants);
@@ -368,16 +347,14 @@ describe("agent profile lifecycle kernel", () => {
       expectedRevision: created.revision,
       enabled: false,
       authority,
-      config,
     })).rejects.toThrow("profile revision conflict");
-    expect((await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority, config })).profile.lifecycle?.enabled).toBeUndefined();
+    expect((await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority })).profile.lifecycle?.enabled).toBeUndefined();
   });
 
   it("rejects runtime-adapter edits that would invalidate authority and grants", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    const created = await commitAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority, config });
+    const created = await commitAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority });
     await expect(commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "codex",
@@ -385,16 +362,14 @@ describe("agent profile lifecycle kernel", () => {
       expectedRevision: created.revision,
       patch: { runtime: { adapter: "pi", executable: "pi" } },
       authority,
-      config,
     })).rejects.toThrow("explicit authority migration");
-    expect((await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority, config })).profile.runtime.adapter).toBe("codex");
+    expect((await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", authority })).profile.runtime.adapter).toBe("codex");
   });
 
   it("compensates the durable tuple when host activation rejects the target", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    const original = config.read();
+    const original = configText(root);
     const activations: string[] = [];
     await expect(commitAgentProfileLifecycle({
       workspaceRoot: root,
@@ -402,136 +377,105 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: initialProfile,
       authority,
-      config,
       activateState: (state) => {
         activations.push(state);
         if (state === "target") throw new Error("activation rejected");
       },
     })).rejects.toThrow("activation rejected");
-    expect(config.read()).toBe(original);
+    expect(configText(root)).toBe(original);
     expect(authority.records.has("codex")).toBe(false);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
     expect(activations).toEqual(["target", "prior"]);
   });
 
-  it("t-07d05c: rolls back the first agent cleanly when the restored roster is empty", async () => {
+  /**
+   * t-ae221c — the t-07d05c tolerance is GONE, and this is what replaced it.
+   *
+   * That exception existed because create rewrote `tachyon.yml`, so rolling back the FIRST canonical
+   * agent handed the host a roster with no agents in it and a reload of that shape could fail after
+   * the durable restore had already succeeded. This transaction writes no config at all: the reload
+   * on the way back sees byte-for-byte the file it saw on the way in. A failure there is therefore a
+   * real host failure and degrades, for the first agent exactly as for the tenth — one rule, and no
+   * roster shape that gets a pass.
+   */
+  it("degrades when prior activation fails, for the first agent as for any other", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    const original = config.read();
+    const original = configText(root);
     const activations: string[] = [];
-    // t-07d05c — host reactivation of the restored prior can still fail for host-local reasons;
-    // empty roster (t-f67185 valid load) must not degrade the transaction after durable restore.
     await expect(commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "codex",
       operation: "create",
       createProfile: initialProfile,
       authority,
-      config,
       activateState: (state) => {
         activations.push(state);
         if (state === "target") throw new Error("activation rejected");
-        if (state === "prior") throw new Error("host refused empty-roster reactivation");
-      },
-    })).rejects.toThrow("activation rejected");
-
-    expect(activations).toEqual(["target", "prior"]);
-    // The original activation failure surfaces — not a degraded-transaction error.
-    expect(agentProfileLifecycleBlocked(root, "codex")).toBe(false);
-    expect(config.read()).toBe(original);
-    expect(authority.records.has("codex")).toBe(false);
-    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
-    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority, config)))
-      .toEqual({ reconciled: [], degraded: [] });
-  });
-
-  it.each([
-    ["a scalar", "agents: {}\nterminals: oops\n"],
-    ["a list", "agents: {}\nterminals:\n  - one\n"],
-    ["null", "agents: {}\nterminals:\n"],
-  ])("t-07d05c: still degrades when the restored roster has %s instead of a mapping", async (_label, priorConfig) => {
-    const root = temporaryWorkspace();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), priorConfig);
-    const authority = new MemoryAuthority();
-    const config = configPort(root);
-    // A present-but-malformed block is a real config error, not an untouched workspace, so the
-    // reload failure it causes must not be mistaken for the empty-roster case.
-    await expect(commitAgentProfileLifecycle({
-      workspaceRoot: root,
-      agentName: "codex",
-      operation: "create",
-      createProfile: initialProfile,
-      authority,
-      config,
-      activateState: (state) => {
-        if (state === "target") throw new Error("activation rejected");
-        if (state === "prior") throw new Error("'terminals' must be a mapping of terminal name -> definition");
+        if (state === "prior") throw new Error("host reload failed for an unrelated reason");
       },
     })).rejects.toThrow("transaction degraded");
+
+    // `blocked` is the degraded tail: the journal stays as the durable launch block.
+    expect(activations).toEqual(["target", "prior", "blocked"]);
     expect(agentProfileLifecycleBlocked(root, "codex")).toBe(true);
+    // The durable restore still ran, and the file was never a party to it.
+    expect(configText(root)).toBe(original);
+    expect(authority.records.has("codex")).toBe(false);
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
   });
 
   it.each([
     ["a scalar", "agents: oops\n"],
     ["a list", "agents:\n  - one\n"],
-  ])("t-07d05c: refuses to stage a create when the agents block is %s", async (_label, priorConfig) => {
+    ["a legacy pointer block", "agents:\n  ghost:\n    profile: .tachyon/agents/ghost/agent.yml\n"],
+  ])("t-ae221c: creates an agent even when the retired agents block is %s", async (_label, priorConfig) => {
     const root = temporaryWorkspace();
     fs.writeFileSync(path.join(root, "tachyon.yml"), priorConfig);
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    // A malformed agents block cannot even take the pointer, so the create fails before staging
-    // and never reaches compensation — nothing is published and nothing is blocked.
-    await expect(commitAgentProfileLifecycle({
+    // Fail-before: create used to write the pointer into this block, so a block it could not take —
+    // and, for the third case, a name already in it — refused the whole create. The block is inert
+    // now, so the only question left is whether the DIRECTORY is free.
+    const committed = await commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "codex",
       operation: "create",
       createProfile: initialProfile,
       authority,
-      config,
-    })).rejects.toThrow();
-    expect(agentProfileLifecycleBlocked(root, "codex")).toBe(false);
-    expect(authority.records.has("codex")).toBe(false);
-    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
+    });
+
+    expect(committed.snapshot.agentName).toBe("codex");
+    expect(scanAgentRosterDirectory(root).members).toEqual(["codex"]);
+    expect(configText(root)).toBe(priorConfig);
   });
 
-  it("t-07d05c: still degrades when prior activation fails on a populated roster", async () => {
+  it("t-ae221c: refuses a create whose profile home already holds an agent.yml", async () => {
     const root = temporaryWorkspace();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  shell:\n    cmd: bash\n");
     const authority = new MemoryAuthority();
-    const config = configPort(root);
+    await commitAgentProfileLifecycle({
+      workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority,
+    });
+
     await expect(commitAgentProfileLifecycle({
-      workspaceRoot: root,
-      agentName: "codex",
-      operation: "create",
-      createProfile: initialProfile,
-      authority,
-      config,
-      activateState: (state) => {
-        if (state === "target") throw new Error("activation rejected");
-        if (state === "prior") throw new Error("host reload failed for an unrelated reason");
-      },
-    })).rejects.toThrow("transaction degraded");
-    expect(agentProfileLifecycleBlocked(root, "codex")).toBe(true);
+      workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority,
+    })).rejects.toThrow("already has canonical state");
   });
 
-  it.each(["staged", "profile-published", "authority-published", "locator-written", "activated"] as const)(
+  it.each(["staged", "profile-published", "authority-published", "activated"] as const)(
     "compensates a create failure after %s without leaving partial identity state",
     async (phase) => {
       const root = temporaryWorkspace();
       const authority = new MemoryAuthority();
-      const config = configPort(root);
-      const originalConfig = config.read();
+      const originalConfig = configText(root);
       await expect(commitAgentProfileLifecycle({
         workspaceRoot: root,
         agentName: "codex",
         operation: "create",
         createProfile: initialProfile,
         authority,
-        config,
         onPhase: (current) => { if (current === phase) throw new Error(`fail-${phase}`); },
       })).rejects.toThrow(`fail-${phase}`);
-      expect(config.read()).toBe(originalConfig);
+      expect(configText(root)).toBe(originalConfig);
       expect(authority.records.has("codex")).toBe(false);
       expect(fs.existsSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"))).toBe(false);
       // t-4a1f85 — "no partial identity state" includes the HOME. The create minted
@@ -553,8 +497,7 @@ describe("agent profile lifecycle kernel", () => {
   it("keeps a compensated create's home when something else wrote into it, and does not degrade", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    const originalConfig = config.read();
+    const originalConfig = configText(root);
     const home = path.join(root, ".tachyon", "agents", "codex");
     const soul = path.join(home, "SOUL.md");
 
@@ -564,16 +507,15 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: initialProfile,
       authority,
-      config,
       onPhase: (current) => {
-        if (current === "locator-written") fs.writeFileSync(soul, "# a human's soul\n", "utf8");
+        if (current === "authority-published") fs.writeFileSync(soul, "# a human's soul\n", "utf8");
         if (current === "activated") throw new Error("fail-activated");
       },
     })).rejects.toThrow("fail-activated");
 
     // The rollback still succeeded on every record the journal names — a refused `rmdir` must never
     // turn a clean compensation into `degraded`, which every reconcile skips forever.
-    expect(config.read()).toBe(originalConfig);
+    expect(configText(root)).toBe(originalConfig);
     expect(authority.records.has("codex")).toBe(false);
     expect(agentProfileLifecycleBlocked(root, "codex")).toBe(false);
     expect(fs.existsSync(path.join(home, "agent.yml"))).toBe(false);
@@ -584,8 +526,7 @@ describe("agent profile lifecycle kernel", () => {
   it("sets canonical enablement without making it authorable in tachyon.yml", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    const created = await commitAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority, config });
+    const created = await commitAgentProfileLifecycle({ workspaceRoot: root, agentName: "codex", operation: "create", createProfile: initialProfile, authority });
     const disabled = await commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "codex",
@@ -593,25 +534,22 @@ describe("agent profile lifecycle kernel", () => {
       expectedRevision: created.revision,
       enabled: false,
       authority,
-      config,
     });
     expect(disabled.snapshot.profile.lifecycle?.enabled).toBe(false);
-    expect(config.read()).not.toContain("enabled");
-    expect((await reconcileAgentProfileLifecycle(recoveryInput(root, authority, config))).degraded).toEqual([]);
+    expect(configText(root)).not.toContain("enabled");
+    expect((await reconcileAgentProfileLifecycle(recoveryInput(root, authority))).degraded).toEqual([]);
   });
 
   it("finalizes an already-converged crash journal on restart and is idempotent", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    const originalConfigSha256 = sha256(config.read());
+    const originalConfigSha256 = sha256(configText(root));
     const committed = await commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "codex",
       operation: "create",
       createProfile: initialProfile,
       authority,
-      config,
     });
     const txid = crypto.randomUUID();
     const txDir = path.join(root, ".tachyon", "canonical-agent-transactions", "lifecycle", txid);
@@ -629,35 +567,39 @@ describe("agent profile lifecycle kernel", () => {
       priorAuthority: null,
       targetAuthority: authority.records.get("codex"),
       priorConfigSha256: originalConfigSha256,
-      targetConfigSha256: sha256(config.read()),
+      targetConfigSha256: sha256(configText(root)),
     }, null, 2)}\n`);
 
     expect(agentProfileLifecycleBlocked(root, "codex")).toBe(true);
-    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority, config))).toEqual({ reconciled: [txid], degraded: [] });
+    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority))).toEqual({ reconciled: [txid], degraded: [] });
     expect(agentProfileLifecycleBlocked(root, "codex")).toBe(false);
-    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority, config))).toEqual({ reconciled: [], degraded: [] });
+    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority))).toEqual({ reconciled: [], degraded: [] });
   });
 
+  /**
+   * t-ae221c — divergence is now measured on the two records the transaction actually owns. It used
+   * to be provoked by editing `tachyon.yml` mid-flight; that file is no longer part of the tuple, so
+   * an edit to it is not divergence and must not degrade anything. The PROFILE is, and a profile
+   * that changed under the transaction still stops compensation dead.
+   */
   it("marks unknown external divergence degraded and keeps launch blocked", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
     await expect(commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "codex",
       operation: "create",
       createProfile: initialProfile,
       authority,
-      config,
       onPhase: (phase) => {
         if (phase === "authority-published") {
-          fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n# external edit\n");
+          fs.writeFileSync(path.join(root, ".tachyon", "agents", "codex", "agent.yml"), "# rewritten by something else\n");
           throw new Error("crash-after-external-edit");
         }
       },
     })).rejects.toThrow("transaction degraded");
     expect(agentProfileLifecycleBlocked(root, "codex")).toBe(true);
-    const recovered = await reconcileAgentProfileLifecycle(recoveryInput(root, authority, config));
+    const recovered = await reconcileAgentProfileLifecycle(recoveryInput(root, authority));
     expect(recovered.reconciled).toEqual([]);
     expect(recovered.degraded).toHaveLength(1);
   });
@@ -665,7 +607,6 @@ describe("agent profile lifecycle kernel", () => {
   it("shares one principal lock with migration writers", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
     const release = acquireAgentProfileTransactionLock(root, "codex", "migration-owner");
     try {
       await expect(commitAgentProfileLifecycle({
@@ -674,7 +615,6 @@ describe("agent profile lifecycle kernel", () => {
         operation: "create",
         createProfile: initialProfile,
         authority,
-        config,
       })).rejects.toThrow("already active");
     } finally {
       release();
@@ -685,7 +625,6 @@ describe("agent profile lifecycle kernel", () => {
       operation: "create",
       createProfile: initialProfile,
       authority,
-      config,
     })).resolves.toMatchObject({ operation: "create" });
   });
 });
@@ -699,9 +638,9 @@ describe("agent profile lifecycle kernel", () => {
  * that window not existing.
  */
 describe("create with a companion owner is one transaction (SDD 482 phase 4)", () => {
-  async function seedOwner(root: string, authority: MemoryAuthority, config: AgentProfileLifecycleConfigPort) {
+  async function seedOwner(root: string, authority: MemoryAuthority) {
     await commitAgentProfileLifecycle({
-      workspaceRoot: root, agentName: "boss", operation: "create", authority, config,
+      workspaceRoot: root, agentName: "boss", operation: "create", authority,
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
     });
   }
@@ -709,17 +648,16 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
   it("publishes both profiles and both authorities under one txid", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    await seedOwner(root, authority, config);
+    await seedOwner(root, authority);
 
     const result = await commitAgentProfileLifecycle({
-      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      workspaceRoot: root, agentName: "importer", operation: "create", authority,
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       companion: { agentName: "boss", ownership: { subagents: ["importer"] } },
     });
 
     // The owner now declares the new agent…
-    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", authority, config });
+    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", authority });
     expect(owner.profile.ownership?.subagents).toEqual(["importer"]);
     // …and BOTH authority records name the same transaction, which is the ratified consequence of a
     // single transaction having a single identity.
@@ -734,12 +672,11 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
   it("compensates BOTH subjects when the transaction fails", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    await seedOwner(root, authority, config);
+    await seedOwner(root, authority);
     const ownerBefore = structuredClone(authority.records.get("boss"));
 
     await expect(commitAgentProfileLifecycle({
-      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      workspaceRoot: root, agentName: "importer", operation: "create", authority,
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       companion: { agentName: "boss", ownership: { subagents: ["importer"] } },
       // Fails after both profiles and both authorities are published, so compensation has real work.
@@ -750,7 +687,7 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "importer", "agent.yml"))).toBe(false);
     expect(authority.records.has("importer")).toBe(false);
     // …and the OWNER is byte-for-byte what it was, including its authority record.
-    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", authority, config });
+    const owner = await inspectAgentProfileLifecycle({ workspaceRoot: root, agentName: "boss", authority });
     expect(owner.profile.ownership).toBeUndefined();
     expect(authority.records.get("boss")).toEqual(ownerBefore);
   });
@@ -766,15 +703,14 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
   it("reconcile refuses to commit a crash that left the companion behind", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
-    await seedOwner(root, authority, config);
+    await seedOwner(root, authority);
     const priorOwnerAuthority = structuredClone(authority.records.get("boss"))!;
     const priorOwnerProfile = fs.readFileSync(path.join(root, ".tachyon", "agents", "boss", "agent.yml"), "utf8");
-    const originalConfig = config.read();
+    const originalConfig = configText(root);
     const originalConfigSha256 = sha256(originalConfig);
 
     const committed = await commitAgentProfileLifecycle({
-      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      workspaceRoot: root, agentName: "importer", operation: "create", authority,
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
     });
 
@@ -800,7 +736,7 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
       priorAuthority: null,
       targetAuthority: authority.records.get("importer"),
       priorConfigSha256: originalConfigSha256,
-      targetConfigSha256: sha256(config.read()),
+      targetConfigSha256: sha256(configText(root)),
       companion: {
         agentName: "boss",
         priorProfileSha256: sha256(priorOwnerProfile),
@@ -810,7 +746,7 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
       },
     }, null, 2)}\n`);
 
-    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority, config)))
+    expect(await reconcileAgentProfileLifecycle(recoveryInput(root, authority)))
       .toEqual({ reconciled: [txid], degraded: [] });
 
     // Compensated, not committed: the created agent is rolled back and the owner is untouched.
@@ -825,16 +761,15 @@ describe("create with a companion owner is one transaction (SDD 482 phase 4)", (
   it("refuses a companion that is the same agent, or one without canonical state", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
 
     await expect(commitAgentProfileLifecycle({
-      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      workspaceRoot: root, agentName: "importer", operation: "create", authority,
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       companion: { agentName: "importer", ownership: { subagents: [] } },
     })).rejects.toThrow(/companion must be a different agent/);
 
     await expect(commitAgentProfileLifecycle({
-      workspaceRoot: root, agentName: "importer", operation: "create", authority, config,
+      workspaceRoot: root, agentName: "importer", operation: "create", authority,
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
       companion: { agentName: "ghost", ownership: { subagents: ["importer"] } },
     })).rejects.toThrow(/incomplete canonical state/);
@@ -845,11 +780,10 @@ describe("t-3bde32 — Saved Agent proposal grant, through the governed door", (
   it("grants, revokes, and treats revocation as absence rather than an explicit false", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const config = configPort(root);
     const created = await commitAgentProfileLifecycle({
       workspaceRoot: root, agentName: "coord", operation: "create",
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
-      authority, config,
+      authority,
     });
     // Default is ABSENT, which the whole feature reads as refusal.
     expect(created.snapshot.profile.grants).toBeUndefined();
@@ -861,7 +795,7 @@ describe("t-3bde32 — Saved Agent proposal grant, through the governed door", (
         { schemaVersion: 1, operation: "set-propose-saved-agent-grant", agentName: "coord", expectedRevision: created.revision, granted: true },
         created.snapshot,
       ),
-      authority, config,
+      authority,
     });
     expect(granted.snapshot.profile.grants?.proposeSavedAgent).toBe(true);
     // It survives a re-read from disk — the door reads the file, not this object.
@@ -874,7 +808,7 @@ describe("t-3bde32 — Saved Agent proposal grant, through the governed door", (
         { schemaVersion: 1, operation: "set-propose-saved-agent-grant", agentName: "coord", expectedRevision: granted.revision, granted: false },
         granted.snapshot,
       ),
-      authority, config,
+      authority,
     });
     // Revocation removes the key rather than writing `false`: one representation of refusal.
     expect(revoked.snapshot.profile.grants).toEqual({});

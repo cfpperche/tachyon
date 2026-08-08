@@ -1,5 +1,4 @@
 import { describe, expect, it, afterEach } from "vitest";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -65,19 +64,6 @@ function authorityPort(root: string) {
       delete records[name]; save(records);
     },
   } as never;
-}
-
-function configPort(root: string) {
-  const file = path.join(root, "tachyon.yml");
-  return {
-    read: () => fs.readFileSync(file, "utf8"),
-    replace: (expected: string, text: string) => {
-      const current = fs.readFileSync(file, "utf8");
-      const sha = crypto.createHash("sha256").update(current).digest("hex");
-      if (sha !== expected) throw new Error("config CAS conflict");
-      fs.writeFileSync(file, text, "utf8");
-    },
-  };
 }
 
 /** Writes a canonical profile so the grant read has something real to parse. */
@@ -222,7 +208,7 @@ describe("t-3bde32 — the grant Studio writes is the grant the Bridge door read
    */
   async function commitGrant(root: string, agent: string, granted: boolean): Promise<void> {
     const current = await inspectAgentProfileLifecycle({
-      workspaceRoot: root, agentName: agent, authority: authorityPort(root), config: configPort(root),
+      workspaceRoot: root, agentName: agent, authority: authorityPort(root),
     });
     await commitAgentProfileLifecycle({
       workspaceRoot: root,
@@ -234,7 +220,6 @@ describe("t-3bde32 — the grant Studio writes is the grant the Bridge door read
         current,
       ),
       authority: authorityPort(root),
-      config: configPort(root),
       activateState: () => undefined,
     });
   }
@@ -244,7 +229,7 @@ describe("t-3bde32 — the grant Studio writes is the grant the Bridge door read
     await commitAgentProfileLifecycle({
       workspaceRoot: root, agentName: "coord", operation: "create",
       createProfile: { runtime: { adapter: "claude", executable: "claude" } },
-      authority: authorityPort(root), config: configPort(root), activateState: () => undefined,
+      authority: authorityPort(root), activateState: () => undefined,
     });
     const bridge = harness(root, { kind: "agent", name: "coord" });
 

@@ -51,11 +51,6 @@ export function agentStanzaSection(text: string | undefined, name: string): Sect
   return sectionOf(load(text), name);
 }
 
-/** Total declared entries across both blocks — the "can't delete the last one" guard. */
-function entryCount(doc: ReturnType<typeof parseDocument>): number {
-  return (mapOf(doc, "agents")?.items.length ?? 0) + (mapOf(doc, "terminals")?.items.length ?? 0);
-}
-
 /**
  * Keys this writer removes from a `terminals:` entry, because `parseAgentEntry` refuses every one of
  * them for a terminal and `Workspace.mutateConfig` refuses to WRITE a file the loader would discard
@@ -412,11 +407,14 @@ export function deleteAgent(text: string, name: string): EditResult {
   const doc = load(text);
   const section = sectionOf(doc, name);
   if (!section) throw new Error(`agent '${name}' does not exist`);
-  if (entryCount(doc) <= 1) {
-    throw new Error(
-      `'${name}' is the last agent — a tachyon.yml needs at least one (delete the file itself to deactivate Tachyon here)`,
-    );
-  }
+  // t-ae221c — the "you cannot delete the last one" guard is gone, and it had to be.
+  //
+  // It refused whenever `agents:` and `terminals:` held one entry between them, and it dated from
+  // when an empty roster was an invalid load. t-f67185 made an empty roster valid, and this cut took
+  // the AGENTS out of the file entirely — so a workspace running a full canonical fleet and one
+  // terminal now reads as "one entry", and deleting that terminal would be refused as deleting the
+  // last agent. Measured: `config.agent.delete` on the only declared terminal failed with exactly
+  // that message while a Saved Agent was live in `.tachyon/agents/`.
   doc.deleteIn([section, name]);
   // Drop a now-empty block so we never leave a bare `terminals: {}` / `agents: {}` behind.
   if (mapOf(doc, section)?.items.length === 0) doc.deleteIn([section]);

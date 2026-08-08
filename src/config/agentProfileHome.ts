@@ -35,7 +35,7 @@ import path from "node:path";
  * `orphan-home` with a reason, instead of `absent` / "there is nothing to remove".
  */
 
-/** The profile home. After t-ae221c this directory IS the agent; today it is where the agent lives. */
+/** The profile home. Since t-ae221c this directory, with a readable `agent.yml` in it, IS the agent. */
 export function agentProfileHome(workspaceRoot: string, agentName: string): string {
   return path.join(path.resolve(workspaceRoot), ".tachyon", "agents", agentName);
 }
