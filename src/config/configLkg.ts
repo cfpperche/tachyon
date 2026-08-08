@@ -33,6 +33,11 @@ export interface ConfigLkgSnapshot {
   agents: ConfigLkgAgent[];
 }
 
+/** Agent-side view of the compatibility roster stored in the LKG snapshot. */
+export function agentEntriesOfLkg(snapshot: ConfigLkgSnapshot | null | undefined): ConfigLkgAgent[] {
+  return (snapshot?.agents ?? []).filter((entry) => entry.kind === "agent");
+}
+
 export function configLkgPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", CONFIG_LKG_FILENAME);
 }

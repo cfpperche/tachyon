@@ -58,7 +58,7 @@ import { provisionTools, provisionData, type ProvisionProgressFn } from "./toolP
 import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlaceholder.js";
 import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCounts, type ToolLock, type DataLock, type ExternalToolReqLock, type LauncherLock } from "./lockfile.js";
 import { dependencyStates, type DependencyState } from "./pluginDeps.js";
-import { readConfigLkg } from "../config/configLkg.js";
+import { agentEntriesOfLkg, readConfigLkg } from "../config/configLkg.js";
 import { runtimeOf } from "../resume/adapters.js";
 
 /** spec 265 — the repo-root-RELATIVE launcher path baked into a resolved git-hook leaf (clone-safe; git runs
@@ -310,8 +310,8 @@ export function detectRuntimes(workspaceRoot: string): Set<Runtime> {
     // Absence/unreadability is not evidence that this workspace uses the runtime.
   }
   const supported = new Set<string>(SUPPORTED_RUNTIMES);
-  for (const entry of readConfigLkg(workspaceRoot)?.agents ?? []) {
-    if (entry.kind !== "agent" || !entry.cmd) continue;
+  for (const entry of agentEntriesOfLkg(readConfigLkg(workspaceRoot))) {
+    if (!entry.cmd) continue;
     const runtime = runtimeOf(entry.cmd);
     if (runtime && supported.has(runtime)) present.add(runtime as Runtime);
   }

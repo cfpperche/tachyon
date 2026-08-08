@@ -847,7 +847,10 @@ describe("detectRuntimes", () => {
       schemaVersion: 1,
       savedAt: "2026-08-02T00:00:00.000Z",
       sourceFile: "tachyon.yml",
-      agents: [{ name: "claude-only", kind: "agent", cmd: "claude" }],
+      agents: [
+        { name: "claude-only", kind: "agent", cmd: "claude" },
+        { name: "grok-terminal", kind: "terminal", cmd: "grok" },
+      ],
     }));
 
     expect(detectRuntimes(ws).has("grok")).toBe(false);
