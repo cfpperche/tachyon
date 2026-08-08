@@ -512,21 +512,6 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
       return t("soul: choose enabled or disabled, then try again");
     case "soul-runtime-unsupported":
       return t("soul: {0} cannot receive a Tachyon-managed soul — use a supported direct agent command or disable soul", issue.param ?? "this runtime");
-    case "harness-claude-only":
-      return t("isolated harness: supported for Claude, Codex, OpenCode, Grok, and Hermes agents only");
-    case "codex-harness-mcp-only":
-      return t("isolated harness: Codex does not support rules; use instruction files instead");
-    case "harness-home-config-only":
-      return t(
-        "isolated harness: {0} supports MCP / skills / hooks only (no rules or instruction files)",
-        issue.param ?? "this runtime",
-      );
-    case "harness-empty":
-      return t("isolated harness: declare at least one of MCP / rules / skills / hooks");
-    case "harness-mcp-invalid":
-      return t("isolated harness: MCP servers must be a valid YAML mapping");
-    case "harness-hooks-invalid":
-      return t("isolated harness: hooks must be a valid YAML mapping");
     case "terminal-cmd-is-attested-runtime":
       return t(
         "command: '{0}' is an LLM runtime Tachyon attests — create it as an agent in Agent Studio; terminals are for generic processes",

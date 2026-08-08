@@ -1,5 +1,5 @@
 /* spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styling: the agent-kind field set rendered inside
- * StudioFrame's fields region (t-a1ba6c: advanced worktree/harness sections are in-flow under Working
+ * StudioFrame's fields region (t-a1ba6c: the advanced worktree section is in-flow under Working
  * directory, not sideActions). Layout only — .ds-input/.ds-chip/.ds-degrade etc. come from the shared
  * design-system.css every studio surface already loads. */
 .ash-fields { display: grid; gap: var(--ds-3); align-content: start; width: min(100%, 760px); margin: 0 auto; }

@@ -881,7 +881,7 @@ export type AgentStudioFields = FormState & { canonical?: AgentStudioCanonicalCo
 export type AgentStudioPatch = FormState | (AgentProfileStudioMutationV1 & Partial<Omit<FormState, "kind">>);
 
 /** A blank agent-kind FormState.
- *  (attention on by default, no harness/worktree). */
+ *  (attention on by default, no worktree). */
 export function blankAgentFields(): FormState {
   return {
     name: "",
@@ -901,13 +901,6 @@ export function blankAgentFields(): FormState {
     branch: "",
     worktreeSetup: "",
     verify: "",
-    harness: false,
-    harnessInherit: "workspace",
-    harnessMcp: "",
-    harnessRules: "",
-    harnessInstructions: "",
-    harnessSkills: "",
-    harnessHooks: "",
     isolate: false,
     schedTiming: "every",
     schedEvery: "1h",
