@@ -5841,7 +5841,12 @@ export class Workspace {
   }
 
   async agentOwnershipView(agentName: string): Promise<AgentOwnershipViewV1> {
-    return agentOwnershipView(agentName, this.agentOwnershipRoster());
+    const agents: AgentOwnershipRosterV1 = Object.entries(agentsOf(this.config)).map(([name, entry]) => ({
+      name,
+      kind: "agent",
+      subagents: [...entry.subagents],
+    }));
+    return agentOwnershipView(agentName, agents);
   }
 
   /**
