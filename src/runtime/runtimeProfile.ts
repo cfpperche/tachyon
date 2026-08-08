@@ -310,10 +310,15 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       ],
       source: "measured",
       verified: true,
-      verifiedAt: "2026-07-25",
+      verifiedAt: "2026-08-07",
       notes:
         "Claude Code 2.1.220: Ctrl+C clears an unsubmitted draft but Ctrl+D does not exit it; a local /exit command then cleanly exits. " +
-        "An authorized real model turn was stopped with Escape, Ctrl+C, then conditional /exit; the pane exited with status 0. Keep interrupt, clear-composer, then conditional /exit.",
+        "An authorized real model turn was stopped with Escape, Ctrl+C, then conditional /exit; the pane exited with status 0. Keep interrupt, clear-composer, then conditional /exit. " +
+        "t-ab2682 (2026-08-07, 2.1.224): this SEQUENCE was never the defect — its DELIVERY was. The text step used to type `/exit` blind and " +
+        "submit immediately, so when the composer still held a staged line (the spawn brief losing the race) `/exit` became part of THAT line and " +
+        "the Enter submitted the pair to the model as a prompt: 3 of 4 stops left the process alive. A fixed gap does not help (600ms: still 3 of 4 " +
+        "alive); a free composer does (13 of 13 exit 0 at a 6-13ms gap, incl. 3 of 3 mid-turn). `AgentManager.sendStopText` now types only into a " +
+        "provably free composer and presses Enter only while the composer provably holds exactly this text.",
     },
     canonicalLimitations: [],
   },

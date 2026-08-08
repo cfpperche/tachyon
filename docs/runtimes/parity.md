@@ -1,6 +1,6 @@
 # Runtime capability parity (living document)
 
-**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-07 (`t-9d76b1` — graceful-stop exit codes per runtime, §3.2.1, measured on claude 2.1.224 / codex-cli 0.146.1 / grok 1.0.0 / opencode 1.18.15 / hermes v0.18.2 / pi 0.80.10; row 7 claude ✓ → ~; prior same-day SDD 495 / `t-2656d7` — row 21 closed for claude/codex/grok: the launch credential refusal carries a governed in-product login; prior same-day SDD 495 / `t-9b5457` — auth status probe + native login surface, rows 20/21 and §3.8, measured on claude 2.1.224 / codex 0.146.1 / grok 1.0.0 / opencode 1.18.9; prior 2026-08-06 SDD 488 F3 `t-dd46a4` `design_mode_chat_reply` runtime call matrix; 2026-08-05 SDD 490 Fatia C native lane suppression; 2026-08-02 `t-0db8cb` codex idle attention)
+**Status:** living · **Owner:** Tachyon maintainers · **Last verified:** 2026-08-07 (`t-ab2682` — claude graceful-stop DELIVERY fixed and row 7 restored ~ → ✓, §3.2.1 + footnote ˢ, measured on claude 2.1.224, 8 of 8 stops exit 0; prior same-day `t-9d76b1` — graceful-stop exit codes per runtime, §3.2.1, measured on claude 2.1.224 / codex-cli 0.146.1 / grok 1.0.0 / opencode 1.18.15 / hermes v0.18.2 / pi 0.80.10; row 7 claude ✓ → ~; prior same-day SDD 495 / `t-2656d7` — row 21 closed for claude/codex/grok: the launch credential refusal carries a governed in-product login; prior same-day SDD 495 / `t-9b5457` — auth status probe + native login surface, rows 20/21 and §3.8, measured on claude 2.1.224 / codex 0.146.1 / grok 1.0.0 / opencode 1.18.9; prior 2026-08-06 SDD 488 F3 `t-dd46a4` `design_mode_chat_reply` runtime call matrix; 2026-08-05 SDD 490 Fatia C native lane suppression; 2026-08-02 `t-0db8cb` codex idle attention)
 **Seams (code of record):** `src/resume/adapters.ts`, `src/runtime/runtimeProfile.ts`, `src/runtime/nativeLaneSuppression.ts`, `src/runtime/nativeMemory.ts`, `src/agents/AgentManager.ts` (`withRuntimeBridge`, `effectiveCmd`), `src/harness/HarnessManager.ts`, `src/config/agentProfileSchema.ts`, `src/config/agentProfileProjection.ts`, `src/activity/*Normalizer.ts`, `src/attention/patterns.ts`, `src/config/loadConfig.ts` (`KNOWN_AI_CLIS`, `inferKind`, `composeCommand`), `src/agents/openingPromptCapability.ts`
 **Native-config / Runtime Config seams:** `src/config/agentNativeConfigPolicy.ts` (family definitions + SDD 471/472 `authorize`), `src/config/agentNativeConfigSchema.ts` (`AGENT_NATIVE_CONFIG_FAMILIES`), `src/config/codexNativeConfigProjection.ts`, `src/config/claudeNativeConfigProjection.ts`, `src/config/grokNativeConfigProjection.ts`, `src/runtimeConfig/codexInventory.ts`, `src/runtimeConfig/claudeInventory.ts`, `src/runtimeConfig/grokInventory.ts`, `src/runtimeObservability/claudeStatusLineCapture.ts` (host-written Claude `statusLine` wrapper into `spawn-settings`)
 
@@ -116,7 +116,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 4 Resume | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
 | 5 Fork | ✓ | ✗ | ✓ | ✓ⁿ | ✓ | **✗** |
 | 6 Harness | ✓ | ✓ | ✓ | ✓† | ✓‡ | **✗** / **—** |
-| 7 Graceful stop | **~**ˢ | ✓ | ✓ | ✓ | ✓ | **~**¶ |
+| 7 Graceful stop | ✓ˢ | ✓ | ✓ | ✓ | ✓ | **~**¶ |
 | 8 Activity | ✓ | ✓ | ✓ | ✓ | ✓ | **✗** |
 | 9 Permission inject | ✓ | ✓ | ~ | ~ | ✓ | **✗** |
 | 10 Label / profile | ✓ | ✓ | ~ | ✓ | ~ | **✗**¶ |
@@ -132,13 +132,32 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 20 Auth status probe (pre-launch) | ~ᵃ | ~ᵃ | ✓ᵃ | ~ᵃ | **?** | **?** |
 | 21 Native login surface | ✓ᵇ | ✓ᵇ | **?** | ✓ᵇ | **?** | **?** |
 
-ˢ **Claude graceful stop, downgraded ✓ → ~ (2026-08-07, `t-9d76b1`):** the measured key SEQUENCE still
-exits 0; what is unreliable is its delivery — `/exit` and its Enter are sent back-to-back and the
-slash-command menu can consume the Enter, so a human Stop leaves the pane alive and the row lands on
-`stop-failed` (Kill forced). Measured 3 failures in 4 runs, with the 4th exiting 0, so it is a RACE and
-not a dead path — which is why it survived a single earlier measurement. By hand on 2.1.224 with the
-Enter 600ms later: exit 0 every time. §3.2.1 has the per-runtime exit codes and run counts. Fix filed
-as `t-ab2682` rather than folded in here — this task classifies a stop, it does not deliver one.
+ˢ **Claude graceful stop, restored ~ → ✓ (2026-08-07, `t-ab2682`; downgraded earlier the same day by
+`t-9d76b1`):** the measured key SEQUENCE was never the defect — its DELIVERY was, and it is fixed.
+`npm run dogfood -- stop-exit-codes claude` now exits **0 in 8 of 8 runs** (1.0-1.6s), against **3 of 4
+left alive** before.
+
+**The recorded cause was wrong, and the correction matters more than the fix.** `t-9d76b1` read the
+empty composer left behind and concluded the slash-command menu had eaten the Enter. Re-measured on
+2.1.224 through the same door: the Enter is never eaten. `/exit` was typed onto a composer that still
+held a staged line — the spawn brief, still being delivered — so it became part of THAT line, and the
+Enter submitted the pair to the model **as a prompt**. The pane read `── END BEFORE FINISHING ──/exit`
+and claude answered it in prose. The composer is empty afterwards precisely *because* the Enter landed.
+
+The numbers that separate the two explanations, and that chose the fix:
+
+| condition | gap typed→Enter | composer free? | result |
+|---|---|---|---|
+| back-to-back, idle / mid-turn / warm | 6-13 ms | yes | **0 in 13 of 13** (incl. 3 of 3 stopped mid-turn) |
+| back-to-back, brief in flight | 6-13 ms | no | alive in 4 of 4 |
+| **fixed 600 ms gap, brief in flight** | 613 ms | no | **alive in 3 of 4 — the old rate** |
+
+So a fixed `submitDelayMs` — the fix the task proposed — was measured and rejected: it does not touch
+the variable that predicts the outcome. Composer occupancy does. `AgentManager.sendStopText` now types
+only into a composer that reads provably free and presses Enter only while the composer provably holds
+exactly that text; a capture costs p50 4 ms / p95 23 ms, cheaper than the delay that does not work.
+A composer that never frees is left alone and the stop surfaces as `stop-failed` — typing there is the
+defect itself. §3.2.1 has the per-runtime exit codes and run counts.
 
 º **Design Mode chat reply (2026-08-06, `t-dd46a4` / SDD 488 F3):** headless probe with the current
 tool-only `formatDmChatPrompt` shape (incl. `Turn id: dm-turn-…`). Claude 2.1.223, Codex 0.146.0,
@@ -422,7 +441,7 @@ Browser Bridge **up** (and optionally fills Pi). Do not remove markers from this
 | Fork | `--resume <id> --fork-session` | `forkCommand` | measured (spec 225 era); UI hides for harness |
 | Harness | `CLAUDE_CONFIG_DIR` + MCP file | `HarnessManager` | specs 226+ |
 | Auth refresh / relogin | `.credentials.json` rewritten by create+rename on OAuth refresh (which replaces the symlink); `claude /login` rewrites the authority | `reconcileWorkspaceClaudeAuth` harvests → promotes → re-symlinks **every** eligible private home (materialize + throttled agent-list tick); `claudeCredentialState` grades projection and health separately; `assertUsableClaudeAuth` refuses a dead session at materialize, before a pane exists | **✓** `t-9598cc` units; detachment measured 2026-07-27 |
-| Stop | Escape / Ctrl+C / local `/exit` | `runtimeProfile.claude.gracefulStop` | **~** the SEQUENCE still exits 0 (2.1.220 TTY, authorized active turn, 2026-07-25; re-confirmed by hand on 2.1.224 with the Enter 600ms after `/exit`). Its DELIVERY does not: `sendTextIfAliveAfterDelay` types `/exit` and submits back-to-back, the slash-command menu eats the Enter, and the pane is still alive 30s later → `stop-failed`, Kill forced. Measured 2026-08-07, `t-9d76b1` §3.2.1; fix filed as `t-ab2682` |
+| Stop | Escape / Ctrl+C / local `/exit` | `runtimeProfile.claude.gracefulStop` + `AgentManager.sendStopText` | **✓** 8 of 8 stops exit 0 (2.1.224, 2026-08-07, `t-ab2682` §3.2.1). The SEQUENCE always exited 0 (2.1.220 TTY, authorized active turn, 2026-07-25); its DELIVERY was the defect — `/exit` was typed blind onto whatever the composer held, so a still-staged spawn brief absorbed it and the Enter submitted the pair as a prompt (3 of 4 stops left alive). The text step now types only into a provably free composer and submits only while the composer provably holds exactly that text |
 | Activity | `~/.claude/projects/.../*.jsonl` | `claudeNormalizer` (+ ownership hooks on shared cwd) | specs 238–240 era |
 | Permission inject | `--permission-mode`, `settings.json` permissions | canonical private `settings.json` regenerates only an explicitly selected, validated global/workspace permission block; `bypassPermissions` is rejected by the canonical projector unless THIS agent's profile explicitly authorizes it (`nativeConfig.permissions.authorize: [bypassPermissions]`, SDD 471) — inheriting it from the person's global settings is never sufficient on its own; ad-hoc ownership injection remains separate | Claude Code 2.1.220 measurement plus closed projector/lifecycle regressions in `t-fdd3a0` / SDD 465, per-agent authorization in SDD 471 / `t-98427e` |
 | Native config parity | `settings.json`, `--model`, `--effort` | exact per-family global/workspace scalar projection plus agent-owned selector argv; provider/service tier and unselected keys fail closed; the Interface family carries `statusLine`, so the private home preserves the status line instead of blanking it (`t-af504e`) | **✓** `t-fdd3a0`; profile/harness/fresh-restart-resume/fork regressions, 2026-07-26; status-line projection `t-af504e`, 2026-07-28 |
@@ -607,14 +626,14 @@ isolated tmux server: `npm run dogfood -- stop-exit-codes` (evidence
 
 | Runtime | CLI | Screen the stop was measured against | Exit code |
 |---------|-----|--------------------------------------|-----------|
-| claude | 2.1.224 | composer | **0 when it lands, and it often does not** — 3 of 4 runs the pane was still alive after 30s (`stop-failed`); the 4th exited **0**. `/exit` and its Enter are sent back-to-back and the slash-command menu can eat the Enter — a race, not a dead path. By hand with the Enter 600ms later: exit 0 every time. So the 2026-07-25 measurement of the SEQUENCE holds; its DELIVERY is unreliable (`t-ab2682`) |
+| claude | 2.1.224 | composer | **0** — 8 of 8 runs after `t-ab2682` (1.0-1.6s to a dead pane). Before it, 3 of 4 runs stayed alive after 30s (`stop-failed`): `/exit` was typed onto the still-staged spawn brief and the Enter submitted the pair as a PROMPT. Not a swallowed Enter, and not fixable with a delay — see footnote ˢ |
 | codex | codex-cli 0.146.1 | composer | 0 |
 | grok | 1.0.0 (3cd0d0cb) | composer | **130** (5 of 6 runs; once still alive after 30s — the `t-b103c5` cancel-vs-exit hazard is the known cause of that shape, and it was not reproduced deliberately here) |
 | opencode | 1.18.15 | ready screen (the `assumed` composer profile does not match its `┃` frame) | 0 |
 | hermes | v0.18.2 | composer | **130** |
 | pi | 0.80.10 | composer | 0 |
 
-Run counts, because a single pass would have hidden two of these: claude alive×3 / 0×1, codex 0×6, grok 130×5 / alive×1, opencode 0×5, hermes 130×5, pi 0×2.
+Run counts, because a single pass would have hidden two of these: claude **0×8 after `t-ab2682`** (alive×3 / 0×1 before it), codex 0×6, grok 130×5 / alive×1, opencode 0×5, hermes 130×5, pi 0×2.
 
 **130 is 128+SIGINT — the CORRECT exit of a process that honoured the Ctrl+C Tachyon itself sent.** The
 runtimes do not agree on which code acknowledges a requested stop, so:
@@ -626,7 +645,7 @@ runtimes do not agree on which code acknowledges a requested stop, so:
 - **A special case for one code is worse than none.** `exitCode !== 130` would have fixed grok and hermes,
   left the next runtime broken, and erased a genuine crash that happened to exit 130.
 - **Do not compare stop behaviour across runtimes by exit code.** Compare it by whether the pane exits
-  at all; that is what row 7 marks, and it is what claude currently fails.
+  at all; that is what row 7 marks. Claude failed exactly that until `t-ab2682` fixed the delivery.
 
 ### 3.3 Secondary runtimes
 
@@ -947,6 +966,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
+| 2026-08-07 | **Claude graceful stop actually stops claude again, and the recorded cause was wrong (`t-ab2682`):** every graceful stop of a claude agent fell through to Kill forced — the owner's most-used runtime, losing the runtime's own clean shutdown each time. `t-9d76b1` had read the empty composer left behind and concluded the slash-command menu ate the Enter; a fixed gap before the Enter was the proposed fix. Re-measured on 2.1.224 through the production door, the Enter is never eaten: `/exit` was typed onto a composer that still held a staged line — the spawn brief, still being delivered — so it joined THAT line and the Enter submitted the pair to the model **as a prompt** (`── END BEFORE FINISHING ──/exit`, answered in prose). The composer looks empty afterwards *because* the Enter landed. The proposed fix was measured before it was chosen and rejected: with a free composer the back-to-back pair exits 0 in **13 of 13** runs at a 6-13ms gap (3 of 3 of them mid-turn), while a fixed **600ms** gap against a staged brief still left 3 of 4 alive — the old rate. Occupancy, not the gap, predicts the outcome. `AgentManager.sendStopText` replaces the blind `sendKeys(text, true)`: it types only into a composer that reads provably free (Ctrl-C, the profile's own clear step, is re-asked while it is not), and presses Enter only while the composer provably holds exactly that text — so a stop can no longer submit someone else's draft, and never sends a blind Enter. A composer that never frees is left alone and the stop surfaces as `stop-failed`, which is true. The defect was in the DELIVERY MECHANISM, not the claude profile: `stopGracefully` is the single executor for the UI, the Bridge and the engine service, and claude is simply the only profile with a text step. `npm run dogfood -- stop-exit-codes claude`: **0 in 8 of 8** runs, versus 3 of 4 left alive before. Evidence: `test/unit/agentManager.test.ts` (three new assertions, each confirmed red against the blind delivery) plus the dogfood runs. |
 | 2026-08-07 | **Row 21 closed for claude/codex/grok: a refused launch now carries the login (`t-2656d7`, SDD 495 first slice).** The condition was never mis-detected — `HarnessManager` has always thrown the complete sentence, ending in `run grok login first`. It was destroyed by presentation: an action-less `notify` takes the `setStatusBarMessage(…, 8_000)` branch in `src/workspace/notify.ts`, which clips to one status-bar cell and erases itself, so the owner read `no credentials at /home/gc`, concluded Grok was unsupported, and asked when the product would enable it. A non-empty actions array is the entire difference, and the mid-run auth hold had been proving that for weeks with `[{ label: "Open" }]`. `HarnessUnavailableError` now carries typed `AuthRequiredEvidence` (previously it had **zero handlers outside its own file**, which is why every caller could only flatten it to a string); `AgentManager` gained an `onAuthRequired` port fired where the harness is materialized — the one place sidebar ▶, restart, resume, autostart, crash-restart, pipeline nodes and Bridge `spawn_agent` all converge; and `Workspace` presents it through the same `host.notify(message, level, actions)` channel the mid-run hold uses, in the same `describeAuthRequired` words. The autostart path, which was **worse** than the owner's case (the instruction was dropped entirely into an aggregate count, not merely truncated), now names `N waiting for a runtime login (…)` as its own outcome. `Log in` runs `RUNTIME_LOGIN[runtime].command` in a governed pane keyed by RUNTIME — so a second refused agent joins the live login instead of racing a second device flow for one account — against the real config home. Nothing auto-starts: after the pane exits the human is offered an explicit `Retry` (SDD 495 Q3, decided by the owner **against** his own live case, which wanted the automatic start). Row 20 unchanged — no pre-launch probe in this slice (Q1). Evidence: `test/unit/authRequiredLaunchNotice.test.ts` (the branch invariant across every refusable runtime, proven red by deleting the `Retry` action), `test/unit/launchAuthRefusalSurface.test.ts` (a real `Workspace` driven through `manager.spawn`, proven red by unwiring the port), `test/unit/harnessAuthRefusalEvidence.test.ts` (per-runtime throw sites, and a non-credential harness failure that must NOT claim to be a login). |
 | 2026-08-07 | **Authentication matrix extended with rows 20 (auth status probe) and 21 (native login surface) — new §3.8 (`t-9b5457` / SDD 495).** Row 16 answers "did this runtime already fail for auth reasons?"; the two new rows answer "can we ask before any work is attempted?" and "what does its own login require of a human?" Measured Claude 2.1.224, codex-cli 0.146.1, grok **1.0.0**, opencode 1.18.9 against isolated credential-free config homes and (for logins) in a tmux pane killed before completion; no real credential touched. All three priority runtimes now expose a local non-interactive status probe (`claude auth status --json`, `codex login status`, the `grok models` banner line) and **Tachyon consumes none of them** — `RUNTIME_AUTH_PREFLIGHT` still declares OpenCode only. Two asymmetries pinned: Grok exits `0` in both states (its signal is a line, never the exit code) and Claude's login **blocks on a typed paste-back** while Grok's prints **nothing on a pipe** — jointly, the only login surface all three permit is a real terminal. Version drift recorded: this host runs grok 1.0.0 while the Grok rows elsewhere still state 0.2.112/0.2.118, and `grokLaunchPreflight.ts:179-188`'s declared "a logged-out CLI prints a sign-in notice instead of a listing" is **false on 1.0.0** — the catalog prints while signed out and the preflight answers `supported` for a credential-free CLI (`t-5dcf47`). Proposal: [`docs/specs/495-runtime-auth-login-recovery/`](../specs/495-runtime-auth-login-recovery/). |
 | 2026-08-06 | **Design Mode `design_mode_chat_reply` runtime matrix (`t-dd46a4` / SDD 488 F3):** measured Claude 2.1.223, Codex 0.146.0, Grok 0.2.118 headless against the live Bridge with the current tool-only Design Mode prompt (incl. turn id). All three **listed** and **called** the tool; none used pane markers. Panel land **unmeasured** (IDE Browser Bridge offline). Live `tools/list` omitted `turnId` while source 0.62.0 declares it. Capability row 19 + §3.1.3; research [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md). F1 (delete markers) unblocked for tool-compliance on those three, not for unconditional deletion. Pi left **?** unmeasured. |

@@ -26,7 +26,7 @@ describe("runtime profiles (spec 358 phase 1)", () => {
       verified: true,
       verifiedAt: "2026-07-27",
     });
-    expect(profile?.gracefulStop).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-07-25" });
+    expect(profile?.gracefulStop).toMatchObject({ source: "measured", verified: true, verifiedAt: "2026-08-07" });
     expect(profile?.gracefulStop?.steps).toEqual([
       { type: "interruptActiveTurn" },
       { type: "sendKey", key: "C-c" },
