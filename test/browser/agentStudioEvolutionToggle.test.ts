@@ -79,14 +79,14 @@ describe("t-f96b2f — Agent Studio can turn Agent Evolution on and off", () => 
       const page = await browser.newPage();
       try {
         await page.bringToFront();
-        // `new-unattested-runtime`, not `new`: it is the only fixture whose fields come from
-        // `canonicalAgentFields()` with no snapshot, which is exactly what
-        // `AgentStudioAdapter.load(undefined)` sends for a brand-new agent. The `new` fixture is
-        // built on `blankAgentFields()` and renders the LEGACY form production no longer produces —
-        // t-d68b8b hit the same wall and worked around it the same way. Its unattested runtime is
-        // beside the point here; what this case needs is a canonical form with no profile behind it.
+        // t-547771 — `new`, the route a human opening New Agent actually gets. This case used to
+        // borrow `new-unattested-runtime` because `new` was built on `blankAgentFields()` and
+        // rendered a legacy form production cannot produce; the fixture carries the canonical shape
+        // now, so the borrow is gone and the assertion is read off the real screen. The unattested
+        // runtime was always beside the point here — what this case needs is a canonical form with
+        // no profile behind it.
         const surface = await openPreview(page, server.origin, {
-          query: { view: "agent-studio-shell", fixture: "new-unattested-runtime" },
+          query: { view: "agent-studio-shell", fixture: "new" },
           width,
           waitFor: ".ash-evolution",
         });

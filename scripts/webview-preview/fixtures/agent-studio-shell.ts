@@ -148,8 +148,17 @@ const flagMap = { claude: ["--dangerously-skip-permissions", "--model sonnet", "
 const evolutionLabels = createAgentEvolutionLabels();
 const profileLabels = createAgentProfileLabels();
 
+/**
+ * t-547771 — New Agent, in the shape the host actually sends. `AgentStudioAdapter.load(undefined)`
+ * returns `{ storage: "canonical", fields: canonicalAgentFields() }` and has since t-ae221c; the
+ * legacy arm is reachable only for an agent-kind entry with neither `profileLifecycle` nor
+ * `profilePointer`, and no such entry exists. `canonical` in the App is `fields.canonical !== undefined`,
+ * so a fixture on `blankAgentFields()` renders every canonical-gated control in the OPPOSITE state —
+ * which is what this route showed for three releases while two tasks routed around it.
+ */
 const newEntity: AgentStudioEntity = {
-  fields: blankAgentFields(),
+  storage: "canonical",
+  fields: canonicalAgentFields(),
   chips,
   flagMap,
   defaultCwd: "/home/dev/project",
@@ -357,10 +366,10 @@ function codexCanonicalEntity(authorize?: string[]): AgentStudioEntity {
  */
 const unattestedRuntimeEntity: AgentStudioEntity = {
   ...newEntity,
-  // `storage: "canonical"` + `canonicalAgentFields()` is exactly what `AgentStudioAdapter.load(undefined)`
-  // sends for a brand-new agent; the refusal only speaks for a canonical creation, so a fixture built
-  // on `blankAgentFields()` would render the legacy form and show nothing.
-  storage: "canonical",
+  // History, not a warning (t-547771, 2026-08-09): this fixture used to re-declare `storage:
+  // "canonical"` + `canonicalAgentFields()` because `newEntity` was still built on
+  // `blankAgentFields()` and would have rendered the legacy form. `newEntity` carries the canonical
+  // shape now, so the spread is enough and only the typed command is left to say.
   fields: { ...canonicalAgentFields(), name: "helper", cmd: "opencode" },
 };
 
@@ -381,6 +390,9 @@ export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFi
   // t-e722ce — the plan a human approves, in both of its shapes.
   "forget-plan": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: executableForgetPlan } },
   "forget-plan-blocked": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: blockedForgetPlan } },
+  // The `entity` here is inert: `agentStudioShellMakeMessage` returns the error envelope ALONE and
+  // never sends `load`, so this route measures the client's no-entity error path and nothing else
+  // (t-547771 measured it rendering the eternal "Loading Agent Studio..." — filed separately).
   "load-error": { provenance: "synthetic-edge", vm: { entity: newEntity, loadError: { code: "persistence/not-found", message: "This agent no longer exists." } } },
 };
 
