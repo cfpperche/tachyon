@@ -123,6 +123,36 @@ function serializeProps(props: Record<string, unknown>): string {
   return out.length ? ` ${out.join(" ")}` : "";
 }
 
+/** One HOST element the serializer emitted, with the props it carried (handlers included). */
+export interface RenderedElement {
+  tag: string;
+  props: Record<string, unknown>;
+  /** The element's own serialized subtree — its rendered text, for finding a control by its label. */
+  html: string;
+}
+
+let elementSink: ((element: RenderedElement) => void) | undefined;
+
+/**
+ * SDD 501 — the same render, plus the host elements it produced.
+ *
+ * A rendered `onClick="[fn]"` proves a handler EXISTS; it does not prove the handler posts the action
+ * the host is listening for, and the gap between those two is where a button that looks wired sends
+ * nothing. This suite has no DOM to click, so the handler is collected from the element the serializer
+ * already walked and called directly. No second traversal: the collector rides the one in
+ * `renderStatic`, so a component this helper could not render is a failure here too.
+ */
+export function renderStaticWithElements(node: unknown): { html: string; elements: RenderedElement[] } {
+  const elements: RenderedElement[] = [];
+  const previous = elementSink;
+  elementSink = (element) => elements.push(element);
+  try {
+    return { html: renderStatic(node), elements };
+  } finally {
+    elementSink = previous;
+  }
+}
+
 /**
  * Serialize a vnode tree to HTML. Function components are INVOKED (that is what makes this a proof
  * about rendered output rather than about vnode shape); `Fragment` needs no special case because
@@ -173,6 +203,11 @@ export function renderStatic(node: unknown): string {
   if (typeof type !== "string") throw new Error(`renderStatic: unsupported vnode type ${String(type)}`);
 
   const attrs = serializeProps(props);
-  if (VOID_ELEMENTS.has(type)) return `<${type}${attrs} />`;
-  return `<${type}${attrs}>${renderStatic(props.children)}</${type}>`;
+  if (VOID_ELEMENTS.has(type)) {
+    elementSink?.({ tag: type, props, html: "" });
+    return `<${type}${attrs} />`;
+  }
+  const inner = renderStatic(props.children);
+  elementSink?.({ tag: type, props, html: inner });
+  return `<${type}${attrs}>${inner}</${type}>`;
 }

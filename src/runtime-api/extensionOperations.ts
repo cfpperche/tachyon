@@ -116,6 +116,9 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("worktrees.classified") }).strict(),
   z.object({ action: z.literal("worktree.review"), agent: name }).strict(),
   z.object({ action: z.literal("worktree.review"), runId: text(128, 1) }).strict(),
+  /** SDD 501 — the same review, reached by the managed-registry id the land block's row carries.
+   *  Additive: an engine that predates it refuses the unknown payload rather than decoding a changed one. */
+  z.object({ action: z.literal("worktree.review"), worktreeId: text(256, 1) }).strict(),
   z.object({ action: z.literal("pipeline.inspect"), name: name.optional(), runId: text(128, 1).optional() }).strict(),
   z.object({
     action: z.literal("agent.wait"),

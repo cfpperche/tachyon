@@ -287,7 +287,6 @@
   "Open": "Abrir",
   "Open PR": "Abrir PR",
   "Open a GitHub PR for branch '{0}'?": "Abrir um PR no GitHub para a branch '{0}'?",
-  "Open a file's diff (base ↔ worktree)": "Abrir o diff de um arquivo (base ↔ worktree)",
   "Open it": "Abrir",
   "Open which agent's terminal?": "Abrir o terminal de qual agente?",
   "Operational actions use the loaded profile revision and stay separate from form save.": "As ações operacionais usam a revisão carregada do perfil e ficam separadas do salvamento do formulário.",
@@ -728,5 +727,12 @@
   "unprojectable — the profile and the runtime configuration disagree. {0}": "unprojectable — o perfil e a configuração do runtime discordam. {0}",
   "unlisted-profile — a profile is on disk and the roster does not list it. {0}": "unlisted-profile — há um perfil em disco e o roster não o lista. {0}",
   "stranded-authority — a host authority is left and the agent is gone. {0}": "stranded-authority — sobrou uma autoridade do host e o agente não existe mais. {0}",
-  "{0} — full detail in Output → {1}": "{0} — detalhe completo em Output → {1}"
+  "{0} — full detail in Output → {1}": "{0} — detalhe completo em Output → {1}",
+  "Open a file's diff ({0} ↔ {1})": "Abrir o diff de um arquivo ({0} ↔ {1})",
+  "Nothing to review — this checkout has no committed history to compare.": "Nada a revisar — este checkout não tem histórico commitado para comparar.",
+  "Review these changes": "Revisar estas mudanças",
+  "Open a pull request": "Abrir um pull request",
+  "Review shows {0}..{1} — the commits this command would land, not the working tree.": "A revisão mostra {0}..{1} — os commits que este comando levaria para o trunk, não a árvore de trabalho.",
+  "Review opens a committed-history comparison, not the working tree.": "A revisão abre uma comparação do histórico de commits, não da árvore de trabalho.",
+  "No local trunk to compare against — review shows this branch against the ref it was forked from.": "Não há trunk local para comparar — a revisão mostra esta branch contra o ref de onde ela saiu."
 }

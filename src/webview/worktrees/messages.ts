@@ -33,6 +33,17 @@ export interface WorktreesStrings {
   landCheckPrimaryClean: string;
   landFixLabel: string;
   landCommits: string;
+  /**
+   * SDD 501 — the two doors that were one room away from this decision. Both dispatch to commands that
+   * already existed (spec 213/230 review, spec 223 PR); what is new here is only that they are offered
+   * where the human is deciding. `landCompare` names the base, because a review at the land door reads
+   * as evidence about what would land and must therefore say what it compared.
+   */
+  landReview: string;
+  landPropose: string;
+  landCompare: string;
+  landCompareBlocked: string;
+  landCompareNoTrunk: string;
   wtAgentGone: string;
   wtAgentOwned: string;
   wtAlsoDeleteBranch: string;
@@ -82,6 +93,9 @@ export type WorktreesAction =
   | { type: "worktreeRemove"; id: string; deleteBranch?: boolean; wsHash?: string }
   | { type: "worktreeForgetRecord"; id: string; wsHash?: string }
   | { type: "worktreeReleaseLock"; id: string; wsHash?: string }
+  /** SDD 501 — the host dispatches these to `tachyon.reviewWorktreeItem` / `tachyon.createWorktreePrItem`. */
+  | { type: "worktreeReviewDiff"; id: string; wsHash?: string }
+  | { type: "worktreeCreatePr"; id: string; wsHash?: string }
   | { type: "worktreeBatchCleanup"; items: Array<{ id: string; op: "remove" | "forget"; wsHash?: string }> };
 
 export const pollWorktreesAction = (): WorktreesAction => ({ type: POLL });

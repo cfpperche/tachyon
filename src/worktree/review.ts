@@ -72,9 +72,16 @@ export function baseSidePath(f: ChangedFile): string {
   return f.from ?? f.path;
 }
 
-/** Human diff-editor title, e.g. `src/a.ts (abc123f ↔ worktree)`. */
-export function diffTitle(file: ChangedFile, baseRef: string): string {
-  const short = baseRef.length > 8 ? baseRef.slice(0, 8) : baseRef;
+/**
+ * Human diff-editor title, e.g. `src/a.ts (abc123f ↔ worktree)`.
+ *
+ * SDD 501 — the current side is NAMED rather than assumed to be the worktree. The land door compares
+ * committed history (`trunkRef..head`), and a title that said "worktree" over a diff read out of a
+ * commit would be the one lie this surface cannot afford: a review at the land door is read as
+ * evidence about what lands.
+ */
+export function diffTitle(file: ChangedFile, baseRef: string, currentLabel = "worktree"): string {
+  const abbreviate = (ref: string): string => (ref.length > 8 ? ref.slice(0, 8) : ref);
   const rename = file.from && file.from !== file.path ? `${file.from} → ${file.path}` : file.path;
-  return `${rename} (${short} ↔ worktree)`;
+  return `${rename} (${abbreviate(baseRef)} ↔ ${abbreviate(currentLabel)})`;
 }

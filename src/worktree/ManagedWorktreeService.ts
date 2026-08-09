@@ -16,7 +16,8 @@ import {
   pathFor,
   resolveBase,
 } from "./WorktreeManager.js";
-import { classifyManagedWorktree, resolveTrunkRefs, type WorktreeClassification } from "./classify.js";
+import { classifyManagedWorktree, localTrunkRef, resolveTrunkRefs, type WorktreeClassification } from "./classify.js";
+import type { ChangedFile } from "./review.js";
 import { probeLandSuggestion, probePrimaryCheckout, type LandSuggestion, type PrimaryCheckoutState } from "./land.js";
 import {
   resolveHygieneAuthority,
@@ -190,7 +191,7 @@ export class ManagedWorktreeService {
     // t-7cb971 — only a LOCAL branch can be fast-forwarded, so the land suggestion needs the local
     // name out of the candidate list rather than whichever candidate proved containment (which may be
     // `origin/<trunk>`). No local trunk at all is an honest null: the suggestion then refuses by name.
-    const localTrunk = trunkRefs.find((ref) => !ref.startsWith("origin/")) ?? null;
+    const localTrunk = localTrunkRef(trunkRefs);
     // t-7cb971 — and so is the primary checkout, for both of the reasons the trunk is: three
     // subprocesses per row otherwise, and two rows in one refresh must not disagree about which
     // branch it has checked out. Probed lazily: a sweep with nothing to land never pays for it.
@@ -253,6 +254,48 @@ export class ManagedWorktreeService {
         }
       }),
     );
+  }
+
+  /**
+   * SDD 501 — what a human standing at the land block would be looking at, resolved by the REGISTRY id
+   * the row already carries.
+   *
+   * The two identities `worktree.review` already accepted are an agent name and a pipeline run; this
+   * is the third, and it exists because the land block renders for `change` rows too — a door keyed on
+   * an agent name would silently skip half the rows that have something to land.
+   *
+   * The comparison is `trunkRef..head` — COMMITTED history, the commits the land command would
+   * introduce (notes.md § D2). `base` falls back to the ref the worktree was forked from only when the
+   * repository has no local trunk at all, which is a state the land block itself already refuses by
+   * name; the base is returned either way so the surface can say which one it used rather than let a
+   * reader assume.
+   */
+  async landReview(id: string): Promise<{
+    record: WorktreeRecord;
+    base: string;
+    head: string;
+    changedFiles: ChangedFile[];
+  } | null> {
+    const entry = findManagedEntry(this.reconcileStore(), id);
+    if (!entry || !fs.existsSync(entry.path)) return null;
+    const trunkRefs = await resolveTrunkRefs(this.git, this.opts.workspaceRoot);
+    const base = localTrunkRef(trunkRefs) ?? entry.baseRef;
+    const { headRef } = await this.opts.manager.headState(entry.path);
+    // No readable HEAD is an unborn or unreadable checkout: there is no committed content to compare,
+    // and answering with the working tree instead would be the substitution this whole decision avoids.
+    if (!headRef) return null;
+    return {
+      record: {
+        path: entry.path,
+        branch: entry.branch,
+        tachyonCreatedBranch: entry.tachyonCreatedBranch,
+        baseRef: entry.baseRef,
+        createdAt: entry.createdAt,
+      },
+      base,
+      head: headRef,
+      changedFiles: await this.opts.manager.changedFiles(entry.path, base, headRef),
+    };
   }
 
   list(filter?: { kind?: ManagedWorktreeKind; status?: ManagedWorktreeEntry["status"] }): ManagedWorktreeEntry[] {

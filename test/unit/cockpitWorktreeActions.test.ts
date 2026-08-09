@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Uri } from "vscode";
-import { __createdPanels, __getWarningMessageCalls, __resetVscodeMock } from "../mocks/vscode.js";
+import { __createdPanels, __getExecutedCommands, __getWarningMessageCalls, __resetVscodeMock } from "../mocks/vscode.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager, type WorktreesDeps } from "../../src/webview/WorktreesPanel.js";
 import { readyMessage } from "../../src/webview/worktrees/messages.js";
 import type { WorkspaceBundle, WorktreeRow } from "../../src/sections/model.js";
@@ -156,5 +156,69 @@ describe("SDD 485 D6 — standalone Worktrees dashboard", () => {
     panelA.webview.__receive({ type: "worktreeRemove", id: "a-only" });
     await flush();
     expect(__getWarningMessageCalls().map((call) => call.message)).toContain("occupied by codex");
+  });
+});
+
+/**
+ * SDD 501 — the two land-door doors, dispatched the way the sidebar has always dispatched them.
+ *
+ * The sidebar posts an action id, looks it up in one table, and calls the EXISTING VS Code command
+ * with a duck-typed item (`SidebarPrototype.ts:72,530`). This panel now does the same thing with the
+ * same two command ids, which is why there is nothing here about diffs or pull requests: the assertion
+ * is that the message reaches `tachyon.reviewWorktreeItem` / `tachyon.createWorktreePrItem`, and that
+ * whatever those commands do is theirs. A test that reimplemented their behaviour would be the first
+ * step towards the code reimplementing it too.
+ */
+describe("SDD 501 — review and propose dispatch to the commands that already exist", () => {
+  const dispatched = (): Array<{ command: string; args: unknown[] }> =>
+    __getExecutedCommands().filter((call) => call.command.startsWith("tachyon."));
+
+  it("review reaches the spec 213/230 command with the row's id", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeReviewDiff", id: "a-only" });
+    await flush();
+    expect(dispatched()).toEqual([
+      { command: "tachyon.reviewWorktreeItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only" }] },
+    ]);
+  });
+
+  it("propose reaches the spec 223 command — no second PR flow in this panel", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeCreatePr", id: "a-only" });
+    await flush();
+    expect(dispatched()).toEqual([
+      { command: "tachyon.createWorktreePrItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only" }] },
+    ]);
+  });
+
+  /** Same containment rule as every other action here: the panel's project is authority, not the row's. */
+  it("uses the immutable panel project even when the message claims another", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeReviewDiff", id: "a-only", wsHash: "ws-b" });
+    await flush();
+    expect(dispatched()).toEqual([
+      { command: "tachyon.reviewWorktreeItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only" }] },
+    ]);
+  });
+
+  /**
+   * plan.md § D3 — readiness is probed at CLICK. Opening the dashboard and refreshing it runs NO
+   * command at all, which is the runtime half of `prReadinessProbedAtClick.test.ts`: a row that
+   * pre-checked whether a PR were possible would have to reach the host to do it, and this is where
+   * that reach would show up.
+   */
+  it("opening and refreshing the dashboard dispatches nothing", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "pollWorktrees" });
+    await flush();
+    await flush();
+    h.manager.refresh();
+    await flush();
+    await flush();
+    expect(dispatched()).toEqual([]);
   });
 });
