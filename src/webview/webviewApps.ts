@@ -22,7 +22,7 @@
  * declaration of record lives in TypeScript, and a test — not a habit — keeps the build honest against it.
  */
 
-import { controlSectionIcon } from "../cockpit/sectionNav.js";
+import { controlSectionIcon } from "./sidebar/sectionNav.js";
 import type { CockpitSectionId } from "../sections/model.js";
 
 /**
@@ -261,7 +261,7 @@ export function sectionAppIconName(app: WebviewAppEntry, declared?: string): str
     throw new Error(
       `${app.view}: this app is opened by the '${app.section}' launcher tile, so its tab icon is the tile's ` +
       `('${controlSectionIcon(app.section)}'). Remove iconName: "${declared}" from its config — to change the ` +
-      "icon, change it in CONTROL_SECTION_NAV (src/cockpit/sectionNav.ts) and both surfaces move together.",
+      "icon, change it in CONTROL_SECTION_NAV (s./sidebar/sectionNav.ts) and both surfaces move together.",
     );
   }
   return controlSectionIcon(app.section);

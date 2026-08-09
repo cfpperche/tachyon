@@ -162,7 +162,7 @@ describe("the trigger set is DERIVED from what the browser suite reads (t-e2c8a2
     const roots = browserSuiteRoots({ cwd: path.resolve(__dirname, "..", "..") });
     expect(roots).toEqual(expect.arrayContaining([
       "test/browser/", "vitest.browser.config.ts",
-      "src/webview/", "src/sidebar/", "src/agents/", "src/cockpit/", "scripts/webview-preview/",
+      "src/webview/", "src/sidebar/", "src/agents/", "src/sections/", "scripts/webview-preview/",
     ]));
   });
 });

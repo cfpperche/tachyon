@@ -9,7 +9,7 @@
  * opens the same top-level set as COCKPIT_SECTION_ORDER.
  */
 
-import { COCKPIT_SECTION_ORDER, type CockpitSectionId } from "../sections/model.js";
+import { COCKPIT_SECTION_ORDER, type CockpitSectionId } from "../../sections/model.js";
 
 export interface ControlSectionNav {
   id: CockpitSectionId;

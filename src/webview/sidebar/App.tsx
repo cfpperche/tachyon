@@ -12,7 +12,7 @@ import {
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 // t-6e2952 — the Control tab's tiles derive from the SAME catalog Control's own TabsBar order comes from
 // (COCKPIT_SECTION_ORDER); a section added there without nav metadata throws instead of silently vanishing.
-import { CONTROL_SECTION_NAV } from "../../cockpit/sectionNav";
+import { CONTROL_SECTION_NAV } from "./sectionNav";
 import type { CockpitSectionId } from "../../sections/model";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";

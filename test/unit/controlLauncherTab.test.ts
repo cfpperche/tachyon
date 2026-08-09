@@ -6,7 +6,7 @@ import { __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
 import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
 import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
-import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
+import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
 import { SAMPLE, TABS, type FleetVM, type TabId } from "../../src/sidebar/types.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 

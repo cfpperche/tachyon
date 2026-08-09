@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { COCKPIT_SECTION_IDS, collectNeedsFor, type CockpitSectionId } from "../../src/sections/model.js";
 import { resolveSectionDestination } from "../../src/sections/route.js";
 import { isCockpitSectionId, resolveCockpitSection } from "../../src/sections/resolveSection.js";
-import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
+import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
 import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 
