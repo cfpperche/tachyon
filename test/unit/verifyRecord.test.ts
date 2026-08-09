@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -142,6 +142,32 @@ describe.skipIf(!gitOk())("verification record (t-47cc91)", () => {
     expect(r.recorded).toBe(false);
     expect(r.reason).toBe("package-lock.json differs in content from the primary checkout — this worktree needs its own dependencies");
     expect(readRecord(sh(["rev-parse", "HEAD^{tree}"], wt), wt)).toBeUndefined();
+  });
+
+  it("REFUSES to record when dependency sharing cannot be measured", () => {
+    const cwd = repo();
+    const wt = path.join(cwd, "..", `unmeasurable-deps-wt-${path.basename(cwd)}`);
+    dirs.push(wt);
+    execFileSync("git", ["worktree", "add", "-q", "-b", "unmeasurable-deps-topic", wt], { cwd, env: ENV });
+    const dependencyDir = path.join(wt, "node_modules");
+    const realLstat = fs.lstatSync;
+    const lstat = vi.spyOn(fs, "lstatSync").mockImplementation((target, options) => {
+      if (target === dependencyDir) {
+        const error = new Error("injected dependency inspection failure") as NodeJS.ErrnoException;
+        error.code = "EACCES";
+        throw error;
+      }
+      return realLstat(target, options as never);
+    });
+
+    try {
+      const r = recordVerification({ cwd: wt });
+      expect(r.recorded).toBe(false);
+      expect(r.reason).toMatch(/could not determine whether dependencies match this tree/);
+      expect(readRecord(sh(["rev-parse", "HEAD^{tree}"], wt), wt)).toBeUndefined();
+    } finally {
+      lstat.mockRestore();
+    }
   });
 
   it("still records divergent lockfiles when the worktree owns node_modules", () => {
