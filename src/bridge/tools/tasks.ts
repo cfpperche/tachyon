@@ -240,9 +240,9 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Record that a Task's work ALREADY finished outside the board — the branch landed, the SHA exists — " +
-        "rather than driving it through the lanes. update_task moves work you are doing and demands an " +
-        "assignee to reach 'active'; reconciling a finished task through it would mean claiming work that is " +
-        "over. This takes triaged/active/landed straight to landed or done, needs no assignee, and requires " +
+        "rather than driving it through the lanes. update_task moves work through its scheduling lanes; " +
+        "reconciling a finished task through it would mean declaring already-finished work active first. " +
+        "This takes triaged/active/landed straight to landed or done, needs no assignee, and requires " +
         "evidence, which is journalled verbatim before the status moves. It does NOT skip triage: an inbox " +
         "task is refused by name, because no SHA answers whether the work was wanted. Answers with a receipt.",
       inputSchema: {
