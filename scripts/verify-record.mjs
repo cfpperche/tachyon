@@ -24,7 +24,7 @@
 
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
-import validityContract from "./verify-record-validity.cjs";
+import validityContract from "../shared/verify-record-validity.cjs";
 
 const { DEFAULT_MAX_RECORD_AGE_MS, verificationRecordValidity } = validityContract;
 export { DEFAULT_MAX_RECORD_AGE_MS };

@@ -23,7 +23,7 @@
  * `check`, because this answer arms an automatic message to a coordinator or a land command.
  */
 import type { GitExec } from "../worktree/WorktreeManager.js";
-import validityContract from "../../scripts/verify-record-validity.cjs";
+import validityContract from "../../shared/verify-record-validity.cjs";
 
 const { verificationRecordValidity } = validityContract;
 
