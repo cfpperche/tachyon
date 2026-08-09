@@ -16,16 +16,20 @@
  * trunk from the primary checkout, so a record written in one has to be readable from the other.
  * The ref also makes the proof publishable and fetchable with git alone.
  *
- * A DIRTY WORKING TREE PRODUCES NO RECORD. What ran then was the working tree, which is not any
- * committed tree, so no commit can honestly claim it. Writing HEAD's tree anyway would be a proof of
- * something that was never verified — the exact failure this exists to prevent. No proof beats a
- * wrong one.
+ * A RUN WITH UNCLAIMABLE INPUTS PRODUCES NO RECORD. A dirty working tree is not any committed tree;
+ * a linked primary `node_modules` paired with divergent lockfiles is not the dependency set declared
+ * by this tree. Writing HEAD's tree in either case would prove something that was never verified.
+ * No proof beats a wrong one.
  */
 
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import dependencyLockfileValidity from "../shared/dependency-lockfile-validity.cjs";
 import validityContract from "../shared/verify-record-validity.cjs";
 
+const { fingerprintLockfiles, lockfileDivergenceReason } = dependencyLockfileValidity;
 const { DEFAULT_MAX_RECORD_AGE_MS, verificationRecordValidity } = validityContract;
 export { DEFAULT_MAX_RECORD_AGE_MS };
 
@@ -93,13 +97,49 @@ export function treeOf(commitish, cwd = process.cwd()) {
   }
 }
 
+function readLockfiles(dir) {
+  return (name) => {
+    try { return fs.readFileSync(path.join(dir, name)); } catch { return null; }
+  };
+}
+
+/**
+ * Refuse only when this checkout is demonstrably running through the primary checkout's
+ * `node_modules` and the two declared dependency sets disagree. An owned install, a foreign link,
+ * matching lockfiles, or no lockfiles on either side makes no claim here.
+ */
+function sharedDependencyDivergenceReason(cwd) {
+  try {
+    const commonDir = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
+    const primary = path.dirname(commonDir);
+    const checkout = git(["rev-parse", "--show-toplevel"], cwd);
+    if (path.resolve(checkout) === path.resolve(primary)) return null;
+
+    const dependencyDir = path.join(checkout, "node_modules");
+    if (!fs.lstatSync(dependencyDir).isSymbolicLink()) return null;
+    const target = path.resolve(path.dirname(dependencyDir), fs.readlinkSync(dependencyDir));
+    if (target !== path.resolve(primary, "node_modules")) return null;
+
+    const primaryFingerprint = fingerprintLockfiles(readLockfiles(primary));
+    const worktreeFingerprint = fingerprintLockfiles(readLockfiles(checkout));
+    if (primaryFingerprint.files.length === 0 && worktreeFingerprint.files.length === 0) return null;
+    if (primaryFingerprint.digest === worktreeFingerprint.digest) return null;
+    return lockfileDivergenceReason(primaryFingerprint, worktreeFingerprint);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Record that the content currently in `cwd` verified green. Returns the record, or null with a
- * reason when there is nothing honest to file (dirty tree, not a repo).
+ * reason when there is nothing honest to file (dirty tree, not a repo, or dependencies from a
+ * different lockfile set).
  */
 export function recordVerification({ cwd = process.cwd(), command, summary, fingerprint, now = () => new Date() } = {}) {
   const tree = verifiableTree(cwd);
   if (!tree) return { recorded: false, reason: "working tree is dirty or not a git repo — no commit can claim this run" };
+  const divergenceReason = sharedDependencyDivergenceReason(cwd);
+  if (divergenceReason) return { recorded: false, reason: divergenceReason };
   let commit = null;
   try { commit = git(["rev-parse", "HEAD"], cwd); } catch { /* detached/empty repo — the tree still identifies it */ }
 

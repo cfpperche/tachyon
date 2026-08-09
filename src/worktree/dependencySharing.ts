@@ -37,11 +37,14 @@
  * policy without evidence.
  */
 
-import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import dependencyLockfileValidity from "../../shared/dependency-lockfile-validity.cjs";
+
+const { LOCKFILES, fingerprintLockfiles, lockfileDivergenceReason } = dependencyLockfileValidity;
+export { LOCKFILES, fingerprintLockfiles };
 
 const execFileAsync = promisify(execFile);
 
@@ -51,14 +54,6 @@ const execFileAsync = promisify(execFile);
  */
 export const DEPENDENCY_DIR = "node_modules";
 export const WORKTREE_INCLUDE_FILE = ".worktreeinclude";
-export const LOCKFILES = [
-  "package-lock.json",
-  "npm-shrinkwrap.json",
-  "yarn.lock",
-  "pnpm-lock.yaml",
-  "bun.lock",
-  "bun.lockb",
-] as const;
 
 /** What a checkout's `node_modules` currently is. `foreign` = a real directory (or a link we did not make). */
 export type DependencyDirState = "absent" | "shared-link" | "foreign";
@@ -91,21 +86,6 @@ export interface LockfileFingerprint {
 }
 
 /** `read` returns the file's bytes, or null when it is absent/unreadable. Pure given that reader. */
-export function fingerprintLockfiles(read: (name: string) => Buffer | null): LockfileFingerprint {
-  const hash = createHash("sha256");
-  const files: string[] = [];
-  for (const name of LOCKFILES) {
-    const bytes = read(name);
-    if (!bytes) continue;
-    files.push(name);
-    // Length-prefixed so no pair of (name, content) concatenations can collide.
-    hash.update(`${name}:${bytes.length}:`);
-    hash.update(bytes);
-  }
-  // An empty set still digests to a stable value; `files: []` is what tells the caller it is empty.
-  return { digest: hash.digest("hex"), files };
-}
-
 export type DependencySharingPlan =
   /** create (or keep) the symlink — the two lockfile sets are byte-identical. */
   | { kind: "link"; digest: string; reason: string }
@@ -158,20 +138,6 @@ export function planDependencySharing(input: DependencySharingInput): Dependency
     digest,
     reason: `lockfiles are identical to the primary checkout (${input.worktree.files.join(", ")} @ ${digest.slice(0, 12)})`,
   };
-}
-
-/** Name WHICH lockfiles disagree — "they differ" without saying how is the kind of message nobody acts on. */
-function lockfileDivergenceReason(primary: LockfileFingerprint, worktree: LockfileFingerprint): string {
-  const added = worktree.files.filter((f) => !primary.files.includes(f));
-  const removed = primary.files.filter((f) => !worktree.files.includes(f));
-  const parts: string[] = [];
-  if (added.length > 0) parts.push(`this worktree adds ${added.join(", ")}`);
-  if (removed.length > 0) parts.push(`this worktree is missing ${removed.join(", ")}`);
-  if (parts.length === 0) {
-    const shared = worktree.files.length > 0 ? worktree.files.join(", ") : "the lockfile set";
-    parts.push(`${shared} differs in content from the primary checkout`);
-  }
-  return `${parts.join("; ")} — this worktree needs its own dependencies`;
 }
 
 /** The filesystem surface, injected so the applier tests without a real disk. */

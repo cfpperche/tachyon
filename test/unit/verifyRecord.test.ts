@@ -31,6 +31,7 @@ function repo(): string {
   dirs.push(dir);
   execFileSync("git", ["init", "-q"], { cwd: dir, env: ENV });
   fs.writeFileSync(path.join(dir, "a.txt"), "one\n");
+  fs.writeFileSync(path.join(dir, ".gitignore"), "node_modules\n");
   execFileSync("git", ["add", "-A"], { cwd: dir, env: ENV });
   execFileSync("git", ["commit", "-qm", "init"], { cwd: dir, env: ENV });
   return dir;
@@ -121,6 +122,71 @@ describe.skipIf(!gitOk())("verification record (t-47cc91)", () => {
     const r = recordVerification({ cwd: wt });
     expect(r.recorded).toBe(true);
     expect(readRecord(r.record.tree, cwd)).toBeTruthy(); // readable from the primary checkout
+  });
+
+  it("REFUSES to record when shared node_modules ran against lockfiles from another tree", () => {
+    const cwd = repo();
+    fs.writeFileSync(path.join(cwd, "package-lock.json"), "primary lock\n");
+    execFileSync("git", ["add", "package-lock.json"], { cwd, env: ENV });
+    execFileSync("git", ["commit", "-qm", "add primary lockfile"], { cwd, env: ENV });
+    fs.mkdirSync(path.join(cwd, "node_modules"));
+
+    const wt = path.join(cwd, "..", `divergent-wt-${path.basename(cwd)}`);
+    dirs.push(wt);
+    execFileSync("git", ["worktree", "add", "-q", "-b", "divergent-topic", wt], { cwd, env: ENV });
+    fs.writeFileSync(path.join(wt, "package-lock.json"), "worktree lock\n");
+    execFileSync("git", ["commit", "-qam", "change worktree lockfile"], { cwd: wt, env: ENV });
+    fs.symlinkSync(path.join(cwd, "node_modules"), path.join(wt, "node_modules"), "dir");
+
+    const r = recordVerification({ cwd: wt });
+    expect(r.recorded).toBe(false);
+    expect(r.reason).toBe("package-lock.json differs in content from the primary checkout — this worktree needs its own dependencies");
+    expect(readRecord(sh(["rev-parse", "HEAD^{tree}"], wt), wt)).toBeUndefined();
+  });
+
+  it("still records divergent lockfiles when the worktree owns node_modules", () => {
+    const cwd = repo();
+    fs.writeFileSync(path.join(cwd, "package-lock.json"), "primary lock\n");
+    execFileSync("git", ["add", "package-lock.json"], { cwd, env: ENV });
+    execFileSync("git", ["commit", "-qm", "add primary lockfile"], { cwd, env: ENV });
+
+    const wt = path.join(cwd, "..", `owned-deps-wt-${path.basename(cwd)}`);
+    dirs.push(wt);
+    execFileSync("git", ["worktree", "add", "-q", "-b", "owned-deps-topic", wt], { cwd, env: ENV });
+    fs.writeFileSync(path.join(wt, "package-lock.json"), "worktree lock\n");
+    execFileSync("git", ["commit", "-qam", "change worktree lockfile"], { cwd: wt, env: ENV });
+    fs.mkdirSync(path.join(wt, "node_modules"));
+
+    expect(recordVerification({ cwd: wt }).recorded).toBe(true);
+  });
+
+  it("still records divergent lockfiles when node_modules links somewhere other than the primary checkout", () => {
+    const cwd = repo();
+    fs.writeFileSync(path.join(cwd, "package-lock.json"), "primary lock\n");
+    execFileSync("git", ["add", "package-lock.json"], { cwd, env: ENV });
+    execFileSync("git", ["commit", "-qm", "add primary lockfile"], { cwd, env: ENV });
+
+    const wt = path.join(cwd, "..", `foreign-deps-wt-${path.basename(cwd)}`);
+    const foreign = path.join(cwd, "..", `foreign-deps-${path.basename(cwd)}`);
+    dirs.push(wt, foreign);
+    execFileSync("git", ["worktree", "add", "-q", "-b", "foreign-deps-topic", wt], { cwd, env: ENV });
+    fs.writeFileSync(path.join(wt, "package-lock.json"), "worktree lock\n");
+    execFileSync("git", ["commit", "-qam", "change worktree lockfile"], { cwd: wt, env: ENV });
+    fs.mkdirSync(foreign);
+    fs.symlinkSync(foreign, path.join(wt, "node_modules"), "dir");
+
+    expect(recordVerification({ cwd: wt }).recorded).toBe(true);
+  });
+
+  it("still records a shared node_modules link when neither checkout has a lockfile", () => {
+    const cwd = repo();
+    fs.mkdirSync(path.join(cwd, "node_modules"));
+    const wt = path.join(cwd, "..", `no-lock-wt-${path.basename(cwd)}`);
+    dirs.push(wt);
+    execFileSync("git", ["worktree", "add", "-q", "-b", "no-lock-topic", wt], { cwd, env: ENV });
+    fs.symlinkSync(path.join(cwd, "node_modules"), path.join(wt, "node_modules"), "dir");
+
+    expect(recordVerification({ cwd: wt }).recorded).toBe(true);
   });
 
   it("keeps a blob-valued verification ref alive through gc and a git push", () => {
