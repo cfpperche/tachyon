@@ -6,6 +6,54 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.72.0 — the project declares what it shares, and the proof refuses to be written when it would lie
+
+Tachyon stops having an opinion about your ecosystem. It also stops telling agents about their
+dependencies, which is fine, because a sentence in a brief was never the mechanism — and the actual
+mechanism ships here.
+
+### Changed
+
+- **Worktree sharing is declared, not inferred** (`t-5ac1df`, `t-9989cb`). Two lists, following Orca's
+  shape after reading their source: `settings.worktree.sharedDirectories` symlinks, `.worktreeinclude`
+  copies. They stay separate because copying and sharing are different decisions, and one list with a
+  per-entry mode invites getting the default wrong. **No product default** — held by a test that shares
+  nothing without a declaration, then symlinks a declared directory in a project with no Node lockfile.
+  A PHP project declares `vendor/`, a Rust project `target/`.
+
+  Admission follows Orca's rule: the path must exist, be untracked, and be gitignored. Absent, tracked,
+  a glob, a negation or an unsafe path **warns and is skipped** — invalid config never blocks a launch.
+
+  Not copied from them, deliberately: Orca has no divergence detection at all, which is why an
+  `npm install` in one of their worktrees silently affects the others. Our SHA-256 over the lockfile
+  bytes stays, as a `node_modules` special case, with the limit written into the code — other
+  ecosystems share without detection until someone says how to detect.
+
+- **The dependency line left the primer.** It read "node_modules is a symlink to the primary checkout"
+  in a PHP project, and its purpose had already died: it existed to warn an agent not to reinstall
+  before running the checks the primer used to name, and those checks left in 0.70.0. Orca injects
+  nothing of the kind either. The state is still *computed* — link, don't link, undo. What stopped is
+  *telling the agent about it*.
+
+- **A run with unclaimable inputs produces no record** (`t-274be9`). This is the mechanism the removed
+  sentence was standing in for. When a worktree's `node_modules` is a symlink into the primary checkout
+  **and** the two lockfile sets disagree, `verify:full` runs to the end, prints its green, and then
+  declines to file the proof — naming which lockfile diverged. Green on screen is not evidence; the
+  record is, and the product's only real power is to refuse to write one.
+
+  It refuses narrowly, and each exemption has a test: an owned `node_modules` records, a link pointing
+  anywhere else records, identical lockfiles record, and **no lockfile on either side records** — which
+  is what keeps non-Node projects working.
+
+### Internal
+
+- **The product stops depending on the tooling folder** (`t-04dfe3`). `src/` was importing from
+  `scripts/`, i.e. the extension depended on the development environment. The shared contracts moved to
+  a new top-level `shared/`, byte-identical via `git mv`. CommonJS is forced, not chosen: `src` compiles
+  as CJS and cannot import `.mjs`, and an `.mjs` run by bare `node` cannot import `.ts`. Both dependency
+  rules — the lockfile fingerprint and the divergence reason — now have exactly one definition, consumed
+  by the extension and the gate alike.
+
 ## 0.71.0 — Soul and Role are gone, and proof of a green run is now a git ref
 
 Ten thousand lines leave in this release, and what they have in common is that nobody was using
