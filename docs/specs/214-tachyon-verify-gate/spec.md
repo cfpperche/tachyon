@@ -5,7 +5,6 @@ _Created 2026-06-14._
 **Status:** shipped — v0.14.0 (2026-06-14)
 
 **Closure:** Implemented across d0d5933 (backend), f7048bf (UI/MCP/Studio), 75950ef +
-**Verify:** `npm run typecheck && npm test`
 c5c653b (codex review rounds 1–2), 9af4fa2 (docs). Tasks 1–9 done; **403 unit tests** green
 (incl. a real-git + real-tmux live smoke of the verify execution path —
 `verifyGate.integration.test.ts`), typecheck + build clean, 3 adversarial codex-dueto rounds
@@ -13,6 +12,8 @@ c5c653b (codex review rounds 1–2), 9af4fa2 (docs). Tasks 1–9 done; **403 uni
 acceptance not auto-verified is the purely-visual VS Code badge/Studio rendering (recipe in
 notes.md § Live smoke, for a manual glance after a window reload); the MCP transport is E2E in
 bridge.test and the execution path is real-infra smoke-tested.
+
+**Verify:** `npm run typecheck && npm test`
 
 **UI impact:** interaction
 <!-- A "Verify" action + a pass/fail/stale badge on worktree agents. Verified by

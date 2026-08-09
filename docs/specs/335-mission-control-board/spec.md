@@ -4,9 +4,6 @@ _Created 2026-07-02._
 
 **Status:** shipped
 **Closure:** v1 gate shipped in full — board + detail webviews, snapshot contract, guarded interactions,
-**Verify:** `npm test -- --run test/unit/boardSnapshot.test.ts test/unit/boardModel.test.ts test/unit/taskStore.test.ts test/unit/nextTask.test.ts`
-**Verify:** `npm run typecheck`
-**Dogfood:** `npm test -- --run test/unit/boardModel.test.ts -t "500"` — ran clean (1 passed, 7 skipped by `-t`).
 context menu addendum (commits 5e9b7e3..ae5fb92 + remediation fixes through 0.55.5), 2119-test suite green,
 4 human dogfood rounds on installed builds (15 findings, all remediated, final round PASS with Visual QA
 evidence). The "Gated v1.1 — in-column rank reorder" gate is now implemented and green (t-9a41b2 — pure
@@ -20,6 +17,10 @@ installed build yet (same outstanding step as the v1 gate originally had) — th
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm test -- --run test/unit/boardSnapshot.test.ts test/unit/boardModel.test.ts test/unit/taskStore.test.ts test/unit/nextTask.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/boardModel.test.ts -t "500"` — ran clean (1 passed, 7 skipped by `-t`).
 
 ## Intent
 

@@ -4,12 +4,13 @@ _Created 2026-07-19._
 
 **Status:** shipped
 **Closure:** Shipped 2026-07-19 in `18ae6dfb`: `create_task` retains canonical MCP schema bounds while returning bounded, content-free received/max errors with deliberate umbrella/follow-up, task-note, and durable-artifact guidance; TaskStore shares the limits and rejects atomically. Evidence: focused MCP/TaskStore tests 95/95, PI-001 2/2, typecheck pass, full verification 437 files and 5,036 passed / 3 skipped, and headless dogfood pass.
-**Verify:** `npx vitest run test/unit/bridge.test.ts test/unit/taskStore.test.ts`
-**Dogfood:** `npx vitest run test/unit/bridge.test.ts -t "create_task rejects oversized authoring input atomically with decomposition guidance"`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npx vitest run test/unit/bridge.test.ts test/unit/taskStore.test.ts`
+**Dogfood:** `npx vitest run test/unit/bridge.test.ts -t "create_task rejects oversized authoring input atomically with decomposition guidance"`
 
 ## Intent
 

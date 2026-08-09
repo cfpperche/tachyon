@@ -4,11 +4,12 @@ _Created 2026-07-01._
 
 **Status:** shipped
 **Closure:** Shipped in this workspace as spec 316 implementation; final commit/VSIX recorded after validation. Evidence: `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentModel.test.ts test/unit/continuityWiring.test.ts` and `npm run typecheck`.
-**Verify:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentModel.test.ts test/unit/continuityWiring.test.ts && npm run typecheck`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentModel.test.ts test/unit/continuityWiring.test.ts && npm run typecheck`
 
 ## Intent
 

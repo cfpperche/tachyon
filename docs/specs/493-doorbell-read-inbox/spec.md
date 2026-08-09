@@ -4,8 +4,6 @@ _Created 2026-08-06._
 
 **Status:** shipped
 **Closure:** Implemented 2026-08-06 — `DoorbellEvent` (`src/bridge/doorbell.ts`) carries `summary`/
-**Verify:** `npx vitest run test/unit/doorbell.test.ts test/unit/bridge.test.ts`
-**Verify:** `npm run typecheck`
 `pointer`; `readDoorbellEventsFor` reads them back self-only, oldest-first, capped at 200, filterable by
 `since`. `read_notices` registered in `src/bridge/tools/communication-io.ts` next to `notify_agent`. The
 `queued … for idle delivery` receipt and `spawn_agent`'s delegation-contract sentence were reworded in the
@@ -16,6 +14,9 @@ test/unit/auth.test.ts test/unit/bridgeToolCountLunaR1Behavior.gen.test.ts` and 
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npx vitest run test/unit/doorbell.test.ts test/unit/bridge.test.ts`
+**Verify:** `npm run typecheck`
 
 ## Supersedes (named, partial)
 

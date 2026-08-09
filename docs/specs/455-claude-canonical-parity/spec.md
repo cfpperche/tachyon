@@ -4,12 +4,13 @@ _Created 2026-07-25._
 
 **Status:** shipped-partial
 **Closure:** Canonical Claude now has a launch-boundary fresh/restart/resume exact-projection test; Claude Code 2.1.220 permission and isolated interactive-stop measurements are recorded in `runtimeProfile`; active/drafted stop and authored native permission-policy precedence remain explicit follow-up `t-b727bd`. Existing Soul startup-argument dogfood (`t-2278bc`) remains the delivery evidence.
-**Verify:** `npm run typecheck`
-**Verify:** `npm run verify:full:quiet`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 
 ## Intent
 

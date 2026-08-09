@@ -4,7 +4,6 @@ _Created 2026-07-05._
 
 **Status:** shipped
 **Closure:** shipped 2026-07-05 (commit c47fcc5, 0.55.31). Every codex agent spawns into a lifetime-scoped
-**Dogfood:** `{{representative headless dogfood command}}`
 private CODEX_HOME (materializeHomeOnly made default for codex; seedCodexHomeOnlyConfig now symlinks auth.json
 too, fixing the 401 the T0 spike found); rollouts are physically isolated → the activity resurrection
 (t-8f2f5b) is impossible at the runtime-rollout source, and resume/attribution scope to the private home
@@ -14,6 +13,8 @@ Verified: full suite 2643 green + a LIVE auth test (private home authenticates +
 the installed 0.55.31 (maintainer: new codex starts with EMPTY activity; codex-2 migrated to a private home
 and authenticates normally). Follow-up left open: the delegation-as-system t-ee7d5f captured the "green is
 not correct" lesson this spec taught.
+
+**Dogfood:** `{{representative headless dogfood command}}`
 
 ## Intent
 

@@ -4,8 +4,6 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped in the t-37fb51 worktree: `ProbeModelProof` verdict computed from the requested
-**Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- probe-model-proof`
 model and the runtime's reported identities, persisted in metadata and carried on the envelope;
 `model_mismatch` fails always and `model_unproven` fails a capable runtime; the Claude adapter now
 preserves the provider-native `modelUsage` keys; historical runs derive an honest verdict on read
@@ -15,6 +13,9 @@ without rewriting artifacts. Evidence: `npm run verify:full:quiet` (518 files, 5
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- probe-model-proof`
 
 ## Intent
 

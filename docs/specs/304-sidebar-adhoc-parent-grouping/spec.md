@@ -5,6 +5,7 @@ _Created 2026-06-30._
 **Status:** shipped
 
 **Closure:** Shipped 2026-06-30. Added `groupByParent()` (`src/sidebar/sortRows.ts`) composed after the existing `sortRows()` in the sidebar Agents branch (`src/webview/sidebar/App.tsx`) so a spawned agent's row now sorts immediately after its parent, with a cycle-safe cleanup pass (codex design dueto SHIP-WITH-CHANGES, both required findings folded pre-implementation). Validation: 7 new `groupByParent` unit tests + full unit suite (140 files / 1877 tests) green, `tsc` main + webview clean, `/sdd verify` passed (logged in `notes.md`). Human dogfood done 2026-06-30 on packaged `tachyon-0.54.5.vsix`: an ad-hoc AI-CLI child agent's row rendered grouped under its parent even against the active Z→A sort order (log in `notes.md`).
+
 **Verify:** `env -u TMUX npx vitest run test/unit/sortRows.test.ts && npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
 
 ## Intent

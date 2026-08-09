@@ -5,6 +5,7 @@ _Created 2026-07-18._
 **Status:** shipped
 
 **Closure:** Default private Pi homes and no-follow JSON snapshot isolation shipped in `a94c48ab`; dogfood closure landed in `43994591` with installed isolation/continuity evidence at `df2c9701`. OAuth concurrency is separately mitigated/deferred by SDD 408.
+
 **Verify:** `npx vitest run test/unit/piSession.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts test/unit/resume.test.ts test/unit/config.test.ts test/unit/runtimeProfile.test.ts test/unit/piRuntimeOnboarding.test.ts --maxWorkers=2 && npm run build && npm run check:engine-boundary && npm run test:invariants`
 **Dogfood:** `node scripts/dogfood/pi-private-home.mjs`
 

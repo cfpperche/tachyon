@@ -6,6 +6,7 @@ _Design ratified 2026-07-20 (maintainer lean + open-question package)._
 **Status:** shipped
 
 **Closure:** Browser Companion MVP landed on ADE main through `c26baecf` (VSIX 0.56.88) + companion monorepo `cfpperche/tachyon-companion` @ 0.4.8. Shipped: loopback pair/unpair + multi-device registry, human send-prompt + approvals, agent-gated `user_browser_*` (snapshot/act/screenshot-to-path), Control Settings (tabTools + Connected devices), Preact side panel without prototype residue. Human dogfood: pair/unpair + tabTools + fixture actuation. Out of this SDD (sibling board, not 414 debt): Firefox/store packaging, mobile client (`t-fe52f0` / `t-619157`), multi-engine picker, Audit trail UI, broader actuation trust policy.
+
 **Verify:** `npm run test:unit -- test/unit/companionPairing` (ADE; extend as surface grows)
 
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.

@@ -5,6 +5,7 @@ _Created 2026-06-09._
 **Status:** shipped
 
 **Closure:** 2026-06-09 — shipped at a388732; 58/58 vitest (unit + real-tmux) + 7/7 VSCode-host integration (xvfb) + live `claude -p` E2E driving all coordination tools through the Bridge (`tachyon-e2e-42` round-trip); spec-verify pass logged in notes.md. Residual: marketplace publishing is a human step (publisher `cfpperche` creation + `vsce publish`, recipe in package README); Codex/OpenCode registration shapes are unit-tested but not yet exercised against live runtimes (mcp-remote fallback documented).
+
 **Verify:** `bash -c 'cd packages/tachyon && npm run typecheck && npm run build && npm test'`
 
 **UI impact:** interaction

@@ -4,11 +4,12 @@ _Created 2026-07-16._
 
 **Status:** shipped
 **Closure:** Shipped 2026-07-16 — fresh typed rebind readiness, bounded non-destructive retry,
-**Verify:** `npx vitest run test/unit/bridgeClientRebind.test.ts test/unit/agentManager.test.ts test/unit/engineProcessBoundary.test.ts test/unit/engineSupervisor.test.ts && npm run typecheck`
-**Dogfood:** `node scripts/dogfood/persistent-engine.mjs`
 final lifecycle-authority guard, focused regressions, full verification, and persistent-engine dogfood.
 **Affected Product Invariants:** none — engine-rebind readiness does not change the registered PI-001
 project-guidance ownership promise or oracle.
+
+**Verify:** `npx vitest run test/unit/bridgeClientRebind.test.ts test/unit/agentManager.test.ts test/unit/engineProcessBoundary.test.ts test/unit/engineSupervisor.test.ts && npm run typecheck`
+**Dogfood:** `node scripts/dogfood/persistent-engine.mjs`
 
 ## Intent
 

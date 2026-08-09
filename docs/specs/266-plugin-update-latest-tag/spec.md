@@ -6,7 +6,6 @@ _Created 2026-06-26._
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 **Closure:** Latest-semver-tag detection in front of the unchanged load→preview→provenance pipeline:
-**Verify:** `env -u TMUX npx vitest run test/unit/pluginSource.test.ts test/unit/pluginFetcher.test.ts test/unit/pluginEngine.test.ts`
 `source.parseSemverTag`/`compareSemver` (now the single comparator — `engine.compareVersions` delegates)/
 `rewriteRef`; `fetcher.resolveLatestSemverTag` (`ls-remote --tags --refs`, returns the full tag list);
 `engine.resolveEffectiveUpdateSpec` (bump only when the current ref is PROVEN a real tag, then to a strictly
@@ -21,6 +20,8 @@ a clean commit / a valid `# OVERRIDE`. Deviation: adopting Layer 2 needed a remo
 update keeps the consented runtime set, and the 1.0.0 install had none), not a plain update. Dogfood state is
 gitignored (per-machine), so Part 2 has no commit. NOTE: the detection ships to the live VS Code UI only after a
 `.vsix` rebuild + reload (the running 0.43.1 build predates this); not packaged here (publish stays gated).
+
+**Verify:** `env -u TMUX npx vitest run test/unit/pluginSource.test.ts test/unit/pluginFetcher.test.ts test/unit/pluginEngine.test.ts`
 
 ## Intent
 

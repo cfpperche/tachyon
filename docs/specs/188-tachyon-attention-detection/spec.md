@@ -5,6 +5,7 @@ _Created 2026-06-09._
 **Status:** shipped
 
 **Closure:** 2026-06-09 — shipped at 6dbd6c9; 72/72 vitest + live VSCode-host integration (real sh agent: [y/n] -> needs-input -> answered -> reset); spec-verify pass logged in notes.md; residual: none.
+
 **Verify:** `bash -c 'cd packages/tachyon && npm run typecheck && npm run build && npm test'`
 
 **UI impact:** interaction

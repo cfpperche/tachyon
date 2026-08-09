@@ -4,8 +4,6 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped in the t-3a3de1 worktree: `effectiveModel` sourced from each run's own stored
-**Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- probes-model-column`
 provenance, a single unambiguous model cell derived in `probeView` (proven / mismatch / unproven /
 reported / none), carried across the engine wire contract, and rendered between `runtime` and
 `archetype`. Visual QA found and fixed three readability regressions. Evidence:
@@ -15,6 +13,9 @@ the wide/narrow screenshots under `evidence/`.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- probes-model-column`
 
 ## Intent
 

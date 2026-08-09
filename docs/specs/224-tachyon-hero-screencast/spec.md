@@ -6,8 +6,9 @@ _Created 2026-06-16._
 approved the arc (+ caught the editor-only-diff defect, fixed to claude-terminal→diff) → codex dueto
 (4 rig findings fixed, round-2 SHIP). Docs/site release, no extension bump.
 **Closure:** the hero is a ~25s live screencast — claude orchestrator in the editor → review diff →
-**Verify:** `bash -n scripts/screenshots/capture.sh scripts/screenshots/cast.sh` + manual playback check.
 Verify ✓ on camera → hover-revealed Create PR → fleet; site `<video>`, README poster→mp4 link.
+
+**Verify:** `bash -n scripts/screenshots/capture.sh scripts/screenshots/cast.sh` + manual playback check.
 
 **UI impact:** none (changes docs/landing assets + the screenshot rig; no extension code).
 

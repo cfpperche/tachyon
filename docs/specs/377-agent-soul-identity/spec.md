@@ -5,12 +5,13 @@ _Created 2026-07-13._
 **Status:** shipped-partial
 
 **Closure:** The bounded Soul MVP shipped on `main` at `7761e46d99f383fa0923c929645ecad5d12f30a3`.
-**Verify:** `npm run typecheck`
-**Verify:** `npm run verify:full:quiet`
 It includes canonical per-agent profiles, typed prompt composition and lifecycle handling, the
 functional Agent Studio common path, confirmed replacement/deletion, and four-runtime human
 dogfood. The broader rename/repair transaction design, exhaustive crash matrix, deterministic
 headless dogfood, and native Hermes profile integration remain explicitly deferred.
+
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 
 **Planning task:** `t-60979d`
 

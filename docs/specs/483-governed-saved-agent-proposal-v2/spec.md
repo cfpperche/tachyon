@@ -41,6 +41,7 @@ proposal grant on 2026-07-30.
 ## Closure
 
 **Closure:** shipped on 2026-07-30 after focused dogfood, typecheck and the full verification gate.
+
 **Verify:** `npm run verify:full:quiet`
 **Dogfood:** `npx vitest run test/unit/savedAgentProposalCommit.test.ts test/unit/agentProfileLifecycle.test.ts`
 

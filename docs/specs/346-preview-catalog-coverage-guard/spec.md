@@ -4,12 +4,13 @@ _Created 2026-07-03._
 
 **Status:** shipped
 **Closure:** Mission Control is now registered in the canonical webview manifest, available in the preview catalog, covered by manifest/catalog guards, and visually verified at `/tmp/spec346-mission-control-preview.png`.
-**Verify:** `npm test -- test/unit/webviewPreviewRoutes.test.ts test/unit/webviewPreviewCatalog.test.ts && npm run typecheck && npm run build`
-**Dogfood:** `npm run preview:webview`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm test -- test/unit/webviewPreviewRoutes.test.ts test/unit/webviewPreviewCatalog.test.ts && npm run typecheck && npm run build`
+**Dogfood:** `npm run preview:webview`
 
 ## Intent
 

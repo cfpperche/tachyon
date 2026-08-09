@@ -5,7 +5,6 @@ _Created 2026-06-11._
 **Status:** shipped
 
 **Closure:** 2026-06-11 — claude (mint) + codex (capture) verified LIVE end-to-end:
-**Verify:** `npm run typecheck && npm test`
 `--session-id` mint → transcript at the adapter's exact path → `--resume` recalled
 the prior codeword (BANANA-7714); `codex exec` persisted → the real
 `resolveCodexId()` resolved the id from disk by cwd → `codex exec resume` recalled
@@ -21,6 +20,8 @@ minted `sessionId 4c706ba0-…` into `.tachyon/sessions.json` at spawn; after
 `claude --resume 4c706ba0-…` (confirmed via pane_start_command) and recalled its
 prior conversation. Residual: the ad-hoc/declared-without-autostart OFFER path is
 unit-tested but not yet exercised live; goose/amp/cursor not implemented.
+
+**Verify:** `npm run typecheck && npm test`
 
 **UI impact:** interaction
 <!-- Activation-time resume of agents whose process died (crash/reboot), plus a

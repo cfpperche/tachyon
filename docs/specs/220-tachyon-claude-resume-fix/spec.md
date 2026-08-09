@@ -5,8 +5,9 @@ _Created 2026-06-15._
 **Status:** SHIPPED v0.18.0 (2026-06-15, commit `7e90eb3`). Live-verified design (V1/V2/V3 + customTitle),
 implemented, codex dueto (2 rounds: 5+2 findings, all fixed/accepted), 481 tests + typecheck green.
 **Closure:** named-session + customTitle-capture + resume-by-uuid landed; 219-followup bundled; pending
-**Verify:** `npm run typecheck && npx vitest run` (safe with `$TMUX` set — spec 218 guard)
 maintainer dogfood confirmation on the live install.
+
+**Verify:** `npm run typecheck && npx vitest run` (safe with `$TMUX` set — spec 218 guard)
 
 **UI impact:** none (changes the spawn/resume commands; "Resume with context" starts behaving).
 

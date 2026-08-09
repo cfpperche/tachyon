@@ -5,11 +5,12 @@ _Created 2026-08-09._
 **Status:** shipped
 
 **Closure:** Overview and Engine are one app, `System`. The summary derives from the same rows the
-**Verify:** `npm run verify:full:quiet`
 cards render, so the counter cannot contradict them; `workspaceCount` renders as an explicitly scoped
 window sub-line. `overview` and `engine` still decode and resolve to `system`, so the eight default
 fallbacks in `route.ts` were untouched. plan.md § D4 was cancelled mid-build: `control.workspaces` is
 always 0 or 1, so the collapse rule it specified was unreachable. Merged in `eb96fd56`.
+
+**Verify:** `npm run verify:full:quiet`
 
 <!-- The maintainer owns the intent; this is a transcription awaiting ratification.
      The measurement in § "They are already one screen" is what shapes this spec — read it
