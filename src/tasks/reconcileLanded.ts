@@ -54,15 +54,15 @@ async function resolveCommit(git: LandedGit, candidate: string): Promise<string 
 }
 
 async function reachableCommitsByTask(git: LandedGit, baseRef: string): Promise<Map<string, string>> {
-  const result = await git.run(["log", baseRef, "--format=%H%x09%B%x00"]);
+  const result = await git.run(["log", baseRef, "--format=%H%x09%s%x00"]);
   if (result.code !== 0) throw new Error(`cannot inspect '${baseRef}': ${result.stderr.trim() || "git log failed"}`);
   const found = new Map<string, string>();
   for (const record of result.stdout.split("\0")) {
     const tab = record.indexOf("\t");
     if (tab < 0) continue;
     const sha = record.slice(0, tab).trim().toLowerCase();
-    const body = record.slice(tab + 1);
-    for (const id of body.match(/\bt-[0-9a-f]{6}\b/gi) ?? []) {
+    const subject = record.slice(tab + 1);
+    for (const id of subject.match(/\bt-[0-9a-f]{6}\b/gi) ?? []) {
       if (!found.has(id.toLowerCase())) found.set(id.toLowerCase(), sha);
     }
   }
@@ -83,7 +83,7 @@ async function journalEvidence(tasks: TaskStore, git: LandedGit, id: string, bas
 
 async function reproveIdEvidence(git: LandedGit, id: string, sha: string, baseRef: string): Promise<boolean> {
   if (!await reachable(git, sha, baseRef)) return false;
-  const show = await git.run(["show", "-s", "--format=%B", sha]);
+  const show = await git.run(["show", "-s", "--format=%s", sha]);
   return show.code === 0 && new RegExp(`\\b${id}\\b`, "i").test(show.stdout);
 }
 
