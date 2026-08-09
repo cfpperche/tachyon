@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
 import { isAgentRow, type FleetVM, type AgentVM } from "../sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
-import { isCockpitSectionId } from "../sections/resolveSection.js";
+import { isSectionId } from "../sections/resolveSection.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
@@ -369,7 +369,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // an unknown id drops to a plain open (overview) instead of reaching the command as-is. The command
       // routes through openCockpit, so an already-open Control NAVIGATES rather than opening a second one.
       if (m.op === "openControl") {
-        return void (isCockpitSectionId(m.sectionId)
+        return void (isSectionId(m.sectionId)
           ? vscode.commands.executeCommand("tachyon.openControl", m.sectionId)
           : vscode.commands.executeCommand("tachyon.openControl"));
       }

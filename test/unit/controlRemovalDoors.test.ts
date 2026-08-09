@@ -55,7 +55,7 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
     // own — `resolveSectionDestination` maps both to `system` BEFORE this switch reads them.
     expect(block).not.toContain("openEngineTab");
     expect(block).not.toContain("openOverviewTab");
-    expect(block, "the alias must be applied before the switch, or the two ids fall through").toContain("resolveSectionDestination(resolveCockpitSection(section))");
+    expect(block, "the alias must be applied before the switch, or the two ids fall through").toContain("resolveSectionDestination(resolveSection(section))");
     // t-5f2b5b — `openFleetTab` left this list because the app it opened is deleted, and the assertion
     // is INVERTED rather than dropped: `fleet` still decodes as a section id (it is the parent of the
     // agent-activity/agent-probes subroutes and of five studios), so a resolver arm for it could come

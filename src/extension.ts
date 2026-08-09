@@ -20,7 +20,7 @@ import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import { COLLECT_EVERYTHING, type SectionCollectNeeds, type WorkspaceBundle } from "./sections/model.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
-import { resolveCockpitSection } from "./sections/resolveSection.js";
+import { resolveSection } from "./sections/resolveSection.js";
 import { resolveSectionDestination } from "./sections/route.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
@@ -2864,7 +2864,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // eight defaults in route.ts name `"overview"` at the call site by decision), and both land on
         // System. Composing them here rather than folding the alias into the decoder keeps a persisted
         // or deep-linked id READABLE instead of rewriting it.
-        const resolved = resolveSectionDestination(resolveCockpitSection(section));
+        const resolved = resolveSectionDestination(resolveSection(section));
         if (resolved === "mission") {
           openBoard();
           return Promise.resolve();

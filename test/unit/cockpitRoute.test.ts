@@ -13,7 +13,7 @@ import {
   type CockpitNonStudioRoute,
 } from "../../src/sections/route.js";
 import { COCKPIT_SECTION_ORDER } from "../../src/sections/model.js";
-import { resolveCockpitSection } from "../../src/sections/resolveSection.js";
+import { resolveSection } from "../../src/sections/resolveSection.js";
 import { STUDIO_IDS } from "../../src/webview/shared/studio/studioIds.js";
 
 describe("routes.section / routeKey / formatRoute", () => {
@@ -37,8 +37,8 @@ describe("retired per-kind navigation compatibility", () => {
   it("keeps Approvals and Validations as deep-link targets without top-level tabs", () => {
     expect(COCKPIT_SECTION_ORDER).not.toContain("approvals");
     expect(COCKPIT_SECTION_ORDER).not.toContain("validations");
-    expect(resolveCockpitSection("approvals")).toBe("approvals");
-    expect(resolveCockpitSection("validations")).toBe("validations");
+    expect(resolveSection("approvals")).toBe("approvals");
+    expect(resolveSection("validations")).toBe("validations");
   });
 });
 

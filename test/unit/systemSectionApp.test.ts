@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { COCKPIT_SECTION_IDS, collectNeedsFor, type SectionId } from "../../src/sections/model.js";
 import { resolveSectionDestination } from "../../src/sections/route.js";
-import { isCockpitSectionId, resolveCockpitSection } from "../../src/sections/resolveSection.js";
+import { isSectionId, resolveSection } from "../../src/sections/resolveSection.js";
 import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
 import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
@@ -18,7 +18,7 @@ import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 describe("SDD 500 S1 — overview and engine resolve to system", () => {
   it("system is a section id, and so are the two ids it replaces", () => {
     for (const id of ["system", "overview", "engine"] satisfies SectionId[]) {
-      expect(isCockpitSectionId(id), `'${id}' must still decode`).toBe(true);
+      expect(isSectionId(id), `'${id}' must still decode`).toBe(true);
       expect(COCKPIT_SECTION_IDS).toContain(id);
     }
   });
@@ -37,8 +37,8 @@ describe("SDD 500 S1 — overview and engine resolve to system", () => {
   it("an unknown or retired id still lands on a section that exists", () => {
     // spec.md § "the default route survives": the resolver's own fallback is `overview`, which is now an
     // ALIAS rather than a destination — so the two functions have to compose to something renderable.
-    expect(resolveSectionDestination(resolveCockpitSection("nope"))).toBe("system");
-    expect(resolveSectionDestination(resolveCockpitSection(undefined))).toBe("system");
+    expect(resolveSectionDestination(resolveSection("nope"))).toBe("system");
+    expect(resolveSectionDestination(resolveSection(undefined))).toBe("system");
     // `fleet` has no tile and no app (t-5f2b5b) and is not aliased; it falls through to the caller's
     // default, which is the same `overview` -> `system` path.
     expect(resolveSectionDestination("fleet")).toBe("fleet");

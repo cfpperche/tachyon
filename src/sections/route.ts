@@ -30,7 +30,7 @@
  */
 import type { SectionId } from "./model.js";
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "../humanInbox/model.js";
-import { resolveCockpitSection, isCockpitSectionId } from "./resolveSection.js";
+import { resolveSection, isSectionId } from "./resolveSection.js";
 import { isStudioId, type StudioId } from "../webview/shared/studio/studioIds.js";
 
 /** A top-level Control tab. Sections have no parent — they ARE the top of the hierarchy. */
@@ -237,7 +237,7 @@ const SECTION_DESTINATIONS: ReadonlyMap<SectionId, SectionId> = new Map([
 /**
  * The section that RENDERS `section` — itself for every id that still has a screen, `system` for the
  * two SDD 500 merged. Total and idempotent: a destination resolves to itself, so composing this with
- * a caller's own fallback (`resolveCockpitSection`, whose default is still `"overview"`) is safe.
+ * a caller's own fallback (`resolveSection`, whose default is still `"overview"`) is safe.
  */
 export function resolveSectionDestination(section: SectionId): SectionId {
   return SECTION_DESTINATIONS.get(section) ?? section;
@@ -504,7 +504,7 @@ function decodeNonStudioRoute(raw: unknown): CockpitNonStudioRoute | null {
   const keys = Object.keys(obj);
   if (obj.kind === "section") {
     if (keys.length !== 2 || !keys.includes("kind") || !keys.includes("section")) return null;
-    if (!isCockpitSectionId(obj.section)) return null;
+    if (!isSectionId(obj.section)) return null;
     return { kind: "section", section: obj.section };
   }
   if (obj.kind === "task-detail") {
@@ -635,7 +635,7 @@ export function decodePanelState(raw: unknown): { route: ProductRoute; wsHash?: 
   const v1 = (obj as CockpitPanelStateV1).section;
   const migratedV1 = migrateRetiredHandoffSection({ kind: "section", section: v1 }, wsHash);
   if (migratedV1) return { route: migratedV1, wsHash };
-  const section = resolveCockpitSection(v1);
+  const section = resolveSection(v1);
   return { route: { kind: "section", section }, wsHash };
 }
 

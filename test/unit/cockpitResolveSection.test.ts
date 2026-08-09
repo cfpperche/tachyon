@@ -1,23 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { resolveCockpitSection, isCockpitSectionId } from "../../src/sections/resolveSection.js";
+import { resolveSection, isSectionId } from "../../src/sections/resolveSection.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 
-describe("resolveCockpitSection (spec 410)", () => {
+describe("resolveSection (spec 410)", () => {
   it("keeps known sections", () => {
-    expect(resolveCockpitSection("approvals")).toBe("approvals");
-    expect(resolveCockpitSection("fleet")).toBe("fleet");
+    expect(resolveSection("approvals")).toBe("approvals");
+    expect(resolveSection("fleet")).toBe("fleet");
   });
 
   it("falls back to overview for unknown or retired ids", () => {
-    expect(resolveCockpitSection("nope")).toBe("overview");
-    expect(resolveCockpitSection(undefined)).toBe("overview");
-    expect(resolveCockpitSection("")).toBe("overview");
-    expect(resolveCockpitSection(null)).toBe("overview");
+    expect(resolveSection("nope")).toBe("overview");
+    expect(resolveSection(undefined)).toBe("overview");
+    expect(resolveSection("")).toBe("overview");
+    expect(resolveSection(null)).toBe("overview");
   });
 
-  it("isCockpitSectionId is a closed check", () => {
-    expect(isCockpitSectionId("mission")).toBe(true);
-    expect(isCockpitSectionId("not-a-section")).toBe(false);
+  it("isSectionId is a closed check", () => {
+    expect(isSectionId("mission")).toBe(true);
+    expect(isSectionId("not-a-section")).toBe(false);
   });
 });
 
