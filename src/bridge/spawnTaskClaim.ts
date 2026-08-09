@@ -95,7 +95,7 @@ export function decideSpawnTaskClaim(task: ClaimableTaskRow, agent: string): Spa
     };
   }
   if (task.status === "active" && task.assignee === agent) return { kind: "already-held" };
-  // `triaged` (the claimable lane) and the store-impossible `active` with no assignee both take the
+  // `triaged` and `active` with no assignee (claimed work whose executor vanished) both take the
   // one store transaction: `status: active` + `assignee`, which `assertTransition` accepts as a unit.
   return { kind: "claim" };
 }

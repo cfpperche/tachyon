@@ -21,6 +21,11 @@ describe("nextTask", () => {
     expect(nextTask({ agent: "codex", tasks: [global, mine] })).toMatchObject({ task: { id: mine.id } });
   });
 
+  it("offers active work whose unavailable executor released ownership (t-49d7ec)", () => {
+    const released = task({ id: "t-000001", status: "active" });
+    expect(nextTask({ agent: "replacement", tasks: [released] })).toMatchObject({ task: { id: released.id } });
+  });
+
   it("orders by priority, human rank, createdAt, then id", () => {
     const tasks = [
       task({ id: "t-000003", priority: 1, rank: "b", createdAt: "2026-07-01T00:00:00.000Z" }),

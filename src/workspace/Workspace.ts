@@ -5961,7 +5961,7 @@ export class Workspace {
       if (returned.length > 0) this.deps.onViewsChanged("tasks");
     } catch (err) {
       this.host.notify(
-        this.t("could not return task claim(s) held by unavailable agent '{0}' to triage: {1}", agent, err instanceof Error ? err.message : String(err)),
+        this.t("could not release task claim(s) held by unavailable agent '{0}': {1}", agent, err instanceof Error ? err.message : String(err)),
         "error",
       );
     }

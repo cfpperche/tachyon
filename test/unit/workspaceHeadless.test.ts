@@ -2407,7 +2407,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
-  it("returns an active claim to triage on startup when its known agent session was lost", async () => {
+  it("releases an active claim without retriage on startup when its known agent session was lost", async () => {
     const { ws } = await makeWorkspace();
     ws.ledger.record("crashchild", {
       def: { cmd: "sh", kind: "agent" },
@@ -2421,7 +2421,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
     await ws.start();
 
-    expect(ws.taskStore.get("t-dead01")).toMatchObject({ status: "triaged" });
+    expect(ws.taskStore.get("t-dead01")).toMatchObject({ status: "active" });
     expect(ws.taskStore.get("t-dead01").assignee).toBeUndefined();
     expect(ws.taskStore.journal.read("t-dead01").at(-1)?.text).toContain("agent 'crashchild' was not running when the workspace started");
     ws.dispose();
@@ -2675,7 +2675,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 });
 
 describe("Workspace — death-poke wiring (spec 332)", () => {
-  it("returns the dead agent's active board claim to triage", async () => {
+  it("releases the dead agent's active board claim without retriage", async () => {
     const { ws, sessions, dead } = await makeWorkspace();
     ws.ledger.record("claimchild", {
       def: { cmd: "pi", kind: "agent" },
@@ -2693,7 +2693,7 @@ describe("Workspace — death-poke wiring (spec 332)", () => {
     await ws.tick();
     await flush();
 
-    expect(ws.taskStore.get("t-c1a1ed")).toMatchObject({ status: "triaged" });
+    expect(ws.taskStore.get("t-c1a1ed")).toMatchObject({ status: "active" });
     expect(ws.taskStore.get("t-c1a1ed").assignee).toBeUndefined();
     expect(ws.taskStore.journal.read("t-c1a1ed").at(-1)?.text).toContain("agent 'claimchild' exited (137)");
     ws.dispose();
