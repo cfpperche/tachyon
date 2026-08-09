@@ -21,7 +21,8 @@
  * client rects), not on the element box, because a block element is always as wide as its container
  * even when its text stops a third of the way in — which is exactly the defect being fixed.
  *
- * Prereq: `npm run build` and `npm run preview:webview` (PREVIEW_PORT respected) in another shell.
+ * Prereq: `npm run build` and `node scripts/webview-preview/serve.mjs` (PREVIEW_PORT respected) in
+ * another shell.
  * Run: `node scripts/visual-qa/worktrees-land-card.mjs [outDir] [label]`
  */
 import puppeteer from "puppeteer-core";
