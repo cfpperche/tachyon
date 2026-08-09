@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { BOARD_AGENT_LIST_TIMEOUT_MS, BoardAgentLists, buildBoardVm } from "../../src/cockpit/boardVm.js";
+import { BOARD_AGENT_LIST_TIMEOUT_MS, BoardAgentLists, buildBoardVm } from "../../src/webview/board/boardVm.js";
 import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 // t-610705 Phase B #6 — the bounded/coalesced agent-liveness pass, ported from the retired
-// BoardPanelManager into src/cockpit/boardVm.ts (Control → Mission is the one board now).
+// BoardPanelManager into src/webview/board/boardVm.ts (Control → Mission is the one board now).
 // These tests carry over the panel-era coverage of the SAME mechanism: liveness must enrich the
 // board, never gate its task snapshot.
 

@@ -1,5 +1,5 @@
-import type { BoardAgentRow, WorkspaceBoardTarget } from "../shell/BoardTarget.js";
-import type { BoardVM } from "../webview/board/messages.js";
+import type { BoardAgentRow, WorkspaceBoardTarget } from "../../shell/BoardTarget.js";
+import type { BoardVM } from "./messages.js";
 
 /** Agent liveness enriches the board, but must never gate its task snapshot. */
 export const BOARD_AGENT_LIST_TIMEOUT_MS = 250;
