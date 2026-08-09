@@ -319,7 +319,7 @@ describe("TaskStore", () => {
     expect(again.status).toBe("triaged"); // and it can be re-triaged normally
   });
 
-  it("derives SDD status only when an sdd artifact ref exists and local spec is present", async () => {
+  it("derives SDD status without using it as task lifecycle policy", async () => {
     writeSpec("325-task-queue-entity", "shipped");
     const task = await store.create({ title: "sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "325-task-queue-entity" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
@@ -327,12 +327,12 @@ describe("TaskStore", () => {
     const view = store.getView(task.id);
     expect(view.derived?.sdd?.status).toBe("shipped");
     expect(view.attention ?? []).not.toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
-    expect(store.next("codex")).toEqual({ empty: true, reason: "no-tasks" });
+    expect(store.next("codex")).toMatchObject({ task: { id: task.id } });
     await store.update(task.id, { status: "done" });
     expect(store.get(task.id).status).toBe("done");
   });
 
-  it("supports landed as a first-class SDD-gated status", async () => {
+  it("keeps landed lifecycle independent from an SDD status", async () => {
     writeSpec("360-landed", "in-progress");
     const task = await store.create({ title: "landed flow", author: "human", artifact_refs: [{ type: "sdd", ref: "360-landed" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
@@ -341,12 +341,6 @@ describe("TaskStore", () => {
     const landed = await store.update(task.id, { status: "landed" });
     expect(landed.status).toBe("landed");
     expect(store.getView(task.id).attention ?? []).not.toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
-    await expect(store.update(task.id, { status: "done" })).rejects.toThrow(/cannot be marked done while SDD artifact/);
-
-    await store.update(task.id, { status: "active" });
-    await store.update(task.id, { status: "landed" });
-    writeSpec("360-landed", "shipped");
-    expect(store.getView(task.id).attention).toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
     await store.update(task.id, { status: "done" });
     expect(store.get(task.id).status).toBe("done");
   });
@@ -356,23 +350,23 @@ describe("TaskStore", () => {
     expect(allowedTransitions("landed")).toEqual(["done", "active", "triaged", "dropped"]);
   });
 
-  it("fails closed when SDD artifact refs are cleared while marking done", async () => {
+  it("allows opaque artifact refs to be cleared while marking done", async () => {
     writeSpec("326-sdd-plugin", "in-progress");
     const task = await store.create({ title: "sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "326-sdd-plugin" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
-    await expect(store.update(task.id, { status: "done", artifact_refs: null })).rejects.toThrow(/can be cleared or replaced only while task is triaged/);
-    expect(store.get(task.id).artifact_refs).toEqual([{ type: "sdd", ref: "326-sdd-plugin" }]);
+    await expect(store.update(task.id, { status: "done", artifact_refs: null })).resolves.toMatchObject({ status: "done" });
+    expect(store.get(task.id).artifact_refs).toBeUndefined();
   });
 
-  it("defaults SDD artifact refs to deliverable role for existing gating behavior", async () => {
+  it("still derives default-role SDD refs without gating task completion", async () => {
     writeSpec("328-default-deliverable", "in-progress");
     const task = await store.create({ title: "default deliverable", author: "human", artifact_refs: [{ type: "sdd", ref: "328-default-deliverable" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
 
     expect(store.getView(task.id).derived?.sdd).toMatchObject({ ref: "328-default-deliverable", status: "in-progress" });
-    await expect(store.update(task.id, { status: "done" })).rejects.toThrow(/cannot be marked done while SDD artifact/);
+    await expect(store.update(task.id, { status: "done" })).resolves.toMatchObject({ status: "done" });
   });
 
   it("treats role:relation SDD refs as non-gating related artifacts", async () => {
@@ -399,23 +393,42 @@ describe("TaskStore", () => {
     await expect(store.create({ title: "bad role", author: "human", artifact_refs: [{ type: "sdd", ref: "358", role: "related" as never }] })).rejects.toThrow(/artifact_refs\.role/);
   });
 
-  it("allows clearing delegated SDD refs only in triaged tasks", async () => {
+  it("allows clearing opaque SDD refs in active tasks", async () => {
     writeSpec("327-review", "in-progress");
     const task = await store.create({ title: "clear sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "327-review" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
-    await expect(store.update(task.id, { artifact_refs: null })).rejects.toThrow(/can be cleared or replaced only while task is triaged/);
-    await store.update(task.id, { status: "triaged", artifact_refs: null });
+    await store.update(task.id, { artifact_refs: null });
     expect(store.get(task.id).artifact_refs).toBeUndefined();
   });
 
-  it("works without SDD and surfaces missing refs as attention only", async () => {
+  it("closes and selects a task with an SDD ref when the plugin and docs/specs are absent", async () => {
+    expect(fs.existsSync(path.join(root, ".tachyon", "plugins", "sdd"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "docs", "specs"))).toBe(false);
+    const task = await store.create({
+      title: "opaque artifact",
+      author: "human",
+      artifact_refs: [{ type: "sdd", ref: "999-plugin-absent" }],
+    });
+    await store.update(task.id, { status: "triaged", assignee: "codex" });
+    await store.update(task.id, { status: "active" });
+    expect(store.next("codex")).toMatchObject({ task: { id: task.id } });
+
+    const taskPath = path.join(root, ".tachyon", "tasks", `${task.id}.json`);
+    const refsBefore = JSON.stringify(JSON.parse(fs.readFileSync(taskPath, "utf8")).artifact_refs);
+    await store.update(task.id, { status: "done" });
+    const refsAfter = JSON.stringify(JSON.parse(fs.readFileSync(taskPath, "utf8")).artifact_refs);
+    expect(refsAfter).toBe(refsBefore);
+  });
+
+  it("derives a missing SDD ref without turning it into task attention", async () => {
     const task = await store.create({ title: "missing sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "999-nope" }] });
     await store.update(task.id, { status: "triaged" });
     const view = store.getView(task.id);
     expect(view.task.status).toBe("triaged");
-    expect(view.attention).toContainEqual(expect.objectContaining({ code: "missing_sdd_spec" }));
-    expect(store.next("codex")).toMatchObject({ task: { id: task.id }, attention: [{ code: "missing_sdd_spec" }] });
+    expect(view.derived?.sdd).toMatchObject({ ref: "999-nope", missing: true });
+    expect(view.attention).toBeUndefined();
+    expect(store.next("codex")).toMatchObject({ task: { id: task.id } });
   });
 
   it("does not report an agent-authored SDD in a registered isolation worktree as missing", async () => {
