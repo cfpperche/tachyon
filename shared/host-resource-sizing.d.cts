@@ -47,6 +47,7 @@ declare const hostResourceSizing: {
   DEFAULT_RESERVE_MB: number;
   DEFAULT_WORKER_MB: number;
   HARD_CAP_WORKERS: number;
+  envInt(name: string): number | undefined;
   parseMeminfo(text: string): hostResourceSizing.HostMemorySnapshot | undefined;
   readHostMemory(readFile?: (path: string) => string): hostResourceSizing.HostMemorySnapshot;
   recommendVitestMaxWorkers(input: hostResourceSizing.WorkerSizingInput): number;

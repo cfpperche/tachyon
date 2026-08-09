@@ -7,6 +7,7 @@ import {
   admitVitestRun,
   admitOrFallback,
   ancestorPids,
+  envInt,
   previewVitestShare,
   sizeFromShare,
   vitestPoolMb,
@@ -14,6 +15,7 @@ import {
   type VitestClaim,
 } from "../../src/host/vitestBudget.js";
 import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "../../src/host/hostResources.js";
+import hostResourceCostInputs from "../../shared/host-resource-cost-inputs.cjs";
 
 /**
  * t-3ad4af — the defect was a SUM, so every test here is about more than one sizer.
@@ -78,6 +80,18 @@ function readLedger(file: string): VitestClaim[] {
 }
 
 describe("vitest host budget (t-3ad4af)", () => {
+  it("uses the shared cost inputs by identity while keeping the ledger's measured floor intentional", () => {
+    // t-f60468 — identity, not source text, catches a faithful local env parser copied back here.
+    expect(envInt).toBe(hostResourceCostInputs.envInt);
+
+    // The free-RAM sizer has no fixed invocation term and protects its divisor at 128MB. The
+    // host-wide ledger separately charges 2048MB per invocation, so its marginal worker input is
+    // intentionally authoritative down to 64MB. Pin the difference so it cannot drift silently.
+    const memory: HostMemorySnapshot = { ...HOST, memAvailableMb: 3_500 };
+    expect(recommendVitestMaxWorkers({ memory, cpuCount: 24, reserveMb: 3_072, workerMb: 100 })).toBe(3);
+    expect(sizeFromShare({ shareMb: 2_448, cpuCount: 24, invocationMb: 2_048, workerMb: 100 })).toBe(4);
+  });
+
   it("reproduces the incident: the OLD per-process sizer lets three concurrent runs divide one budget", () => {
     // The exact reading from the incident logs: MemAvailable 10190MB → workers=9, three times over.
     const duringIncident: HostMemorySnapshot = { ...HOST, memAvailableMb: 10_190 };
