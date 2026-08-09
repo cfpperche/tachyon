@@ -2,7 +2,7 @@
 
 _Created 2026-08-09._
 
-**Status:** draft
+**Status:** in-progress
 
 <!-- The maintainer owns the intent; this is a transcription awaiting ratification.
      The measurements below were taken before writing, and the central one killed the

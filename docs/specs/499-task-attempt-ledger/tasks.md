@@ -1,52 +1,63 @@
-# 499 — task-attempt-ledger — tasks
+# 499 — tasks
 
-_Generated from `plan.md` on 2026-08-09. Work top-to-bottom. Check boxes as tasks complete. If a task reveals the plan is wrong, update `plan.md` before continuing._
+_Created 2026-08-09._
 
-## Implementation
+**Verify:** `npm run verify:full:quiet`
 
-- [ ] {{task — small, unambiguous, ordered}}
-- [ ] {{task}}
-- [ ] {{task}}
+Ordered. Each slice leaves `main` green on its own. S3 is the one that can silently break the product,
+so its red comes first and is non-negotiable.
 
-## Verification
+## S1 — measure, then decide the backfill
 
-_Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
+- [ ] Count `.tachyon/tasks/*.json` by (status, has-assignee). This decides D6 and nothing else should
+      be written before it exists.
+- [ ] Record in `notes.md`: how many historical tasks carry an assignee (candidate delivered attempts),
+      how many `active` ones do (candidate open attempts), and how many carry none.
+- [ ] Decide and record: backfill one line per legacy assignee, **or** derive `lastDeliverer` with a
+      fallback to the legacy field when a task has no ledger. Name the one you rejected.
 
-- [ ] {{verify criterion}}
-- [ ] {{verify criterion}}
+## S2 — the ledger exists and nothing uses it
 
-**Headless check:** `{{command, or "none"}}`
-<!-- A mechanical command an agent can run to validate this spec's implementation
-     without a human (tests / build / lint). Kept green = the spec stays delivered.
-     To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:
-       **Verify:** `npm test`
-     `/sdd verify` reads the FIRST backtick span per **Verify:** line, previews by
-     default, and runs only with --run. Multiple **Verify:** lines run in order. -->
+- [ ] Red first: append two attempts for a task and read them back; fails because the store does not exist.
+- [ ] `TaskAttemptStore`: `<id>.attempts`, JSONL append, same directory convention as the journal.
+- [ ] Typed events: `claimed`, `released`, `delivered`, `dropped`, each carrying agent, timestamp and
+      the evidence string the lifecycle already produces.
+- [ ] **No byte cap that refuses.** D5 says why; if you add one anyway, say why in the commit.
+- [ ] Invariant, held by test: at most one open attempt per task. A second `claimed` with one open is a
+      refusal that names the open one.
 
-## Dogfood
+## S3 — the two derived values, and the consumers that meant "delivered"
 
-**Dogfood:** `{{representative headless dogfood command}}`
-<!-- A representative command that exercises the shipped behavior end-to-end.
-     `/sdd dogfood` previews by default and runs only with --run, then logs under
-     notes.md `## Dogfood log`. If no meaningful headless dogfood exists, replace
-     the Dogfood line with: **Dogfood-Opt-Out:** <non-empty reason>. -->
+- [ ] Red first, and this is the slice's whole point: a test proving that a `done` task still yields its
+      deliverer, and that Evolution's completion marker still resolves the delivering agent. Write it
+      against `lastDeliverer` so it fails now.
+- [ ] `currentAssignee` and `lastDeliverer` derived at read time in `TaskStore`. Neither is written to
+      the task file — a test asserts the task JSON on disk gains no field.
+- [ ] Migrate the four Evolution sites (`EvolutionCoordinator.ts:60-63`, `:85`, `:87`) to `lastDeliverer`.
+- [ ] Migrate `boardModel.ts:313-316` (`assigneeLabel`) and `:211` (`assigneeHistorical`).
+- [ ] `assignee` becomes a read-time alias of `currentAssignee`. The other ~95 read sites are untouched
+      — if a change needs them, stop and re-read plan.md § D4.
 
-**Human dogfood:** optional
-<!-- Opt-in: a short walkthrough a human follows to approve the spec (demo steps,
-     UI routes, things to eyeball). Name the steps here when human sign-off matters. -->
+## S4 — the lifecycle writes attempts
+
+- [ ] Claim paths append `claimed`: `update` with an assignee, and `spawn_agent(claim_task:)`.
+- [ ] `returnUnavailableAgentClaims` appends `released` with the evidence string it already builds
+      (`TaskStore.ts:354-370`), for all five call sites.
+- [ ] Reaching `landed`/`done` with an open attempt appends `delivered`; `dropped` appends `dropped`.
+- [ ] Red first: a re-claim `active → active` produces two attempts. **Today this writes nothing at
+      all** (`TaskStore.ts:327` appends only on status change) — that gap is why this spec exists.
+- [ ] Crash safety: a test where the attempt append succeeds and the task write fails leaves at most one
+      open attempt.
+
+## S5 — the question that could not be asked
+
+- [ ] `TaskStore` answers "attempts that ended without delivery" for a task.
+- [ ] A new attempt cannot reset it — the count comes from the ledger, never from a field.
+- [ ] **Do not act on the count.** No retry, no scheduling, no circuit breaker. spec.md § Non-goals:
+      making failure countable is this spec; deciding what to do about it is nobody's decision yet.
 
 ## Visual QA
 
-_Optional for UI/interface/rendered-output work. Keep prose-based: real surface inspected, evidence captured, verdict recorded. If not useful, declare `**Visual QA Opt-Out:** <reason>`._
-
-_Do not create a prototype or evidence file just to satisfy this section. If a durable spec-specific artifact is useful, store it inside this spec directory (for example under `prototypes/` or `evidence/`) and reference its path in backticks after `Prototype:` or `Evidence:`. If it must live elsewhere, declare `**Artifact-Location-Opt-Out:** <reason>`._
-
-- [ ] Evidence:
-- [ ] Verdict:
-
-## Cookbook
-
-_Optional operator/agent how-to. Not scaffolded by `new`. When this ship adds a Bridge tool, CLI, registry lifecycle, or other usable surface, add `cookbook.md` (via `sdd-cookbook.sh <499>`) and declare **Cookbook:** yes — or **Cookbook-Opt-Out:** &lt;reason&gt;. `close` warns (does not hard-fail) if a likely operator surface ships without either._
-
-<!-- **Cookbook:** yes -->
-<!-- **Cookbook-Opt-Out:** pure internal refactor; no new operator surface -->
+- [ ] The board card for a historical task still reads `delivered by <agent>`.
+- [ ] Evidence: screenshot of a `done` card before and after.
+- [ ] Verdict: recorded after looking, including anything fixed as a result.
