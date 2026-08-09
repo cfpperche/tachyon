@@ -127,7 +127,7 @@ describe("SDD 500 — System reads as one screen at both widths", () => {
       height: 1200,
       waitFor: '[data-testid="control-system"]',
     });
-    // `buildCockpitModel` scopes `control.workspaces` to the selected root: one card, always.
+    // `buildSectionsModel` scopes `control.workspaces` to the selected root: one card, always.
     expect(await surface.evaluate(() => document.querySelectorAll(".ci-ws").length)).toBe(1);
     const metrics = await readMetrics(surface);
     expect(metrics.Workspaces, "the value must match the cards, never the window").toBe("1");

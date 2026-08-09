@@ -23,12 +23,12 @@
  *    parent are both Mission), but a future route could highlight one tab while its breadcrumb
  *    parent is a different node, so these stay two functions on purpose.
  *
- * t-337cdf — retained after Control's renderer was removed because the live `CockpitModel`
- * contract still type-imports `CockpitRoute` for `activeRoute`, while the preview fixture builds
+ * t-337cdf — retained after Control's renderer was removed because the live `SectionsModel`
+ * contract still type-imports `ProductRoute` for `activeRoute`, while the preview fixture builds
  * route-shaped compatibility models with `routes`. Removing this module therefore belongs with
  * dissolving that remaining model contract, not with deleting the retired host in isolation.
  */
-import type { CockpitSectionId } from "./model.js";
+import type { SectionId } from "./model.js";
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "../humanInbox/model.js";
 import { resolveCockpitSection, isCockpitSectionId } from "./resolveSection.js";
 import { isStudioId, type StudioId } from "../webview/shared/studio/studioIds.js";
@@ -36,7 +36,7 @@ import { isStudioId, type StudioId } from "../webview/shared/studio/studioIds.js
 /** A top-level Control tab. Sections have no parent — they ARE the top of the hierarchy. */
 export interface CockpitSectionRoute {
   readonly kind: "section";
-  readonly section: CockpitSectionId;
+  readonly section: SectionId;
 }
 
 /**
@@ -85,7 +85,7 @@ export interface CockpitWorkspaceProbesRoute {
 }
 
 /**
- * t-610705 (SDD 410 Phase D, D3) — every CockpitRoute kind EXCEPT the two studio kinds. This is
+ * t-610705 (SDD 410 Phase D, D3) — every ProductRoute kind EXCEPT the two studio kinds. This is
  * exactly the set a pin's `returnRoute` is allowed to hold (design dueto probe-43bca1cc blocker:
  * "studio kinds excluded by construction" must be a TYPE guarantee, not just a runtime convention —
  * a convention-only guard left a real gap where trusted internal code could still construct an
@@ -172,7 +172,7 @@ export interface CockpitStudioEditRoute {
 // added to studioIds.ts's STUDIO_IDS), then satisfy parentRoute/decodeRoute/refreshPolicy/
 // navSection's exhaustiveness checks — the compiler is the checklist (assertNeverRoute's `never`
 // parameter fails to compile until every function below handles the new kind/studio).
-export type CockpitRoute =
+export type ProductRoute =
   | CockpitNonStudioRoute
   | CockpitStudioNewRoute
   | CockpitStudioEditRoute;
@@ -189,7 +189,7 @@ export type CockpitRoute =
  * route.kind switch) so adding a StudioId without a matching case fails to compile independently of
  * adding a new route KIND.
  */
-function studioParentSection(studio: Exclude<StudioId, "pin">): CockpitSectionId {
+function studioParentSection(studio: Exclude<StudioId, "pin">): SectionId {
   switch (studio) {
     case "command":
     case "terminal":
@@ -222,14 +222,14 @@ function studioParentSection(studio: Exclude<StudioId, "pin">): CockpitSectionId
  * keep DECODING, which is the whole point: not one of the eight defaults below has to change, and a
  * persisted panel or deep link naming either one still says something readable that lands somewhere
  * real. The precedent is documented one file over — `sectionNav.ts` records `fleet` leaving the
- * launcher while staying a `CockpitSectionId` because subroutes depend on it, and `mission` doing the
+ * launcher while staying a `SectionId` because subroutes depend on it, and `mission` doing the
  * mirror image (label "Board", id `mission`). This product already separates what a human can open
  * from what must decode; this is that separation used once more.
  *
  * Rejected: renaming `overview` to `system` across the codebase. It would touch every fallback and
  * every persisted route to gain nothing a resolving alias does not already give.
  */
-const SECTION_DESTINATIONS: ReadonlyMap<CockpitSectionId, CockpitSectionId> = new Map([
+const SECTION_DESTINATIONS: ReadonlyMap<SectionId, SectionId> = new Map([
   ["overview", "system"],
   ["engine", "system"],
 ]);
@@ -239,7 +239,7 @@ const SECTION_DESTINATIONS: ReadonlyMap<CockpitSectionId, CockpitSectionId> = ne
  * two SDD 500 merged. Total and idempotent: a destination resolves to itself, so composing this with
  * a caller's own fallback (`resolveCockpitSection`, whose default is still `"overview"`) is safe.
  */
-export function resolveSectionDestination(section: CockpitSectionId): CockpitSectionId {
+export function resolveSectionDestination(section: SectionId): SectionId {
   return SECTION_DESTINATIONS.get(section) ?? section;
 }
 
@@ -256,7 +256,7 @@ function assertNeverRoute(route: never): never {
  * included, re-opening the SAME pin from a different origin route would look like a different route,
  * defeating `requestNavigate`'s same-identity re-entry check (`routeKey(route) === routeKey(currentRoute)`).
  */
-export function routeKey(route: CockpitRoute): string {
+export function routeKey(route: ProductRoute): string {
   switch (route.kind) {
     case "section":
       return `section:${route.section}`;
@@ -282,7 +282,7 @@ export function routeKey(route: CockpitRoute): string {
 }
 
 /** Where breadcrumb/back navigation goes. Sections are top-level (no parent). */
-export function parentRoute(route: CockpitRoute): CockpitRoute | null {
+export function parentRoute(route: ProductRoute): ProductRoute | null {
   switch (route.kind) {
     case "section":
       return null;
@@ -329,13 +329,13 @@ export function parentRoute(route: CockpitRoute): CockpitRoute | null {
 /**
  * Which nav-bar tab should read as active while this route is showing — `null` for pin (D3): it has
  * no home tab in Control's nav bar (studios-routes-design.md's parent/nav table: "none, navSection:
- * null, nav-less"). Callers that need a definite `CockpitSectionId` (which background section data
+ * null, nav-less"). Callers that need a definite `SectionId` (which background section data
  * stays warm underneath a studio form) fall back to "overview" AT THE CALL SITE, not here — keeping
  * this function's own return value a genuine tri-state (design-dueto probe-43bca1cc minor finding:
  * coercing null to "overview" inside this function would make nav-less state indistinguishable from
  * "the Overview tab is genuinely active" for any future caller, e.g. diagnostics).
  */
-export function navSection(route: CockpitRoute): CockpitSectionId | null {
+export function navSection(route: ProductRoute): SectionId | null {
   switch (route.kind) {
     case "section":
       return route.section;
@@ -364,7 +364,7 @@ export function navSection(route: CockpitRoute): CockpitSectionId | null {
 
 /** True for either studio route kind — the one place callers gate "is a studio form active" without
  *  caring whether it's new or edit (nav-transaction guard, CSS co-load, embed-host styling). */
-export function isStudioRoute(route: CockpitRoute): route is CockpitStudioNewRoute | CockpitStudioEditRoute {
+export function isStudioRoute(route: ProductRoute): route is CockpitStudioNewRoute | CockpitStudioEditRoute {
   return route.kind === "studio-new" || route.kind === "studio-edit";
 }
 
@@ -375,11 +375,11 @@ export function isStudioRoute(route: CockpitRoute): route is CockpitStudioNewRou
  * rendered right now" — the board's data has no reason to keep refreshing while a task-detail
  * subroute is what's actually on screen.
  */
-export function isSection(route: CockpitRoute, section: CockpitSectionId): boolean {
+export function isSection(route: ProductRoute, section: SectionId): boolean {
   return route.kind === "section" && route.section === section;
 }
 
-export function refreshPolicy(route: CockpitRoute): CockpitRefreshPolicy {
+export function refreshPolicy(route: ProductRoute): CockpitRefreshPolicy {
   switch (route.kind) {
     case "section":
       // matches today's behavior exactly — every section already polls on the shared 3s timer.
@@ -422,7 +422,7 @@ export function refreshPolicy(route: CockpitRoute): CockpitRefreshPolicy {
 }
 
 /** Plain (non-localized) slug for logging/breadcrumb keys. UI localizes via its own strings map. */
-export function formatRoute(route: CockpitRoute): string {
+export function formatRoute(route: ProductRoute): string {
   switch (route.kind) {
     case "section":
       return route.section;
@@ -448,7 +448,7 @@ export function formatRoute(route: CockpitRoute): string {
 }
 
 export const routes = {
-  section: (section: CockpitSectionId): CockpitSectionRoute => ({ kind: "section", section }),
+  section: (section: SectionId): CockpitSectionRoute => ({ kind: "section", section }),
   taskDetail: (wsHash: string, taskId: string): CockpitTaskDetailRoute => ({ kind: "task-detail", wsHash, taskId }),
   agentActivity: (wsHash: string, agent: string): CockpitAgentActivityRoute => ({ kind: "agent-activity", wsHash, agent }),
   agentProbes: (wsHash: string, agent: string): CockpitAgentProbesRoute => ({ kind: "agent-probes", wsHash, agent }),
@@ -565,7 +565,7 @@ function decodeReturnRoute(raw: unknown, studio: StudioId, wsHash: string): Cock
  * returns null rather than guessing, so callers choose their own fallback (usually
  * `routes.section("overview")`).
  */
-export function decodeRoute(raw: unknown): CockpitRoute | null {
+export function decodeRoute(raw: unknown): ProductRoute | null {
   if (!raw || typeof raw !== "object") return null;
   const obj = raw as Record<string, unknown>;
   const keys = Object.keys(obj);
@@ -602,14 +602,14 @@ const COCKPIT_PANEL_VIEW = "tachyonCockpit" as const;
 export interface CockpitPanelStateV1 {
   schemaVersion: 1;
   view: typeof COCKPIT_PANEL_VIEW;
-  section?: CockpitSectionId;
+  section?: SectionId;
   wsHash?: string;
 }
 
 export interface CockpitPanelStateV2 {
   schemaVersion: 2;
   view: typeof COCKPIT_PANEL_VIEW;
-  route: CockpitRoute;
+  route: ProductRoute;
   wsHash?: string;
 }
 
@@ -618,11 +618,11 @@ export type CockpitPanelState = CockpitPanelStateV1 | CockpitPanelStateV2;
 
 /**
  * Strict per-version decode at the restore boundary ONLY — runtime state after this point is
- * always a CockpitRoute, never a persisted-shape lookalike (closes the "duplicate section/route
+ * always a ProductRoute, never a persisted-shape lookalike (closes the "duplicate section/route
  * fields can diverge" finding). New panels are always PERSISTED as v2; this function is what
  * still understands v1 disk records.
  */
-export function decodePanelState(raw: unknown): { route: CockpitRoute; wsHash?: string } {
+export function decodePanelState(raw: unknown): { route: ProductRoute; wsHash?: string } {
   const obj = (raw && typeof raw === "object" ? raw : {}) as Partial<CockpitPanelState>;
   const wsHash = typeof obj.wsHash === "string" ? obj.wsHash : undefined;
   if (obj.schemaVersion === 2) {
@@ -642,7 +642,7 @@ export function decodePanelState(raw: unknown): { route: CockpitRoute; wsHash?: 
 /**
  * t-ace77f — a window reloaded on the retired Handoff TAB must reopen the document it was showing,
  * not silently drop to Overview. `section: "handoff"` stopped decoding the moment it left
- * `CockpitSectionId`, so this is the one place that still recognizes it — and only when the record
+ * `SectionId`, so this is the one place that still recognizes it — and only when the record
  * also carries the workspace the route now needs as its locator. Without one there is nothing to
  * open, and the caller's Overview fallback is the honest answer.
  */

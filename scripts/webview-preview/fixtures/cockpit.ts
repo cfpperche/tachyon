@@ -2,7 +2,7 @@
  * Control panel fixtures for dev-host preview (production-facing copy only).
  */
 
-import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/sections/model";
+import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "../../../src/sections/model";
 import { routes as cockpitRoutes } from "../../../src/sections/route";
 import type { CockpitStrings } from "../../../src/webview/shared/control/messages";
 import type { WorktreesStrings } from "../../../src/webview/worktrees/messages";
@@ -318,7 +318,7 @@ export const runtimeConfigPreviewStrings: import("../../../src/webview/runtime-c
 };
 
 
-const bundles: CockpitWorkspaceBundle[] = [
+const bundles: WorkspaceBundle[] = [
   {
     control: {
       folderName: "tachyon",
@@ -534,7 +534,7 @@ const bundles: CockpitWorkspaceBundle[] = [
 ];
 
 // t-d16a39 — a second workspace so the shell-level workspace selector renders (it hides with one).
-const goldenBundle: CockpitWorkspaceBundle = {
+const goldenBundle: WorkspaceBundle = {
   control: {
     folderName: "golem",
     workspaceRoot: "/home/goat/golem",
@@ -894,7 +894,7 @@ export const NAV_PENDING_TASK_ID = "t-4bf28a";
  * and the Engine card's error row all read — so this is ONE edit that reaches every place the failure
  * has to be visible, rather than three hand-set values that could disagree.
  */
-const brokenEngineBundle: CockpitWorkspaceBundle = {
+const brokenEngineBundle: WorkspaceBundle = {
   ...bundles[0]!,
   control: {
     ...bundles[0]!.control,
@@ -903,10 +903,10 @@ const brokenEngineBundle: CockpitWorkspaceBundle = {
   },
 };
 
-export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
-  default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "system", nowIso: now }) },
+export const cockpitFixtures: Record<string, Fixture<SectionsModel>> = {
+  default: { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "system", nowIso: now }) },
   // SDD 500 — the case System exists to answer the second half of ("and if not, WHERE?").
-  "engine-error": { provenance: "synthetic-edge", vm: buildCockpitModel([brokenEngineBundle], { section: "system", nowIso: now }) },
+  "engine-error": { provenance: "synthetic-edge", vm: buildSectionsModel([brokenEngineBundle], { section: "system", nowIso: now }) },
   // t-5f2b5b — no `fleet` fixture: the Fleet section had no Control renderer left and its standalone app is
   // deleted, so there is no surface to photograph. `fleet` is still the nav section the studio/agent-subroute
   // fixtures below build against, which is why those keep using it.
@@ -936,94 +936,94 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
    */
   "nav-pending": {
     provenance: "synthetic-edge",
-    vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }),
+    vm: buildSectionsModel(bundles, { section: "overview", nowIso: now }),
   },
-  // t-610705 (Phase C.2) — Fleet subroutes: buildCockpitModel only knows sections, so activeRoute is
+  // t-610705 (Phase C.2) — Fleet subroutes: buildSectionsModel only knows sections, so activeRoute is
   // attached after, exactly like Cockpit.ts's sendModel() does for the real host. Nav section: "fleet".
   "agent-activity": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.agentActivity("b349073a", "claude") },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.agentActivity("b349073a", "claude") },
   },
   "agent-probes": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.agentProbes("b349073a", "claude") },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.agentProbes("b349073a", "claude") },
   },
   // t-610705 (Phase D, D0) — the pilot studio route (studios-routes-design.md): same activeRoute-
-  // attached-after-buildCockpitModel pattern as above; nav section is "fleet" (command/terminal/
+  // attached-after-buildSectionsModel pattern as above; nav section is "fleet" (command/terminal/
   // runbook/schedule/agent studios all parent there per the registry table). `studioMountNonce` is
   // a fixture-only stand-in for the real host's per-binding nonce — this static harness has no live
   // host to hand one out, and the client doesn't validate it against anything here anyway.
   "studio-command": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("command", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("command", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-command-edit": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("command", "b349073a", "verify-ui"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("command", "b349073a", "verify-ui"), studioMountNonce: "fixture-mount-nonce" },
   },
   // t-610705 (Phase D, D1a) — same pattern as studio-command/-edit above for the 3 D1a studios.
   "studio-terminal": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("terminal", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("terminal", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-terminal-edit": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("terminal", "b349073a", "dev-server"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("terminal", "b349073a", "dev-server"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-runbook": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("runbook", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("runbook", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-runbook-edit": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("runbook", "b349073a", "release-preview"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("runbook", "b349073a", "release-preview"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-schedule": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("schedule", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("schedule", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-schedule-edit": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("schedule", "b349073a", "nightly-release-check"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("schedule", "b349073a", "nightly-release-check"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-agent": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("agent", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioNew("agent", "b349073a"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-agent-edit": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "reviewer"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "reviewer"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-agent-canonical": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-reviewer"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-reviewer"), studioMountNonce: "fixture-mount-nonce" },
   },
   // SDD 471 — the per-agent bypassPermissions authorization renders only for a canonical Claude
   // agent with the permissions family projected; both states are inspectable.
   "studio-agent-claude-bypass-off": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-claude-bypass-off"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-claude-bypass-off"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-agent-claude-bypass-on": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-claude-bypass-on"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-claude-bypass-on"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-agent-codex-danger-off": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-codex-danger-off"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-codex-danger-off"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-agent-codex-danger-on": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-codex-danger-on"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-codex-danger-on"), studioMountNonce: "fixture-mount-nonce" },
   },
   // t-e722ce — Agent Studio's forget plan: the panel a human reads before approving a removal.
   "studio-agent-forget-plan": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-forget-plan"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-forget-plan"), studioMountNonce: "fixture-mount-nonce" },
   },
   "studio-agent-forget-plan-blocked": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-forget-plan-blocked"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "fleet", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("agent", "b349073a", "canonical-forget-plan-blocked"), studioMountNonce: "fixture-mount-nonce" },
   },
   // t-610705 (Phase D, D2) — task is edit-only in practice (route.ts's decodeRoute rejects
   // studio-new + "task" outright — every real caller pre-mints an id), so there is no "studio-task"
@@ -1031,10 +1031,10 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   // "mission", not "fleet" — route.ts's studioParentSection special-cases "task" (D2).
   "studio-task-edit": {
     provenance: "synthetic-edge",
-    vm: { ...buildCockpitModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("task", "b349073a", "t-4f2c91"), studioMountNonce: "fixture-mount-nonce" },
+    vm: { ...buildSectionsModel(bundles, { section: "mission", nowIso: now }), activeRoute: cockpitRoutes.studioEdit("task", "b349073a", "t-4f2c91"), studioMountNonce: "fixture-mount-nonce" },
   },
-  validations: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "validations", nowIso: now }) },
-  approvals: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "approvals", nowIso: now }) },
+  validations: { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "validations", nowIso: now }) },
+  approvals: { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "approvals", nowIso: now }) },
   // SDD 485 D4 — the two Inbox fixtures left with the section: both are `?view=human-inbox` now
   // (`fixture=list` and `fixture=item`), rendering the real standalone bundle rather than the same
   // components embedded in Control. The VMs below are still built HERE, because they derive from this
@@ -1045,32 +1045,32 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   handoff: {
     provenance: "synthetic-edge",
     vm: {
-      ...buildCockpitModel(bundles, { section: "overview", nowIso: now }),
+      ...buildSectionsModel(bundles, { section: "overview", nowIso: now }),
       activeRoute: cockpitRoutes.projectHandoff("b349073a"),
     },
   },
-  "runtime-config": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime-config", nowIso: now }) },
-  worktrees: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "worktrees", nowIso: now }) },
-  settings: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "settings", nowIso: now }) },
-  empty: { provenance: "synthetic-edge", vm: buildCockpitModel([], { section: "system", nowIso: now }) },
+  "runtime-config": { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "runtime-config", nowIso: now }) },
+  worktrees: { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "worktrees", nowIso: now }) },
+  settings: { provenance: "synthetic-edge", vm: buildSectionsModel(bundles, { section: "settings", nowIso: now }) },
+  empty: { provenance: "synthetic-edge", vm: buildSectionsModel([], { section: "system", nowIso: now }) },
   // t-d16a39 — the shell workspace selector: visible under "All workspaces" and scoped to one.
   "multi-workspace": {
     provenance: "synthetic-edge",
-    vm: buildCockpitModel([...bundles, goldenBundle], { section: "fleet", nowIso: now }),
+    vm: buildSectionsModel([...bundles, goldenBundle], { section: "fleet", nowIso: now }),
   },
   "multi-workspace-scoped": {
     provenance: "synthetic-edge",
-    vm: buildCockpitModel([...bundles, goldenBundle], { section: "fleet", nowIso: now, wsHash: "c7d21e90" }),
+    vm: buildSectionsModel([...bundles, goldenBundle], { section: "fleet", nowIso: now, wsHash: "c7d21e90" }),
   },
   /**
    * SDD 500 — TWO roots attached to the window, ONE card on screen, which is the only shape this
-   * product can produce: `buildCockpitModel` scopes `control.workspaces` to the selected root, while
+   * product can produce: `buildSectionsModel` scopes `control.workspaces` to the selected root, while
    * `overview.workspaceCount` deliberately counts the whole window (t-72ff5a). This fixture is what
    * proves the summary says which is which — the Workspaces value reads 1, matching the card, and the
    * window's 2 appears underneath, labelled with its own scope.
    */
   "multi-workspace-window": {
     provenance: "synthetic-edge",
-    vm: buildCockpitModel([...bundles, goldenBundle], { section: "system", nowIso: now }),
+    vm: buildSectionsModel([...bundles, goldenBundle], { section: "system", nowIso: now }),
   },
 };

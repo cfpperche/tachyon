@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   collectNeedsFor,
   COLLECT_EVERYTHING,
-  buildCockpitModel,
-  type CockpitWorkspaceBundle,
+  buildSectionsModel,
+  type WorkspaceBundle,
 } from "../../src/sections/model.js";
 
 /**
@@ -16,14 +16,14 @@ import {
  * paid for all of it, across every workspace, before a single pixel could change.
  *
  * t-e88c8a retired `deliveries.classified` with the Deliveries tab, leaving one expensive slice.
- * `CockpitCollectNeeds` stays an object anyway — the shape is what makes the next one a one-liner.
+ * `SectionCollectNeeds` stays an object anyway — the shape is what makes the next one a one-liner.
  *
  * The fix is not a cache — that would add a second source of truth about the world. It is asking for
  * less: a view collects the slices it reads. These tests pin WHICH views read what, and pin the
  * distinction that makes skipping safe — absent is "not collected", never "none exist".
  */
 
-const bundle = (over: Partial<CockpitWorkspaceBundle> = {}): CockpitWorkspaceBundle => ({
+const bundle = (over: Partial<WorkspaceBundle> = {}): WorkspaceBundle => ({
   control: {
     folderName: "demo",
     workspaceRoot: "/ws",
@@ -33,7 +33,7 @@ const bundle = (over: Partial<CockpitWorkspaceBundle> = {}): CockpitWorkspaceBun
     agents: { total: 0, running: 0 },
     authConfigured: "unknown",
     notes: [],
-  } as CockpitWorkspaceBundle["control"],
+  } as WorkspaceBundle["control"],
   agents: [],
   approvals: [],
   ...over,
@@ -67,7 +67,7 @@ describe("t-af3eef — a view collects only what it reads", () => {
 
   describe("absent means not collected, never none", () => {
     it("reports the slice as not collected when no bundle carried it", () => {
-      const model = buildCockpitModel([bundle()], { section: "mission" });
+      const model = buildSectionsModel([bundle()], { section: "mission" });
 
       expect(model.worktreesCollected).toBe(false);
       expect(model.worktrees).toEqual([]);
@@ -75,14 +75,14 @@ describe("t-af3eef — a view collects only what it reads", () => {
 
     it("reports it as collected when a bundle carried it, even if it was genuinely empty", () => {
       // The case the flag exists for: an empty list that IS an answer must not read like a skip.
-      const model = buildCockpitModel([bundle({ worktrees: [] })], { section: "worktrees" });
+      const model = buildSectionsModel([bundle({ worktrees: [] })], { section: "worktrees" });
 
       expect(model.worktreesCollected).toBe(true);
       expect(model.worktrees).toEqual([]);
     });
 
     it("counts only what was actually collected", () => {
-      const collected = buildCockpitModel(
+      const collected = buildSectionsModel(
         [bundle({ worktrees: [{ path: "/w", branch: "b", folder: "demo", wsHash: "h1", status: "active" } as never] })],
         { section: "worktrees" },
       );

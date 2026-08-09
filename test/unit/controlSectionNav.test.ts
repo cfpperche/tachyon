@@ -19,7 +19,7 @@ describe("CONTROL_SECTION_NAV (t-6e2952)", () => {
     const tiles = CONTROL_SECTION_NAV.map((t) => t.id);
     for (const id of COCKPIT_SECTION_ORDER) expect(tiles, `section '${id}' has no launcher tile`).toContain(id);
     // t-5f2b5b — and the deletion is pinned, not merely reflected in a number: `fleet` is STILL a
-    // CockpitSectionId (parent of agent-activity/agent-probes and of five studios, so it must keep
+    // SectionId (parent of agent-activity/agent-probes and of five studios, so it must keep
     // decoding), which is exactly what would let a tile for it drift back in unnoticed.
     expect(tiles, "the Fleet tile was deleted — it must not come back").not.toContain("fleet");
     // SDD 500 — the same guard for the merged pair, and for the same reason: both are STILL

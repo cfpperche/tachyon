@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import type { CockpitModel, CockpitWorktreeRow } from "../../sections/model";
+import type { SectionsModel, WorktreeRow } from "../../sections/model";
 import { Badge, Button, EmptyState, ListRow, PageChrome } from "../shared/ui";
 import type { WorktreesAction, WorktreesStrings as Strings } from "./messages";
 
@@ -17,7 +17,7 @@ type WtGroup = (typeof WT_GROUPS)[number];
 const WT_RECORD_COLLAPSE_AT = 4;
 
 /** Fail-closed: a row the engine did not classify is NEVER treated as safe. */
-function wtGroupOf(row: CockpitWorktreeRow): WtGroup {
+function wtGroupOf(row: WorktreeRow): WtGroup {
   const state = row.classification?.state ?? "needs-review";
   // Occupancy still wins: a live agent's lock may belong to a launch in flight, and the thing to do
   // about that row is to deal with the agent, not to take its quarantine away underneath it.
@@ -33,7 +33,7 @@ function wtGroupOf(row: CockpitWorktreeRow): WtGroup {
  * says how many commits it carries and whether the tree is dirty. Fail-closed: with no classification
  * at all it says so, and never renders as "empty".
  */
-function InsideSummary({ s, row }: { s: Strings; row: CockpitWorktreeRow }) {
+function InsideSummary({ s, row }: { s: Strings; row: WorktreeRow }) {
   const c = row.classification;
   const parts = c
     ? [
@@ -71,7 +71,7 @@ const LAND_CHECK_LABEL: Record<string, keyof Strings> = {
  * Tachyon does not run it. That is stated in the block rather than implied, so nobody goes looking for
  * a button that is deliberately absent.
  */
-function LandBlock({ s, land, onCopyText }: { s: Strings; land: NonNullable<CockpitWorktreeRow["land"]>; onCopyText: (text: string) => void }) {
+function LandBlock({ s, land, onCopyText }: { s: Strings; land: NonNullable<WorktreeRow["land"]>; onCopyText: (text: string) => void }) {
   const blocked = land.checks.filter((c) => !c.ok);
   return (
     <section class="ck-land" data-testid="worktree-land">
@@ -139,7 +139,7 @@ export function WorktreesHygiene({
   onPost,
 }: {
   s: Strings;
-  rows: CockpitWorktreeRow[];
+  rows: WorktreeRow[];
   unavailable?: Array<{ folder: string; reason: string }>;
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
@@ -150,7 +150,7 @@ export function WorktreesHygiene({
   const [showAllRecords, setShowAllRecords] = useState(false);
   const [branchConsent, setBranchConsent] = useState<Record<string, boolean>>({});
 
-  const byGroup = new Map<WtGroup, CockpitWorktreeRow[]>(WT_GROUPS.map((g) => [g, []]));
+  const byGroup = new Map<WtGroup, WorktreeRow[]>(WT_GROUPS.map((g) => [g, []]));
   for (const row of rows) byGroup.get(wtGroupOf(row))!.push(row);
   // Selection survives model refreshes only while the row is still in its safe group.
   const stillSafe = (id: string, op: "remove" | "forget"): boolean => {
@@ -191,7 +191,7 @@ export function WorktreesHygiene({
     "record-only": { title: s.wtRecordTitle, desc: s.wtRecordDesc },
   };
 
-  const renderRow = (row: CockpitWorktreeRow, group: WtGroup) => {
+  const renderRow = (row: WorktreeRow, group: WtGroup) => {
     const reasons = row.classification?.reasons ?? [];
     // t-e722ce — an agent's checkout is not this tab's to remove. The engine refuses it outright;
     // hiding the control here is so a human is not invited into that refusal, and the row stays
@@ -499,6 +499,6 @@ export const defaultStrings: Strings = {
   wtSelected: "selected",
   wtShowAll: "Show all",
 };
-export function App({ model, strings: s, post }: { model?: CockpitModel; strings: Strings; post: (action: WorktreesAction) => void }) {
+export function App({ model, strings: s, post }: { model?: SectionsModel; strings: Strings; post: (action: WorktreesAction) => void }) {
   return <main class="ds-page"><PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />{model ? <WorktreesHygiene s={s} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={post} /> : null}</main>;
 }

@@ -1,4 +1,4 @@
-import type { CockpitModel } from "../../sections/model";
+import type { SectionsModel } from "../../sections/model";
 import { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
 export { READY, readyMessage, type ReadyMessage };
@@ -85,5 +85,5 @@ export type WorktreesAction =
   | { type: "worktreeBatchCleanup"; items: Array<{ id: string; op: "remove" | "forget"; wsHash?: string }> };
 
 export const pollWorktreesAction = (): WorktreesAction => ({ type: POLL });
-export const worktreesModelMessage = (model: CockpitModel) => ({ type: WORKTREES_MODEL, model } as const);
+export const worktreesModelMessage = (model: SectionsModel) => ({ type: WORKTREES_MODEL, model } as const);
 export const worktreesErrorMessage = (message: string) => ({ type: WORKTREES_ERROR, message } as const);

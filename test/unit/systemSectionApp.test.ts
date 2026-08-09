@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { COCKPIT_SECTION_IDS, collectNeedsFor, type CockpitSectionId } from "../../src/sections/model.js";
+import { COCKPIT_SECTION_IDS, collectNeedsFor, type SectionId } from "../../src/sections/model.js";
 import { resolveSectionDestination } from "../../src/sections/route.js";
 import { isCockpitSectionId, resolveCockpitSection } from "../../src/sections/resolveSection.js";
 import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
@@ -11,13 +11,13 @@ import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
  * SDD 500 S1 — `system` is the destination; `overview` and `engine` keep decoding and resolve to it.
  *
  * The precedent this applies is `fleet` (`sectionNav.ts`'s own comment): an id may leave the launcher
- * while staying a `CockpitSectionId`, because something else still has to be able to READ it. Here the
+ * while staying a `SectionId`, because something else still has to be able to READ it. Here the
  * "something else" is `route.ts`'s eight default fallbacks, which name `"overview"` at the call site by
  * a documented decision — so the id must not stop decoding, and this file is what pins that.
  */
 describe("SDD 500 S1 — overview and engine resolve to system", () => {
   it("system is a section id, and so are the two ids it replaces", () => {
-    for (const id of ["system", "overview", "engine"] satisfies CockpitSectionId[]) {
+    for (const id of ["system", "overview", "engine"] satisfies SectionId[]) {
       expect(isCockpitSectionId(id), `'${id}' must still decode`).toBe(true);
       expect(COCKPIT_SECTION_IDS).toContain(id);
     }

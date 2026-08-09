@@ -9,10 +9,10 @@
  * opens the same top-level set as COCKPIT_SECTION_ORDER.
  */
 
-import { COCKPIT_SECTION_ORDER, type CockpitSectionId } from "../../sections/model.js";
+import { COCKPIT_SECTION_ORDER, type SectionId } from "../../sections/model.js";
 
 export interface ControlSectionNav {
-  id: CockpitSectionId;
+  id: SectionId;
   /** codicon name (no `codicon-` prefix). */
   icon: string;
   /** English product label; localize at the host boundary. */
@@ -27,7 +27,7 @@ export interface ControlSectionNav {
 }
 
 /** Top-level only (not approvals/validations deep-links). Keyed by id for O(1) lookup. */
-const NAV_BY_ID: ReadonlyMap<CockpitSectionId, Omit<ControlSectionNav, "id">> = new Map([
+const NAV_BY_ID: ReadonlyMap<SectionId, Omit<ControlSectionNav, "id">> = new Map([
   // SDD 500 — one tile where Overview and Engine were two. Neither old id has an entry here: this map
   // is the launcher's metadata, and a tile for an id that resolves elsewhere would open the same app
   // twice under two names. They stay decodable ids (`resolveSectionDestination` in route.ts) — the same
@@ -53,7 +53,7 @@ const NAV_BY_ID: ReadonlyMap<CockpitSectionId, Omit<ControlSectionNav, "id">> = 
  *
  * t-5f2b5b — and what lets a tile be DELETED without touching the id it named. `fleet` left this list
  * (owner decision, 2026-08-07: the sidebar Agents tab is the only fleet, so the tile had nowhere worth
- * going) while staying a `CockpitSectionId`: it is still the parent section of the agent-activity and
+ * going) while staying a `SectionId`: it is still the parent section of the agent-activity and
  * agent-probes subroutes and of five studios, so it must still decode. Eleven tiles now, not twelve.
  *
  * SDD 500 — ten, and this time two ids left together for ONE new one. `system` takes the position
@@ -61,7 +61,7 @@ const NAV_BY_ID: ReadonlyMap<CockpitSectionId, Omit<ControlSectionNav, "id">> = 
  * decoding for the same reason `fleet` does — the eight default fallbacks in `route.ts` name
  * `"overview"` at the call site by a documented decision, so the id must stay readable.
  */
-const LAUNCHER_ORDER: readonly CockpitSectionId[] = [
+const LAUNCHER_ORDER: readonly SectionId[] = [
   "system",
   "inbox",
   "mission",
@@ -74,7 +74,7 @@ const LAUNCHER_ORDER: readonly CockpitSectionId[] = [
 ];
 
 /** the ids whose tile opens a standalone app instead of navigating Control (SDD 485). */
-const STANDALONE_APPS = new Set<CockpitSectionId>(LAUNCHER_ORDER);
+const STANDALONE_APPS = new Set<SectionId>(LAUNCHER_ORDER);
 
 /** Top-level launcher entries in product order — the launcher grid's sole catalog. */
 export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.map((id) => {
@@ -98,7 +98,7 @@ export const CONTROL_SECTION_NAV: readonly ControlSectionNav[] = LAUNCHER_ORDER.
  * `SectionPanelManager` resolves through here for any app whose manifest row names a `section`, so the two
  * surfaces cannot disagree: there is one name, and changing it changes both.
  */
-export function controlSectionIcon(id: CockpitSectionId): string {
+export function controlSectionIcon(id: SectionId): string {
   const meta = NAV_BY_ID.get(id);
   // Every caller passes a literal from the manifest, so a miss is a typo at startup, not a runtime branch.
   if (!meta) throw new Error(`controlSectionIcon: no launcher metadata for section '${id}'`);

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../src/sections/model.js";
+import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "../../src/sections/model.js";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "../../src/webview/SystemPanel.js";
@@ -113,13 +113,13 @@ describe("SDD 500 D3 — the summary is derived from the rows on screen", () => 
     });
 
     /** a model with ONE attached workspace, whose `overview` block has been made to lie. */
-    const lyingModel = (): CockpitModel => {
-      const bundle: CockpitWorkspaceBundle = {
+    const lyingModel = (): SectionsModel => {
+      const bundle: WorkspaceBundle = {
         control: wsInput({ wsHash: "a", agents: { total: 4, running: 3 } }),
         agents: [],
         approvals: [],
       };
-      const real = buildCockpitModel([bundle], { nowIso: "2026-08-09T00:00:00.000Z" });
+      const real = buildSectionsModel([bundle], { nowIso: "2026-08-09T00:00:00.000Z" });
       return {
         ...real,
         // the aggregate half, drifted away from the rows it was computed from
@@ -135,7 +135,7 @@ describe("SDD 500 D3 — the summary is derived from the rows on screen", () => 
     ) as Record<string, string>;
     strings.workspacesInWindow = "of {0} in this window";
 
-    const render = (model: CockpitModel): string =>
+    const render = (model: SectionsModel): string =>
       renderStatic(App({ model, strings, auto: true, setAuto: () => undefined, post: () => undefined }));
 
     /**
@@ -197,13 +197,13 @@ describe("SDD 500 — the workspace-wide counts keep their own sources", () => {
     expect(app).toContain("window > derived.workspaces");
   });
 
-  it("model.overview survives, because formatCockpitDiagnostics still reads it", () => {
+  it("model.overview survives, because formatSectionsDiagnostics still reads it", () => {
     // Measured rather than assumed: the field is not dead just because the screen stopped reading it
     // whole. Deleting it would silently empty three lines of the diagnostics a human copies when
     // something is already wrong.
     const model = readFileSync("src/sections/model.ts", "utf8");
     for (const line of ["model.overview.approvalsPending", "model.overview.inboxPending", "model.overview.worktreesActive"]) {
-      expect(model, `formatCockpitDiagnostics lost ${line}`).toContain(line);
+      expect(model, `formatSectionsDiagnostics lost ${line}`).toContain(line);
     }
   });
 });

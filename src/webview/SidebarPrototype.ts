@@ -314,7 +314,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
    * is the cheap version of finding it.
    *
    * Agreement with the rest of the window comes from the RULE being shared instead: an unresolvable
-   * scope resolves to the first attached project here, in `buildCockpitModel` (`workspaces[0]`), and
+   * scope resolves to the first attached project here, in `buildSectionsModel` (`workspaces[0]`), and
    * at every `extension.ts` call site (`?? workspaces()[0]`). Same list, same order, same answer — so
    * the sidebar and a Control panel opened from anywhere land on the same project without either one
    * having to write to the other.

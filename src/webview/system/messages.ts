@@ -1,4 +1,4 @@
-import type { CockpitModel } from "../../sections/model";
+import type { SectionsModel } from "../../sections/model";
 import { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
 export { READY, readyMessage, type ReadyMessage };
@@ -23,5 +23,5 @@ export type SystemAction = ReadyMessage
   | { type: "engineLogJournal"; wsHash: string };
 
 export const pollSystemAction = (): SystemAction => ({ type: POLL });
-export const systemModelMessage = (model: CockpitModel) => ({ type: SYSTEM_MODEL, model } as const);
+export const systemModelMessage = (model: SectionsModel) => ({ type: SYSTEM_MODEL, model } as const);
 export const systemErrorMessage = (message: string) => ({ type: SYSTEM_ERROR, message } as const);

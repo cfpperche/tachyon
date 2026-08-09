@@ -29,7 +29,7 @@ import {
   validate,
   type CardEditorState,
 } from "./cardTemplateEditor";
-import type { CockpitCardTemplateState } from "../../../sections/model";
+import type { CardTemplateState } from "../../../sections/model";
 import type { CockpitStrings } from "./messages";
 
 declare global {
@@ -143,7 +143,7 @@ function RegionEditor({
  * state, per home, from the host — never a restatement of the precedence rule, which would be true
  * and useless.
  */
-export function CardTemplateInEffect({ s, state }: { s: CockpitStrings; state: CockpitCardTemplateState }) {
+export function CardTemplateInEffect({ s, state }: { s: CockpitStrings; state: CardTemplateState }) {
   const personal = state.personal === "active"
     ? s.cardTemplatePersonalActive
     : state.personal === "refused"
@@ -190,7 +190,7 @@ export function CardTemplateBlock({
   s: CockpitStrings;
   onOpenConfig: () => void;
   onOpenSettings: () => void;
-  inEffect?: CockpitCardTemplateState;
+  inEffect?: CardTemplateState;
 }) {
   const [state, setState] = useState<CardEditorState>(() => editorStateFrom());
   // SDD 479 phase 5 — the composer produces ONE template; this only decides which home's syntax the

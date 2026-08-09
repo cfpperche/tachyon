@@ -23,7 +23,7 @@
  */
 
 import { controlSectionIcon } from "./sidebar/sectionNav.js";
-import type { CockpitSectionId } from "../sections/model.js";
+import type { SectionId } from "../sections/model.js";
 
 /**
  * How many panels of one app may exist at once, and — equivalently — what a panel's KEY is made of.
@@ -77,7 +77,7 @@ interface WebviewAppBase {
    * Absent for an app no tile opens — `task-detail` (opened from a task, not from the launcher) and the
    * dev fixture. Those declare `iconName` on their config instead.
    */
-  section?: CockpitSectionId;
+  section?: SectionId;
   /**
    * Budget for this app's EAGER entry — the bytes the webview must fetch and execute before it can paint
    * anything. Lazily-imported route bodies land in chunks and are not counted here; the reachable total
@@ -200,7 +200,7 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   { view: "human-inbox", viewId: "tachyonHumanInbox", section: "inbox", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   { view: "handoff", viewId: "tachyonHandoff", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 500 — System replaces D5's Engine app and D11's Overview app with ONE row, and it inherits the
-  // cardinality both had for the same reason: `buildCockpitModel` accepts a wsHash and filters bundles
+  // cardinality both had for the same reason: `buildSectionsModel` accepts a wsHash and filters bundles
   // before producing `control.workspaces`, so every fact on this screen is rooted at one project.
   //
   // That filter is also why this app has no collapse rule: it leaves exactly ONE row, so the "second
@@ -210,7 +210,7 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // The viewId is NEW. Both retired ids named half of this screen, so reusing either would leave a name
   // in the manifest that lies about what it opens — the call C5 made, not C4's.
   { view: "system", viewId: "tachyonSystem", section: "system", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
-  // SDD 485 D6 — Worktrees is filtered by buildCockpitModel's wsHash before its classified rows are
+  // SDD 485 D6 — Worktrees is filtered by buildSectionsModel's wsHash before its classified rows are
   // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
   { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // t-5f2b5b — SDD 485 D7's Fleet app is GONE (owner decision, 2026-08-07: the sidebar Agents tab is the

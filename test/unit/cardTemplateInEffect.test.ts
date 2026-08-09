@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import path from "node:path";
-import { buildCockpitModel, type CockpitWorkspaceBundle } from "../../src/sections/model.js";
+import { buildSectionsModel, type WorkspaceBundle } from "../../src/sections/model.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import type { CockpitStrings } from "../../src/webview/shared/control/messages.js";
 
@@ -29,7 +29,7 @@ const STRINGS = {
   cardTemplateProjectRefused: "its tachyon.yml template was refused; showing the default card",
 } as unknown as CockpitStrings;
 
-const bundle = (folder: string, cardTemplate?: { configured: boolean; refused: boolean }): CockpitWorkspaceBundle => ({
+const bundle = (folder: string, cardTemplate?: { configured: boolean; refused: boolean }): WorkspaceBundle => ({
   control: { folderName: folder, workspaceRoot: `/w/${folder}`, wsHash: folder, bridgeUrl: "" },
   agents: [],
   worktrees: [],
@@ -39,12 +39,12 @@ const bundle = (folder: string, cardTemplate?: { configured: boolean; refused: b
 
 describe("the model reports both homes", () => {
   it("defaults to 'no personal override' when the host reported none", () => {
-    const model = buildCockpitModel([bundle("alpha")], { nowIso: "now" });
+    const model = buildSectionsModel([bundle("alpha")], { nowIso: "now" });
     expect(model.cardTemplate).toMatchObject({ personal: "none", projects: [{ folder: "alpha", configured: false, refused: false }] });
   });
 
   it("carries the personal state and its refusal reasons verbatim", () => {
-    const model = buildCockpitModel([bundle("alpha")], {
+    const model = buildSectionsModel([bundle("alpha")], {
       nowIso: "now",
       personalCardTemplate: { state: "refused", errors: ["sidebar.cardTemplate.meta[0]: unknown component 'cpu-graph'"] },
     });
@@ -61,14 +61,14 @@ describe("the model reports both homes", () => {
     // about is untouched and is what is asserted now — a project's card layout comes from ITS OWN
     // tachyon.yml, so the answer changes with the project rather than being folded across them.
     const bundles = [bundle("alpha", { configured: true, refused: false }), bundle("beta", { configured: false, refused: true })];
-    expect(buildCockpitModel(bundles, { nowIso: "now" }).cardTemplate?.projects)
+    expect(buildSectionsModel(bundles, { nowIso: "now" }).cardTemplate?.projects)
       .toEqual([{ folder: "alpha", configured: true, refused: false }]);
-    expect(buildCockpitModel(bundles, { nowIso: "now", wsHash: "beta" }).cardTemplate?.projects)
+    expect(buildSectionsModel(bundles, { nowIso: "now", wsHash: "beta" }).cardTemplate?.projects)
       .toEqual([{ folder: "beta", configured: false, refused: true }]);
   });
 
   it("narrows to the selected workspace, like every other scoped section", () => {
-    const model = buildCockpitModel(
+    const model = buildSectionsModel(
       [bundle("alpha", { configured: true, refused: false }), bundle("beta")],
       { nowIso: "now", wsHash: "beta" },
     );

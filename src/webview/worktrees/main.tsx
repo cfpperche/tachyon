@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { CockpitModel } from "../../sections/model";
+import type { SectionsModel } from "../../sections/model";
 import type { CockpitStrings } from "../shared/control/messages";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
@@ -13,7 +13,7 @@ persistWebviewState(vscode);
 const post = (message: WorktreesAction) => vscode ? vscode.postMessage(message) : window.postMessage(message, "*");
 
 function Root() {
-  const [model, setModel] = useState<CockpitModel>();
+  const [model, setModel] = useState<SectionsModel>();
   const strings = (window as unknown as { __TACHYON_STRINGS__?: CockpitStrings }).__TACHYON_STRINGS__ ?? defaultStrings;
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
