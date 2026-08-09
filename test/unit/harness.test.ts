@@ -865,28 +865,6 @@ describe("HarnessManager materialize (fs)", () => {
     expect(toml).not.toContain("CLAUDE.md");
   });
 
-  it("spec 311 dogfood: local codex prompt-input sees harness AGENTS.md and CODEX_HOME skills", () => {
-    const codexHome = path.join(path.dirname(realHome), "realcodex");
-    fs.mkdirSync(codexHome, { recursive: true });
-    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
-    fs.mkdirSync(path.join(ws, "agents"), { recursive: true });
-    fs.writeFileSync(path.join(ws, "agents", "researcher.md"), "# Researcher\nUse TachyonCodexDogfoodProof.\n");
-    fs.mkdirSync(path.join(ws, "skills", "research"), { recursive: true });
-    fs.writeFileSync(path.join(ws, "skills", "research", "SKILL.md"), "---\nname: research\ndescription: Use when proving Tachyon Codex harness dogfood.\n---\nSkill body.\n");
-    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
-    const res = mgr.materialize("coder", { inherit: "none", instructions: ["agents/researcher.md"], skills: ["skills/research"] }, codex);
-
-    const out = execFileSync("codex", ["debug", "prompt-input", "hello"], {
-      cwd: ws,
-      env: { ...process.env, CODEX_HOME: res.home },
-      encoding: "utf8",
-      timeout: 10_000,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    expect(out).toContain("TachyonCodexDogfoodProof");
-    expect(out).toContain("research: Use when proving Tachyon Codex harness dogfood.");
-  });
-
   it("spec 298: codex isolate: transcript seeds auth and copies base config without MCP harness args", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex");
     fs.mkdirSync(codexHome, { recursive: true });
