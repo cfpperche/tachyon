@@ -6,6 +6,51 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.73.0 — the product stops asserting facts it never observed
+
+Three fixes, one shape: code that wrote down a second fact after observing a first one. A dead process
+became "the work was not done". An unreadable directory became "dependencies are fine". A hand-copied
+algorithm became "these two files still agree".
+
+### Fixed
+
+- **Process death no longer claims the work was not done** (`t-49d7ec`). `returnUnavailableAgentClaims`
+  observed one fact — this agent is no longer executing — and wrote two: that, plus "the task went back
+  to triage". **Measured cost: 25 of 68 triaged tasks had already been delivered and merged**, sitting
+  in `triaged` because the agent was dismissed after the merge.
+
+  Five different events came through one door — explicit kill, absence at startup, clean `exited (0)`,
+  requested stop, and disappearance — and the evidence string already told them apart, unread.
+
+  What forced it: the store refused `active` without an assignee, so clearing the owner — the only
+  proven fact — dragged the lane with it. Now `active` without an assignee is legal and means *claimed
+  work, nobody executing*. The assignee is cleared because it names the executor that vanished;
+  `awaitingHuman` and `evolutionCompletion` are **kept**, because waiting on a human and owing a review
+  are not facts about the dead process. `nextTask` and the board's dimming both treat it as claimable,
+  and a real crash still frees the claim — each held by a test.
+
+- **"I could not measure" stops being recorded as "everything is fine"** (`t-7681c1`). The refusal that
+  guards verification proof wrapped everything in `catch { return null }`, and `null` means *write the
+  record*. Worse, that catch was load-bearing for the normal path: a missing `node_modules` throws
+  ENOENT. Each throwing call was measured, then the answer became an explicit refusal naming the error.
+  Only ENOENT of `node_modules` or of a lockfile still means "does not apply".
+
+- **The last hand-maintained copy is gone** (`t-da6b78`). `scripts/host-resources.mjs` was an ESM twin
+  of `src/host/hostResources.ts`, kept in sync by human memory — and it had already cost one defect
+  (`t-0b7aa7`, a refusal reporting `0` workers as if it were a measurement). The algorithm now lives
+  once in `shared/host-resource-sizing.cjs`; the `.mjs` was deleted. The regression is held by a test
+  comparing **function identity**, not names: a faithful re-declaration that delegates to the shared
+  module passes `tsc` and every other test, and fails only that one.
+
+### Internal
+
+- **Audit: machinery with no inlet** (`t-e50995`). 145 exported symbols with test callers and no
+  production caller were judged; **5 are real missing inlets**, 140 dismissed with a reason. Method was
+  TypeScript AST plus both bundles as an independent second signal, never grep alone. The worst is
+  `gcAbandonedTransactions`: `ToolTransaction.begin` runs in production and the file header states that
+  in-process rollback is backed by recover-on-restart. It is not — an interrupted provisioning
+  transaction is orphaned forever. Follow-ups filed, nothing removed.
+
 ## 0.72.0 — the project declares what it shares, and the proof refuses to be written when it would lie
 
 Tachyon stops having an opinion about your ecosystem. It also stops telling agents about their
