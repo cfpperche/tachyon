@@ -5,6 +5,10 @@ _Created 2026-07-22._
 **Status:** shipped
 
 **Closure:** Shipped 2026-07-22 as the complete host-authorized formation foundation and four lane
+**Verify:** `npm run test:invariants`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm test -- test/unit/agentFormationDogfood.test.ts`
 implementations: Soul, Persistent Instructions, approved Evolution and human-approved selected
 memory resolve into one immutable fresh-session snapshot with pinned resume/re-anchor/fork bytes.
 PI-001, focused matrices, isolated dogfood, typecheck and full verification (476 files; 5,390 passed,

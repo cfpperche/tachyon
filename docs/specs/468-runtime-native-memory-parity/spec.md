@@ -4,6 +4,8 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Measured six installed runtimes, defined a fail-closed evidence
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 contract, added parity dimension 15 and created the implementation roadmap
 under `t-8c7431`; no runtime memory behavior was enabled.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.

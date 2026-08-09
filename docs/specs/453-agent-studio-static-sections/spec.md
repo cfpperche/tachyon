@@ -4,6 +4,8 @@ _Created 2026-07-25._
 
 **Status:** shipped
 **Closure:** New/Edit Agent configuration disclosures were replaced with accessible, always-expanded
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 static cards, with responsive narrow layout, regression tests, and visual evidence.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);

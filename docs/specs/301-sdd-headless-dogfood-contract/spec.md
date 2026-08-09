@@ -4,6 +4,8 @@ _Created 2026-06-30._
 
 **Status:** shipped
 **Closure:** 2026-06-30 — SDD plugin source now has a preview-by-default `sdd-dogfood.sh`, `sdd-close` requires passing dogfood proof or a non-empty visible opt-out for shipped specs, docs/templates formalize Dogfood/Human dogfood and `shipped-partial`, and plugin manifest is bumped to 1.4.0. Validated by spec smoke, dogfood log, targeted plugin engine/manifest tests, typecheck, and a real engine materialization test into temp `.claude/skills/sdd` + `.agents/skills/sdd`.
+**Verify:** `bash docs/specs/301-sdd-headless-dogfood-contract/smoke.sh verify && npm test -- --run test/unit/sddDogfoodMaterialization.test.ts test/unit/pluginEngine.test.ts test/unit/pluginManifest.test.ts && npm run -s typecheck`
+**Dogfood:** `bash docs/specs/301-sdd-headless-dogfood-contract/smoke.sh dogfood`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes / placeholders). -->

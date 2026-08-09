@@ -5,6 +5,10 @@ _Created 2026-07-18._
 **Status:** shipped
 
 **Closure:** Pi primer + immutable authenticated Bridge extension shipped in `858affc1`; automated/human dogfood closure landed in `b32c2424` with installed Dev Host evidence at `625c3c1d`.
+**Verify:** `npm run typecheck`
+**Verify:** `npx vitest run test/unit/piRuntimeOnboarding.test.ts test/unit/agentManager.test.ts test/unit/piBridgeExtension.test.ts test/unit/engineBundleStore.test.ts`
+**Verify:** `npm run test:invariants`
+**Dogfood:** `node scripts/dogfood/pi-runtime-onboarding.mjs`
 
 ## Intent
 

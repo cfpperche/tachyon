@@ -6,6 +6,7 @@ _Created 2026-06-26._
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 **Closure:** agent-browser → **2.0.0** declares a spec-269 `launchPolicy` forcing `AGENT_BROWSER_CONFIRM_ACTIONS`
+**Verify:** _(plugin payload in the external repo; proof is the dogfood transcript in notes.md)_
 (the mutating-command categories) + refusing the bypass surfaces (`--confirm-actions`/`--action-policy`/`--config`
 /`mcp`/`batch`). Live-proven into `/home/goat/tachyon`: with the caller's env UNSET a common write (`click`) is
 HELD (`confirmation_required` + id), reads run free, and an agent's `--confirm-actions ""`/`mcp`/`batch`/`--config`

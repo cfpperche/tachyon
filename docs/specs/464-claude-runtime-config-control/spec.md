@@ -4,6 +4,9 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped Claude's measured Runtime Config adapter with per-document CAS,
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/claudeRuntimeConfigInventory.test.ts test/unit/codexRuntimeConfigInventory.test.ts`
 safe scalar JSON writes, local-shadow detection, read-only MCP inventory, runtime-scoped
 pending, explicit unavailable state and functional Dev Host evidence in
 `.tachyon/dev-host/interactive-out/result.json` (`ok: true`, 2026-07-26).

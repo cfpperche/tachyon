@@ -4,6 +4,8 @@ _Created 2026-07-01._
 
 **Status:** shipped
 **Closure:** Shipped silent persistence hooks for declared Claude/Codex agents: SessionStart now carries a continuity pointer silently, Stop records deterministic persistence lifecycle evidence, automatic continuity/handoff pane nudges are suppressed only when the current spawn actually received the silent hook bundle, and `settings.persistence.silentHooks: false` restores the legacy visible path.
+**Verify:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/continuityWiring.test.ts test/unit/config.test.ts && npm run typecheck`
+**Dogfood:** `npm test -- test/unit/continuityWiring.test.ts -t "spec 312"`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

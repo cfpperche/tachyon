@@ -4,6 +4,9 @@ _Created 2026-07-03._
 
 **Status:** shipped
 **Closure:** shipped 2026-07-03 — T1-T7 (extraction, TaskAttachmentStore, sidecar with body-hash anchoring,
+**Verify:** `npm test -- --run test/unit/docMarkdown.test.ts test/unit/markdownDoc.test.ts test/unit/studioModel.test.ts test/unit/taskDetailStore.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/studioModel.test.ts -t "no-op"`
 serializer with no-op preservation, panel+surface, wiring, hardening) by ad-hoc Sonnet taskStudio, then two
 human dogfood rounds + polish waves (tsFixes, uiFixes, uiPolish): visuals thumbnails/annotation badge/sketch
 backing, detail-tab attachment resolution + card clip, close-on-open-studio, header actions, deps chip

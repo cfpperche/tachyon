@@ -4,6 +4,9 @@ _Created 2026-07-04._
 
 **Status:** shipped
 **Closure:** shipped 2026-07-04 — digest-only caller registry (HMAC key in SecretStorage, persistence
+**Verify:** `npm test -- --run test/unit/callerIdentity.test.ts test/unit/bridge.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/callerIdentity.test.ts -t "mismatch"`
 preserving the no-plaintext invariant + surviving-tmux resolution), per-agent token mint/revoke at
 spawn/resume, Bridge per-request caller snapshots with reason codes, actor resolution + mismatch across all
 self-identifying tools, self-assign suppression, probe per-run tokens, fenced+logged legacy compat,

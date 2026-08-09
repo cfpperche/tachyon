@@ -5,6 +5,9 @@ _Created 2026-07-22._
 **Status:** shipped
 
 **Closure:** Running and stopped canonical rename now converge through one recoverable journal; focused and full verification are recorded in `notes.md`.
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/logStore.test.ts test/unit/resume.test.ts test/unit/agentManager.test.ts test/unit/agentProfileRename.test.ts test/unit/workspaceHeadless.test.ts`
 
 **Task:** `t-c3605c` · **Parent:** `t-c111e4` / SDD 431
 

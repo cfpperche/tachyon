@@ -4,6 +4,7 @@ _Created 2026-07-03._
 
 **Status:** shipped
 **Closure:** Shipped view-only Activity type filters in the webview: fixed user-facing categories, search composition, hidden count, show-all reset, session-local persistence, unit coverage, typecheck, build, and preview evidence (`/tmp/activity-filter-full.png`).
+**Verify:** `npm test -- test/unit/activityFeedModel.test.ts test/unit/webviewPreviewRoutes.test.ts && npm run typecheck && npm run build`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

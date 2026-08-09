@@ -59,6 +59,8 @@ rather than pretending a health system already exists.
   `Stop` appear installed/active in `/hooks` and real persisted Codex Stop rows started appending.
 
 **Closure:** Shipped 2026-07-01. Codex silent persistence hook injection now emits separate documented `-c key=value`
+**Verify:** `npm test -- test/unit/codexBridge.test.ts test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts && npm run typecheck`
+**Dogfood:** `tail -n 30 .tachyon/activity/persistence-stop.jsonl && tail -n 30 .tachyon/activity/persistence-hooks-failures.jsonl 2>/dev/null || true`
 overrides for `hooks.SessionStart` and `hooks.Stop`, allowing persisted Codex TUI sessions to install and run the Stop
 recorder without `--dangerously-bypass-hook-trust`. Human dogfood confirmed `/hooks` shows Stop installed/active; real
 ledger rows exist for both persisted runtimes (`codex` at `2026-07-02T01:07:05.906Z`, `claude` at

@@ -5,6 +5,7 @@ _Created 2026-06-10._
 **Status:** shipped
 
 **Closure:** 2026-06-10 — unit 188/188 unchanged; xvfb single-root suite 23 passing UNTOUCHED (the refactor gate) + new multi-root host suite 6 passing (two-folder .code-workspace fixture); residual: none
+**Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
 
 **UI impact:** render
 <!-- Folder nodes in all four views with 2+ folders; single-folder rendering byte-identical (gate). -->

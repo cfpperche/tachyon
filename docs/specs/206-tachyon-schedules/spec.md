@@ -5,6 +5,7 @@ _Created 2026-06-11._
 **Status:** shipped
 
 **Closure:** 2026-06-11 — unit 207/207 (schedule 10 new), xvfb 22 single-root (active + propose→approve→active + reject) + 6 multi-root; live claude E2E proposed a schedule that stayed pending until approved; residual: none
+**Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
 
 **UI impact:** render
 <!-- New Schedules sidebar view (active + pending proposals); exercised via the _schedules/_proposals/_approveProposal seams + dogfood. -->

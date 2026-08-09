@@ -5,6 +5,7 @@ _Created 2026-06-13._
 **Status:** shipped-partial
 
 **Closure:** 2026-06-13 — implemented Tasks 1–7 (Opus 4.8). Ledger def/resume split
+**Verify:** `npm run typecheck && npm test`
 + `isResumable` + pre-211 migration; every ad-hoc recorded after a successful spawn
 (def for all, resume adapter-only); `rehydrateFromLedger()` wired before planResume;
 all resume paths (planResume offers, sidebar badge) filter on `isResumable`;
