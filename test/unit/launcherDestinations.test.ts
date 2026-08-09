@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
-import { COCKPIT_SECTION_ORDER } from "../../src/cockpit/model.js";
+import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
+import { COCKPIT_SECTION_ORDER } from "../../src/sections/model.js";
 import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 
 /**

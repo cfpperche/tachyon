@@ -18,10 +18,10 @@ import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesP
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
-import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
+import { COLLECT_EVERYTHING, type SectionCollectNeeds, type WorkspaceBundle } from "./sections/model.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
-import { resolveCockpitSection } from "./cockpit/resolveSection.js";
-import { resolveSectionDestination } from "./cockpit/route.js";
+import { resolveSection } from "./sections/resolveSection.js";
+import { resolveSectionDestination } from "./sections/route.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
 import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";
@@ -748,7 +748,7 @@ function worktreeStatusFrom(value: unknown): WorktreeStatus {
  * passed belongs to `landSuggestion`; asserting it a second time here would be a copy free to drift
  * from the one that produced the checks — the failure the maintainer measured three times in one day.
  */
-type LandRow = NonNullable<NonNullable<CockpitWorkspaceBundle["worktrees"]>[number]["land"]>;
+type LandRow = NonNullable<NonNullable<WorkspaceBundle["worktrees"]>[number]["land"]>;
 
 function landRowFrom(value: unknown): LandRow | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
@@ -1122,7 +1122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
   // t-610705 (SDD 410 Phase C.2) — the standalone Activity panel was retired: it's a Control
   // subroute now (fleet/agent/<name>/activity; src/webview/activity/App.tsx stays, lazy-imported by
-  // cockpit/App.tsx; the watcher moved to src/cockpit/activityFeed.ts).
+  // cockpit/App.tsx; the watcher moved to src/webview/activity/activityFeed.ts).
   // t-610705 (SDD 410 Phase C.3) — the standalone Project Handoff panel was retired: it's a Control
   // section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx).
   // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and
@@ -1796,10 +1796,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // t-af3eef — `needs` says which expensive slices this view actually consumes. A slice that is
     // not needed is not queried and its field is ABSENT, so a caller can tell "not collected" from
     // "none exist". Navigation used to pay for every slice regardless of the route.
-    collect: async (needs: CockpitCollectNeeds = COLLECT_EVERYTHING): Promise<CockpitWorkspaceBundle[]> => {
-      const bundles: CockpitWorkspaceBundle[] = [];
+    collect: async (needs: SectionCollectNeeds = COLLECT_EVERYTHING): Promise<WorkspaceBundle[]> => {
+      const bundles: WorkspaceBundle[] = [];
       for (const ws of workspaces()) {
-        let identity: CockpitWorkspaceBundle["control"]["identity"] = null;
+        let identity: WorkspaceBundle["control"]["identity"] = null;
         let identityError: string | undefined;
         try {
           const id = ws.client.identity;
@@ -1830,7 +1830,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           /* best-effort */
         }
 
-        let agentRows: CockpitWorkspaceBundle["agents"] = [];
+        let agentRows: WorkspaceBundle["agents"] = [];
         let agentCounts: { total: number; running: number } | undefined;
         try {
           const items = ws.client.presentation.agents.items;
@@ -1858,9 +1858,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           tmux = { state: "unknown" };
         }
 
-        let companion: CockpitWorkspaceBundle["companion"];
+        let companion: WorkspaceBundle["companion"];
         // SDD 488 F4 — shell config is the authority when engine is offline; companion.status may piggyback the bit.
-        let ideBrowser: CockpitWorkspaceBundle["ideBrowser"] = {
+        let ideBrowser: WorkspaceBundle["ideBrowser"] = {
           enabled: ws.config?.settings?.ideBrowser?.enabled === true,
         };
         try {
@@ -1903,7 +1903,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // spec 444 — the classified engine read is the ONE source for the Worktrees tab. Engine
         // unreachable → an EMPTY list plus a note, never unverified raw-disk rows (maintainer-
         // ratified: untrusted data is not better than no data). The raw reader is deleted.
-        let worktreeRows: CockpitWorkspaceBundle["worktrees"];
+        let worktreeRows: WorkspaceBundle["worktrees"];
         let worktreesUnavailable: string | undefined;
         try {
           if (!needs.worktrees) throw SKIP_SLICE;
@@ -1925,7 +1925,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
               folder: ws.folderName,
               wsHash: ws.wsHash,
               tachyonCreatedBranch: e.tachyonCreatedBranch === true,
-              classification: e.classification as NonNullable<CockpitWorkspaceBundle["worktrees"]>[number]["classification"],
+              classification: e.classification as NonNullable<WorkspaceBundle["worktrees"]>[number]["classification"],
               // t-621613 — anything the engine did not state reads as `unknown`, which the tab
               // treats as "somebody lives here". An older engine that never sends it lands there.
               ownerPresence: e.ownerPresence === "absent" || e.ownerPresence === "present" ? e.ownerPresence : "unknown",
@@ -2864,7 +2864,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // eight defaults in route.ts name `"overview"` at the call site by decision), and both land on
         // System. Composing them here rather than folding the alias into the decoder keeps a persisted
         // or deep-linked id READABLE instead of rewriting it.
-        const resolved = resolveSectionDestination(resolveCockpitSection(section));
+        const resolved = resolveSectionDestination(resolveSection(section));
         if (resolved === "mission") {
           openBoard();
           return Promise.resolve();

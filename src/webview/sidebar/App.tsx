@@ -12,8 +12,8 @@ import {
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 // t-6e2952 — the Control tab's tiles derive from the SAME catalog Control's own TabsBar order comes from
 // (COCKPIT_SECTION_ORDER); a section added there without nav metadata throws instead of silently vanishing.
-import { CONTROL_SECTION_NAV } from "../../cockpit/sectionNav";
-import type { CockpitSectionId } from "../../cockpit/model";
+import { CONTROL_SECTION_NAV } from "./sectionNav";
+import type { SectionId } from "../../sections/model";
 import { sortRows, groupByParent, SORT_LABEL, asSortMode, type SortMode } from "../../sidebar/sortRows";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows } from "./grouping";
 import { attentionRows, splitNoticeAuthor } from "../../sidebar/attentionStack.js";
@@ -1152,7 +1152,7 @@ function AttentionStack({ fleets, dispatch }: { fleets: FleetVM[]; dispatch?: Di
  * "Which section am I in" moved with the navigation: the section's own H1 in the Control panel answers
  * it, which is why every one of the twelve now has one (see cockpit/App.tsx's SectionFallback).
  */
-function ControlGrid({ onOpen, engineHasError }: { onOpen: (section: CockpitSectionId) => void; engineHasError: boolean }) {
+function ControlGrid({ onOpen, engineHasError }: { onOpen: (section: SectionId) => void; engineHasError: boolean }) {
   return (
     <div class="ctl-grid" role="group" aria-label="Control sections" data-testid="control-grid">
       {CONTROL_SECTION_NAV.map((s) => {

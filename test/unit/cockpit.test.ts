@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { buildCockpitModel, COCKPIT_SECTION_ORDER, formatCockpitDiagnostics } from "../../src/cockpit/model.js";
+import { buildSectionsModel, COCKPIT_SECTION_ORDER, formatSectionsDiagnostics } from "../../src/sections/model.js";
 
 describe("cockpit model", () => {
   it("orders sections by ops frequency (no soon slots)", () => {
     expect(COCKPIT_SECTION_ORDER).not.toContain("overview");
     expect(COCKPIT_SECTION_ORDER).not.toContain("settings");
     expect(COCKPIT_SECTION_ORDER).not.toContain("engine");
-    // SDD 485 D4 — the Human Inbox is a standalone `dashboard` app: still a CockpitSectionId (so a
+    // SDD 485 D4 — the Human Inbox is a standalone `dashboard` app: still a SectionId (so a
     // persisted or deep-linked `section:inbox` decodes and can be redirected) and still a launcher tile,
     // but Control renders no section for it. `approvals` and `validations` below were never on this list
     // for a DIFFERENT reason — they are compatibility routes the Inbox aggregates, not apps.
     expect(COCKPIT_SECTION_ORDER).not.toContain("inbox");
     expect(COCKPIT_SECTION_ORDER).not.toContain("approvals");
-    // SDD 485 C5 — the Board is a standalone app: it is still a CockpitSectionId (so a persisted or
+    // SDD 485 C5 — the Board is a standalone app: it is still a SectionId (so a persisted or
     // deep-linked route decodes and can be redirected) and still a launcher tile, but Control renders no
     // section for it, and this list is what Control renders.
     expect(COCKPIT_SECTION_ORDER).not.toContain("mission");
@@ -30,7 +30,7 @@ describe("cockpit model", () => {
   });
 
   it("builds fleet/worktrees overview counts", () => {
-    const m = buildCockpitModel(
+    const m = buildSectionsModel(
       [
         {
           control: {
@@ -106,7 +106,7 @@ describe("cockpit model", () => {
    * that branch, not the state it once described, is what a regression would revive.
    */
   it("answers companion settings for the resolved workspace instead of asking which one", () => {
-    const m = buildCockpitModel(
+    const m = buildSectionsModel(
       [
         {
           control: { folderName: "a", workspaceRoot: "/a", wsHash: "h1", bridgeUrl: "http://127.0.0.1:1/mcp" },
@@ -149,7 +149,7 @@ describe("cockpit model", () => {
     });
     const bundles = [bundle("aaa", "alpha", 2), bundle("bbb", "beta", 3)];
 
-    const scoped = buildCockpitModel(bundles, { section: "fleet", wsHash: "bbb", nowIso: "now" });
+    const scoped = buildSectionsModel(bundles, { section: "fleet", wsHash: "bbb", nowIso: "now" });
     expect(scoped.selectedWsHash).toBe("bbb");
     expect(scoped.workspaces).toEqual([
       { hash: "aaa", folder: "alpha" },
@@ -164,14 +164,14 @@ describe("cockpit model", () => {
     // t-72ff5a — no selection resolves to the FIRST project, not to an aggregate. The seven scoped
     // sidebar tabs render exactly one project, so a scope that could still mean "every project"
     // would put Control in a mode the sidebar has no way to show.
-    const unset = buildCockpitModel(bundles, { section: "fleet", nowIso: "now" });
+    const unset = buildSectionsModel(bundles, { section: "fleet", nowIso: "now" });
     expect(unset.selectedWsHash).toBe("aaa");
     expect(unset.fleet).toHaveLength(2);
     // …and the full list is still every bundle, so the selector can still offer the other one.
     expect(unset.workspaces).toHaveLength(2);
 
     // a persisted hash whose folder was closed since falls back the same way — never an empty Control
-    const stale = buildCockpitModel(bundles, { section: "fleet", wsHash: "gone", nowIso: "now" });
+    const stale = buildSectionsModel(bundles, { section: "fleet", wsHash: "gone", nowIso: "now" });
     expect(stale.selectedWsHash).toBe("aaa");
     expect(stale.fleet).toHaveLength(2);
 
@@ -179,11 +179,11 @@ describe("cockpit model", () => {
     // model whose selection names no offered option renders as a blank button. t-72ff5a removed the
     // "__all__" sentinel from the offer list, which is exactly why every state below must now name
     // a real workspace — there is no longer a sentinel for an unresolved one to fall back on.
-    const optionValues = (m: ReturnType<typeof buildCockpitModel>): string[] => m.workspaces.map((w) => w.hash);
+    const optionValues = (m: ReturnType<typeof buildSectionsModel>): string[] => m.workspaces.map((w) => w.hash);
     for (const [label, m] of [
-      ["single root, no persisted selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", nowIso: "now" })],
-      ["single root, stale persisted selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", wsHash: "gone", nowIso: "now" })],
-      ["single root, explicit selection", buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", wsHash: "solo", nowIso: "now" })],
+      ["single root, no persisted selection", buildSectionsModel([bundle("solo", "only", 1)], { section: "overview", nowIso: "now" })],
+      ["single root, stale persisted selection", buildSectionsModel([bundle("solo", "only", 1)], { section: "overview", wsHash: "gone", nowIso: "now" })],
+      ["single root, explicit selection", buildSectionsModel([bundle("solo", "only", 1)], { section: "overview", wsHash: "solo", nowIso: "now" })],
       ["multi root, no selection", unset],
       ["multi root, explicit selection", scoped],
       ["multi root, stale selection", stale],
@@ -197,14 +197,14 @@ describe("cockpit model", () => {
     expect(scoped.overview.workspaceCount).toBe(2);
 
     // And the single-root selection is the root itself, not the aggregate sentinel.
-    expect(buildCockpitModel([bundle("solo", "only", 1)], { section: "overview", nowIso: "now" }).selectedWsHash)
+    expect(buildSectionsModel([bundle("solo", "only", 1)], { section: "overview", nowIso: "now" }).selectedWsHash)
       .toBe("solo");
     // Scoping is unchanged by naming it: one bundle filtered is one bundle.
-    expect(buildCockpitModel([bundle("solo", "only", 1)], { section: "fleet", nowIso: "now" }).fleet).toHaveLength(1);
+    expect(buildSectionsModel([bundle("solo", "only", 1)], { section: "fleet", nowIso: "now" }).fleet).toHaveLength(1);
   });
 
-  it("formatCockpitDiagnostics is product-oriented", () => {
-    const text = formatCockpitDiagnostics(buildCockpitModel([], { nowIso: "now" }));
+  it("formatSectionsDiagnostics is product-oriented", () => {
+    const text = formatSectionsDiagnostics(buildSectionsModel([], { nowIso: "now" }));
     expect(text).toMatch(/Control/i);
   });
 });

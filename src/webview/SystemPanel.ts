@@ -1,10 +1,10 @@
 import * as vscode from "vscode";
 import {
-  buildCockpitModel,
+  buildSectionsModel,
   collectNeedsFor,
-  formatCockpitDiagnostics,
-  type CockpitWorkspaceBundle,
-} from "../cockpit/model.js";
+  formatSectionsDiagnostics,
+  type WorkspaceBundle,
+} from "../sections/model.js";
 import { cockpitStrings } from "./controlStrings.js";
 import {
   SectionPanelManager,
@@ -31,7 +31,7 @@ export const SYSTEM_VIEW_TYPE = "tachyonSystem";
 type SystemRefreshKind = "system";
 
 export interface SystemDeps {
-  collect: (needs?: ReturnType<typeof collectNeedsFor>) => Promise<CockpitWorkspaceBundle[]>;
+  collect: (needs?: ReturnType<typeof collectNeedsFor>) => Promise<WorkspaceBundle[]>;
   openDoctor(): void;
   /** the "waiting on you" counter's shortcut into the Inbox — the only `openSection` caller left. */
   openSection(section: string, project: string): void;
@@ -40,7 +40,7 @@ export interface SystemDeps {
 }
 
 /**
- * System is a `dashboard`: one panel per project, exactly as both halves were. `buildCockpitModel`
+ * System is a `dashboard`: one panel per project, exactly as both halves were. `buildSectionsModel`
  * validates and filters the bundles by the panel's immutable project before producing
  * `m.control.workspaces`, so that plural is the old aggregate model's shape and never a cross-project
  * data source — which is also why this screen draws one card and needs no collapse rule.
@@ -106,7 +106,7 @@ export class SystemPanelManager {
       const bundles = await this.deps.collect(collectNeedsFor("system"));
       session.post(
         systemModelMessage(
-          buildCockpitModel(bundles, { section: "system", wsHash: session.target.project }),
+          buildSectionsModel(bundles, { section: "system", wsHash: session.target.project }),
         ),
       );
     } catch (e) {
@@ -127,11 +127,11 @@ export class SystemPanelManager {
       await this.send(session);
     } else if (m.type === "copyDiagnostics") {
       // Deliberately the UNSCOPED collect, as Overview's was: a diagnostics dump is explicitly a full
-      // picture of the world, and `formatCockpitDiagnostics` is the one surviving reader of
+      // picture of the world, and `formatSectionsDiagnostics` is the one surviving reader of
       // `model.overview` outside this app.
       const bundles = await this.deps.collect();
       await vscode.env.clipboard.writeText(
-        formatCockpitDiagnostics(buildCockpitModel(bundles, { section: "system", wsHash: project })),
+        formatSectionsDiagnostics(buildSectionsModel(bundles, { section: "system", wsHash: project })),
       );
     }
   }

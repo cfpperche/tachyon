@@ -8,10 +8,10 @@
  * screen — this module never decides to redirect away on a load failure, only the caller's
  * "no last-known state at all" fallback does (a bare not-found VM, same shape the original used).
  */
-import type { TaskDetailProjectionV1 } from "../runtime-api/taskDetailProjection.js";
-import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
-import { assembleUntrustedSrcdoc } from "../webview/shared/untrustedSrcdoc.js";
-import type { TaskDetailVM } from "../webview/task-detail/messages.js";
+import type { TaskDetailProjectionV1 } from "../../runtime-api/taskDetailProjection.js";
+import type { WorkspaceTaskDetailTarget } from "../../shell/TaskDetailTarget.js";
+import { assembleUntrustedSrcdoc } from "../shared/untrustedSrcdoc.js";
+import type { TaskDetailVM } from "./messages.js";
 
 /** Resolves `panel.webview.asWebviewUri` — injected so this module stays vscode-free. */
 export type ResolveBlobUri = (localPath: string) => string;

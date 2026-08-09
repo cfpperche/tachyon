@@ -9,7 +9,10 @@ describe("rich-doc image Import shares the paste/drop content path (t-cdab51)", 
       const app = readFileSync(`src/webview/${studio}/App.tsx`, "utf8");
       const messages = readFileSync(`src/webview/${studio}/messages.ts`, "utf8");
       const types = readFileSync(`src/webview/${studio}/types.ts`, "utf8");
-      const domain = readFileSync(`src/cockpit/${studio === "pin-studio" ? "pinStudioDomain" : "taskStudioDomain"}.ts`, "utf8");
+      const domain = readFileSync(
+        `src/${studio === "pin-studio" ? "webview/pin-studio/pinStudioDomain" : "webview/task-detail/taskStudioDomain"}.ts`,
+        "utf8",
+      );
 
       expect(app).toContain("<ImageImportPicker");
       expect(app).toContain('await attachFile(file, "import")');

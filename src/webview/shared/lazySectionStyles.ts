@@ -1,7 +1,7 @@
 declare global {
   interface Window {
     /** t-610705 (SDD 410 Phase B) — webview-resource URIs for lazy cockpit sections' stylesheets,
-     *  keyed by CockpitSectionId. Populated only for sections NOT active at initial paint — the
+     *  keyed by SectionId. Populated only for sections NOT active at initial paint — the
      *  active section's sheet still loads eagerly in the shell `<head>` for a flash-free first paint. */
     __tachyonSectionStyles?: Record<string, string>;
   }

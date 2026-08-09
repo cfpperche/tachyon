@@ -9,7 +9,7 @@ import {
   type ApprovalRequest,
 } from "../../src/bridge/approvalRequest.js";
 import { buildApprovalViewModel, listApprovalViewItems, pendingApprovalRows } from "../../src/webview/approval/viewModel.js";
-import { buildCockpitModel, type CockpitWorkspaceBundle } from "../../src/cockpit/model.js";
+import { buildSectionsModel, type WorkspaceBundle } from "../../src/sections/model.js";
 
 const roots: string[] = [];
 
@@ -36,7 +36,7 @@ function request(id: string, requester: string): ApprovalRequest {
   });
 }
 
-function bundle(approvals: CockpitWorkspaceBundle["approvals"]): CockpitWorkspaceBundle {
+function bundle(approvals: WorkspaceBundle["approvals"]): WorkspaceBundle {
   return {
     control: { folderName: "tachyon", workspaceRoot: "/w", wsHash: "abc", bridgeUrl: "" },
     agents: [],
@@ -90,14 +90,14 @@ describe("Overview's pending-approval counter (t-d85857)", () => {
       buildApprovalViewModel({ workspaceRoot: root, folder: "tachyon", wsHash: "abc" }).approvals.map((item) => item.id),
     );
 
-    const model = buildCockpitModel([bundle(rows)], { section: "overview" });
+    const model = buildSectionsModel([bundle(rows)], { section: "overview" });
     expect(model.overview.approvalsPending).toBe(3);
   });
 
   it("reports zero only when nothing is pending", () => {
     const empty = workspace();
     expect(pendingApprovalRows(empty)).toEqual([]);
-    expect(buildCockpitModel([bundle(pendingApprovalRows(empty))], { section: "overview" }).overview.approvalsPending).toBe(0);
+    expect(buildSectionsModel([bundle(pendingApprovalRows(empty))], { section: "overview" }).overview.approvalsPending).toBe(0);
 
     const resolvedOnly = workspace();
     // Pre-change bytes, kept deliberately — same reasoning as the record in the first case above.

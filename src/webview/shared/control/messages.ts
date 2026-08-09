@@ -1,4 +1,4 @@
-import type { CockpitModel, CockpitSectionId } from "../../../cockpit/model.js";
+import type { SectionsModel, SectionId } from "../../../sections/model.js";
 import { READY } from "../ready.js";
 
 export const INIT = "init" as const;
@@ -238,7 +238,7 @@ export type CockpitAction =
   | { type: "openSettings" }
   | { type: "openPersonalCardTemplate" }
   | { type: "openDoctor" }
-  | { type: "setSection"; section: CockpitSectionId }
+  | { type: "setSection"; section: SectionId }
   /** t-d16a39 — shell-level workspace scope. t-72ff5a — always a real wsHash: the "all workspaces"
    *  aggregate was removed when the selection moved to the sidebar chrome and began to scope its tabs. */
   | { type: "switchControlWorkspace"; wsHash: string }
@@ -309,7 +309,7 @@ export type CockpitAction =
   | { type: "openProjectHandoff" }
   ;
 
-/** Ephemeral pair offer — not part of the polled CockpitModel. */
+/** Ephemeral pair offer — not part of the polled SectionsModel. */
 export type CompanionPairOffer =
   | {
       ok: true;
@@ -334,7 +334,7 @@ export type CompanionPairOffer =
 
 export type CockpitHostMessage =
   | { type: typeof INIT; strings: CockpitStrings }
-  | { type: typeof MODEL; model: CockpitModel }
+  | { type: typeof MODEL; model: SectionsModel }
   /** Product toast (t-963b66). `tone` optional for back-compat (defaults to info). */
   | { type: "toast"; text: string; tone?: "info" | "ok" | "warn" | "err"; context?: string }
   | { type: "companionPairOffer"; offer: CompanionPairOffer }
@@ -366,7 +366,7 @@ export const refreshAction = (): CockpitAction => ({ type: "refresh" });
 export const copyDiagnosticsAction = (): CockpitAction => ({ type: "copyDiagnostics" });
 export const openSettingsAction = (): CockpitAction => ({ type: "openSettings" });
 export const openDoctorAction = (): CockpitAction => ({ type: "openDoctor" });
-export const setSectionAction = (section: CockpitSectionId): CockpitAction => ({ type: "setSection", section });
+export const setSectionAction = (section: SectionId): CockpitAction => ({ type: "setSection", section });
 export const navigateReturnAction = (routeKey: string): CockpitAction => ({ type: "navigateReturn", routeKey });
 export const navigateStudioParentAction = (routeKey: string): CockpitAction => ({ type: "navigateStudioParent", routeKey });
 /**
@@ -471,7 +471,7 @@ export const studioNavCheckpointAckAction = (txnId: string, dirty: boolean, edit
 });
 
 export const initMessage = (strings: CockpitStrings): CockpitHostMessage => ({ type: INIT, strings });
-export const modelMessage = (model: CockpitModel): CockpitHostMessage => ({ type: MODEL, model });
+export const modelMessage = (model: SectionsModel): CockpitHostMessage => ({ type: MODEL, model });
 /** Host → webview product toast. Prefer tone: err on failures, ok on success. */
 export const toastMessage = (
   text: string,

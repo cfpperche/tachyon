@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { buildCockpitModel, collectNeedsFor, type CockpitWorkspaceBundle } from "../cockpit/model.js";
+import { buildSectionsModel, collectNeedsFor, type WorkspaceBundle } from "../sections/model.js";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
@@ -9,7 +9,7 @@ export const WORKTREES_VIEW_TYPE = "tachyonWorktrees";
 type WorktreesRefreshKind = "worktrees";
 
 export interface WorktreesDeps {
-  collect: (needs?: ReturnType<typeof collectNeedsFor>) => Promise<CockpitWorkspaceBundle[]>;
+  collect: (needs?: ReturnType<typeof collectNeedsFor>) => Promise<WorkspaceBundle[]>;
   revealPath(path: string): void;
   remove(id: string, deleteBranch: boolean, wsHash: string): Promise<string | undefined>;
   forget(id: string, wsHash: string): Promise<string | undefined>;
@@ -19,7 +19,7 @@ export interface WorktreesDeps {
 
 /**
  * SDD 485 D6 — Worktrees is a dashboard because its source is project-filtered by
- * `buildCockpitModel(..., { wsHash })`. Actions use the panel's immutable project, never a row-supplied
+ * `buildSectionsModel(..., { wsHash })`. Actions use the panel's immutable project, never a row-supplied
  * fallback, so project A cannot remove a worktree belonging to project B.
  *
  * No legacy standalone id exists: Worktrees was born inside Control, so a new viewType is the honest
@@ -68,7 +68,7 @@ export class WorktreesPanelManager {
   private async send(session: SectionPanelSession<WorktreesRefreshKind>): Promise<void> {
     try {
       const bundles = await this.deps.collect(collectNeedsFor("worktrees"));
-      session.post(worktreesModelMessage(buildCockpitModel(bundles, {
+      session.post(worktreesModelMessage(buildSectionsModel(bundles, {
         section: "worktrees",
         wsHash: session.target.project,
       })));

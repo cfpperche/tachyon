@@ -6,7 +6,7 @@ import {
   type SectionPanelTarget,
 } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { buildTaskDetailVm, emptyTombstoneVm } from "../cockpit/taskDetailVm.js";
+import { buildTaskDetailVm, emptyTombstoneVm } from "./task-detail/taskDetailVm.js";
 import { taskDocumentModeMessage, taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "./task-detail/messages.js";
 import { READY } from "./shared/ready.js";
 import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
@@ -16,7 +16,7 @@ import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
 import { TaskStudioAdapter } from "./TaskStudioAdapter.js";
 import { decodeStudioMessage, envelope } from "./shared/studio/protocol.js";
 import { mapUnknownError } from "./shared/studio/errorTaxonomy.js";
-import { handleTaskStudioDomainMessage } from "../cockpit/taskStudioDomain.js";
+import { handleTaskStudioDomainMessage } from "./task-detail/taskStudioDomain.js";
 import { TaskDocumentEditPolicy, type TaskDocumentDraft } from "./task-detail/editPolicy.js";
 import type { TaskPatch } from "./task-studio/domain.js";
 import { confirmDocumentStudioCancel } from "./shared/studio/documentStudioCancel.js";

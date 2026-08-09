@@ -1,4 +1,4 @@
-import type { CockpitModel } from "../../cockpit/model";
+import type { SectionsModel } from "../../sections/model";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import { EngineLogPanel } from "../shared/control/EngineLogPanel";
 import { Badge, Button, PageChrome } from "../shared/ui";
@@ -86,7 +86,7 @@ function Summary({
 }: {
   s: Strings;
   rows: readonly ControlInspectorWorkspaceRow[];
-  overview: CockpitModel["overview"];
+  overview: SectionsModel["overview"];
   post: (a: SystemAction) => void;
 }) {
   const derived = summariseWorkspaceRows(rows);
@@ -197,7 +197,7 @@ function WorkspaceCard({
  * The summary answers the first half at a glance and the per-workspace card answers "where" without a
  * second navigation. There is no collapse rule, and its absence is a DECISION rather than an omission
  * (t-7b92bd, 2026-08-09): plan.md § D4 proposed collapsing the detail whenever more than one workspace
- * was on screen, and the measurement that killed it is `model.ts`'s own scoping — `buildCockpitModel`
+ * was on screen, and the measurement that killed it is `model.ts`'s own scoping — `buildSectionsModel`
  * filters bundles to the ONE selected workspace, so `control.workspaces` is 0 or 1 and a second card
  * cannot exist. A rule only a test fixture could reach is machinery with no tap; the owner's ruling was
  * to cancel it outright and write it against a real case if multi-scope ever returns.
@@ -209,7 +209,7 @@ export function App({
   setAuto,
   post,
 }: {
-  model?: CockpitModel;
+  model?: SectionsModel;
   strings: Strings;
   auto: boolean;
   setAuto: (value: boolean) => void;

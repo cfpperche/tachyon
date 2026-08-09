@@ -26,7 +26,7 @@ export const DEFAULT_IDLE_NOTIFY_MINUTES = DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_
  * Order = importance / frequency of use for a project sysadmin.
  * No "soon" tabs — every section is a real module page (data and/or deep-link).
  */
-export type CockpitSectionId =
+export type SectionId =
   // SDD 500 — System: one screen for "is Tachyon up and healthy, and if not, where?". `overview` and
   // `engine` below are the two ids it replaced; both still decode and both resolve here
   // (`resolveSectionDestination` in route.ts). They were never two subjects — Overview's counters were
@@ -58,7 +58,7 @@ export type CockpitSectionId =
  * The sections CONTROL ITSELF RENDERS, in product order.
  *
  * SDD 485 C5 — `mission` left this list when the Board became a standalone app. It is still a
- * `CockpitSectionId` and still a decodable route (a persisted pre-485 panel must be READABLE so it can be
+ * `SectionId` and still a decodable route (a persisted pre-485 panel must be READABLE so it can be
  * redirected rather than silently mistaken for something else), and it is still a launcher tile — but the
  * tile opens the app, and Control has no renderer for it. This is the shape Phase D repeats: a migrated
  * section moves from here to the compatibility list below, and its tile's destination changes.
@@ -71,7 +71,7 @@ export type CockpitSectionId =
  * both route kinds redirect (see `navigate()` in Cockpit.ts). D10 — `settings` likewise remains
  * decodable solely so old state and deep links can redirect to its standalone app.
  */
-export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
+export const COCKPIT_SECTION_ORDER: SectionId[] = [
 ];
 
 /**
@@ -82,7 +82,7 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
  * entries are what let a persisted or deep-linked `section:<id>` still DECODE, so it can be redirected to
  * the app instead of falling back to Overview and losing which screen the human had.
  */
-export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
+export const COCKPIT_SECTION_IDS: SectionId[] = [
   ...COCKPIT_SECTION_ORDER,
   // SDD 500 — `system` is the live destination; `overview` and `engine` below it are compatibility
   // ids for exactly the reason this list exists. `overview` in particular is the default fallback at
@@ -104,7 +104,7 @@ export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   "validations",
 ];
 
-export interface CockpitAgentRow {
+export interface AgentRow {
   name: string;
   kind?: string;
   running: boolean;
@@ -119,7 +119,7 @@ export interface CockpitAgentRow {
   wsHash?: string;
 }
 
-export interface CockpitWorktreeRow {
+export interface WorktreeRow {
   id: string;
   kind: string;
   path: string;
@@ -133,7 +133,7 @@ export interface CockpitWorktreeRow {
   tachyonCreatedBranch?: boolean;
   /**
    * spec 444 — fail-closed hygiene classification (see `src/worktree/classify.ts`). Computed
-   * host-side in `CockpitDeps.collect()` before this row reaches `buildCockpitModel` (a pure,
+   * host-side in `CockpitDeps.collect()` before this row reaches `buildSectionsModel` (a pure,
    * synchronous composer — classification itself requires async git probes, so it is never
    * computed here). Absent only for a row sourced from the fail-closed `disk.ts` fallback path
    * (the classifier itself threw); the client must never treat "absent" as "safe".
@@ -165,7 +165,7 @@ export interface CockpitWorktreeRow {
  * override quietly contradicting the project's template, which is indistinguishable from a broken
  * project template until something says which one the cards are actually using.
  */
-export interface CockpitCardTemplateState {
+export interface CardTemplateState {
   /** the personal override in the global Tachyon settings file: absent, in effect, or refused */
   personal: "none" | "active" | "refused";
   /** why it was refused — the same diagnostics the sidebar banner shows, from the same validator */
@@ -174,14 +174,14 @@ export interface CockpitCardTemplateState {
   projects: Array<{ folder: string; configured: boolean; refused: boolean }>;
 }
 
-export interface CockpitApprovalRow {
+export interface ApprovalRow {
   id: string;
   status?: string;
   title?: string;
 }
 
 /** SDD 414 — one paired Companion client row (Control → Connected devices). */
-export interface CockpitCompanionDevice {
+export interface CompanionDevice {
   id: string;
   kind: string;
   name: string;
@@ -192,7 +192,7 @@ export interface CockpitCompanionDevice {
 }
 
 /** SDD 414 — Companion tab tools (Bridge list opt-in) + devices for Control Settings. */
-export interface CockpitCompanionSettings {
+export interface CompanionSettings {
   wsHash: string;
   folderName: string;
   /** settings.companion.tabTools — tools listed on Bridge when true. */
@@ -207,14 +207,14 @@ export interface CockpitCompanionSettings {
   baseUrl?: string;
   engineLabel?: string;
   /** 0–1 today; array-shaped for multi-device later. */
-  devices: CockpitCompanionDevice[];
+  devices: CompanionDevice[];
 }
 
 /**
  * SDD 488 F4 — Integrated Browser GA gate for Control Settings.
  * Human surface + call-time; ide_browser_* stay listed on the Bridge.
  */
-export interface CockpitIdeBrowserSettings {
+export interface IdeBrowserSettings {
   wsHash: string;
   folderName: string;
   /** settings.ideBrowser.enabled — status bar + bridge start + call-time execution. */
@@ -235,7 +235,7 @@ export interface CockpitIdeBrowserSettings {
  * The needs are derived from the section being rendered, never stored, so there is one authority for
  * "what does this view consume" and no cache to invalidate.
  */
-export interface CockpitCollectNeeds {
+export interface SectionCollectNeeds {
   worktrees: boolean;
 }
 
@@ -249,28 +249,28 @@ export interface CockpitCollectNeeds {
 const SECTIONS_NEEDING_WORKTREES = new Set(["system", "overview", "worktrees"]);
 
 /** What a given section needs. Unknown sections get nothing expensive — they render without it. */
-export function collectNeedsFor(section: string): CockpitCollectNeeds {
+export function collectNeedsFor(section: string): SectionCollectNeeds {
   return { worktrees: SECTIONS_NEEDING_WORKTREES.has(section) };
 }
 
 /** Everything. For diagnostics dumps, which are explicitly a full picture of the world. */
-export const COLLECT_EVERYTHING: CockpitCollectNeeds = { worktrees: true };
+export const COLLECT_EVERYTHING: SectionCollectNeeds = { worktrees: true };
 
-export interface CockpitWorkspaceBundle {
+export interface WorkspaceBundle {
   control: ControlInspectorWorkspaceInput;
-  agents: CockpitAgentRow[];
+  agents: AgentRow[];
   /**
    * t-af3eef — ABSENT means "not collected for this view", never "none exist". The distinction is the
    * same one `worktreesUnavailable` already draws: this file's own comment on the validation slice
    * says absent means not collected, and a silent empty list is exactly the lie that convention
    * exists to prevent.
    */
-  worktrees?: CockpitWorktreeRow[];
+  worktrees?: WorktreeRow[];
   /** spec 444 — the classified engine read failed (engine unreachable). The tab shows an honest
    *  error state for this workspace instead of unverified raw rows. */
   worktreesUnavailable?: string;
   /** t-af3eef — absent means "not collected for this view", never "none". See `worktrees` above. */
-  approvals: CockpitApprovalRow[];
+  approvals: ApprovalRow[];
   /**
    * t-e76acc — validations still awaiting a HUMAN in this workspace, counted host-side with the very
    * predicate the Inbox list uses (`validationAwaitsHuman`). A number, not rows: Overview only counts
@@ -284,7 +284,7 @@ export interface CockpitWorkspaceBundle {
   /** SDD 479 phase 5 — does THIS folder's tachyon.yml write a card template, and was it honored? */
   cardTemplate?: { configured: boolean; refused: boolean };
   tmux?: { state: string; version?: string };
-  companion?: Omit<CockpitCompanionSettings, "wsHash" | "folderName">;
+  companion?: Omit<CompanionSettings, "wsHash" | "folderName">;
   /** SDD 488 F4 — settings.ideBrowser.enabled for Control Settings (absent on older engines). */
   ideBrowser?: { enabled: boolean };
   /**
@@ -297,10 +297,10 @@ export interface CockpitWorkspaceBundle {
   idleAfterMinutes?: number | "never";
 }
 
-export interface CockpitModel {
+export interface SectionsModel {
   checkedAt: string;
   /** Which NAV TAB reads as active (a subroute's parent section, e.g. task-detail -> "mission"). */
-  section: CockpitSectionId;
+  section: SectionId;
   /**
    * t-610705 (Phase C.1) — the exact route being rendered, when it's more specific than the bare
    * section (a subroute). Undefined for a plain section route — the client's existing `section`
@@ -308,7 +308,7 @@ export interface CockpitModel {
    * Attached by Cockpit.ts's sendModel() (this pure builder stays route-shape-agnostic); import is
    * type-only, so there is no runtime coupling to route.ts.
    */
-  activeRoute?: import("./route.js").CockpitRoute;
+  activeRoute?: import("./route.js").ProductRoute;
   /**
    * t-610705 (Phase D, D0) — the CURRENT studio binding's host-issued mount nonce, present only
    * when `activeRoute` is a studio-new/studio-edit route AND the host has a live binding for it.
@@ -362,14 +362,14 @@ export interface CockpitModel {
     worktreesActive: number;
     bridges: Array<{ folder: string; url: string; port?: number; ok: boolean }>;
   };
-  fleet: CockpitAgentRow[];
-  worktrees: CockpitWorktreeRow[];
+  fleet: AgentRow[];
+  worktrees: WorktreeRow[];
   /** t-af3eef — false when this view never asked for the classified read, so an empty `worktrees`
    *  means "not collected" rather than "none exist". The counters below are omitted in that case. */
   worktreesCollected: boolean;
   /** spec 444 — folders whose classified worktree read failed (engine unreachable), with reasons. */
   worktreesUnavailable?: Array<{ folder: string; reason: string }>;
-  approvals: CockpitApprovalRow[];
+  approvals: ApprovalRow[];
   tmux: Array<{ folder: string; state: string; version?: string }>;
   /**
    * Companion settings for the scoped workspace.
@@ -377,32 +377,32 @@ export interface CockpitModel {
    * is attached, so this is undefined only when none is. `companionNeedsWorkspacePick` below is kept
    * as the guard for that branch ever firing again, not as a state the model can still reach.
    */
-  companion?: CockpitCompanionSettings;
+  companion?: CompanionSettings;
   /** True when multiple workspaces are in scope and none is selected for Companion settings. */
   companionNeedsWorkspacePick?: boolean;
   /**
    * SDD 488 F4 — Integrated Browser enable gate for the scoped workspace (Control → Settings).
    * Same single-workspace scoping as companion.
    */
-  ideBrowser?: CockpitIdeBrowserSettings;
+  ideBrowser?: IdeBrowserSettings;
   /**
    * t-585d5c — the idle-notification threshold for the scoped workspace (Control -> Settings).
    * Scoped exactly like `companion`: the setting is per folder, so with several roots in view there
    * is no single value to show and none to write back.
    */
   idleNotify?: { wsHash: string; folderName: string; configured?: number | "never"; defaultMinutes: number };
-  /** SDD 479 phase 5 — see CockpitCardTemplateState. */
-  cardTemplate?: CockpitCardTemplateState;
+  /** SDD 479 phase 5 — see CardTemplateState. */
+  cardTemplate?: CardTemplateState;
   /**
    * t-aaad95 — the per-person, per-machine half of Tachyon's settings, read from the global Tachyon
    * file. It arrives as an option rather than as bundle data for the same reason `cardTemplate` does:
    * it belongs to one person on one machine, not to any workspace, and it must answer with zero
    * workspaces open.
    */
-  globalSettings?: CockpitGlobalSettingsState;
+  globalSettings?: GlobalSettingsState;
 }
 
-export interface CockpitGlobalSettingsState {
+export interface GlobalSettingsState {
   /** the hand-editable path, shown verbatim because it is also the documented recovery surface */
   file: string;
   activityCodeTheme: "auto" | "dark" | "light";
@@ -414,10 +414,10 @@ export interface CockpitGlobalSettingsState {
   refusal?: string[];
 }
 
-export function buildCockpitModel(
-  bundles: CockpitWorkspaceBundle[],
+export function buildSectionsModel(
+  bundles: WorkspaceBundle[],
   opts?: {
-    section?: CockpitSectionId;
+    section?: SectionId;
     nowIso?: string;
     wsHash?: string;
     /**
@@ -427,10 +427,10 @@ export function buildCockpitModel(
      * machine: no workspace owns it, and no engine should ever project it.
      */
     personalCardTemplate?: { state: "none" | "active" | "refused"; errors?: string[] },
-    /** t-aaad95 — the global Tachyon settings file's current state; see CockpitGlobalSettingsState. */
-    globalSettings?: CockpitGlobalSettingsState,
+    /** t-aaad95 — the global Tachyon settings file's current state; see GlobalSettingsState. */
+    globalSettings?: GlobalSettingsState,
   },
-): CockpitModel {
+): SectionsModel {
   // t-d16a39 — the shell-level workspace scope: every aggregate section (overview/engine/fleet/
   // worktrees/tmux) narrows to the selected bundle. The selector list itself always spans ALL
   // bundles, never the filtered set.
@@ -487,9 +487,9 @@ export function buildCockpitModel(
   const inboxPending = approvalsPending + validationsAwaitingHuman;
 
   // Companion tabTools UI needs exactly one workspace in scope.
-  let companion: CockpitCompanionSettings | undefined;
+  let companion: CompanionSettings | undefined;
   let companionNeedsWorkspacePick = false;
-  let ideBrowser: CockpitIdeBrowserSettings | undefined;
+  let ideBrowser: IdeBrowserSettings | undefined;
   if (scoped.length === 1) {
     const b = scoped[0]!;
     companion = {
@@ -523,7 +523,7 @@ export function buildCockpitModel(
     : undefined;
 
   // SDD 479 phase 5 — the two homes side by side, so the block can say which one the cards use.
-  const cardTemplate: CockpitCardTemplateState = {
+  const cardTemplate: CardTemplateState = {
     personal: opts?.personalCardTemplate?.state ?? "none",
     ...(opts?.personalCardTemplate?.errors?.length ? { personalErrors: opts.personalCardTemplate.errors } : {}),
     projects: scoped.map((b) => ({
@@ -572,7 +572,7 @@ export function buildCockpitModel(
   };
 }
 
-export function formatCockpitDiagnostics(model: CockpitModel): string {
+export function formatSectionsDiagnostics(model: SectionsModel): string {
   return [
     "Tachyon Control (desktop — editor sysadmin; VS Code sidebar unchanged)",
     `section: ${model.section}`,

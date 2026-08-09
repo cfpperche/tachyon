@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 
 export interface TrustedPanelState {
-  // t-610705 (Phase C.0) — Cockpit's persisted state carries schemaVersion 2 (a CockpitRoute
+  // t-610705 (Phase C.0) — Cockpit's persisted state carries schemaVersion 2 (a ProductRoute
   // instead of a bare section); every other panel type still only ever writes 1. Widened here
   // rather than per-type: `view` already scopes each deserializer to its own viewType, so this
   // union only ever matters for the one view that actually writes 2.

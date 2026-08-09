@@ -9,12 +9,12 @@ import {
   decodeRoute,
   decodePanelState,
   isStudioRoute,
-  type CockpitRoute,
+  type ProductRoute,
   type CockpitNonStudioRoute,
-} from "../../src/cockpit/route.js";
-import { COCKPIT_SECTION_ORDER } from "../../src/cockpit/model.js";
-import { resolveCockpitSection } from "../../src/cockpit/resolveSection.js";
-import { STUDIO_IDS } from "../../src/cockpit/studioIds.js";
+} from "../../src/sections/route.js";
+import { COCKPIT_SECTION_ORDER } from "../../src/sections/model.js";
+import { resolveSection } from "../../src/sections/resolveSection.js";
+import { STUDIO_IDS } from "../../src/webview/shared/studio/studioIds.js";
 
 describe("routes.section / routeKey / formatRoute", () => {
   it("builds a section route and derives its key + display string", () => {
@@ -37,8 +37,8 @@ describe("retired per-kind navigation compatibility", () => {
   it("keeps Approvals and Validations as deep-link targets without top-level tabs", () => {
     expect(COCKPIT_SECTION_ORDER).not.toContain("approvals");
     expect(COCKPIT_SECTION_ORDER).not.toContain("validations");
-    expect(resolveCockpitSection("approvals")).toBe("approvals");
-    expect(resolveCockpitSection("validations")).toBe("validations");
+    expect(resolveSection("approvals")).toBe("approvals");
+    expect(resolveSection("validations")).toBe("validations");
   });
 });
 
@@ -154,7 +154,7 @@ describe("studio-new / studio-edit (t-610705 Phase D, D0)", () => {
   });
 
   it("task's parent/nav: new falls back to mission (unreachable in practice), edit goes to the specific task-detail subroute (t-610705 Phase D, D2)", () => {
-    const fresh: CockpitRoute = { kind: "studio-new", studio: "task", wsHash: "ws-1", returnRoute: null };
+    const fresh: ProductRoute = { kind: "studio-new", studio: "task", wsHash: "ws-1", returnRoute: null };
     expect(parentRoute(fresh)).toEqual({ kind: "section", section: "mission" });
     expect(navSection(fresh)).toBe("mission");
 
@@ -301,11 +301,11 @@ describe("pin's nav-less returnRoute (t-610705 Phase D, D3)", () => {
 });
 
 describe("exhaustiveness seam (route.ts's core promise, not yet load-bearing)", () => {
-  it("every CockpitRoute kind literal is handled by routeKey/parentRoute/refreshPolicy/formatRoute", () => {
+  it("every ProductRoute kind literal is handled by routeKey/parentRoute/refreshPolicy/formatRoute", () => {
     // Only one kind exists today, so these are straight-line functions, not a real exhaustive
     // switch — see route.ts's comment above each. The FIRST time C.1 adds a second kind, convert
     // to switch + `default: assertNever(route)` so a missed case fails `npx tsc`, not this test.
-    const r: CockpitRoute = routes.section("overview");
+    const r: ProductRoute = routes.section("overview");
     expect(() => routeKey(r)).not.toThrow();
     expect(() => parentRoute(r)).not.toThrow();
     expect(() => refreshPolicy(r)).not.toThrow();

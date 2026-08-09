@@ -77,7 +77,7 @@ describe("the global workspace scope has exactly one control (SDD 485 C6, revise
       expect(code(readFileSync(file, "utf8")), path.relative(WEBVIEW, file)).not.toContain("All workspaces");
     }
     // …and the model no longer produces the state either: an unset scope resolves to a real project.
-    const model = readFileSync(path.resolve(WEBVIEW, "..", "cockpit", "model.ts"), "utf8");
+    const model = readFileSync(path.resolve(WEBVIEW, "..", "sections", "model.ts"), "utf8");
     expect(model).toContain("const selected = requested ?? workspaces[0]?.hash;");
   });
 

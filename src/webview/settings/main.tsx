@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { CockpitModel } from "../../cockpit/model";
+import type { SectionsModel } from "../../sections/model";
 import { CardTemplateBlock } from "../shared/control/CardTemplateBlock";
 import { formatCompanionPairClipboard, openGlobalSettingsFileAction, openPersonalCardTemplateAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings, type CompanionPairOffer } from "../shared/control/messages";
 import { Button, PageChrome } from "../shared/ui";
@@ -79,7 +79,7 @@ function GlobalSettingsBlock({
   onPost,
 }: {
   s: CockpitStrings;
-  settings: CockpitGlobalSettingsState;
+  settings: GlobalSettingsState;
   onPost: (action: CockpitAction) => void;
 }) {
   const [gitPath, setGitPath] = useState(settings.gitPath);
@@ -179,7 +179,7 @@ function IdleNotifyField({
   onSave,
 }: {
   s: CockpitStrings;
-  idle: NonNullable<CockpitModel["idleNotify"]>;
+  idle: NonNullable<SectionsModel["idleNotify"]>;
   onSave: (wsHash: string, minutes?: number | "never") => void;
 }) {
   const off = idle.configured === "never";
@@ -424,7 +424,7 @@ function CompanionPairOfferCard({
 
 
 
-export interface SettingsAppProps { model: CockpitModel; strings: CockpitStrings; pairOffer?: CompanionPairOffer; post: (action: CockpitAction | SettingsAction) => void; }
+export interface SettingsAppProps { model: SectionsModel; strings: CockpitStrings; pairOffer?: CompanionPairOffer; post: (action: CockpitAction | SettingsAction) => void; }
 export function SettingsApp({ model: m, strings: s, pairOffer, post }: SettingsAppProps) {
   const p = { onOpenDoctor: () => post({type:"openDoctor"}), onOpenSettings: () => post({type:"openGlobalSettingsFile"}), onOpenConfigFile: (wsHash?: string) => post({type:"openConfigFile",wsHash}), onPost: post, onSetIdleAfterMinutes: (wsHash:string,minutes?:number|"never") => post({type:"setIdleAfterMinutes",wsHash,minutes}), onSetCompanionTabTools:(wsHash:string,enabled:boolean)=>post({type:"setCompanionTabTools",wsHash,enabled}), onSetIdeBrowserEnabled:(wsHash:string,enabled:boolean)=>post({type:"setIdeBrowserEnabled",wsHash,enabled}), onSetCompanionAllowedHosts:(wsHash:string,hosts:string[])=>post({type:"setCompanionAllowedHosts",wsHash,hosts}), onIssueCompanionPairCode:(wsHash:string)=>post({type:"issueCompanionPairCode",wsHash}), onCopyText:(text:string)=>post({type:"copyText",text}), onUnpairCompanionDevice:(wsHash:string,deviceId:string)=>post({type:"unpairCompanionDevice",wsHash,deviceId}), companionPairOffer: pairOffer };
     const companion = m.companion;
@@ -661,5 +661,5 @@ declare function acquireVsCodeApi(): TachyonVsCodeApi;
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
 persistWebviewState(vscode);
 const post = (message: CockpitAction | SettingsAction) => vscode ? vscode.postMessage(message) : window.postMessage(message, "*");
-export function SettingsRoot() { const [model,setModel]=useState<CockpitModel>(); const [pairOffer,setPairOffer]=useState<CompanionPairOffer>(); const strings=(window as any).__TACHYON_STRINGS__ as CockpitStrings; useEffect(()=>{ const onMessage=(e:MessageEvent)=>{if(e.data?.type===MODEL)setModel(e.data.model);if(e.data?.type===pairOfferMessageType)setPairOffer(e.data.offer)}; window.addEventListener("message",onMessage); post(readyMessage()); const timer=setInterval(()=>post(pollSettingsAction()),3000); return()=>{clearInterval(timer);window.removeEventListener("message",onMessage)}},[]); return model?<main class="ds-page"><SettingsApp model={model} strings={strings} pairOffer={pairOffer} post={post}/></main>:null; }
+export function SettingsRoot() { const [model,setModel]=useState<SectionsModel>(); const [pairOffer,setPairOffer]=useState<CompanionPairOffer>(); const strings=(window as any).__TACHYON_STRINGS__ as CockpitStrings; useEffect(()=>{ const onMessage=(e:MessageEvent)=>{if(e.data?.type===MODEL)setModel(e.data.model);if(e.data?.type===pairOfferMessageType)setPairOffer(e.data.offer)}; window.addEventListener("message",onMessage); post(readyMessage()); const timer=setInterval(()=>post(pollSettingsAction()),3000); return()=>{clearInterval(timer);window.removeEventListener("message",onMessage)}},[]); return model?<main class="ds-page"><SettingsApp model={model} strings={strings} pairOffer={pairOffer} post={post}/></main>:null; }
 const root=document.getElementById("root"); if(root) render(<ErrorBoundary><SettingsRoot/></ErrorBoundary>,root);

@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { CockpitModel } from "../../cockpit/model";
+import type { SectionsModel } from "../../sections/model";
 import type { CockpitStrings } from "../shared/control/messages";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
@@ -13,7 +13,7 @@ persistWebviewState(vscode);
 const post = (message: SystemAction) => vscode ? vscode.postMessage(message) : window.postMessage(message, "*");
 
 function Root() {
-  const [model, setModel] = useState<CockpitModel>();
+  const [model, setModel] = useState<SectionsModel>();
   // Overview's auto-refresh toggle, kept: Engine polled unconditionally, so the union of the two is the
   // one that can be turned OFF (spec.md § Acceptance — every action both pages carried is reachable).
   const [auto, setAuto] = useState(true);

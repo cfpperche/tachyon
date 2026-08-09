@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState, type SectionPanelTarget } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { buildBoardVm, BoardAgentLists } from "../cockpit/boardVm.js";
+import { buildBoardVm, BoardAgentLists } from "./board/boardVm.js";
 import { READY, snapshotMessage, taskErrorMessage, type BoardAction } from "./board/messages.js";
 import type { WorkspaceBoardTarget } from "../shell/BoardTarget.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
@@ -55,7 +55,7 @@ export class BoardPanelManager {
   private readonly manager: SectionPanelManager<BoardRefreshKind>;
   /**
    * The bounded/coalesced agent-liveness pass, moved no further than it had to be. It landed in
-   * `src/cockpit/boardVm.ts` when SDD 410 retired the old standalone panel, and it is a pure function of a
+   * `src/webview/board/boardVm.ts` when SDD 410 retired the old standalone panel, and it is a pure function of a
    * workspace target with no Control anywhere in it — so it comes back to a standalone host by IMPORT rather
    * than by being moved a second time. One instance per manager: it coalesces per wsHash, so it is the two
    * project panels that would otherwise duplicate a request which share one.

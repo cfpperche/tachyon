@@ -5,7 +5,7 @@ import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
-import { buildCockpitModel, type CockpitWorkspaceBundle, type CockpitWorktreeRow } from "../../src/cockpit/model.js";
+import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "../../src/sections/model.js";
 import { landSuggestion, type LandFacts } from "../../src/worktree/land.js";
 
 /**
@@ -60,7 +60,7 @@ const UNLANDED = {
   trunkRef: "main",
 };
 
-function row(id: string, land: CockpitWorktreeRow["land"]): CockpitWorktreeRow {
+function row(id: string, land: WorktreeRow["land"]): WorktreeRow {
   return {
     id,
     kind: "change",
@@ -76,7 +76,7 @@ function row(id: string, land: CockpitWorktreeRow["land"]): CockpitWorktreeRow {
   };
 }
 
-function bundle(worktrees: CockpitWorktreeRow[]): CockpitWorkspaceBundle {
+function bundle(worktrees: WorktreeRow[]): WorkspaceBundle {
   return {
     control: {
       folderName: "tachyon",
@@ -87,7 +87,7 @@ function bundle(worktrees: CockpitWorktreeRow[]): CockpitWorkspaceBundle {
       agents: { total: 0, running: 0 },
       authConfigured: "unknown",
       notes: [],
-    } as CockpitWorkspaceBundle["control"],
+    } as WorkspaceBundle["control"],
     agents: [],
     worktrees,
     approvals: [],
@@ -129,7 +129,7 @@ describe("t-7cb971 land suggestion headless Visual QA", () => {
   it("the command is readable in full and the verdict is legible at 880 and 360", async () => {
     const html = renderStatic(App({
       strings: fixtureStrings,
-      model: buildCockpitModel([bundle([
+      model: buildSectionsModel([bundle([
         row("fleet-ui", landSuggestion(READY)),
         row("t-7cb971", landSuggestion({ ...READY, verified: null, trunkIsAncestorOfHead: false })),
       ])], { section: "worktrees", wsHash: "b349073a" }),

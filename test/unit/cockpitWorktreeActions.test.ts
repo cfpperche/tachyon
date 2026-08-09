@@ -3,7 +3,7 @@ import { Uri } from "vscode";
 import { __createdPanels, __getWarningMessageCalls, __resetVscodeMock } from "../mocks/vscode.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager, type WorktreesDeps } from "../../src/webview/WorktreesPanel.js";
 import { readyMessage } from "../../src/webview/worktrees/messages.js";
-import type { CockpitWorkspaceBundle, CockpitWorktreeRow } from "../../src/cockpit/model.js";
+import type { WorkspaceBundle, WorktreeRow } from "../../src/sections/model.js";
 
 /**
  * SDD 485 D6 — retargeted from Control's retired Worktrees handler to the standalone dashboard host.
@@ -18,7 +18,7 @@ afterEach(() => {
   for (const panel of __createdPanels) if (!panel.disposed) panel.dispose();
 });
 
-function row(wsHash: string, id: string): CockpitWorktreeRow {
+function row(wsHash: string, id: string): WorktreeRow {
   return {
     id,
     kind: "change",
@@ -39,7 +39,7 @@ function row(wsHash: string, id: string): CockpitWorktreeRow {
   };
 }
 
-function bundle(wsHash: string, worktree: CockpitWorktreeRow): CockpitWorkspaceBundle {
+function bundle(wsHash: string, worktree: WorktreeRow): WorkspaceBundle {
   return {
     control: {
       folderName: wsHash,
@@ -48,7 +48,7 @@ function bundle(wsHash: string, worktree: CockpitWorktreeRow): CockpitWorkspaceB
       bridgeUrl: "http://127.0.0.1:1",
       identity: null,
       notes: [],
-    } as CockpitWorkspaceBundle["control"],
+    } as WorkspaceBundle["control"],
     agents: [],
     worktrees: [worktree],
     approvals: [],

@@ -14,7 +14,7 @@ import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
-import { buildCockpitModel, type CockpitWorkspaceBundle, type CockpitWorktreeRow } from "../../src/cockpit/model.js";
+import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "../../src/sections/model.js";
 import { landSuggestion, type LandFacts } from "../../src/worktree/land.js";
 
 const SHELL_TSX = path.join(__dirname, "../../src/webview/worktrees/App.tsx");
@@ -49,7 +49,7 @@ const UNLANDED = {
   trunkRef: "main",
 };
 
-function row(over: Partial<CockpitWorktreeRow> = {}): CockpitWorktreeRow {
+function row(over: Partial<WorktreeRow> = {}): WorktreeRow {
   return {
     id: "mw-change-x",
     kind: "change",
@@ -66,7 +66,7 @@ function row(over: Partial<CockpitWorktreeRow> = {}): CockpitWorktreeRow {
   };
 }
 
-function bundle(worktrees: CockpitWorktreeRow[]): CockpitWorkspaceBundle {
+function bundle(worktrees: WorktreeRow[]): WorkspaceBundle {
   return {
     control: {
       folderName: "tachyon",
@@ -77,7 +77,7 @@ function bundle(worktrees: CockpitWorktreeRow[]): CockpitWorkspaceBundle {
       agents: { total: 0, running: 0 },
       authConfigured: "unknown",
       notes: [],
-    } as CockpitWorkspaceBundle["control"],
+    } as WorkspaceBundle["control"],
     agents: [],
     worktrees,
     approvals: [],
@@ -90,10 +90,10 @@ describe("t-7cb971 — the land suggestion on a Worktrees row", () => {
     Shell = (await loadWebviewModule(SHELL_TSX, { packageResolution: true })).App as (props: unknown) => unknown;
   });
 
-  const renderWith = (rows: CockpitWorktreeRow[], post: (a: unknown) => void = () => {}): string =>
+  const renderWith = (rows: WorktreeRow[], post: (a: unknown) => void = () => {}): string =>
     renderStatic(Shell({
       strings: fixtureStrings,
-      model: buildCockpitModel([bundle(rows)], { section: "worktrees", wsHash: "h" }),
+      model: buildSectionsModel([bundle(rows)], { section: "worktrees", wsHash: "h" }),
       post,
     }));
 

@@ -7,7 +7,7 @@ import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js"
 import { ControlWorkspaceScope, controlWorkspaceScope } from "../../src/webview/shared/ControlWorkspaceScope.js";
 import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
 import { SAMPLE, TABS, type FleetVM, type TabId } from "../../src/sidebar/types.js";
-import { buildCockpitModel } from "../../src/cockpit/model.js";
+import { buildSectionsModel } from "../../src/sections/model.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 
@@ -298,7 +298,7 @@ describe("t-72ff5a — every door onto the selection resolves to an attached pro
     });
     const bundles = [bundle("hash-alpha", "Alpha"), bundle("hash-beta", "Beta")];
     for (const scope of [undefined, "hash-gone"]) {
-      const model = buildCockpitModel(bundles as never, { section: "overview", ...(scope ? { wsHash: scope } : {}), nowIso: "now" });
+      const model = buildSectionsModel(bundles as never, { section: "overview", ...(scope ? { wsHash: scope } : {}), nowIso: "now" });
       expect(model.selectedWsHash, `scope=${scope}`).toBe("hash-alpha");
     }
     // and the extension's own readers fall through to the same first project

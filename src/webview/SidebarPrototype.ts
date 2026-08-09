@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
 import { isAgentRow, type FleetVM, type AgentVM } from "../sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
-import { isCockpitSectionId } from "../cockpit/resolveSection.js";
+import { isSectionId } from "../sections/resolveSection.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";
@@ -314,7 +314,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
    * is the cheap version of finding it.
    *
    * Agreement with the rest of the window comes from the RULE being shared instead: an unresolvable
-   * scope resolves to the first attached project here, in `buildCockpitModel` (`workspaces[0]`), and
+   * scope resolves to the first attached project here, in `buildSectionsModel` (`workspaces[0]`), and
    * at every `extension.ts` call site (`?? workspaces()[0]`). Same list, same order, same answer — so
    * the sidebar and a Control panel opened from anywhere land on the same project without either one
    * having to write to the other.
@@ -369,7 +369,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       // an unknown id drops to a plain open (overview) instead of reaching the command as-is. The command
       // routes through openCockpit, so an already-open Control NAVIGATES rather than opening a second one.
       if (m.op === "openControl") {
-        return void (isCockpitSectionId(m.sectionId)
+        return void (isSectionId(m.sectionId)
           ? vscode.commands.executeCommand("tachyon.openControl", m.sectionId)
           : vscode.commands.executeCommand("tachyon.openControl"));
       }

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { COCKPIT_SECTION_IDS, collectNeedsFor, type CockpitSectionId } from "../../src/cockpit/model.js";
-import { resolveSectionDestination } from "../../src/cockpit/route.js";
-import { isCockpitSectionId, resolveCockpitSection } from "../../src/cockpit/resolveSection.js";
-import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
+import { COCKPIT_SECTION_IDS, collectNeedsFor, type SectionId } from "../../src/sections/model.js";
+import { resolveSectionDestination } from "../../src/sections/route.js";
+import { isSectionId, resolveSection } from "../../src/sections/resolveSection.js";
+import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
 import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 
@@ -11,14 +11,14 @@ import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
  * SDD 500 S1 — `system` is the destination; `overview` and `engine` keep decoding and resolve to it.
  *
  * The precedent this applies is `fleet` (`sectionNav.ts`'s own comment): an id may leave the launcher
- * while staying a `CockpitSectionId`, because something else still has to be able to READ it. Here the
+ * while staying a `SectionId`, because something else still has to be able to READ it. Here the
  * "something else" is `route.ts`'s eight default fallbacks, which name `"overview"` at the call site by
  * a documented decision — so the id must not stop decoding, and this file is what pins that.
  */
 describe("SDD 500 S1 — overview and engine resolve to system", () => {
   it("system is a section id, and so are the two ids it replaces", () => {
-    for (const id of ["system", "overview", "engine"] satisfies CockpitSectionId[]) {
-      expect(isCockpitSectionId(id), `'${id}' must still decode`).toBe(true);
+    for (const id of ["system", "overview", "engine"] satisfies SectionId[]) {
+      expect(isSectionId(id), `'${id}' must still decode`).toBe(true);
       expect(COCKPIT_SECTION_IDS).toContain(id);
     }
   });
@@ -37,8 +37,8 @@ describe("SDD 500 S1 — overview and engine resolve to system", () => {
   it("an unknown or retired id still lands on a section that exists", () => {
     // spec.md § "the default route survives": the resolver's own fallback is `overview`, which is now an
     // ALIAS rather than a destination — so the two functions have to compose to something renderable.
-    expect(resolveSectionDestination(resolveCockpitSection("nope"))).toBe("system");
-    expect(resolveSectionDestination(resolveCockpitSection(undefined))).toBe("system");
+    expect(resolveSectionDestination(resolveSection("nope"))).toBe("system");
+    expect(resolveSectionDestination(resolveSection(undefined))).toBe("system");
     // `fleet` has no tile and no app (t-5f2b5b) and is not aliased; it falls through to the caller's
     // default, which is the same `overview` -> `system` path.
     expect(resolveSectionDestination("fleet")).toBe("fleet");
@@ -47,7 +47,7 @@ describe("SDD 500 S1 — overview and engine resolve to system", () => {
   it("route.ts's eight default fallbacks are untouched — they still name overview", () => {
     // The whole argument of plan.md § D1: because `overview` keeps decoding, not one of these has to
     // change. If a future edit rewrites them to `system`, that is a different decision and this goes red.
-    const route = readFileSync("src/cockpit/route.ts", "utf8");
+    const route = readFileSync("src/sections/route.ts", "utf8");
     const fallbacks = [...route.matchAll(/section:\s*"overview"/g)].length;
     expect(fallbacks, "the three parentRoute overview fallbacks moved or were rewritten").toBe(3);
     expect(route).toContain('routes.section("overview")');

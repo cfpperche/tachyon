@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { buildCockpitModel, collectNeedsFor, type CockpitModel, type CockpitWorkspaceBundle } from "../cockpit/model.js";
+import { buildSectionsModel, collectNeedsFor, type SectionsModel, type WorkspaceBundle } from "../sections/model.js";
 import { parseCardTemplate } from "../sidebar/cardTemplate.js";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
 import { cockpitStrings } from "./controlStrings.js";
@@ -12,7 +12,7 @@ export const SETTINGS_VIEW_TYPE = "tachyonSettings";
 type RefreshKind = "settings";
 
 export interface SettingsDeps {
-  collect: (needs?: ReturnType<typeof collectNeedsFor>) => Promise<CockpitWorkspaceBundle[]>;
+  collect: (needs?: ReturnType<typeof collectNeedsFor>) => Promise<WorkspaceBundle[]>;
   openDoctor(): void;
   openConfigFile(wsHash?: string): Promise<void>;
   setCompanionTabTools(wsHash: string, enabled: boolean): Promise<void>;
@@ -60,7 +60,7 @@ export class SettingsPanelManager {
     const project = session.target.project;
     if (!project) throw new Error("Settings dashboard has no project");
     const bundles = await this.deps.collect(collectNeedsFor("settings"));
-    session.post(settingsModelMessage(buildCockpitModel(bundles, {
+    session.post(settingsModelMessage(buildSectionsModel(bundles, {
       section: "settings", wsHash: project, personalCardTemplate: personalCardTemplateState(),
       globalSettings: globalSettingsState(),
     })));
@@ -94,7 +94,7 @@ export function settingsRefreshKind(message: unknown): RefreshKind | undefined {
   return type === READY || type === POLL ? "settings" : undefined;
 }
 
-function globalSettingsState(): NonNullable<CockpitModel["globalSettings"]> {
+function globalSettingsState(): NonNullable<SectionsModel["globalSettings"]> {
   const store = sharedGlobalSettings(); const current = store.current(); const refusal = store.refusal();
   return { file: store.file, activityCodeTheme: current.activityCodeTheme, agentPaneEnabled: current.agentPaneEnabled,
     gitPath: current.gitPath, hasCardTemplate: current.sidebarCardTemplate !== undefined,

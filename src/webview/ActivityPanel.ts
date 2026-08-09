@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as vscode from "vscode";
-import { startActivityFeed, type ActivityFeed } from "../cockpit/activityFeed.js";
+import { startActivityFeed, type ActivityFeed } from "./activity/activityFeed.js";
 import { withActivityShareKeys, resolveActivityShare, internalSharePrompt } from "../activity/activityShare.js";
 import type { ActivityViewModel } from "../activity/activityView.js";
 import type { WorkspaceActivityTarget } from "../shell/ActivityTarget.js";

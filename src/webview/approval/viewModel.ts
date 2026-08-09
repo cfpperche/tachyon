@@ -11,7 +11,7 @@ import {
   type ApprovalResolution,
   type ApprovalStatus,
 } from "../../bridge/approvalRequest.js";
-import type { CockpitApprovalRow } from "../../cockpit/model.js";
+import type { ApprovalRow } from "../../sections/model.js";
 
 export interface ApprovalViewItem {
   id: string;
@@ -110,6 +110,6 @@ export function listPendingApprovalViewItems(workspaceRoot: string): ApprovalVie
 }
 
 /** Overview's row shape for the same pending set — id + status only; the counter renders no payload. */
-export function pendingApprovalRows(workspaceRoot: string): CockpitApprovalRow[] {
+export function pendingApprovalRows(workspaceRoot: string): ApprovalRow[] {
   return listPendingApprovalViewItems(workspaceRoot).map((item) => ({ id: item.id, status: "pending" }));
 }
