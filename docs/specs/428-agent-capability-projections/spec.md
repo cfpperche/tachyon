@@ -6,6 +6,10 @@ _Created 2026-07-22._
 
 **Closure:** Shipped task `t-a34bb7`. Agent-selected skills, MCP servers, classified hooks, and explicit Pi resources now resolve from digest-bound captured bytes, join host-custodied authority where required, and materialize into disposable private runtime projections with provenance. Three independent probe passes shaped and verified the trust boundary. Final proof: 121 focused tests, dogfood pass, typecheck pass, and full suite 5399 passed / 3 skipped.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/agentProfileConfigLoader.test.ts test/unit/harness.test.ts`
+
 **Task:** `t-a34bb7` (slice 5 of `t-7d2cc0`)
 
 **Affected Product Invariants: none —** the active registry currently contains only PI-001 (project-guidance ownership), whose promise and fixed oracle do not cover agent capability declaration or runtime projection. This behavior receives focused regression and integration coverage; creating a new Product Invariant would require separate maintainer ratification.

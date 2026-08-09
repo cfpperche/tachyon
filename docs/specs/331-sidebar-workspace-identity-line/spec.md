@@ -15,6 +15,9 @@ work — reproduced identically with this spec's diff stashed out), and the decl
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx tsc -p tsconfig.webview.json --noEmit`
+**Verify:** `env -u TMUX npx vitest run test/unit/sidebarPrototype.test.ts test/unit/sidebarSearch.test.ts test/unit/sidebarActions.test.ts test/unit/webviewPreviewCatalog.test.ts test/unit/webviewPreviewRoutes.test.ts`
+
 ## Intent
 
 Decided in pin `p-cf707f`. Root cause: in multi-root the Project Handoff chip already lives correctly in

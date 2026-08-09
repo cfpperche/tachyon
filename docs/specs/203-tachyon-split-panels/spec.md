@@ -8,6 +8,8 @@ _Created 2026-06-10._
 
 **Closure:** 2026-06-10 — unit 188/188 (layouts 13 new), xvfb integration 23 passing incl. sized-apply + capture round-trip + settings.layout auto-arrange scenarios; residual: none
 
+**Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
+
 **UI impact:** render
 <!-- Editor-grid behavior exercised live in the xvfb host (tabGroups/getEditorLayout asserts); visual feel in the dogfood. -->
 

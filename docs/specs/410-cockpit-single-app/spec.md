@@ -52,6 +52,8 @@ Standing exceptions (not debt): sidebar (by design, the other app), pin-preview 
 `surfaces.ts`. Full suite green throughout (469 files / 5378 tests as of the Phase E audit).
 <!-- Updated 2026-07-19: fable ACCEPT-WITH-CHANGES — P0s folded (surfaces.ts guard, multi-instance, bundle budget). -->
 
+**Verify:** `npm run typecheck && npx vitest run test/unit/webviewConvention.test.ts test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.ts`
+
 ## Intent
 
 Tachyon ships **many independent Preact webview apps** (23 `App.tsx` under `src/webview/`, 24

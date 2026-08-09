@@ -11,6 +11,10 @@ the durable audit records Codex's legitimate native-fork limitation.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/agentProfileStudio.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/codexRuntimeConfigInventory.test.ts test/unit/claudeRuntimeConfigInventory.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts`
+
 ## Intent
 
 Auditar a paridade Claude↔Codex após Runtime Config, policy/projeção e Agent

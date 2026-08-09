@@ -8,6 +8,8 @@ _Created 2026-06-09._
 <!-- Optional — fill at ship/close time: date + evidence + residual scope. Keeps **Status:** a clean enum. Uncomment when closing. e.g. `**Closure:** 2026-06-09 — shipped at <commit>; <proof, e.g. tests N/N>; residual: none` -->
 **Closure:** 2026-06-09 — shipped at f41480b; 78/78 vitest + 9-passing host integration (live derived-port bind asserted via clipboard); spec-verify pass in notes.md; residual: none.
 
+**Verify:** `bash -c 'cd packages/tachyon && npm run typecheck && npm run build && npm test'`
+
 <!-- Optional — declare when this spec produces UI; drives the visual-contract acceptance gate (spec 155). Omit or keep `none` for non-UI work. See .agent0/context/rules/visual-contract.md -->
 **UI impact:** none
 

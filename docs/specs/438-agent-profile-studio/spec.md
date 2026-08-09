@@ -9,6 +9,10 @@ _Created 2026-07-22._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts`
+
 ## Intent
 
 Replace Agent Studio's legacy last-write-wins path for canonical profile-backed agents with a revisioned, redacted lifecycle experience. Studio may present authored values together with provenance, authority, learned state, runtime projection and diagnostics, but only an explicit allowlisted draft may cross the write boundary. Canonical mutations reuse the lifecycle, rename/forget and portable-bundle services already shipped; `tachyon.yml` remains a pointer and never receives resolved profile values.

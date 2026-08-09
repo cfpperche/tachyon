@@ -9,6 +9,9 @@ _Created 2026-06-30._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- --run test/unit/resume.test.ts test/unit/agentManager.test.ts test/unit/codexNormalizer.test.ts test/unit/activityLog.integration.test.ts && npm run typecheck`
+**Dogfood:** `node scripts/dogfood-codex-activity.mjs`
+
 ## Intent
 
 The Activity log shipped first for Claude. Codex agents are now resumable and Tachyon can own their session

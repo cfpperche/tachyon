@@ -9,6 +9,9 @@ _Created 2026-07-02._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/test-visual-close.sh && bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/sdd-close.sh docs/specs/326-sdd-visual-qa-light-contract --json`
+**Dogfood:** `bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/sdd-close.sh docs/specs/326-sdd-visual-qa-light-contract --json`
+
 ## Intent
 
 The SDD flow currently proves functional claims with `Verify` and `Dogfood`, but it does not explicitly make an

@@ -11,6 +11,10 @@ immediately naming their replacement. Two structural guards keep the layout from
 (pins the F5 wiring the headless harness cannot reach). verify:full green in isolation (503 files, 5649 passed at e2fa3da1) and green again on the combined main after the agent-pane merge and its two follow-up fixes (507 files, 5679 passed).
 Migration done: 583M of orphan slots reclaimed from the primary and its `launch.json` restored.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npx vitest run test/unit/devHostPointer.test.ts test/unit/devHostBoundary.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts`
+**Dogfood:** `npm run dogfood -- dev-host -- point --fixture agent-soul-dogfood && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear`
+
 ## Intent
 
 Maintainer's objective, verbatim (2026-07-24): *"trabalhamos com vários agentes em várias worktrees,

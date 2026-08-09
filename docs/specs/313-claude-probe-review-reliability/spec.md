@@ -9,6 +9,9 @@ _Created 2026-07-01._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/probeAdapterClaude.test.ts test/unit/probeBridge.test.ts test/unit/probeArchetypes.test.ts`
+**Dogfood:** `node scripts/dogfood-claude-probe-review.mjs`
+
 ## Intent
 
 Claude probes are currently brittle for review duets: large review prompts can hit short caller-provided timeouts, low manual budgets can terminate before a useful answer, and structured archetypes can return prose that Tachyon has to downgrade to `parse_error`.

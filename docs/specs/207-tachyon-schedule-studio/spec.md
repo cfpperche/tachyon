@@ -6,6 +6,8 @@ _Created 2026-06-11._
 
 **Closure:** 2026-06-11 — unit 211/211 (schedule form logic 3 new), studio parse-guard green, Studio Schedule tab captured live; 0.6.4; residual: none
 
+**Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
+
 **UI impact:** render
 <!-- Fifth Agent Studio tab + a + button on the Schedules view; captured into the studio montage. -->
 

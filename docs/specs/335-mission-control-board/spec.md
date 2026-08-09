@@ -18,6 +18,10 @@ installed build yet (same outstanding step as the v1 gate originally had) — th
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- --run test/unit/boardSnapshot.test.ts test/unit/boardModel.test.ts test/unit/taskStore.test.ts test/unit/nextTask.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/boardModel.test.ts -t "500"` — ran clean (1 passed, 7 skipped by `-t`).
+
 ## Intent
 
 Spec 325 shipped the Task entity and its five bridge tools, but the only surfaces today are MCP calls and

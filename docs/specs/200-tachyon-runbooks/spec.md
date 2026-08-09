@@ -6,6 +6,8 @@ _Created 2026-06-10._
 
 **Closure:** 2026-06-10 — shipped with spec 199 in the F15+F21 package; unit 153/153 (runbooks 6/6), integration 20 passing (xvfb) incl. the failure-gate scenario, live claude -p E2E ran run_runbook ship to a passed job; residual: none
 
+**Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
+
 **UI impact:** render
 <!-- Runbooks group renders inside the Commands view; steps verified through the _runRunbook seam in the xvfb host + dogfood walkthrough. -->
 

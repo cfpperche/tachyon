@@ -11,6 +11,9 @@ regression, and parity evidence.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 Canonical Claude profiles must consume only capabilities explicitly selected by the profile, captured

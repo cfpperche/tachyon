@@ -6,6 +6,10 @@ _Created 2026-07-04._
 
 **Closure:** shipped 2026-07-04 — implemented per-task append-only `.tachyon/tasks/<id>.journal` storage, `append_task_note`, journal materialization in `get_task`/Task Detail, board `journalCount` boundary, lifecycle/cap/caller tests, and spawn/pin usage guidance.
 
+**Verify:** `npm test -- --run test/unit/taskJournalStore.test.ts test/unit/bridge.test.ts test/unit/boardSnapshot.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/taskJournalStore.test.ts`
+
 ## Intent
 
 Agents use **pins** as a scratchpad for what they discover while WORKING a task — blockers, decisions,

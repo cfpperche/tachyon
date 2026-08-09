@@ -9,6 +9,8 @@ _Created 2026-07-01._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts && npm run typecheck`
+
 ## Intent
 
 The v1 hook scripts are deliberately best-effort and should not break Claude/Codex when Tachyon's bookkeeping fails.

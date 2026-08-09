@@ -10,6 +10,9 @@ functional Agent Studio common path, confirmed replacement/deletion, and four-ru
 dogfood. The broader rename/repair transaction design, exhaustive crash matrix, deterministic
 headless dogfood, and native Hermes profile integration remain explicitly deferred.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 **Planning task:** `t-60979d`
 
 **Ratification:** locked on 2026-07-14. The maintainer accepted the complete revised R1–R6 bundle

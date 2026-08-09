@@ -14,6 +14,9 @@ without rewriting artifacts. Evidence: `npm run verify:full:quiet` (518 files, 5
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- probe-model-proof`
+
 ## Intent
 
 A probe requested with an explicit model can silently run on a different one. Three recorded cases:

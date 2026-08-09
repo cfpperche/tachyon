@@ -8,6 +8,8 @@ approved the arc (+ caught the editor-only-diff defect, fixed to claude-terminal
 **Closure:** the hero is a ~25s live screencast — claude orchestrator in the editor → review diff →
 Verify ✓ on camera → hover-revealed Create PR → fleet; site `<video>`, README poster→mp4 link.
 
+**Verify:** `bash -n scripts/screenshots/capture.sh scripts/screenshots/cast.sh` + manual playback check.
+
 **UI impact:** none (changes docs/landing assets + the screenshot rig; no extension code).
 
 ## Intent

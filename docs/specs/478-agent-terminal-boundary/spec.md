@@ -15,6 +15,8 @@ M3 `t-a054f1`, M4 `t-18f6a5`, M5 `t-6ebdc8` (`ba32fcc9`), M6 `t-a7ae2d`, M7 `t-d
 absorbing `t-315ce9`), M8 `t-a31844` (`b386dc9f`), M9 `t-8f3f7d`. Each landed on a tree its own
 `verify:full:quiet` had recorded green.
 
+**Verify:** `npm run verify:full:quiet`
+
 The boundary is now held by construction rather than by review: an agent-only field lives on the
 Agent arm, so a conditional cannot be what grants a capability (M2/M3); a kindless persisted record
 is refused rather than guessed (M4); the UI reads the arm instead of keeping a third, contradictory

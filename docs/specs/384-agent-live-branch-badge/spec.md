@@ -9,6 +9,11 @@ _Created 2026-07-14._
 
 **Closure:** Shipped 2026-07-14 on branch `grok/t-c64647-agent-live-branch` (maintainer-approved). Live HEAD badge first on every agent row; isolated green `--ds-ok` chip; shared quiet; drift via `⚠` + tooltip (chip stays green); agent-block vertical rhythm. Evidence: unit/dogfood tests, headless EDH S1, human EDH dogfood, preview screenshots under `evidence/`.
 
+**Verify:** `npx vitest run test/unit/agentModel.test.ts test/unit/sidebarPrototype.test.ts`
+**Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
+**Dogfood:** `npx vitest run test/unit/agentLiveBranch.dogfood.test.ts`
+**Dogfood:** `npm run build && npm run dogfood -- dev-host -- headless`
+
 ## Intent
 
 With several agents working in parallel (isolated worktrees or shared cwd), the human cannot tell **which git branch each agent is on** without opening a terminal. The VS Code status bar shows the **workspace root** branch (`main*`), not the agent session cwd. Today the sidebar only shows `⎇ <branch>` when a worktree record exists, and that value is the **spawn/config branch** from the ledger — not live `HEAD`.

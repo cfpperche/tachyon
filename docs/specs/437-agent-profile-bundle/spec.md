@@ -9,6 +9,10 @@ _Created 2026-07-22._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/agentProfileBundle.test.ts test/unit/workspaceHeadless.test.ts`
+
 ## Intent
 
 Canonical profiles are safe inside one workspace, but there is no safe interchange boundary. Copying the on-disk profile would transfer identity, host authority, secret handles, derived state and machine-local paths; the existing legacy clone copies a definition without the canonical lifecycle guarantees.

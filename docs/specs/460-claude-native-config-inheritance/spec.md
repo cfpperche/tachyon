@@ -10,6 +10,9 @@ Bridge-only strict MCP, ambient tooling exclusion, lifecycle tests and parity ev
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 Canonical Claude agents already use a private `CLAUDE_CONFIG_DIR`, but the projection is an implicit

@@ -9,6 +9,9 @@ _Created 2026-07-03._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/webviewPreviewRoutes.test.ts test/unit/webviewPreviewCatalog.test.ts && npm run typecheck && npm run build`
+**Dogfood:** `npm run preview:webview`
+
 ## Intent
 
 Mission Control exists as a real converted webview, but it is missing from both `WEBVIEW_SURFACES` and the preview catalog. Spec 345 exposed this only during visual QA: Sidebar, Plugins, Task Detail, Task Studio, and Activity could be rendered through the preview harness, while Mission Control required manual installed-extension inspection.

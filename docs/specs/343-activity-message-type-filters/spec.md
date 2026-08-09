@@ -9,6 +9,8 @@ _Created 2026-07-03._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/activityFeedModel.test.ts test/unit/webviewPreviewRoutes.test.ts && npm run typecheck && npm run build`
+
 ## Intent
 
 The Activity panel currently renders every normalized activity item in one feed. On active sessions this mixes chat messages, thinking, tool calls, injected context, Tachyon nudges, images, usage records, errors, files, commands, and session boundaries. Pin `p-521c54` asks for a way to enable/disable visible Activity messages by type.

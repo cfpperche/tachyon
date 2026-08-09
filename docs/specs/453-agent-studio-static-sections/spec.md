@@ -10,6 +10,9 @@ static cards, with responsive narrow layout, regression tests, and visual eviden
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 Replace the three configuration disclosures in New/Edit Agent—Persistent instructions, Git worktree

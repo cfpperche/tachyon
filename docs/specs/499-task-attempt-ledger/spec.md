@@ -10,6 +10,8 @@ derives `currentAssignee` and `lastDeliverer` at read time and persists neither;
 backfilled as `delivered` attempts, marked as backfill rather than carrying an invented timestamp.
 Merged in `fc3be5cb`.
 
+**Verify:** `npm run verify:full:quiet`
+
 <!-- The maintainer owns the intent; this is a transcription awaiting ratification.
      The measurements below were taken before writing, and the central one killed the
      first version of this proposal. Read § "What was already tried and refused". -->

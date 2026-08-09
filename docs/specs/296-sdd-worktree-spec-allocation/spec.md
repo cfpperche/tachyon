@@ -18,6 +18,8 @@ specs reference it. Verified by `bash docs/specs/296-sdd-worktree-spec-allocatio
 (`loadPlugin → previewInstall → applyInstall`) materializing the updated `sdd` skill into `.claude/skills/sdd` and
 `.agents/skills/sdd`, then running the materialized scripts.
 
+**Verify:** `bash docs/specs/296-sdd-worktree-spec-allocation/smoke.sh`
+
 ## Intent
 
 The `sdd` plugin's `new.sh` allocates the next `docs/specs/NNN-*` number by scanning only the current worktree, then

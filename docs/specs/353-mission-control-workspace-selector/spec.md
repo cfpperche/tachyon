@@ -5,6 +5,8 @@ _Created 2026-07-04._
 **Status:** shipped
 **Closure:** Shipped locally: Mission Control now receives workspace options in its VM, renders an always-present Tachyon workspace selector in the header, and switches the panel workspace through a host action. Verification passed via `/sdd verify` on 2026-07-04.
 
+**Verify:** `npm test -- test/unit/missionControlPanel.test.ts && npm run build && npm run test:browser -- test/browser/boardHeaderKitParity.test.ts && npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
+
 ## Intent
 
 Mission Control is scoped to one Tachyon workspace folder, but the header currently renders that scope as plain text:

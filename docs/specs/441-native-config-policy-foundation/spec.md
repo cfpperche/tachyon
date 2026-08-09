@@ -9,6 +9,8 @@ _Created 2026-07-23._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/agentNativeConfigPolicy.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/agentProfileStudio.test.ts test/unit/agentStudioDomain.test.ts`
+
 ## Intent
 
 Canonical profiles have no common contract for selecting runtime-native configuration. Adapters

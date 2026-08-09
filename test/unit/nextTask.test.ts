@@ -58,11 +58,11 @@ describe("nextTask", () => {
     expect(nextTask({ agent: "human", tasks: [human, agent] })).toMatchObject({ task: { id: human.id } });
   });
 
-  it("handles active SDD-backed lifecycle states", () => {
+  it("does not use derived SDD lifecycle states as selection policy", () => {
     const active = task({ id: "t-000001", status: "active", assignee: "codex", artifact_refs: [{ type: "sdd", ref: "325" }] });
     expect(nextTask({ agent: "codex", tasks: [active], derived: { [active.id]: { sdd: { type: "sdd", ref: "325", status: "in-progress" } } } })).toMatchObject({ task: { id: active.id } });
-    expect(nextTask({ agent: "codex", tasks: [active], derived: { [active.id]: { sdd: { type: "sdd", ref: "325", status: "shipped" } } } })).toEqual({ empty: true, reason: "no-tasks" });
-    expect(nextTask({ agent: "codex", tasks: [active], derived: { [active.id]: { sdd: { type: "sdd", ref: "325", status: "deferred" } } } })).toEqual({ empty: true, reason: "no-tasks" });
+    expect(nextTask({ agent: "codex", tasks: [active], derived: { [active.id]: { sdd: { type: "sdd", ref: "325", status: "shipped" } } } })).toMatchObject({ task: { id: active.id } });
+    expect(nextTask({ agent: "codex", tasks: [active], derived: { [active.id]: { sdd: { type: "sdd", ref: "325", status: "deferred" } } } })).toMatchObject({ task: { id: active.id } });
   });
 
   it("returns structured empty reasons", () => {

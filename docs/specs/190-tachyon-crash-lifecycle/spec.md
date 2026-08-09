@@ -7,6 +7,8 @@ _Created 2026-06-09._
 
 **Closure:** 2026-06-09 — shipped at 6f3a053; 92/92 vitest (3x stable) + 11-passing host integration (live crash exit-code/postmortem + live on-crash auto-restart); spec-verify pass in notes.md; residual: none.
 
+**Verify:** `bash -c 'cd packages/tachyon && npm run typecheck && npm run build && npm test'`
+
 <!-- Optional — declare when this spec produces UI; drives the visual-contract acceptance gate (spec 155). Omit or keep `none` for non-UI work. See .agent0/context/rules/visual-contract.md -->
 **UI impact:** none
 

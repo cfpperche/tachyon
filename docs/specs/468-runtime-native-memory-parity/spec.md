@@ -11,6 +11,9 @@ under `t-8c7431`; no runtime memory behavior was enabled.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 Measure runtime-managed native memory as a distinct trust boundary for every

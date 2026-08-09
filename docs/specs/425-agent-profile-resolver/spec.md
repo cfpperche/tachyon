@@ -8,6 +8,12 @@ _Created 2026-07-22._
 authority/attestation-bound resolver and focused adversarial coverage. Runtime wiring and YAML
 migration remain in `t-4f82e0`; no runtime projection or plugin behavior changed in this slice.
 
+**Verify:** `npm test -- test/unit/agentProfileResolver.test.ts`
+**Verify:** `npm run test:invariants`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm test -- test/unit/agentProfileResolver.test.ts`
+
 ## Intent
 
 SDD 423 established `.tachyon/agents/<agent>/agent.yml` as the canonical definition of a persistent

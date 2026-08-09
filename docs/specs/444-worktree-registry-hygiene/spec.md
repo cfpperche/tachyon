@@ -10,6 +10,10 @@ ManagedWorktreeService.listClassified()/removeClassified() drive a real Worktree
 (5639 passed). Pixel-accurate screenshot taken post-merge via the fixed webview-preview harness
 (t-e085bc) confirming the real rendered UI matches the approved mockup.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npx vitest run test/unit/worktreeClassify.test.ts test/product-invariants/PI-002-worktree-cleanup-commit-safety.test.ts`
+**Dogfood:** `npx vitest run test/unit/worktreeClassify.test.ts`
+
 ## Intent
 
 Control's Worktrees tab (`src/webview/cockpit/App.tsx`) reads `.tachyon/managed-worktrees.json`

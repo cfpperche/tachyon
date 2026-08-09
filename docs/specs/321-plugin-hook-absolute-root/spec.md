@@ -6,6 +6,9 @@ _Created 2026-07-01._
 
 **Closure:** Shipped 2026-07-01. Plugin hook commands referencing `${TACHYON_PLUGIN_ROOT}` now render with the ABSOLUTE materialized root plus a cwd-independence wrapper (`src/plugins/adapters/hooks.ts` `wrapResolved` + `FAIL_CLOSED_HOOK_EVENTS`; `isSafeAbsolutePluginRoot` in `paths.ts`; `engine.ts` passes `path.join(workspaceRoot, rootRel)`): a gate hook (PreToolUse) with a missing root or an exit-127 command now BLOCKS (exit 2, clear stderr) instead of silently passing; observational hooks skip clean (exit 0). Design settled beforehand by the live claude×codex debate on pin `p-763d4b` (baked-absolute over git-root/env-var resolution; fail-closed scoped to gates; per-hook failurePolicy deferred to v2). Validation: adapter/engine suites updated + 7 new cases including behavioral `sh -c` execution of the rendered wrapper (block-on-missing-root, 127→2 remap, rc passthrough, fail-open skip); full suite 141 files/1958 tests green; tsc main+webview clean; `/sdd verify` + dogfood logged in `notes.md`. Human dogfood (re-apply secrets-guard in this workspace, then `cd` + Bash to confirm the guard no longer disarms) left as the maintainer's follow-up — live settings keep the old relative command until re-apply (spec non-goal).
 
+**Verify:** `env -u TMUX npx vitest run test/unit/pluginClaudeAdapter.test.ts test/unit/pluginCodexAdapter.test.ts test/unit/pluginEngine.test.ts && npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
+**Dogfood:** `env -u TMUX npx vitest run test/unit/pluginEngine.test.ts -t "hook"`
+
 ## Intent
 
 _Origin: pin `p-763d4b` — found live in the maintainer's own session; design settled by a live claude×codex debate (2 rounds, both sides probing empirically; the debate record lives in the pin + handoff note and substitutes the usual design dueto)._

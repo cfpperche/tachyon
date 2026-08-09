@@ -9,6 +9,12 @@ _Created 2026-07-17._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm exec vitest run test/unit/packageCleanGate.test.ts test/unit/engineServiceProtocol.test.ts test/unit/engineBundleStore.test.ts test/unit/engineSupervisor.test.ts test/unit/devHostBoundary.test.ts test/unit/devHostPointer.test.ts test/unit/devHostLauncher.test.ts test/unit/controlInspector.test.ts`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run check:engine-boundary`
+**Verify:** `npm test`
+**Dogfood:** `npm run dogfood -- dev-host -- headless`
+
 ## Intent
 
 Tachyon currently records a clean Git commit in every packaged engine bundle, but it does not distinguish a

@@ -11,6 +11,10 @@ diagnostics redaction. Implemented by ad-hoc Sonnet identityB (aaf9b34..286908f,
 rescued via the 341 idle queue); suite 2482 green; live dogfood PASS on 0.55.17 (see notes). Follow-up:
 t-600324 (dedicated external token).
 
+**Verify:** `npm test -- --run test/unit/callerIdentity.test.ts test/unit/bridge.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/callerIdentity.test.ts -t "mismatch"`
+
 ## Intent
 
 The Bridge authenticates every caller with ONE shared Bearer token, so it cannot tell agents apart: every

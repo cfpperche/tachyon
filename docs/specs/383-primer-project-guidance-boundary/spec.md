@@ -78,3 +78,8 @@ This spec establishes a hard ownership boundary. The product-global primer carri
 None. The maintainer ratified the ownership boundary and explicit project-owned channel in the discussion that created `t-9cb29e`; implementation details are fixed in `plan.md`.
 
 **Closure:** Shipped 2026-07-14 in isolated branch `codex/t-9cb29e-project-guidance`: the global primer now carries only Tachyon protocol and explicitly configured verification facts; `settings.projectGuidance.files` provides bounded, provenance-labelled project-owned content across supported spawn/restart/re-anchor paths, including Hermes and long-brief delivery. Self-managed and unsupported startup adapters remain unchanged, invalid sources fail closed, Tachyon self-hosts via `docs/project-guidance.md`, three independent reviews accepted the final delta, and the declared focused checks, typecheck, full verification, and AgentManager-backed dogfood passed. The pre-existing Vitest/`test/unit` gated-stub assumption remains explicitly deferred to dependent task `t-2b8808`.
+
+**Verify:** `npm exec -- vitest run test/unit/projectGuidance.test.ts test/unit/primer.test.ts test/unit/ocPrimerShapeBehavior.gen.test.ts test/unit/briefFile.test.ts test/unit/cxBriefBehavior.gen.test.ts test/unit/agentManager.test.ts test/unit/workspaceHeadless.test.ts test/unit/resume.test.ts test/unit/config.test.ts test/unit/configSchema.test.ts`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm exec -- vite-node scripts/dogfood-project-guidance.mts`

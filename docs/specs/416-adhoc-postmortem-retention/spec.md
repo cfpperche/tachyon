@@ -6,6 +6,10 @@ _Created 2026-07-19. Task: t-1e636f._
 
 **Closure:** Shipped 2026-07-19 in `b734ca97`. Clean-exited ad-hoc rows now persist a terminal lifecycle marker across manager reconstruction, are excluded from generic resume planning, remain explicitly dismissible, and retain authenticated coordinator authority for managed child-worktree cleanup. Dogfood, focused verification, typecheck, and the 5,102-test full suite passed headlessly.
 
+**Verify:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridge.test.ts test/unit/resume.test.ts test/unit/managedWorktree.test.ts --maxWorkers=1`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/agentManager.test.ts test/unit/managedWorktree.test.ts -t "postmortem across manager reload|coordinator retains authority" --maxWorkers=1`
+
 ## Intent
 
 Clean-exited ad-hoc agents are meant to remain as explicit postmortem rows until `dismiss_agent`, but the current lifecycle deletes their session-ledger row as soon as `AgentManager.list()` observes exit code 0. The row survives only in process-local maps. An engine restart/rebind therefore loses the row while leaving its transcript and managed worktree behind, breaking `list_agents`, `read_output`, evidence attachment and coordinator cleanup.

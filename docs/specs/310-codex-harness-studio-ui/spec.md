@@ -5,6 +5,9 @@ _Created 2026-07-01._
 **Status:** shipped
 **Closure:** Shipped Agent Studio Codex harness UI materialization on 2026-07-01. Codex now exposes transcript/harness controls, limits the visible harness fields to MCP, and Studio validation blocks unsupported rules/skills/hooks.
 
+**Verify:** `npm test -- --run test/unit/agentStudio.test.ts && npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/agentStudio.test.ts -t "codex"`
+
 ## Intent
 
 Spec 298 shipped backend/config support for Codex isolated harness, but Agent Studio still hides the isolation controls

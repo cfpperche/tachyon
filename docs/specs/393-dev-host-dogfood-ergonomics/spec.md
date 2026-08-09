@@ -9,6 +9,9 @@ _Created 2026-07-16._
 
 **Closure:** 2026-07-16 — Dev Host dogfood ergonomics (P0–P3): mirror `.tachyon` copy locked by test, `point-status` doctor, `--fixture` / `fixture-new`, worktree tool resolve + stale pointer, fixture drift warn, runbook preferred F5 path. Commits `08443142` / `c87ac17a` on branch; landed via merge to main.
 
+**Verify:** `npx vitest run test/unit/devHostPointer.test.ts test/unit/pluginGitHookRegistry.test.ts`
+**Dogfood:** `npm run dogfood -- dev-host -- fixture-new --slug ergonomics-smoke --intent focus && npm run dogfood -- dev-host -- point --worktree "$PWD" --fixture ergonomics-smoke --spec 393 && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear`
+
 ## Intent
 
 Dev Host is the right isolation model (pointer F5, fixture workspace, never monorepo root), but **arming and diagnosing it still costs dogfood time**. Spec 390 hit real friction: SoulError when fixture `.tachyon` was only a symlink out of the mirror; “missing metrics” when the fixture was Live 0; long manual `point` paths; worktree pre-commit hooks looking for `.tachyon/bin/_tachyon-tool` relative to the worktree cwd; pointer left armed after worktree remove.

@@ -11,6 +11,11 @@ PI-001, focused matrices, isolated dogfood, typecheck and full verification (476
 3 skipped) are green. Residual scope is intentionally separate: cross-lane lifecycle orchestration
 and UI (`t-e50d4f`), runtime-native memory architecture (`t-d4c42e`) and agent-scoped plugins.
 
+**Verify:** `npm run test:invariants`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm test -- test/unit/agentFormationDogfood.test.ts`
+
 ## Intent
 
 The canonical `agent.yml` can describe runtime and operational policy, but profile-backed agents still

@@ -12,6 +12,10 @@ Studio fields row) + bundle accounting/README/VENDORED.md docs. Full suite, both
 remains outstanding — optional/informational per this project's SDD convention, tracked in `tasks.md`'s
 Human Dogfood + Visual QA sections, not a closure blocker.
 
+**Verify:** `npm test -- --run test/unit/vscodeThemeBridge.test.ts test/unit/cssOrderSnapshot.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm run test:browser`
+
 ## Intent
 
 Every webview surface hand-rolls its form controls today: the same select/input/field-row gets rebuilt per

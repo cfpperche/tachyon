@@ -12,6 +12,10 @@ t-321e9d (pin-preview inline image), doc read-access via bridge tools (spec F15 
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence). -->
 
+**Verify:** `npm test -- --run test/unit/docMarkdown.test.ts test/unit/markdownDoc.test.ts test/unit/studioModel.test.ts test/unit/taskDetailStore.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/studioModel.test.ts -t "no-op"`
+
 ## Intent
 
 Mission Control (spec 335) shipped with a deliberately minimal quick-add and a read-mostly detail tab. The

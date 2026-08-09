@@ -9,6 +9,9 @@ _Created 2026-07-03._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `bash -n /home/goat/tachyon-plugins/image/skills/image/scripts/image.sh /home/goat/tachyon-plugins/sound/skills/sound/scripts/sound.sh /home/goat/tachyon-plugins/video/skills/video/scripts/video.sh && ! rg -n '(^|[[:space:]])(source|eval)[[:space:]]+.*secrets\\.env|(^|[[:space:]])\\.[[:space:]]+.*secrets\\.env' /home/goat/tachyon-plugins/image/skills/image/scripts/image.sh /home/goat/tachyon-plugins/sound/skills/sound/scripts/sound.sh /home/goat/tachyon-plugins/video/skills/video/scripts/video.sh`
+**Dogfood:** `bash /home/goat/tachyon-plugins/scripts/dogfood-fal-secrets-env.sh`
+
 ## Intent
 
 Paid fal.ai plugins should not require humans to export `FAL_KEY` manually in every shell. Keep the existing

@@ -15,6 +15,9 @@ test/unit/auth.test.ts test/unit/bridgeToolCountLunaR1Behavior.gen.test.ts` and 
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/doorbell.test.ts test/unit/bridge.test.ts`
+**Verify:** `npm run typecheck`
+
 ## Supersedes (named, partial)
 
 This spec reverses the FIRST of four non-goals declared in

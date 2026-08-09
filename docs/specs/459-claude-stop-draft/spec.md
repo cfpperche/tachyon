@@ -11,6 +11,10 @@ unavailable because Tachyon has no corresponding profile field.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** In an authorized Claude Code 2.1.220 session, submit one no-tools prompt, apply Escape,
+
 ## Intent
 
 Claude Code 2.1.220 clears an unsubmitted composer draft with Ctrl+C, but does not exit after the

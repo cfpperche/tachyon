@@ -10,6 +10,9 @@ copiadas, seed cross-home/cwd, compensação de falha e evidência automatizada.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 O fork nativo de um Claude canônico hoje abandona o `CLAUDE_CONFIG_DIR` privado e as

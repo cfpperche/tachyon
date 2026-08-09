@@ -9,6 +9,8 @@ _Created 2026-07-01._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentModel.test.ts test/unit/continuityWiring.test.ts && npm run typecheck`
+
 ## Intent
 
 Silent persistence hooks are currently invisible by design. That is correct for the human terminal, but it creates a new

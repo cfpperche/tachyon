@@ -9,6 +9,8 @@ _Created 2026-07-03._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/notifyAgent.test.ts test/unit/noticeQueue.test.ts test/unit/tmux.test.ts test/unit/bridge.test.ts test/unit/workspaceHeadless.test.ts`
+
 ## Intent
 
 `notify_agent` currently types a one-line `[tachyon]` envelope into the recipient's tmux pane and immediately sends one Enter. Pin `p-c77b48` showed that when the recipient TUI is mid-turn, the paste can stick while Enter is swallowed, leaving the envelope stranded in the composer until a human presses Enter or deletes it.

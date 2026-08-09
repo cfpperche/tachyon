@@ -9,6 +9,10 @@ _Created 2026-07-22._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/agentProfileForget.test.ts test/unit/workspaceHeadless.test.ts`
+
 ## Intent
 
 Deleting a profile-backed agent still falls through the legacy broad cleanup path. That path is keyed only by the mutable agent name, removes runtime homes, and deletes Evolution storage directly; after a crash or name reuse it cannot prove that the bytes still belong to the retired identity.

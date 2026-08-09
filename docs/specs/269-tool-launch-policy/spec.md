@@ -18,6 +18,8 @@ same-user shell agent; true bypass-proofing = agent sandboxing, separate future 
 (`LD_*`/`DYLD_*`/`PATH`/`NODE_OPTIONS`/…) is rejected at parse. Full gate green (1622 vitest + tsc×2 +
 engine-boundary + esbuild). The agent-browser-specific write-gate fixture (scenario 7) lands with spec 268.
 
+**Verify:** `env -u TMUX npx vitest run test/unit/pluginManifest.test.ts test/unit/pluginLockfile.test.ts test/unit/pluginToolPlan.test.ts test/unit/pluginToolLauncher.test.ts test/unit/pluginConsentViewModel.test.ts`
+
 ## Intent
 
 Let a plugin declare a **launcher-enforced launch policy** for a provisioned tool — a set of env vars + args the

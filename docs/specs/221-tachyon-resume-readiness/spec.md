@@ -7,6 +7,8 @@ MINOR fixed; round-2 SHIP), 482 tests + typecheck green.
 **Closure:** honest resume badge (`· resumable` vs `· fresh start`) via a read-only `resumeReadiness`
 probe mirroring `resume()`'s pre-flight; no mechanism change.
 
+**Verify:** `npm run typecheck && npx vitest run` (safe with `$TMUX` set — spec 218 guard)
+
 **UI impact:** ui (sidebar badge text/tooltip for stopped/crashed agents).
 
 ## Intent

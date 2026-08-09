@@ -6,6 +6,9 @@ _Created 2026-07-18._
 
 **Closure:** Integrated on `main` as `256901cc`; focused 672 tests, typecheck, build, engine boundary, Product Invariants and real Pi RPC dogfood passed. Full-suite baseline failures unrelated to SDD 406 are recorded in `notes.md`.
 
+**Verify:** `npx vitest run test/unit/config.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts test/unit/piSession.test.ts test/unit/resume.test.ts test/unit/runtimeProfile.test.ts test/unit/piRuntimeOnboarding.test.ts test/unit/piNormalizer.test.ts --maxWorkers=2 && npm run build && npm run check:engine-boundary && npm run test:invariants`
+**Dogfood:** `npx tsx scripts/dogfood/pi-harness-resources.mjs`
+
 ## Intent
 
 SDD 401 made every Tachyon-managed Pi process use a private home and deliberately stripped ambient global extensions, skills, prompt templates, themes and packages. That default-deny boundary prevents sibling agents from silently executing the user's global Pi customization, but it also leaves no governed way to give one named agent the Pi resources its role requires.

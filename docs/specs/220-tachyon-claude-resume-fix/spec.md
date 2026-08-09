@@ -7,6 +7,8 @@ implemented, codex dueto (2 rounds: 5+2 findings, all fixed/accepted), 481 tests
 **Closure:** named-session + customTitle-capture + resume-by-uuid landed; 219-followup bundled; pending
 maintainer dogfood confirmation on the live install.
 
+**Verify:** `npm run typecheck && npx vitest run` (safe with `$TMUX` set — spec 218 guard)
+
 **UI impact:** none (changes the spawn/resume commands; "Resume with context" starts behaving).
 
 ## Intent

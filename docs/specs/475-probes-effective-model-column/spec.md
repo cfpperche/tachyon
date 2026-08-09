@@ -14,6 +14,9 @@ the wide/narrow screenshots under `evidence/`.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- probes-model-column`
+
 ## Intent
 
 The Control Probes table shows id, status, reason, runtime, archetype, caller, age and excerpt — but

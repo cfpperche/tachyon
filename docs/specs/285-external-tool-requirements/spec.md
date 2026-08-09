@@ -21,6 +21,8 @@ clone-rehydrate the shim; busy-guard + in-flight serialization on the privileged
 display). ~30 unit tests incl. regressions. Verified: full suite 1801 green, typecheck + build clean. With spec 284,
 a transcription plugin (whisper-cli external + ffmpeg external + a `ggml` model data-artifact) is now buildable.
 
+**Verify:** `npx vitest run test/unit && npm run typecheck && npm run build`
+
 ## Intent
 
 A plugin's skill often needs an **external system tool it does not provision** — a heavy, native, or package-managed

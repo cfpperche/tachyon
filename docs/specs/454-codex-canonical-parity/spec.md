@@ -10,6 +10,9 @@ lifecycle evidence; fork remains explicitly unavailable.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 Codex canonical profiles already materialize the selected approval policy and sandbox mode into a

@@ -8,6 +8,12 @@ project-neutral verifier configuration; authenticated, fresh delegated authority
 launch recovery; independent RED/GREEN and security closure; full verification green.
 **Affected Product Invariants:** `PI-001` (created and adopted by this decision)
 
+**Verify:** `npm run test:invariants`
+**Verify:** `npm exec -- vitest run test/unit/config.test.ts test/unit/configSchema.test.ts test/unit/deliveryStore.test.ts test/unit/verifyTask.test.ts test/unit/workspaceHeadless.test.ts test/unit/snBoundaryLocksBehavior.gen.test.ts`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run test:invariants`
+
 ## Intent
 
 Tachyon has many regression tests, but their names and locations do not distinguish a change-scoped

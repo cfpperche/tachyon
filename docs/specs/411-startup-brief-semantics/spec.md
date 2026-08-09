@@ -10,6 +10,12 @@ configured full verification, independent equivalence review and sanitized cross
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/startupBrief.test.ts test/unit/projectGuidance.test.ts test/unit/soul-lifecycle-a2Behavior.gen.test.ts test/unit/briefFile.test.ts test/unit/snBriefBehavior.gen.test.ts test/unit/cxBriefBehavior.gen.test.ts test/unit/agentManager.test.ts test/unit/agentSoulLegacyParity.test.ts test/unit/workspaceHeadless.test.ts test/unit/t12DerivedFiles.test.ts --maxWorkers=1`
+**Verify:** `npm run test:invariants`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm exec -- vite-node scripts/dogfood-project-guidance.mts`
+
 ## Intent
 
 Tachyon safely diverts a long onboarding body to `.tachyon/briefs/spawn/<agent>.md`, but calls every

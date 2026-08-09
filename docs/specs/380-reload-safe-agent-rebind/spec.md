@@ -12,6 +12,9 @@ and restored this session's native MCP calls without a stale-client hang.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts -t "reload-safe"`
+
 ## Intent
 
 Tachyon 0.56.2 reproduced a destructive interaction between the spec-364 Bridge-client rebind and

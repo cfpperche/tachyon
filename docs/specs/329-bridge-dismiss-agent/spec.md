@@ -9,6 +9,9 @@ _Created 2026-07-02._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- --run test/unit/bridge.test.ts test/unit/agentManager.test.ts`
+**Dogfood:** `npm test -- --run test/unit/bridge.test.ts -t dismiss_agent`
+
 ## Intent
 
 Bridge-spawned ad-hoc agents can finish cleanly before a human or parent agent reads their pane. Tachyon keeps

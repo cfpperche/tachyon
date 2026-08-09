@@ -10,6 +10,10 @@ runtime-reported model identities; absent provider evidence remains absent.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/probeAdapterClaude.test.ts test/unit/probeService.test.ts test/unit/probeStore.test.ts`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 `probe_agent` already forwards a requested Claude model as `--model`, but neither the requested

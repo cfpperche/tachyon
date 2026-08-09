@@ -16,6 +16,8 @@ not offered, rehydrate restartable+re-nest, declared-shadow skip, kill-removes-r
 rename-children, addAgent-instructions). **Residual:** Task 8 live EDH smoke
 (reopen→restart→re-nest→promote) — the maintainer's dogfood step.
 
+**Verify:** `npm run typecheck && npm test`
+
 **UI impact:** interaction
 <!-- Restart works on a re-discovered ad-hoc agent; the tree re-nests sub-agents
 under their parent after a restart; a "Save to tachyon.yml" action promotes an

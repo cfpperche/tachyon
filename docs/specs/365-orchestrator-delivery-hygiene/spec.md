@@ -8,6 +8,9 @@ _Revised 2026-07-09 (fold: Claude probe `.tachyon/reviews/365-orchestrator-deliv
 **Closure:** Phase 1 shipped 2026-07-09 — GitDelivery store + git_delivery_{list,hygiene,open,prune}, autoOpen, live-git prune fail-closed, open/prune policy harden (e781110). Commits on main: 34a5fef + 0c286ec. Phase 2 review/integrate deferred. gxReview ACCEPT e781110.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. -->
 
+**Verify:** `npx vitest run test/unit/gitDelivery`
+**Verify:** `npm run typecheck`
+
 ## Intent
 
 Tachyon already has multi-agent delivery isolation — git worktrees (`worktree: true` → branch

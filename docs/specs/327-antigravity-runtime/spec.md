@@ -9,6 +9,9 @@ _Created 2026-07-02._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- --run test/unit/resume.test.ts test/unit/config.test.ts test/unit/agentStudio.test.ts`
+**Dogfood:** `npm test -- --run test/unit/resume.test.ts -t antigravity`
+
 ## Intent
 
 Google moved the public/consumer Gemini CLI path to Antigravity CLI. Tachyon still treats `gemini`

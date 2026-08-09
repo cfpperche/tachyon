@@ -8,6 +8,9 @@ _Created 2026-07-10 from the maintainer discussion about token economics and Cod
 normalized host projection, explicit source lifecycle, deterministic degraded-state coverage and maintainer-approved
 Extension Development Host dogfood. Cost/history enrichment and Grok support remain follow-up slices.
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- runtime-observability`
+
 ## Intent
 
 Runtime Ops V1 observes Tachyon-managed runtimes honestly from local activity, lifecycle, attention, session, and

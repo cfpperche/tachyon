@@ -9,6 +9,9 @@ _Created 2026-07-25._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 Canonical Pi homes currently copy ambient `trust.json` once and then preserve it as runtime-owned

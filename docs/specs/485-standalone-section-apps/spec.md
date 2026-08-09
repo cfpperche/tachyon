@@ -10,6 +10,8 @@ as its own editor tab, `Cockpit.ts` / `cockpit/main.tsx` / `cockpitSingleton.ts`
 through another door. Phases A, B, C and E complete; D delivered twenty migrations (D1–D20). Gate on
 delivery: 682 files / 7639 unit tests, 116 browser tests.
 
+**Verify:** `npm run verify:full:quiet`
+
 `shipped-partial` rather than `shipped`, and the remaining gap is named rather than rounded off:
 
 1. **"One broken app does not take the others" is measured FALSE.** E1 deleted

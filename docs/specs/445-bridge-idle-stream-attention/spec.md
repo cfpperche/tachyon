@@ -9,6 +9,8 @@ _Created 2026-07-24._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/bridge.test.ts test/unit/bridgeSlowRequestPolicy.test.ts`
+
 ## Intent
 
 Idle MCP stream renewals currently look like hung Bridge tools and accumulate durable

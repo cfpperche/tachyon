@@ -9,6 +9,8 @@ _Created 2026-07-01._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts && npm run typecheck`
+
 ## Intent
 
 Spec 312 introduced `persistence-stop.jsonl`, and spec 317 is expected to add a failure log. These files are activity

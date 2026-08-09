@@ -9,6 +9,8 @@ to the commands spec 213/230 and 223 already provided — no second diff or PR f
 `singleDiffReviewImplementation.test.ts`. Review compares committed history (`trunkRef..head`), and the
 sentence naming it tells the truth in the blocked state too. Merged in `929fc5e8`.
 
+**Verify:** `npm run verify:full:quiet`
+
 <!-- The maintainer owns the intent; this is a transcription awaiting ratification.
      Read § "What already exists" first. This spec builds almost nothing — the finding that
      shaped it is that both features were already written and are in the wrong room. -->

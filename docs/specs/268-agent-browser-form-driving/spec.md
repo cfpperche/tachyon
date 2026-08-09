@@ -18,6 +18,8 @@ completeness, env/config-file override, self-confirm) documented as accepted lim
 mechanical hold on common writes + a cooperative human-approval protocol." This also satisfies spec 269's
 scenario 7 (the agent-browser write-gate fixture).
 
+**Verify:** _(plugin payload in the external repo; proof is the dogfood transcript in notes.md)_
+
 ## Intent
 
 Promote **form-driving** to a first-class agent-browser capability — `click` / `fill` / `type` / `press` /

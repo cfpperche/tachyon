@@ -10,6 +10,8 @@ clean. codex dueto: round 1 NO-SHIP (5 findings) → fixed; round 2 SHIP (Ajv-ve
 no remaining/new). Pure config-surface change — no engine/runtime code touched; backward
 compatible (agents:+kind:terminal still works), no auto-migration, one namespace across blocks.
 
+**Verify:** `npm run typecheck && npm test`
+
 **UI impact:** flow
 <!-- The Agent Studio's Terminal tab writes to a new `terminals:` block; hand-written
 `terminals:` round-trips. Verified by creating/editing a terminal in the Studio and

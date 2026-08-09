@@ -8,6 +8,9 @@ final lifecycle-authority guard, focused regressions, full verification, and per
 **Affected Product Invariants:** none — engine-rebind readiness does not change the registered PI-001
 project-guidance ownership promise or oracle.
 
+**Verify:** `npx vitest run test/unit/bridgeClientRebind.test.ts test/unit/agentManager.test.ts test/unit/engineProcessBoundary.test.ts test/unit/engineSupervisor.test.ts && npm run typecheck`
+**Dogfood:** `node scripts/dogfood/persistent-engine.mjs`
+
 ## Intent
 
 After a real persistent-engine incarnation change, a surviving Bridge-wired agent can be alive while

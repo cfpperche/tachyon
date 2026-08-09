@@ -6,6 +6,10 @@ _Created and ratified from maintainer screenshots on 2026-07-20._
 
 **Closure:** Implemented for `t-57e60b`; executable and visual evidence is recorded in `notes.md`.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run build && npx vitest run --config vitest.browser.config.ts test/browser/boardCardLayout.test.ts`
+
 **Task:** `t-57e60b`
 
 Affected Product Invariants: none — this presentation-only Board refinement does not change the

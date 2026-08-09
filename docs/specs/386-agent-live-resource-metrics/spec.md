@@ -8,6 +8,10 @@ _Created 2026-07-14._
 
 **Closure:** Shipped 2026-07-14 — live CPU/RSS peek + collapsible L3–L4; hierarchy chevron independent; one header graph icon for all-metrics; pill toggles detail. Maintainer-approved dogfood UX. Commits on `grok/agent-live-resource-metrics`.
 
+**Verify:** `npx vitest run test/unit/resourceSample.test.ts test/unit/agentModel.test.ts test/unit/agentLiveResourceMetrics.test.ts test/unit/sidebarRowAlignment.test.ts`
+**Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
+**Dogfood:** `npm run build` then point monorepo F5; expand metrics on running agents
+
 ## Intent
 
 Show **live CPU and memory** for each running agent without polluting the badge row. Metrics live on **collapsible detail lanes (L3–L5)**; hierarchy collapse of subagents stays on the existing left chevron. A separate metrics control + collapsed peek surface the data.

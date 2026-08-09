@@ -9,6 +9,9 @@ _Created 2026-07-01._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/continuityWiring.test.ts test/unit/config.test.ts && npm run typecheck`
+**Dogfood:** `npm test -- test/unit/continuityWiring.test.ts -t "spec 312"`
+
 > **t-7bcba6 (2026-07-12):** The `settings.persistence.silentHooks` kill switch and the `tachyon.persistenceSettings` / “Visible legacy reminders” UI were **removed**. Silent hooks remain the only supported path for eligible declared Claude/Codex agents. This shipped history is not rewritten; the kill switch is obsolete product surface, not current behavior.
 
 

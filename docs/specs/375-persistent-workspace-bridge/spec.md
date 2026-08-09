@@ -9,6 +9,9 @@ _Created 2026-07-13._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `node scripts/dogfood/persistent-bridge.mjs`
+
 ## Intent
 
 The Tachyon Bridge and the workspace engine currently live inside VS Code's Extension Host. Extension

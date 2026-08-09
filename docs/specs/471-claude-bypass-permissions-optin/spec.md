@@ -13,6 +13,9 @@ under `evidence/`. Codex confirmed to have no equivalent blocker; its own gap fi
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- claude-bypass-optin`
+
 ## Intent
 
 The canonical Claude projector refuses `permissions.defaultMode: "bypassPermissions"` outright

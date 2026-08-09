@@ -7,6 +7,11 @@ _Created 2026-07-03._
 
 **Closure:** v1 shipped 2026-07-04 (commits `ba073fb` T1 iframe gate · `72bd22e` Phase 1 declaration/engine/consent/validator · `2dbd97d` Phase 2 projection · `2f269c1` Phase 3 broker · `fec26c0` Phase 4 host+relay · `776e673` fix-up activation/guards · `efd740f` Phase 5 fixtures+gesture · `b6577c7` lifecycle hardening). The untrusted-plugin UI primitive: a plugin declares a `views` capability, consents per-scope, and renders in an opaque-origin `srcdoc` iframe (never `allow-same-origin`) fed a purpose-built `PluginFleetProjectionV1` (never `FleetVM`, canary-proven), with one non-destructive `focusAgent` action brokered via generation-stamped opaque handles and gated on trusted `navigator.userActivation` (empirically proven to cross the sandbox). Proven end-to-end by `test/integration/plugin-ui.e2e.test.ts` (real engine install → productionized relay → adversarial breach-all-fail + Mundinho render + gesture broker + relay teardown/recreate). Verified in an isolated worktree at HEAD: full typecheck + build + 737 tests + engine-boundary, all green. **Residuals (honest):** the sidebar surface is covered by relay-inheritance + the host registration-path unit test rather than a full `vscode-test` `WebviewView` e2e (the relay is byte-identical to the editor surface); the editor panel re-opens via command rather than a `WebviewPanelSerializer` window-reload restore. Real Mundinho art/engine is deferred to `p-2ab0f3`; v2 scope (destructive actions, egress, fine scopes, author SDK) is `p-af2b39`.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm test`
+**Verify:** `bash scripts/check-engine-boundary.sh`
+**Dogfood:** `vitest run test/integration/plugin-ui.e2e.test.ts`
+
 > **DRAFT — ready for ratification.** Drafted from the design conversation + the Fase-0 research
 > report (`notes.md`), then hardened by an adversarial dueto review (claude-2 + ad-hoc codex-review,
 > 2026-07-03 — see `notes.md` § Dueto review). Q0 (v1 action scope) **resolved 2026-07-03**: one

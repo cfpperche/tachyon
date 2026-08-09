@@ -9,6 +9,9 @@ shared `mermaid-block.css`) without mutating source or weakening `securityLevel:
 zoom/fit/Source) under `.tachyon/evidence/374-mermaid-activity-readonly-nav/`. Harness gains mermaid bootstrap globals
 and synthetic fixture so the surface is re-dogfoodable without a live agent session.
 
+**Verify:** `npx vitest run test/unit/mermaidViewport.test.ts test/unit/markdownEngine.test.ts test/unit/markdownHardening.test.ts test/unit/webviewPreviewRoutes.test.ts test/unit/webviewShellParity.test.ts`
+**Dogfood:** `npx vitest run test/unit/mermaidViewport.test.ts`
+
 ## Intent
 
 The Activity feed already renders fenced ````mermaid` blocks as SVG diagrams (on-demand Mermaid load, `securityLevel: "strict"`, diagram↔Source toggle). Large diagrams — e.g. multi-subgraph architecture charts in handoff/agent output — only get a passive `max-width: 100%` fit-to-width and horizontal overflow. They stay hard to inspect: no zoom, no pan, no fit/reset, no scale feedback, and no keyboard path.

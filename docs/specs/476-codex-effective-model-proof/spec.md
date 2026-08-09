@@ -21,6 +21,10 @@ absent rollout), and `npm run dogfood -- probe-provenance-parity` (9/9).
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- probe-codex-model-proof`
+**Dogfood:** `npm run dogfood -- probe-provenance-parity`
+
 ## Intent
 
 SDD 473 made a probe refuse to read as evidence unless the runtime itself says which model ran.

@@ -5,6 +5,9 @@ _Created 2026-07-01._
 **Status:** shipped
 **Closure:** Shipped Codex harness instructions/skills/hooks materialization on 2026-07-01. Codex now supports `harness.instructions` -> private `CODEX_HOME/AGENTS.md`, `harness.skills` -> private `CODEX_HOME/skills`, and `harness.hooks` -> native `config.toml` hook keys; `rules` remains Claude-only.
 
+**Verify:** `npm test -- --run test/unit/config.test.ts test/unit/harness.test.ts test/unit/agentStudio.test.ts && npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/harness.test.ts -t "spec 311"`
+
 ## Intent
 
 Codex isolated harness currently supports only MCP/config/transcript isolation. That is honest but incomplete: Codex

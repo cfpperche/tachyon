@@ -8,6 +8,8 @@ _Created 2026-06-30._
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes / placeholders). -->
 
+**Verify:** `npm test -- --run test/unit/config.test.ts test/unit/agentManager.test.ts test/unit/sidebarActions.test.ts test/unit/bridge.test.ts && npm run -s typecheck`
+
 ## Intent
 
 Tachyon already distinguishes AI CLIs from plain shells/dev servers with `kind: agent | terminal` and with separate human-facing `agents:` / `terminals:` config blocks. The remaining naming debt is below that surface: core types, manager APIs, MCP tools, commands, and docs still use `agent` as the umbrella term for every long-lived tmux-backed process. That makes terminals look like agents in public and internal contracts, and forces docs to explain that "agent" sometimes means "managed entry".

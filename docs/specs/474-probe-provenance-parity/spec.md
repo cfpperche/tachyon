@@ -14,6 +14,9 @@ so Grok leaves SDD 473's unproven exemption, the Codex absence recorded as measu
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- probe-provenance-parity`
+
 ## Intent
 
 SDD 473 made a probe refuse to pass off an unproven model as evidence, and left one deliberate

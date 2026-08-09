@@ -8,6 +8,9 @@ _Created 2026-06-30._
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes / placeholders). -->
 
+**Verify:** `bash docs/specs/301-sdd-headless-dogfood-contract/smoke.sh verify && npm test -- --run test/unit/sddDogfoodMaterialization.test.ts test/unit/pluginEngine.test.ts test/unit/pluginManifest.test.ts && npm run -s typecheck`
+**Dogfood:** `bash docs/specs/301-sdd-headless-dogfood-contract/smoke.sh dogfood`
+
 ## Intent
 
 The SDD plugin already supports mechanical verification (`**Verify:**`) and closure hygiene (`sdd-close`), but it has no first-class way to require a real dogfood proof before a spec is declared shipped. Today dogfood evidence is written ad hoc in `notes.md` or closure prose. That works when a maintainer remembers to ask, but it is not a contract agents can consistently inspect or enforce.

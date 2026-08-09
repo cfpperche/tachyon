@@ -6,6 +6,10 @@ _Created 2026-07-18._
 
 **Closure:** Exact minted Pi session identity, private session directory and fail-closed Resume shipped in `dc3e8a60`; dogfood closure landed in `6dc5d197` with human Stop → Resume evidence at `ff71e6c3`.
 
+**Verify:** `npx vitest run test/unit/adapters.test.ts test/unit/resume.test.ts test/unit/agentManager.test.ts test/unit/piSession.test.ts`
+**Verify:** `npm run test:invariants`
+**Dogfood:** `node scripts/dogfood/pi-session-continuity.mjs`
+
 ## Intent
 
 SDD 399 proved that a Tachyon-managed Pi receives its primer, authenticated identity and Bridge tools, but the engine still classifies Pi as non-resumable. A stopped/crashed Pi therefore cannot advertise or execute Tachyon's exact-session Resume flow even though Pi exposes caller-selected `--session-id` and exact `--session <id>` primitives with durable JSONL transcripts.

@@ -9,6 +9,10 @@ _Created 2026-06-30._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- --run test/unit/probeRunner.test.ts test/unit/probeBridge.test.ts test/unit/probeAdapterClaude.test.ts test/unit/probeAdapterCodex.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/probeSmoke.test.ts`
+
 ## Intent
 
 `probe_agent` works for short Claude and Codex probes, but real review probes can look broken: the sync call waits around 120s, the process times out at the same boundary, and the final failed envelope can contain `reason:"timeout"` with an empty `lastMessage`. That leaves the caller unable to tell whether the runtime is unavailable, the probe was still thinking, the prompt was too large, or the runner killed it.

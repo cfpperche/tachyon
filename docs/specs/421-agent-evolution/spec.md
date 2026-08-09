@@ -9,6 +9,11 @@ recovery hardening, full verification, Agent Studio Visual QA and live Codex run
 complete. The final publication hardening commit `3a195cf7` is fully contained in `main`; the managed
 worktree and local branch were removed after landing.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run test:invariants`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `TACHYON_AGENT_EVOLUTION_LIVE_RUNTIME=codex npm exec -- vite-node scripts/dogfood-agent-evolution.mts`
+
 ## Intent
 
 Tachyon agents can keep a stable identity (`SOUL.md`) and human-authored operating instructions, but

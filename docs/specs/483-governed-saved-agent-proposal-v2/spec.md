@@ -42,6 +42,9 @@ proposal grant on 2026-07-30.
 
 **Closure:** shipped on 2026-07-30 after focused dogfood, typecheck and the full verification gate.
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/savedAgentProposalCommit.test.ts test/unit/agentProfileLifecycle.test.ts`
+
 The proposal contract, review projection and canonical create path now carry the ratified choices.
 The prior v1 action remains byte-shape compatible; v2 is an additive action. Approval still creates
 an enabled, stopped agent and never starts it.

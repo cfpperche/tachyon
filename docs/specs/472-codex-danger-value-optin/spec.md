@@ -14,6 +14,9 @@ screenshots under `evidence/`.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- codex-danger-optin`
+
 ## Intent
 
 SDD 471 made Claude's `bypassPermissions` require a deliberate per-agent authorization: the global

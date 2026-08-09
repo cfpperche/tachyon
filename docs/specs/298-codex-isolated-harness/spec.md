@@ -6,6 +6,9 @@ _Created 2026-06-30._
 
 **Closure:** Shipped 2026-06-30 (commit `30b59f0`, `feat(harness): support codex isolated homes`). `ResumeAdapter.harness` was generalized so a runtime can materialize MCP by CLI flag (Claude, unchanged) or by writing scoped config directly into a redirected home (Codex: `CODEX_HOME` + `config.toml`, no MCP args). Codex gained isolated-harness and `isolate: "transcript"` support, auth symlinking, config validation, and redirected session/resume/activity resolution — all acceptance criteria and tasks checked. Re-verified against current `HEAD` at close time (not just the original implementation commit): `npm test && npx tsc --noEmit` and the focused harness/agentManager/resume dogfood slice both pass (logged in `notes.md`). Real authenticated-Codex-TUI dogfood under a redirected home remains a noted open item (see `notes.md`'s Open questions), not a blocker — resolves pin `p-00ca60`.
 
+**Verify:** `npm test && npx tsc --noEmit`
+**Dogfood:** `npm test -- --run test/unit/harness.test.ts test/unit/agentManager.test.ts test/unit/resume.test.ts`
+
 ## Intent
 
 The **isolated-harness** and **isolate-transcript** capabilities are claude-only today. Both are the same

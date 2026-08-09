@@ -9,6 +9,10 @@ _Created 2026-06-30._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- --run test/unit/continuityWiring.test.ts test/unit/projectHandoff.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/continuityWiring.test.ts test/unit/projectHandoff.test.ts`
+
 ## Intent
 
 Bridge-spawned ad-hoc agents are currently eligible for the same automatic persistence nudges as durable agents. In practice this means a short-lived review/probe child can receive a proactive continuity reminder such as `[Tachyon] You have no continuity brief yet... set_continuity(...)`, even though the child was intentionally ephemeral and should not pollute the persistent handoff/continuity lane by default.

@@ -9,6 +9,8 @@ _Created 2026-07-25._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Dogfood:** `{{representative headless dogfood command}}`
+
 ## Intent
 
 Pi already has a private home, exact-resource harness, measured composer/stop behavior, a safe

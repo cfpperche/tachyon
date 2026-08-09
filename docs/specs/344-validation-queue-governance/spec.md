@@ -9,6 +9,8 @@ _Created 2026-07-03._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/validationStore.test.ts test/unit/nextValidation.test.ts test/unit/bridge.test.ts && npm run typecheck && npm run build`
+
 ## Intent
 
 Tachyon can already prove mechanical gates (`verify`, unit tests, builds) and can record advisory evidence, but real project readiness also depends on validation work that is easy to forget: human dogfood, exploratory QA, install checks, release smoke tests, agent-run checks, customer-demo rehearsal, or any project-specific proof that a change works in practice.

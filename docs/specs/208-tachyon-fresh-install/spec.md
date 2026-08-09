@@ -6,6 +6,8 @@ _Created 2026-06-11._
 
 **Closure:** 2026-06-11 — unit 211/211, xvfb 22 single-root (hot path unchanged) + 6 multi-root; native walkthrough auto-opens on install; lazy activation verified (no Bridge/tmux on a look-only folder); 0.6.6; residual: none
 
+**Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
+
 **UI impact:** render
 <!-- A native Getting-Started walkthrough + a viewsWelcome that now actually shows; both verified manually + by the regression suite. -->
 

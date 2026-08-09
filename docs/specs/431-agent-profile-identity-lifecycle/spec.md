@@ -5,6 +5,9 @@ _Created 2026-07-22._
 **Status:** shipped
 **Closure:** Shipped through `t-152041` (`599441cc`), `t-c3605c` (`885f8e9d`) and `t-980e6e` (`c8bcf33c`); all child SDDs and final compatibility gates are green.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 **Task:** `t-c111e4` · **Parent:** `t-e50d4f` / SDD 429 · **Depends on:** SDD 430
 
 **Affected Product Invariants: none —** PI-001 concerns project-guidance ownership and remains unchanged. This slice does not alter prompt composition.

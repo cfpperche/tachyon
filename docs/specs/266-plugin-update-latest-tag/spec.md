@@ -21,6 +21,8 @@ update keeps the consented runtime set, and the 1.0.0 install had none), not a p
 gitignored (per-machine), so Part 2 has no commit. NOTE: the detection ships to the live VS Code UI only after a
 `.vsix` rebuild + reload (the running 0.43.1 build predates this); not packaged here (publish stays gated).
 
+**Verify:** `env -u TMUX npx vitest run test/unit/pluginSource.test.ts test/unit/pluginFetcher.test.ts test/unit/pluginEngine.test.ts`
+
 ## Intent
 
 "Check updates" re-resolves a plugin's **exact** pinned source ref. A plugin pinned to an immutable tag

@@ -10,6 +10,8 @@ window sub-line. `overview` and `engine` still decode and resolve to `system`, s
 fallbacks in `route.ts` were untouched. plan.md § D4 was cancelled mid-build: `control.workspaces` is
 always 0 or 1, so the collapse rule it specified was unreachable. Merged in `eb96fd56`.
 
+**Verify:** `npm run verify:full:quiet`
+
 <!-- The maintainer owns the intent; this is a transcription awaiting ratification.
      The measurement in § "They are already one screen" is what shapes this spec — read it
      before proposing any layout, because it says these two are a summary and its detail. -->

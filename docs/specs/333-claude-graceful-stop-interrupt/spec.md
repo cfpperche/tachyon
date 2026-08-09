@@ -10,6 +10,9 @@ _Created 2026-07-02._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- --run test/unit/agentManager.test.ts`
+**Verify:** `npm run typecheck`
+
 ## Intent
 
 Graceful Stop on a `claude`-runtime agent that is mid-turn does not work. `stopGracefully` (`src/agents/AgentManager.ts:810`) only pre-interrupts an active turn for `codex` (`interruptCodexTurnIfActive`: active turn → `Escape` + 500ms wait → `C-d` lands on an idle composer and exits). For `claude` it sends `C-d` (+ a second `C-d` after 150ms) with no pre-interrupt at all. In the Claude Code TUI, Ctrl+D only exits at an **idle prompt with an empty composer** — mid-turn it's a no-op, and with draft text in the composer it's a delete-char keystroke. The result: the row sits in the "stopping…" badge state (`stoppingSince`) until `STOPPING_FALLBACK_MS` (15s) elapses and the UI reverts as if Stop was never requested — this is the maintainer's exact repro (Stop on a working `claude` agent). A second, narrower hole: even when `claude` is idle, a leftover composer draft (e.g. a queued `notify_agent` envelope) also defeats the plain `C-d`.

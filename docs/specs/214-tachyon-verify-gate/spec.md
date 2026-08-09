@@ -13,6 +13,8 @@ acceptance not auto-verified is the purely-visual VS Code badge/Studio rendering
 notes.md § Live smoke, for a manual glance after a window reload); the MCP transport is E2E in
 bridge.test and the execution path is real-infra smoke-tested.
 
+**Verify:** `npm run typecheck && npm test`
+
 **UI impact:** interaction
 <!-- A "Verify" action + a pass/fail/stale badge on worktree agents. Verified by
 driving a real worktree: run the gate, see it pass; commit more, see it go stale;

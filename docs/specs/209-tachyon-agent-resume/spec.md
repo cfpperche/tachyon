@@ -21,6 +21,8 @@ minted `sessionId 4c706ba0-…` into `.tachyon/sessions.json` at spawn; after
 prior conversation. Residual: the ad-hoc/declared-without-autostart OFFER path is
 unit-tested but not yet exercised live; goose/amp/cursor not implemented.
 
+**Verify:** `npm run typecheck && npm test`
+
 **UI impact:** interaction
 <!-- Activation-time resume of agents whose process died (crash/reboot), plus a
 sidebar/notification affordance to resume ad-hoc ones. Verified by driving the

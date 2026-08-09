@@ -9,6 +9,9 @@ workspace JSON ledger, `sessions list/show`, `cleanup --dry-run`, `cleanup --ses
 `close --window-id`, identity revalidation before close, and runtime requirement preflight in `doctor`. Generic `launch`
 ownership is intentionally not claimed unless a future implementation can prove process/window identity safely.
 
+**Verify:** `bash -n /home/goat/tachyon-plugins/agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh`
+**Dogfood:** `bash -lc 'set -euo pipefail; evidence=.tachyon/evidence/agent-desktop-cleanup-v11; mkdir -p "$evidence"; session="dogfood-336-$(date +%s)"; /home/goat/tachyon-plugins/agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh open-url --browser chrome --new-window https://example.com --session "$session" --json > "$evidence/open-1.json"; /home/goat/tachyon-plugins/agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh open-url --browser chrome --new-window https://www.iana.org/domains/reserved --session "$session" --json > "$evidence/open-2.json"; /home/goat/tachyon-plugins/agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh cleanup --session "$session" --dry-run --json > "$evidence/dry-run.json"; /home/goat/tachyon-plugins/agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh cleanup --session "$session" --json > "$evidence/cleanup.json"; /home/goat/tachyon-plugins/agent-desktop/skills/agent-desktop/scripts/agent-desktop.sh sessions show --session "$session" --json > "$evidence/session-after.json"; node -e "const fs=require(\"fs\"); const c=JSON.parse(fs.readFileSync(process.argv[1], \"utf8\")); if (!c.ok || !c.closed || c.closed.length < 2) process.exit(1)" "$evidence/cleanup.json"'`
+
 ## Intent
 
 `agent-desktop` v0.1.0 can open, focus, restore, and capture-ready desktop windows, but it leaves a bad dogfood

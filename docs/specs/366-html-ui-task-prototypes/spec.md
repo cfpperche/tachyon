@@ -11,6 +11,12 @@ interactive panel omitted after T3 real-host egress proof unavailable. T9: typec
 via static pointer-guard overflow. Evidence `.tachyon/evidence/366-html-ui-task-prototypes/`. Worktree
 `tachyon/htmlUiPrototypes366T9`.
 
+**Verify:** `npm test -- --run test/unit/taskPrototypeStore.test.ts test/unit/prototypeHtmlPolicy.test.ts test/unit/taskDetailPanel.test.ts test/unit/taskStudioPanel.test.ts`
+**Verify:** `npm run test:browser -- taskPrototypeFrame`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full`
+**Dogfood:** `npm run test:browser -- taskPrototypeFrame`
+
 ## Intent
 
 Tasks that need a human UI decision currently ask the maintainer to infer a proposed interaction from prose,

@@ -9,6 +9,9 @@ _Created 2026-06-30._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- --run test/unit/pluginsListControls.test.ts test/unit/pluginViewModel.test.ts test/unit/webviewPreviewPluginsFixture.test.ts && npm run -s typecheck && npm run -s build`
+**Dogfood:** `bash docs/specs/302-plugins-view-improvements/smoke.sh`
+
 ## Intent
 
 The Plugins View currently has one global "Check updates" action in the header and a long installed-plugin list rendered in fixed alphabetical order. With many installed plugins, checking one plugin requires scanning/updating the whole list, and finding a plugin requires manual scrolling.

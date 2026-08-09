@@ -12,6 +12,9 @@ provisioned browser launcher is missing from this worktree.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 The canonical parity work established a truthful baseline for Codex, Claude, Grok, and Pi, but an

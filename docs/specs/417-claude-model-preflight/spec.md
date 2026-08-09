@@ -6,6 +6,10 @@ _Created 2026-07-19. Task: t-838af6._
 
 **Closure:** Shipped 2026-07-19 in `a9f37305`. Claude explicit-model delegation now yields an honest provisional preflight result and is validated by the existing bounded runtime-startup boundary; invalid models still reject and compensate, pending processes remain unassignable, and missing-adapter runtimes remain fail-closed. Dogfood, focused verification, typecheck, and the 5,108-test full suite passed headlessly.
 
+**Verify:** `npx vitest run test/unit/runtimeLaunchPreflight.test.ts test/unit/agentManager.test.ts test/unit/bridge.test.ts --maxWorkers=1`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/agentManager.test.ts -t "delegated Claude explicit model|provisional Claude model rejection" --maxWorkers=1`
+
 ## Intent
 
 Delegated ad-hoc launches fail closed whenever an explicit model is used on a runtime without an authoritative catalog adapter. Claude Code intentionally exposes no safe account-aware catalog command, so valid runtime-native selections such as `--model sonnet` and `--model claude-sonnet-5` are rejected before Claude can validate them. This makes task-fit routing impossible and leaves the already-prepared worktree in recovery state.

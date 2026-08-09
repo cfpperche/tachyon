@@ -12,6 +12,10 @@ gates passed on 2026-07-26.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/agentProfileConfigLoader.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts`
+
 ## Intent
 
 Claude canônico já possui home privado, capabilities capturadas e projeção parcial de

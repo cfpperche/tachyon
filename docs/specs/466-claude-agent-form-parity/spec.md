@@ -12,6 +12,10 @@ passed on 2026-07-26.
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/agentProfileStudio.test.ts test/unit/agentStudioDomain.test.ts`
+
 ## Intent
 
 Permitir criar e editar um agente Claude canônico pelo Agent Form com a mesma

@@ -6,6 +6,11 @@ _Created 2026-07-18._
 
 **Closure:** Pi primer + immutable authenticated Bridge extension shipped in `858affc1`; automated/human dogfood closure landed in `b32c2424` with installed Dev Host evidence at `625c3c1d`.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npx vitest run test/unit/piRuntimeOnboarding.test.ts test/unit/agentManager.test.ts test/unit/piBridgeExtension.test.ts test/unit/engineBundleStore.test.ts`
+**Verify:** `npm run test:invariants`
+**Dogfood:** `node scripts/dogfood/pi-runtime-onboarding.mjs`
+
 ## Intent
 
 Tachyon already recognizes `pi` as an AI CLI and injects its agent identity, Bridge URL and per-agent bearer token, but Pi has no built-in MCP client. A Tachyon-spawned Pi therefore appears in the fleet while receiving neither the generated onboarding brief nor the Bridge tools needed to participate in orchestration.

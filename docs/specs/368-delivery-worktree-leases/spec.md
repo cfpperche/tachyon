@@ -9,6 +9,10 @@ Git projection/worktree, exclusive sequential segments, verification/review, gov
 hygiene. The stronger process-fenced production boundary was not shipped or implied; it was extracted to umbrella
 `t-f25434` and follow-ups `t-a26f3c`, `t-816d7f`, `t-f55bf7`, and `t-9cf3ae`.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `node scripts/dogfood/delivery-lease.mjs`
+
 ## Intent
 
 Tachyon currently isolates a gated delegation by creating a worktree and task ref for its original agent. A

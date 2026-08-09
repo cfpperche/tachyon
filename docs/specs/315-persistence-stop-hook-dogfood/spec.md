@@ -64,3 +64,6 @@ recorder without `--dangerously-bypass-hook-trust`. Human dogfood confirmed `/ho
 ledger rows exist for both persisted runtimes (`codex` at `2026-07-02T01:07:05.906Z`, `claude` at
 `2026-07-02T01:08:09.066Z`) and `.tachyon/activity/persistence-hooks-failures.jsonl` is empty. Validation: focused
 unit tests, typecheck, headless dogfood, and SDD close passed.
+
+**Verify:** `npm test -- test/unit/codexBridge.test.ts test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts && npm run typecheck`
+**Dogfood:** `tail -n 30 .tachyon/activity/persistence-stop.jsonl && tail -n 30 .tachyon/activity/persistence-hooks-failures.jsonl 2>/dev/null || true`

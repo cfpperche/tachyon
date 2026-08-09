@@ -17,6 +17,10 @@ column still declared-only; divergence-on-profile-default kept (informative sema
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/livemodel2Behavior.gen.test.ts test/unit/agentModel.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/livemodel2Behavior.gen.test.ts`
+
 ## Intent
 
 The sidebar's per-agent model label is static: `modelFromCommand()` parses the *declared*

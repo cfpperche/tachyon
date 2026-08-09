@@ -11,6 +11,9 @@ request. Current repository-wide baseline failures reproduce unchanged on main a
 **Affected Product Invariants:** none — approval routing does not change the registered PI-001
 project-guidance ownership promise or oracle.
 
+**Verify:** `npx vitest run test/unit/daemonEngineHost.test.ts test/unit/cxApproval2Behavior.gen.test.ts test/unit/i18n.test.ts && npm run typecheck`
+**Dogfood:** `npm run dogfood -- persistent-engine`
+
 ## Intent
 
 The human-approval protocol, trusted panel, and host-only Approve/Deny resolver already exist.  During

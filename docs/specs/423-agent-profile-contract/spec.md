@@ -9,6 +9,10 @@ the canonical ownership, trust, reference, snapshot and lifecycle requirements; 
 behavior. Implementation remains in the dependency-ordered follow-ups under `t-7d2cc0`. Plugins remain
 outside V1 and may be reconsidered only by their dedicated task chain.
 
+**Verify:** `sh /home/goat/tachyon/.agents/skills/sdd/scripts/check-ids.sh`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 Tachyon currently persists the inputs that form an agent across several ownership and lifecycle

@@ -10,6 +10,9 @@ Working directory, with localized copy, regression coverage, and desktop/narrow 
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 The canonical runtime adapters now pre-authorize native project trust only for the workspace root and

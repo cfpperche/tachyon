@@ -14,6 +14,8 @@ the installed 0.55.31 (maintainer: new codex starts with EMPTY activity; codex-2
 and authenticates normally). Follow-up left open: the delegation-as-system t-ee7d5f captured the "green is
 not correct" lesson this spec taught.
 
+**Dogfood:** `{{representative headless dogfood command}}`
+
 ## Intent
 
 A CLASS of bugs shares one root: **codex (a capture runtime) has no stable per-INSTANCE session identity, so

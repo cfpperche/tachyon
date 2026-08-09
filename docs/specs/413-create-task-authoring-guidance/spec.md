@@ -9,6 +9,9 @@ _Created 2026-07-19._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/bridge.test.ts test/unit/taskStore.test.ts`
+**Dogfood:** `npx vitest run test/unit/bridge.test.ts -t "create_task rejects oversized authoring input atomically with decomposition guidance"`
+
 ## Intent
 
 `create_task` currently rejects oversized input through the MCP SDK's generic Zod error. The response reports a schema failure but does not explain how to preserve a large body without truncation, when to split independently shippable work into follow-up Tasks, or which existing surfaces hold chronological notes and durable artifacts. This makes the safe authoring path discoverable only after human intervention.

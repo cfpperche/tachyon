@@ -9,6 +9,10 @@ _Created 2026-07-26._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/runtimeConfigDropdown.test.ts`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 ## Intent
 
 Control → Runtime Config currently renders one button per runtime in a segmented control. That grows

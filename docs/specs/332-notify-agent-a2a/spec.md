@@ -6,6 +6,9 @@ _Created 2026-07-02._
 
 **Closure:** Implemented 2026-07-02 — `src/bridge/notifyAgent.ts` (pure sanitizer/composer), the `notify_agent` Bridge tool in `src/bridge/tools.ts`, parent-aware `composeSpawnContractBrief` guidance in `src/bridge/spawnContract.ts`, and death-poke wiring (`AgentManager.parentOf` + `Workspace`'s `expectedDeath`/`pokeParentOnDeath`) in `src/workspace/Workspace.ts`. Full unit suite (2030 tests) + both typechecks green. Human dogfood (real claude/codex TUI delivery matrix, per `tasks.md`) is a documented maintainer follow-up — the mechanics are proven headless (sanitizer, envelope, tool gating, death-poke suppression), but live-pane delivery across both runtimes wasn't exercised in this session.
 
+**Verify:** `env -u TMUX npx vitest run test/unit/notifyAgent.test.ts test/unit/spawnContract.test.ts && npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
+**Dogfood:** `env -u TMUX npx vitest run test/unit/notifyAgent.test.ts -t "sanit"`
+
 ## Intent
 
 _Origin: pin `p-2e337e`, co-designed with the maintainer 2026-07-02. Naming ratified by the maintainer: `notify_agent`, NOT `notify_parent` — the target is any agent by name (parent, sibling, anyone in the fleet); "tell my spawner" is only the delegation contract's default, never the primitive's shape._

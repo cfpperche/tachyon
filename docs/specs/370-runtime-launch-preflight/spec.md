@@ -8,6 +8,9 @@ _Created 2026-07-10 after the failed `rtObsVendorSpike` launch._
 on implementation commit `4509f294`; final review approved the main-reanchored branch and merge commit `44deb715`
 landed the runtime launch preflight closure.
 
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- runtime-launch-preflight`
+
 ## Intent
 
 `spawn_agent` currently validates delegation shape, isolation, worktree authority, and process-count limits, but it

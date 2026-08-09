@@ -10,6 +10,10 @@ _Created 2026-07-11._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npx vitest run test/unit/verifyFullQuiet.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm run verify:full:quiet`
+
 ## Intent
 
 Tachyon's declared full-verification command currently streams successful esbuild and Vitest output into every

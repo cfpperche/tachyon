@@ -10,6 +10,8 @@ _Created 2026-07-01._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `test -d docs/specs/315-persistence-stop-hook-dogfood && test -d docs/specs/316-persistence-hook-health-diagnostics && test -d docs/specs/317-persistence-hook-failure-log && test -d docs/specs/318-persistence-settings-ui && test -d docs/specs/319-persistence-ledger-retention && test -d docs/specs/320-persistence-handoff-candidates`
+
 ## Intent
 
 Spec 312 moved automatic continuity/handoff maintenance from visible terminal nudges into runtime-native hooks for

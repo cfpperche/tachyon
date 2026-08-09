@@ -9,6 +9,10 @@ _Created 2026-07-19._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/attentionStack.dogfood.test.ts --maxWorkers=1`
+
 ## Intent
 
 Tachyon currently serializes daemon notices through VS Code's native Notification Center. VS Code owns that surface's capacity, ordering, and lifetime (including a hard maximum of three visible toasts), so independent agent events arrive one-by-one and the human cannot compare parallel requests. Tachyon also races passive notices against a four-second timer, which advances its queue without proving that the human saw the message.

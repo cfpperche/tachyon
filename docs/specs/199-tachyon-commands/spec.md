@@ -6,6 +6,8 @@ _Created 2026-06-10._
 
 **Closure:** 2026-06-10 — shipped with spec 200 in the F15+F21 package; unit 153/153, integration 20 passing (xvfb), live claude -p E2E drove list_commands + run_command pass/fail; residual: none
 
+**Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
+
 **UI impact:** render
 <!-- Commands view + Studio tab exercised in the xvfb host through the _commands/_runCommand seams; webview internals are covered by the dogfood walkthrough (agent-browser cannot drive VSCode UI). -->
 

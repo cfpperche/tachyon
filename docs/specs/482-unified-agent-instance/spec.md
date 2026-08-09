@@ -325,6 +325,9 @@ review → approve, committed in ONE canonical transaction across both subjects,
 shut by default because no profile holds `grants.proposeSavedAgent`. Deliberately NOT done, with
 reasons: the legacy `declared` fallback, `declared` on the wire (ratified 7), and the promotion UI.
 
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+
 Delivered, phase by phase, with the finding that changed each one:
 
 | Phase | What shipped | The finding that shaped it |

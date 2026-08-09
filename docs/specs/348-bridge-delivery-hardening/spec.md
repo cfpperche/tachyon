@@ -9,6 +9,10 @@ _Created 2026-07-03._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
+**Verify:** `npm test -- test/unit/bridge.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- test/unit/bridge.test.ts`
+
 ## Intent
 
 _Origin: task t-12ec8a (residual of the t-8f86e2 verification of spec 341) and task t-ea86e6 (found during the same flow exercise). Both harden a Bridge delivery path that currently either types blind or stays silent._
