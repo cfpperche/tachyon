@@ -78,7 +78,7 @@ nothing about the current task: a later inline launch deliberately leaves an old
 postmortem residue but does not reference it.
 
 Inspection therefore starts from the current pane/session, not by scanning `.tachyon/briefs`. The
-file and its inventory are derived context, never authority for Mission Control status, Delivery,
+file and its inventory are derived context, never authority for Board status, Delivery,
 verification gates, approvals or permissions.
 
 Replacement uses a private same-directory temporary file followed by atomic rename. Preview and pane
@@ -98,4 +98,4 @@ object retain **SpawnContract**. Re-anchor messages say **re-anchor context**. E
 purpose, stage, UTF-8 bytes, shell-escaped transport bytes and destination, but never dump the body.
 
 For a missing task, do not infer or claim work from an old file, git status, project handoff or the
-Mission Control queue. Wait for an explicit user direction or a real delegated task contract.
+Board queue. Wait for an explicit user direction or a real delegated task contract.

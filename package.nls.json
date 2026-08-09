@@ -84,7 +84,7 @@
   "command.inspectEngine": "Tachyon: Control — Engine",
   "command.openPlugins": "Tachyon: Plugins",
   "command.openPluginSurface": "Tachyon: Open Plugin Surface",
-  "command.missionControl": "Tachyon: Board",
+  "command.board": "Tachyon: Board",
   "command.taskStudioNew": "Tachyon: New Task",
   "command.openProbes": "Tachyon: Probes",
   "command.resumeAll": "Tachyon: Resume Agents (with context)",

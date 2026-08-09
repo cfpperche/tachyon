@@ -1,7 +1,7 @@
 /* Validations — tokens from design-system (--ds-*), no standalone max-width column.
  *
  * t-dc9f64: every rule below the root is scoped under `.validations-main`, the way approval.css
- * scopes under `.approval-root`. Control co-loads mission-control.css, which declares UNSCOPED
+ * scopes under `.approval-root`. Control co-loads board.css, which declares UNSCOPED
  * `.validation-list { display: flex }` and `.validation-summary { white-space: nowrap }` for its own
  * board strip. Those class names collide with this surface: at equal specificity the winner is decided
  * by stylesheet order alone, and losing that coin flip laid the pending cards out in horizontal
@@ -70,7 +70,7 @@
   padding: 12px;
   cursor: pointer;
   font: inherit;
-  /* mission-control.css's board strip sets `nowrap` on this class name — long titles must wrap here. */
+  /* board.css's board strip sets `nowrap` on this class name — long titles must wrap here. */
   white-space: normal;
 }
 /* Title above id, never on one line: `gap` is the only thing separating "…non-empty queue" from

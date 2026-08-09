@@ -53,7 +53,7 @@ integração ou remoção sem autoridade e evidência suficiente é governança.
 | Roles e instructions | Contrato operacional entregue ao agente. | **Qualquer — opt-in** | Não. |
 | Startup primer | Protocolo básico de operação do agente. | **Qualquer — padrão** | Faz parte dos startups suportados. |
 | Project Guidance | Convenções específicas escolhidas pelo projeto. | **Qualquer — opt-in** | Não existem arquivos de projeto implicitamente globais. |
-| Mission Control Tasks | Ownership, prioridade, assignee e lifecycle do trabalho. | **Qualquer — opt-in por uso** | Não. |
+| Board Tasks | Ownership, prioridade, assignee e lifecycle do trabalho. | **Qualquer — opt-in por uso** | Não. |
 | Project Handoff | Estado compartilhado e distill concorrência-seguro. | **Qualquer — opt-in por uso** | Não. |
 | Continuidade | Estado privado recuperável de cada agente. | **Qualquer — opt-in por uso** | Não. |
 | Pins | Checklist leve compartilhado. | **Qualquer — opt-in por uso** | Não concede autoridade. |

@@ -38,7 +38,7 @@ import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
 import { PROBES_VIEW_TYPE, ProbeResultPanelManager, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
-import { MISSION_CONTROL_VIEW_TYPE, type MissionControlPanelState } from "./webview/MissionControlPanel.js";
+import { RETIRED_BOARD_VIEW_TYPE, type RetiredBoardPanelState } from "./webview/RetiredBoardPanel.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
 import { controlWorkspaceScope } from "./webview/shared/ControlWorkspaceScope.js";
 import type { SectionPanelState } from "./webview/shared/SectionPanelManager.js";
@@ -1270,7 +1270,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // to the task-detail app above — the Board never learns where a task detail lives, which is what let C4
   // and C5 land in either order.
   const boardPanels = new BoardPanelManager(context.extensionUri, {
-    getWorkspaces: () => workspaces().map((ws) => ws.missionControl),
+    getWorkspaces: () => workspaces().map((ws) => ws.board),
     openTask: (ws, taskId) => taskDetailPanels.open(ws.wsHash, taskId),
     openTaskStudio: (ws, id) => {
       // t-3c8f2a — the Board's "+ Task" (no id) is a CREATE: the document opens against a pre-minted
@@ -1614,7 +1614,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           humanInboxPanels.refresh();
         },
       },
-      validations: { getWorkspaces: () => workspaces().map((ws) => ws.missionControl) },
+      validations: { getWorkspaces: () => workspaces().map((ws) => ws.board) },
       onValidationsChanged: () => {
         boardPanels.refresh();
         humanInboxPanels.refresh();
@@ -1990,7 +1990,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           // failure leaves the field absent rather than reporting zero: absent means "not collected".
           ...(() => {
             try {
-              return { validationsAwaitingHuman: ws.missionControl.listValidations().filter(validationAwaitsHuman).length };
+              return { validationsAwaitingHuman: ws.board.listValidations().filter(validationAwaitsHuman).length };
             } catch {
               return {};
             }
@@ -2476,7 +2476,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // panel someone else had already restored. Opening an app touches no Control state, and re-opening for the
   // same project reveals rather than duplicating — which makes this safe against VS Code's unspecified
   // revive order all by itself.
-  registerTrustedPanelSerializer<MissionControlPanelState>(context, MISSION_CONTROL_VIEW_TYPE, (panel, state) => {
+  registerTrustedPanelSerializer<RetiredBoardPanelState>(context, RETIRED_BOARD_VIEW_TYPE, (panel, state) => {
     panel.dispose();
     openBoard(state?.wsHash);
   });
@@ -2971,12 +2971,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // legacy aliases (palette hidden for openCockpit)
     vscode.commands.registerCommand("tachyon.openCockpit", () => { openOverviewTab(); }),
     vscode.commands.registerCommand("tachyon.inspectEngine", () => { openEngineTab(); }),
-    // SDD 485 C5 — the Board opens as its own editor tab (same as tachyon.missionControl without the pick).
+    // SDD 485 C5 — the Board opens as its own editor tab (same as tachyon.board without the pick).
     vscode.commands.registerCommand("tachyon.openControlMission", () => { openBoard(); }),
     // SDD 485 D3 — Runtime Ops opens as its own editor tab, or reveals the one already open. The command
     // id keeps its `openControl` spelling on purpose: `tachyon.showRuntimeUsage` and
     // `src/runtimeOps/openRuntimeOps.ts` both route through it, and renaming it inside a cutover would
-    // churn three call sites to say the same thing (the same call C5 made for the `mission-control`
+    // churn three call sites to say the same thing (the same call C5 made for the `board`
     // directory name).
     vscode.commands.registerCommand("tachyon.openControlRuntime", () => { runtimeOpsPanels.open(); }),
     // t-75fd3c — deep-link straight to a task's detail subroute (the host-agnostic EngineHost.openTask
@@ -3321,7 +3321,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     vscode.commands.registerCommand("tachyon.openPluginSurface", (arg?: { pluginId?: string; viewId?: string; wsHash?: string } | string) => pluginSurfaces.openSurface(arg)),
     // spec 335 — open the Board for one project. SDD 485 C5: its own editor tab, revealed if already open.
-    vscode.commands.registerCommand("tachyon.missionControl", async (hash?: string) => {
+    vscode.commands.registerCommand("tachyon.board", async (hash?: string) => {
       const ws = hash ? byHash(hash) : await pickWorkspace();
       if (!ws) return;
       openBoard(ws.wsHash);

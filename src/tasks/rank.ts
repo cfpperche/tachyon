@@ -1,6 +1,6 @@
 /**
  * spec 335 (Gated v1.1 — in-column rank reorder) — pure, DOM-free rank-minting helpers shared by the board's
- * drag-reorder decision (`resolveReorder` in mission-control/interactions.ts) and the store's rebalance
+ * drag-reorder decision (`resolveReorder` in board/interactions.ts) and the store's rebalance
  * operation (`TaskStore.reorderLane`). No disk access, no store imports — mirrors boardModel's discipline.
  */
 

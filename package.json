@@ -393,8 +393,8 @@
         "icon": "$(extensions)"
       },
       {
-        "command": "tachyon.missionControl",
-        "title": "%command.missionControl%",
+        "command": "tachyon.board",
+        "title": "%command.board%",
         "icon": "$(checklist)"
       },
       {

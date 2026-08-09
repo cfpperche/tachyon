@@ -1,6 +1,6 @@
 /**
- * spec 335 — the SHARED host↔webview envelope for the Mission Control board. Pure module (no vscode, no
- * preact): imported by the host (MissionControlPanel), the webview (mission-control/main.tsx), and the dev
+ * spec 335 — the SHARED host↔webview envelope for the Board. Pure module (no vscode, no
+ * preact): imported by the host (BoardPanel), the webview (board/main.tsx), and the dev
  * preview harness. Mirrors the handoff/pin-studio message-envelope convention (spec 278/280).
  */
 
@@ -10,7 +10,7 @@ import type { ValidationOutcome } from "../../validations/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
-export interface MissionControlVM {
+export interface BoardVM {
   folder: string;
   wsHash: string;
   /** Optional for compatibility with persisted/dev fixtures created before liveness became degradable. */
@@ -18,7 +18,7 @@ export interface MissionControlVM {
   snapshot: BoardSnapshot;
 }
 
-export interface MissionControlWorkspaceOption {
+export interface BoardWorkspaceOption {
   hash: string;
   folder: string;
 }
@@ -27,9 +27,9 @@ export interface MissionControlWorkspaceOption {
 export const SNAPSHOT = "snapshot" as const;
 export interface SnapshotMessage {
   type: typeof SNAPSHOT;
-  vm: MissionControlVM;
+  vm: BoardVM;
 }
-export function snapshotMessage(vm: MissionControlVM): SnapshotMessage {
+export function snapshotMessage(vm: BoardVM): SnapshotMessage {
   return { type: SNAPSHOT, vm };
 }
 
@@ -46,10 +46,10 @@ export function taskErrorMessage(message: string, taskId?: string): TaskErrorMes
   return { type: TASK_ERROR, message, ...(taskId ? { taskId } : {}) };
 }
 
-export type MissionControlHostMessage = SnapshotMessage | TaskErrorMessage;
+export type BoardHostMessage = SnapshotMessage | TaskErrorMessage;
 
 /** webview → host actions. */
-export type MissionControlAction =
+export type BoardAction =
   | { type: "ready" }
   | { type: "requestSnapshot" }
   | { type: "updateTask"; id: string; patch: TaskUpdateInput }
@@ -63,16 +63,16 @@ export type MissionControlAction =
    *  board's former inline quick-add (createTask/CreateForm) as every create path now opens the Studio. */
   | { type: "openTaskStudio"; id?: string };
 
-export const requestSnapshotAction = (): MissionControlAction => ({ type: "requestSnapshot" });
-export const updateTaskAction = (id: string, patch: TaskUpdateInput): MissionControlAction => ({ type: "updateTask", id, patch });
-export const reorderLaneAction = (status: TaskStatus, priority: TaskPriority | undefined, orderedIds: string[], expect: Record<string, string>): MissionControlAction => ({
+export const requestSnapshotAction = (): BoardAction => ({ type: "requestSnapshot" });
+export const updateTaskAction = (id: string, patch: TaskUpdateInput): BoardAction => ({ type: "updateTask", id, patch });
+export const reorderLaneAction = (status: TaskStatus, priority: TaskPriority | undefined, orderedIds: string[], expect: Record<string, string>): BoardAction => ({
   type: "reorderLane",
   status,
   ...(priority !== undefined ? { priority } : {}),
   orderedIds,
   expect,
 });
-export const closeValidationAction = (id: string, outcome: ValidationOutcome, result_note: string): MissionControlAction => ({ type: "closeValidation", id, outcome, result_note });
-export const openTaskAction = (id: string): MissionControlAction => ({ type: "openTask", id });
-export const copyTaskIdAction = (id: string): MissionControlAction => ({ type: "copyTaskId", id });
-export const openTaskStudioAction = (id?: string): MissionControlAction => ({ type: "openTaskStudio", ...(id ? { id } : {}) });
+export const closeValidationAction = (id: string, outcome: ValidationOutcome, result_note: string): BoardAction => ({ type: "closeValidation", id, outcome, result_note });
+export const openTaskAction = (id: string): BoardAction => ({ type: "openTask", id });
+export const copyTaskIdAction = (id: string): BoardAction => ({ type: "copyTaskId", id });
+export const openTaskStudioAction = (id?: string): BoardAction => ({ type: "openTaskStudio", ...(id ? { id } : {}) });

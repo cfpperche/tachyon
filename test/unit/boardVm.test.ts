@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS, MissionAgentLists, buildMissionVm } from "../../src/cockpit/missionVm.js";
-import { legacyMissionControlTarget, type WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import { BOARD_AGENT_LIST_TIMEOUT_MS, BoardAgentLists, buildBoardVm } from "../../src/cockpit/boardVm.js";
+import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 // t-610705 Phase B #6 — the bounded/coalesced agent-liveness pass, ported from the retired
-// MissionControlPanelManager into src/cockpit/missionVm.ts (Control → Mission is the one board now).
+// BoardPanelManager into src/cockpit/boardVm.ts (Control → Mission is the one board now).
 // These tests carry over the panel-era coverage of the SAME mechanism: liveness must enrich the
 // board, never gate its task snapshot.
 
@@ -58,15 +58,15 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, op
   } as unknown as Workspace;
 }
 
-const target = (workspace: Workspace): WorkspaceMissionControlTarget => legacyMissionControlTarget(workspace);
+const target = (workspace: Workspace): WorkspaceBoardTarget => legacyBoardTarget(workspace);
 
-describe("buildMissionVm (bounded agent liveness)", () => {
+describe("buildBoardVm (bounded agent liveness)", () => {
   it("computes liveness + live ad-hoc chips when the agent list resolves in time", async () => {
     const ws = fakeWorkspace(undefined, { codex: {} }, { managedEntries: [{ name: "codex", lifetime: "saved" }, { name: "live-ad-hoc" }] });
     const t = await ws.taskStore.create({ title: "seed", author: "human" });
     await ws.taskStore.update(t.id, { status: "triaged", assignee: "open-ad-hoc" });
 
-    const vm = await buildMissionVm(target(ws), new MissionAgentLists(), () => {});
+    const vm = await buildBoardVm(target(ws), new BoardAgentLists(), () => {});
 
     expect(vm.agentLiveness).toEqual({ status: "available" });
     expect(vm.snapshot.chips.map((c) => c.agent)).toEqual(["codex", "human", "live-ad-hoc", "open-ad-hoc"]);
@@ -78,8 +78,8 @@ describe("buildMissionVm (bounded agent liveness)", () => {
     ws.manager.listAgents = () => pending.promise;
     await ws.taskStore.create({ title: "task store survives", author: "human" });
 
-    const vmPromise = buildMissionVm(target(ws), new MissionAgentLists(), () => {});
-    await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
+    const vmPromise = buildBoardVm(target(ws), new BoardAgentLists(), () => {});
+    await vi.advanceTimersByTimeAsync(BOARD_AGENT_LIST_TIMEOUT_MS);
     const vm = await vmPromise;
 
     expect(vm.agentLiveness).toEqual({ status: "unavailable" });
@@ -95,7 +95,7 @@ describe("buildMissionVm (bounded agent liveness)", () => {
     ws.manager.listAgents = async () => { throw new Error("tmux down"); };
     await ws.taskStore.create({ title: "still renders", author: "human" });
 
-    const vmPromise = buildMissionVm(target(ws), new MissionAgentLists(), () => {});
+    const vmPromise = buildBoardVm(target(ws), new BoardAgentLists(), () => {});
     await vi.advanceTimersByTimeAsync(0);
     const vm = await vmPromise;
 
@@ -105,13 +105,13 @@ describe("buildMissionVm (bounded agent liveness)", () => {
   });
 });
 
-describe("MissionAgentLists (per-workspace coalescing + trailing retry)", () => {
+describe("BoardAgentLists (per-workspace coalescing + trailing retry)", () => {
   it("coalesces concurrent refreshes onto one list() call and fires exactly one trailing retry after a timed-out list settles", async () => {
     const pending = deferred<never[]>();
     const list = vi.fn()
       .mockImplementationOnce(() => pending.promise)
       .mockResolvedValueOnce([]);
-    const lists = new MissionAgentLists();
+    const lists = new BoardAgentLists();
     let retries = 0;
     const retry = () => { retries += 1; };
 
@@ -122,7 +122,7 @@ describe("MissionAgentLists (per-workspace coalescing + trailing retry)", () => 
     await Promise.resolve();
     expect(list).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(BOARD_AGENT_LIST_TIMEOUT_MS);
     expect((await first).status).toEqual({ status: "unavailable" });
 
     // refreshes AFTER the fallback keep coalescing on the still-pending source and mark it trailing
@@ -144,7 +144,7 @@ describe("MissionAgentLists (per-workspace coalescing + trailing retry)", () => 
   });
 
   it("does not fire a trailing retry when the list settles in time (no fallback happened)", async () => {
-    const lists = new MissionAgentLists();
+    const lists = new BoardAgentLists();
     let retries = 0;
     const result = lists.bounded("ws-1", async () => [], () => { retries += 1; });
     await vi.advanceTimersByTimeAsync(0);
@@ -157,14 +157,14 @@ describe("MissionAgentLists (per-workspace coalescing + trailing retry)", () => 
     const wedged = deferred<never[]>();
     const listA = vi.fn(() => wedged.promise);
     const listB = vi.fn(async () => []);
-    const lists = new MissionAgentLists();
+    const lists = new BoardAgentLists();
 
     const a = lists.bounded("ws-a", listA, () => {});
     const b = lists.bounded("ws-b", listB, () => {});
     await vi.advanceTimersByTimeAsync(0);
     expect((await b).status).toEqual({ status: "available" });
 
-    await vi.advanceTimersByTimeAsync(MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(BOARD_AGENT_LIST_TIMEOUT_MS);
     expect((await a).status).toEqual({ status: "unavailable" });
     expect(listA).toHaveBeenCalledTimes(1);
     expect(listB).toHaveBeenCalledTimes(1);

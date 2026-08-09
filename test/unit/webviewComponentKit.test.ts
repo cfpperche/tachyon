@@ -25,7 +25,7 @@ const MIGRATED_VIEWS = [
   "approval",
   "validations",
   "runtime-ops",
-  "mission-control",
+  "board",
   "task-detail",
   "pipeline-studio",
 ];

@@ -1,22 +1,22 @@
-import type { MissionControlAgentRow, WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
-import type { MissionControlVM } from "../webview/mission-control/messages.js";
+import type { BoardAgentRow, WorkspaceBoardTarget } from "../shell/BoardTarget.js";
+import type { BoardVM } from "../webview/board/messages.js";
 
 /** Agent liveness enriches the board, but must never gate its task snapshot. */
-export const MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS = 250;
+export const BOARD_AGENT_LIST_TIMEOUT_MS = 250;
 
 interface AgentListResult {
-  agents: MissionControlAgentRow[];
-  status: MissionControlVM["agentLiveness"];
+  agents: BoardAgentRow[];
+  status: BoardVM["agentLiveness"];
 }
 
 interface AgentListRequest {
-  source: Promise<MissionControlAgentRow[]>;
+  source: Promise<BoardAgentRow[]>;
   bounded: Promise<AgentListResult>;
   fellBack: boolean;
   trailing: boolean;
 }
 
-function boundedAgentList(list: () => Promise<MissionControlAgentRow[]>, onFallback: () => void): Promise<AgentListResult> {
+function boundedAgentList(list: () => Promise<BoardAgentRow[]>, onFallback: () => void): Promise<AgentListResult> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (result: AgentListResult): void => {
@@ -29,7 +29,7 @@ function boundedAgentList(list: () => Promise<MissionControlAgentRow[]>, onFallb
       onFallback();
       finish({ agents: [], status: { status: "unavailable" } });
     };
-    const timer = setTimeout(unavailable, MISSION_CONTROL_AGENT_LIST_TIMEOUT_MS);
+    const timer = setTimeout(unavailable, BOARD_AGENT_LIST_TIMEOUT_MS);
 
     // Starting from an already-resolved promise also captures a synchronous throw. Both handlers stay
     // attached after timeout so a late rejection cannot become unhandled.
@@ -41,19 +41,19 @@ function boundedAgentList(list: () => Promise<MissionControlAgentRow[]>, onFallb
 }
 
 /**
- * Per-workspace agent-list coalescing (ported from the retired MissionControlPanelManager, t-610705
- * Phase B #6): concurrent board refreshes share ONE underlying listMissionControlAgents() call, the
+ * Per-workspace agent-list coalescing (ported from the retired BoardPanelManager, t-610705
+ * Phase B #6): concurrent board refreshes share ONE underlying listBoardAgents() call, the
  * bounded race renders the board at 250ms with liveness "unavailable" instead of blocking on a slow
  * or wedged tmux query, and when the slow response finally settles after a fallback WITH further
  * refreshes coalesced behind it, `onTrailingRetry` fires exactly once so the caller can re-render
  * with real liveness — the user never sees the board block.
  */
-export class MissionAgentLists {
+export class BoardAgentLists {
   private readonly requests = new Map<string, AgentListRequest>();
 
   bounded(
     wsHash: string,
-    list: () => Promise<MissionControlAgentRow[]>,
+    list: () => Promise<BoardAgentRow[]>,
     onTrailingRetry: () => void,
   ): Promise<AgentListResult> {
     let request = this.requests.get(wsHash);
@@ -82,13 +82,13 @@ export class MissionAgentLists {
   }
 }
 
-export async function buildMissionVm(
-  ws: WorkspaceMissionControlTarget,
-  lists: MissionAgentLists,
+export async function buildBoardVm(
+  ws: WorkspaceBoardTarget,
+  lists: BoardAgentLists,
   onTrailingRetry: () => void,
-): Promise<MissionControlVM> {
+): Promise<BoardVM> {
   const declared = new Set(ws.declaredAgentNames());
-  const { agents, status } = await lists.bounded(ws.wsHash, () => ws.listMissionControlAgents(), onTrailingRetry);
+  const { agents, status } = await lists.bounded(ws.wsHash, () => ws.listBoardAgents(), onTrailingRetry);
   const liveManaged = agents.filter((a) => a.running);
   const liveTemporary = liveManaged
     // SDD 482 phase 3 — "which live instances are Temporary?" `declared.has(name)` stays as the

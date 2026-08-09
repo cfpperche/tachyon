@@ -13,7 +13,7 @@ import {
   workspaceExtensionCommandSuccessV1,
   workspaceExtensionQuerySuccessV1,
   workspaceHandoffViewSuccessV1,
-  workspaceMissionControlViewSuccessV1,
+  workspaceBoardViewSuccessV1,
   workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
   workspaceSidebarViewSuccessV1,
@@ -258,7 +258,7 @@ describe("EngineControlClient", () => {
         updatedAt: "2026-07-14T12:00:00.000Z",
       },
     }));
-    const result = workspaceMissionControlViewSuccessV1({
+    const result = workspaceBoardViewSuccessV1({
       schemaVersion: 1,
       board: {
         schemaVersion: 1,

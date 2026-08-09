@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildBoardModel } from "../../src/tasks/boardModel.js";
 import type { BoardSnapshot } from "../../src/tasks/boardSnapshot.js";
 import type { Task, TaskView } from "../../src/tasks/types.js";
-import { applyAwaitingHumanFilter, shouldShowAwaitingFilterButton } from "../../src/webview/mission-control/interactions.js";
+import { applyAwaitingHumanFilter, shouldShowAwaitingFilterButton } from "../../src/webview/board/interactions.js";
 
 // t-2ab324 — App.tsx has no component-render harness in test/unit (see boardModel.test.ts's awaitingHuman
 // suite), so this exercises the SAME pure functions App.tsx wires the toolbar button/board to:

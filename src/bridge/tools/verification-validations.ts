@@ -114,7 +114,7 @@ export function registerValidationTools(mcp: McpServer, deps: BridgeDeps): void 
   mcp.registerTool(
     "list_validations",
     {
-      description: "List bounded Validation summaries for Mission Control. Omits instructions; use get_validation for full detail.",
+      description: "List bounded Validation summaries for Board. Omits instructions; use get_validation for full detail.",
       inputSchema: {
         limit: z.number().int().min(1).max(500).default(100),
       },

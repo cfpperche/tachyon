@@ -44,20 +44,20 @@ import {
 } from "../runtime-api/runtimeOpsProjection.js";
 import type { RuntimeOpsSnapshot } from "../runtimeOps/types.js";
 import {
-  isMissionControlTaskReorderInputV1,
-  isMissionControlTaskUpdateInputV1,
-  isMissionControlValidationCloseInputV1,
-  isMissionControlValidationAssignInputV1,
-  type MissionControlTaskReorderInputV1,
-  type MissionControlTaskUpdateInputV1,
-  type MissionControlValidationCloseInputV1,
-  type MissionControlValidationAssignInputV1,
-} from "../runtime-api/missionControlCommands.js";
+  isBoardTaskReorderInputV1,
+  isBoardTaskUpdateInputV1,
+  isBoardValidationCloseInputV1,
+  isBoardValidationAssignInputV1,
+  type BoardTaskReorderInputV1,
+  type BoardTaskUpdateInputV1,
+  type BoardValidationCloseInputV1,
+  type BoardValidationAssignInputV1,
+} from "../runtime-api/boardCommands.js";
 import {
-  isMissionControlViewV1,
-  parseMissionControlViewV1,
-  type MissionControlViewV1,
-} from "../runtime-api/missionControlProjection.js";
+  isBoardViewV1,
+  parseBoardViewV1,
+  type BoardViewV1,
+} from "../runtime-api/boardProjection.js";
 import {
   isTaskPrototypeReviewInputV1,
   type TaskPrototypeReviewInputV1,
@@ -323,19 +323,19 @@ export type WorkspaceCommandV1 = {
 } | {
   schemaVersion: 1;
   method: "task.update";
-  input: MissionControlTaskUpdateInputV1;
+  input: BoardTaskUpdateInputV1;
 } | {
   schemaVersion: 1;
   method: "task.reorder-lane";
-  input: MissionControlTaskReorderInputV1;
+  input: BoardTaskReorderInputV1;
 } | {
   schemaVersion: 1;
   method: "validation.assign";
-  input: MissionControlValidationAssignInputV1;
+  input: BoardValidationAssignInputV1;
 } | {
   schemaVersion: 1;
   method: "validation.close";
-  input: MissionControlValidationCloseInputV1;
+  input: BoardValidationCloseInputV1;
 } | {
   schemaVersion: 1;
   method: "task.prototype.review";
@@ -543,7 +543,7 @@ export type WorkspaceQueryResultV1 =
       schemaVersion: 1;
       method: "task.board";
       status: "ok";
-      view: MissionControlViewV1;
+      view: BoardViewV1;
     }
   | {
       schemaVersion: 1;
@@ -635,7 +635,7 @@ const SHA256_RE = /^[a-f0-9]{64}$/;
 const GIT_ID_RE = /^[a-f0-9]{7,64}$/;
 const OPERATION_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
-export const MISSION_CONTROL_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
+export const BOARD_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const TASK_DETAIL_RESPONSE_MAX_BYTES = 2 * 1024 * 1024;
 export const TASK_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
 export const PIN_STUDIO_RESPONSE_MAX_BYTES = 32 * 1024 * 1024;
@@ -734,10 +734,10 @@ export function isWorkspaceCommandV1(value: unknown): value is WorkspaceCommandV
     || !isRecord(value.input)) return false;
   if (value.method === "studio.submit") return isWorkspaceStudioSubmitInputV1(value.input);
   if (value.method === "agent.input") return isAgentInputCommandV1(value.input);
-  if (value.method === "task.update") return isMissionControlTaskUpdateInputV1(value.input);
-  if (value.method === "task.reorder-lane") return isMissionControlTaskReorderInputV1(value.input);
-  if (value.method === "validation.close") return isMissionControlValidationCloseInputV1(value.input);
-  if (value.method === "validation.assign") return isMissionControlValidationAssignInputV1(value.input);
+  if (value.method === "task.update") return isBoardTaskUpdateInputV1(value.input);
+  if (value.method === "task.reorder-lane") return isBoardTaskReorderInputV1(value.input);
+  if (value.method === "validation.close") return isBoardValidationCloseInputV1(value.input);
+  if (value.method === "validation.assign") return isBoardValidationAssignInputV1(value.input);
   if (value.method === "task.prototype.review") return isTaskPrototypeReviewInputV1(value.input);
   if (value.method === "task.studio.apply") return isTaskStudioApplyInputV1(value.input);
   if (value.method === "task.studio.cancel") return isTaskStudioCancelInputV1(value.input);
@@ -916,7 +916,7 @@ export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQuer
         : value.method === "probe.view"
           ? isWorkspaceProbeViewV1(value.view)
           : value.method === "task.board"
-            ? isMissionControlViewV1(value.view)
+            ? isBoardViewV1(value.view)
             : value.method === "task.detail"
               ? isTaskDetailViewV1(value.view)
               : value.method === "task.studio"
@@ -1088,18 +1088,18 @@ export function workspaceExtensionQuerySuccessV1(
 }
 
 /** Builds and bounds the large board read without relaxing the 64 KiB limit of any other control response. */
-export function workspaceMissionControlViewSuccessV1(view: MissionControlViewV1): WorkspaceQueryResultV1 {
+export function workspaceBoardViewSuccessV1(view: BoardViewV1): WorkspaceQueryResultV1 {
   const result = {
     schemaVersion: 1,
     method: "task.board",
     status: "ok",
-    view: parseMissionControlViewV1(view),
+    view: parseBoardViewV1(view),
   } as const;
   const transportEnvelope = { ok: true as const, op: "query" as const, result };
   // The control server terminates every response with a newline. Measure the exact bytes the
   // client receives so a payload at the boundary cannot pass here and fail one byte later.
-  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > MISSION_CONTROL_RESPONSE_MAX_BYTES) {
-    throw new Error("Mission Control view exceeds its dedicated response size limit");
+  if (Buffer.byteLength(`${JSON.stringify(transportEnvelope)}\n`, "utf8") > BOARD_RESPONSE_MAX_BYTES) {
+    throw new Error("Board view exceeds its dedicated response size limit");
   }
   return result;
 }

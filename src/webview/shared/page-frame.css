@@ -1,7 +1,7 @@
 /*
  * SDD 485 — THE PAGE FRAME of a standalone app, in ONE place.
  *
- * t-32c872. `mission-control.css`'s per-column scrolling is a height chain: `body` with a definite
+ * t-32c872. `board.css`'s per-column scrolling is a height chain: `body` with a definite
  * height → `#root { height: 100% }` → … → `.col-body { overflow-y: auto }`. Inside Control that chain
  * started at `cockpit/cockpit.css:13-22`, which pins `html, body { height: 100% !important; overflow:
  * hidden !important }` — t-e085bc deleted the Board's own copy of those rules on purpose and declared

@@ -14,7 +14,7 @@ import { openPreview } from "./support/preview";
 // with the same shape Fleet had — title + hint + an action in `PageChrome`'s actions slot.
 const SURFACES = {
   inbox: { view: "human-inbox", fixture: "list", waitFor: "[data-testid=inbox-counts]" },
-  mission: { view: "mission-control", fixture: "default", waitFor: ".mc-head-tools" },
+  mission: { view: "board", fixture: "default", waitFor: ".mc-head-tools" },
 } as const;
 
 async function loadFixture(

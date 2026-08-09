@@ -7,7 +7,7 @@ import { registerTools } from "../../src/bridge/tools.js";
  * t-a4ac02 — remove the Bridge tool `next_task`; keep the pure function `nextTask()`.
  *
  * Two things share a name. The TOOL was an agent-pull path nobody walks (coordinator push via
- * spawn_agent(claim_task:) is the load-bearing claim). The FUNCTION still computes Mission Control
+ * spawn_agent(claim_task:) is the load-bearing claim). The FUNCTION still computes Board
  * spotlight per chip. This file is the source/registry gate for that split:
  *   1. registerTools must NOT expose `next_task`
  *   2. boardSnapshot must still call nextTask() for each chip

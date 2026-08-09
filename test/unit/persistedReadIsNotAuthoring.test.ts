@@ -25,7 +25,7 @@ import {
 } from "../../src/tasks/TaskPrototypeStore.js";
 import { TASK_AUTHORING_LIMITS } from "../../src/tasks/taskAuthoring.js";
 import { buildBoardSnapshot } from "../../src/tasks/boardSnapshot.js";
-import { projectMissionControlBoard } from "../../src/runtime-api/missionControlProjection.js";
+import { projectBoard } from "../../src/runtime-api/boardProjection.js";
 import { projectTaskDetail } from "../../src/runtime-api/taskDetailProjection.js";
 import { projectTaskStudio } from "../../src/runtime-api/taskStudioProjection.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
@@ -153,12 +153,12 @@ describe("persisted reads are not authoring (t-c2882f)", () => {
    * record, the board still rendered without it, and serving the record correctly is exactly what
    * breaks a board that cannot carry it. The neighbour row is asserted for that reason.
    */
-  it("carries an oversize record through the Mission Control board without dropping its neighbours", () => {
+  it("carries an oversize record through the Board without dropping its neighbours", () => {
     persistTask("t-aaaaaa", { body: "small", title: "an ordinary neighbour" });
     persistTask("t-1d9d15", { body: "B".repeat(11_511) });
     const store = new TaskStore(root);
 
-    const board = projectMissionControlBoard(buildBoardSnapshot({ store, declaredAgents: [], workspaceRoot: root }));
+    const board = projectBoard(buildBoardSnapshot({ store, declaredAgents: [], workspaceRoot: root }));
     expect(board.views.map((v) => v.task.id).sort()).toEqual(["t-1d9d15", "t-aaaaaa"]);
     expect(board.views.find((v) => v.task.id === "t-1d9d15")?.task.body).toHaveLength(11_511);
   });
@@ -187,7 +187,7 @@ describe("persisted reads are not authoring (t-c2882f)", () => {
     expect(() => store.get("t-d780e4")).not.toThrow(/unknown task/);
     expect(store.listRaw().map((t) => t.id)).toEqual(["t-aaaaaa"]);
 
-    const board = projectMissionControlBoard(buildBoardSnapshot({ store, declaredAgents: [], workspaceRoot: root }));
+    const board = projectBoard(buildBoardSnapshot({ store, declaredAgents: [], workspaceRoot: root }));
     expect(board.views.map((v) => v.task.id)).toEqual(["t-aaaaaa"]);
   });
 

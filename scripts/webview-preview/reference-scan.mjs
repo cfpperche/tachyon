@@ -5,7 +5,7 @@
  * WHY THIS EXISTS. `test:browser` needs a system Chrome and ~96s, so `verify:full` does not run it — and
  * for months nobody else did either. It rotted in silence: t-c55f8d measured 17 failures on main and found
  * that 16 of them were ONE defect repeated — a test opening `?view=plugins`, `?view=runtime-ops`,
- * `dist/webview/task-studio.js`, `dist/webview/mission-control.js`, all of which the product had folded
+ * `dist/webview/task-studio.js`, `dist/webview/board.js`, all of which the product had folded
  * into the Control bundle. None of those needed a browser to be detected: they were strings pointing at
  * doors that no longer exist. This scan reads those strings and matches them against the two LIVE sources,
  * in milliseconds, on any machine — so the day a route is retired, the person retiring it sees the tests

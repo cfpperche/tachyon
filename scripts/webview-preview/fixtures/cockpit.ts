@@ -77,7 +77,7 @@ export const strings: CockpitStrings & WorktreesStrings & ExecutionGraphStrings 
   auto: "Auto-refresh",
   empty: "No Tachyon workspace attached in this window.",
   copyDiagnostics: "Copy diagnostics",
-  openMissionControl: "Open Board",
+  openBoard: "Open Board",
   openSettings: "Open Settings",
   openDoctor: "Run Doctor",
   copied: "Diagnostics copied",
@@ -982,7 +982,7 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   // deleted, so there is no surface to photograph. `fleet` is still the nav section the studio/agent-subroute
   // fixtures below build against, which is why those keep using it.
   // SDD 485 C5 — no `mission` fixture: Control has no Board section to photograph any more. The Board has
-  // its own harness route (?view=mission-control), rendering the same component in the page it really ships.
+  // its own harness route (?view=board), rendering the same component in the page it really ships.
   // SDD 485 C4 — the four `task-detail*` cockpit fixtures are GONE with the subroute: the task detail
   // is a standalone app, so its four content shapes (default / heavy / sparse / tombstone) are previewed
   // through its OWN route (`?view=task-detail`) against the REAL shipped bundle. Previewing it here would

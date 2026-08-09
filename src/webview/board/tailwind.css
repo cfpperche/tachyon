@@ -1,4 +1,4 @@
-/* t-6da5f0 — Tailwind v4 entry for the Mission Control board panel (t-b0a229's first board-surface Kit
+/* t-6da5f0 — Tailwind v4 entry for the Board panel (t-b0a229's first board-surface Kit
  * adoption: KitSelect for the agent filter). Same preflight-off construction as the other Tailwind-opted
  * surfaces — see task-studio/tailwind.css's header. */
 @layer theme, utilities;

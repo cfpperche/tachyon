@@ -10,7 +10,7 @@ export interface AgentFocus {
   /** Truncated display text (sidebar). */
   text: string;
   source: FocusSource;
-  /** Mission Control task id when source === "task". */
+  /** Board task id when source === "task". */
   taskId?: string;
   /** Full untruncated text for tooltip. */
   full: string;

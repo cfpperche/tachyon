@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState, type SectionPanelTarget } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { buildMissionVm, MissionAgentLists } from "../cockpit/missionVm.js";
-import { READY, snapshotMessage, taskErrorMessage, type MissionControlAction } from "./mission-control/messages.js";
-import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
+import { buildBoardVm, BoardAgentLists } from "../cockpit/boardVm.js";
+import { READY, snapshotMessage, taskErrorMessage, type BoardAction } from "./board/messages.js";
+import type { WorkspaceBoardTarget } from "../shell/BoardTarget.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 
 export const BOARD_VIEW_TYPE = "tachyonBoard";
@@ -38,15 +38,15 @@ type BoardRefreshKind = "board";
  * `session.run` for exactly that reason — an ungated one would be the fifth door 0.56.159 was about.
  */
 export interface BoardPanelDeps {
-  getWorkspaces: () => WorkspaceMissionControlTarget[];
+  getWorkspaces: () => WorkspaceBoardTarget[];
   /**
    * Open a task's own detail surface. Injected rather than performed here because the Board must not know
    * WHERE a task detail lives: today it is a Control subroute, and SDD 485 C4 makes it a `document` app.
    * This is the one wire that moves when that lands.
    */
-  openTask: (ws: WorkspaceMissionControlTarget, taskId: string) => void;
+  openTask: (ws: WorkspaceBoardTarget, taskId: string) => void;
   /** Open Task Studio for a new (`id` omitted) or existing task — still a Control studio route. */
-  openTaskStudio: (ws: WorkspaceMissionControlTarget, id?: string) => void;
+  openTaskStudio: (ws: WorkspaceBoardTarget, id?: string) => void;
   /** the ONE fan-out every task mutation takes, whatever its source (see extension.ts's `onTasksChanged`). */
   onTasksChanged: () => void;
 }
@@ -55,17 +55,17 @@ export class BoardPanelManager {
   private readonly manager: SectionPanelManager<BoardRefreshKind>;
   /**
    * The bounded/coalesced agent-liveness pass, moved no further than it had to be. It landed in
-   * `src/cockpit/missionVm.ts` when SDD 410 retired the old standalone panel, and it is a pure function of a
+   * `src/cockpit/boardVm.ts` when SDD 410 retired the old standalone panel, and it is a pure function of a
    * workspace target with no Control anywhere in it — so it comes back to a standalone host by IMPORT rather
    * than by being moved a second time. One instance per manager: it coalesces per wsHash, so it is the two
    * project panels that would otherwise duplicate a request which share one.
    */
-  private readonly agentLists = new MissionAgentLists();
+  private readonly agentLists = new BoardAgentLists();
 
   constructor(
     extensionUri: vscode.Uri,
     private readonly deps: BoardPanelDeps,
-    app: WebviewAppEntry = webviewApp("mission-control"),
+    app: WebviewAppEntry = webviewApp("board"),
     workspaceScope?: ControlWorkspaceScope,
   ) {
     this.manager = new SectionPanelManager<BoardRefreshKind>(extensionUri, this.configFor(app), workspaceScope);
@@ -102,7 +102,7 @@ export class BoardPanelManager {
     this.manager.dispose();
   }
 
-  private workspaceFor(target: SectionPanelTarget): WorkspaceMissionControlTarget | undefined {
+  private workspaceFor(target: SectionPanelTarget): WorkspaceBoardTarget | undefined {
     return this.deps.getWorkspaces().find((w) => w.wsHash === target.project);
   }
 
@@ -120,7 +120,7 @@ export class BoardPanelManager {
       // came from cockpit.css. Standalone, the Board must link the shared frame itself. It is a shared
       // sheet, so this is conformance, not page chrome of its own — and the contract now checks the
       // CONSUMPTION, not just the declaration.
-      styleFiles: ["codicon.css", "design-system.css", "page-frame.css", "vscode-theme.css", "mission-control.tailwind.css", "mission-control.css"],
+      styleFiles: ["codicon.css", "design-system.css", "page-frame.css", "vscode-theme.css", "board.tailwind.css", "board.css"],
       title: () => "Board",
       refreshKindFor: boardRefreshKind,
       bind: (session) => {
@@ -134,7 +134,7 @@ export class BoardPanelManager {
             // The trailing retry re-enters through the GATE rather than calling `send` directly: a liveness
             // list that settles after its 250ms fallback already rendered must re-post real liveness, and a
             // panel hidden in the meantime must journal that instead of doing the work for nobody.
-            const vm = await buildMissionVm(ws, this.agentLists, () => { session.run("board", () => { void send(); }); });
+            const vm = await buildBoardVm(ws, this.agentLists, () => { session.run("board", () => { void send(); }); });
             session.post(snapshotMessage(vm));
           } catch (err) {
             session.post(taskErrorMessage(err instanceof Error ? err.message : String(err)));
@@ -147,7 +147,7 @@ export class BoardPanelManager {
           // after a burst — one, either way — not what they do.
           replay: () => { void send(); },
           resync: () => { void send(); },
-          onMessage: (raw) => { void this.handleAction(session, raw as Partial<MissionControlAction>); },
+          onMessage: (raw) => { void this.handleAction(session, raw as Partial<BoardAction>); },
         };
       },
     };
@@ -157,7 +157,7 @@ export class BoardPanelManager {
    * The board's six actions. `requestSnapshot` and `ready` never arrive here — `boardRefreshKind` claims them
    * for the gate — so everything below is a human action on a panel someone is looking at.
    */
-  private async handleAction(session: SectionPanelSession<BoardRefreshKind>, m: Partial<MissionControlAction>): Promise<void> {
+  private async handleAction(session: SectionPanelSession<BoardRefreshKind>, m: Partial<BoardAction>): Promise<void> {
     if (!m?.type) return;
     // Copying an id touches no workspace, so it must not be refused when one is missing.
     if (m.type === "copyTaskId" && typeof m.id === "string") {

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { ToastProvider } from "../shared/ui";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
-import { App, type MissionControlDispatch, type TaskErrorEvent } from "./App";
+import { App, type BoardDispatch, type TaskErrorEvent } from "./App";
 import {
   SNAPSHOT,
   TASK_ERROR,
@@ -15,7 +15,7 @@ import {
   reorderLaneAction,
   requestSnapshotAction,
   updateTaskAction,
-  type MissionControlVM,
+  type BoardVM,
 } from "./messages";
 import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
@@ -44,7 +44,7 @@ const post = (message: unknown): void => {
 };
 
 function BoardRoot() {
-  const [vm, setVm] = useState<MissionControlVM | undefined>(undefined);
+  const [vm, setVm] = useState<BoardVM | undefined>(undefined);
   const [lastError, setLastError] = useState<TaskErrorEvent | undefined>(undefined);
 
   useEffect(() => {
@@ -52,7 +52,7 @@ function BoardRoot() {
     const onMessage = (event: MessageEvent) => {
       const raw = event.data as Record<string, unknown> | undefined;
       if (!raw || typeof raw.type !== "string") return;
-      if (raw.type === SNAPSHOT && raw.vm) setVm(raw.vm as MissionControlVM);
+      if (raw.type === SNAPSHOT && raw.vm) setVm(raw.vm as BoardVM);
       else if (raw.type === TASK_ERROR && typeof raw.message === "string") {
         errorSeq += 1;
         setLastError({
@@ -75,7 +75,7 @@ function BoardRoot() {
     };
   }, []);
 
-  const dispatch: MissionControlDispatch = useMemo(
+  const dispatch: BoardDispatch = useMemo(
     () => ({
       updateTask: (id: string, patch: TaskUpdateInput) => post(updateTaskAction(id, patch)),
       reorderLane: (status: TaskStatus, priority: TaskPriority | undefined, orderedIds: string[], expect: Record<string, string>) =>

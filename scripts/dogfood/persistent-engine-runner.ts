@@ -23,7 +23,7 @@ import { workspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
 import { workspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
-import { workspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import { workspaceBoardTarget } from "../../src/shell/BoardTarget.js";
 import { workspacePinStudioTarget } from "../../src/shell/PinStudioTarget.js";
 import { workspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 import { workspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
@@ -60,7 +60,7 @@ fs.writeFileSync(path.join(workspaceRoot, "tachyon.yml"), [
 const dogfoodTaskStore = new TaskStore(workspaceRoot);
 let dogfoodTask = await dogfoodTaskStore.create({
   id: "t-d06f00",
-  title: "persistent Mission Control dogfood",
+  title: "persistent Board dogfood",
   body: "remote board body",
   author: "human",
 });
@@ -95,7 +95,7 @@ dogfoodTask = await dogfoodTaskStore.update(dogfoodTask.id, {
   },
 });
 const dogfoodValidation = await new ValidationStore(workspaceRoot).create({
-  title: "persistent Mission Control validation",
+  title: "persistent Board validation",
   author: "human",
   executor: "human",
 });
@@ -212,13 +212,13 @@ try {
     || !(await sidebar.loadSidebar()).pins.some((pin) => pin.id === dogfoodPin.id && pin.done)) {
     throw new Error(`remote Sidebar mutation failed: ${JSON.stringify(sidebarMutation)}`);
   }
-  const missionControl = workspaceMissionControlTarget(first);
-  const initialBoard = await missionControl.boardSnapshot(["dogfood-reviewer"]);
+  const board = workspaceBoardTarget(first);
+  const initialBoard = await board.boardSnapshot(["dogfood-reviewer"]);
   if (initialBoard.views[0]?.task.id !== dogfoodTask.id
     || initialBoard.views[0]?.task.body !== "remote board body"
     || !initialBoard.chips.some((chip) => chip.agent === "dogfood-reviewer")
     || initialBoard.validations?.items[0]?.id !== dogfoodValidation.id) {
-    throw new Error(`remote Mission Control projection failed: ${JSON.stringify(initialBoard)}`);
+    throw new Error(`remote Board projection failed: ${JSON.stringify(initialBoard)}`);
   }
   const taskDetail = workspaceTaskDetailTarget(first);
   const initialDetail = await taskDetail.loadTaskDetail(dogfoodTask.id);
@@ -236,7 +236,7 @@ try {
   const taskStudio = workspaceTaskStudioTarget(first);
   const initialStudio = await taskStudio.loadTaskStudio(dogfoodTask.id);
   if (initialStudio.taskId !== dogfoodTask.id
-    || initialStudio.title !== "persistent Mission Control dogfood"
+    || initialStudio.title !== "persistent Board dogfood"
     || initialStudio.attachments[0]?.id !== dogfoodImage.id
     || initialStudio.anchor !== "load") {
     throw new Error(`remote Task Studio projection failed: ${JSON.stringify(initialStudio)}`);
@@ -317,23 +317,23 @@ try {
     expect: { updatedAt: dogfoodTask.updatedAt },
   });
   dogfoodTask = dogfoodTaskStore.get(dogfoodTask.id);
-  await missionControl.updateTask(dogfoodTask.id, {
+  await board.updateTask(dogfoodTask.id, {
     status: "triaged",
     expect: { status: "inbox", updatedAt: dogfoodTask.updatedAt },
   });
-  const updatedBoard = await missionControl.boardSnapshot([]);
+  const updatedBoard = await board.boardSnapshot([]);
   const updatedTask = updatedBoard.views.find((view) => view.task.id === dogfoodTask.id)?.task;
-  if (!updatedTask || updatedTask.status !== "triaged") throw new Error("remote Mission Control task update did not persist");
-  await missionControl.reorderLane("triaged", 1, {
+  if (!updatedTask || updatedTask.status !== "triaged") throw new Error("remote Board task update did not persist");
+  await board.reorderLane("triaged", 1, {
     orderedIds: [dogfoodTask.id],
     expect: { [dogfoodTask.id]: updatedTask.updatedAt },
   });
-  await missionControl.closeValidation(dogfoodValidation.id, { outcome: "passed", result_note: "packaged dogfood passed" });
-  const closedBoard = await missionControl.boardSnapshot([]);
+  await board.closeValidation(dogfoodValidation.id, { outcome: "passed", result_note: "packaged dogfood passed" });
+  const closedBoard = await board.boardSnapshot([]);
   if (closedBoard.validations?.pendingCount !== 0 || closedBoard.validations.items.length !== 0) {
-    throw new Error("remote Mission Control validation close did not persist");
+    throw new Error("remote Board validation close did not persist");
   }
-  await expectAgentStopped(first, "after Mission Control reads and mutations");
+  await expectAgentStopped(first, "after Board reads and mutations");
   let soulOperation = 0;
   const soulStudio = new ClientWorkspaceStudioTarget(first, {
     extensionUri: {} as StudioDeps["extensionUri"],

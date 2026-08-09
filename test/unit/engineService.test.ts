@@ -147,7 +147,7 @@ describe("daemon engine service", () => {
     const seedTaskStore = new TaskStore(workspaceRoot);
     let seedTask = await seedTaskStore.create({
       id: "t-abc123",
-      title: "remote Mission Control",
+      title: "remote Board",
       author: "human",
       body: "engine-owned body",
       now: "2026-07-14T12:00:00.000Z",
@@ -377,7 +377,7 @@ describe("daemon engine service", () => {
       status: "ok",
       view: {
         board: {
-          views: [{ task: { id: seedTask.id, title: "remote Mission Control", body: "engine-owned body", status: "inbox" } }],
+          views: [{ task: { id: seedTask.id, title: "remote Board", body: "engine-owned body", status: "inbox" } }],
           chips: [{ agent: "worker" }, { agent: "human" }, { agent: "reviewer" }],
           validations: { pendingCount: 1, humanPendingCount: 1, items: [{ id: seedValidation.id }] },
         },
@@ -389,7 +389,7 @@ describe("daemon engine service", () => {
       status: "ok",
       view: {
         detail: {
-          task: { id: seedTask.id, title: "remote Mission Control" },
+          task: { id: seedTask.id, title: "remote Board" },
           journal: [{ author: "codex", text: "daemon-owned detail note" }],
           imageAttachments: [{ id: seedImage.id, blobRef: seedImage.blobRef, available: true }],
           prototypes: {
@@ -406,7 +406,7 @@ describe("daemon engine service", () => {
       view: {
         studio: {
           taskId: seedTask.id,
-          title: "remote Mission Control",
+          title: "remote Board",
           attachments: [{ id: seedImage.id, kind: "image" }],
           anchor: "load",
           expectUpdatedAt: seedTask.updatedAt,

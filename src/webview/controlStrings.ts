@@ -25,7 +25,7 @@ export function cockpitStrings(): CockpitStrings {
     auto: t("Auto-refresh"),
     empty: t("No Tachyon workspace attached in this window."),
     copyDiagnostics: t("Copy diagnostics"),
-    openMissionControl: t("Open Board"),
+    openBoard: t("Open Board"),
     openSettings: t("Open Settings"),
     openDoctor: t("Run Doctor"),
     copied: t("Diagnostics copied"),

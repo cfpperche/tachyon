@@ -116,11 +116,11 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // SDD 485 C5 — the Board, and the maintainer's motivating case #1 (the Board open beside an agent
   // terminal). `dashboard` is the whole of its difference from the task detail above: one panel per project,
   // and re-opening it reveals the panel that is already open rather than making a second. `view` stays
-  // "mission-control" because that is the directory the screen has always lived in and the basename its two
-  // stylesheets already ship under; the viewType is NEW (`tachyonBoard`) so the legacy `tachyonMissionControl`
+  // "board" because that is the directory the screen has always lived in and the basename its two
+  // stylesheets already ship under; the viewType is NEW (`tachyonBoard`) so the retired Board viewType's
   // serializer can keep redirecting a pre-410 panel instead of colliding with this one — the opposite call
   // from C4's, and for the opposite reason: that tombstone has no live redirect left to preserve.
-  { view: "mission-control", viewId: "tachyonBoard", section: "mission", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  { view: "board", viewId: "tachyonBoard", section: "mission", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 485 D1 — the tmux Server Inspector, the FIRST Phase D migration and the app that introduced
   // `window`. The socket is one per user, shared by every workspace in the window (`WEBVIEW_SURFACES`
   // recorded that when 410 retired this panel: "no per-workspace scoping needed — the tmux socket is
@@ -129,7 +129,7 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   //
   // `view` stays "inspector" — the directory the screen has always lived in and the basename its
   // stylesheet already ships under; renaming it inside a cutover would touch ~10 files to say the same
-  // thing (the same call C5 made for "mission-control"). The viewType is the RETIRED
+  // thing (the same call C5 made for "board"). The viewType is the RETIRED
   // `tachyonServerInspector`, reused rather than replaced: 410 left it a serializer-only tombstone whose
   // persisted state is `{schemaVersion, view}` and nothing else — which is EXACTLY what a `window` app
   // persists, since it has no project and no identity. So a pre-410 window state is not migrated, it is

@@ -17,7 +17,7 @@ import { showNotification } from "../workspace/NotificationService.js";
  * compatibility shim at all and no window in which a human sees one tab close and another open.
  *
  * C4 reused `tachyonTaskDetail` for a weaker version of this argument (its tombstone still needed two
- * fields renamed); C5 could NOT reuse `tachyonMissionControl`, because that tombstone is a live redirect
+ * fields renamed); C5 could NOT reuse the retired Board viewType, because that tombstone is a live redirect
  * carrying an incompatible `{wsHash}`. This one is the clean case, and it is the cardinality that makes it
  * clean.
  */

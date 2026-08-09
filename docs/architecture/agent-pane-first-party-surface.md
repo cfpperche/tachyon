@@ -1,7 +1,7 @@
 # Agent pane: first-party surface (layer 2) alongside VS Code integrated terminal (layer 1)
 
 **Status:** product decision recorded 2026-07-24 · **Slice 0 viewport human-approved**; **Slice 1** identity + stage/submit bar on worktree `tachyon/change/agent-pane-first-party` (task `t-610355`)  
-**Related research:** Mission Control task `t-5726dc` (evaluation framing)  
+**Related research:** Board task `t-5726dc` (evaluation framing)
 **Related product:** spec 381 prompt-templates (inject already dogfoods on layer 1; layer-2 stage bar reuses the same tmux delivery)
 
 ---
@@ -206,7 +206,7 @@ Formal SDD (`docs/specs/NNN-…`) should be opened before Slice 1 lands; Slice 0
 - VS Code Terminal / Pseudoterminal API — data plane, not visual host ownership  
 - xterm.js embedder APIs — decorations, markers, overview ruler, selection  
 - Ghostty Terminal VS Code extension — webview + PTY architecture and known limitations  
-- Prior product framing on Mission Control task `t-5726dc`  
+- Prior product framing on Board task `t-5726dc`
 
 ---
 

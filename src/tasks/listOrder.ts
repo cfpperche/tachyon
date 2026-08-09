@@ -1,7 +1,7 @@
 import type { Task, TaskStatus, TaskView } from "./types.js";
 
 /**
- * Listing (Mission Control tool) sort priority — actionable work first, terminal/archive last.
+ * Listing (Board tool) sort priority — actionable work first, terminal/archive last.
  * t-f64a90: the previous read-layer sort was `createdAt` ascending, which surfaced the oldest
  * terminal tasks (done/landed/dropped) and silently truncated triaged/active under the default
  * limit=100 cap. This order keeps the default list_tasks surface alive even at modest limits.

@@ -15,7 +15,7 @@ cd "$(dirname "$0")/.."
 # not engine logic.
 #
 # They are ENUMERATED, not matched by a `src/cockpit/` prefix, on purpose: the other modules in that
-# directory (including route/resolveSection/model/missionVm/taskDetailVm/activityFeed/studioIds) are pure
+# directory (including route/resolveSection/model/boardVm/taskDetailVm/activityFeed/studioIds) are pure
 # logic and must STAY vscode-free. A directory-wide allow would let them acquire a vscode import in
 # silence, which is the regression this guard exists to catch.
 #

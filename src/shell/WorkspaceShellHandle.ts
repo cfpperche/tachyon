@@ -3,7 +3,7 @@ import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import { workspaceActivityTarget, type WorkspaceActivityTarget } from "./ActivityTarget.js";
 import { ClientWorkspaceStudioTarget } from "./ClientWorkspaceStudioTarget.js";
 import { workspaceHandoffTarget, type WorkspaceHandoffTarget } from "./HandoffTarget.js";
-import { workspaceMissionControlTarget, type WorkspaceMissionControlTarget } from "./MissionControlTarget.js";
+import { workspaceBoardTarget, type WorkspaceBoardTarget } from "./BoardTarget.js";
 import { workspacePinStudioTarget, type WorkspacePinStudioTarget } from "./PinStudioTarget.js";
 import { workspaceRuntimeOpsTarget, type WorkspaceRuntimeOpsTarget } from "./RuntimeOpsTarget.js";
 import { workspaceSidebarTarget, type WorkspaceSidebarTarget } from "./SidebarTarget.js";
@@ -36,7 +36,7 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   readonly sidebar: WorkspaceSidebarTarget;
   readonly activity: WorkspaceActivityTarget;
   readonly handoff: WorkspaceHandoffTarget;
-  readonly missionControl: WorkspaceMissionControlTarget;
+  readonly board: WorkspaceBoardTarget;
   readonly pinStudio: WorkspacePinStudioTarget;
   readonly taskDetail: WorkspaceTaskDetailTarget;
   readonly taskStudio: WorkspaceTaskStudioTarget;
@@ -54,7 +54,7 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
     this.sidebar = workspaceSidebarTarget(client);
     this.activity = workspaceActivityTarget(client);
     this.handoff = workspaceHandoffTarget(client);
-    this.missionControl = workspaceMissionControlTarget(client);
+    this.board = workspaceBoardTarget(client);
     this.pinStudio = workspacePinStudioTarget(client);
     this.taskDetail = workspaceTaskDetailTarget(client);
     this.taskStudio = workspaceTaskStudioTarget(client);

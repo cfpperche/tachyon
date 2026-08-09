@@ -43,12 +43,12 @@ import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRe
 /**
  * The viewType, and it is the RETIRED one on purpose — the fourth call in this spec's series, and the one
  * that makes the rule readable. C4 REUSED `tachyonTaskDetail` and paid a two-field rename for it; C5 could
- * NOT reuse `tachyonMissionControl`; D1 reused `tachyonServerInspector` for free.
+ * NOT reuse the retired Board viewType; D1 reused `tachyonServerInspector` for free.
  *
  * The question that decides it is not "was the tombstone a redirect" — all three were — but **does the id
  * still NAME this app, and does its legacy record map onto this app's key with no residue?** For the Board
  * the answer was no on the first half: the product screen is called the Board, its manifest row is
- * `{view: "mission-control", viewId: "tachyonBoard"}`, and `tachyonMissionControl` names a screen that no
+ * `{view: "board", viewId: "tachyonBoard"}`, and the retired Board viewType names a screen that no
  * longer exists under that name. Here both halves are yes — the app IS Plugins, its bundle directory IS
  * `plugins`, and the pre-410 panel's one scoping field (`wsHash`) is exactly the one field a `dashboard`
  * key is made of. So `migrateLegacy` renames it and the panel VS Code hands back is REUSED: a window
