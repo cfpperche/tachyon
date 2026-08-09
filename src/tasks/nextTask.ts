@@ -13,9 +13,6 @@ type Candidate = {
   tier: 0 | 1;
 };
 
-const ACTIONABLE_SDD = new Set(["draft", "in-progress", "shipped-partial"]);
-const RETRIAGE_SDD = new Set(["superseded", "abandoned", "deferred"]);
-
 export function nextTask(input: NextTaskInput): NextTaskResult {
   const byId = new Map(input.tasks.map((task) => [task.id, task]));
   let sawPotential = false;
@@ -42,22 +39,7 @@ export function nextTask(input: NextTaskInput): NextTaskResult {
       continue;
     }
 
-    const sdd = derived?.sdd;
     const attention = [...depState.attention];
-    if (sdd?.missing) {
-      attention.push({ code: "missing_sdd_spec", message: `SDD artifact '${sdd.ref}' was not found`, ref: sdd.ref });
-    }
-    if (task.status === "active" && sdd?.status === "shipped") {
-      // The execution artifact is done; the task itself still needs an explicit close.
-      continue;
-    }
-    if (task.status === "active" && sdd?.status && RETRIAGE_SDD.has(sdd.status)) {
-      continue;
-    }
-    if (task.status === "active" && sdd?.status && !ACTIONABLE_SDD.has(sdd.status) && sdd.status !== "shipped") {
-      continue;
-    }
-
     candidates.push({ task, derived, attention, tier: assignedToCaller ? 0 : 1 });
   }
 
