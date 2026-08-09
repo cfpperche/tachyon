@@ -41,11 +41,12 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
       displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" },
       cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false },
       worktree: { enabled: true, branch: "feature/web", setup: [] }, selfEvolution: false,
-      isolation: "transcript",
+      instructions: "", isolation: "transcript",
     },
     bindings: {
       grants: { proposeSavedAgent: false },
       foreignWorkspaceCommands: false,
+      foreignPersistentInstructions: false,
       environmentValueNames: ["PUBLIC_VALUE"],
       secretNames: ["API_TOKEN"],
       prompt: { instructions: false, evolution: true },

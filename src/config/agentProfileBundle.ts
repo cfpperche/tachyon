@@ -11,6 +11,10 @@ import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAge
 import type { AgentProfileLifecycleSnapshot } from "./agentProfileLifecycle.js";
 import { DEFAULT_NEW_AGENT_WORKTREE_ENABLED } from "./agentProfileStudio.js";
 import type { AgentProfileReferenceV1, AgentProfileV1 } from "./agentProfileSchema.js";
+import {
+  PERSISTENT_INSTRUCTIONS_FILE_NAME,
+  PERSISTENT_INSTRUCTIONS_REFERENCE_ID,
+} from "./agentInstructionsDocument.js";
 
 export const PORTABLE_AGENT_PROFILE_BUNDLE_VERSION = 1 as const;
 export const PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES = 256 * 1024;
@@ -250,9 +254,19 @@ export async function importPortableAgentProfileBundle(input: BundleLifecycleDep
   const references: Array<Omit<AgentProfileReferenceV1, "scope" | "owner">> = [];
   const prompt: NonNullable<Omit<AgentProfileV1, "schemaVersion" | "agentId">["prompt"]> = {};
   if (documents?.instructions) {
-    prompt.instructions = "portable-instructions";
-    artifacts.push({ path: "instructions.md", text: documents.instructions.text, sha256: documents.instructions.sha256 });
-    references.push({ id: "portable-instructions", kind: "instructions", path: "instructions.md", mode: "pinned", sha256: documents.instructions.sha256 });
+    // t-d48775 — the id an import mints is the id Agent Studio OWNS, not a private one. It used to be
+    // `portable-instructions`, which made an imported agent's instructions foreign to the only form
+    // that can edit them: importable, then uneditable forever. A bundle carries no ids (the document
+    // travels as text plus digest), so sharing the id changes nothing about what a bundle round-trips.
+    prompt.instructions = PERSISTENT_INSTRUCTIONS_REFERENCE_ID;
+    artifacts.push({ path: PERSISTENT_INSTRUCTIONS_FILE_NAME, text: documents.instructions.text, sha256: documents.instructions.sha256 });
+    references.push({
+      id: PERSISTENT_INSTRUCTIONS_REFERENCE_ID,
+      kind: "instructions",
+      path: PERSISTENT_INSTRUCTIONS_FILE_NAME,
+      mode: "pinned",
+      sha256: documents.instructions.sha256,
+    });
   }
   const lifecycle = await commitAgentProfileLifecycle({
     workspaceRoot: input.workspaceRoot,

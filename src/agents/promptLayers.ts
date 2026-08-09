@@ -6,8 +6,11 @@ import { renderSessionWorkRecord, sessionRecordManifest, type SessionWorkRecord 
 
 export interface AgentPromptLayers {
   instructions?: string;
-  /** Authority receipt for canonical instructions. Absent means the bytes came from the legacy
-   * definition path; an unadopted agent remains a valid, explicitly non-formation composition. */
+  /**
+   * Authority receipt for FORMATION-adopted instructions. Absent means the bytes came from the
+   * agent's own definition — for a canonical agent, the pinned `instructions.md` its profile names
+   * (t-d48775); an unadopted agent remains a valid, explicitly non-formation composition.
+   */
   instructionsFormation?: {
     source: "formation";
     agentId: string;
@@ -38,7 +41,7 @@ export type PromptTaskLayer =
 export interface AgentPromptManifest {
   persistentInstructions: boolean;
   instructions?:
-    | { source: "legacy-definition"; sha256: string }
+    | { source: "profile-definition"; sha256: string }
     | {
         source: "formation";
         sha256: string;
@@ -81,7 +84,11 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
     ...(instructions ? {
       instructions: layers.instructionsFormation
         ? { ...layers.instructionsFormation, sha256: sha256(instructions) }
-        : { source: "legacy-definition" as const, sha256: sha256(instructions) },
+        // t-d48775 — this used to read `legacy-definition`, and that name stopped being true the day
+        // the inline agent format was removed: nothing legacy can reach this branch, and what does
+        // reach it is the profile's own pinned document. A manifest the agent reads about itself is
+        // exactly the wrong place to keep a label that names a mechanism the product no longer has.
+        : { source: "profile-definition" as const, sha256: sha256(instructions) },
     } : {}),
     ...(layers.evolution ? { evolution: { version: layers.evolution.version, digest: layers.evolution.digest } } : {}),
     ...(present(layers.formationEvolution) ? { canonicalEvolution: true as const } : {}),

@@ -191,12 +191,13 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" },
     cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true },
     worktree: { enabled: true, branch: "feature/reviewer", setup: ["pnpm install", "pnpm --filter web build"] },
-    selfEvolution: true, isolation: "transcript",
+    selfEvolution: true, instructions: "you are a code reviewer; read the diff and flag correctness issues", isolation: "transcript",
     capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },
   bindings: {
     grants: { proposeSavedAgent: false },
     foreignWorkspaceCommands: false,
+    foreignPersistentInstructions: false,
     environmentValueNames: ["NODE_ENV"], secretNames: ["GITHUB_TOKEN"],
     prompt: { instructions: true, evolution: true, memoryPolicy: "human-approved" },
     capabilities: { skills: 3, mcp: 1, hooks: 1, pi: 0 }, externalReferences: 2,
@@ -242,6 +243,26 @@ const foreignWorkspaceCommandsEntity: AgentStudioEntity = {
     bindings: { ...canonicalSnapshot.bindings, foreignWorkspaceCommands: true },
   }),
 };
+
+/**
+ * t-d48775 — an agent whose persistent instructions were published by another owner.
+ *
+ * The one case where THAT field stays read-only, and it is worth its own fixture for the same reason
+ * the setup one is: rendering it blank and editable would let the next save delete durable prompt
+ * text the human was never shown.
+ */
+const foreignPersistentInstructionsEntity: AgentStudioEntity = (() => {
+  const foreignSnapshot = {
+    ...canonicalSnapshot,
+    editable: { ...canonicalSnapshot.editable, instructions: "" },
+    bindings: { ...canonicalSnapshot.bindings, foreignPersistentInstructions: true },
+  };
+  return {
+    ...canonicalEntity,
+    profile: foreignSnapshot,
+    fields: canonicalAgentFields(foreignSnapshot),
+  };
+})();
 
 /**
  * SDD 471 — the bypassPermissions authorization only renders for Claude with the permissions
@@ -349,6 +370,7 @@ export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFi
   "dense-edit": { provenance: "synthetic-edge", vm: { entity: denseEntity } },
   "canonical-disabled": { provenance: "synthetic-edge", vm: { entity: canonicalEntity } },
   "foreign-workspace-commands": { provenance: "synthetic-edge", vm: { entity: foreignWorkspaceCommandsEntity } },
+  "foreign-persistent-instructions": { provenance: "synthetic-edge", vm: { entity: foreignPersistentInstructionsEntity } },
   "canonical-claude-bypass-off": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity() } },
   "canonical-claude-bypass-on": { provenance: "synthetic-edge", vm: { entity: claudeCanonicalEntity(["bypassPermissions"]) } },
   "canonical-codex-danger-off": { provenance: "synthetic-edge", vm: { entity: codexCanonicalEntity() } },

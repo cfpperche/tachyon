@@ -26,7 +26,8 @@ import type { AgentProfileStudioMutationV1 } from "../../src/config/agentProfile
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, enableSavedAgentSelfEvolution, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
-import { asAgent } from "../../src/config/loadConfig.js";
+import { asAgent, composeCommand } from "../../src/config/loadConfig.js";
+import { composeAgentPrompt } from "../../src/agents/promptLayers.js";
 import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
 import { parseExtensionCommandV1, type ExtensionCommandV1 } from "../../src/runtime-api/extensionOperations.js";
 import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
@@ -881,7 +882,7 @@ it("t-afc86e: an agent's setup commands survive a save that does not touch them"
     displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
     cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
     worktree: { enabled: true, branch: "", setup: ["python -m venv .venv", "pip install -e ."] },
-    selfEvolution: false, isolation: "",
+    selfEvolution: false, instructions: "", isolation: "",
     ...over,
   });
 
@@ -921,6 +922,163 @@ it("t-afc86e: an agent's setup commands survive a save that does not touch them"
     expect(cleared.editable.worktree.setup).toEqual([]);
     const afterClear = parseYaml(fs.readFileSync(path.join(profileDir, "agent.yml"), "utf8")) as { workspace?: Record<string, unknown>; references?: unknown[] };
     expect(afterClear.references ?? []).toEqual([]);
+  } finally {
+    ws.dispose();
+  }
+});
+
+/**
+ * t-d48775 — persistent instructions, WRITTEN through the product and READ BACK after a restart.
+ *
+ * The defect this closes was not a missing control. `prompt.instructions` naming a pinned
+ * `instructions.md` was in the schema from the start; the portable-bundle importer wrote it; the
+ * Agent Studio field rendered with an inviting placeholder. What was missing was a writer the human
+ * could reach and a reader on the other end — the projection REFUSED any canonical profile carrying
+ * the binding, so the one existing writer produced an agent that dropped off the roster.
+ *
+ * That is why a test that only proves the write proves nothing here. Each leg below is a place the
+ * old code stopped:
+ *
+ *  1. the save reaches the FILE, in the documented format — not a new key of our own
+ *  2. the snapshot carries the TEXT back, so reopening the form shows it instead of a blank box that
+ *     the next save would write over the real bytes
+ *  3. a SECOND Workspace over the same durable state — a window reload, the closest thing to restart
+ *     this harness has — still projects it
+ *  4. and the projection puts it where the runtime actually reads it: `AgentEntry.instructions`,
+ *     which `composeCommand` turns into the launch argument and `composeAgentPrompt` counts in the
+ *     manifest. This is the leg that was empty before: bytes on disk are not delivery.
+ *
+ * Then the negative halves, because "it works" is only half a contract: an unrelated save must not
+ * erase them, and clearing the box must remove the binding rather than leave a pin with no document.
+ */
+it("t-d48775: persistent instructions written in Agent Studio survive a reload and reach the agent", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const substrate = { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir };
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, substrate);
+  const AUTHORED = "you are a code reviewer; read the diff and flag correctness issues";
+  const profileDir = path.join(root, ".tachyon", "agents", "reviewer");
+  const storedProfile = () => parseYaml(fs.readFileSync(path.join(profileDir, "agent.yml"), "utf8")) as {
+    prompt?: Record<string, unknown>;
+    references?: Array<Record<string, unknown>>;
+  };
+  const editable = (over: Partial<AgentProfileStudioMutationV1["editable"]> = {}): AgentProfileStudioMutationV1["editable"] => ({
+    displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
+    cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
+    worktree: { enabled: false, branch: "", setup: [] },
+    selfEvolution: false, instructions: "", isolation: "",
+    ...over,
+  });
+
+  let reloaded: Workspace | undefined;
+  try {
+    // 1. Created with instructions, through the door the webview posts to.
+    const created = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer",
+      editable: editable({ instructions: AUTHORED }),
+    });
+    expect(created.editable.instructions).toBe(AUTHORED);
+    expect(created.bindings.prompt.instructions).toBe(true);
+    expect(created.bindings.foreignPersistentInstructions).toBe(false);
+
+    // 2. On disk, in the format the portable bundle already produces and the lane already reads —
+    //    a document plus a pinned reference, not a new key in agent.yml.
+    expect(fs.readFileSync(path.join(profileDir, "instructions.md"), "utf8")).toBe(`${AUTHORED}\n`);
+    expect(storedProfile().prompt).toEqual({ instructions: "persistent-instructions" });
+    expect(storedProfile().references).toMatchObject([{
+      id: "persistent-instructions", kind: "instructions", scope: "profile",
+      path: "instructions.md", mode: "pinned",
+      sha256: createHash("sha256").update(`${AUTHORED}\n`).digest("hex"),
+    }]);
+
+    // 3. RESTART. A second Workspace over the same root and the same host authority reads only what
+    //    is durable — and both halves come back: the form's value, and the agent's.
+    reloaded = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, substrate);
+    const afterReload = await reloaded.inspectAgentProfileStudio("reviewer");
+    expect(afterReload.editable.instructions).toBe(AUTHORED);
+
+    // 4. And it REACHES the agent. `AgentEntry.instructions` is what `AgentManager` composes into
+    //    the startup body and what `composeCommand` appends to the launch command; the refusal this
+    //    change removes is exactly what kept this field undefined for every agent that can exist.
+    const entry = asAgent(reloaded.config?.agents.reviewer);
+    expect(entry?.instructions).toBe(`${AUTHORED}\n`);
+    expect(composeCommand({ cmd: entry!.cmd, instructions: entry!.instructions })).toContain(AUTHORED);
+    expect(composeAgentPrompt({ instructions: entry?.instructions, bridgeGuidance: false }))
+      .toMatchObject({ manifest: { persistentInstructions: true } });
+
+    // 5. The PORTABLE BUNDLE still matches the living profile. This is the reason the writer reuses
+    //    `prompt.instructions` plus a pinned document instead of inventing a key of its own: export
+    //    reads the binding, so a second format would have made the exported bundle describe an agent
+    //    that no longer existed. A clone carries the text across into a fresh identity.
+    const exported = await ws.exportAgentProfileBundle("reviewer");
+    expect(exported.bundle.profile.documents?.instructions?.text).toBe(`${AUTHORED}\n`);
+    await ws.cloneAgentProfileAgent("reviewer", "reviewer2");
+    expect((await ws.inspectAgentProfileStudio("reviewer2")).editable.instructions).toBe(AUTHORED);
+
+    // 6. An unrelated save must not erase them — the form refills from the snapshot, so anything the
+    //    snapshot did not carry would be written back as blank.
+    const untouched = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: afterReload.revision,
+      editable: { ...afterReload.editable, displayName: "Renamed Reviewer" },
+    });
+    expect(untouched.editable.instructions).toBe(AUTHORED);
+
+    // 7. Edited, then cleared. Clearing removes the binding AND the reference — a pin with no
+    //    document is the fail-closed state the projection refuses the whole profile over.
+    const edited = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: untouched.revision,
+      editable: { ...untouched.editable, instructions: "answer only in Portuguese" },
+    });
+    expect(edited.editable.instructions).toBe("answer only in Portuguese");
+    expect(fs.readFileSync(path.join(profileDir, "instructions.md"), "utf8")).toBe("answer only in Portuguese\n");
+
+    const cleared = await ws.commitAgentProfileStudio({
+      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: edited.revision,
+      editable: { ...edited.editable, instructions: "" },
+    });
+    expect(cleared.editable.instructions).toBe("");
+    expect(cleared.bindings.prompt.instructions).toBe(false);
+    expect(storedProfile().prompt).toBeUndefined();
+    expect(storedProfile().references ?? []).toEqual([]);
+    expect(ws.reloadConfig()).toBe(true);
+    expect(asAgent(ws.config?.agents.reviewer)?.instructions).toBeUndefined();
+  } finally {
+    reloaded?.dispose();
+    ws.dispose();
+  }
+});
+
+/**
+ * t-d48775 — the OTHER door onto the same binding, refused where it can be explained.
+ *
+ * `agent-profile.saved-agent-create` (Saved Agent approval) commits a profile and no profile-local
+ * documents. A `prompt.instructions` arriving through it would name a reference nothing satisfies —
+ * the schema does catch that, but as a reference-integrity error that never mentions the door the
+ * caller actually wanted. Approval's own mutation carries no instructions today; this asserts the
+ * refusal a future caller will meet instead of a broken transaction.
+ */
+it("t-d48775: the Saved Agent creation door refuses instructions it cannot publish a document for", async () => {
+  const root = mkdir();
+  const homeDir = mkdir();
+  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
+  const host = new SharedSecretHost(mkdir(), new Map());
+  const ws = await Workspace.createForTest(
+    root,
+    { host, onViewsChanged: () => {} },
+    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+  );
+  try {
+    await expect(ws.commitSavedAgentCreation({
+      agentName: "reviewer",
+      createProfile: {
+        runtime: { adapter: "codex", executable: "codex" },
+        prompt: { instructions: "persistent-instructions" },
+        lifecycle: { enabled: true },
+      },
+    })).rejects.toThrow(/Saved Agent creation door/);
+    expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer"))).toBe(false);
   } finally {
     ws.dispose();
   }
@@ -972,7 +1130,7 @@ it("t-f96b2f: the Evolution toggle survives a save that does not touch it, ON an
     // A verify gate rides along on purpose: the two writers CHAIN over one reference list, and a
     // rebuild from the stored list instead of from the previous writer's output would drop this
     // gate every time the Evolution toggle moved. Nothing else in this case would notice.
-    worktree: { enabled: true, branch: "", setup: [] }, selfEvolution: false, isolation: "",
+    worktree: { enabled: true, branch: "", setup: [] }, selfEvolution: false, instructions: "", isolation: "",
     ...over,
   });
   /** An edit that says nothing about Evolution: the form refills from the snapshot and renames. */
@@ -1082,7 +1240,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, selfEvolution: false, isolation: "transcript",
+        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, selfEvolution: false, instructions: "", isolation: "transcript",
       },
     });
     // t-ca9086: human-authorized Studio create writes enabled; start/autostart remain separate.
@@ -1097,7 +1255,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, selfEvolution: false, isolation: "transcript",
+        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, selfEvolution: false, instructions: "", isolation: "transcript",
       },
     });
     expect(edited.editable).toMatchObject({ displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" } });
@@ -1109,7 +1267,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Stale", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, instructions: "", isolation: "",
       },
     })).rejects.toThrow("revision conflict");
     expect((await ws.inspectAgentProfileStudio("reviewer")).editable.displayName).toBe("Review Agent");
@@ -1135,7 +1293,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, instructions: "", isolation: "",
       },
     });
     // t-05dff5 — a stale revision RESOLVES as a governed refusal instead of rejecting: it is an

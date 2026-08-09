@@ -29,6 +29,11 @@ import {
   WORKSPACE_SETUP_REFERENCE_ID,
   parseWorkspaceCommandLines,
 } from "./agentWorkspaceCommands.js";
+import {
+  PERSISTENT_INSTRUCTIONS_FILE_NAME,
+  PERSISTENT_INSTRUCTIONS_REFERENCE_ID,
+  persistentInstructionsFormValue,
+} from "./agentInstructionsDocument.js";
 import { isSupersededRuntimeInspector, profileRuntimeInspectorFor } from "./agentProfileProjection.js";
 
 const SCHEMA_VERSION = 1 as const;
@@ -42,7 +47,7 @@ const ARTIFACTS = "artifacts";
 /** t-afc86e — prior bytes of any artifact this transaction REPLACES, so a rollback can restore them. */
 const ARTIFACT_BACKUPS = "artifact-backups";
 const DIGEST_RE = /^[a-f0-9]{64}$/;
-const CREATE_ARTIFACT_NAMES = new Set(["instructions.md", WORKSPACE_SETUP_PATH]);
+const CREATE_ARTIFACT_NAMES = new Set([PERSISTENT_INSTRUCTIONS_FILE_NAME, WORKSPACE_SETUP_PATH]);
 /**
  * `t-d185e1` — profile-local documents an EDIT may publish.
  *
@@ -59,7 +64,18 @@ const CREATE_ARTIFACT_NAMES = new Set(["instructions.md", WORKSPACE_SETUP_PATH])
  * gesture that writes the rest of the form, so an edit must be able to republish them — the reason
  * Nothing else owns these bytes under another contract.
  */
-const EDIT_ARTIFACT_NAMES = new Set(["evolution-selector.json", WORKSPACE_SETUP_PATH]);
+/*
+ * t-d48775 adds `instructions.md` to the EDIT set. It was already in create's — a portable bundle
+ * could carry a document, but nothing could ever change one afterwards, which is exactly the shape
+ * of the defect: a binding the schema declares, the importer writes once, and no door can edit.
+ * Agent Studio now authors it by the same gesture that writes the rest of the form, so an edit must
+ * be able to republish it. Nothing else owns these bytes under another contract.
+ */
+const EDIT_ARTIFACT_NAMES = new Set([
+  "evolution-selector.json",
+  WORKSPACE_SETUP_PATH,
+  PERSISTENT_INSTRUCTIONS_FILE_NAME,
+]);
 const ARTIFACT_NAMES_FOR = { create: CREATE_ARTIFACT_NAMES, edit: EDIT_ARTIFACT_NAMES } as const;
 const ALL_ARTIFACT_NAMES = new Set([...CREATE_ARTIFACT_NAMES, ...EDIT_ARTIFACT_NAMES]);
 const CREATE_ARTIFACT_MAX_BYTES = 64 * 1024;
@@ -163,6 +179,16 @@ export interface AgentProfileLifecycleSnapshot {
    * own (`bindings.foreignWorkspaceCommands` on the projected snapshot).
    */
   workspaceCommands?: { setup?: string[] };
+  /**
+   * t-d48775 — the persistent-instructions document's text, read the same way and for the same
+   * reason: `profile.prompt.instructions` is a reference ID, so a form built from `profile` alone
+   * would render an empty box for an agent that HAS instructions, and the next save would write
+   * that emptiness over them.
+   *
+   * Absent when the profile declares no binding, or one this Studio does not own
+   * (`bindings.foreignPersistentInstructions` on the projected snapshot).
+   */
+  persistentInstructions?: string;
   provenance: {
     canonical: { scope: "profile"; writable: true; sha256: string };
     authority: { scope: "host"; writable: false; revision: string; grants: number; /** Content-free IDs of grants eligible for Studio selection. */ capabilityReferenceIds?: string[] };
@@ -521,6 +547,7 @@ function savedAgentProfile(workspaceRoot: string, agentName: string): {
   text: string;
   sha256: string;
   workspaceCommands?: { setup?: string[] };
+  persistentInstructions?: string;
 } | undefined {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) return undefined;
@@ -534,11 +561,14 @@ function savedAgentProfile(workspaceRoot: string, agentName: string): {
     // directory that may have moved underneath — the exact race `readAgentProfileReference`'s
     // fd-relative walk exists to close.
     const workspaceCommands = readStudioWorkspaceCommands(source, parsed.data);
+    // t-d48775 — and the instructions document, for the same reason and under the same open handle.
+    const persistentInstructions = readStudioPersistentInstructions(source, parsed.data);
     return {
       profile: parsed.data,
       text: source.text,
       sha256: source.sha256,
       ...(workspaceCommands ? { workspaceCommands } : {}),
+      ...(persistentInstructions !== undefined ? { persistentInstructions } : {}),
     };
   } finally {
     closeCanonicalAgentProfile(source);
@@ -579,6 +609,29 @@ function readStudioWorkspaceCommands(
   };
 }
 
+/**
+ * t-d48775 — the bytes behind the instructions binding Agent Studio OWNS, or undefined when the
+ * profile declares none or declares a FOREIGN one.
+ *
+ * Same three rules as `readStudioWorkspaceCommands` directly above, for the same reasons: ownership
+ * is the fixed reference id, the read happens under the already-open profile directory handle that
+ * produced `source.sha256`, and a digest mismatch throws out of the whole inspect rather than
+ * opening a form on bytes that disagree with what the profile pins.
+ */
+function readStudioPersistentInstructions(
+  source: CanonicalAgentProfileSource,
+  profile: AgentProfileV1,
+): string | undefined {
+  if (profile.prompt?.instructions !== PERSISTENT_INSTRUCTIONS_REFERENCE_ID) return undefined;
+  const reference = profile.references?.find((candidate) => candidate.id === PERSISTENT_INSTRUCTIONS_REFERENCE_ID);
+  if (!reference || reference.kind !== "instructions" || reference.scope !== "profile"
+    || reference.owner !== profile.agentId || reference.mode !== "pinned" || !reference.sha256
+    || reference.path !== PERSISTENT_INSTRUCTIONS_FILE_NAME) {
+    return undefined;
+  }
+  return persistentInstructionsFormValue(readAgentProfileReference(source, reference.path, reference.sha256).text);
+}
+
 function replaceAgentProfileExact(workspaceRoot: string, agentName: string, expectedSha256: string, text: string): void {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) throw new Error(`canonical profile for '${agentName}' is missing`);
@@ -611,6 +664,7 @@ export async function inspectAgentProfileLifecycle(input: {
     revision,
     profile: structuredClone(canonical.profile),
     ...(canonical.workspaceCommands ? { workspaceCommands: structuredClone(canonical.workspaceCommands) } : {}),
+    ...(canonical.persistentInstructions !== undefined ? { persistentInstructions: canonical.persistentInstructions } : {}),
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: canonical.sha256 },
       authority: {

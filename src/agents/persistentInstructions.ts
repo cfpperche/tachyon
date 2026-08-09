@@ -6,10 +6,19 @@ import {
   readCanonicalAgentProfile,
 } from "../config/agentProfileReader.js";
 import { agentProfileSchemaV1, type AgentProfileReferenceV1 } from "../config/agentProfileSchema.js";
-
-export const PERSISTENT_INSTRUCTIONS_FILE_NAME = "instructions.md";
-export const PERSISTENT_INSTRUCTIONS_MAX_BYTES = 64 * 1024;
-export const PERSISTENT_INSTRUCTIONS_MAX_CHARS = 20_000;
+// t-d48775 — the file name and the two limits moved to `agentInstructionsDocument.ts` so the WRITER
+// (Agent Studio, host and webview) and this reader share one definition. Re-exported because this
+// module was their published home and several callers import them from here.
+export {
+  PERSISTENT_INSTRUCTIONS_FILE_NAME,
+  PERSISTENT_INSTRUCTIONS_MAX_BYTES,
+  PERSISTENT_INSTRUCTIONS_MAX_CHARS,
+} from "../config/agentInstructionsDocument.js";
+import {
+  PERSISTENT_INSTRUCTIONS_FILE_NAME,
+  PERSISTENT_INSTRUCTIONS_MAX_BYTES,
+  PERSISTENT_INSTRUCTIONS_MAX_CHARS,
+} from "../config/agentInstructionsDocument.js";
 
 export class PersistentInstructionsError extends Error {
   constructor(readonly code: "instructions/invalid" | "instructions/unauthorized" | "instructions/cas" | "instructions/unsafe" | "instructions/missing", message: string) {
