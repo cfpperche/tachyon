@@ -2,7 +2,7 @@
 
 _Created 2026-08-09._
 
-**Status:** draft
+**Status:** implemented
 
 <!-- The maintainer owns the intent; this is a transcription awaiting ratification.
      Read § "What already exists" first. This spec builds almost nothing — the finding that
@@ -53,37 +53,37 @@ not change what land does.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: look before landing**
+- [x] **Scenario: look before landing**
   - **Given** a worktree row whose land block is rendered
   - **When** the human wants to see what would land
   - **Then** the block offers it from there, and choosing it opens the changed files in VS Code's
     native diff — not a diff drawn by Tachyon
 
-- [ ] **Scenario: nothing to look at**
+- [x] **Scenario: nothing to look at**
   - **Given** a branch with no changes against the trunk
   - **When** review is offered
   - **Then** it says so plainly instead of opening an empty picker
 
-- [ ] **Scenario: what you review is what would land**
+- [x] **Scenario: what you review is what would land**
   - **Given** a land block that is ready
   - **When** the diff is opened
   - **Then** it covers exactly the commits the land command would introduce, and the base it compares
     against is named on screen
 
-- [ ] **Scenario: propose instead of land**
+- [x] **Scenario: propose instead of land**
   - **Given** a worktree row with a branch and a remote
   - **When** the human chooses to propose rather than land
   - **Then** the existing PR flow runs — readiness probed at click, title editable, body previewed,
     `gh pr create` only after confirmation
 
-- [ ] **Scenario: no forge, no door**
+- [x] **Scenario: no forge, no door**
   - **Given** a repository with no remote, or no `gh`
   - **When** the row is rendered
   - **Then** Propose is absent or refuses by naming what is missing, and Land is unaffected
 
-- [ ] Land keeps working exactly as it does today: five preconditions, a command shown and copyable,
+- [x] Land keeps working exactly as it does today: five preconditions, a command shown and copyable,
       and the product never runs the merge.
-- [ ] No diff is rendered by Tachyon. If a change adds one, this spec was misread.
+- [x] No diff is rendered by Tachyon. If a change adds one, this spec was misread.
 
 ## Non-goals
 
@@ -100,6 +100,17 @@ not change what land does.
   is not.
 
 ## Open questions
+
+**Both answered during the build — the reasoning and the measurements are in `notes.md`.**
+
+1. **Answered: committed.** The land door compares `trunkRef..head`. Measured cheaper than the
+   working-tree comparison (10.9 ms vs 16.4 ms over a 130-file range), so the fallback in plan.md § D2
+   was never needed. The base is named on screen. See `notes.md` § D2.
+2. **Answered: below Land, not beside it.** Decided by looking, at 880 and 360, against the anchor.
+   Land's copy action is the only emphasised control; the two doors are secondary buttons on their own
+   row behind a rule. See `notes.md` § Visual QA.
+
+---
 
 1. **What the review compares.** `reviewWorktreeDiff` diffs `rec.baseRef` against the **working tree**
    (`extension.ts:645` uses `vscode.Uri.file(...)` for the current side). Land is about committed

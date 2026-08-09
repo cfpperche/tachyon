@@ -71,8 +71,33 @@ const LAND_CHECK_LABEL: Record<string, keyof Strings> = {
  * Tachyon does not run it. That is stated in the block rather than implied, so nobody goes looking for
  * a button that is deliberately absent.
  */
-function LandBlock({ s, land, onCopyText }: { s: Strings; land: NonNullable<CockpitWorktreeRow["land"]>; onCopyText: (text: string) => void }) {
+function LandBlock({
+  s,
+  land,
+  row,
+  onCopyText,
+  onPost,
+}: {
+  s: Strings;
+  land: NonNullable<CockpitWorktreeRow["land"]>;
+  row: CockpitWorktreeRow;
+  onCopyText: (text: string) => void;
+  onPost: (action: WorktreesAction) => void;
+}) {
   const blocked = land.checks.filter((c) => !c.ok);
+  const wsHash = row.wsHash ? { wsHash: row.wsHash } : {};
+  /**
+   * SDD 501 § D2 — what the review will show, in the same words the checks above are written in.
+   *
+   * `trunkRef..head` is the committed range the land command would introduce, which is the only
+   * comparison a land-door review may claim to be about. Named rather than implied: the working-tree
+   * comparison the sidebar offers is a legitimate different question, and a human must never have to
+   * guess which of the two they are looking at. With no local trunk there is no range to name — the
+   * fast-forward check is already red in that case — so it says that instead of inventing a base.
+   */
+  const compare = land.trunkRef
+    ? s.landCompare.replace("{0}", land.trunkRef).replace("{1}", land.head.slice(0, 12))
+    : s.landCompareNoTrunk;
   return (
     <section class="ck-land" data-testid="worktree-land">
       <div class="ck-land-head">
@@ -110,6 +135,21 @@ function LandBlock({ s, land, onCopyText }: { s: Strings; land: NonNullable<Cock
           {s.landBlocked.replace("{0}", String(blocked.length))}
         </p>
       )}
+      {/* SDD 501 — reading the code and proposing it are READ-ONLY doors, so they sit below the
+          decision rather than beside it: only "Copy command" is `primary`, and a blocked delivery keeps
+          both of these (a red check is when looking matters most). Neither draws a diff — the review
+          opens VS Code's own diff editor, through the command the sidebar has always used. */}
+      <div class="ck-land-actions">
+        <span class="ck-land-compare">{compare}</span>
+        <Button variant="default" onClick={() => onPost({ type: "worktreeReviewDiff", id: row.id, ...wsHash })}>
+          {s.landReview}
+        </Button>
+        {land.branch ? (
+          <Button variant="default" onClick={() => onPost({ type: "worktreeCreatePr", id: row.id, ...wsHash })}>
+            {s.landPropose}
+          </Button>
+        ) : null}
+      </div>
     </section>
   );
 }
@@ -260,7 +300,7 @@ export function WorktreesHygiene({
               {/* t-7cb971 — present only when the engine found work the trunk does not contain, so it
                   appears on the rows that actually have something to land, in whichever hygiene group
                   they sit. Absent is never "ready": no block at all is the fail-closed default. */}
-              {row.land ? <LandBlock s={s} land={row.land} onCopyText={onCopyText} /> : null}
+              {row.land ? <LandBlock s={s} land={row.land} row={row} onCopyText={onCopyText} onPost={onPost} /> : null}
             </>
           )
         }
@@ -465,6 +505,10 @@ export const defaultStrings: Strings = {
   landCheckPrimaryClean: "Primary checkout clean",
   landFixLabel: "Fix",
   landCommits: "commit(s)",
+  landReview: "Review these changes",
+  landPropose: "Open a pull request",
+  landCompare: "Review shows {0}..{1} — the commits this command would land, not the working tree.",
+  landCompareNoTrunk: "No local trunk to compare against — review shows this branch against the ref it was forked from.",
   wtAgentGone: "Agent no longer exists — leftover checkout",
   wtAgentOwned: "Managed by Agent Studio → Forget",
   wtAlsoDeleteBranch: "Also delete local branch",

@@ -273,6 +273,10 @@ export const strings: CockpitStrings & WorktreesStrings = {
   landCheckPrimaryClean: "Primary checkout clean",
   landFixLabel: "Fix",
   landCommits: "commit(s)",
+  landReview: "Review these changes",
+  landPropose: "Open a pull request",
+  landCompare: "Review shows {0}..{1} — the commits this command would land, not the working tree.",
+  landCompareNoTrunk: "No local trunk to compare against — review shows this branch against the ref it was forked from.",
 };
 /** Standalone Runtime Config receives this bootstrap global from its host; preview mirrors it. */
 export const runtimeConfigPreviewStrings: import("../../../src/webview/runtime-config/messages.js").RuntimeConfigStrings = {
