@@ -6,6 +6,55 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.70.0 — Tachyon stops running your checks
+
+Running a command is something an agent and a CI can both already do. Holding the proof of what was
+run, about which content, is something only the orchestrator is placed to do. Tachyon was doing both
+and doing the first one badly, so this release removes it: **the product no longer executes a
+verification command anywhere.** What stays is the part that was load-bearing — reading evidence.
+
+Two config keys are gone, and they were failing in opposite directions. `settings.verify` was
+presented as configuration and executed by nothing; its four commands only ever became sentences in
+an agent's brief, and two of them (`prepare`, `affected`) did not even reach that. Meanwhile
+`settings.worktree.verify` — the one the product really ran — was never shown to the agent it
+applied to. The key that only talked called itself config; the key that acted was invisible.
+
+### Removed
+
+- **`settings.verify` and everything downstream of it.** Four subkeys, the schema, the primer lines
+  they produced. A file that still declares the block loads with a warning, like any other unknown
+  key — nothing breaks, because nothing executed it in the first place. Gone with it: the line
+  telling every agent that "verification applies only when delivering repository changes". That was
+  a **cadence** decision, and it belonged to the project, not to a block of the brief that declares
+  itself un-overridable. Its stated justification was a mutex inside *this* repository's own gate
+  script — our host economics, broadcast to every project as protocol.
+
+- **The verify gate the product ran** (`t-6ca846`). `settings.worktree.verify`, per-agent `verify:`,
+  the `verify_agent` tool, the verify badge and its recorded verdict, the field in Agent Studio, the
+  `verification` command kind, the verify summary in the PR body, and the pipeline done-contract that
+  could wait on a "verify gate". 131 files, ~1,800 lines net. **If you declared either verify key,
+  Tachyon will no longer run it for you** — declare it in your CI, or run it in the agent's shell.
+
+### Kept, deliberately
+
+- **The evidence path is untouched.** The per-tree verification record, the land preconditions that
+  read it, and the agent-completion signal that reads it all work exactly as before. This release
+  removes the *producer* the product owned; it does not touch what consumes proof. The distinction
+  worth keeping in mind: what left ran a command and recorded a verdict against a **commit**; what
+  stayed reads a record about a **tree**.
+
+- **"A check attests the exact TREE it ran on."** That sentence lived inside the block being deleted
+  and would have died by accident. It is a fact about how proof works here, not a policy about when
+  to run one, so it now renders unconditionally.
+
+- **The dependency line in the brief.** It still tells an agent whether the checkout it was handed
+  has, links, or lacks its dependencies. Only the install hint — which came from the removed config
+  — is gone.
+
+Where this is going, for anyone reading the direction rather than the diff: evidence should be
+publishable by any CI with nothing but `git`, so that a project gets a working land door without
+adopting a Tachyon script. That work is specified in `docs/specs/497-verify-evidence-by-ref/`.
+
 ## 0.69.0 — One name for the board, and a proof that has to still be worth something
 
 Two changes that look unrelated and are the same idea: a thing should not be called two names, and
