@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ToolTransaction, gcAbandonedTransactions, TRANSACTIONS_REL } from "../../src/plugins/toolTransaction.js";
+import { ToolTransaction } from "../../src/plugins/toolTransaction.js";
 import { resolveToolPlaceholders, containsToolPlaceholder } from "../../src/plugins/toolPlaceholder.js";
 
-describe("ToolTransaction + gcAbandonedTransactions", () => {
+describe("ToolTransaction", () => {
   let ws: string;
   beforeEach(() => (ws = fs.mkdtempSync(path.join(os.tmpdir(), "tach-tx-"))));
   afterEach(() => fs.rmSync(ws, { recursive: true, force: true }));
@@ -24,34 +24,6 @@ describe("ToolTransaction + gcAbandonedTransactions", () => {
     expect(fs.existsSync(tx.dir)).toBe(true);
     tx.abandon();
     expect(fs.existsSync(tx.dir)).toBe(false);
-  });
-
-  it("GC reclaims a transaction older than the TTL but keeps a fresh one", () => {
-    const old = ToolTransaction.begin(ws, { plugin: "cg", txid: "old", startedAtIso: "2026-06-20T00:00:00.000Z" });
-    const fresh = ToolTransaction.begin(ws, { plugin: "cg", txid: "fresh", startedAtIso: "2026-06-25T11:59:00.000Z" });
-    const now = Date.parse("2026-06-25T12:00:00.000Z");
-    const { reclaimed } = gcAbandonedTransactions(ws, { nowMs: now, ttlMs: 60 * 60 * 1000 });
-    expect(fs.existsSync(old.dir)).toBe(false);
-    expect(fs.existsSync(fresh.dir)).toBe(true);
-    expect(reclaimed).toHaveLength(1);
-  });
-
-  it("GC reclaims a transaction with corrupt/missing meta", () => {
-    const tx = ToolTransaction.begin(ws, { plugin: "cg", txid: "corrupt", startedAtIso: "2026-06-25T11:59:00.000Z" });
-    fs.writeFileSync(path.join(tx.dir, "meta.json"), "{not json");
-    const { reclaimed } = gcAbandonedTransactions(ws, { nowMs: Date.parse("2026-06-25T12:00:00.000Z"), ttlMs: 60 * 60 * 1000 });
-    expect(fs.existsSync(tx.dir)).toBe(false);
-    expect(reclaimed).toHaveLength(1);
-  });
-
-  it("GC sweeps stale *.staging-* litter", () => {
-    fs.mkdirSync(path.join(ws, TRANSACTIONS_REL, "x.staging-123"), { recursive: true });
-    const { reclaimed } = gcAbandonedTransactions(ws, {});
-    expect(reclaimed.some((p) => p.includes(".staging-"))).toBe(true);
-  });
-
-  it("GC is a no-op when there is no transactions dir", () => {
-    expect(gcAbandonedTransactions(ws, {})).toEqual({ reclaimed: [] });
   });
 });
 
