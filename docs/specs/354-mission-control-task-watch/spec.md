@@ -4,6 +4,7 @@ _Created 2026-07-04._
 
 **Status:** shipped
 **Closure:** Shipped locally: Workspace now watches `.tachyon/tasks/*.json` and debounces out-of-band task file create/change/delete events into the existing `onViewsChanged("tasks")` fan-out. Verification passed via `/sdd verify` on 2026-07-04.
+**Verify:** `npm test -- test/unit/workspaceHeadless.test.ts && npx tsc --noEmit`
 
 ## Intent
 

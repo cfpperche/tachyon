@@ -5,6 +5,7 @@ _Created 2026-08-09._
 **Status:** shipped
 
 **Closure:** The land block offers `Review these changes` and `Open a pull request`, both dispatching
+**Verify:** `npm run verify:full:quiet`
 to the commands spec 213/230 and 223 already provided — no second diff or PR flow exists, held by
 `singleDiffReviewImplementation.test.ts`. Review compares committed history (`trunkRef..head`), and the
 sentence naming it tells the truth in the blocked state too. Merged in `929fc5e8`.

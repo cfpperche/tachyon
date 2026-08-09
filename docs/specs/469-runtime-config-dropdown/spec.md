@@ -4,6 +4,9 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Implemented under `t-e0734d`; focused regression, typecheck and full verification pass.
+**Verify:** `npx vitest run test/unit/runtimeConfigDropdown.test.ts`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

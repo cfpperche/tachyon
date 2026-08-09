@@ -5,6 +5,7 @@ _Created 2026-06-15._
 **Status:** SHIPPED v0.19.0 (2026-06-15, commit `d85738b`). codex dueto 2 rounds (round-1: 1 MAJOR + 1
 MINOR fixed; round-2 SHIP), 482 tests + typecheck green.
 **Closure:** honest resume badge (`· resumable` vs `· fresh start`) via a read-only `resumeReadiness`
+**Verify:** `npm run typecheck && npx vitest run` (safe with `$TMUX` set — spec 218 guard)
 probe mirroring `resume()`'s pre-flight; no mechanism change.
 
 **UI impact:** ui (sidebar badge text/tooltip for stopped/crashed agents).

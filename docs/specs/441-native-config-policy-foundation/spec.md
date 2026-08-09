@@ -4,6 +4,7 @@ _Created 2026-07-23._
 
 **Status:** shipped
 **Closure:** shared schema, fail-closed projection admission, canonical Studio round-trip and content-free provenance shipped in task `t-96ebad`; task `t-e05e00` hardened the adapter support seam and mixed-support contract before the first adapter slice.
+**Verify:** `npx vitest run test/unit/agentNativeConfigPolicy.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/agentProfileStudio.test.ts test/unit/agentStudioDomain.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

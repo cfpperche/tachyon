@@ -5,6 +5,9 @@ _Created 2026-07-13._
 **Status:** shipped
 
 **Closure:** merged to main at 40ad921a (branch tachyon/livemodel2, delegated task t-832fa2).
+**Verify:** `npx vitest run test/unit/livemodel2Behavior.gen.test.ts test/unit/agentModel.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/livemodel2Behavior.gen.test.ts`
 Behavior gate manual-equivalent (canonical verify_task blocked by lease wedge t-19026b — no salvage
 path exists); independent review ACCEPT; full suite green on branch and merged main; maintainer live
 dogfood 2026-07-14: codex-budget flipped "Codex default · profile" → observed "GPT-5.6 Sol" within

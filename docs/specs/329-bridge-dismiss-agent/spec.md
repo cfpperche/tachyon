@@ -4,6 +4,8 @@ _Created 2026-07-02._
 
 **Status:** shipped
 **Closure:** Shipped locally in this worktree. Evidence: `npm test -- --run test/unit/bridge.test.ts test/unit/agentManager.test.ts`, `npm run typecheck`, `npm run build`, and `/sdd dogfood --run` for the focused `dismiss_agent` path.
+**Verify:** `npm test -- --run test/unit/bridge.test.ts test/unit/agentManager.test.ts`
+**Dogfood:** `npm test -- --run test/unit/bridge.test.ts -t dismiss_agent`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

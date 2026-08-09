@@ -42,3 +42,4 @@ Done means first-party trusted Tachyon editor panels register serializers and re
 None.
 
 **Closure:** Implemented first-party trusted webview serializers and transient terminal manifest restore for task t-5beaad Parte A+B. Verified with `npm run typecheck` and `npm test -- --run`.
+**Verify:** `npm test -- --run`

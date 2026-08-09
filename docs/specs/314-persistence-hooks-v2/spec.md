@@ -4,6 +4,7 @@ _Created 2026-07-01._
 
 **Status:** shipped
 **Closure:** Shipped 2026-07-02 as a planning umbrella. Specs 315, 317, 319, 316, and 318 were implemented/closed; spec
+**Verify:** `test -d docs/specs/315-persistence-stop-hook-dogfood && test -d docs/specs/316-persistence-hook-health-diagnostics && test -d docs/specs/317-persistence-hook-failure-log && test -d docs/specs/318-persistence-settings-ui && test -d docs/specs/319-persistence-ledger-retention && test -d docs/specs/320-persistence-handoff-candidates`
 320 was explicitly superseded by the existing Project Handoff pending-notes lane after owner review found it duplicative.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);

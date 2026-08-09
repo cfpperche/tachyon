@@ -4,6 +4,8 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped in the t-be9405 worktree: fleet audit of the four provenance obligations (the
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- probe-provenance-parity`
 first three already held everywhere), Grok effective-model extraction from its measured `modelUsage`
 so Grok leaves SDD 473's unproven exemption, the Codex absence recorded as measured and filed as
 `t-a10d31`, and a registry guard that fails any adapter which neither declares

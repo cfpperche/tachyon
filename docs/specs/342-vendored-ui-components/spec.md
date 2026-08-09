@@ -5,6 +5,9 @@ _Created 2026-07-03._
 **Status:** shipped
 
 **Closure:** T1-T8 shipped (2026-07-03): Tailwind v4 pipeline + token bridge + the T3 compat gate (recorded
+**Verify:** `npm test -- --run test/unit/vscodeThemeBridge.test.ts test/unit/cssOrderSnapshot.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm run test:browser`
 per-component pass/fail: DropdownMenu/Select/Popover PASS, Tooltip/Dialog FAIL and excluded) + Kit wrappers
 (KitSelect/KitFieldRow/KitLabeledInput/KitDropdown/KitPopover) + Pilot A (Plugins panel) + Pilot B (Task
 Studio fields row) + bundle accounting/README/VENDORED.md docs. Full suite, both typechecks, and

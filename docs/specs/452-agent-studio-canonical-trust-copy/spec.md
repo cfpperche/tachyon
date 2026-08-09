@@ -4,6 +4,8 @@ _Created 2026-07-25._
 
 **Status:** shipped
 **Closure:** Canonical New/Edit Agent now discloses the bounded native trust authorization beside
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 Working directory, with localized copy, regression coverage, and desktop/narrow Visual QA evidence.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);

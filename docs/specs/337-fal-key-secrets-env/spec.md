@@ -4,6 +4,8 @@ _Created 2026-07-03._
 
 **Status:** shipped
 **Closure:** Shipped 2026-07-03. The paid fal.ai plugins now keep explicit `FAL_KEY` env precedence and fall back to `.tachyon/secrets.env` via a non-executing parser; image/sound/video docs and manifest patch versions were updated, and mocked dogfood proved missing-key, file fallback, and env-wins behavior without paid calls.
+**Verify:** `bash -n /home/goat/tachyon-plugins/image/skills/image/scripts/image.sh /home/goat/tachyon-plugins/sound/skills/sound/scripts/sound.sh /home/goat/tachyon-plugins/video/skills/video/scripts/video.sh && ! rg -n '(^|[[:space:]])(source|eval)[[:space:]]+.*secrets\\.env|(^|[[:space:]])\\.[[:space:]]+.*secrets\\.env' /home/goat/tachyon-plugins/image/skills/image/scripts/image.sh /home/goat/tachyon-plugins/sound/skills/sound/scripts/sound.sh /home/goat/tachyon-plugins/video/skills/video/scripts/video.sh`
+**Dogfood:** `bash /home/goat/tachyon-plugins/scripts/dogfood-fal-secrets-env.sh`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

@@ -5,6 +5,10 @@ _Created 2026-07-19. Task: t-a9d1f2._
 **Status:** shipped
 
 **Closure:** Shipped 2026-07-19 in `4b7cfcf4`. The six status-filter pills were replaced by one counted native dropdown in the `AGENTS` title toolbar; filter semantics and session-local state remain unchanged, zero-count modes stay visible/disabled, and obsolete pill markup/CSS were removed. Headless Visual QA passed at 360×760 and 240×760 with tracked screenshots; focused tests, build, typecheck, and the 5,112-test full suite passed.
+**Verify:** `npx vitest run test/unit/agentStatusFilter.test.ts test/unit/agentStatusFilterDropdown.test.ts test/unit/webviewPreviewRoutes.test.ts --maxWorkers=1`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run build`
+**Dogfood:** `npx vitest run test/unit/agentStatusFilterDropdown.test.ts -t "Agents header dropdown" --maxWorkers=1`
 
 ## Intent
 

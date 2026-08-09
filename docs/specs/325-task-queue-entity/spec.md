@@ -4,6 +4,8 @@ _Created 2026-07-02._
 
 **Status:** shipped
 **Closure:** Shipped 2026-07-02. Added the core Task entity/store under `.tachyon/tasks`, pure `nextTask()` selection, optional SDD artifact enrichment without SDD plugin dependency, Bridge tools `create_task`/`get_task`/`update_task`/`list_tasks`/`next_task`, Workspace refresh wiring for `tasks`, and focused/full verification. UI board/studio remains follow-up as scoped.
+**Verify:** `env -u TMUX npx vitest run test/unit/taskStore.test.ts test/unit/nextTask.test.ts && npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
+**Dogfood:** `env -u TMUX npx vitest run test/unit/taskStore.test.ts -t "CAS claim"`
 
 ## Intent
 

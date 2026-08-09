@@ -4,6 +4,7 @@ _Created 2026-07-14._
 
 **Status:** shipped
 **Closure:** 2026-07-14 — User prompt templates under `.tachyon/prompts/<id>.md`; palette + sidebar inject (stage/submit) via hardened tmux delivery; busy/composer refuse on submit. Human dogfood on Dev Host F5 (fixture `prompt-templates-dogfood`, agent `dogfood`): list templates, submit "Status + next step" into live pane (toast + multi-line body observed). Unit: promptStore/injectFlow/sidebarActions/i18n 33/33. Worktree `feat/prompt-templates`. Dev Host isolation fixed under `t-2d1810` (portable WSL F5).
+**Verify:** `npx vitest run test/unit/promptStore.test.ts test/unit/injectFlow.test.ts test/unit/sidebarActions.test.ts test/unit/i18n.test.ts`
 
 **UI impact:** flow
 <!-- Palette + sidebar agent action inject named prose into a live agent composer.

@@ -6,6 +6,7 @@ _Created 2026-06-28._
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 **Closure:** shipped 2026-06-28 — external-tool requirements + consent-gated assisted install land end-to-end. A plugin
+**Verify:** `npx vitest run test/unit && npm run typecheck && npm run build`
 declares `externalTools` (a system binary it needs but Tachyon does NOT provision); the engine DETECTS each
 spoof-resistantly (clean-PATH realpath + `isTrustedExecPath`, the detect probe runs the RESOLVED trusted binary, never
 a manifest path), surfaces present/missing at install, records the consented requirement in the lockfile, materializes

@@ -4,6 +4,9 @@ _Created 2026-06-30._
 
 **Status:** shipped
 **Closure:** Shipped local implementation on 2026-06-30. `ProbeService` now uses a 5 minute default subprocess budget so `probe_agent wait:"sync"` can return `{status:"running", runId}` at the 120s sync cap instead of killing the run by default; explicit `timeoutSec` remains authoritative. `ProbeRunner` now returns non-empty timeout/killed diagnostics using artifact/stdout/stderr fallback plus synthesized runtime/timeout/signal metadata. Verification: `/sdd verify` passed (`npm test -- --run test/unit/probeRunner.test.ts test/unit/probeBridge.test.ts test/unit/probeAdapterClaude.test.ts test/unit/probeAdapterCodex.test.ts`, `npm run typecheck`); `/sdd dogfood` passed (`npm test -- --run test/unit/probeSmoke.test.ts`). Commit pending.
+**Verify:** `npm test -- --run test/unit/probeRunner.test.ts test/unit/probeBridge.test.ts test/unit/probeAdapterClaude.test.ts test/unit/probeAdapterCodex.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/probeSmoke.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

@@ -4,6 +4,9 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped Claude New/Edit authoring for measured selectors and
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/agentProfileStudio.test.ts test/unit/agentStudioDomain.test.ts`
 native-config sources, host-side fail-closed validation, readiness reconciliation
 and a disposable Dev Host create/edit scenario; focused dogfood and both gates
 passed on 2026-07-26.

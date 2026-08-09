@@ -4,6 +4,8 @@ _Created 2026-07-23._
 
 **Status:** shipped
 **Closure:** t-1a3d50 closes lifecycle parity with a fresh/restart/resume private-home regeneration proof and a 2026-07-25 Dev Host smoke; lifecycle evidence `4e3b45bd`.
+**Verify:** `npx vitest run test/unit/codexNativeConfigProjection.test.ts test/unit/agentNativeConfigPolicy.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts`
+**Dogfood:** `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood -- dev-host -- headless`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

@@ -5,6 +5,8 @@ _Created 2026-07-18._
 **Status:** shipped
 
 **Closure:** Stateful Pi transcript normalization and bounded Activity integration shipped in `647b60b9`; dogfood closure landed in `f67a5400` with human Activity-panel approval at `1b51e39a`.
+**Verify:** `npx vitest run test/unit/piNormalizer.test.ts test/unit/logWriter.test.ts test/unit/activityLog.integration.test.ts test/unit/activityLogManager.test.ts test/unit/activityView.test.ts test/unit/piSession.test.ts test/unit/agentManager.test.ts --maxWorkers=2 && npm run build && npm run check:engine-boundary && npm run test:invariants`
+**Dogfood:** `node scripts/dogfood/pi-activity.mjs`
 
 ## Intent
 

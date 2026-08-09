@@ -5,6 +5,7 @@ _Created 2026-08-09._
 **Status:** shipped
 
 **Closure:** Attempts live in `.tachyon/tasks/<id>.attempts` (JSONL, no refusing cap). `TaskStore`
+**Verify:** `npm run verify:full:quiet`
 derives `currentAssignee` and `lastDeliverer` at read time and persists neither; `boardModel`'s
 `delivered by` and Evolution's four sites read the delivered value. 1 051 historical assignees were
 backfilled as `delivered` attempts, marked as backfill rather than carrying an invented timestamp.
