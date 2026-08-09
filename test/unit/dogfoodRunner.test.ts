@@ -44,4 +44,14 @@ describe("dogfood command surface", () => {
     );
     expect(unrunnable).toEqual([]);
   });
+
+  it("resolves dev-host commands with or without npm's extra separator", () => {
+    const run = (args: string[]) =>
+      execFileSync(process.execPath, ["scripts/dogfood/run.mjs", "dev-host", ...args], {
+        cwd: repoRoot,
+        encoding: "utf8",
+      });
+
+    expect(run(["--", "help"])).toBe(run(["help"]));
+  });
 });

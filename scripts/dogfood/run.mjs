@@ -65,6 +65,7 @@ const scenarios = [
   "worktree-plugin-projection",
 ];
 const [name, ...extraArgs] = process.argv.slice(2);
+if (extraArgs[0] === "--") extraArgs.shift();
 
 if (!name || name === "--help" || name === "-h") {
   console.log("Usage: npm run dogfood -- <scenario> [args...]");
