@@ -13,7 +13,8 @@ import {
  *
  * Unlike Claude, Grok ships a bounded catalog command, and the CLI itself treats it as the source of
  * truth. Re-measured on grok 1.0.0 (2026-08-09), `grok models` prints a catalog in both auth states;
- * only its banner distinguishes them. The authenticated form captured on 2026-08-07 is:
+ * only its banner distinguishes them. Both states were measured in one session on 2026-08-09; the
+ * authenticated form is:
  *
  *     You are logged in with grok.com.
  *

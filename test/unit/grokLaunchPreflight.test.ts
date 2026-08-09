@@ -19,7 +19,7 @@ import { parseLaunchCommand } from "../../src/runtime/launchPreflight.js";
  * models.*
  */
 
-/** Verbatim `grok models` output. */
+/** Verbatim logged-in `grok models` output measured live on grok 1.0.0 (2026-08-09). */
 const GROK_MODELS_OUTPUT = [
   "You are logged in with grok.com.",
   "",
