@@ -25,7 +25,7 @@ import { TaskStudioAdapter } from "../../TaskStudioAdapter.js";
 import { PinStudioAdapter } from "../../PinStudioAdapter.js";
 import { createAgentEvolutionLabels, createAgentProfileLabels } from "../../agent-studio-shell/domain.js";
 import { handleAgentStudioDomainMessage } from "../../../cockpit/agentStudioDomain.js";
-import { handleTaskStudioDomainMessage } from "../../../cockpit/taskStudioDomain.js";
+import { handleTaskStudioDomainMessage } from "../../task-detail/taskStudioDomain.js";
 import { handlePinStudioDomainMessage } from "../../pin-studio/pinStudioDomain.js";
 import { envelope } from "../../shared/studio/protocol.js";
 

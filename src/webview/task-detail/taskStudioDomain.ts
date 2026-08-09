@@ -15,11 +15,11 @@
 import * as vscode from "vscode";
 import fs from "node:fs";
 import path from "node:path";
-import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
-import { envelope } from "../webview/shared/studio/protocol.js";
-import { attachmentStoredMessage } from "../webview/task-studio/messages.js";
-import { notify } from "../workspace/NotificationService.js";
-import type { StudioDomainContext } from "../webview/shared/studio/studioRegistry.js";
+import type { WorkspaceTaskStudioTarget } from "../../shell/TaskStudioTarget.js";
+import { envelope } from "../shared/studio/protocol.js";
+import { attachmentStoredMessage } from "../task-studio/messages.js";
+import { notify } from "../../workspace/NotificationService.js";
+import type { StudioDomainContext } from "../shared/studio/studioRegistry.js";
 
 /** the webview -> host domain message shapes (mirrors task-studio/types.ts's TaskStudioWebviewMessage's
  *  domain members) — kept local since the dispatch's `message` param is only typed as `{ type: string }`. */
