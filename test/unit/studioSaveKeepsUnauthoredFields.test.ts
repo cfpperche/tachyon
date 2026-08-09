@@ -156,8 +156,23 @@ function terminalAccepts(key: string): boolean {
 }
 
 describe("t-26ba8f — the family: a no-op Studio save is the identity on the loaded definition", () => {
+  it("every key the schema declares has a probe value — coverage cannot shrink by omission", () => {
+    // The guard the guard needed. Selecting probes with `key in TERMINAL_PROBE_VALUES` (which is what
+    // this file did first) makes a NEW schema key skip itself: no probe, no measurement, still green,
+    // while the commit message claims the family is closed. That is precisely the shape this suite
+    // exists to catch, so it is asserted rather than trusted.
+    //
+    // Equality in BOTH directions, and no exemption list: a probe for a key the schema no longer
+    // declares is the same rot from the other end, and there is no such thing as a key that cannot be
+    // probed — the probe measures whether the loader ACCEPTS the key, and a refusal is a valid answer
+    // (it is the answer `kind`, `instructions`, `worktree`, `branch`, `worktreeSetup`, `selfEvolution`
+    // and `harness` already give). Adding a key to `tachyon.schema.json` must mean deciding here what
+    // a terminal does with it.
+    expect(Object.keys(TERMINAL_PROBE_VALUES).sort()).toEqual(schemaEntryKeys().sort());
+  });
+
   it("every schema key a terminal may carry survives a save that edited nothing", () => {
-    const accepted = schemaEntryKeys().filter((key) => key in TERMINAL_PROBE_VALUES && terminalAccepts(key));
+    const accepted = schemaEntryKeys().filter(terminalAccepts);
     // The probe values must be real ones, or "accepted" would silently shrink to nothing and the
     // assertion below would pass by measuring an empty entry.
     expect(accepted).toContain("attention");
