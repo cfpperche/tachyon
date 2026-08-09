@@ -19,18 +19,6 @@ export interface PrimerInput {
   delegator?: string;
   /** Plain Temporary lineage parent. */
   parent?: string;
-  /**
-   * t-3f93b4 — one already-rendered sentence about this checkout's dependencies, from
-   * `describeDependencyState`. Undefined means "nothing measured", and the line is omitted rather
-   * than guessed at.
-   *
-   * This is the half of that task that is a contract and not an optimization. Until this field
-   * existed the primer said nothing at all about whether the checkout it was handing over could
-   * run project tooling. Three
-   * delegated children measured on 2026-08-02 each answered that silence independently with their
-   * own 478 MB `npm ci`. A product that asks for verification says whether verification is possible.
-   */
-  dependencies?: string;
 }
 
 export interface RenderedPrimer {
@@ -89,12 +77,6 @@ function protocolLines(): string[] {
   ];
 }
 
-/** t-3f93b4 — reports the measured dependency state of the checkout handed to the agent. */
-function dependencyLines(input: PrimerInput): string[] {
-  const line = input.dependencies?.trim();
-  return line ? [line] : [];
-}
-
 /**
  * t-48f504 — which of the two documents that name an agent's work wins, said out loud.
  *
@@ -146,12 +128,8 @@ function beforeFinishingVerificationLines(): string[] {
 
 /** Renders both sections from ONE pass over the input (single source of truth — spec.md dueto #7). */
 export function renderPrimer(input: PrimerInput): RenderedPrimer {
-  const interpolated = [
-    input.agentName,
-    input.delegator,
-    input.parent,
-    input.dependencies,
-  ].filter((value): value is string => value !== undefined);
+  const interpolated = [input.agentName, input.delegator, input.parent]
+    .filter((value): value is string => value !== undefined);
   if (interpolated.some(containsUnsafeFramingCharacter)) {
     throw new Error("primer facts must not contain control characters");
   }
@@ -160,7 +138,6 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
     PRIMER_OPEN,
     ...identityLines(input),
     ...protocolLines(),
-    ...dependencyLines(input),
     ...precedenceLines(),
     PRIMER_CLOSE,
   ];

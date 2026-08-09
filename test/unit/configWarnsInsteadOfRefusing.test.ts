@@ -108,7 +108,7 @@ describe("the default runs — nothing is closed, nothing is substituted", () =>
         "  legacyBridgeAuth: nope",        // default `?? true` → shared legacy token ACCEPTED
         "  maxAgents: four",               // default 8
         "  worktree:",
-        "    shareDependency: false",      // typo → shareDependencies default (share) stands
+        "    shareDependency: false",      // typo is discarded; no sharedDirectories default exists
         "",
       ].join("\n"),
     );
@@ -119,6 +119,21 @@ describe("the default runs — nothing is closed, nothing is substituted", () =>
     expect(config?.settings.maxAgents).toBeUndefined();
     expect(config?.settings.worktree?.shareDependencies).toBeUndefined();
     expect(config?.settings.worktree?.revealInWorkspace).toBeUndefined();
+  });
+
+  it("keeps valid sharedDirectories entries and warns away invalid list members", () => {
+    const { config, errors, warnings } = parseConfig([
+      "settings:",
+      "  worktree:",
+      "    sharedDirectories:",
+      "      - node_modules",
+      "      - 42",
+      "      - ''",
+      "",
+    ].join("\n"));
+    expect(errors).toEqual([]);
+    expect(config?.settings.worktree?.sharedDirectories).toEqual(["node_modules"]);
+    expect(warnings.filter((warning) => warning.includes("sharedDirectories["))).toHaveLength(2);
   });
 
   it("keeps the readable half of a block whose other half was discarded", () => {

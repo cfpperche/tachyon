@@ -4,8 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { WorktreeManager, resolveWorktreeCwd } from "../../src/worktree/WorktreeManager.js";
-import { DEPENDENCY_DIR, describeDependencyState, shareDependencies } from "../../src/worktree/dependencySharing.js";
-import { renderPrimer, PRIMER_LINE_BUDGET } from "../../src/bridge/primer.js";
+import { DEPENDENCY_DIR, shareDependencies } from "../../src/worktree/dependencySharing.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
 
 /**
@@ -13,11 +12,10 @@ import type { TachyonConfig } from "../../src/config/loadConfig.js";
  *
  * `dependencySharing.test.ts` proves the DECISION. This file proves the decision is actually reached
  * at every door a launch comes through, because the measured defect was never a wrong decision — it
- * was no decision at all. A fresh worktree was born empty, the primer told its agent to run the
- * configured checks anyway, and three delegated children each answered that silence with their own
- * 478 MB `npm ci`.
+ * was no decision at all. Three delegated children independently installed 478 MB before the
+ * project could declare that one existing installation was shareable.
  *
- * Doors covered here: create, relaunch (validated reuse), the settings opt-out, and the primer.
+ * Doors covered here: create, relaunch (validated reuse), and the settings opt-out.
  */
 describe("t-3f93b4 — dependency sharing reaches every launch door (real git, tmp repo)", () => {
   const dirs: string[] = [];
@@ -34,7 +32,7 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
     git(["config", "user.email", "t@t.dev"], d);
     git(["config", "user.name", "T"], d);
     fs.writeFileSync(path.join(d, "package-lock.json"), lockBody);
-    fs.writeFileSync(path.join(d, ".gitignore"), `${DEPENDENCY_DIR}\n`);
+    fs.writeFileSync(path.join(d, ".gitignore"), `${DEPENDENCY_DIR}\n.env\n`);
     git(["add", "-A"], d);
     git(["commit", "-m", "init"], d);
     fs.mkdirSync(path.join(d, DEPENDENCY_DIR));
@@ -52,7 +50,13 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
       settings,
       resolveParent: async () => ({ known: false }),
       runSetup: async () => {},
-      shareDependencies: (worktreePath: string) => shareDependencies({ workspaceRoot: repo, worktreePath }),
+      shareDependencies: (worktreePath: string) => shareDependencies({
+        workspaceRoot: repo,
+        worktreePath,
+        sharedDirectories: settings.worktree?.shareDependencies === false
+          ? []
+          : (settings.worktree?.sharedDirectories ?? []),
+      }),
       notify: (n: string) => notices.push(n),
     };
   }
@@ -67,9 +71,8 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
   });
 
   it("CREATE: a fresh delegated worktree can resolve packages immediately, with no install and no bytes", async () => {
-    // This is the DONE_WHEN, mechanized: the checkout git just made is usable by the commands the
-    // primer tells its agent to run, without the agent doing anything first.
-    const settings: TachyonConfig["settings"] = { worktree: { base } };
+    // The checkout git just made can resolve packages without the agent doing anything first.
+    const settings: TachyonConfig["settings"] = { worktree: { base, sharedDirectories: [DEPENDENCY_DIR] } };
     const notices: string[] = [];
     const m = mgr(settings);
 
@@ -86,7 +89,7 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
   });
 
   it("CREATE: a branch whose committed lockfile differs is NOT linked, and the human hears why", async () => {
-    const settings: TachyonConfig["settings"] = { worktree: { base } };
+    const settings: TachyonConfig["settings"] = { worktree: { base, sharedDirectories: [DEPENDENCY_DIR] } };
     const notices: string[] = [];
     const m = mgr(settings);
     // A base branch that bumped a dependency — the child forks from it, so its checkout carries the
@@ -121,7 +124,7 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
   });
 
   it("RELAUNCH: an unchanged lockfile keeps the link across restart", async () => {
-    const settings: TachyonConfig["settings"] = { worktree: { base } };
+    const settings: TachyonConfig["settings"] = { worktree: { base, sharedDirectories: [DEPENDENCY_DIR] } };
     const m = mgr(settings);
     const first = await resolveWorktreeCwd({ name: "child", worktree: true, temporary: true, isRestart: false }, deps(m, settings, []));
     await m.completePreparation(first!.worktree!);
@@ -138,7 +141,7 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
   it("RELAUNCH re-decides rather than carrying the prior record's claim forward", async () => {
     // The prior record says `linked`. If relaunch trusted it, a lockfile that moved in between would
     // be a stale claim the ledger keeps repeating — `t-b4a799`'s shape exactly.
-    const settings: TachyonConfig["settings"] = { worktree: { base } };
+    const settings: TachyonConfig["settings"] = { worktree: { base, sharedDirectories: [DEPENDENCY_DIR] } };
     const m = mgr(settings);
     const first = await resolveWorktreeCwd({ name: "child", worktree: true, temporary: true, isRestart: false }, deps(m, settings, []));
     await m.completePreparation(first!.worktree!);
@@ -155,7 +158,21 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
   });
 
   it("settings.worktree.shareDependencies: false opts a workspace out entirely", async () => {
-    const settings: TachyonConfig["settings"] = { worktree: { base, shareDependencies: false } };
+    const settings: TachyonConfig["settings"] = { worktree: { base, shareDependencies: false, sharedDirectories: [DEPENDENCY_DIR] } };
+    const m = mgr(settings);
+    fs.writeFileSync(path.join(repo, ".env"), "PRIVATE=primary\n");
+    fs.writeFileSync(path.join(repo, ".worktreeinclude"), ".env\n");
+
+    const r = await resolveWorktreeCwd({ name: "child", worktree: true, temporary: true, isRestart: false }, deps(m, settings, []));
+
+    expect(r?.worktree?.dependencies).toBeUndefined();
+    expect(fs.existsSync(path.join(r!.cwd, DEPENDENCY_DIR))).toBe(false);
+    expect(fs.readFileSync(path.join(r!.cwd, ".env"), "utf8")).toBe("PRIVATE=primary\n");
+    expect(fs.lstatSync(path.join(r!.cwd, ".env")).isSymbolicLink()).toBe(false);
+  });
+
+  it("has no product default: an undeclared node_modules is not shared", async () => {
+    const settings: TachyonConfig["settings"] = { worktree: { base } };
     const m = mgr(settings);
 
     const r = await resolveWorktreeCwd({ name: "child", worktree: true, temporary: true, isRestart: false }, deps(m, settings, []));
@@ -173,43 +190,5 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
 
     expect(r?.worktree?.dependencies).toBeUndefined();
     expect(fs.existsSync(path.join(r!.cwd, DEPENDENCY_DIR))).toBe(false);
-  });
-});
-
-describe("t-3f93b4 — the primer stops being silent about it", () => {
-  it("a shared checkout is told the terms", () => {
-    const line = describeDependencyState({ mode: "linked", lockDigest: "d".repeat(64), reason: "lockfiles are identical to the primary checkout", at: "t" });
-    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", dependencies: line });
-    const lines = primer.split("\n");
-
-    const depsIdx = lines.findIndex((l) => l.startsWith("Dependencies:"));
-    expect(depsIdx).toBeGreaterThan(-1);
-    expect(lines[depsIdx]).toContain("Do not reinstall through it");
-  });
-
-  it("a checkout that must install is told SO and WHY — the honest half of the DONE_WHEN", () => {
-    const line = describeDependencyState(
-      { mode: "absent", lockDigest: "d".repeat(64), reason: "this worktree adds pnpm-lock.yaml — this worktree needs its own dependencies", at: "t" },
-    );
-    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", dependencies: line });
-
-    expect(primer).toContain("this worktree has no node_modules");
-    expect(primer).toContain("adds pnpm-lock.yaml");
-    expect(primer).toContain("Install dependencies before using project tooling");
-  });
-
-  it("stays silent when nothing was measured — no line invented for a non-Node project", () => {
-    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator" });
-    expect(primer).not.toContain("Dependencies:");
-  });
-
-  it("the added line stays inside the primer's hard budget", () => {
-    const line = describeDependencyState({ mode: "linked", lockDigest: "d".repeat(64), reason: "lockfiles are identical to the primary checkout", at: "t" });
-    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", dependencies: line });
-    expect(primer.split("\n").length).toBeLessThanOrEqual(PRIMER_LINE_BUDGET);
-  });
-
-  it("a dependency sentence carrying control characters is refused like every other primer fact", () => {
-    expect(() => renderPrimer({ agentName: "child", dependencies: "Dependencies: shared\u0007 (a bell smuggled in through an fs error string)" })).toThrow(/control characters/);
   });
 });

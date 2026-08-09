@@ -1,5 +1,5 @@
 /**
- * t-3f93b4 — a fresh worktree is born without the dependencies the primer tells its agent to use.
+ * t-3f93b4 / t-5ac1df — materialize project-declared worktree-local resources.
  *
  * The contradiction this module closes: Tachyon hands an agent a checkout where project tooling may
  * not run and used to say nothing about that dependency state. Measured on 2026-08-02 with three delegated children
@@ -31,24 +31,26 @@
  * `pnpm-lock.yaml` the primary does not have has diverged, so the digest covers the file NAMES as
  * well as their contents.
  *
- * Pure decision + a thin injected-fs applier, so the whole matrix table-tests with no real
- * filesystem, keeping policy separate from filesystem effects.
+ * Node lockfile divergence remains a deliberately narrow safety case. Other ecosystems may share
+ * any declared, gitignored directory, but Tachyon makes no claim that it can detect when that
+ * ecosystem's dependency inputs diverge. Adding a speculative package-manager table here would be
+ * policy without evidence.
  */
 
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
 
 /**
- * The directory two checkouts of one repo can share, and the files that decide whether they may.
- *
- * One ecosystem on purpose. Node is where the measured 478 MB lives, `node_modules` is the only
- * dependency directory that is both path-independent and reproducible from a lockfile alone, and a
- * speculative table of every package manager would be hardening nobody asked for. Every recognized
- * lockfile is listed because ANY of them appearing on one side and not the other is divergence —
- * yarn/pnpm/bun all populate the same `node_modules`, so the digest has to see them.
+ * The one declared directory for which Tachyon knows how to detect divergence. Every recognized
+ * lockfile is listed because any one appearing on only one side changes what populates node_modules.
  */
 export const DEPENDENCY_DIR = "node_modules";
+export const WORKTREE_INCLUDE_FILE = ".worktreeinclude";
 export const LOCKFILES = [
   "package-lock.json",
   "npm-shrinkwrap.json",
@@ -172,23 +174,6 @@ function lockfileDivergenceReason(primary: LockfileFingerprint, worktree: Lockfi
   return `${parts.join("; ")} — this worktree needs its own dependencies`;
 }
 
-/**
- * One sentence for the agent's primer — the half of this task that is a CONTRACT rather than an
- * optimization. Either the product shares the dependencies and says the terms, or it says the agent
- * will have to install and why; what it must never do again is stay silent and let each agent
- * rediscover the gap and answer it differently.
- */
-export function describeDependencyState(state: SharedDependencyState | undefined): string | undefined {
-  if (!state) return undefined;
-  if (state.mode === "linked") {
-    return `Dependencies: ${DEPENDENCY_DIR} is a symlink to the primary checkout (${state.reason}). Do not reinstall through it — if you change dependencies, replace the link with your own install and say so in your report.`;
-  }
-  if (state.mode === "own") {
-    return `Dependencies: this worktree has its own ${DEPENDENCY_DIR} — ${state.reason}.`;
-  }
-  return `Dependencies: this worktree has no ${DEPENDENCY_DIR} — ${state.reason}. Install dependencies before using project tooling.`;
-}
-
 /** The filesystem surface, injected so the applier tests without a real disk. */
 export interface DependencyFsLike {
   readFile: (p: string) => Buffer;
@@ -220,6 +205,146 @@ function readLockfiles(dir: string, io: DependencyFsLike): (name: string) => Buf
   };
 }
 
+type Warn = (message: string) => void;
+
+function literalPath(raw: string, source: string, warn: Warn): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.startsWith("#")) return undefined;
+  const normalized = trimmed.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  if (normalized.startsWith("!") || /[*?\[]/.test(normalized)) {
+    warn(`${source}: skipping unsupported pattern '${raw}' (only literal paths are supported)`);
+    return undefined;
+  }
+  if (!normalized || path.isAbsolute(normalized) || path.win32.isAbsolute(normalized)) {
+    warn(`${source}: skipping unsafe path '${raw}'`);
+    return undefined;
+  }
+  const segments = normalized.split("/");
+  if (segments.includes("..") || segments.includes("") || segments[0] === ".git") {
+    warn(`${source}: skipping unsafe path '${raw}'`);
+    return undefined;
+  }
+  return normalized;
+}
+
+async function isGitIgnored(workspaceRoot: string, relativePath: string, warn: Warn): Promise<boolean> {
+  try {
+    await execFileAsync("git", ["check-ignore", "-q", "--", relativePath], { cwd: workspaceRoot });
+    return true;
+  } catch (error) {
+    if ((error as { code?: unknown }).code === 1) return false;
+    warn(`worktree paths: could not check whether '${relativePath}' is gitignored; skipping it`);
+    return false;
+  }
+}
+
+async function isGitTracked(workspaceRoot: string, relativePath: string, warn: Warn): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("git", ["ls-files", "--", relativePath], { cwd: workspaceRoot });
+    return stdout.trim().length > 0;
+  } catch {
+    warn(`worktree paths: could not check whether '${relativePath}' is tracked; skipping it`);
+    return true;
+  }
+}
+
+async function admittedSharedDirectories(workspaceRoot: string, configured: readonly string[], warn: Warn): Promise<string[]> {
+  const admitted: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of configured) {
+    const relativePath = literalPath(raw, "settings.worktree.sharedDirectories", warn);
+    if (!relativePath || seen.has(relativePath)) continue;
+    seen.add(relativePath);
+    let directory = false;
+    try { directory = fs.statSync(path.join(workspaceRoot, relativePath)).isDirectory(); } catch { /* warned below */ }
+    if (!directory) {
+      warn(`settings.worktree.sharedDirectories: skipping '${relativePath}' because it is absent or not a directory in the primary checkout`);
+      continue;
+    }
+    if (await isGitTracked(workspaceRoot, relativePath, warn)) {
+      warn(`settings.worktree.sharedDirectories: skipping '${relativePath}' because tracked directories cannot be shared`);
+      continue;
+    }
+    if (!(await isGitIgnored(workspaceRoot, relativePath, warn))) {
+      warn(`settings.worktree.sharedDirectories: skipping '${relativePath}' because only gitignored directories can be shared`);
+      continue;
+    }
+    admitted.push(relativePath);
+  }
+  return admitted;
+}
+
+async function worktreeIncludePaths(workspaceRoot: string, warn: Warn): Promise<string[]> {
+  let content: string;
+  try { content = fs.readFileSync(path.join(workspaceRoot, WORKTREE_INCLUDE_FILE), "utf8"); }
+  catch { return []; }
+  const admitted: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of content.split(/\r?\n/)) {
+    const relativePath = literalPath(raw, WORKTREE_INCLUDE_FILE, warn);
+    if (!relativePath || seen.has(relativePath)) continue;
+    seen.add(relativePath);
+    try { fs.lstatSync(path.join(workspaceRoot, relativePath)); }
+    catch {
+      warn(`${WORKTREE_INCLUDE_FILE}: skipping '${relativePath}' because it is absent in the primary checkout`);
+      continue;
+    }
+    if (await isGitTracked(workspaceRoot, relativePath, warn)) {
+      warn(`${WORKTREE_INCLUDE_FILE}: skipping '${relativePath}' because tracked paths cannot be copied`);
+      continue;
+    }
+    if (!(await isGitIgnored(workspaceRoot, relativePath, warn))) {
+      warn(`${WORKTREE_INCLUDE_FILE}: skipping '${relativePath}' because only gitignored paths can be copied`);
+      continue;
+    }
+    admitted.push(relativePath);
+  }
+  return admitted;
+}
+
+function copyOwnPath(source: string, target: string): void {
+  const actualSource = fs.lstatSync(source).isSymbolicLink() ? fs.realpathSync(source) : source;
+  const stat = fs.statSync(actualSource);
+  if (stat.isDirectory()) {
+    fs.mkdirSync(target, { recursive: true, mode: stat.mode });
+    for (const entry of fs.readdirSync(actualSource)) {
+      copyOwnPath(path.join(actualSource, entry), path.join(target, entry));
+    }
+    return;
+  }
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(actualSource, target, process.platform === "darwin" ? fs.constants.COPYFILE_FICLONE : 0);
+}
+
+async function copyIncludedPaths(workspaceRoot: string, worktreePath: string, warn: Warn): Promise<void> {
+  for (const relativePath of await worktreeIncludePaths(workspaceRoot, warn)) {
+    const source = path.join(workspaceRoot, relativePath);
+    const target = path.join(worktreePath, relativePath);
+    try { fs.lstatSync(target); continue; } catch { /* missing target is the only write case */ }
+    try { copyOwnPath(source, target); }
+    catch (error) {
+      warn(`${WORKTREE_INCLUDE_FILE}: could not copy '${relativePath}' (${error instanceof Error ? error.message : String(error)})`);
+    }
+  }
+}
+
+function linkSharedDirectory(workspaceRoot: string, worktreePath: string, relativePath: string, warn: Warn): void {
+  const source = path.join(workspaceRoot, relativePath);
+  const target = path.join(worktreePath, relativePath);
+  try {
+    const st = fs.lstatSync(target);
+    if (st.isSymbolicLink() && path.resolve(path.dirname(target), fs.readlinkSync(target)) === path.resolve(source)) return;
+    warn(`settings.worktree.sharedDirectories: skipping '${relativePath}' because the worktree target already exists`);
+    return;
+  } catch { /* absent target */ }
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.symlinkSync(source, target, "dir");
+  } catch (error) {
+    warn(`settings.worktree.sharedDirectories: could not link '${relativePath}' (${error instanceof Error ? error.message : String(error)})`);
+  }
+}
+
 /**
  * Classify `<dir>/node_modules`. Only a symlink pointing at the EXPECTED target counts as ours; a
  * symlink anywhere else is `foreign`, because a link somebody else made is not ours to retarget.
@@ -245,17 +370,42 @@ export function dependencyDirState(dir: string, expectedTarget: string, io: Depe
  * converges — that is deliberate, because create and restart/resume are the same mechanism reached
  * through different doors, and a check that only ran at create would miss every rebase.
  *
- * Never throws: a filesystem that refuses the link degrades to `absent` with the error in the reason,
- * which the agent then reads in its primer. An isolated launch must not fail over an optimization.
+ * Never throws for materialization failures: a refused link degrades to `absent` or a warning. An
+ * isolated launch must not fail over an optimization.
  */
-export function shareDependencies(
-  o: { workspaceRoot: string; worktreePath: string; now?: () => string; io?: DependencyFsLike },
-): SharedDependencyState | undefined {
+export async function shareDependencies(
+  o: {
+    workspaceRoot: string;
+    worktreePath: string;
+    /** No default: the repository must name every directory Tachyon may share. */
+    sharedDirectories?: readonly string[];
+    warn?: Warn;
+    now?: () => string;
+    io?: DependencyFsLike;
+  },
+): Promise<SharedDependencyState | undefined> {
   const io = o.io ?? nodeFs;
+  const warn = o.warn ?? (() => {});
   const at = (o.now ?? (() => new Date().toISOString()))();
+  await copyIncludedPaths(o.workspaceRoot, o.worktreePath, warn);
+  const sharedDirectories = await admittedSharedDirectories(o.workspaceRoot, o.sharedDirectories ?? [], warn);
+  for (const relativePath of sharedDirectories) {
+    if (relativePath !== DEPENDENCY_DIR) linkSharedDirectory(o.workspaceRoot, o.worktreePath, relativePath, warn);
+  }
   const target = path.join(o.workspaceRoot, DEPENDENCY_DIR);
   const linkPath = path.join(o.worktreePath, DEPENDENCY_DIR);
   const dirState = dependencyDirState(o.worktreePath, target, io);
+  if (!sharedDirectories.includes(DEPENDENCY_DIR)) {
+    // A checkout created under the retired implicit default may still carry our exact link. Absence
+    // from the declaration now means "share nothing", so converge by removing only that known link.
+    if (dirState === "shared-link") {
+      try { io.unlink(linkPath); }
+      catch (error) {
+        warn(`settings.worktree.sharedDirectories: could not remove undeclared '${DEPENDENCY_DIR}' link (${error instanceof Error ? error.message : String(error)})`);
+      }
+    }
+    return undefined;
+  }
   const plan = planDependencySharing({
     primary: fingerprintLockfiles(readLockfiles(o.workspaceRoot, io)),
     worktree: fingerprintLockfiles(readLockfiles(o.worktreePath, io)),
@@ -269,8 +419,8 @@ export function shareDependencies(
 
   switch (plan.kind) {
     case "leave":
-      // A worktree with no lockfile anywhere is not a Node project; saying anything about its
-      // dependencies would be inventing a fact, so it gets no state and the primer gets no line.
+      // A declared node_modules without a lockfile can make no divergence claim. Leave a foreign
+      // directory alone; otherwise this declaration has nothing safe to materialize.
       if (dirState !== "foreign") return undefined;
       return { mode: "own", lockDigest: plan.digest, reason: plan.reason, at };
 

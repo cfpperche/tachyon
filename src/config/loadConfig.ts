@@ -504,7 +504,14 @@ export interface TachyonConfig {
      * t-aaad95 — `revealInWorkspace` (default true), migrated
      * from the retired `tachyon.worktrees.revealInWorkspace` VS Code setting.
      */
-    worktree?: { base?: string; branch?: string; revealInWorkspace?: boolean; shareDependencies?: boolean };
+    worktree?: {
+      base?: string;
+      branch?: string;
+      revealInWorkspace?: boolean;
+      shareDependencies?: boolean;
+      /** Gitignored directories in the primary checkout to symlink into every isolated worktree. */
+      sharedDirectories?: string[];
+    };
     /** spec 383 — explicit project-owned onboarding documents, transported verbatim by Tachyon. */
     projectGuidance?: ProjectGuidanceSettings;
     /** spec 216 — append Bridge-coordination guidance to agents spawned via the Bridge (default true) */
@@ -1572,7 +1579,7 @@ export function parseConfig(yamlText: string): ParseResult {
           discarded.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
         } else {
           const wt = raw.settings.worktree;
-          const out: { base?: string; branch?: string; revealInWorkspace?: boolean; shareDependencies?: boolean } = {};
+          const out: NonNullable<TachyonConfig["settings"]["worktree"]> = {};
           if (wt.base !== undefined) {
             if (typeof wt.base !== "string" || wt.base.trim().length === 0) discarded.push("settings.worktree.base: must be a non-empty path string");
             else out.base = wt.base;
@@ -1593,17 +1600,29 @@ export function parseConfig(yamlText: string): ParseResult {
             if (typeof wt.revealInWorkspace !== "boolean") discarded.push("settings.worktree.revealInWorkspace: must be a boolean");
             else out.revealInWorkspace = wt.revealInWorkspace;
           }
-          // t-3f93b4 — link a fresh worktree's `node_modules` to the primary checkout's when the two
-          // lockfiles are byte-identical (default true). The opt-out exists because sharing one
-          // dependency directory across checkouts is a real product decision, not a free win: a
-          // workspace whose tooling writes INTO node_modules per-checkout can say no here without
-          // having to give up worktree isolation itself.
+          // Compatibility kill switch for directory sharing. There is deliberately no product
+          // default: a project opts in path-by-path with `sharedDirectories`.
           if (wt.shareDependencies !== undefined) {
             if (typeof wt.shareDependencies !== "boolean") discarded.push("settings.worktree.shareDependencies: must be a boolean");
             else out.shareDependencies = wt.shareDependencies;
           }
+          if (wt.sharedDirectories !== undefined) {
+            if (!Array.isArray(wt.sharedDirectories)) {
+              discarded.push("settings.worktree.sharedDirectories: must be a list of literal path strings");
+            } else {
+              const directories: string[] = [];
+              for (const [index, value] of wt.sharedDirectories.entries()) {
+                if (typeof value !== "string" || value.trim().length === 0) {
+                  discarded.push(`settings.worktree.sharedDirectories[${index}]: must be a non-empty literal path string`);
+                  continue;
+                }
+                directories.push(value.trim());
+              }
+              out.sharedDirectories = directories;
+            }
+          }
           for (const key of Object.keys(wt)) {
-            if (!["base", "branch", "revealInWorkspace", "shareDependencies"].includes(key)) discarded.push(`settings.worktree: unknown key '${key}'`);
+            if (!["base", "branch", "revealInWorkspace", "shareDependencies", "sharedDirectories"].includes(key)) discarded.push(`settings.worktree: unknown key '${key}'`);
           }
           settings.worktree = out;
         }

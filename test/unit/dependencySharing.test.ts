@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { makeTempDir } from "../helpers/tempDir.js";
 import {
   DEPENDENCY_DIR,
   dependencyDirState,
-  describeDependencyState,
   fingerprintLockfiles,
   planDependencySharing,
   shareDependencies,
@@ -116,35 +116,6 @@ describe("planDependencySharing", () => {
   });
 });
 
-describe("describeDependencyState — what the agent is actually told", () => {
-  it("states the sharing CONTRACT, not just the fact", () => {
-    const line = describeDependencyState({ mode: "linked", lockDigest: "abc", reason: "lockfiles are identical", at: "t" });
-    expect(line).toContain("symlink to the primary checkout");
-    expect(line).toContain("Do not reinstall through it");
-    expect(line).toContain("say so in your report");
-  });
-
-  it("when it must install, it says WHY without inventing an install command", () => {
-    const line = describeDependencyState(
-      { mode: "absent", lockDigest: "abc", reason: "this worktree adds pnpm-lock.yaml", at: "t" },
-    );
-    expect(line).toContain("this worktree adds pnpm-lock.yaml");
-    expect(line).toContain("Install dependencies before using project tooling");
-    expect(line).not.toContain("npm ci");
-    expect(line).not.toContain("configured checks");
-  });
-
-  it("does not tell an agent that already has dependencies to install them", () => {
-    const line = describeDependencyState({ mode: "own", lockDigest: "abc", reason: "not created by Tachyon", at: "t" });
-    expect(line).toContain("its own");
-    expect(line).not.toContain("Install");
-  });
-
-  it("says nothing when nothing was measured", () => {
-    expect(describeDependencyState(undefined)).toBeUndefined();
-  });
-});
-
 // ─────────────────────────── against a real filesystem ───────────────────────────
 
 function tmpPair(): { root: string; primary: string; worktree: string } {
@@ -153,20 +124,27 @@ function tmpPair(): { root: string; primary: string; worktree: string } {
   const worktree = path.join(root, "wt");
   fs.mkdirSync(primary);
   fs.mkdirSync(worktree);
+  execFileSync("git", ["init", "-q"], { cwd: primary });
+  fs.writeFileSync(path.join(primary, ".gitignore"), `${DEPENDENCY_DIR}\n`);
   return { root, primary, worktree };
 }
 
 const writeLock = (dir: string, body: string) => fs.writeFileSync(path.join(dir, "package-lock.json"), body);
+const shareNodeModules = (primary: string, worktree: string) => shareDependencies({
+  workspaceRoot: primary,
+  worktreePath: worktree,
+  sharedDirectories: [DEPENDENCY_DIR],
+});
 
 describe("shareDependencies (real fs) — create, relaunch, and the divergence in between", () => {
-  it("CREATE: an identical lockfile gets a link instead of a 478 MB install", () => {
+  it("CREATE: an identical lockfile gets a link instead of a 478 MB install", async () => {
     const { primary, worktree } = tmpPair();
     writeLock(primary, "L1");
     writeLock(worktree, "L1");
     fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
     fs.writeFileSync(path.join(primary, DEPENDENCY_DIR, "marker"), "from-primary");
 
-    const state = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
+    const state = await shareNodeModules(primary, worktree);
 
     expect(state?.mode).toBe("linked");
     expect(fs.lstatSync(path.join(worktree, DEPENDENCY_DIR)).isSymbolicLink()).toBe(true);
@@ -174,30 +152,30 @@ describe("shareDependencies (real fs) — create, relaunch, and the divergence i
     expect(fs.readFileSync(path.join(worktree, DEPENDENCY_DIR, "marker"), "utf8")).toBe("from-primary");
   });
 
-  it("CREATE: a diverged lockfile is never linked, and the reason survives into the state", () => {
+  it("CREATE: a diverged lockfile is never linked, and the reason survives into the state", async () => {
     const { primary, worktree } = tmpPair();
     writeLock(primary, "L1");
     writeLock(worktree, "L2-this-branch-changed-a-dependency");
     fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
 
-    const state = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
+    const state = await shareNodeModules(primary, worktree);
 
     expect(state?.mode).toBe("absent");
     expect(state?.reason).toContain("needs its own dependencies");
     expect(fs.existsSync(path.join(worktree, DEPENDENCY_DIR))) .toBe(false);
   });
 
-  it("RELAUNCH: a link that went stale is REMOVED and said out loud — never silently kept", () => {
+  it("RELAUNCH: a link that went stale is REMOVED and said out loud — never silently kept", async () => {
     // The measured failure mode: the child rebases onto a base whose lockfile moved. Its next launch
     // must not hand it the primary's packages while its briefing says it is on its own branch.
     const { primary, worktree } = tmpPair();
     writeLock(primary, "L1");
     writeLock(worktree, "L1");
     fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
-    expect(shareDependencies({ workspaceRoot: primary, worktreePath: worktree })?.mode).toBe("linked");
+    expect((await shareNodeModules(primary, worktree))?.mode).toBe("linked");
 
     writeLock(worktree, "L2-rebased-onto-a-base-that-bumped-a-dependency");
-    const relaunch = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
+    const relaunch = await shareNodeModules(primary, worktree);
 
     expect(relaunch?.mode).toBe("absent");
     expect(relaunch?.reason).toContain("package-lock.json");
@@ -205,32 +183,32 @@ describe("shareDependencies (real fs) — create, relaunch, and the divergence i
     expect(fs.existsSync(path.join(worktree, DEPENDENCY_DIR))).toBe(false);
   });
 
-  it("RELAUNCH: an unchanged lockfile is idempotent — one link, not a churn of unlink/relink", () => {
+  it("RELAUNCH: an unchanged lockfile is idempotent — one link, not a churn of unlink/relink", async () => {
     const { primary, worktree } = tmpPair();
     writeLock(primary, "L1");
     writeLock(worktree, "L1");
     fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
 
-    const first = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
-    const second = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
+    const first = await shareNodeModules(primary, worktree);
+    const second = await shareNodeModules(primary, worktree);
 
     expect(second?.mode).toBe("linked");
     expect(second?.lockDigest).toBe(first?.lockDigest);
     expect(fs.readlinkSync(path.join(worktree, DEPENDENCY_DIR))).toBe(path.join(primary, DEPENDENCY_DIR));
   });
 
-  it("RELAUNCH: rebasing BACK onto the matching lockfile re-links", () => {
+  it("RELAUNCH: rebasing BACK onto the matching lockfile re-links", async () => {
     const { primary, worktree } = tmpPair();
     writeLock(primary, "L1");
     writeLock(worktree, "L2");
     fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
-    expect(shareDependencies({ workspaceRoot: primary, worktreePath: worktree })?.mode).toBe("absent");
+    expect((await shareNodeModules(primary, worktree))?.mode).toBe("absent");
 
     writeLock(worktree, "L1");
-    expect(shareDependencies({ workspaceRoot: primary, worktreePath: worktree })?.mode).toBe("linked");
+    expect((await shareNodeModules(primary, worktree))?.mode).toBe("linked");
   });
 
-  it("an agent's OWN install is left alone and reported as its own — not overwritten by a link", () => {
+  it("an agent's OWN install is left alone and reported as its own — not overwritten by a link", async () => {
     const { primary, worktree } = tmpPair();
     writeLock(primary, "L1");
     writeLock(worktree, "L1");
@@ -238,13 +216,13 @@ describe("shareDependencies (real fs) — create, relaunch, and the divergence i
     fs.mkdirSync(path.join(worktree, DEPENDENCY_DIR));
     fs.writeFileSync(path.join(worktree, DEPENDENCY_DIR, "mine"), "installed-by-the-agent");
 
-    const state = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
+    const state = await shareNodeModules(primary, worktree);
 
     expect(state?.mode).toBe("own");
     expect(fs.readFileSync(path.join(worktree, DEPENDENCY_DIR, "mine"), "utf8")).toBe("installed-by-the-agent");
   });
 
-  it("a symlink pointing somewhere ELSE is foreign — we do not retarget what we did not create", () => {
+  it("a symlink pointing somewhere ELSE is foreign — we do not retarget what we did not create", async () => {
     const { root, primary, worktree } = tmpPair();
     const stranger = path.join(root, "stranger-modules");
     fs.mkdirSync(stranger);
@@ -253,13 +231,13 @@ describe("shareDependencies (real fs) — create, relaunch, and the divergence i
     fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
     fs.symlinkSync(stranger, path.join(worktree, DEPENDENCY_DIR), "dir");
 
-    expect(shareDependencies({ workspaceRoot: primary, worktreePath: worktree })?.mode).toBe("own");
+    expect((await shareNodeModules(primary, worktree))?.mode).toBe("own");
     expect(fs.readlinkSync(path.join(worktree, DEPENDENCY_DIR))).toBe(stranger);
     expect(dependencyDirState(worktree, path.join(primary, DEPENDENCY_DIR))).toBe("foreign");
   });
 
-  it("a project with no lockfile gets no claim at all", () => {
+  it("a project with no lockfile gets no claim at all", async () => {
     const { primary, worktree } = tmpPair();
-    expect(shareDependencies({ workspaceRoot: primary, worktreePath: worktree })).toBeUndefined();
+    expect(await shareDependencies({ workspaceRoot: primary, worktreePath: worktree })).toBeUndefined();
   });
 });

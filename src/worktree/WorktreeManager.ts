@@ -397,7 +397,7 @@ export interface EnsureOptions {
    * only into create would link a matching lockfile once and then never notice the rebase that broke
    * it. Also runs BEFORE `runSetup`, so a `worktreeSetup` that builds can see the dependencies.
    */
-  shareDependencies?: (worktreePath: string) => SharedDependencyState | undefined;
+  shareDependencies?: (worktreePath: string) => Promise<SharedDependencyState | undefined>;
 }
 
 /**
@@ -538,9 +538,9 @@ export class WorktreeManager {
    * What that guard does NOT cover is deliberate: git deletes IGNORED files silently (measured, git
    * 2.53), and it unlinks a `node_modules` symlink without following it (measured — the primary
    * checkout's directory survives). Everything ignored in a checkout of this age was produced by this
-   * same launch's `worktreeSetup` or by dependency sharing, and both are derived. Refusing on ignored
-   * files instead would refuse ALWAYS, since dependency sharing links `node_modules` by default — a
-   * guard that never passes is the bug wearing a safety costume.
+   * same launch's `worktreeSetup` or by project-declared worktree materialization, and both are
+   * derived. A configured shared directory is a symlink, so removing the checkout never follows it
+   * into the primary checkout.
    *
    * Commits are never at stake: removing a checkout does not remove its branch, and the branch is only
    * deleted through `git branch -d`, which refuses anything unmerged.
@@ -873,7 +873,7 @@ export class WorktreeManager {
       // t-3f93b4 — RE-decide, never carry forward. `prior.dependencies` records what was true at the
       // last launch; a branch that rebased onto a base with a different lockfile since then would
       // otherwise relaunch still claiming a link that is now wrong. Recomputing is two file reads.
-      const dependencies = o.shareDependencies?.(wtPath);
+      const dependencies = await o.shareDependencies?.(wtPath);
       const record: WorktreeRecord = {
         path: wtPath,
         branch: o.branch,
@@ -924,7 +924,7 @@ export class WorktreeManager {
       // t-3f93b4 — the checkout exists and is at its expected tip, so its lockfile is now readable.
       // Decide dependency sharing BEFORE setup, so a `worktreeSetup` that builds or tests is not the
       // thing that discovers the worktree has nothing installed.
-      const dependencies = o.shareDependencies?.(wtPath);
+      const dependencies = await o.shareDependencies?.(wtPath);
       if (dependencies) record.dependencies = dependencies;
       // Fresh checkout (create or attach) → run setup HERE, still holding the lock, so no
       // concurrent reuse-spawn can race into the half-set-up worktree.
@@ -1287,7 +1287,7 @@ export interface WorktreeResolveDeps {
    * way `runSetup` is, because it needs the workspace root and a filesystem this module has no
    * business reaching for itself. Omitted → no sharing at all (what every caller did before t-3f93b4).
    */
-  shareDependencies?: (worktreePath: string) => SharedDependencyState | undefined;
+  shareDependencies?: (worktreePath: string) => Promise<SharedDependencyState | undefined>;
   notify: (message: string, level?: "info" | "warn" | "error") => void;
 }
 
@@ -1405,11 +1405,10 @@ export async function resolveWorktreeCwd(
   // Setup runs ONCE, only on a fresh create (not restart) — handed to ensure() so it runs
   // under the per-agent lock (review fix: setup must not race a concurrent reuse-spawn).
   const wantSetup = !ctx.isRestart && !!ctx.worktreeSetup && ctx.worktreeSetup.length > 0;
-  // t-3f93b4 — unlike setup, this runs on EVERY launch including restart: setup is a one-time build
-  // step, while dependency sharing is a claim about the lockfile that has to be re-checked each time
-  // the branch could have moved. Default ON; `settings.worktree.shareDependencies: false` opts a
-  // workspace out for which sharing one directory across checkouts is genuinely wrong.
-  const wantShare = deps.settings.worktree?.shareDependencies !== false && deps.shareDependencies;
+  // Unlike setup, materialization runs on EVERY launch including restart. Shared paths converge
+  // idempotently, `.worktreeinclude` copies fill only missing targets, and node_modules lockfile
+  // divergence is re-checked each time the branch could have moved.
+  const wantShare = !!deps.shareDependencies;
   try {
     const { record: rec, created, initialHead, preparationLocked } = await deps.manager.ensure({
       agent: ctx.name,
@@ -1422,9 +1421,8 @@ export async function resolveWorktreeCwd(
       ...(wantShare ? { shareDependencies: deps.shareDependencies } : {}),
     });
     announceDiscardedCwd(ctx, deps, rec.path, "it runs in its own git worktree, which IS its working directory");
-    // t-3f93b4 — divergence is never a silent downgrade. `absent` after a lockfile mismatch means the
-    // agent is about to be handed a checkout its primer tells it to verify in and it cannot; the
-    // human hears it here, and the agent hears the same fact in its primer.
+    // Node divergence remains loud to the human even though dependency state is no longer prompt
+    // text. The persisted state still protects verification records from a stale shared install.
     if (rec.dependencies?.mode === "absent") {
       deps.notify(`'${ctx.name}' has no shared node_modules — ${rec.dependencies.reason}`, "warn");
     }

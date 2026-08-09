@@ -235,7 +235,6 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     { label: "delegator", input: { agentName: "worker", delegator: "boss\u001b]8;;https://example.test\u0007" } },
     { label: "parent", input: { agentName: "worker", parent: "boss\u001b[2J" } },
     { label: "C1 in delegator", input: { agentName: "worker", delegator: "boss\u009b2J" } },
-    { label: "Unicode line separator", input: { agentName: "worker", dependencies: "deps\u2028spoof" } },
     { label: "bidi isolate", input: { agentName: "worker", parent: "boss\u2066spoof" } },
   ])("rejects control characters in interpolated $label facts", ({ input }) => {
     expect(() => renderPrimer(input)).toThrow(/control characters/);
