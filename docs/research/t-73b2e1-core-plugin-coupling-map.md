@@ -61,11 +61,32 @@ Depois do desacoplamento, **o vínculo não some**: as 271 Tasks continuam apont
 2. Remover leitura/derivação SDD do TaskStore e discovery de `docs/specs/*/tasks.md`; SDD continua responsável por seu próprio workflow, sem criar um novo mecanismo genérico porque nenhum segundo plugin precisa dele.
 3. Apagar apenas o vocabulário derivado SDD de tipos, runtime-api, modelos e webviews; renderizar refs pela superfície genérica de artefatos existente. Manter citações históricas e a proveniência opaca `agent-browser`.
 
+## Guarda contra o próximo acoplamento
+
+### O grep ingênuo não é viável
+
+A lista dinâmica dos 15 diretórios contém nomes comuns: `image`, `audio`, `video`, `sound` e `diagram`. Eles já aparecem legitimamente no core como tipos de anexo/nó Markdown, operações visuais e palavras inglesas. Procurar nomes como substrings faria o guarda falhar em código não relacionado; procurar só strings exatas ainda encontra valores legítimos como `type: "image"`. Um guarda assim seria ruído desde o primeiro dia.
+
+A afirmação ampliada “SDD é o único nome de plugin no código” é, portanto, verdadeira apenas no sentido **plugin-específico**. Literalmente há também `agent-browser` em `src/externalTools/types.ts:2`, de propósito, e nomes comuns coincidentes. A busca confirmou que os três pontos citados pelo dono (`TaskStore.ts:623/626/628`, `taskDetailProjection.ts:45`, `types.ts:107`) são reais, mas não são exaustivos: há propriedades/símbolos SDD, projeções, UI e policy listados acima; `validations/discovery.ts:52` também emite `type: "sdd"`.
+
+### Guarda proposto
+
+Adicionar um teste de arquitetura, não um grep, com estas propriedades:
+
+1. Descobrir os nomes em runtime enumerando os diretórios de `.tachyon/plugins/` (a instalação real), sem lista de plugins copiada no teste; limitar a busca a fontes de produção do core (`src/**/*.{ts,tsx,json}`), excluindo o próprio subsistema genérico de plugins apenas quando ele estiver tratando manifestos de forma opaca.
+2. Tokenizar/parsear TypeScript/TSX/JSON e ignorar comments/JSDoc/JSX comments por construção. Normalizar identificadores (`SddStatus`, `sddStage`, `RETRIAGE_SDD`) em palavras para alcançar tanto literais quanto vocabulário de código; não usar substring para nomes comuns.
+3. Comparar candidatos a uma allowlist pequena e revisável de **ocorrências semânticas**, cada entrada com arquivo, classe de nó e justificativa. A primeira exceção é `src/externalTools/types.ts:2`, literal `agent-browser`, porque é proveniência opaca observada. Coincidências genéricas (`image` como media type, por exemplo) precisam ser agrupadas por classe semântica estável, não centenas de linhas/line numbers. Qualquer nome novo ou uso novo sem justificativa falha e imprime plugin, arquivo, linha e nó.
+
+O teste precisa provar o próprio vermelho com fixtures sintéticas, sem editar produção: (1) comentário `// SDD 410` passa; (2) config do dono fora de `src` passa; (3) `ref.type === "sdd"`, `z.literal("sdd")` e `interface SddStage` falham; (4) a exceção exata `agent-browser` passa, mas o mesmo literal num `if` de política falha; (5) um diretório de plugin sintético novo é descoberto sem mudar lista no teste. Assim a lista é dinâmica, a interpretação de falso positivo é explícita e o detector não depende da árvore que pretende vigiar.
+
+Esse guarda é viável, mas a allowlist é parte do contrato: sem análise sintática e exceções semânticas, os plugins de nome comum o tornariam inutilizável.
+
 ## Portas a testar na implementação futura
 
 - Interface → editar/fechar Task com ref SDD, com e sem diretório/plugin.
 - Agent/Bridge → `update_task` e `reconcile_task` nas mesmas condições.
 - Tachyon → `next_task`, snapshot Board, Task Detail e descoberta de validações sem plugin/diretório.
 - Restart/resume/worktree alternativo → nenhuma busca de spec em outro checkout; refs persistidas permanecem idênticas.
+- Guarda → fixtures sintéticas cobrem comentário, config fora do core, literal/propriedade/identificador proibidos, exceção de proveniência e descoberta automática de plugin novo.
 
 Não rodei gate: esta rodada não altera produto, teste, configuração ou `tachyon.yml`; só adiciona este relatório.
