@@ -19,11 +19,10 @@ import { handoffMessage } from "../../src/webview/handoff/messages";
 import { humanInboxItemMessage, humanInboxMessage } from "../../src/webview/human-inbox/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
-import { engineModelMessage } from "../../src/webview/engine/messages";
 import { worktreesModelMessage } from "../../src/webview/worktrees/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
 import { settingsModelMessage } from "../../src/webview/settings/messages";
-import { overviewModelMessage } from "../../src/webview/overview/messages";
+import { systemModelMessage } from "../../src/webview/system/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { pinStudioFixtures, pinStudioMakeMessage } from "./fixtures/pin-studio";
@@ -399,14 +398,6 @@ export const ROUTES: Record<string, Route> = {
     globals: { __TACHYON_STRINGS__: runtimeConfigPreviewStrings },
     makeMessage: (vm) => runtimeConfigSnapshotMessage(vm as never),
   },
-  engine: {
-    bundle: "/dist/webview/engine.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/engine-workspace.css"],
-    frame: { w: 880, h: 900 },
-    fixtures: { default: cockpitFixtures.engine },
-    module: true,
-    makeMessage: (vm) => engineModelMessage(vm as never),
-  },
   // SDD 485 D6 — the fixture moved with the renderer: the same classified model now reaches the real
   // standalone Worktrees bundle, with both shared sheets its production panel declares.
   worktrees: {
@@ -430,14 +421,21 @@ export const ROUTES: Record<string, Route> = {
     globals: { __TACHYON_STRINGS__: cockpitStrings },
     makeMessage: (vm) => settingsModelMessage(vm as never),
   },
-  overview: {
-    bundle: "/dist/webview/overview.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/engine-workspace.css", "/dist/webview/overview.css"],
+  // SDD 500 — one route where `overview` and `engine` were two, and three fixtures because the screen
+  // has three shapes worth looking at: healthy, failed, and a window with a second root attached that
+  // still draws ONE card (the only multi-root shape this product produces — see the fixture's comment).
+  system: {
+    bundle: "/dist/webview/system.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/engine-workspace.css", "/dist/webview/system.css"],
     frame: { w: 880, h: 900 },
-    fixtures: { default: cockpitFixtures.default },
+    fixtures: {
+      default: cockpitFixtures.default,
+      "engine-error": cockpitFixtures["engine-error"],
+      "multi-workspace-window": cockpitFixtures["multi-workspace-window"],
+    },
     module: true,
     globals: { __TACHYON_STRINGS__: cockpitStrings },
-    makeMessage: (vm) => overviewModelMessage(vm as never),
+    makeMessage: (vm) => systemModelMessage(vm as never),
   },
   handoff: {
     bundle: "/dist/webview/handoff.js",
@@ -494,7 +492,9 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   plugins: { title: "Plugins", aliases: ["plugins", "plugin manager", "install plugin", "marketplace"] },
   "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime", "quota", "provider capacity", "rate limit"] },
   "human-inbox": { title: "Human Inbox", aliases: ["inbox", "human inbox", "waiting on you", "approvals queue"] },
-  engine: { title: "Engine", aliases: ["engine", "bridge", "control plane"] },
+  // SDD 500 — the merged surface answers to both retired names, so a named lookup for "overview" or
+  // "engine" resolves HERE instead of to nothing (the same courtesy `sidebar` does for "fleet").
+  system: { title: "System", aliases: ["system", "overview", "engine", "bridge", "control plane", "health"] },
   worktrees: { title: "Worktrees", aliases: ["worktrees", "managed worktrees", "checkout hygiene"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },

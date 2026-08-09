@@ -199,9 +199,17 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // divergence a fourth hand-written `iconName` would have re-opened.
   { view: "human-inbox", viewId: "tachyonHumanInbox", section: "inbox", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   { view: "handoff", viewId: "tachyonHandoff", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
-  // SDD 485 D5 — Engine is per project: buildCockpitModel accepts wsHash and filters bundles before
-  // producing the plural workspaces row. New id: tachyonControlInspector names a retired inspector.
-  { view: "engine", viewId: "tachyonEngine", section: "engine", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
+  // SDD 500 — System replaces D5's Engine app and D11's Overview app with ONE row, and it inherits the
+  // cardinality both had for the same reason: `buildCockpitModel` accepts a wsHash and filters bundles
+  // before producing `control.workspaces`, so every fact on this screen is rooted at one project.
+  //
+  // That filter is also why this app has no collapse rule: it leaves exactly ONE row, so the "second
+  // workspace below the fold" the design feared cannot occur (plan.md § D4, cancelled by owner ruling
+  // on t-7b92bd rather than shipped as machinery only a fixture could reach).
+  //
+  // The viewId is NEW. Both retired ids named half of this screen, so reusing either would leave a name
+  // in the manifest that lies about what it opens — the call C5 made, not C4's.
+  { view: "system", viewId: "tachyonSystem", section: "system", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 485 D6 — Worktrees is filtered by buildCockpitModel's wsHash before its classified rows are
   // exposed, so it is one dashboard per project. It never had a standalone id; use a new one.
   { view: "worktrees", viewId: "tachyonWorktrees", section: "worktrees", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
@@ -211,9 +219,6 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // SDD 485 D10 — companion and every mutation accept one wsHash. Settings was born in Control,
   // so there is no retired standalone id or persisted shape to revive.
   { view: "settings", viewId: "tachyonSettings", section: "settings", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
-  // SDD 485 D11 — Overview is scoped by buildCockpitModel(..., { wsHash }). It was born in Control,
-  // so it has no legacy standalone id or persisted shape to reuse.
-  { view: "overview", viewId: "tachyonOverview", section: "overview", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 485 D17 — Activity has no launcher tile. Its route and feed source both take the immutable
   // (workspace, agent) pair, so each pair is one document and two agents may remain open side by side.
   // The retired viewType still names this exact app; its legacy wsHash/agent state maps without residue.

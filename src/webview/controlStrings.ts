@@ -6,8 +6,6 @@ export function cockpitStrings(): CockpitStrings {
   return {
     title: t("Control"),
     subtitle: t("Project sysadmin"),
-    navOverview: t("Overview"),
-    navEngine: t("Engine"),
     navFleet: t("Fleet"),
     navInbox: t("Inbox"),
     navApprovals: t("Approvals"),
@@ -29,9 +27,11 @@ export function cockpitStrings(): CockpitStrings {
     openSettings: t("Open Settings"),
     openDoctor: t("Run Doctor"),
     copied: t("Diagnostics copied"),
-    overviewTitle: t("Overview"),
-    overviewHint: t("Health snapshot. Fleet = agents (sidebar); Board = work queue."),
-    engineTitle: t("Engine / Bridge"),
+    // SDD 500 — the hint answers the question spec.md says System exists to answer, in the reader's
+    // words. Overview's old hint pointed at two OTHER screens (Fleet, Board); this one points at what
+    // is on this one.
+    systemTitle: t("System"),
+    systemHint: t("Is Tachyon up and healthy, and if not, where?"),
     fleetTitle: t("Fleet"),
     fleetHint: t("Agents (runtime) — start, stop, terminal, activity. Work items are on the Board."),
     approvalsTitle: t("Approvals"),
@@ -43,16 +43,19 @@ export function cockpitStrings(): CockpitStrings {
     settingsTitle: t("Settings"),
     settingsHint: t("Personal machine preferences and shared project policy — two files, two authorities."),
     workspaces: t("Workspaces"),
+    workspacesInWindow: t("of {0} in this window"),
     engines: t("Engines"),
     agents: t("Agents"),
     errors: t("Errors"),
-    bridges: t("Bridges"),
     approvals: t("Approvals"),
     inbox: t("Waiting on you"),
     worktrees: t("Worktrees"),
-    attached: t("attached"),
-    error: t("error"),
-    none: t("none"),
+    // SDD 500 — the engine STATE badge's three words, and they are capitalized because that is how the
+    // Engine screen shipped them. Before the merge these existed twice: lower-case here (read by
+    // nothing) and Title Case in `EnginePanel.ts`'s own inline strings table. One table now.
+    attached: t("Attached"),
+    error: t("Error"),
+    none: t("None"),
     state: t("State"),
     pid: t("PID"),
     version: t("Version"),

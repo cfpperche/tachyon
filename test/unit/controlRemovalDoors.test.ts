@@ -35,20 +35,27 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
     expect(block).toContain("taskDetailPanels.openCreate(ws.wsHash, mintTaskId())");
   });
 
-  it("a persisted Control panel is discarded and replaced by Overview", () => {
+  it("a persisted Control panel is discarded and replaced by System", () => {
     const block = blockFrom('context, "tachyonCockpit"', 400);
     expect(block).toContain("panel.dispose()");
-    expect(block).toContain("openOverviewTab(");
+    expect(block).toContain("openSystemTab(");
   });
 
   it("tachyon.openControl resolves every section without falling through to Control", () => {
     const block = blockFrom('registerCommand("tachyon.openControl"', 3_800);
     for (const opener of [
       "openBoard", "tmuxPanels.open", "openPluginsTab", "runtimeOpsPanels.open",
-      "openHumanInboxTab", "openEngineTab", "openWorktreesTab",
-      "openRuntimeConfigTab", "openSettingsTab", "openOverviewTab",
+      "openHumanInboxTab", "openWorktreesTab",
+      "openRuntimeConfigTab", "openSettingsTab", "openSystemTab",
     ]) expect(block, `${opener} is not reachable from tachyon.openControl`).toContain(opener);
     expect(block).not.toContain("openCockpit(");
+    // SDD 500 — `openEngineTab` and `openOverviewTab` left this list because their apps MERGED, and the
+    // assertion is inverted rather than dropped for the same reason `openFleetTab`'s was: both ids
+    // still decode, so an arm for either could come back by accident. Neither may have a door of its
+    // own — `resolveSectionDestination` maps both to `system` BEFORE this switch reads them.
+    expect(block).not.toContain("openEngineTab");
+    expect(block).not.toContain("openOverviewTab");
+    expect(block, "the alias must be applied before the switch, or the two ids fall through").toContain("resolveSectionDestination(resolveCockpitSection(section))");
     // t-5f2b5b — `openFleetTab` left this list because the app it opened is deleted, and the assertion
     // is INVERTED rather than dropped: `fleet` still decodes as a section id (it is the parent of the
     // agent-activity/agent-probes subroutes and of five studios), so a resolver arm for it could come
@@ -56,14 +63,22 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
     expect(block).not.toContain("openFleetTab");
   });
 
-  it("tachyon.openControl with no section defaults to Overview", () => {
+  it("tachyon.openControl with no section defaults to System", () => {
     const block = blockFrom('registerCommand("tachyon.openControl"', 3_800);
-    expect(block).toMatch(/openOverviewTab\(\);\n\s*return Promise\.resolve\(\);\n\s*}\),/);
+    expect(block).toMatch(/openSystemTab\(\);\n\s*return Promise\.resolve\(\);\n\s*}\),/);
   });
 
-  it("the legacy tachyon.openCockpit alias defaults to Overview", () => {
+  it("the legacy tachyon.openCockpit alias defaults to System", () => {
     const block = blockFrom('registerCommand("tachyon.openCockpit"', 180);
-    expect(block).toContain("openOverviewTab()");
+    expect(block).toContain("openSystemTab()");
     expect(block).not.toContain("openCockpit(");
+  });
+
+  it("tachyon.inspectEngine keeps its command id and lands on System", () => {
+    // SDD 500 — the command is contributed in package.json and reachable from the palette, so retiring
+    // it would remove a door. The engine detail it opened is the lower half of System; only the
+    // destination changed.
+    const block = blockFrom('registerCommand("tachyon.inspectEngine"', 200);
+    expect(block).toContain("openSystemTab()");
   });
 });

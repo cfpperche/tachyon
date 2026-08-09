@@ -18,8 +18,6 @@ import type { Fixture } from "../routes";
 export const strings: CockpitStrings & WorktreesStrings = {
   title: "Control",
   subtitle: "Project sysadmin",
-  navOverview: "Overview",
-  navEngine: "Engine",
   navFleet: "Fleet",
   navInbox: "Inbox",
   navApprovals: "Approvals",
@@ -41,9 +39,8 @@ export const strings: CockpitStrings & WorktreesStrings = {
   openSettings: "Open Settings",
   openDoctor: "Run Doctor",
   copied: "Diagnostics copied",
-  overviewTitle: "Overview",
-  overviewHint: "Health snapshot. Fleet = agents (sidebar); Board = work queue.",
-  engineTitle: "Engine / Bridge",
+  systemTitle: "System",
+  systemHint: "Is Tachyon up and healthy, and if not, where?",
   fleetTitle: "Fleet",
   fleetHint: "Agents (runtime) — start, stop, terminal, activity. Work items are on the Board.",
   approvalsTitle: "Approvals",
@@ -57,16 +54,16 @@ export const strings: CockpitStrings & WorktreesStrings = {
   settingsTitle: "Settings",
   settingsHint: "Tachyon settings and workspace config.",
   workspaces: "Workspaces",
+  workspacesInWindow: "of {0} in this window",
   engines: "Engines",
   agents: "Agents",
   errors: "Errors",
-  bridges: "Bridges",
   approvals: "Approvals",
   inbox: "Waiting on you",
   worktrees: "Worktrees",
-  attached: "attached",
-  error: "error",
-  none: "none",
+  attached: "Attached",
+  error: "Error",
+  none: "None",
   state: "State",
   pid: "PID",
   version: "Version",
@@ -891,9 +888,25 @@ export const runtimeConfigFixtureSnapshot: RuntimeConfigControlSnapshot = {
  */
 export const NAV_PENDING_TASK_ID = "t-4bf28a";
 
+/**
+ * SDD 500 — the workspace whose engine failed to identify itself. `buildControlInspectorModel` turns
+ * `identityError` into `engine.state === "error"`, which is what the state badge, the Errors counter
+ * and the Engine card's error row all read — so this is ONE edit that reaches every place the failure
+ * has to be visible, rather than three hand-set values that could disagree.
+ */
+const brokenEngineBundle: CockpitWorkspaceBundle = {
+  ...bundles[0]!,
+  control: {
+    ...bundles[0]!.control,
+    identity: null,
+    identityError: "engine handshake failed: no response on 127.0.0.1:7421 after 5s",
+  },
+};
+
 export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
-  default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "overview", nowIso: now }) },
-  engine: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "engine", nowIso: now }) },
+  default: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "system", nowIso: now }) },
+  // SDD 500 — the case System exists to answer the second half of ("and if not, WHERE?").
+  "engine-error": { provenance: "synthetic-edge", vm: buildCockpitModel([brokenEngineBundle], { section: "system", nowIso: now }) },
   // t-5f2b5b — no `fleet` fixture: the Fleet section had no Control renderer left and its standalone app is
   // deleted, so there is no surface to photograph. `fleet` is still the nav section the studio/agent-subroute
   // fixtures below build against, which is why those keep using it.
@@ -1039,7 +1052,7 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
   "runtime-config": { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "runtime-config", nowIso: now }) },
   worktrees: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "worktrees", nowIso: now }) },
   settings: { provenance: "synthetic-edge", vm: buildCockpitModel(bundles, { section: "settings", nowIso: now }) },
-  empty: { provenance: "synthetic-edge", vm: buildCockpitModel([], { section: "overview", nowIso: now }) },
+  empty: { provenance: "synthetic-edge", vm: buildCockpitModel([], { section: "system", nowIso: now }) },
   // t-d16a39 — the shell workspace selector: visible under "All workspaces" and scoped to one.
   "multi-workspace": {
     provenance: "synthetic-edge",
@@ -1049,11 +1062,15 @@ export const cockpitFixtures: Record<string, Fixture<CockpitModel>> = {
     provenance: "synthetic-edge",
     vm: buildCockpitModel([...bundles, goldenBundle], { section: "fleet", nowIso: now, wsHash: "c7d21e90" }),
   },
-  // t-46eb4f — Overview with more than one root attached: the ONE global scope selector, offering
-  // "All workspaces" plus each root. The single-root case is the `default` fixture, where the same
-  // selector is still rendered (it just has one option) — it no longer hides itself.
-  "multi-workspace-overview": {
+  /**
+   * SDD 500 — TWO roots attached to the window, ONE card on screen, which is the only shape this
+   * product can produce: `buildCockpitModel` scopes `control.workspaces` to the selected root, while
+   * `overview.workspaceCount` deliberately counts the whole window (t-72ff5a). This fixture is what
+   * proves the summary says which is which — the Workspaces value reads 1, matching the card, and the
+   * window's 2 appears underneath, labelled with its own scope.
+   */
+  "multi-workspace-window": {
     provenance: "synthetic-edge",
-    vm: buildCockpitModel([...bundles, goldenBundle], { section: "overview", nowIso: now }),
+    vm: buildCockpitModel([...bundles, goldenBundle], { section: "system", nowIso: now }),
   },
 };

@@ -81,7 +81,7 @@
   "command.inspectServer": "Tachyon: Inspect tmux Server",
   "command.openControl": "Tachyon: Control",
   "command.openCockpit": "Tachyon: Control (legacy alias)",
-  "command.inspectEngine": "Tachyon: Control — Engine",
+  "command.inspectEngine": "Tachyon: Control — System",
   "command.openPlugins": "Tachyon: Plugins",
   "command.openPluginSurface": "Tachyon: Open Plugin Surface",
   "command.board": "Tachyon: Board",

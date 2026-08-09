@@ -1868,24 +1868,6 @@
     ]
   },
   {
-    "view": "engine",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=engine&fixture=default",
-    "frame": {
-      "w": 880,
-      "h": 900
-    },
-    "tags": [
-      "synthetic-edge"
-    ],
-    "title": "Engine",
-    "aliases": [
-      "engine",
-      "bridge",
-      "control plane"
-    ]
-  },
-  {
     "view": "worktrees",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=worktrees&fixture=default",
@@ -1916,15 +1898,66 @@
     ]
   },
   {
-    "view": "overview",
+    "view": "system",
     "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=overview&fixture=default",
+    "url": "/scripts/webview-preview/index.html?view=system&fixture=default",
     "frame": {
       "w": 880,
       "h": 900
     },
     "tags": [
       "synthetic-edge"
+    ],
+    "title": "System",
+    "aliases": [
+      "system",
+      "overview",
+      "engine",
+      "bridge",
+      "control plane",
+      "health"
+    ]
+  },
+  {
+    "view": "system",
+    "fixture": "engine-error",
+    "url": "/scripts/webview-preview/index.html?view=system&fixture=engine-error",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "System",
+    "aliases": [
+      "system",
+      "overview",
+      "engine",
+      "bridge",
+      "control plane",
+      "health"
+    ]
+  },
+  {
+    "view": "system",
+    "fixture": "multi-workspace-window",
+    "url": "/scripts/webview-preview/index.html?view=system&fixture=multi-workspace-window",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "System",
+    "aliases": [
+      "system",
+      "overview",
+      "engine",
+      "bridge",
+      "control plane",
+      "health"
     ]
   },
   {

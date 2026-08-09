@@ -1156,10 +1156,13 @@ function ControlGrid({ onOpen, engineHasError }: { onOpen: (section: CockpitSect
   return (
     <div class="ctl-grid" role="group" aria-label="Control sections" data-testid="control-grid">
       {CONTROL_SECTION_NAV.map((s) => {
-        // t-aa2780 — the Engine tile carries the log-error dot that used to sit on Control's Engine
-        // TAB. The tab-strip dot next to it says "something is wrong"; this one says WHERE, so the
-        // alarm has an address. Announced through the button's own label, not as a decorative glyph.
-        const err = engineHasError && s.id === "engine";
+        // t-aa2780 — one tile carries the log-error dot that used to sit on Control's Engine TAB. The
+        // tab-strip dot next to it says "something is wrong"; this one says WHERE, so the alarm has an
+        // address. Announced through the button's own label, not as a decorative glyph.
+        // SDD 500 — that address is the System tile now: the Engine tile was merged into it, and the
+        // log panel the dot is about is still on that screen. The id is the tile's, not the section
+        // alias — a dot on a tile that does not exist is an alarm with no address again.
+        const err = engineHasError && s.id === "system";
         // SDD 485 — a standalone app's tile opens its OWN editor tab, so the tooltip must not promise
         // Control. The click is unchanged (one door: `tachyon.openControl <id>`); only the wording is.
         const opens = s.standalone ? `Open ${s.label}` : `Open Control — ${s.label}`;
