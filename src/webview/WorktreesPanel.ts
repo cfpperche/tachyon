@@ -87,6 +87,10 @@ export class WorktreesPanelManager {
       await this.runOne(session, "forget", message.id, false);
     } else if (message.type === "worktreeReleaseLock" && typeof message.id === "string") {
       await this.runOne(session, "releaseLock", message.id, false);
+    } else if (message.type === "worktreeReviewDiff" && typeof message.id === "string") {
+      await this.dispatch(session, "tachyon.reviewWorktreeItem", message.id);
+    } else if (message.type === "worktreeCreatePr" && typeof message.id === "string") {
+      await this.dispatch(session, "tachyon.createWorktreePrItem", message.id);
     } else if (message.type === "worktreeBatchCleanup" && Array.isArray(message.items)) {
       for (const item of message.items) {
         const row = item as { id?: unknown; op?: unknown };
@@ -95,6 +99,30 @@ export class WorktreesPanelManager {
         }
       }
     }
+  }
+
+  /**
+   * SDD 501 — hand a land-block action to the command that already implements it.
+   *
+   * This is the sidebar's routing, not a new one: an action id is mapped to an EXISTING VS Code command
+   * and called with a duck-typed item the handler reads its fields off (`SidebarPrototype.ts:72,530`).
+   * Two things follow from being a dashboard rather than the sidebar. The project is the panel's own
+   * immutable one, never the row's `wsHash` — the same rule every mutation here already obeys (SDD 485
+   * D6), and it holds for a read too, because "review project B's checkout from project A's panel" is
+   * the same crossing. And nothing is dispatched on a refresh: these two commands probe at click, which
+   * is the property spec 223 bought and `prReadinessProbedAtClick.test.ts` keeps.
+   *
+   * There is deliberately no local review or PR implementation to fall back on. A refusal — no such
+   * row, no committed history, no `gh` — is the command's to make and to name.
+   */
+  private async dispatch(
+    session: SectionPanelSession<WorktreesRefreshKind>,
+    command: "tachyon.reviewWorktreeItem" | "tachyon.createWorktreePrItem",
+    worktreeId: string,
+  ): Promise<void> {
+    const project = session.target.project;
+    if (!project) throw new Error("Worktrees dashboard has no project");
+    await vscode.commands.executeCommand(command, { workspaceHash: project, worktreeId });
   }
 
   private async runOne(
@@ -147,6 +175,11 @@ function worktreesStrings(): Record<string, string> {
     landCheckPrimaryClean: t("Primary checkout clean"),
     landFixLabel: t("Fix"),
     landCommits: t("commit(s)"),
+    landReview: t("Review these changes"),
+    landPropose: t("Open a pull request"),
+    landCompare: t("Review shows {0}..{1} — the commits this command would land, not the working tree."),
+    landCompareBlocked: t("Review opens a committed-history comparison, not the working tree."),
+    landCompareNoTrunk: t("No local trunk to compare against — review shows this branch against the ref it was forked from."),
     wtAgentGone: t("Agent no longer exists — leftover checkout"),
     wtAgentOwned: t("Managed by Agent Studio → Forget"),
     wtAlsoDeleteBranch: t("Also delete local branch"),

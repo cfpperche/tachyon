@@ -205,6 +205,19 @@ export async function resolveTrunkRefs(git: GitExec, cwd: string): Promise<strin
   return ["main"];
 }
 
+/**
+ * The LOCAL trunk out of the candidate list, or null when the list holds only remote-tracking refs.
+ *
+ * t-7cb971 needed this because only a local branch can be fast-forwarded. SDD 501 needs the SAME
+ * answer, because the diff the land door shows must be against the ref the land command would move —
+ * two answers to "which trunk" would put a review and the command it informs on different bases,
+ * which is precisely the class of quiet disagreement the land block exists to end. So it is one
+ * function with two callers rather than the same `find` written twice.
+ */
+export function localTrunkRef(trunkRefs: readonly string[]): string | null {
+  return trunkRefs.find((ref) => !ref.startsWith("origin/")) ?? null;
+}
+
 export async function classifyManagedWorktree(
   entry: ManagedWorktreeEntry,
   deps: ClassifyWorktreeDeps,

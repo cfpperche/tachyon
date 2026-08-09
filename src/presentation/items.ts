@@ -15,3 +15,12 @@ export interface ScheduleItem { ws?: WorkspacePresentationTarget; scheduleName: 
 export interface ProposalItem { ws?: WorkspacePresentationTarget; proposalId: string; label?: string }
 export interface PipelineDefItem { ws?: WorkspacePresentationTarget; pipelineName: string; run?: PipelineRun }
 export interface PipelineNodeItem { ws?: WorkspacePresentationTarget; runId?: string; nodeId?: string; run?: PipelineRun }
+/**
+ * SDD 501 — a managed-worktree ROW, sent by the Worktrees dashboard's land block.
+ *
+ * It carries `workspaceHash` rather than a `ws` target for the reason that panel is a dashboard: its
+ * project is the panel's own immutable one (SDD 485 D6), so the host names it by hash instead of
+ * forwarding a target a webview message could have shaped. Same duck-typing rule as the rest of this
+ * file — a handler reads these fields and nothing else.
+ */
+export interface WorktreeRowItem { ws?: WorkspacePresentationTarget; workspaceHash?: string; worktreeId: string }

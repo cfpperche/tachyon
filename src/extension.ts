@@ -76,6 +76,7 @@ import type {
   ProposalItem,
   PipelineDefItem,
   PipelineNodeItem,
+  WorktreeRowItem,
 } from "./presentation/items.js";
 import { isTemporaryItem } from "./presentation/contextValue.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
@@ -619,30 +620,54 @@ async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAge
   }
 }
 
+/**
+ * The two sides a review compares. `headRef` is what SDD 501 added: absent, the current side is the
+ * file on disk (spec 213's question — what has this agent touched *so far*, uncommitted work included);
+ * present, it is read out of that commit instead, and the pair is committed history.
+ */
+interface ReviewSides {
+  /** The checkout both sides are read from. */
+  cwd: string;
+  baseRef: string;
+  /** SDD 501 — read the current side from this commit rather than from the working tree. */
+  headRef?: string;
+}
+
 /** spec 213 / 230 — quick-pick the changed files of a worktree (base ↔ current), each opening VS Code's
- *  native diff. Shared by the agent worktree review and the pipeline run "View changes". */
-async function reviewWorktreeDiff(rec: WorktreeRecord, changes: ChangedFile[], label: string): Promise<void> {
+ *  native diff. THE one implementation: the agent worktree review, the pipeline run "View changes" and
+ *  (SDD 501) the land door all resolve an identity and arrive here.
+ *  `singleDiffReviewImplementation.test.ts` is the guard that keeps that true. */
+async function reviewWorktreeDiff(sides: ReviewSides, changes: ChangedFile[], label: string): Promise<void> {
   if (changes.length === 0) {
     notify(vscode.l10n.t("Nothing to review — '{0}' has no changes yet.", label), "info");
     return;
   }
+  // The current side names itself: a diff read out of a commit must not be titled "worktree".
+  const currentLabel = sides.headRef ?? "worktree";
   const glyph: Record<string, string> = { A: "$(diff-added)", M: "$(diff-modified)", D: "$(diff-removed)", R: "$(diff-renamed)", C: "$(diff-renamed)" };
   const pick = await vscode.window.showQuickPick(
     changes.map((c) => ({ label: `${glyph[c.status] ?? ""} ${c.from && c.from !== c.path ? `${c.from} → ${c.path}` : c.path}`, file: c })),
     {
       title: vscode.l10n.t("Review '{0}' — {1} changed file(s)", label, changes.length),
-      placeHolder: vscode.l10n.t("Open a file's diff (base ↔ worktree)"),
+      placeHolder: vscode.l10n.t("Open a file's diff ({0} ↔ {1})", sides.baseRef, currentLabel),
     },
   );
   if (!pick) return;
   const f = pick.file;
   const { baseEmpty, currentEmpty } = emptySides(f.status);
   const emptyUri = vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: "/empty", query: "empty=1" });
-  const base = baseEmpty
+  const atRef = (file: string, ref: string): vscode.Uri => vscode.Uri.from({
+    scheme: WT_DIFF_SCHEME,
+    path: `/${file}`,
+    query: `cwd=${encodeURIComponent(sides.cwd)}&ref=${encodeURIComponent(ref)}`,
+  });
+  const base = baseEmpty ? emptyUri : atRef(baseSidePath(f), sides.baseRef);
+  const current = currentEmpty
     ? emptyUri
-    : vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: `/${baseSidePath(f)}`, query: `cwd=${encodeURIComponent(rec.path)}&ref=${encodeURIComponent(rec.baseRef)}` });
-  const current = currentEmpty ? emptyUri : vscode.Uri.file(path.join(rec.path, f.path));
-  await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, rec.baseRef));
+    : sides.headRef
+      ? atRef(f.path, sides.headRef)
+      : vscode.Uri.file(path.join(sides.cwd, f.path));
+  await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, sides.baseRef, currentLabel));
 }
 
 const DRAFT_INPUT_SEED =
@@ -776,15 +801,32 @@ function changedFilesFrom(value: unknown): ChangedFile[] {
   });
 }
 
+/**
+ * SDD 501 — a third identity (`worktreeId`, the managed-registry row behind a land block) alongside the
+ * agent and the pipeline run. Only the ANSWER differs: that identity comes back with a `comparison`,
+ * because its review is of committed history rather than of the working tree.
+ */
 async function worktreeReview(
   ws: WorkspaceShellHandle,
-  input: { agent: string } | { runId: string },
-): Promise<{ record: WorktreeRecord | null; status: WorktreeStatus | null; changedFiles: ChangedFile[] }> {
+  input: { agent: string } | { runId: string } | { worktreeId: string },
+): Promise<{
+  record: WorktreeRecord | null;
+  status: WorktreeStatus | null;
+  changedFiles: ChangedFile[];
+  comparison?: { base: string; head: string };
+}> {
   const payload = jsonObject(await extensionQuery(ws, { action: "worktree.review", ...input }), "worktree.review");
+  const comparison = payload.comparison === undefined || payload.comparison === null
+    ? undefined
+    : jsonObject(payload.comparison, "worktree review comparison");
+  if (comparison && (typeof comparison.base !== "string" || typeof comparison.head !== "string")) {
+    throw new Error("worktree review comparison is incomplete");
+  }
   return {
     record: payload.record === null ? null : worktreeRecordFrom(payload.record),
     status: payload.status === null ? null : worktreeStatusFrom(payload.status),
     changedFiles: changedFilesFrom(payload.changedFiles),
+    ...(comparison ? { comparison: { base: comparison.base as string, head: comparison.head as string } } : {}),
   };
 }
 
@@ -3538,16 +3580,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await extensionInvoke(ws, { action: "config.agent.delete", agent: item.agentName, removeWorktree: false });
       refreshAll();
     }),
-    vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentItem) => {
+    vscode.commands.registerCommand("tachyon.reviewWorktreeItem", async (item: AgentItem | WorktreeRowItem) => {
       // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current).
+      // SDD 501 — the SAME command, reached from the land block by the managed-registry row id. Which
+      // identity arrived decides only what is resolved; the flow both reach is the one below.
       const ws = wsOf(item);
       if (!ws) return;
+      if ("worktreeId" in item) {
+        const review = await worktreeReview(ws, { worktreeId: item.worktreeId });
+        if (!review.record || !review.comparison) {
+          notify(vscode.l10n.t("Nothing to review — this checkout has no committed history to compare."), "warn");
+          return;
+        }
+        await reviewWorktreeDiff(
+          { cwd: review.record.path, baseRef: review.comparison.base, headRef: review.comparison.head },
+          review.changedFiles,
+          review.record.branch,
+        );
+        return;
+      }
       const review = await worktreeReview(ws, { agent: item.agentName });
       if (!review.record) {
         notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
         return;
       }
-      await reviewWorktreeDiff(review.record, review.changedFiles, item.agentName);
+      await reviewWorktreeDiff({ cwd: review.record.path, baseRef: review.record.baseRef }, review.changedFiles, item.agentName);
     }),
     vscode.commands.registerCommand("tachyon.reviewPipelineItem", async (item: PipelineNodeItem | PipelineDefItem) => {
       // spec 230 — "View changes": review the RUN's worktree diff (what a pipeline produced), so the
@@ -3561,21 +3618,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("no active run worktree to review"), "warn");
         return;
       }
-      await reviewWorktreeDiff(review.record, review.changedFiles, runId);
+      await reviewWorktreeDiff({ cwd: review.record.path, baseRef: review.record.baseRef }, review.changedFiles, runId);
     }),
-    vscode.commands.registerCommand("tachyon.createWorktreePrItem", async (item: AgentItem) => {
+    vscode.commands.registerCommand("tachyon.createWorktreePrItem", async (item: AgentItem | WorktreeRowItem) => {
       // spec 223 — open a GitHub PR from the worktree's branch. Human stays at the gate: readiness is probed at CLICK (no per-refresh gh spawn), then an
       // editable title + a modal body preview confirm before `gh pr create` fires.
+      // SDD 501 — reachable from the land block too, by managed-registry row id. The probe-at-click
+      // property is exactly what makes that safe to put on a polled dashboard, so nothing below moves
+      // earlier; `prReadinessProbedAtClick.test.ts` is the guard.
       const ws = wsOf(item);
       if (!ws) return;
-      const review = await worktreeReview(ws, { agent: item.agentName });
+      const review = "worktreeId" in item
+        ? await worktreeReview(ws, { worktreeId: item.worktreeId })
+        : await worktreeReview(ws, { agent: item.agentName });
       const rec = review.record;
+      // The name a refusal uses is the one the human clicked from: an agent by name, a land-block row
+      // by its branch — never an internal registry id nobody recognizes.
+      const subject = "worktreeId" in item ? (rec?.branch ?? item.worktreeId) : item.agentName;
       if (!rec) {
-        notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
+        notify(vscode.l10n.t("'{0}' has no worktree", subject), "warn");
         return;
       }
       if (!fs.existsSync(rec.path)) {
-        notify(vscode.l10n.t("'{0}'s worktree path no longer exists", item.agentName), "warn");
+        notify(vscode.l10n.t("'{0}'s worktree path no longer exists", subject), "warn");
         return;
       }
       const readiness = await probePrReadiness(rec.path, true, ws.git.gitExec);
@@ -3595,7 +3660,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           base: base ?? undefined,
         });
         const title = await vscode.window.showInputBox({
-          title: vscode.l10n.t("Create PR for '{0}'", item.agentName),
+          title: vscode.l10n.t("Create PR for '{0}'", subject),
           prompt: vscode.l10n.t("PR title"),
           value: composePrTitle(rec.branch),
         });

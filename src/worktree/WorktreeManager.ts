@@ -267,8 +267,11 @@ export const gitArgs = {
   /** list worktrees in a parseable form (to find if a branch is checked out elsewhere) */
   listWorktrees: (): string[] => ["worktree", "list", "--porcelain"],
   /** C2 (spec 213): tracked changes vs baseRef (working-tree compare), name+status. `-z` =
-   *  NUL-delimited, UNquoted paths (git would otherwise C-quote non-ASCII/space/tab paths). */
-  diffNameStatus: (baseRef: string): string[] => ["diff", "-z", "--name-status", "--find-renames", "--find-copies", baseRef],
+   *  NUL-delimited, UNquoted paths (git would otherwise C-quote non-ASCII/space/tab paths).
+   *  SDD 501: with `headRef`, the same read between two COMMITS instead — one extra argument, which is
+   *  the whole cost of the land door's committed comparison (notes.md § D2). */
+  diffNameStatus: (baseRef: string, headRef?: string): string[] =>
+    ["diff", "-z", "--name-status", "--find-renames", "--find-copies", baseRef, ...(headRef ? [headRef] : [])],
   /** C2: untracked, not-ignored files (NUL-delimited) */
   lsOthers: (): string[] => ["ls-files", "-z", "--others", "--exclude-standard"],
   /** C2: a file's content at a ref (the diff's base side) */
@@ -1172,13 +1175,22 @@ export class WorktreeManager {
    * C2 (spec 213) — the agent's whole contribution since the worktree was born: tracked
    * changes vs `baseRef` (working-tree compare, rename/copy-aware) ∪ untracked files (as
    * adds). Empty on any git failure (stale/removed worktree) — the caller shows a notice.
+   *
+   * SDD 501 — with `headRef`, the comparison is between two COMMITS (`baseRef..headRef`) and untracked
+   * files are not read at all: nothing uncommitted belongs in an answer about committed history. That
+   * is the land door's question — *what would this command introduce* — and it is a different question
+   * from the sidebar's *what has this agent touched so far*, which is why it is an argument here rather
+   * than a second function. Measured cheaper than the working-tree read (notes.md § D2): no working
+   * tree to stat and one fewer subprocess.
    */
-  async changedFiles(cwd: string, baseRef: string): Promise<ChangedFile[]> {
+  async changedFiles(cwd: string, baseRef: string, headRef?: string): Promise<ChangedFile[]> {
     try {
-      const diff = await this.git(gitArgs.diffNameStatus(baseRef), cwd);
+      const diff = await this.git(gitArgs.diffNameStatus(baseRef, headRef), cwd);
       if (diff.code !== 0) return [];
+      const tracked = parseNameStatus(diff.stdout);
+      if (headRef) return mergeChanges(tracked, ""); // committed range — sorted, no untracked
       const others = await this.git(gitArgs.lsOthers(), cwd);
-      return mergeChanges(parseNameStatus(diff.stdout), others.code === 0 ? others.stdout : "");
+      return mergeChanges(tracked, others.code === 0 ? others.stdout : "");
     } catch {
       return []; // removed worktree (cwd ENOENT) / git absent — nothing to review, no crash
     }

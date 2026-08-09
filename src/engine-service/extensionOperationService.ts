@@ -240,6 +240,9 @@ export async function executeExtensionQuery(
       return json({ worktrees: (await workspace.managedWorktrees.listClassified()) as unknown as JsonValue });
     }
     case "worktree.review":
+      // SDD 501 — three identities, one review. The land door's is resolved against the managed
+      // registry and answers a COMMITTED comparison; the other two keep the working-tree one.
+      if ("worktreeId" in query) return inspectWorktreeForLanding(workspace, query.worktreeId);
       return inspectWorktree(workspace, "agent" in query ? query.agent : query.runId, "agent" in query);
     case "pipeline.inspect":
       return inspectPipeline(workspace, query.name, query.runId);
@@ -835,6 +838,25 @@ async function inspectWorktree(workspace: Workspace, identity: string, isAgent: 
     record,
     status,
     changedFiles,
+  });
+}
+
+/**
+ * SDD 501 — the land door's review: `trunkRef..head`, the commits the land command would introduce.
+ *
+ * `comparison` is what distinguishes this answer from the two above it, and it is returned rather than
+ * inferred so the surface can NAME the base it is showing. A row the registry does not know, or whose
+ * checkout is gone, answers the same empty shape the other identities do — an honest "nothing to
+ * review here", never a working-tree comparison quietly substituted for the committed one.
+ */
+async function inspectWorktreeForLanding(workspace: Workspace, worktreeId: string): Promise<JsonValue> {
+  const review = await workspace.managedWorktrees.landReview(worktreeId);
+  if (!review) return json({ record: null, status: null, changedFiles: [] });
+  return json({
+    record: review.record,
+    status: null,
+    changedFiles: review.changedFiles,
+    comparison: { base: review.base, head: review.head },
   });
 }
 
