@@ -126,14 +126,14 @@ describe("describeDependencyState — what the agent is actually told", () => {
     expect(line).toContain("say so in your report");
   });
 
-  it("when it must install, it says WHY and hands over the project's own command", () => {
+  it("when it must install, it says WHY without inventing an install command", () => {
     const line = describeDependencyState(
       { mode: "absent", lockDigest: "abc", reason: "this worktree adds pnpm-lock.yaml", at: "t" },
-      "npm ci --ignore-scripts",
     );
     expect(line).toContain("this worktree adds pnpm-lock.yaml");
-    expect(line).toContain("npm ci --ignore-scripts");
-    expect(line).toContain("before running the configured checks");
+    expect(line).toContain("Install dependencies before using project tooling");
+    expect(line).not.toContain("npm ci");
+    expect(line).not.toContain("configured checks");
   });
 
   it("does not tell an agent that already has dependencies to install them", () => {

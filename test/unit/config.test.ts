@@ -338,46 +338,15 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  worktree:\n    verify: ""\n`).warnings[0]).toContain("settings.worktree.verify");
   });
 
-  it("parses the closed project-owned settings.verify contract without touching spec-214 worktree verify", () => {
-    const { config, errors } = parseConfig(
+  it("warns and drops retired settings.verify without touching worktree verify", () => {
+    const { config, errors, warnings } = parseConfig(
       `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    full: "  npm run test:all  "\n    typecheck: " npm run typecheck "\n    prepare: " npm ci --ignore-scripts "\n    affected: " npx vitest related --run "\n  worktree:\n    verify: ci\n`,
     );
     expect(errors).toEqual([]);
-    expect(config?.settings.verify).toEqual({
-      full: "npm run test:all",
-      typecheck: "npm run typecheck",
-      prepare: "npm ci --ignore-scripts",
-      affected: "npx vitest related --run",
-    });
+    expect(config?.settings).not.toHaveProperty("verify");
+    expect(warnings).toContain("settings: unknown key 'verify'");
     expect(config?.settings.worktree?.verify).toBe("ci");
   });
-
-  /**
-   * t-e88c8a — `settings.verify.behavior` configured the named-behavior oracle that `verify_task`
-   * bound to a gated spawn. Both are retired, so the key is accepted-and-warned rather than made an
-   * unknown key: a workspace that configured it is told what happened instead of reading a refusal
-   * that looks like a typo. `full`/`typecheck`/`prepare`/`affected` are untouched — the primer still
-   * hands those to agents.
-   */
-  it("accepts a retired settings.verify.behavior with a warning, and drops it from the parsed config", () => {
-    const { config, errors, warnings } = parseConfig(
-      `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    full: npm test\n    behavior:\n      adapter: vitest-name\n      command: npm test --\n      stubPath: test/unit/{agent}Behavior.gen.test.ts\n      executorPaths: [package.json]\n`,
-    );
-    expect(errors).toEqual([]);
-    expect(warnings.some((w) => w.includes("settings.verify.behavior was ignored") && w.includes("verify_task"))).toBe(true);
-    expect(config?.settings.verify).toEqual({ full: "npm test" });
-  });
-
-  it("keeps settings.verify closed and rejects empty full, typecheck, and affected commands", () => {
-    const base = `agents:\n  a:\n    cmd: x\n`;
-    expect(parseConfig(`${base}settings:\n  verify: nope\n`).warnings[0]).toContain("settings.verify");
-    expect(parseConfig(`${base}settings:\n  verify:\n    full: ""\n`).warnings[0]).toContain("settings.verify.full");
-    expect(parseConfig(`${base}settings:\n  verify:\n    typecheck: 3\n`).warnings[0]).toContain("settings.verify.typecheck");
-    expect(parseConfig(`${base}settings:\n  verify:\n    affected: "   "\n`).warnings[0]).toContain("settings.verify.affected");
-    expect(parseConfig(`${base}settings:\n  verify:\n    extra: true\n`).warnings[0]).toContain("settings.verify: unknown key 'extra'");
-  });
-
-
 
   it("parses ordered project-owned guidance paths, trimming only their outer whitespace", () => {
     const { config, errors } = parseConfig(

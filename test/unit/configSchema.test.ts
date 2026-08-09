@@ -114,54 +114,14 @@ describe("tachyon.schema.json — settings.projectGuidance", () => {
   });
 });
 
-describe("tachyon.schema.json — settings.verify", () => {
-  it("publishes a closed project-owned command and named-behavior adapter contract", () => {
+describe("tachyon.schema.json — verify surfaces", () => {
+  it("removes settings.verify while preserving per-agent and worktree verify", () => {
     const settings = schema.properties?.settings;
-    const verify = settings?.properties?.verify;
-    const full = verify?.properties?.full;
-    const typecheck = verify?.properties?.typecheck;
-    const prepare = verify?.properties?.prepare;
-    const affected = verify?.properties?.affected;
-    const behavior = verify?.properties?.behavior;
-    const adapter = behavior?.properties?.adapter;
-    const command = behavior?.properties?.command;
-    const stubPath = behavior?.properties?.stubPath;
-    const executorPaths = behavior?.properties?.executorPaths;
+    const entrySchema = schema.properties?.agents?.additionalProperties;
+    const agentVerify = typeof entrySchema === "object" ? entrySchema.properties?.verify : undefined;
 
-    expect(verify).toMatchObject({ type: "object", additionalProperties: false });
-    expect(verify).not.toHaveProperty("default");
-    expect(verify?.description).toContain("Project-owned");
-    expect(verify?.description).toContain("no package-manager");
-    expect(Object.keys(verify?.properties ?? {}).sort()).toEqual(["affected", "behavior", "full", "prepare", "typecheck"]);
-    /**
-     * t-8b8315 — `behavior` used to REQUIRE `prepare`, because the retired verify_task provisioned
-     * each isolated BASE/HEAD clone before running the named oracle. With the adapter retired and
-     * ignored, that dependency only had the power to fail a config over a key the loader discards,
-     * so it is gone and `behavior` is published as deprecated instead.
-     */
-    expect(verify?.dependencies).toBeUndefined();
-    expect(behavior?.deprecated).toBe(true);
-    expect(behavior?.description).toContain("RETIRED and ignored");
-
-    for (const field of [full, typecheck, prepare, affected]) {
-      expect(field).toMatchObject({ type: "string", minLength: 1 });
-    }
-    expect(behavior).toMatchObject({
-      type: "object",
-      additionalProperties: false,
-      required: ["adapter", "command", "stubPath", "executorPaths"],
-    });
-    expect(adapter).toMatchObject({ type: "string", enum: ["vitest-name"] });
-    expect(prepare).toMatchObject({ type: "string", minLength: 1 });
-    expect(command).toMatchObject({ type: "string", minLength: 1 });
-    expect(stubPath).toMatchObject({ type: "string", minLength: 1, maxLength: 512 });
-    expect(executorPaths).toMatchObject({ type: "array", minItems: 1, uniqueItems: true });
-    expect(stubPath?.pattern).toBeTruthy();
-
-    const safeTemplate = new RegExp(stubPath!.pattern!);
-    expect(safeTemplate.test("test/unit/{agent}Behavior.gen.test.ts")).toBe(true);
-    for (const unsafe of ["/tmp/{agent}.test.ts", "../{agent}.test.ts", "test\\{agent}.test.ts", ".git/{agent}.test.ts", "test/fixed.test.ts"]) {
-      expect(safeTemplate.test(unsafe), unsafe).toBe(false);
-    }
+    expect(settings?.properties?.verify).toBeUndefined();
+    expect(settings?.properties?.worktree?.properties?.verify).toMatchObject({ type: "string", minLength: 1 });
+    expect(agentVerify).toMatchObject({ type: "string", minLength: 1 });
   });
 });

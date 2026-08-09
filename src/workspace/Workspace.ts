@@ -3885,7 +3885,6 @@ export class Workspace {
           agentName: agent,
           delegator: this.manager.delegatorOf(agent),
           parent: this.manager.parentOf(agent),
-          verify: this.config?.settings.verify,
         });
         const body = composeAgentPrompt({
           soul,
@@ -3933,7 +3932,6 @@ export class Workspace {
         agentName: agent,
         delegator: this.manager.delegatorOf(agent),
         parent: this.manager.parentOf(agent),
-        verify: this.config?.settings.verify,
       });
       assertSafeBriefTransport(
         frame(previewDeliverableBody(this.workspaceRoot, agent, body, "reanchor")),
@@ -3961,7 +3959,6 @@ export class Workspace {
       agentName: agent,
       delegator: this.manager.delegatorOf(agent),
       parent: this.manager.parentOf(agent),
-      verify: this.config?.settings.verify,
     });
     // Preflight the exact pointer framing before replacing a prior re-anchor artifact.
     assertSafeBriefTransport(

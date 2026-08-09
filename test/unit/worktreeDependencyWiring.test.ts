@@ -177,44 +177,39 @@ describe("t-3f93b4 — dependency sharing reaches every launch door (real git, t
 });
 
 describe("t-3f93b4 — the primer stops being silent about it", () => {
-  const verify = { full: "npm run verify:full", typecheck: "npm run typecheck", prepare: "npm ci --ignore-scripts" };
-
-  it("a shared checkout is told the terms, right under the checks it is told to run", () => {
+  it("a shared checkout is told the terms", () => {
     const line = describeDependencyState({ mode: "linked", lockDigest: "d".repeat(64), reason: "lockfiles are identical to the primary checkout", at: "t" });
-    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", verify, dependencies: line });
+    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", dependencies: line });
     const lines = primer.split("\n");
 
-    const checkIdx = lines.findIndex((l) => l.includes("typecheck: npm run typecheck"));
     const depsIdx = lines.findIndex((l) => l.startsWith("Dependencies:"));
-    expect(checkIdx).toBeGreaterThan(-1);
-    expect(depsIdx).toBe(checkIdx + 1); // the answer to "can I run those?" sits with the question
+    expect(depsIdx).toBeGreaterThan(-1);
     expect(lines[depsIdx]).toContain("Do not reinstall through it");
   });
 
   it("a checkout that must install is told SO and WHY — the honest half of the DONE_WHEN", () => {
     const line = describeDependencyState(
       { mode: "absent", lockDigest: "d".repeat(64), reason: "this worktree adds pnpm-lock.yaml — this worktree needs its own dependencies", at: "t" },
-      verify.prepare,
     );
-    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", verify, dependencies: line });
+    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", dependencies: line });
 
     expect(primer).toContain("this worktree has no node_modules");
     expect(primer).toContain("adds pnpm-lock.yaml");
-    expect(primer).toContain("npm ci --ignore-scripts");
+    expect(primer).toContain("Install dependencies before using project tooling");
   });
 
   it("stays silent when nothing was measured — no line invented for a non-Node project", () => {
-    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", verify });
+    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator" });
     expect(primer).not.toContain("Dependencies:");
   });
 
   it("the added line stays inside the primer's hard budget", () => {
     const line = describeDependencyState({ mode: "linked", lockDigest: "d".repeat(64), reason: "lockfiles are identical to the primary checkout", at: "t" });
-    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", verify, dependencies: line });
+    const { primer } = renderPrimer({ agentName: "child", delegator: "coordinator", dependencies: line });
     expect(primer.split("\n").length).toBeLessThanOrEqual(PRIMER_LINE_BUDGET);
   });
 
   it("a dependency sentence carrying control characters is refused like every other primer fact", () => {
-    expect(() => renderPrimer({ agentName: "child", verify, dependencies: "Dependencies: shared\u0007 (a bell smuggled in through an fs error string)" })).toThrow(/control characters/);
+    expect(() => renderPrimer({ agentName: "child", dependencies: "Dependencies: shared\u0007 (a bell smuggled in through an fs error string)" })).toThrow(/control characters/);
   });
 });

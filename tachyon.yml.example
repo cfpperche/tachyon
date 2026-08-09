@@ -44,20 +44,6 @@ settings:
   # and no recreating agents.
   agentNotifications:
     idleAfterMinutes: 10
-  # specs 362/385 — this repository's explicit verify commands/adapter (no product-global runner defaults):
-  # full builds dist/ first (the plugin-ui full-stack topology needs bundles; a fresh worktree has none).
-  verify:
-    full: npm run verify:full:quiet
-    typecheck: npm run typecheck
-    prepare: npm run verify:prepare
-    affected: npx vitest related --run
-    behavior:
-      adapter: vitest-name
-      command: npm test --
-      # Compatibility key: this names a pre-existing tracked project oracle; Tachyon never generates it.
-      stubPath: test/unit/{agent}Behavior.gen.test.ts
-      # These tracked files define dependency and runner mechanics; their spawn hashes must match BASE/HEAD.
-      executorPaths: [ package.json, package-lock.json, vitest.config.ts, tsconfig.json ]
   # worktree:
   #   branch: "tachyon/{agent}"   # template for per-agent worktree branch names
   #   revealInWorkspace: true     # show each running agent's worktree as a folder (multi-root windows only)

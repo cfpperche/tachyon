@@ -369,12 +369,11 @@ describe("quiet full verification", () => {
     expect(describeChildExit({ code: 1, signal: undefined, error: new Error("ENOENT") })).toBe("child never ran: ENOENT");
   });
 
-  it("declares the governed quiet runner as the canonical full verification entry point", () => {
+  it("keeps the governed quiet runner in package scripts without declaring project verify config", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
     expect(packageJson.scripts["verify:full"]).toBe("node scripts/verify-full.mjs");
     expect(packageJson.scripts["verify:full:quiet"]).toBe("node scripts/verify-full.mjs");
     const config = fs.readFileSync(path.join(repoRoot, "tachyon.yml.example"), "utf8");
-    expect(config).toMatch(/verify:\n\s+full: npm run verify:full:quiet/);
-    expect(config.match(/^\s+full:\s+npm run verify:full:quiet\s*$/gm)).toHaveLength(1);
+    expect(config).not.toContain("full: npm run verify:full:quiet");
   });
 });

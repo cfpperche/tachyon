@@ -1587,31 +1587,14 @@ describe("AgentManager", () => {
     expect(cmd).not.toContain("<your spawner>");
   });
 
-  it("delivers explicit workspace verification facts to a bare declared agent", async () => {
+  it("does not deliver retired settings.verify facts to a bare declared agent", async () => {
     const cmd = await captureSpawnCmd(
       "agents:\n  codex:\n    cmd: codex\nsettings:\n  verify:\n    full: ./verify-all\n    typecheck: ./check-types\n",
       "codex",
     );
-    expect(cmd).toContain("Configured verification (source: workspace config settings.verify):");
-    expect(cmd).toContain("  - full: ./verify-all");
-    expect(cmd).toContain("  - typecheck: ./check-types");
-  });
-
-  it("rejects oversized dynamic primer facts before creating a tmux session", async () => {
-    const full = `node ${JSON.stringify("'".repeat(4_000))}`;
-    const config = configOf(
-      `agents:\n  codex:\n    cmd: codex\nsettings:\n  verify:\n    full: ${JSON.stringify(full)}\n`,
-    );
-    const fake = fakeTmux();
-    const manager = new AgentManager({
-      tmux: fake.tmux,
-      wsHash: HASH,
-      workspaceRoot: WS,
-      getConfig: () => config,
-    });
-
-    await expect(manager.spawn("codex")).rejects.toThrow(/startup brief.*safe pane-delivery ceiling/);
-    expect(fake.newSessionArgs).toHaveLength(0);
+    expect(cmd).not.toContain("Configured verification");
+    expect(cmd).not.toContain("./verify-all");
+    expect(cmd).not.toContain("./check-types");
   });
 
   it("delivers configured project guidance to a bare declared agent in the owned block", async () => {
@@ -1660,37 +1643,6 @@ describe("AgentManager", () => {
       expect(onDisk).toContain("Task: absent — awaiting assignment");
       expect(onDisk).toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
       expect(onDisk).toContain("LONG_GUIDANCE_");
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps the prior long brief unchanged when restart framing is oversized", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-restart-atomic-"));
-    const guidance = path.join(root, "guidance.md");
-    fs.writeFileSync(guidance, `OLD_GUIDANCE_${"o".repeat(5_000)}`, "utf8");
-    let config = configOf(
-      "agents:\n  codex:\n    cmd: codex\nsettings:\n  projectGuidance:\n    files: [guidance.md]\n",
-    );
-    const fake = fakeTmux();
-    const manager = new AgentManager({
-      tmux: fake.tmux,
-      wsHash: workspaceHash(root),
-      workspaceRoot: root,
-      getConfig: () => config,
-    });
-    try {
-      await manager.spawn("codex");
-      const destination = briefFilePath(root, "codex");
-      const oldBrief = fs.readFileSync(destination, "utf8");
-      fs.writeFileSync(guidance, `NEW_GUIDANCE_${"n".repeat(5_000)}`, "utf8");
-      config = configOf(
-        `agents:\n  codex:\n    cmd: codex\nsettings:\n  verify:\n    full: ${JSON.stringify(`node ${JSON.stringify("'".repeat(4_000))}`)}\n  projectGuidance:\n    files: [guidance.md]\n`,
-      );
-
-      await expect(manager.restart("codex", { stop: "force", session: "new" })).rejects.toThrow(/safe pane-delivery ceiling/);
-      expect(fs.readFileSync(destination, "utf8")).toBe(oldBrief);
-      expect(fake.respawnArgs).toHaveLength(0);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -1918,7 +1870,7 @@ describe("AgentManager", () => {
   it("does not read or size-check startup guidance for an agent without a prompt adapter", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-project-guidance-unsupported-"));
     const config = configOf(
-      `agents:\n  aider:\n    cmd: aider\n    instructions: undeliverable\nsettings:\n  verify:\n    full: ${JSON.stringify(`node ${JSON.stringify("'".repeat(4_000))}`)}\n  projectGuidance:\n    files: [missing.md]\n`,
+      "agents:\n  aider:\n    cmd: aider\n    instructions: undeliverable\nsettings:\n  projectGuidance:\n    files: [missing.md]\n",
     );
     const fake = fakeTmux();
     const manager = new AgentManager({
