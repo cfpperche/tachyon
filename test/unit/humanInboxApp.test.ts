@@ -23,7 +23,7 @@ import { buildApprovalRequest, writeApprovalRequest } from "../../src/bridge/app
 import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
 import { savedAgentProposalPath } from "../../src/agents/savedAgentProposalStore.js";
 import { workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
-import type { WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import type { WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
 import type { Validation } from "../../src/validations/types.js";
 
 /**
@@ -144,13 +144,13 @@ interface Harness {
   deps: HumanInboxDeps;
 }
 
-function validationTarget(project: Project, calls: Calls): WorkspaceMissionControlTarget {
+function validationTarget(project: Project, calls: Calls): WorkspaceBoardTarget {
   return {
     workspaceRoot: project.root,
     wsHash: project.wsHash,
     folderName: project.folderName,
     declaredAgentNames: () => [],
-    listMissionControlAgents: async () => [],
+    listBoardAgents: async () => [],
     boardSnapshot: async () => ({}) as never,
     updateTask: async () => {},
     reorderLane: async () => {},
@@ -164,7 +164,7 @@ function validationTarget(project: Project, calls: Calls): WorkspaceMissionContr
     assignValidation: async (id: string, assignee: string) => {
       calls.assigned.push({ id, assignee });
     },
-  } as unknown as WorkspaceMissionControlTarget;
+  } as unknown as WorkspaceBoardTarget;
 }
 
 function harness(projects: Project[], over: Partial<HumanInboxDeps> = {}): Harness {

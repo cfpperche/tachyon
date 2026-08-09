@@ -20,7 +20,7 @@ import path from "node:path";
  * actually assert. The lesson is the series' own: a file named for the vehicle looks disposable when
  * the vehicle goes, whatever it happens to cover.
  *
- * The two Validations cases are the ones worth not losing. Control co-loaded mission-control.css,
+ * The two Validations cases are the ones worth not losing. Control co-loaded board.css,
  * whose board strip declares UNSCOPED `.validation-list { display: flex }` and `.validation-summary
  * { white-space: nowrap }`. Those names collided with the Validations surface at equal specificity,
  * so the winner came down to stylesheet order — and losing it laid the pending cards out as
@@ -186,13 +186,13 @@ describe("Validations pending list flows vertically (t-dc9f64)", () => {
     expect(declaration(body, "grid-auto-flow")).toBe("row");
     // one column: a multi-column template would reintroduce the side-by-side cards.
     expect(declaration(body, "grid-template-columns")).toBe("minmax(0, 1fr)");
-    // and it must not be the flex row mission-control.css declares for its board strip.
+    // and it must not be the flex row board.css declares for its board strip.
     expect(declaration(body, "display")).not.toBe("flex");
     expect(declaration(body, "flex-direction")).toBeUndefined();
   });
 
-  it("no unscoped .validation-* rule is left to lose a load-order coin flip with mission-control.css", () => {
-    // mission-control.css declares `.validation-list` and `.validation-summary` globally. Any rule here
+  it("no unscoped .validation-* rule is left to lose a load-order coin flip with board.css", () => {
+    // board.css declares `.validation-list` and `.validation-summary` globally. Any rule here
     // that is not rooted under .validations-main ties it on specificity and is decided by link order.
     const unscoped = rules(css)
       .flatMap((r) => r.selector.split(","))
@@ -202,10 +202,10 @@ describe("Validations pending list flows vertically (t-dc9f64)", () => {
     expect(unscoped).toEqual([]);
   });
 
-  it("mission-control.css still owns the unscoped names this scoping defends against", () => {
-    // guards the premise: if mission-control.css ever scopes its own board rules, this test's rationale
+  it("board.css still owns the unscoped names this scoping defends against", () => {
+    // guards the premise: if board.css ever scopes its own board rules, this test's rationale
     // changes and should be revisited rather than silently protecting against nothing.
-    const mc = read("src/webview/mission-control/mission-control.css");
+    const mc = read("src/webview/board/board.css");
     expect(rulesFor(mc, ".validation-list")).not.toHaveLength(0);
     expect(rulesFor(mc, ".validation-summary")).not.toHaveLength(0);
   });

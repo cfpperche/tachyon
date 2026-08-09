@@ -1,7 +1,7 @@
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
 import { Badge, Button, Chip, Input, PageChrome, Select } from "../shared/ui";
 import { MarkdownView } from "../activity/markdown";
-import { assigneePatch, priorityPatch } from "../mission-control/interactions";
+import { assigneePatch, priorityPatch } from "../board/interactions";
 import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, type DetailField } from "./interactions";
 import type { TaskDetailVM } from "./messages";
 import type { TaskPriority, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";

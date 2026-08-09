@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * t-e1bd89 — Cockpit co-loads approval.css with mission-control.css. An unscoped
+ * t-e1bd89 — Cockpit co-loads approval.css with board.css. An unscoped
  * `button { background: vscode-button-background }` paints every Mission board chip blue.
  */
 describe("approval.css surface scoping (t-e1bd89)", () => {

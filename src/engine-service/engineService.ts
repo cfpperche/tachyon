@@ -36,7 +36,7 @@ import { executeExtensionCommand, executeExtensionQuery } from "./extensionOpera
 import { getEngineLogRing } from "./engineLogRing.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
-import { projectMissionControlBoard } from "../runtime-api/missionControlProjection.js";
+import { projectBoard } from "../runtime-api/boardProjection.js";
 import { projectPinStudio } from "../runtime-api/pinStudioProjection.js";
 import {
   parsePinStudioStagedPayloadV1,
@@ -82,7 +82,7 @@ import {
   workspaceRuntimeOpsViewSuccessV1,
   workspaceExtensionCommandSuccessV1,
   workspaceExtensionQuerySuccessV1,
-  workspaceMissionControlViewSuccessV1,
+  workspaceBoardViewSuccessV1,
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
@@ -534,9 +534,9 @@ async function executeWorkspaceQuery(
     return workspaceExtensionQuerySuccessV1(query, await executeExtensionQuery({ workspace }, query.input));
   }
   if (query.method === "task.board") {
-    return workspaceMissionControlViewSuccessV1({
+    return workspaceBoardViewSuccessV1({
       schemaVersion: 1,
-      board: projectMissionControlBoard(buildBoardSnapshot({
+      board: projectBoard(buildBoardSnapshot({
         store: workspace.taskStore,
         declaredAgents: Object.keys(workspace.config?.agents ?? {}),
         liveTemporaryAgents: query.input.liveTemporaryAgents,

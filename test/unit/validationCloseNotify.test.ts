@@ -10,13 +10,13 @@ import {
 } from "../../src/validations/validationCloseNotify.js";
 import type { Validation } from "../../src/validations/types.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { legacyMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import { legacyBoardTarget } from "../../src/shell/BoardTarget.js";
 import { composeFixedApprovalResponse } from "../../src/bridge/approvalRequest.js";
 
 /**
  * t-c6c4ad / t-ebde5f — Validation close must wake the author without inventing an actor.
  *
- * Fail-before: closeRound alone never typed into any session (see MissionControlTarget /
+ * Fail-before: closeRound alone never typed into any session (see BoardTarget /
  * engineService pre-patch). Pass-after: pure compose is FIXED, recipients skip humans, live
  * inject is best-effort and never undoes a durable close.
  */
@@ -194,10 +194,10 @@ describe("wakeValidationClosedAuthors", () => {
 });
 
 /**
- * Integration through the shared MissionControl close path used by BOTH Human Inbox and the
+ * Integration through the shared Board close path used by BOTH Human Inbox and the
  * legacy Validations tab — one call, one wake (no double notify when UIs share the target).
  */
-describe("legacyMissionControlTarget.closeValidation wakes the author once", () => {
+describe("legacyBoardTarget.closeValidation wakes the author once", () => {
   const roots: string[] = [];
   afterEach(() => {
     for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
@@ -214,7 +214,7 @@ describe("legacyMissionControlTarget.closeValidation wakes the author once", () 
     });
 
     const sendSubmittedLine = vi.fn(async () => {});
-    const target = legacyMissionControlTarget({
+    const target = legacyBoardTarget({
       workspaceRoot: root,
       wsHash: "ws-test",
       folderName: "tachyon",
@@ -260,7 +260,7 @@ describe("legacyMissionControlTarget.closeValidation wakes the author once", () 
       executor: "human",
     });
     const sendSubmittedLine = vi.fn(async () => {});
-    const target = legacyMissionControlTarget({
+    const target = legacyBoardTarget({
       workspaceRoot: root,
       wsHash: "ws-test",
       folderName: "tachyon",

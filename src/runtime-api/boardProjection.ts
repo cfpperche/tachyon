@@ -23,13 +23,13 @@ const ATTENTION_CODES = new Set<TaskAttention["code"]>([
   "dangling_dep", "missing_sdd_spec", "ready_to_close", "sdd_needs_retriage", "corrupt_task", "awaiting_human",
 ]);
 
-export interface MissionControlChipV1 {
+export interface BoardChipV1 {
   agent: string;
   source: "declared" | "human" | "assignee";
   next: { taskId: string } | { empty: true; reason: "no-tasks" | "all-blocked" | "all-assigned-elsewhere" };
 }
 
-export interface MissionControlValidationV1 {
+export interface BoardValidationV1 {
   id: string;
   title: string;
   type?: string;
@@ -43,13 +43,13 @@ export interface MissionControlValidationV1 {
   updatedAt: string;
 }
 
-export interface MissionControlBoardProjectionV1 {
+export interface BoardProjectionV1 {
   schemaVersion: 1;
   views: TaskView[];
   allowedDropStatuses: Record<string, TaskStatus[]>;
-  chips: MissionControlChipV1[];
+  chips: BoardChipV1[];
   validations?: {
-    items: MissionControlValidationV1[];
+    items: BoardValidationV1[];
     pendingCount: number;
     humanPendingCount: number;
     agentPendingCount: number;
@@ -65,13 +65,13 @@ export interface MissionControlBoardProjectionV1 {
   attachmentCounts?: Record<string, number>;
 }
 
-export interface MissionControlViewV1 {
+export interface BoardViewV1 {
   schemaVersion: 1;
-  board: MissionControlBoardProjectionV1;
+  board: BoardProjectionV1;
 }
 
-export function projectMissionControlBoard(snapshot: BoardSnapshot): MissionControlBoardProjectionV1 {
-  return parseMissionControlBoardProjectionV1({
+export function projectBoard(snapshot: BoardSnapshot): BoardProjectionV1 {
+  return parseBoardProjectionV1({
     schemaVersion: 1,
     views: snapshot.views.map(projectTaskView),
     allowedDropStatuses: snapshot.allowedDropStatuses,
@@ -106,47 +106,47 @@ export function projectMissionControlBoard(snapshot: BoardSnapshot): MissionCont
   });
 }
 
-export function parseMissionControlViewV1(value: unknown): MissionControlViewV1 {
-  const input = exactRecord(value, ["schemaVersion", "board"], "Mission Control view");
-  if (input.schemaVersion !== 1) throw invalid("Mission Control view schemaVersion is invalid");
+export function parseBoardViewV1(value: unknown): BoardViewV1 {
+  const input = exactRecord(value, ["schemaVersion", "board"], "Board view");
+  if (input.schemaVersion !== 1) throw invalid("Board view schemaVersion is invalid");
   return {
     schemaVersion: 1,
-    board: parseMissionControlBoardProjectionV1(input.board),
+    board: parseBoardProjectionV1(input.board),
   };
 }
 
-export function isMissionControlViewV1(value: unknown): value is MissionControlViewV1 {
-  try { parseMissionControlViewV1(value); return true; } catch { return false; }
+export function isBoardViewV1(value: unknown): value is BoardViewV1 {
+  try { parseBoardViewV1(value); return true; } catch { return false; }
 }
 
-export function parseMissionControlBoardProjectionV1(value: unknown): MissionControlBoardProjectionV1 {
-  const input = record(value, "Mission Control board");
+export function parseBoardProjectionV1(value: unknown): BoardProjectionV1 {
+  const input = record(value, "Board");
   const expected = ["schemaVersion", "views", "allowedDropStatuses", "chips"];
   if (input.validations !== undefined) expected.push("validations");
   if (input.attachmentCounts !== undefined) expected.push("attachmentCounts");
-  assertOnlyKeys(input, expected, "Mission Control board");
+  assertOnlyKeys(input, expected, "Board");
   if (input.schemaVersion !== 1 || !Array.isArray(input.views) || input.views.length > MAX_TASKS) {
-    throw invalid("Mission Control board task rows are invalid");
+    throw invalid("Board task rows are invalid");
   }
   const views = input.views.map(parseTaskView);
   const ids = views.map((view) => view.task.id);
-  if (new Set(ids).size !== ids.length) throw invalid("Mission Control board contains duplicate task ids");
+  if (new Set(ids).size !== ids.length) throw invalid("Board contains duplicate task ids");
   const idSet = new Set(ids);
-  const allowedInput = record(input.allowedDropStatuses, "Mission Control allowed statuses");
+  const allowedInput = record(input.allowedDropStatuses, "Board allowed statuses");
   if (Object.keys(allowedInput).length !== ids.length || Object.keys(allowedInput).some((id) => !idSet.has(id))) {
-    throw invalid("Mission Control allowed statuses do not match its task rows");
+    throw invalid("Board allowed statuses do not match its task rows");
   }
   const allowedDropStatuses: Record<string, TaskStatus[]> = {};
   for (const id of ids) {
     const statuses = allowedInput[id];
     if (!Array.isArray(statuses) || new Set(statuses).size !== statuses.length || statuses.some((status) => !isTaskStatus(status))) {
-      throw invalid(`Mission Control allowed statuses are invalid for '${id}'`);
+      throw invalid(`Board allowed statuses are invalid for '${id}'`);
     }
     allowedDropStatuses[id] = statuses as TaskStatus[];
   }
-  if (!Array.isArray(input.chips) || input.chips.length > MAX_CHIPS) throw invalid("Mission Control chips are invalid");
+  if (!Array.isArray(input.chips) || input.chips.length > MAX_CHIPS) throw invalid("Board chips are invalid");
   const chips = input.chips.map((chip) => parseChip(chip, idSet));
-  if (new Set(chips.map((chip) => chip.agent)).size !== chips.length) throw invalid("Mission Control chips contain duplicate agents");
+  if (new Set(chips.map((chip) => chip.agent)).size !== chips.length) throw invalid("Board chips contain duplicate agents");
   const validations = input.validations === undefined ? undefined : parseValidations(input.validations);
   const attachmentCounts = input.attachmentCounts === undefined ? undefined : parseAttachmentCounts(input.attachmentCounts, idSet);
   return {
@@ -159,7 +159,7 @@ export function parseMissionControlBoardProjectionV1(value: unknown): MissionCon
   };
 }
 
-export function missionControlBoardSnapshot(projection: MissionControlBoardProjectionV1): BoardSnapshot {
+export function restoreBoardSnapshot(projection: BoardProjectionV1): BoardSnapshot {
   const byId = new Map(projection.views.map((view) => [view.task.id, view]));
   const validations = projection.validations
     ? {
@@ -193,7 +193,7 @@ export function missionControlBoardSnapshot(projection: MissionControlBoardProje
     chips: projection.chips.map((chip) => {
       if ("empty" in chip.next) return { agent: chip.agent, source: chip.source, next: chip.next };
       const view = byId.get(chip.next.taskId);
-      if (!view) throw invalid(`Mission Control chip references missing task '${chip.next.taskId}'`);
+      if (!view) throw invalid(`Board chip references missing task '${chip.next.taskId}'`);
       return {
         agent: chip.agent,
         source: chip.source,
@@ -228,12 +228,12 @@ function projectTaskView(view: TaskView): TaskView {
 }
 
 function parseTaskView(value: unknown): TaskView {
-  const input = record(value, "Mission Control task view");
+  const input = record(value, "Board task view");
   const expected = ["task"];
   if (input.journalCount !== undefined) expected.push("journalCount");
   if (input.derived !== undefined) expected.push("derived");
   if (input.attention !== undefined) expected.push("attention");
-  assertOnlyKeys(input, expected, "Mission Control task view");
+  assertOnlyKeys(input, expected, "Board task view");
   const task = parseTask(input.task);
   const journalCount = input.journalCount === undefined ? undefined : safeInteger(input.journalCount, 0, 1_000_000, "task journalCount");
   const derived = input.derived === undefined ? undefined : parseDerived(input.derived);
@@ -247,14 +247,14 @@ function parseTaskView(value: unknown): TaskView {
 }
 
 function parseTask(value: unknown): Task {
-  const input = record(value, "Mission Control task");
+  const input = record(value, "Board task");
   const expected = ["id", "title", "status", "author", "createdAt", "updatedAt"];
   for (const key of ["body", "priority", "rank", "kind", "assignee", "awaitingHuman"]) {
     if (input[key] !== undefined) expected.push(key);
   }
-  assertOnlyKeys(input, expected, "Mission Control task");
+  assertOnlyKeys(input, expected, "Board task");
   if (typeof input.id !== "string" || !TASK_ID_RE.test(input.id) || !isTaskStatus(input.status)) {
-    throw invalid("Mission Control task identity or status is invalid");
+    throw invalid("Board task identity or status is invalid");
   }
   const task: Task = {
     id: input.id,
@@ -334,31 +334,31 @@ function parseAttention(value: unknown): TaskAttention[] {
   });
 }
 
-function parseChip(value: unknown, taskIds: Set<string>): MissionControlChipV1 {
-  const input = exactRecord(value, ["agent", "source", "next"], "Mission Control chip");
+function parseChip(value: unknown, taskIds: Set<string>): BoardChipV1 {
+  const input = exactRecord(value, ["agent", "source", "next"], "Board chip");
   if (input.source !== "declared" && input.source !== "human" && input.source !== "assignee") {
-    throw invalid("Mission Control chip source is invalid");
+    throw invalid("Board chip source is invalid");
   }
-  const next = record(input.next, "Mission Control chip next");
+  const next = record(input.next, "Board chip next");
   if ("taskId" in next) {
-    assertOnlyKeys(next, ["taskId"], "Mission Control chip task");
-    if (typeof next.taskId !== "string" || !taskIds.has(next.taskId)) throw invalid("Mission Control chip task is missing");
-    return { agent: text(input.agent, 1, 128, "Mission Control chip agent"), source: input.source, next: { taskId: next.taskId } };
+    assertOnlyKeys(next, ["taskId"], "Board chip task");
+    if (typeof next.taskId !== "string" || !taskIds.has(next.taskId)) throw invalid("Board chip task is missing");
+    return { agent: text(input.agent, 1, 128, "Board chip agent"), source: input.source, next: { taskId: next.taskId } };
   }
-  assertOnlyKeys(next, ["empty", "reason"], "Mission Control empty chip");
+  assertOnlyKeys(next, ["empty", "reason"], "Board empty chip");
   if (next.empty !== true || (next.reason !== "no-tasks" && next.reason !== "all-blocked" && next.reason !== "all-assigned-elsewhere")) {
-    throw invalid("Mission Control empty chip is invalid");
+    throw invalid("Board empty chip is invalid");
   }
-  return { agent: text(input.agent, 1, 128, "Mission Control chip agent"), source: input.source, next: { empty: true, reason: next.reason } };
+  return { agent: text(input.agent, 1, 128, "Board chip agent"), source: input.source, next: { empty: true, reason: next.reason } };
 }
 
-function parseValidations(value: unknown): NonNullable<MissionControlBoardProjectionV1["validations"]> {
-  const input = exactRecord(value, ["items", "pendingCount", "humanPendingCount", "agentPendingCount", "candidateCount", "candidates"], "Mission Control validations");
+function parseValidations(value: unknown): NonNullable<BoardProjectionV1["validations"]> {
+  const input = exactRecord(value, ["items", "pendingCount", "humanPendingCount", "agentPendingCount", "candidateCount", "candidates"], "Board validations");
   if (!Array.isArray(input.items) || input.items.length > MAX_VALIDATIONS || !Array.isArray(input.candidates) || input.candidates.length > MAX_CANDIDATES) {
-    throw invalid("Mission Control validation rows are invalid");
+    throw invalid("Board validation rows are invalid");
   }
   const items = input.items.map(parseValidation);
-  if (new Set(items.map((item) => item.id)).size !== items.length) throw invalid("Mission Control validations contain duplicate ids");
+  if (new Set(items.map((item) => item.id)).size !== items.length) throw invalid("Board validations contain duplicate ids");
   const pending = items.filter((item) => item.status !== "closed");
   const pendingCount = safeInteger(input.pendingCount, 0, MAX_VALIDATIONS, "validation pendingCount");
   const humanPendingCount = safeInteger(input.humanPendingCount, 0, MAX_VALIDATIONS, "validation humanPendingCount");
@@ -368,21 +368,21 @@ function parseValidations(value: unknown): NonNullable<MissionControlBoardProjec
   if (pendingCount !== pending.length
     || humanPendingCount !== pending.filter((item) => item.executor === "human").length
     || agentPendingCount !== pending.filter((item) => item.executor !== "human").length
-    || candidateCount !== candidates.length) throw invalid("Mission Control validation counts contradict their rows");
+    || candidateCount !== candidates.length) throw invalid("Board validation counts contradict their rows");
   return { items, pendingCount, humanPendingCount, agentPendingCount, candidateCount, candidates };
 }
 
-function parseValidation(value: unknown): MissionControlValidationV1 {
-  const input = record(value, "Mission Control validation");
+function parseValidation(value: unknown): BoardValidationV1 {
+  const input = record(value, "Board validation");
   const expected = ["id", "title", "status", "executor", "author", "createdAt", "updatedAt"];
   for (const key of ["type", "priority", "assignee", "outcome"]) if (input[key] !== undefined) expected.push(key);
-  assertOnlyKeys(input, expected, "Mission Control validation");
+  assertOnlyKeys(input, expected, "Board validation");
   if (typeof input.id !== "string" || !VALIDATION_ID_RE.test(input.id)
     || !isValidationStatus(input.status) || !isValidationExecutor(input.executor)
     || (input.outcome !== undefined && !isValidationOutcome(input.outcome))) {
-    throw invalid("Mission Control validation identity or enum is invalid");
+    throw invalid("Board validation identity or enum is invalid");
   }
-  if (input.priority !== undefined && !isTaskPriority(input.priority)) throw invalid("Mission Control validation priority is invalid");
+  if (input.priority !== undefined && !isTaskPriority(input.priority)) throw invalid("Board validation priority is invalid");
   return {
     id: input.id,
     title: persistedText(input.title, "validation title"),
@@ -398,16 +398,16 @@ function parseValidation(value: unknown): MissionControlValidationV1 {
   };
 }
 
-function parseCandidate(value: unknown): NonNullable<MissionControlBoardProjectionV1["validations"]>["candidates"][number] {
-  const input = record(value, "Mission Control validation candidate");
+function parseCandidate(value: unknown): NonNullable<BoardProjectionV1["validations"]>["candidates"][number] {
+  const input = record(value, "Board validation candidate");
   const expected = ["title", "executor", "source_ref", "excerpt"];
   if (input.type !== undefined) expected.push("type");
-  assertOnlyKeys(input, expected, "Mission Control validation candidate");
-  if (!isValidationExecutor(input.executor)) throw invalid("Mission Control candidate executor is invalid");
-  const source = record(input.source_ref, "Mission Control candidate source_ref");
+  assertOnlyKeys(input, expected, "Board validation candidate");
+  if (!isValidationExecutor(input.executor)) throw invalid("Board candidate executor is invalid");
+  const source = record(input.source_ref, "Board candidate source_ref");
   const sourceExpected = ["type", "ref"];
   if (source.role !== undefined) sourceExpected.push("role");
-  assertOnlyKeys(source, sourceExpected, "Mission Control candidate source_ref");
+  assertOnlyKeys(source, sourceExpected, "Board candidate source_ref");
   if (source.role !== undefined && source.role !== "deliverable" && source.role !== "relation") throw invalid("candidate source_ref role is invalid");
   return {
     title: persistedText(input.title, "candidate title"),
@@ -423,7 +423,7 @@ function parseCandidate(value: unknown): NonNullable<MissionControlBoardProjecti
 }
 
 function parseAttachmentCounts(value: unknown, taskIds: Set<string>): Record<string, number> {
-  const input = record(value, "Mission Control attachment counts");
+  const input = record(value, "Board attachment counts");
   const out: Record<string, number> = {};
   for (const [id, count] of Object.entries(input)) {
     if (!taskIds.has(id)) throw invalid(`attachment count references missing task '${id}'`);

@@ -88,7 +88,7 @@ describe("the global workspace scope has exactly one control (SDD 485 C6, revise
       expect(src, path.relative(WEBVIEW, file)).not.toContain('aria-label="Board workspace"');
     }
     // …and so is the action it posted, so no other client can re-target the global scope.
-    const boardMessages = readFileSync(path.join(WEBVIEW, "mission-control", "messages.ts"), "utf8");
+    const boardMessages = readFileSync(path.join(WEBVIEW, "board", "messages.ts"), "utf8");
     expect(boardMessages).not.toContain("switchWorkspace");
   });
 
@@ -120,7 +120,7 @@ describe("local filters are not global selectors (t-46eb4f)", () => {
   });
 
   it("the Board keeps the filters that only narrow its own cards", () => {
-    const board = readFileSync(path.join(WEBVIEW, "mission-control", "App.tsx"), "utf8");
+    const board = readFileSync(path.join(WEBVIEW, "board", "App.tsx"), "utf8");
     expect(board).toContain('aria-label="Search tasks"');
     expect(board).toContain("All agents");
     expect(board).not.toContain("switchControlWorkspace");

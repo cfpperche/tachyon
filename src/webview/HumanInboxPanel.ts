@@ -23,7 +23,7 @@ import type { HumanInboxKind, StaleAfter } from "../humanInbox/model.js";
 import type { ApprovalDecision } from "../bridge/approvalRequest.js";
 import type { ValidationOutcome } from "../validations/types.js";
 import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
-import type { WorkspaceMissionControlTarget } from "../shell/MissionControlTarget.js";
+import type { WorkspaceBoardTarget } from "../shell/BoardTarget.js";
 import { buildValidationsViewModel } from "./validations/viewModel.js";
 import { listApprovalViewItems } from "./approval/viewModel.js";
 import { readLiveSavedAgentProposalQueue } from "../agents/savedAgentProposalStore.js";
@@ -50,7 +50,7 @@ import { ProposalStore } from "../schedule/ProposalStore.js";
  *
  * The id that LOOKS available is `tachyonApprovals`, and taking it would have been two mistakes at once. It
  * is a LIVE redirect (its trusted serializer is still registered and still carries `{wsHash}`), which is
- * exactly what stopped C5 reusing `tachyonMissionControl`; and it names a DIFFERENT surface — Approvals,
+ * exactly what stopped C5 reusing the retired Board viewType; and it names a DIFFERENT surface — Approvals,
  * which `spec.md` § Non-goals deliberately keeps as a deep-link/compatibility route rather than promoting to
  * an app. An id naming the surface this one AGGREGATES is worse than a merely stale one.
  *
@@ -82,7 +82,7 @@ export interface HumanInboxDeps {
     resolve: (wsHash: string, id: string, decision: ApprovalDecision) => Promise<void>;
   };
   validations: {
-    getWorkspaces: () => WorkspaceMissionControlTarget[];
+    getWorkspaces: () => WorkspaceBoardTarget[];
   };
   /**
    * Closing or assigning a validation from HERE must invalidate the same things it invalidates from the
@@ -111,7 +111,7 @@ export interface HumanInboxDeps {
 /** The two workspace targets one panel reads, resolved together so an approvals-only workspace is visible. */
 interface InboxSources {
   approvalWs: WorkspacePresentationTarget;
-  validationWs: WorkspaceMissionControlTarget | undefined;
+  validationWs: WorkspaceBoardTarget | undefined;
 }
 
 /**

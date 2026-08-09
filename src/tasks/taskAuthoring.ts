@@ -1,4 +1,4 @@
-/** Canonical authoring bounds for a Task created through Mission Control. */
+/** Canonical authoring bounds for a Task created through Board. */
 export const TASK_AUTHORING_LIMITS = {
   title: 300,
   body: 4_000,

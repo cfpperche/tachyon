@@ -31,7 +31,7 @@ export interface CockpitStrings {
   auto: string;
   empty: string;
   copyDiagnostics: string;
-  openMissionControl: string;
+  openBoard: string;
   openSettings: string;
   openDoctor: string;
   copied: string;

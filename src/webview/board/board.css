@@ -1,5 +1,5 @@
-/* spec 335 — Mission Control board styles. Visual language ported from the approved prototype
-   (/tmp/mission-control/index.html, pin p-96da7e) onto the real design-system tokens (.ds-*). */
+/* spec 335 — Board styles. Visual language ported from the approved prototype
+   (/tmp/board/index.html, pin p-96da7e) onto the real design-system tokens (.ds-*). */
 
 /* t-e085bc — the bare `html, body { height }` / `body { display: flex; ... }` rules were removed:
    standalone-era leftovers (the Board is Control-embedded since SDD 410 Phase B #6), and this sheet

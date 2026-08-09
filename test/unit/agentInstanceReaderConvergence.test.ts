@@ -12,7 +12,7 @@ import type { SessionRecord } from "../../src/resume/SessionLedger.js";
  * assertion rather than one blanket check:
  *
  *  1. the Bridge dismiss family (`canDismiss`, the kill_agent hint, the dismiss guard);
- *  2. Mission Control's live-Temporary filter;
+ *  2. Board's live-Temporary filter;
  *  3. the degraded roster's `adhoc` flag, including the LKG row that has no policy to read.
  *
  * t-04052d then removed `declared` outright, so the readers below ask `lifetime` — the roster's
@@ -61,9 +61,9 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
     expect(source).toContain("is a Saved Agent (declared in tachyon.yml)");
   });
 
-  /** Reader 2. Mission Control's live-Temporary filter, and its second guard which is NOT the same question. */
-  it("Mission Control filters live Temporary instances by policy, keeping the config-ownership guard separate", () => {
-    const src = SOURCE("src/cockpit/missionVm.ts");
+  /** Reader 2. Board's live-Temporary filter, and its second guard which is NOT the same question. */
+  it("Board filters live Temporary instances by policy, keeping the config-ownership guard separate", () => {
+    const src = SOURCE("src/cockpit/boardVm.ts");
     expect(src).toMatch(/\.filter\(\(a\) => a\.lifetime === "temporary" && !declared\.has\(a\.name\)\)/);
     // `declared.has(name)` is a set of CONFIG-OWNED NAMES — a different question, correctly kept.
     expect(src).toMatch(/const declared = new Set\(ws\.declaredAgentNames\(\)\)/);

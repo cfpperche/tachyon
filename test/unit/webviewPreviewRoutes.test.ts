@@ -65,7 +65,7 @@ describe("preview route table", () => {
       .map(([view]) => `${view}: links page-frame.css but does not declare pageFrame — the harness would hand #root a height the product does not have`);
     expect(violations, violations.join("\n")).toEqual([]);
     // and the Board is the route that proves the flag is wired to something (not a field nobody sets).
-    expect(ROUTES["mission-control"].pageFrame).toBe(true);
+    expect(ROUTES["board"].pageFrame).toBe(true);
   });
 
   it("declares the task-detail route (SDD 485 C4) against the REAL standalone bundle and the host's own CSS list", () => {
@@ -209,7 +209,7 @@ describe("generated route catalog", () => {
 //
 // `test:browser` needs a system Chrome and ~96s, so `verify:full` does not run it, and for months nothing
 // else did: t-c55f8d found 17 failures on main of which SIXTEEN were one defect repeated — a test opening
-// `?view=plugins` / `?view=runtime-ops` / `dist/webview/task-studio.js` / `dist/webview/mission-control.js`
+// `?view=plugins` / `?view=runtime-ops` / `dist/webview/task-studio.js` / `dist/webview/board.js`
 // after the product folded every one of those standalone entry points into the Control bundle. Not one of
 // them needed a browser to be caught; they were strings pointing at doors that no longer exist.
 //
@@ -251,10 +251,10 @@ describe("preview references in the browser suite (t-fdfbd4)", () => {
 
   it("derives the live bundle set from esbuild.mjs, including the code-split app targets", () => {
     expect(bundles.has("dist/webview/sidebar.js")).toBe(true);
-    // SDD 485 C4/C5 — task-detail.js and mission-control.js are BACK, as entries of the same splitting
+    // SDD 485 C4/C5 — task-detail.js and board.js are BACK, as entries of the same splitting
     // invocation: both surfaces are standalone apps again. They are the canary that this derivation sees
     // multi-entry targets, not just the one it was written for.
-    expect(bundles.has("dist/webview/mission-control.js")).toBe(true);
+    expect(bundles.has("dist/webview/board.js")).toBe(true);
     expect(bundles.has("dist/webview/task-detail.js")).toBe(true);
     // SDD 485 D1/D2 — and inspector.js and plugins.js, the third and fourth surfaces to come back as
     // their own entries. `dist/webview/plugins.js` is a string this very file's history names as DEAD

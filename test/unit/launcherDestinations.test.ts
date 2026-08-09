@@ -21,7 +21,7 @@ import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 describe("SDD 485 C8 — every launcher tile has a live destination", () => {
   const appSections = new Set(WEBVIEW_APPS.filter((a) => a.host === "section").map((a) => a.view));
   /**
-   * `mission` (the Board) is the app whose bundle dir is `mission-control`; the manifest keys on the
+   * `mission` (the Board) is the app whose bundle dir is `board`; the manifest keys on the
    * bundle dir, the launcher on the section id, so the seam needs an explicit mapping rather than a
    * guessed transform — two of the four migrated so far do not match, and no transform predicts which.
    *

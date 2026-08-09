@@ -9,8 +9,8 @@ import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager, boardRefreshKind, type BoardPanelDeps } from "../../src/webview/BoardPanel.js";
 import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
-import { legacyMissionControlTarget, type WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
-import { readyMessage, requestSnapshotAction } from "../../src/webview/mission-control/messages.js";
+import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
+import { readyMessage, requestSnapshotAction } from "../../src/webview/board/messages.js";
 import type { Workspace } from "../../src/workspace/Workspace.js";
 
 /**
@@ -56,7 +56,7 @@ function fakeWorkspace(root = mkroot(), agents: Record<string, unknown> = {}, op
   } as unknown as Workspace;
 }
 
-const target = (workspace: Workspace): WorkspaceMissionControlTarget => legacyMissionControlTarget(workspace);
+const target = (workspace: Workspace): WorkspaceBoardTarget => legacyBoardTarget(workspace);
 
 interface Harness {
   manager: BoardPanelManager;
@@ -65,7 +65,7 @@ interface Harness {
   openedStudios: Array<[string, string | undefined]>;
 }
 
-function harness(targets: WorkspaceMissionControlTarget[], hooks: Partial<BoardPanelDeps> = {}): Harness {
+function harness(targets: WorkspaceBoardTarget[], hooks: Partial<BoardPanelDeps> = {}): Harness {
   let fanOuts = 0;
   const openedTasks: Array<[string, string]> = [];
   const openedStudios: Array<[string, string | undefined]> = [];
@@ -134,7 +134,7 @@ describe("SDD 485 C5 — the Board's cardinality is `dashboard`", () => {
   it("says so when its project is no longer attached, instead of borrowing another one's tasks", async () => {
     const gone = fakeWorkspace(mkroot(), {}, { hash: "ws-gone" });
     const other = fakeWorkspace(mkroot(), {}, { hash: "ws-other" });
-    let attached: WorkspaceMissionControlTarget[] = [target(gone), target(other)];
+    let attached: WorkspaceBoardTarget[] = [target(gone), target(other)];
     const h = harness([], { getWorkspaces: () => attached });
     h.manager.open("ws-gone");
     attached = [target(other)]; // the folder was closed while its Board stayed open

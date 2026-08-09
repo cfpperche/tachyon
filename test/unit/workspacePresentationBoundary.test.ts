@@ -37,9 +37,9 @@ describe("persistent workspace presentation boundary", () => {
       "src/webview/RunbookStudioAdapter.ts",
       "src/webview/ScheduleStudioAdapter.ts",
       "src/webview/TerminalStudioAdapter.ts",
-      // MissionControlPanel.ts left this list on t-610705 Phase B #6: the panel host was retired and the
+      // BoardPanel.ts left this list on t-610705 Phase B #6: the panel host was retired and the
       // file is types-only now (no Workspace, no Target) — the board is hosted by Cockpit.ts, which was
-      // born on WorkspaceMissionControlTarget.
+      // born on WorkspaceBoardTarget.
       // TaskDetailPanel.ts left this list on t-610705 Phase C.1 for the same reason: the panel host was
       // retired and the file is types-only now (VIEW_TYPE + PanelState only) — Task Detail is hosted by
       // Cockpit.ts, which was born on WorkspaceTaskDetailTarget.
@@ -79,7 +79,7 @@ describe("persistent workspace presentation boundary", () => {
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
       expect(source, relative).not.toMatch(/workspace\/Workspace(?:\.js)?/);
-      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|Activity|Handoff|MissionControl|PinStudio|Sidebar|TaskDetail|TaskStudio|AgentStudio|Studio)Target/);
+      expect(source, relative).toMatch(/Workspace(?:Presentation|GitPresentation|ProbePresentation|PluginPresentation|Activity|Handoff|Board|PinStudio|Sidebar|TaskDetail|TaskStudio|AgentStudio|Studio)Target/);
     }
   });
 
@@ -106,8 +106,8 @@ describe("persistent workspace presentation boundary", () => {
       "src/runtime-api/agentInputCommands.ts",
       "src/runtime-api/handoffCommands.ts",
       "src/runtime-api/handoffProjection.ts",
-      "src/runtime-api/missionControlCommands.ts",
-      "src/runtime-api/missionControlProjection.ts",
+      "src/runtime-api/boardCommands.ts",
+      "src/runtime-api/boardProjection.ts",
       "src/runtime-api/sidebarCommands.ts",
       "src/runtime-api/sidebarProjection.ts",
       "src/runtime-api/pinStudioCommands.ts",
@@ -121,7 +121,7 @@ describe("persistent workspace presentation boundary", () => {
       "src/shell/FakeWorkspaceClient.ts",
       "src/shell/ActivityTarget.ts",
       "src/shell/HandoffTarget.ts",
-      "src/shell/MissionControlTarget.ts",
+      "src/shell/BoardTarget.ts",
       "src/shell/SidebarTarget.ts",
       "src/shell/PinStudioTarget.ts",
       "src/shell/TaskDetailTarget.ts",

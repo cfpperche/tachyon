@@ -21,7 +21,7 @@ import {
   workspaceHandoffDistillSuccessV1,
   workspaceHandoffEnsureSuccessV1,
   workspaceHandoffViewSuccessV1,
-  workspaceMissionControlViewSuccessV1,
+  workspaceBoardViewSuccessV1,
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
   workspaceProbeViewSuccessV1,
@@ -422,7 +422,7 @@ describe("persistent engine protocol", () => {
     expect("harness" in canonicalWorkspaceStudioFormV1(legacy)).toBe(false);
   });
 
-  it("accepts only exact Mission Control reads and idempotency-keyed mutations", () => {
+  it("accepts only exact Board reads and idempotency-keyed mutations", () => {
     const updatedAt = "2026-07-14T12:00:00.000Z";
     const update = {
       schemaVersion: 1,
@@ -454,12 +454,12 @@ describe("persistent engine protocol", () => {
     expect(isWorkspaceQueryV1(query)).toBe(true);
     expect(isWorkspaceQueryV1({ ...query, input: { liveTemporaryAgents: ["reviewer", "reviewer"] } })).toBe(false);
     expect(isWorkspaceQueryV1({ ...query, input: { liveTemporaryAgents: ["../escape"] } })).toBe(false);
-    const result = workspaceMissionControlViewSuccessV1({
+    const result = workspaceBoardViewSuccessV1({
       schemaVersion: 1,
       board: { schemaVersion: 1, views: [], allowedDropStatuses: {}, chips: [] },
     });
     expect(isWorkspaceQueryResultV1(result)).toBe(true);
-    if (result.status !== "ok" || result.method !== "task.board") throw new Error("expected Mission Control result");
+    if (result.status !== "ok" || result.method !== "task.board") throw new Error("expected Board result");
     expect(isWorkspaceQueryResultV1({ ...result, view: { ...result.view, extra: true } })).toBe(false);
   });
 

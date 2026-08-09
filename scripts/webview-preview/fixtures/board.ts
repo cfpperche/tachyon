@@ -1,10 +1,10 @@
 /**
- * spec 346 — Mission Control fixture for the dev preview harness. Provenance: synthetic-edge, typed against
- * the real MissionControlVM. It covers the validations strip, all always-on board columns, a dropped card,
+ * spec 346 — Board fixture for the dev preview harness. Provenance: synthetic-edge, typed against
+ * the real BoardVM. It covers the validations strip, all always-on board columns, a dropped card,
  * agent chips, priorities, assignees, SDD badges, attention, and attachment count.
  */
 
-import type { MissionControlVM } from "../../../src/webview/mission-control/messages";
+import type { BoardVM } from "../../../src/webview/board/messages";
 import type { BoardSnapshot } from "../../../src/tasks/boardSnapshot";
 import type { Task, TaskView } from "../../../src/tasks/types";
 import type { ValidationSummary } from "../../../src/validations/ValidationStore";
@@ -189,7 +189,7 @@ const volumeSnapshot: BoardSnapshot = {
   attachmentCounts: {},
 };
 
-export const missionControlFixtures: Record<string, Fixture<MissionControlVM>> = {
+export const boardFixtures: Record<string, Fixture<BoardVM>> = {
   default: {
     provenance: "synthetic-edge",
     vm: {

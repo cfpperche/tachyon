@@ -80,7 +80,7 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   });
 
   it("Board head and Inspector use PageChrome", () => {
-    const board = readFileSync("src/webview/mission-control/App.tsx", "utf8");
+    const board = readFileSync("src/webview/board/App.tsx", "utf8");
     expect(board).toContain("PageChrome");
     expect(board).not.toContain("◆");
     const insp = readFileSync("src/webview/inspector/App.tsx", "utf8");
@@ -128,7 +128,7 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     const activity = readFileSync("src/webview/activity/App.tsx", "utf8");
     expect(activity).toContain("from \"../shared/ui\"");
     expect(activity).toMatch(/Button[\s\S]*Show all/);
-    const board = readFileSync("src/webview/mission-control/App.tsx", "utf8");
+    const board = readFileSync("src/webview/board/App.tsx", "utf8");
     expect(board).toContain("Select");
     expect(board).toMatch(/stale-editor[\s\S]*Button/);
     const radius = readFileSync("src/webview/shared/vscode-theme.css", "utf8");

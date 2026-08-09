@@ -1,5 +1,5 @@
 .td-chrome.ds-page-chrome { /* spacing from canonical .ds-page-chrome */ }
-/* spec 335 — Task Detail panel styles. Shares tokens with mission-control.css (.dot/.who-btn/.stale-editor/.ref
+/* spec 335 — Task Detail panel styles. Shares tokens with board.css (.dot/.who-btn/.stale-editor/.ref
    conventions) but is its own small sheet since the two surfaces bundle separately. */
 
 .codicon-loading { animation: td-spin 1.1s linear infinite; }

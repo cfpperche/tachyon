@@ -93,7 +93,7 @@ function compareCandidates(a: Candidate, b: Candidate): number {
   return a.tier - b.tier || compareTasksByPriorityRank(a.task, b.task);
 }
 
-// spec 335 — the priority → rank → createdAt → id ordering, exported so the Mission Control board's card
+// spec 335 — the priority → rank → createdAt → id ordering, exported so the Board's card
 // ordering uses the SAME comparator next_task ranks candidates with (no re-encoding in boardModel.ts).
 export function compareTasksByPriorityRank(a: Task, b: Task): number {
   return (

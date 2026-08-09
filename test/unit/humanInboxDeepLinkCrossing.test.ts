@@ -17,7 +17,7 @@ import { savedAgentProposalPath } from "../../src/agents/savedAgentProposalStore
 import { computeSavedAgentRemovalProposalDigest } from "../../src/agents/savedAgentRemovalProposal.js";
 import { savedAgentRemovalProposalPath } from "../../src/agents/savedAgentRemovalProposalStore.js";
 import { workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
-import type { WorkspaceMissionControlTarget } from "../../src/shell/MissionControlTarget.js";
+import type { WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
 import type { Validation } from "../../src/validations/types.js";
 import { ProposalStore } from "../../src/schedule/ProposalStore.js";
 
@@ -152,7 +152,7 @@ function liveWorkspace(): { manager: HumanInboxPanelManager; root: string } {
     listValidations: () => [validation],
     closeValidation: async () => {},
     assignValidation: async () => {},
-  } as unknown as WorkspaceMissionControlTarget;
+  } as unknown as WorkspaceBoardTarget;
 
   const deps: HumanInboxDeps = {
     approvals: {

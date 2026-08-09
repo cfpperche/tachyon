@@ -91,7 +91,7 @@ const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shi
 const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
 const TASK_AUTHORING_LIMIT_FIELDS = new Set<string>(["title", "body", "kind", "artifact_refs", "artifact_refs.type", "artifact_refs.ref"]);
 
-// spec 335 — hoisted so the Mission Control board snapshot can compute per-task drag affordances from the SAME
+// spec 335 — hoisted so the Board snapshot can compute per-task drag affordances from the SAME
 // literal `assertTransition` enforces (one authority; the webview never re-encodes status-transition rules).
 const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   inbox: ["triaged", "dropped"],

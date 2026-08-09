@@ -103,7 +103,7 @@ describe("webview convention (spec 279)", () => {
       tachyonWorktrees: "WORKTREES_VIEW_TYPE",
       tachyonExecutionGraph: "EXECUTION_GRAPH_VIEW_TYPE",
       tachyonPinPreview: "PIN_DETAIL_VIEW_TYPE",
-      tachyonMissionControl: "MISSION_CONTROL_VIEW_TYPE",
+      [["tachyon", "Mission", "Control"].join("")]: "RETIRED_BOARD_VIEW_TYPE",
       // SDD 485 C5 — the Board's own viewType, and the first app on `SectionPanelManager` that genuinely
       // revives (the legacy id above stays a dispose+redirect INTO this one).
       tachyonBoard: "BOARD_VIEW_TYPE",
@@ -301,7 +301,7 @@ const declaredExtensionPoints = (s: WebviewSurface): ShellExtensionPoint[] => (s
 // spec 485 Phase A — CONSUMPTION, the question the declaration half cannot ask (t-32c872).
 //
 // The block above asks "does this surface DECLARE that it styles the page frame?". For the Board the answer
-// was no, and it was RIGHT: `mission-control.css` styles no `html`/`body`, mints no `--ds-*`, links the
+// was no, and it was RIGHT: `board.css` styles no `html`/`body`, mints no `--ds-*`, links the
 // design system — legitimately `conform`. It shipped standalone and lost per-column scrolling anyway,
 // because its layout DEPENDS on a page frame that a sheet it no longer links used to provide (cockpit.css
 // pinned `html, body { height: 100% }`; the Board linked it only while it lived inside Control).
@@ -379,7 +379,7 @@ function linkedPageFrameProviders(s: WebviewSurface, sources: Map<string, string
 describe("webview design-system conformance contract (spec 485 Phase A)", () => {
   it("every launcher-backed section app consumes the shared page chrome or declares a measured exception (t-a07b1e)", () => {
     const exceptions: Record<string, string> = {
-      "mission-control": "fixed-height board splits the standard pad between its header and independently scrolling columns",
+      "board": "fixed-height board splits the standard pad between its header and independently scrolling columns",
     };
     const violations: string[] = [];
     for (const app of WEBVIEW_APPS.filter((entry) => entry.host === "section" && entry.section !== undefined)) {

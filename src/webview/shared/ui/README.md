@@ -66,12 +66,12 @@ component + migrate every hand-rolled call site in the same trail. Tracked on th
 
 | Gap | Evidence (audit 2026-07-20) | Task |
 | --- | --- | --- |
-| `KitTooltip` / `KitDialog` | 4 surfaces hand-roll overlay/modal CSS (rich-doc, sidebar, mission-control, activity); tooltip CSS in mission-control | t-c7e518 (gated on the preact/compat gate — until then: `title=` fallback, no new modal CSS) |
+| `KitTooltip` / `KitDialog` | 4 surfaces hand-roll overlay/modal CSS (rich-doc, sidebar, board, activity); tooltip CSS in board | t-c7e518 (gated on the preact/compat gate — until then: `title=` fallback, no new modal CSS) |
 | `KitRow` | Control/list rows still partially per-surface | t-eaa94d |
-| `SearchBox` | activity + mission-control each own a search-input cluster (icon + input + clear) | t-b0a229 batch |
-| `Spinner` / loading affordance | 4 surfaces own spin keyframes (handoff, task-detail, mission-control, activity) | t-b0a229 batch |
-| `StatusDot` | `.dot` styled per surface (sidebar, mission-control, attention cards) | t-b0a229 batch |
-| Card/chip CSS consolidation | task-studio, mission-control, plugins each define `.card`/`.chip` | t-b0a229 batch |
+| `SearchBox` | activity + board each own a search-input cluster (icon + input + clear) | t-b0a229 batch |
+| `Spinner` / loading affordance | 4 surfaces own spin keyframes (handoff, task-detail, board, activity) | t-b0a229 batch |
+| `StatusDot` | `.dot` styled per surface (sidebar, board, attention cards) | t-b0a229 batch |
+| Card/chip CSS consolidation | task-studio, board, plugins each define `.card`/`.chip` | t-b0a229 batch |
 | Raw `<button>` residue | 37 raw `<button>`s outside shared/ui (worst: rich-doc/toolbar 15, sidebar 10) | migrate on touch; new code: zero |
 | Hardcoded hex in surface CSS | 68 occurrences outside shared/vendor | migrate on touch; new code: zero |
 

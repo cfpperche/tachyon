@@ -7,15 +7,15 @@ import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { EDITOR_HUMAN_ACTOR } from "../../src/validations/types.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import {
-  isMissionControlViewV1,
-  missionControlBoardSnapshot,
-  parseMissionControlBoardProjectionV1,
-  projectMissionControlBoard,
-  type MissionControlBoardProjectionV1,
-} from "../../src/runtime-api/missionControlProjection.js";
+  isBoardViewV1,
+  restoreBoardSnapshot,
+  parseBoardProjectionV1,
+  projectBoard,
+  type BoardProjectionV1,
+} from "../../src/runtime-api/boardProjection.js";
 import {
-  MISSION_CONTROL_RESPONSE_MAX_BYTES,
-  workspaceMissionControlViewSuccessV1,
+  BOARD_RESPONSE_MAX_BYTES,
+  workspaceBoardViewSuccessV1,
 } from "../../src/engine-service/protocol.js";
 
 const roots: string[] = [];
@@ -24,9 +24,9 @@ afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
-describe("Mission Control wire projection", () => {
+describe("Board wire projection", () => {
   it("round-trips the board fields the UI consumes without duplicating task bodies in chips or validation history", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "mission-control-projection-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "board-projection-"));
     roots.push(root);
     const taskStore = new TaskStore(root);
     const validationStore = new ValidationStore(root);
@@ -60,8 +60,8 @@ describe("Mission Control wire projection", () => {
     });
     source.attachmentCounts = { [task.id]: 2 };
 
-    const projected = projectMissionControlBoard(source);
-    const restored = missionControlBoardSnapshot(projected);
+    const projected = projectBoard(source);
+    const restored = restoreBoardSnapshot(projected);
 
     expect(projected.views[0]?.task).toMatchObject({ id: task.id, body: "searchable body", assignee: "codex", awaitingHuman: { kind: "dogfood" } });
     expect(projected.views[0]?.task).not.toHaveProperty("artifact_refs");
@@ -76,34 +76,34 @@ describe("Mission Control wire projection", () => {
 
   it("fails closed on unknown fields, contradictory counts and chip references outside the task set", () => {
     const projection = minimalProjection();
-    expect(() => parseMissionControlBoardProjectionV1({ ...projection, extra: true })).toThrow(/unknown or missing fields/);
-    expect(() => parseMissionControlBoardProjectionV1({
+    expect(() => parseBoardProjectionV1({ ...projection, extra: true })).toThrow(/unknown or missing fields/);
+    expect(() => parseBoardProjectionV1({
       ...projection,
       chips: [{ agent: "codex", source: "declared", next: { taskId: "t-ffffff" } }],
     })).toThrow(/task is missing/);
-    expect(() => parseMissionControlBoardProjectionV1({
+    expect(() => parseBoardProjectionV1({
       ...projection,
       validations: {
         items: [], pendingCount: 1, humanPendingCount: 0, agentPendingCount: 0, candidateCount: 0, candidates: [],
       },
     })).toThrow(/counts contradict/);
-    expect(isMissionControlViewV1({ schemaVersion: 1, board: projection })).toBe(true);
-    expect(isMissionControlViewV1({ schemaVersion: 1, board: projection, agentLiveness: { status: "available" } })).toBe(false);
+    expect(isBoardViewV1({ schemaVersion: 1, board: projection })).toBe(true);
+    expect(isBoardViewV1({ schemaVersion: 1, board: projection, agentLiveness: { status: "available" } })).toBe(false);
   });
 
   it("keeps a maximal ordinary 500-card board below its dedicated cap and rejects an adversarial oversized view", () => {
     const ordinary = largeProjection({ attentionRows: 0 });
-    const ordinaryResult = workspaceMissionControlViewSuccessV1({ schemaVersion: 1, board: ordinary });
+    const ordinaryResult = workspaceBoardViewSuccessV1({ schemaVersion: 1, board: ordinary });
     const ordinaryEnvelope = `${JSON.stringify({ ok: true, op: "query", result: ordinaryResult })}\n`;
-    expect(Buffer.byteLength(ordinaryEnvelope, "utf8")).toBeLessThan(MISSION_CONTROL_RESPONSE_MAX_BYTES);
+    expect(Buffer.byteLength(ordinaryEnvelope, "utf8")).toBeLessThan(BOARD_RESPONSE_MAX_BYTES);
 
     const oversized = largeProjection({ attentionRows: 8 });
-    expect(() => workspaceMissionControlViewSuccessV1({ schemaVersion: 1, board: oversized }))
+    expect(() => workspaceBoardViewSuccessV1({ schemaVersion: 1, board: oversized }))
       .toThrow(/dedicated response size limit/);
   }, 20_000);
 });
 
-function minimalProjection(): MissionControlBoardProjectionV1 {
+function minimalProjection(): BoardProjectionV1 {
   return {
     schemaVersion: 1,
     views: [{
@@ -122,7 +122,7 @@ function minimalProjection(): MissionControlBoardProjectionV1 {
   };
 }
 
-function largeProjection(options: { attentionRows: number }): MissionControlBoardProjectionV1 {
+function largeProjection(options: { attentionRows: number }): BoardProjectionV1 {
   const body = "😀".repeat(4_000);
   const message = "😀".repeat(2_000);
   const ref = "😀".repeat(500);
@@ -143,7 +143,7 @@ function largeProjection(options: { attentionRows: number }): MissionControlBoar
       } : {}),
     };
   });
-  return parseMissionControlBoardProjectionV1({
+  return parseBoardProjectionV1({
     schemaVersion: 1,
     views,
     allowedDropStatuses: Object.fromEntries(views.map((view) => [view.task.id, ["triaged", "dropped"]])),

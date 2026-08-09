@@ -305,7 +305,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "mission-control", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "engine", "worktrees", "execution-graph", "settings", "overview", "activity", "probes"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "engine", "worktrees", "execution-graph", "settings", "overview", "activity", "probes"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `src/webview/${view}/main.tsx`])),
@@ -361,9 +361,9 @@ const pluginHost = {
   outfile: "dist/webview/plugin-host.js",
 };
 
-// t-610705 (SDD 410 Phase B #6) — the standalone Mission Control bundle was retired: the Board is a
-// cockpit-only section (src/webview/mission-control/App.tsx stays, lazy-imported by cockpit/App.tsx
-// via CSS co-load). Both mission-control CSS files are still emitted below — Cockpit.ts co-loads them.
+// t-610705 (SDD 410 Phase B #6) — the standalone Board bundle was retired: the Board is a
+// cockpit-only section (src/webview/board/App.tsx stays, lazy-imported by cockpit/App.tsx
+// via CSS co-load). Both Board CSS files are still emitted below — Cockpit.ts co-loads them.
 
 // t-610705 (SDD 410 Phase C.1) — the standalone Task Detail bundle was retired: Task Detail is a
 // cockpit-only subroute now (src/webview/task-detail/App.tsx stays, lazy-imported by cockpit/App.tsx
@@ -448,7 +448,7 @@ const tailwindSurfaces = [
   { input: "src/webview/ui-gate/tailwind.css", output: "dist/webview/ui-gate.tailwind.css" },
   { input: "src/webview/plugins/tailwind.css", output: "dist/webview/plugins.tailwind.css" }, // spec 342 Pilot A
   { input: "src/webview/task-studio/tailwind.css", output: "dist/webview/task-studio.tailwind.css" }, // spec 342 Pilot B
-  { input: "src/webview/mission-control/tailwind.css", output: "dist/webview/mission-control.tailwind.css" }, // t-6da5f0 — first t-b0a229 board adoption (KitSelect agent filter)
+  { input: "src/webview/board/tailwind.css", output: "dist/webview/board.tailwind.css" }, // t-6da5f0 — first t-b0a229 board adoption (KitSelect agent filter)
   { input: "src/webview/agent-studio-shell/tailwind.css", output: "dist/webview/agent-studio-shell.tailwind.css" }, // t-2278bc — KitDropdown for Soul secondary actions
 ];
 const tailwindCli = fileURLToPath(new URL("./node_modules/@tailwindcss/cli/dist/index.mjs", import.meta.url));
@@ -506,7 +506,7 @@ copyFileSync("src/webview/human-inbox/human-inbox.css", "dist/webview/human-inbo
 copyFileSync("src/webview/rich-doc/rich-doc.css", "dist/webview/rich-doc.css"); // spec 339 — entity-neutral rich-doc editor styles (shared by pin-studio + task-studio + the dev preview harness)
 copyFileSync("src/webview/pin-studio/pin-studio.css", "dist/webview/pin-studio.css"); // spec 280 — pin-studio styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/task-studio/task-studio.css", "dist/webview/task-studio.css"); // spec 339 — task-studio styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/mission-control/mission-control.css", "dist/webview/mission-control.css"); // spec 335 — Mission Control board styles (shared by the webview + the dev preview harness)
+copyFileSync("src/webview/board/board.css", "dist/webview/board.css"); // spec 335 — Board styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/task-detail/task-detail.css", "dist/webview/task-detail.css"); // spec 335 — Task Detail styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/runtime-ops/runtime-ops.css", "dist/webview/runtime-ops.css"); // spec 367 — Runtime Ops bottom-panel styles
 copyFileSync("src/webview/runtime-config/runtime-config.css", "dist/webview/runtime-config.css"); // SDD 485 D8 — standalone Runtime Config styles

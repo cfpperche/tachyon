@@ -1,11 +1,11 @@
 /**
  * spec 335 — pure decision helpers for the Task Detail panel's per-field stale marking (dogfood round 1, #2),
  * extracted so the concurrency edge is unit-testable without a DOM (same rationale as
- * mission-control/interactions.ts). The Preact component only dispatches events; every actual DECISION
+ * board/interactions.ts). The Preact component only dispatches events; every actual DECISION
  * (which field a CAS failure stales, when a stale marker clears) funnels through this one reducer.
  */
 
-import { isStaleError } from "../mission-control/interactions";
+import { isStaleError } from "../board/interactions";
 import type { TaskPrototypeListVM, TaskPrototypeVM } from "../task-prototype/types";
 
 export type DetailField = "priority" | "assignee";

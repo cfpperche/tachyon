@@ -137,7 +137,7 @@ export class TaskNotificationDeduper {
  *
  * The wake-up line already existed, but it hung off the Bridge's `update_task` handler, so an agent
  * assigning to another agent notified and a human assigning in the UI did not — and the UI is the
- * common case. Four writers reach `TaskStore.update` directly (TaskDetailTarget, MissionControlTarget,
+ * common case. Four writers reach `TaskStore.update` directly (TaskDetailTarget, BoardTarget,
  * taskStudioService, engineService) and none of them passed through that handler.
  *
  * So the decision moves here, as a pure function over before/after, and the caller that runs it is the

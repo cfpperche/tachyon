@@ -2,7 +2,7 @@
  * Human Inbox — the wire between Control's host and the unified surface (t-e76acc).
  *
  * Every message and action carries its own type strings, distinct from the Approvals and Validations
- * surfaces even where the shape looks identical. That is not ceremony: `mission-control` and
+ * surfaces even where the shape looks identical. That is not ceremony: `board` and
  * `task-detail` both shipped a `"taskError"` message and Control's single client had to keep a route
  * ref around just to tell whose error it was (see cockpit/main.tsx's `activeRouteRef` comment). One
  * more surface reusing a neighbour's wire string would repeat exactly that.

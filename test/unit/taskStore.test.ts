@@ -507,7 +507,7 @@ describe("reorderLane (Gated v1.1)", () => {
   });
 });
 
-// spec 335 (T3/T4 verification line) — allowedTransitions is what the Mission Control board reads for drag
+// spec 335 (T3/T4 verification line) — allowedTransitions is what the Board reads for drag
 // affordances; this is the parity proof that its answer matches what assertTransition actually enforces, for
 // EVERY status pair (not just the ones the acceptance-scenario tests above happen to exercise).
 describe("allowedTransitions parity with assertTransition", () => {

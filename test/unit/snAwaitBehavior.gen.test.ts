@@ -12,7 +12,7 @@ import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
  *       through the store below).
  *   (2) PERSISTENCE — TaskStore.update sets/round-trips/clears the field; attentionFor derives the attention.
  *   (3) BRIDGE TOOLS — flag_for_human (agent-caller-only, mirrors request_human_approval) + clear_human_flag.
- * The Mission Control render coverage (strip + card highlight) lives in boardModel.test.ts, since App.tsx has
+ * The Board render coverage (strip + card highlight) lives in boardModel.test.ts, since App.tsx has
  * no existing component-render harness in test/unit and boardModel is the pure VM App.tsx renders from.
  */
 

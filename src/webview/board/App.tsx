@@ -4,17 +4,17 @@ import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
 import { compareTasksByPriorityRank } from "../../tasks/nextTask";
-import type { MissionControlVM } from "./messages";
+import type { BoardVM } from "./messages";
 import { applyAwaitingHumanFilter, assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, resolveReorder, isStaleError, shouldShowAwaitingFilterButton, type DragSession } from "./interactions";
 import type { TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
-// spec 335 — Mission Control board. The webview NEVER computes affordances/ordering itself: every column, card
+// spec 335 — Board. The webview NEVER computes affordances/ordering itself: every column, card
 // order, drag legality, and spotlight comes straight out of `boardModel.ts` (pure, shared with tests), fed by
 // the snapshot the host pushes. No optimistic mutation: a card's position/fields only ever change when a fresh
 // snapshot arrives, so "snap back" on a rejected drop is just... nothing moved in the first place.
 
-export interface MissionControlDispatch {
+export interface BoardDispatch {
   updateTask(id: string, patch: TaskUpdateInput): void;
   /** spec 335 (Gated v1.1) — the `resolveReorder` rebalance fallback, routed to `TaskStore.reorderLane`. */
   reorderLane(status: TaskStatus, priority: TaskPriority | undefined, orderedIds: string[], expect: Record<string, string>): void;
@@ -48,9 +48,9 @@ const ALL_AGENTS = "__all__";
 const FLIP_CARD_ANIMATION_MS = 260;
 
 export function App({ vm, lastError, dispatch, pendingTaskId }: {
-  vm?: MissionControlVM;
+  vm?: BoardVM;
   lastError?: TaskErrorEvent;
-  dispatch: MissionControlDispatch;
+  dispatch: BoardDispatch;
   /**
    * t-ac79a7 — the task whose detail route the host has committed but has not finished loading, so
    * the card the user actually clicked acknowledges the click on the spot rather than leaving the

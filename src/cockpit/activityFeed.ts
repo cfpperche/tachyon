@@ -1,6 +1,6 @@
 /**
  * t-610705 (SDD 410 Phase C.2) — the Activity feed's watcher, ported from the retired
- * ActivityPanelManager's private `watch()` method (mirrors the missionVm.ts/taskDetailVm.ts
+ * ActivityPanelManager's private `watch()` method (mirrors the boardVm.ts/taskDetailVm.ts
  * pure-extraction precedent from Phases B/C.1). This module still touches `fs` (the durable
  * per-agent log tail/watch is inherently I/O), so it isn't "pure" the way those two are — but it
  * stays vscode-free and independently testable.

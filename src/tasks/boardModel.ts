@@ -118,7 +118,7 @@ export interface BoardValidationVM {
   candidateTitles: string[];
 }
 
-/** t-1339a8 — one authored "blocked on the human" entry for the Mission Control "Awaiting you" strip. A
+/** t-1339a8 — one authored "blocked on the human" entry for the Board "Awaiting you" strip. A
  *  DIFFERENT signal from Validations (BoardValidationCardVM): this comes straight from `task.awaitingHuman`,
  *  never derived/discovered. */
 export interface BoardAwaitingHumanCardVM {

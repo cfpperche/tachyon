@@ -42,8 +42,8 @@ import {
 } from "./fixtures/cockpit";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskDetailFixtures } from "./fixtures/task-detail";
-import { missionControlFixtures } from "./fixtures/mission-control";
-import { snapshotMessage as missionControlSnapshotMessage } from "../../src/webview/mission-control/messages";
+import { boardFixtures } from "./fixtures/board";
+import { snapshotMessage as boardSnapshotMessage } from "../../src/webview/board/messages";
 import { runtimeOpsFixtures, type RuntimeOpsPreviewState } from "./fixtures/runtime-ops";
 import { humanInboxFixtures, type HumanInboxPreviewState } from "./fixtures/human-inbox";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";
@@ -180,7 +180,7 @@ export const ROUTES: Record<string, Route> = {
   // standalone "approval" route previewed the retired Approvals panel; Approvals is a cockpit-only
   // section now — use ?view=cockpit&fixture=approvals (same App.tsx, same fixture VM, via the
   // cockpit route's section injection above).
-  // t-610705 (SDD 410 Phase B #6) — the standalone "mission-control" route previewed the retired
+  // t-610705 (SDD 410 Phase B #6) — the standalone "board" route previewed the retired
   // Board panel; the Board is a cockpit-only section now — use ?view=cockpit&fixture=mission
   // (same App.tsx, same fixture VM via the cockpit route's board injection below).
   // t-610705 (SDD 410 Phase D, D2) — the standalone "task-studio" route previewed the retired
@@ -293,10 +293,10 @@ export const ROUTES: Record<string, Route> = {
     },
   },
   // SDD 485 C5 — the Board, standalone again, so it gets its own route back for the same reason the task
-  // detail did one commit earlier: this renders the REAL shipped `mission-control.js` with the exact
+  // detail did one commit earlier: this renders the REAL shipped `board.js` with the exact
   // stylesheet list `BoardPanel.ts` links, rather than the same component embedded inside Control.
-  "mission-control": {
-    bundle: "/dist/webview/mission-control.js",
+  "board": {
+    bundle: "/dist/webview/board.js",
     cssLinks: [
       CODICON,
       DESIGN_SYSTEM,
@@ -304,16 +304,16 @@ export const ROUTES: Record<string, Route> = {
       // `.col-body { overflow-y: auto }` scroll per column instead of the whole page.
       "/dist/webview/page-frame.css",
       "/dist/webview/vscode-theme.css",
-      "/dist/webview/mission-control.tailwind.css",
-      "/dist/webview/mission-control.css",
+      "/dist/webview/board.tailwind.css",
+      "/dist/webview/board.css",
     ],
     frame: { w: 1100, h: 720 },
-    fixtures: missionControlFixtures as Record<string, Fixture>,
+    fixtures: boardFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
     module: true,
     // the Board fills its editor tab and scrolls per column — the harness must render a real page frame.
     pageFrame: true,
-    makeMessage: (vm) => missionControlSnapshotMessage(vm as never),
+    makeMessage: (vm) => boardSnapshotMessage(vm as never),
   },
   // SDD 485 D1 — the tmux Server Inspector, standalone again, so it gets its own route back for the same
   // reason the task detail and the Board did: this renders the REAL shipped `inspector.js` with the exact
@@ -499,7 +499,7 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
   "section-app-fixture": { title: "Section app (mechanism proof)", aliases: ["section app", "section panel", "standalone app", "spec 485"] },
-  "mission-control": { title: "Board", aliases: ["board", "mission control", "task board", "kanban"] },
+  "board": { title: "Board", aliases: ["board", "board view", "task board", "kanban"] },
   "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab"] },
   inspector: { title: "tmux", aliases: ["tmux", "server inspector", "tmux server inspector", "sessions"] },
   plugins: { title: "Plugins", aliases: ["plugins", "plugin manager", "install plugin", "marketplace"] },

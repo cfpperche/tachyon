@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { workspaceCommandSuccessV1, workspaceTaskDetailViewSuccessV1 } from "../../src/engine-service/protocol.js";
-import type { MissionControlTaskPatchV1 } from "../../src/runtime-api/missionControlCommands.js";
+import type { BoardTaskPatchV1 } from "../../src/runtime-api/boardCommands.js";
 import type { TaskPrototypeReviewActionV1 } from "../../src/shell/TaskDetailTarget.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { legacyTaskDetailTarget, workspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
@@ -124,7 +124,7 @@ describe("Workspace Task Detail target", () => {
 
     await expect(target.updateTask(
       task.id,
-      { title: "forged broad edit" } as unknown as MissionControlTaskPatchV1,
+      { title: "forged broad edit" } as unknown as BoardTaskPatchV1,
     )).rejects.toThrow(/invalid Task Detail task update/);
     await expect(target.reviewPrototype(task.id, {
       prototypeId: "p-0123456789ab",

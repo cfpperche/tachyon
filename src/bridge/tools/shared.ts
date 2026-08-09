@@ -378,11 +378,11 @@ export interface BridgeDeps {
    * digest binds to; undefined when the name is not a canonical profile agent.
    */
   inspectSavedAgentProfile?: (name: string) => Promise<{ agentId: string; revision: string } | undefined>;
-  /** Fired after any task mutation — wired to the future Mission Control/task view refresh. */
+  /** Fired after any task mutation — wired to the future Board/task view refresh. */
   onTasksChanged?: (event?: { reason: "task-mutated" | "journal-appended"; id?: string }) => void;
   /** Human-facing task mutation event sink. Best-effort; separate from assignee pane notices. */
   onTaskNotificationEvent?: (event: TaskNotificationEvent) => void;
-  /** Fired after any validation mutation — wired to Mission Control refresh. */
+  /** Fired after any validation mutation — wired to Board refresh. */
   onValidationsChanged?: () => void;
   /**
    * t-e76acc — fired when work lands on a HUMAN: a validation created with `executor: "human"`, or

@@ -10,12 +10,12 @@ import { type BridgeDeps, AGENT_NAME, CREATE_TASK_ARTIFACT_REF, EVOLUTION_PROPOS
 
 export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
 
-  // spec 325 — project task queue (Mission Control entity), independent from pins.
+  // spec 325 — project task queue (Board entity), independent from pins.
   mcp.registerTool(
     "create_task",
     {
       description:
-        "Create one bounded, schedulable project Task in the shared Mission Control queue. Tasks are work items, not reminders: " +
+        "Create one bounded, schedulable project Task in the shared Board queue. Tasks are work items, not reminders: " +
         "new tasks land in inbox with no priority/assignee so a human or agent can triage them deliberately. " +
         "Bugs and defects discovered mid-work belong here (kind: 'bug', evidence in the body) — never in pins. " +
         "If a request has four independently shippable slices, create one umbrella Task and explicit follow-up Tasks; " +
@@ -287,7 +287,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         "Flag a Task as blocked on the HUMAN — an authored (never derived) signal distinct from the " +
         "Validations subsystem. Sets Task.awaitingHuman (reason, kind, since=now); TaskStore.attentionFor " +
         "then derives an 'awaiting_human' attention from it, so the board highlights the card via the " +
-        "existing attention rendering and Mission Control's 'Awaiting you' strip lists it. Any status " +
+        "existing attention rendering and Board's 'Awaiting you' strip lists it. Any status " +
         "transition on this task clears the flag automatically — a task that advances is no longer " +
         "waiting. Agent-authenticated callers only (mirrors request_human_approval): only the coordinator " +
         "that actually hit the block should author this, never a relayed/self-declared claim.",
@@ -425,7 +425,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
     "list_tasks",
     {
       description:
-        "List bounded Task summaries for Mission Control. Omits body by default; use get_task for one full task. " +
+        "List bounded Task summaries for Board. Omits body by default; use get_task for one full task. " +
         "Surfaces actionable work first (active > triaged > inbox > landed > done > dropped) so the default " +
         "cap never silently truncates the queue an orchestrator needs; pass status to filter to one lane. " +
         "fields:\"compact\" (t-ee0a19) returns only id/status/priority/kind/title/assignee/deps for board sweeps — " +
@@ -484,6 +484,6 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   // t-a4ac02 — Bridge tool `next_task` removed. The pure function nextTask() in src/tasks/nextTask.ts
-  // still computes Mission Control spotlight via boardSnapshot; agents claim work through
+  // still computes Board spotlight via boardSnapshot; agents claim work through
   // spawn_agent(claim_task:) or update_task CAS, not an advisory pull tool.
 }

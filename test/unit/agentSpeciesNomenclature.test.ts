@@ -168,7 +168,7 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
         "scripts/webview-preview/fixtures/cockpit.ts",
         "test/unit/boardModel.test.ts",
         "test/unit/harness.test.ts",
-        "test/unit/missionVm.test.ts",
+        "test/unit/boardVm.test.ts",
       ],
     },
     {

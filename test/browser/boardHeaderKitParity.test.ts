@@ -7,19 +7,19 @@ import { openPreview } from "./support/preview";
 // t-6da5f0 — maintainer dogfood (screenshot, 0.55.14): the board header's search input, "All agents" select,
 // and +Task/Dropped buttons render at visibly different heights on the SAME row. kitLegacyParity.test.ts
 // already proves KitSelect's OWN box model matches `.ds-input` in the abstract (a synthetic ui-gate page);
-// this drives the REAL shipped bundle + mission-control.css instead, the same way pilotBTaskStudio.test.ts's
+// this drives the REAL shipped bundle + board.css instead, the same way pilotBTaskStudio.test.ts's
 // dogfood-round-2 (#1) test proves a REAL row's parity, not just an isolated trigger — the bug here was
-// entirely in mission-control.css's own overrides (`.board-search`'s split outer/inner padding, `.ds-btn`'s
+// entirely in board.css's own overrides (`.board-search`'s split outer/inner padding, `.ds-btn`'s
 // shorter padding token), which a page that never links that stylesheet can't catch.
 //
 // t-c55f8d (2026-08-01) replaced this test's hand-rolled host page with the preview harness, because the
 // board had stopped shipping its own bundle and the page 404'd on the script.
-// SDD 485 C5 (2026-08-03): `dist/webview/mission-control.js` is back — the Board is a standalone app again —
+// SDD 485 C5 (2026-08-03): `dist/webview/board.js` is back — the Board is a standalone app again —
 // so the harness route is the board's OWN route rather than Control with the board embedded. Same component,
 // same stylesheet set, same catalog VM; what changed is that the page measured is now the page that ships.
-async function loadMissionControl(page: Page, origin: string): Promise<Frame> {
+async function loadBoard(page: Page, origin: string): Promise<Frame> {
   return openPreview(page, origin, {
-    query: { view: "mission-control", fixture: "default" },
+    query: { view: "board", fixture: "default" },
     width: 1100,
     height: 760,
     waitFor: ".mc-head",
@@ -42,7 +42,7 @@ describe("Board header: Kit vs legacy box-model parity on the real bundle (t-6da
 
   it("search box, agent-filter KitSelect, and the +Task/Dropped buttons all compute the same height + baseline", async () => {
     const page = await browser.newPage();
-    const surface = await loadMissionControl(page, server.origin);
+    const surface = await loadBoard(page, server.origin);
 
     const boxOf = (selector: string) =>
       surface.$eval(selector, (el) => {

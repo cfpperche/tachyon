@@ -169,14 +169,14 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // rendering one screen is what `spec.md` forbids, not two panels.
   //
   // `conform`, and the contract checks that rather than trusting this sentence: it mounts through the shared
-  // shell (via SectionPanelManager), links design-system.css, and mission-control.css styles neither the page
+  // shell (via SectionPanelManager), links design-system.css, and board.css styles neither the page
   // frame nor the `--ds-*` scale — t-e085bc had already deleted its `html, body` rules, which is why the
   // migration cost Phase A's open question priced for this section came out at zero.
   //
-  // The legacy "tachyonMissionControl" viewType is NOT this row: it stays a serializer-only redirect in
+  // The retired Board viewType is NOT this row: it stays a serializer-only redirect in
   // extension.ts (a revived pre-410 panel disposes itself and opens THIS app for its persisted workspace),
   // which is why the new panel needed a viewType of its own.
-  { viewId: "tachyonBoard", view: "mission-control", hostFile: "src/webview/BoardPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  { viewId: "tachyonBoard", view: "board", hostFile: "src/webview/BoardPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // SDD 485 C4 (2026-08-03) — Task Detail is a STANDALONE APP again, and this row is the reversal of
   // 410 Phase C.1's retirement (which had made it a Control subroute). It is the `document` kind: one
   // panel per identity, so two task details stand side by side and neither is retargeted by the project

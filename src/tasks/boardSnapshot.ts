@@ -6,7 +6,7 @@ import { validationSummary, type ValidationSummary, type ValidationStore } from 
 import type { ValidationCandidate } from "../validations/types.js";
 import { TaskDetailStore } from "./TaskDetailStore.js";
 
-/** spec 335 — one chip in the Mission Control header: a declared agent, the `human` queue, or a relevant
+/** spec 335 — one chip in the Board header: a declared agent, the `human` queue, or a relevant
  *  Temporary instance (live, or still owning open work). */
 export type BoardChipSource = "declared" | "human" | "assignee";
 
@@ -16,7 +16,7 @@ export interface BoardChip {
   next: NextTaskResult;
 }
 
-/** spec 335 — the board snapshot contract: one engine-side pass producing everything a Mission Control push
+/** spec 335 — the board snapshot contract: one engine-side pass producing everything a Board push
  *  needs, so every card/chip/spotlight in one push reflects a single consistent filesystem view (dueto F4). */
 export interface BoardSnapshot {
   views: TaskView[];

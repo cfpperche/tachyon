@@ -3,7 +3,7 @@ import net from "node:net";
 import {
   EXTENSION_OPERATION_RESPONSE_MAX_BYTES,
   HANDOFF_VIEW_RESPONSE_MAX_BYTES,
-  MISSION_CONTROL_RESPONSE_MAX_BYTES,
+  BOARD_RESPONSE_MAX_BYTES,
   PIN_STUDIO_RESPONSE_MAX_BYTES,
   RUNTIME_OPS_VIEW_RESPONSE_MAX_BYTES,
   SIDEBAR_VIEW_RESPONSE_MAX_BYTES,
@@ -380,7 +380,7 @@ export function requestEngineControl(
     }
     const maxResponseBytes = request.op === "query"
       ? request.query.method === "task.board"
-        ? MISSION_CONTROL_RESPONSE_MAX_BYTES
+        ? BOARD_RESPONSE_MAX_BYTES
         : request.query.method === "task.detail"
           ? TASK_DETAIL_RESPONSE_MAX_BYTES
           : request.query.method === "task.studio"

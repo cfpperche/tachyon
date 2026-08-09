@@ -12,7 +12,7 @@ Humans already run Tachyon as a **local fleet** (engine + Bridge + VS Code Contr
 - Answer a short prompt or approve something without opening the laptop
 - Confirm the workspace is still paired and healthy
 
-**Job to be done (v1):** a **phone-reachable, local-first shell** that observes and lightly acts on the **same engine** that Control uses — not a second orchestrator, not Mission Control cloud, not a browser-tab automation client.
+**Job to be done (v1):** a **phone-reachable, local-first shell** that observes and lightly acts on the **same engine** that Control uses — not a second orchestrator, not Board cloud, not a browser-tab automation client.
 
 **Primary user:** maintainer / power user on the same LAN (or equivalent tunnel) as the machine running the engine.
 
@@ -151,7 +151,7 @@ Phone is high-risk if it can dump terminals or run arbitrary host actions. **Fai
 
 - Cloud account, multi-user SaaS, Orca parity
 - `t-784bc8` Runtime API unificação
-- Replacing Control / Mission Control
+- Replacing Control / Board
 - Native store apps
 - Browser tab automation from phone
 - Full terminal multiplex on phone

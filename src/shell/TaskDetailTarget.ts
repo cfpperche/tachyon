@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
-  isMissionControlTaskUpdateInputV1,
-  type MissionControlTaskPatchV1,
-} from "../runtime-api/missionControlCommands.js";
+  isBoardTaskUpdateInputV1,
+  type BoardTaskPatchV1,
+} from "../runtime-api/boardCommands.js";
 import {
   isTaskPrototypeReviewInputV1,
   type TaskPrototypeReviewInputV1,
@@ -24,7 +24,7 @@ export type TaskPrototypeReviewActionV1 = Omit<TaskPrototypeReviewInputV1, "task
 
 export interface WorkspaceTaskDetailTarget extends WorkspacePresentationTarget {
   loadTaskDetail(id: string): Promise<TaskDetailProjectionV1>;
-  updateTask(id: string, patch: MissionControlTaskPatchV1): Promise<void>;
+  updateTask(id: string, patch: BoardTaskPatchV1): Promise<void>;
   reviewPrototype(taskId: string, input: TaskPrototypeReviewActionV1): Promise<void>;
   attachmentBlobRoot(taskId: string): string;
   /** t-4d59d3 — the stable per-workspace parent of every task's blob dir, granted once at panel creation. */
@@ -89,8 +89,8 @@ export function workspaceTaskDetailTarget(client: WorkspaceClient): WorkspaceTas
   };
 }
 
-function assertTaskDetailUpdate(id: string, patch: MissionControlTaskPatchV1): void {
-  if (!isMissionControlTaskUpdateInputV1({ id, patch })) {
+function assertTaskDetailUpdate(id: string, patch: BoardTaskPatchV1): void {
+  if (!isBoardTaskUpdateInputV1({ id, patch })) {
     throw new Error("invalid Task Detail task update");
   }
 }

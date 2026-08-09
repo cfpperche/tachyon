@@ -36,12 +36,12 @@ describe("spec 280 — migrated-panel shell parity", () => {
     expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/plugins.css"]);
   });
 
-  // spec 335 (dueto F9) — Mission Control + Task Detail use the SAME strictest house CSP posture as every other
+  // spec 335 (dueto F9) — Board + Task Detail use the SAME strictest house CSP posture as every other
   // migrated panel: nonce'd local bundles only, no inline script, no external network, img-src local/data only.
-  it("mission-control: standard CSP (no relaxation) + codicon→design-system→mission-control.css order", () => {
-    const html = renderWebviewShell(opts({ styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mission-control.css"], bundle: "/dist/webview/mission-control.js" }));
+  it("board: standard CSP (no relaxation) + codicon→design-system→board.css order", () => {
+    const html = renderWebviewShell(opts({ styles: ["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/board.css"], bundle: "/dist/webview/board.js" }));
     expect(parseShellCsp(html)).toEqual(STANDARD);
-    expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/mission-control.css"]);
+    expect(linkOrder(html)).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/board.css"]);
   });
 
   it("task-detail: standard CSP (no relaxation) + codicon→design-system→mermaid-block→task-detail.css order", () => {

@@ -135,8 +135,8 @@ describe("Button icon+label DOM shape (t-240a3b)", () => {
     expect((label!.props.children as unknown[]).join("")).toBe("#sometag");
   });
 
-  it("a leading literal <Icon/> followed by its own <span> label (mission-control/App.tsx more-item pattern) leaves both as direct siblings", () => {
-    // mirrors src/webview/mission-control/App.tsx:680 — <Button><Icon name={a.icon} /><span>{a.label}</span></Button>
+  it("a leading literal <Icon/> followed by its own <span> label (board/App.tsx more-item pattern) leaves both as direct siblings", () => {
+    // mirrors src/webview/board/App.tsx:680 — <Button><Icon name={a.icon} /><span>{a.label}</span></Button>
     const vnode = Button({
       class: "more-item",
       children: [{ type: Icon, props: { name: "check" } }, { type: "span", props: { children: "Do the thing" } }],

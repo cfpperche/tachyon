@@ -1272,9 +1272,9 @@
     ]
   },
   {
-    "view": "mission-control",
+    "view": "board",
     "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=mission-control&fixture=default",
+    "url": "/scripts/webview-preview/index.html?view=board&fixture=default",
     "frame": {
       "w": 1100,
       "h": 720
@@ -1285,15 +1285,15 @@
     "title": "Board",
     "aliases": [
       "board",
-      "mission control",
+      "board view",
       "task board",
       "kanban"
     ]
   },
   {
-    "view": "mission-control",
+    "view": "board",
     "fixture": "volume",
-    "url": "/scripts/webview-preview/index.html?view=mission-control&fixture=volume",
+    "url": "/scripts/webview-preview/index.html?view=board&fixture=volume",
     "frame": {
       "w": 1100,
       "h": 720
@@ -1304,7 +1304,7 @@
     "title": "Board",
     "aliases": [
       "board",
-      "mission control",
+      "board view",
       "task board",
       "kanban"
     ]

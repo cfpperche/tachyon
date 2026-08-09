@@ -6,15 +6,15 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 import { openPreview } from "./support/preview";
 
 // t-c55f8d (2026-08-01) replaced this test's hand-rolled host page with the preview harness, after the board
-// stopped shipping its own `dist/webview/mission-control.js` and the page rendered empty on a 404'd script.
+// stopped shipping its own `dist/webview/board.js` and the page rendered empty on a 404'd script.
 // SDD 485 C5 (2026-08-03): that bundle exists again — the Board is a standalone app — so the route is the
-// board's own, pushing the SAME missionControlFixtures.default VM through the same shared envelope.
+// board's own, pushing the SAME boardFixtures.default VM through the same shared envelope.
 // `width`/`height` size the preview frame to the viewport, so the lane-width and board-scroller
 // measurements below still measure what they measured before. t-b24282 — that frame is an iframe now, so
 // the board's DOM lives in the returned surface frame; the browser viewport is only what a screenshot sees.
 async function loadBoard(page: Page, origin: string, frame: { width: number; height: number }): Promise<Frame> {
   return openPreview(page, origin, {
-    query: { view: "mission-control", fixture: "default" },
+    query: { view: "board", fixture: "default" },
     width: frame.width,
     height: frame.height,
     waitFor: '[data-card-id="t-82f870"]',

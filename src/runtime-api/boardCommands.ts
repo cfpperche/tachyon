@@ -8,7 +8,7 @@ import {
 } from "../tasks/types.js";
 import { isValidationOutcome, VALIDATION_ID_RE, type ValidationOutcome } from "../validations/types.js";
 
-export interface MissionControlTaskPatchV1 {
+export interface BoardTaskPatchV1 {
   status?: TaskStatus;
   priority?: TaskPriority | null;
   rank?: string | null;
@@ -16,25 +16,25 @@ export interface MissionControlTaskPatchV1 {
   expect?: TaskUpdateExpect;
 }
 
-export interface MissionControlTaskUpdateInputV1 {
+export interface BoardTaskUpdateInputV1 {
   id: string;
-  patch: MissionControlTaskPatchV1;
+  patch: BoardTaskPatchV1;
 }
 
-export interface MissionControlTaskReorderInputV1 {
+export interface BoardTaskReorderInputV1 {
   status: TaskStatus;
   priority?: TaskPriority;
   orderedIds: string[];
   expect: Record<string, string>;
 }
 
-export interface MissionControlValidationCloseInputV1 {
+export interface BoardValidationCloseInputV1 {
   id: string;
   outcome: ValidationOutcome;
   result_note: string;
 }
 
-export interface MissionControlValidationAssignInputV1 {
+export interface BoardValidationAssignInputV1 {
   id: string;
   assignee: string;
   expect?: { assignee?: string | null; updatedAt?: string };
@@ -44,7 +44,7 @@ const TASK_PATCH_KEYS = [
   "status", "priority", "rank", "assignee", "expect",
 ] as const;
 
-export function isMissionControlTaskUpdateInputV1(value: unknown): value is MissionControlTaskUpdateInputV1 {
+export function isBoardTaskUpdateInputV1(value: unknown): value is BoardTaskUpdateInputV1 {
   if (!isRecord(value) || !hasOnlyKeys(value, ["id", "patch"])
     || typeof value.id !== "string" || !TASK_ID_RE.test(value.id)
     || !isRecord(value.patch)) return false;
@@ -58,7 +58,7 @@ export function isMissionControlTaskUpdateInputV1(value: unknown): value is Miss
   return patch.expect === undefined || isTaskUpdateExpect(patch.expect);
 }
 
-export function isMissionControlTaskReorderInputV1(value: unknown): value is MissionControlTaskReorderInputV1 {
+export function isBoardTaskReorderInputV1(value: unknown): value is BoardTaskReorderInputV1 {
   if (!isRecord(value)) return false;
   const expected = ["status", "orderedIds", "expect"];
   if (value.priority !== undefined) expected.push("priority");
@@ -73,7 +73,7 @@ export function isMissionControlTaskReorderInputV1(value: unknown): value is Mis
     && expectationKeys.every((id) => ids.includes(id) && isTimestamp(expectations[id]));
 }
 
-export function isMissionControlValidationCloseInputV1(value: unknown): value is MissionControlValidationCloseInputV1 {
+export function isBoardValidationCloseInputV1(value: unknown): value is BoardValidationCloseInputV1 {
   return isRecord(value)
     && hasOnlyKeys(value, ["id", "outcome", "result_note"])
     && typeof value.id === "string"
@@ -82,7 +82,7 @@ export function isMissionControlValidationCloseInputV1(value: unknown): value is
     && boundedText(value.result_note, 1, 4_000);
 }
 
-export function isMissionControlValidationAssignInputV1(value: unknown): value is MissionControlValidationAssignInputV1 {
+export function isBoardValidationAssignInputV1(value: unknown): value is BoardValidationAssignInputV1 {
   if (!isRecord(value)) return false;
   const expected = ["id", "assignee"];
   if (value.expect !== undefined) expected.push("expect");
