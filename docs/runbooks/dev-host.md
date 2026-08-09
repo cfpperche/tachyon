@@ -436,6 +436,15 @@ secondary (scripted / non-F5); headless remains the automated Xvfb path.
 Open VS Code on the **checkout containing the feature under test**. The Dev Host belongs to that
 checkout; there is no shared monorepo pointer to select.
 
+Arm the Dev Host from the same checkout where you will press F5. Before launching, verify that
+`.tachyon/dev-host/extension` resolves to that checkout (or a path inside it); a pointer resolving
+outside the F5 checkout is not correctly armed for that window.
+
+Recorded observation: arming from the primary checkout while targeting a linked worktree produced
+an `extension` symlink into `/home/goat/.cache/tachyon/worktrees/...`, and F5 opened a Windows-side
+window with an empty sidebar. Re-arming from inside the linked worktree worked. This records the
+observed boundary; it does not assert an unmeasured mechanism for the different outcomes.
+
 ```bash
 # Optional: scaffold a fixture (intent focus = stopped OK; metrics = autostart loops)
 npm run dogfood -- dev-host -- fixture-new --slug my-feature --spec 393 --intent focus \
