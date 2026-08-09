@@ -94,7 +94,8 @@ describe("landSuggestion", () => {
 /** A git that answers by argument list, so a case can make one probe fail without touching the rest. */
 function git(over: Record<string, { code?: number; stdout?: string }> = {}): GitExec {
   return async (args: string[], cwd: string) => {
-    const key = args[0] === "rev-parse" && args.includes("--git-common-dir") ? "common-dir"
+    const key = args[0] === "cat-file" ? "record"
+      : args[0] === "rev-parse" && args.includes("--git-common-dir") ? "common-dir"
       : args[0] === "rev-parse" && args.includes("--abbrev-ref") ? (cwd === "/wt" ? "branch" : "primary-branch")
         : args[0] === "rev-parse" && args[1] === `${HEAD}^{tree}` ? "tree"
           : args[0] === "rev-parse" ? "head"
@@ -106,6 +107,7 @@ function git(over: Record<string, { code?: number; stdout?: string }> = {}): Git
       "common-dir": "/repo/.git",
       head: HEAD,
       tree: TREE,
+      record: JSON.stringify({ schema: 2, tree: TREE, at: new Date().toISOString(), fingerprint: "f".repeat(64) }),
       branch: "tachyon/change/fleet-ui",
       "primary-branch": "main",
       ancestor: "",
@@ -125,8 +127,7 @@ const currentRecord = () => JSON.stringify({
 
 async function expectVerificationRecordToBlockLanding(recordBody: Record<string, unknown>): Promise<void> {
   const out = await probeLandSuggestion({
-    git: git(), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2,
-    readFile: () => JSON.stringify(recordBody),
+    git: git({ record: { stdout: JSON.stringify(recordBody) } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2,
   });
   expect(out.checks.find((c) => c.id === "verified-tree")!.ok).toBe(false);
   expect(out.command).toBeUndefined();
@@ -170,8 +171,7 @@ describe("probeLandSuggestion", () => {
 
   it("an absent verification record blocks the landing instead of being skipped", async () => {
     const out = await probeLandSuggestion({
-      git: git(), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2,
-      readFile: () => { throw new Error("ENOENT"); },
+      git: git({ record: { code: 1 } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2,
     });
     expect(out.command).toBeUndefined();
     expect(out.checks.find((c) => c.id === "verified-tree")!.ok).toBe(false);
@@ -215,7 +215,7 @@ describe("probePrimaryCheckout", () => {
     }
     // Three rows, and not one of them re-read the primary checkout's branch or status.
     expect(calls.slice(before).filter((a) => a[0] === "status")).toEqual([]);
-    expect(calls.slice(before).filter((a) => a.includes("--git-common-dir")).length).toBe(3); // the record reader's own, per worktree
+    expect(calls.slice(before).filter((a) => a[0] === "cat-file").length).toBe(3); // the record reader's own, per worktree
   });
 
   it("a detached primary is unknown, not a branch named HEAD", async () => {

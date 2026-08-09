@@ -3,9 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { readVerificationRecord } from "../../src/workspace/verifyRecordReader.js";
+import type { GitExec } from "../../src/worktree/WorktreeManager.js";
 // The verification runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- exercising the real recorder the verify path uses is the point.
-import { recordVerification, readRecord, verifiableTree, treeOf, recordDir } from "../../scripts/verify-record.mjs";
+import { recordVerification, readRecord, verifiableTree, treeOf } from "../../scripts/verify-record.mjs";
 
 /**
  * t-47cc91 — the record answers "was THIS content verified?", which is what
@@ -34,6 +36,14 @@ function repo(): string {
   return dir;
 }
 const sh = (args: string[], cwd: string) => execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" }).trim();
+const gitExec: GitExec = async (args, cwd) => {
+  try {
+    return { code: 0, stdout: execFileSync("git", args, { cwd, env: ENV, encoding: "utf8" }), stderr: "" };
+  } catch (error) {
+    const result = error as { status?: number; stdout?: string; stderr?: string };
+    return { code: result.status ?? 1, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
+  }
+};
 
 describe.skipIf(!gitOk())("verification record (t-47cc91)", () => {
   it("files a green under the tree it covered, and finds it again", () => {
@@ -42,7 +52,32 @@ describe.skipIf(!gitOk())("verification record (t-47cc91)", () => {
     expect(r.recorded).toBe(true);
     const tree = sh(["rev-parse", "HEAD^{tree}"], cwd);
     expect(r.record.tree).toBe(tree);
+    expect(execFileSync("git", ["cat-file", "blob", r.ref], { cwd, env: ENV, encoding: "utf8" }))
+      .toBe(`${JSON.stringify(r.record, null, 2)}\n`);
     expect(readRecord(tree, cwd)).toMatchObject({ tree, command: "verify:full" });
+  });
+
+  it("publishes a record that the host reader reads through the git ref, without a file fallback", async () => {
+    const cwd = repo();
+    const wt = path.join(cwd, "..", `reader-wt-${path.basename(cwd)}`);
+    dirs.push(wt);
+    execFileSync("git", ["worktree", "add", "-q", "-b", "reader-topic", wt], { cwd, env: ENV });
+    const published = recordVerification({
+      cwd: wt,
+      command: "verify:full",
+      fingerprint: "f".repeat(64),
+      now: () => new Date("2026-08-09T00:00:00.000Z"),
+    });
+    expect(published.recorded).toBe(true);
+    const legacyDir = sh(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
+    fs.rmSync(path.join(legacyDir, "tachyon-verify"), { recursive: true, force: true });
+    await expect(readVerificationRecord(
+      cwd,
+      "HEAD",
+      gitExec,
+      undefined,
+      () => Date.parse("2026-08-09T01:00:00.000Z"),
+    )).resolves.toMatchObject({ tree: published.record.tree, command: "verify:full" });
   });
 
   it("keys by TREE, so an amended commit with identical content is already verified", () => {
@@ -83,24 +118,46 @@ describe.skipIf(!gitOk())("verification record (t-47cc91)", () => {
     const wt = path.join(cwd, "..", `wt-${path.basename(cwd)}`);
     dirs.push(wt);
     execFileSync("git", ["worktree", "add", "-q", "-b", "topic", wt], { cwd, env: ENV });
-    expect(recordDir(wt)).toBe(recordDir(cwd));
     const r = recordVerification({ cwd: wt });
     expect(r.recorded).toBe(true);
     expect(readRecord(r.record.tree, cwd)).toBeTruthy(); // readable from the primary checkout
   });
 
+  it("keeps a blob-valued verification ref alive through gc and a git push", () => {
+    const cwd = repo();
+    const remote = fs.mkdtempSync(path.join(os.tmpdir(), "verify-record-remote-"));
+    dirs.push(remote);
+    execFileSync("git", ["init", "-q", "--bare"], { cwd: remote, env: ENV });
+    const published = recordVerification({ cwd, fingerprint: "f".repeat(64) });
+    const ref = `refs/tachyon/verify/${published.record.tree}`;
+    const beforeGc = sh(["rev-parse", ref], cwd);
+
+    execFileSync("git", ["gc", "--prune=now"], { cwd, env: ENV });
+    expect(sh(["rev-parse", ref], cwd)).toBe(beforeGc);
+    expect(sh(["cat-file", "-t", ref], cwd)).toBe("blob");
+
+    execFileSync("git", ["push", remote, `${ref}:${ref}`], { cwd, env: ENV });
+    expect(sh([`--git-dir=${remote}`, "rev-parse", ref], cwd)).toBe(beforeGc);
+    expect(sh([`--git-dir=${remote}`, "cat-file", "-t", ref], cwd)).toBe("blob");
+  });
+
   it("treats a malformed record as absent — a proof that cannot be read is not a proof", () => {
     const cwd = repo();
     const r = recordVerification({ cwd });
-    fs.writeFileSync(path.join(recordDir(cwd), `${r.record.tree}.json`), "{ not json");
+    const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], {
+      cwd, env: ENV, input: "{ not json", encoding: "utf8",
+    }).trim();
+    expect(blob).toMatch(/^[0-9a-f]{40}$/);
+    sh(["update-ref", `refs/tachyon/verify/${r.record.tree}`, blob], cwd);
     expect(readRecord(r.record.tree, cwd)).toBeUndefined();
   });
 
-  it("treats a record whose tree does not match its filename as absent", () => {
+  it("treats a record whose tree does not match its ref name as absent", () => {
     const cwd = repo();
     const r = recordVerification({ cwd });
-    const file = path.join(recordDir(cwd), `${r.record.tree}.json`);
-    fs.writeFileSync(file, JSON.stringify({ schema: 1, tree: "0".repeat(40), at: "now" }));
+    const mismatched = JSON.stringify({ schema: 1, tree: "0".repeat(40), at: "now" });
+    const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd, env: ENV, input: mismatched, encoding: "utf8" }).trim();
+    sh(["update-ref", `refs/tachyon/verify/${r.record.tree}`, blob], cwd);
     expect(readRecord(r.record.tree, cwd)).toBeUndefined();
   });
 });

@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 // The verification runner is intentionally plain ESM and has no separate declaration surface — same
 // convention as verifyRecord.test.ts. Exercising the real recorder the verify path uses is the point.
 // @ts-expect-error -- see above
-import { DEFAULT_MAX_RECORD_AGE_MS, readRecord, recordVerification, recordDir, reuseDecision, verifierFingerprint } from "../../scripts/verify-record.mjs";
+import { DEFAULT_MAX_RECORD_AGE_MS, readRecord, recordVerification, reuseDecision, verifierFingerprint } from "../../scripts/verify-record.mjs";
 
 /** A throwaway git repo with one commit, so tree ids are real rather than invented. */
 function repo(): { dir: string; tree: string; commit: (msg: string, file: string, body: string) => string } {
@@ -40,6 +40,11 @@ function repo(): { dir: string; tree: string; commit: (msg: string, file: string
 }
 
 const FP = verifierFingerprint({ command: "verify:full", gates: ["typecheck"] }).fingerprint;
+
+function writeRecordBlob(dir: string, tree: string, raw: string): void {
+  const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: dir, input: raw, encoding: "utf8" }).trim();
+  execFileSync("git", ["update-ref", `refs/tachyon/verify/${tree}`, blob], { cwd: dir });
+}
 
 describe("t-5d0e9d — an exact-tree green is reusable", () => {
   it("reuses a fresh record for the same tree, same verifier", () => {
@@ -101,7 +106,7 @@ describe("t-5d0e9d — everything else re-runs", () => {
     const { dir, tree } = repo();
     try {
       recordVerification({ cwd: dir, command: "verify:full", fingerprint: FP, summary: "green" });
-      fs.writeFileSync(path.join(recordDir(dir), `${tree}.json`), "{ not json");
+      writeRecordBlob(dir, tree, "{ not json");
       expect(readRecord(tree, dir)).toBeUndefined();
       expect(reuseDecision({ tree, fingerprint: FP, cwd: dir }).reuse).toBe(false);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
@@ -112,9 +117,8 @@ describe("t-5d0e9d — everything else re-runs", () => {
     const { dir, tree } = repo();
     try {
       recordVerification({ cwd: dir, command: "verify:full", fingerprint: FP, summary: "green" });
-      const file = path.join(recordDir(dir), `${tree}.json`);
-      const rec = JSON.parse(fs.readFileSync(file, "utf8"));
-      fs.writeFileSync(file, JSON.stringify({ ...rec, tree: "0".repeat(40) }));
+      const rec = readRecord(tree, dir);
+      writeRecordBlob(dir, tree, JSON.stringify({ ...rec, tree: "0".repeat(40) }));
       expect(reuseDecision({ tree, fingerprint: FP, cwd: dir }).reuse).toBe(false);
     } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   });
@@ -138,9 +142,7 @@ describe("t-5d0e9d — everything else re-runs", () => {
     // Reusing one would be assuming the answer to the exact question fingerprinting was added to ask.
     const { dir, tree } = repo();
     try {
-      const dirPath = recordDir(dir);
-      fs.mkdirSync(dirPath, { recursive: true });
-      fs.writeFileSync(path.join(dirPath, `${tree}.json`), JSON.stringify({ schema: 1, tree, at: new Date().toISOString() }));
+      writeRecordBlob(dir, tree, JSON.stringify({ schema: 1, tree, at: new Date().toISOString() }));
       const decision = reuseDecision({ tree, fingerprint: FP, cwd: dir });
       expect(decision.reuse).toBe(false);
       expect(decision.reason).toMatch(/predates verifier fingerprinting/);
