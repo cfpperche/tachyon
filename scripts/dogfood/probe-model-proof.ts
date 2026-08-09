@@ -10,7 +10,7 @@
  *   probe-66c1e789 / probe-42744006 — asked claude-opus-5, modelUsage proved claude-haiku-4-5
  *   probe-77505e6b — asked claude-opus-5, completed at $0.2126, recorded no model at all
  *
- * Run: npm run dogfood -- probe-model-proof
+ * Run: node scripts/dogfood/run.mjs probe-model-proof
  */
 import fs from "node:fs";
 import os from "node:os";

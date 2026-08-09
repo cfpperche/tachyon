@@ -10,7 +10,7 @@ _Created 2026-07-03._
      placeholders, and missing dogfood proof or opt-out). -->
 
 **Verify:** `npm test -- test/unit/webviewPreviewRoutes.test.ts test/unit/webviewPreviewCatalog.test.ts && npm run typecheck && npm run build`
-**Dogfood:** `npm run preview:webview`
+**Dogfood:** `node scripts/webview-preview/serve.mjs`
 
 ## Intent
 

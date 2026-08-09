@@ -13,7 +13,7 @@ Migration done: 583M of orphan slots reclaimed from the primary and its `launch.
 
 **Verify:** `npm run typecheck`
 **Verify:** `npx vitest run test/unit/devHostPointer.test.ts test/unit/devHostBoundary.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts`
-**Dogfood:** `npm run dogfood -- dev-host -- point --fixture agent-soul-dogfood && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear`
+**Dogfood:** `scripts/dev-host/cli.sh point --fixture agent-soul-dogfood && scripts/dev-host/cli.sh point-status && scripts/dev-host/cli.sh point-clear`
 
 ## Intent
 

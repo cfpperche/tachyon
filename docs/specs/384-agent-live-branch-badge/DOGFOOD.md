@@ -34,7 +34,7 @@ Se F5 falhar de novo com “not armed”, re-arme **no monorepo**:
 
 ```bash
 cd /home/goat/tachyon
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --worktree /home/goat/tachyon-worktrees/t-c64647-agent-live-branch \
   --workspace /tmp/tachyon-dev-host/live-branch-384/workspace \
   --spec 384 --slug agent-live-branch-badge
@@ -90,8 +90,8 @@ Badge de branch deve ser **sempre o primeiro** da lista de badges da row.
 # 1) Fechar a janela [Extension Development Host]
 cd /home/goat/tachyon
 export TACHYON_DEV_HOST_ID=live-branch-384
-npm run dogfood -- dev-host -- clean
-npm run dogfood -- dev-host -- point-clear
+scripts/dev-host/cli.sh clean
+scripts/dev-host/cli.sh point-clear
 # se a lane ainda estiver com o agent:
 # node scripts/dev-host/lane.mjs release --owner grok
 ```

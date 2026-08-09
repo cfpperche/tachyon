@@ -8,14 +8,14 @@ first three already held everywhere), Grok effective-model extraction from its m
 so Grok leaves SDD 473's unproven exemption, the Codex absence recorded as measured and filed as
 `t-a10d31`, and a registry guard that fails any adapter which neither declares
 `reportsEffectiveModel` nor carries a reasoned exemption. Evidence: `npm run verify:full:quiet`
-(519 files, 5833 tests) and `npm run dogfood -- probe-provenance-parity` (6/6).
+(519 files, 5833 tests) and `node scripts/dogfood/run.mjs probe-provenance-parity` (6/6).
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
 **Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- probe-provenance-parity`
+**Dogfood:** `node scripts/dogfood/run.mjs probe-provenance-parity`
 
 ## Intent
 

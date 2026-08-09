@@ -13,7 +13,7 @@
  * the private home preserves the person's status line instead of blanking it. The rest of the
  * 0.56.109 key list is unchanged and still has to stay opaque.
  *
- * Run: npm run dogfood -- claude-canonical-create
+ * Run: node scripts/dogfood/run.mjs claude-canonical-create
  */
 import crypto from "node:crypto";
 import fs from "node:fs";

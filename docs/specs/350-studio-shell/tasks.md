@@ -47,7 +47,7 @@ pipeline-studio preview route behind the dev flag, checking the chrome matches T
 
 - [x] Evidence: agent-browser captures of the pipeline fake's 7 stateful scenarios (clean/dirty/validation-
   blocked/save-pending/stale-conflict/load-error/domain-action) + both agent fixture variants (default/new),
-  captured 2026-07-04 against the dev preview harness (`npm run preview:webview`). Saved locally under
+  captured 2026-07-04 against the dev preview harness (`node scripts/webview-preview/serve.mjs`). Saved locally under
   `.tachyon/evidence/spec350/` (gitignored; not shipped, dev-only artifacts).
 - [x] Verdict: PASS. Chrome is consistent across both fakes and matches the existing dark VS Code theme
   language (mono title, bordered `.ds-input` fields, right-aligned Cancel/Save) — the "one chrome" bar from

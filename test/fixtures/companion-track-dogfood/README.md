@@ -29,7 +29,7 @@ git add test/fixtures/companion-track-dogfood/tachyon.yml test/fixtures/companio
 
 ```bash
 # from monorepo:
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --worktree <worktree-or-repo> \
   --fixture companion-track \
   --spec 414 --slug companion-track

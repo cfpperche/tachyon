@@ -104,7 +104,7 @@ Cada item mapeia para um critério de `spec.md` § 5.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood -- planner`
+**Dogfood:** `node scripts/dogfood/run.mjs planner`
 
 Cenário novo no runner existente (`scripts/dogfood/run.mjs`) — não um script de pacote avulso. Deve
 exercitar, sem humano: criar plano e entrada pela porta Bridge; recusa de sobreposição nomeando o

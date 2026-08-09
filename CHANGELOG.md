@@ -42,8 +42,8 @@ the product, with the land block open on screen the whole time.
 ### Fixed
 
 - **The tooling stopped teaching a command that does not exist** (`t-5a9544`).
-  `npm run dogfood -- dev-host -- <cmd>` answered `unknown command '--'`. `t-6e2e44` had consolidated
-  the dogfood surface on 2026-07-30, and the separator that used to belong to npm became a literal
+  The former npm indirection for Dev Host passed a leading separator, so the CLI answered
+  `unknown command '--'`. `t-6e2e44` had consolidated the dogfood surface on 2026-07-30, and that separator became a literal
   argument. **Broken for ten days across ~100 references** — 20 in the dev-host runbook, 15 in the
   CLI's own help, 10 in `point`'s output, and one in `docs/project-guidance.md`, which goes into every
   agent's brief. The tool printed the wrong form and everything copied it.
@@ -486,7 +486,7 @@ fix is a trap for whoever reads this next.
   that happens to exit 130, which is exactly what a special case for that number would have erased.
   The Activity record stops calling an ordered stop a *failure*, and — the part that was worse than
   cosmetic — an agent with `restart: on-crash` is no longer resurrected seconds after you stopped it.
-  Measured on all six runtimes rather than assumed symmetric (`npm run dogfood -- stop-exit-codes`):
+  Measured on all six runtimes rather than assumed symmetric (`node scripts/dogfood/run.mjs stop-exit-codes`):
   grok and hermes answer a requested stop with 130, codex, opencode and pi with 0. One more finding
   came out of running it more than once: claude's stop only *sometimes* stops claude — three failures
   in four runs — which is why a single earlier measurement called it fine. Filed as `t-ab2682`, marked

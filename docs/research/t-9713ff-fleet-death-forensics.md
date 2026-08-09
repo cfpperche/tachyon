@@ -12,7 +12,7 @@ do ensaio privado enviava `kill-server` ao servidor que hospedava a frota inteir
 
 O commit `8bfb8ff45c8fbb9f5fcd54e653c4e9d50b43ce33` removeu `TMUX` e `TMUX_PANE` desse ambiente.
 Ele é ancestral do `HEAD` examinado. O cenário `runtime-remeasure` ainda existe e continua
-alcançável por `npm run dogfood -- runtime-remeasure`; o defeito não desapareceu por remoção de Soul,
+alcançável por `node scripts/dogfood/run.mjs runtime-remeasure`; o defeito não desapareceu por remoção de Soul,
 Role, Execution graph, verify de worktree ou GC de transação. O ponto perigoso foi corrigido no
 próprio cenário.
 

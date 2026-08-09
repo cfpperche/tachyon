@@ -349,7 +349,7 @@ properties, all of which this repository already uses somewhere:
    each declared probe against a temporary empty config home and against the real one, and assert the
    classifier separates them. This is what would have caught the Grok change on the day it landed;
    nothing in a fixture-based test can. It costs three subprocess spawns and no network. Add as
-   `npm run dogfood -- runtime-auth-probe` using the existing harness (per repo rule: dogfood uses
+   `node scripts/dogfood/run.mjs runtime-auth-probe` using the existing harness (per repo rule: dogfood uses
    existing harnesses, never one-off package scripts).
 3. **`unreadable` is a first-class outcome.** When a runtime's output shape changes, the honest
    result is "I no longer recognize this", which degrades to today's behavior — not a confident wrong

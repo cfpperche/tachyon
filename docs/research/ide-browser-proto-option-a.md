@@ -26,7 +26,7 @@ forking VS Code:
 | VS Code extensions cannot embed Chromium / BrowserView | Real browser must be external (Puppeteer/CDP) |
 | Webview is an iframe sandbox | Panel is a **viewer + input surface**, not the browser |
 | Stable VSIX must not ship experimental UX as product | Gate on `ExtensionMode.Development` (+ Test); palette `when` context |
-| Dev Host is the dogfood door | F5 / `npm run dogfood -- dev-host` only; no `package` / marketplace |
+| Dev Host is the dogfood door | F5 / `scripts/dev-host/cli.sh` only; no `package` / marketplace |
 
 ## Architecture (prototype)
 
@@ -86,7 +86,7 @@ Code lives under `src/webview/ide-browser-proto/` (shell allowlist already cover
 
 1. Build worktree: `npm run build` (or `watch`).
 2. Point Dev Host at this worktree:
-   - `npm run dogfood -- dev-host -- point --fixture <slug>`  
+   - `scripts/dev-host/cli.sh point --fixture <slug>`
    - or F5 **Tachyon: Dev Host** with extension path = this worktree.
 3. In the Extension Development Host window: Command Palette →  
    **Tachyon: IDE Browser (prototype — Dev Host)**.

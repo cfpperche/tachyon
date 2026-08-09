@@ -137,7 +137,7 @@ The evidence that fits that claim is the byte-for-byte comparison, which is mech
 
 **Phase 2: there is now something to judge, and it is NOT yet judged by a human.** The recipe below is
 written and ready; it has not been run, because it needs a VS Code host and a person looking at a real
-sidebar. Run it in the change worktree (`npm run dogfood -- dev-host -- point --fixture <slug>` →
+sidebar. Run it in the change worktree (`scripts/dev-host/cli.sh point --fixture <slug>` →
 `point-status` → F5 there, per `docs/runbooks/dev-host.md`):
 
 1. **It applies.** Add to the workspace `tachyon.yml`:
@@ -219,7 +219,7 @@ sidebar), so `.row-meta > .ds-badge` now ellipsizes, with the full value still i
 this change.
 
 **Still owed by a human, and pre-armed:** none of the above is inside VS Code. The dev-host pointer is
-armed on this checkout (`npm run dogfood -- dev-host -- point-status` → armed, fixture `sample-workspace`),
+armed on this checkout (`scripts/dev-host/cli.sh point-status` → armed, fixture `sample-workspace`),
 so the remaining step is one keypress: open VS Code on this worktree, Run and Debug → "Tachyon: Dev
 Host", F5, then Control → Settings → "Agent card layout". The `code` CLI available here refuses
 `--extensionDevelopmentPath` ("not supported for code"), so an agent cannot start the Extension

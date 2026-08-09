@@ -13,7 +13,7 @@ _Created 2026-07-17._
 **Verify:** `npm run typecheck`
 **Verify:** `npm run check:engine-boundary`
 **Verify:** `npm test`
-**Dogfood:** `npm run dogfood -- dev-host -- headless`
+**Dogfood:** `scripts/dev-host/cli.sh headless`
 
 ## Intent
 

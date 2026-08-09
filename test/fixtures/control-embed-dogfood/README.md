@@ -29,7 +29,7 @@ git add test/fixtures/control-embed-dogfood/tachyon.yml test/fixtures/control-em
 
 ```bash
 # from monorepo:
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --worktree <worktree-or-repo> \
   --fixture control-embed \
   --spec control-monolith-embed --slug control-embed

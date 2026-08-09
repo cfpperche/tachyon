@@ -1,7 +1,7 @@
 /**
  * t-9d76b1 — measure what exit code each runtime returns to a stop TACHYON ASKED FOR.
  *
- * Run: `npm run dogfood -- stop-exit-codes [runtime ...]`
+ * Run: `node scripts/dogfood/run.mjs stop-exit-codes [runtime ...]`
  *
  * ## Why this exists
  *

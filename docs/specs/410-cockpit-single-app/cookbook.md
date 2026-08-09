@@ -62,7 +62,7 @@ time, not a one-off guess._
    by `cockpitStudio.test.ts`); update `workspacePresentationBoundary.test.ts`'s migrated-surfaces
    list (move `XPanel.ts` out, keep `XAdapter.ts` in); update the dev-preview harness
    (`scripts/webview-preview/routes.ts` + a `fixtures/x-studio.ts`) and regenerate
-   `routes.json` (`npm run preview:webview:catalog`).
+   `routes.json` (`npx vite-node --script scripts/webview-preview/generate-routes.ts`).
 
 ## Happy path — new section (flat tab, no entity form)
 
@@ -75,7 +75,7 @@ Same shape, much smaller: add the id to `CockpitSectionId` (`src/cockpit/model.t
 
 | Action | Command | Notes |
 |--------|---------|-------|
-| Regenerate the preview catalog after adding/renaming a route or fixture | `npm run preview:webview:catalog` | writes `scripts/webview-preview/routes.json`; `webviewPreviewCatalog.test.ts` fails if it's stale |
+| Regenerate the preview catalog after adding/renaming a route or fixture | `npx vite-node --script scripts/webview-preview/generate-routes.ts` | writes `scripts/webview-preview/routes.json`; `webviewPreviewCatalog.test.ts` fails if it's stale |
 | Verify the CSS co-load contract | `npx vitest run test/unit/cockpitCssParity.test.ts` | client/host key parity + per-studio cascade-order assertions |
 | Verify the manifest + convention guard | `npx vitest run test/unit/webviewConvention.test.ts` | the primary "no un-manifested panel" guard |
 | Router exhaustiveness (adding a StudioId) | `npx vitest run test/unit/cockpitRoute.test.ts` | drives every StudioId through decode/routeKey/parent/nav/refresh |

@@ -6,7 +6,7 @@
  * `applyGrokRuntimeConfigChange` against a disposable `GROK_HOME` and then asks the real binary,
  * through `grok inspect --json`, what it discovered. No network, no login, no user home.
  *
- * Run: npm run dogfood -- grok-runtime-config
+ * Run: node scripts/dogfood/run.mjs grok-runtime-config
  */
 import fs from "node:fs";
 import os from "node:os";

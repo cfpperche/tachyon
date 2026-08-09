@@ -31,7 +31,7 @@
  * has never been a harness fixture in Control either. So three card renderings cover the four states, and
  * `default` is the one that stands for both "up to date" and "downgrade".
  *
- * Prereq: `node esbuild.mjs` and `npm run preview:webview` in another shell.
+ * Prereq: `node esbuild.mjs` and `node scripts/webview-preview/serve.mjs` in another shell.
  * Run: `node scripts/visual-qa/plugins-app-widths.mjs [outDir]`
  */
 import puppeteer from "puppeteer-core";

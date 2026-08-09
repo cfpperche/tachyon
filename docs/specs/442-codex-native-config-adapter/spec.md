@@ -10,7 +10,7 @@ _Created 2026-07-23._
      placeholders, and missing dogfood proof or opt-out). -->
 
 **Verify:** `npx vitest run test/unit/codexNativeConfigProjection.test.ts test/unit/agentNativeConfigPolicy.test.ts test/unit/agentProfileConfigLoader.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts`
-**Dogfood:** `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood -- dev-host -- headless`
+**Dogfood:** `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- scripts/dev-host/cli.sh headless`
 
 ## Intent
 
