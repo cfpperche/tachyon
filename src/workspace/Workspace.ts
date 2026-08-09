@@ -1271,9 +1271,16 @@ export class Workspace {
             }),
             priorRecord: this.ledger.get(ctx.name)?.worktree,
             runSetup: (rec, setup) => this.runWorktreeSetup(rec, setup),
-            // t-3f93b4 — the workspace root is the only thing this needs that the resolver cannot
-            // reach; everything else is a decision `dependencySharing.ts` makes on its own.
-            shareDependencies: (worktreePath) => shareDependencies({ workspaceRoot: this.workspaceRoot, worktreePath }),
+            // t-5ac1df — the project owns the list. The materializer validates existence and
+            // gitignore admission per path and reports bad entries without blocking launch.
+            shareDependencies: (worktreePath) => shareDependencies({
+              workspaceRoot: this.workspaceRoot,
+              worktreePath,
+              sharedDirectories: this.config?.settings.worktree?.shareDependencies === false
+                ? []
+                : (this.config?.settings.worktree?.sharedDirectories ?? []),
+              warn: (message) => this.host.notify(message, "warn"),
+            }),
             notify: (m, level) => this.host.notify(m, level ?? "info"),
           },
         );

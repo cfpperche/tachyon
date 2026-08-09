@@ -164,7 +164,6 @@ describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`,
         input: {
           agentName: "child",
           delegator: "coordinator",
-          dependencies: "Dependencies: node_modules is a symlink to the primary checkout.",
         },
       },
       { label: "plain child", input: { agentName: "helper", parent: "ada" } },

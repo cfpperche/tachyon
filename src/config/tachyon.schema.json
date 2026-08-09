@@ -315,7 +315,13 @@
             "shareDependencies": {
               "type": "boolean",
               "default": true,
-              "description": "Link a fresh worktree's node_modules to the primary checkout's when both checkouts' lockfiles are byte-identical, instead of leaving the agent to install its own copy. Re-decided on every launch: if the lockfiles diverge the link is removed and the agent is told it must install, never left pointing at the wrong packages. Set false for a workspace whose tooling writes into node_modules per-checkout."
+              "description": "Compatibility kill switch for settings.worktree.sharedDirectories. Set false to disable project-declared directory sharing without removing the declaration."
+            },
+            "sharedDirectories": {
+              "type": "array",
+              "description": "Repo-relative literal directories to symlink from the primary checkout into isolated worktrees. Only entries that exist as directories and are gitignored are admitted; invalid entries warn and are skipped. There is no product default.",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
             }
           }
         },

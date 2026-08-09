@@ -47,7 +47,13 @@ settings:
   # worktree:
   #   branch: "tachyon/{agent}"   # template for per-agent worktree branch names
   #   revealInWorkspace: true     # show each running agent's worktree as a folder (multi-root windows only)
-  #   shareDependencies: true     # link node_modules to the primary checkout while the lockfiles match (default true)
+  #   sharedDirectories:          # existing + gitignored directories to share by symlink; no product defaults
+  #     - node_modules             # keeps SHA-256 lockfile divergence protection; other stacks share as declared
+  #     - .cache
+  #   shareDependencies: true     # compatibility kill switch for sharedDirectories
+  #
+  # Gitignored files/directories that need an independent copy in each worktree belong in the
+  # repo-root .worktreeinclude (literal paths only), for example `.env` or `.vscode/settings.json`.
   # maxAgents: 8                  # fork-bomb guardrail (default 8)
   # agentMemoryMax: "2G"          # opt-in systemd --user MemoryMax per agent spawn tree (Linux only)
   # taskNotifications:            # human-facing toasts for task create/edit events
