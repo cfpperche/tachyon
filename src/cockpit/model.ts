@@ -27,6 +27,12 @@ export const DEFAULT_IDLE_NOTIFY_MINUTES = DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_
  * No "soon" tabs — every section is a real module page (data and/or deep-link).
  */
 export type CockpitSectionId =
+  // SDD 500 — System: one screen for "is Tachyon up and healthy, and if not, where?". `overview` and
+  // `engine` below are the two ids it replaced; both still decode and both resolve here
+  // (`resolveSectionDestination` in route.ts). They were never two subjects — Overview's counters were
+  // read off the very object Engine renders row by row (`control.summary` beside `control.workspaces`,
+  // built in one call below), so this is a summary put back on top of the detail it summarises.
+  | "system"
   | "overview"
   | "engine"
   | "fleet"
@@ -78,6 +84,11 @@ export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
  */
 export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   ...COCKPIT_SECTION_ORDER,
+  // SDD 500 — `system` is the live destination; `overview` and `engine` below it are compatibility
+  // ids for exactly the reason this list exists. `overview` in particular is the default fallback at
+  // eight call sites in route.ts, whose own comment argues the default belongs at the call site — so
+  // it must keep DECODING, and it resolves to `system` rather than being renamed across the codebase.
+  "system",
   "overview",
   "approvals",
   "engine",
@@ -228,8 +239,14 @@ export interface CockpitCollectNeeds {
   worktrees: boolean;
 }
 
-/** Sections that actually read the classified worktree rows (or their Overview counter). */
-const SECTIONS_NEEDING_WORKTREES = new Set(["overview", "worktrees"]);
+/**
+ * Sections that actually read the classified worktree rows (or their summary counter).
+ *
+ * SDD 500 — `system` carries the counter Overview used to, so it needs the same slice. `overview`
+ * stays: it still decodes, and a caller that asks with the compatibility id must not be told the
+ * expensive slice is unnecessary and then render a confident zero.
+ */
+const SECTIONS_NEEDING_WORKTREES = new Set(["system", "overview", "worktrees"]);
 
 /** What a given section needs. Unknown sections get nothing expensive — they render without it. */
 export function collectNeedsFor(section: string): CockpitCollectNeeds {

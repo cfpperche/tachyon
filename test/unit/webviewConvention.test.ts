@@ -99,7 +99,11 @@ describe("webview convention (spec 279)", () => {
       // born as a Control section after 410 and never had a standalone panel, so unlike C4's and D2's
       // reuses there is no tombstone and no `migrateLegacy`.
       tachyonHumanInbox: "HUMAN_INBOX_VIEW_TYPE",
-      tachyonEngine: "ENGINE_VIEW_TYPE",
+      // SDD 500 — one live viewType where `tachyonEngine` (D5) and `tachyonOverview` (D11) were two.
+      // Both retired ids moved to `disposeOnly` below rather than being dropped from this file: a tab a
+      // human left open before the merge still comes back on reload, and it must be disposed rather
+      // than handed to nobody.
+      tachyonSystem: "SYSTEM_VIEW_TYPE",
       tachyonWorktrees: "WORKTREES_VIEW_TYPE",
       tachyonPinPreview: "PIN_DETAIL_VIEW_TYPE",
       // SDD 485 C5 — the Board's own viewType, and the first app on `SectionPanelManager` that genuinely
@@ -116,7 +120,6 @@ describe("webview convention (spec 279)", () => {
       tachyonAgentPane: "AGENT_PANE_VIEW_TYPE",
       tachyonRuntimeConfig: "RUNTIME_CONFIG_VIEW_TYPE",
       tachyonSettings: "SETTINGS_VIEW_TYPE",
-      tachyonOverview: "OVERVIEW_VIEW_TYPE",
     };
     const disposeOnly = new Set(["tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonPluginSurface", "tachyonPluginSurfaces"]);
     const violations: string[] = [];
@@ -553,9 +556,11 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
     expect(unused, `extension points declared by the shell but used by nothing: ${unused.join(", ")}`).toEqual([]);
   });
 
-  it("the Engine app consumes its linked shared workspace sheet (SDD 485 D5)", () => {
-    const host = readFileSync("src/webview/EnginePanel.ts", "utf8");
-    const consumers = readFileSync("src/webview/engine/App.tsx", "utf8")
+  it("the System app consumes its linked shared workspace sheet (SDD 485 D5, SDD 500)", () => {
+    // The sheet outlived the app that motivated it: Engine merged into System, and the workspace/log
+    // contract it linked came across whole. Still LINKED and not copied — Worktrees links it too.
+    const host = readFileSync("src/webview/SystemPanel.ts", "utf8");
+    const consumers = readFileSync("src/webview/system/App.tsx", "utf8")
       + readFileSync("src/webview/shared/control/EngineLogPanel.tsx", "utf8");
     const shared = readFileSync("src/webview/shared/engine-workspace.css", "utf8");
     expect(host).toContain('"engine-workspace.css"');

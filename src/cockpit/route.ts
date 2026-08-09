@@ -211,6 +211,38 @@ function studioParentSection(studio: Exclude<StudioId, "pin">): CockpitSectionId
   }
 }
 
+/**
+ * SDD 500 D1 — which section a decodable id actually OPENS. The two are not the same question, and
+ * this file is where the difference already lives: `decodeRoute` answers "is this readable", the
+ * eight `"overview"` defaults below answer "what does a caller fall back to", and neither of them
+ * asks what still has a screen.
+ *
+ * `overview` and `engine` were merged into `system` (they were never two subjects — Overview's
+ * counters were a rollup of Engine's rows, read off the same object in the same function). Both ids
+ * keep DECODING, which is the whole point: not one of the eight defaults below has to change, and a
+ * persisted panel or deep link naming either one still says something readable that lands somewhere
+ * real. The precedent is documented one file over — `sectionNav.ts` records `fleet` leaving the
+ * launcher while staying a `CockpitSectionId` because subroutes depend on it, and `mission` doing the
+ * mirror image (label "Board", id `mission`). This product already separates what a human can open
+ * from what must decode; this is that separation used once more.
+ *
+ * Rejected: renaming `overview` to `system` across the codebase. It would touch every fallback and
+ * every persisted route to gain nothing a resolving alias does not already give.
+ */
+const SECTION_DESTINATIONS: ReadonlyMap<CockpitSectionId, CockpitSectionId> = new Map([
+  ["overview", "system"],
+  ["engine", "system"],
+]);
+
+/**
+ * The section that RENDERS `section` — itself for every id that still has a screen, `system` for the
+ * two SDD 500 merged. Total and idempotent: a destination resolves to itself, so composing this with
+ * a caller's own fallback (`resolveCockpitSection`, whose default is still `"overview"`) is safe.
+ */
+export function resolveSectionDestination(section: CockpitSectionId): CockpitSectionId {
+  return SECTION_DESTINATIONS.get(section) ?? section;
+}
+
 /** How often the active route's data should be re-fetched on the 3s shell timer. */
 export type CockpitRefreshPolicy = "poll" | "none";
 
