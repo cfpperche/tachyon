@@ -64,7 +64,6 @@ describe("t-8b8315 — emitted text never names a tool the Bridge does not regis
       const { primer, beforeFinishing } = renderPrimer({
         agentName: "helper",
         parent: "ada",
-        verify: { full: "npm run verify:full", typecheck: "npm run typecheck" },
       });
 
       assertNamesOnlyLiveTools(primer, "the spawn primer");

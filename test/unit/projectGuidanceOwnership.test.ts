@@ -160,11 +160,10 @@ describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`,
   describe("t-486f43: no working METHOD is born immune to project guidance", () => {
     const SHAPES: Array<{ label: string; input: PrimerInput }> = [
       {
-        label: "delegated child with configured checks and measured dependencies",
+        label: "delegated child with measured dependencies",
         input: {
           agentName: "child",
           delegator: "coordinator",
-          verify: { full: "npm run verify:full:quiet", typecheck: "npm run typecheck" },
           dependencies: "Dependencies: node_modules is a symlink to the primary checkout.",
         },
       },
@@ -172,13 +171,8 @@ describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`,
       { label: "declared agent with no lineage", input: { agentName: "solo" } },
     ];
 
-    /** Lines that echo the CONSUMER's own configuration or a measurement of its checkout back to it.
-     *  These are the shape the rest of the block is judged against — `configuredVerificationLines`
-     *  invents nothing, which is exactly the discipline t-486f43 extended to its neighbours. */
+    /** Lines that echo a measurement of the consumer's checkout back to it. */
     const ECHOES_THE_CONSUMER = [
-      /^Configured verification \(source: workspace config settings\.verify\):$/,
-      /^ {2}- (full|typecheck): /,
-      /^Run configured check \(workspace config settings\.verify\.(full|typecheck)\): /,
       /^Dependencies: /,
     ];
 
@@ -204,10 +198,6 @@ describe(`${"project-guidance-ownership"}: project-guidance ownership boundary`,
       { why: "substance is the spawner's brief, which exists nowhere else", line: /^ {2}- WHAT to do: / },
       { why: "a genuine conflict between the two records is reported, not resolved", line: /^ {2}- If BOTH name DIFFERENT BOARD work/ },
       { why: "the boundary declaration this whole block answers to", line: /^This Tachyon primer governs orchestration protocol/ },
-      {
-        why: "host-resource economy — the full suite holds a machine-wide lock every agent on the host queues behind (t-21bcb7)",
-        line: /^Verification applies only when delivering repository changes/,
-      },
       { why: "what a run attests — a property of the verification record, not a working loop", line: /^A check attests the exact TREE it ran on/ },
       { why: "the doorbell — the completion signal the product itself witnesses", line: /^Call notify_agent\(to: / },
     ];

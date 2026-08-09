@@ -831,8 +831,6 @@ export interface SpawnCwdContext {
   temporary: boolean;
   /** true on restart/resume — the resolver reuses the worktree and skips worktreeSetup */
   isRestart: boolean;
-  /** Immutable project verifier snapshot shown in the primer and persisted with this delegation. */
-  verifySettings?: TachyonConfig["settings"]["verify"];
   /**
    * t-da80ed — the profile's declared `workspace.cwd`, resolved to an absolute path; absent when the
    * profile declares none. Present so the resolver can SEE the directory it is about to override:
@@ -2092,14 +2090,11 @@ export class AgentManager {
    * nothing measured to say.
    *
    * Spawn and restart both reach it, because both are launches that hand an agent a checkout and
-   * then tell it to verify in one — the actor is the same and only the door differs, which is exactly
-   * the shape this repository keeps finding defects in. The install hint is the workspace's own
-   * `settings.verify.prepare`: a worktree that must install gets told the command the project already
-   * declares, instead of being left to invent one (which is what each of the three measured children
-   * did, independently, on 2026-08-02).
+   * then tell it about the checkout — the actor is the same and only the door differs, which is exactly
+   * the shape this repository keeps finding defects in.
    */
   private dependencyPrimerFact(worktree: WorktreeRecord | undefined): { dependencies?: string } {
-    const line = describeDependencyState(worktree?.dependencies, this.opts.getConfig()?.settings.verify?.prepare);
+    const line = describeDependencyState(worktree?.dependencies);
     return line ? { dependencies: line } : {};
   }
 
@@ -2107,7 +2102,7 @@ export class AgentManager {
     name: string,
     def: AgentDef,
     parent: string | undefined,
-    primerCtx?: { delegator?: string; freshWorktree?: boolean; verify?: TachyonConfig["settings"]["verify"]; dependencies?: string },
+    primerCtx?: { delegator?: string; freshWorktree?: boolean; dependencies?: string },
     taskBrief?: string,
     taskContract?: SpawnContract,
     soul?: ResolvedSoul,
@@ -2150,13 +2145,12 @@ export class AgentManager {
           agentName: name,
           delegator: primerCtx?.delegator,
           parent,
-          verify: primerCtx?.verify ?? this.opts.getConfig()?.settings.verify,
           ...(primerCtx?.dependencies ? { dependencies: primerCtx.dependencies } : {}),
         })
       : deliverable;
     // Size-check the exact successful-write pointer before deliverableBody atomically replaces any
-    // prior brief. Thus an oversized verify/gate fact cannot change what the still-running pane's
-    // old pointer reads when restart is rejected.
+    // prior brief. Thus an oversized dynamic fact cannot change what the still-running pane's old
+    // pointer reads when restart is rejected.
     const preview = body ? previewDeliverableBody(this.opts.workspaceRoot, name, body, "spawn", startupManifest) : undefined;
     const previewInstructions = frame(preview);
     if (previewInstructions) assertSafeBriefTransport(previewInstructions, `agent '${name}' startup brief`);
@@ -2827,11 +2821,7 @@ export class AgentManager {
     // config `declaredOwner` only as presentation guidance when this spawn has no lineage.
     const primerParent = (opts?.parent && opts.parent !== name ? opts.parent : undefined)
       ?? (!temporary ? this.opts.getConfig()?.declaredOwner?.[name] : undefined);
-    // `{}` is an intentional snapshot of "no verifier configured", distinct from an omitted one.
-    const verifySettingsSnapshot: NonNullable<TachyonConfig["settings"]["verify"]> = structuredClone(
-      this.opts.getConfig()?.settings.verify ?? {},
-    );
-    const primerCtx = { delegator, verify: verifySettingsSnapshot };
+    const primerCtx = { delegator };
 
     const liveCount = (await this.runningAgents()).length;
     const max = this.opts.getConfig()?.settings.maxAgents ?? DEFAULT_MAX_AGENTS;
@@ -2862,7 +2852,6 @@ export class AgentManager {
         delegator,
         temporary,
         isRestart: false,
-        verifySettings: verifySettingsSnapshot,
         ...(def.cwd ? { declaredCwd: cwd } : {}),
       });
       if (resolved) {
@@ -4688,7 +4677,6 @@ export class AgentManager {
     const restartPrimerCtx = {
       delegator: this.delegators.get(name),
       freshWorktree: false as const,
-      verify: this.opts.getConfig()?.settings.verify,
     };
     const restartParent = this.lineage.get(name);
     // Resolve the exact reused cwd/private home before any live-pane or transient-state mutation.
@@ -5263,7 +5251,6 @@ export class AgentManager {
       agentName: name,
       delegator: this.delegators.get(name),
       parent: this.lineage.get(name),
-      verify: this.opts.getConfig()?.settings.verify,
     });
     await this.opts.tmux.sendKeys(session, `${primer}\n\n${beforeFinishing}`, true);
   }

@@ -1,9 +1,8 @@
 /**
  * t-3f93b4 — a fresh worktree is born without the dependencies the primer tells its agent to use.
  *
- * The contradiction this module closes: Tachyon injects a primer into EVERY spawn that says "run
- * `settings.verify.typecheck`" and "use focused tests while implementing", and then hands the agent
- * a checkout where neither command can run. Measured on 2026-08-02 with three delegated children
+ * The contradiction this module closes: Tachyon hands an agent a checkout where project tooling may
+ * not run and used to say nothing about that dependency state. Measured on 2026-08-02 with three delegated children
  * live: each worktree carried its OWN 478 MB `node_modules` (a real directory, not a link), because
  * each agent independently discovered the gap and ran `npm ci` to close it. Three children, 1.4 GB,
  * and minutes of wall clock apiece before any of them could verify anything. Every agent solving the
@@ -179,7 +178,7 @@ function lockfileDivergenceReason(primary: LockfileFingerprint, worktree: Lockfi
  * will have to install and why; what it must never do again is stay silent and let each agent
  * rediscover the gap and answer it differently.
  */
-export function describeDependencyState(state: SharedDependencyState | undefined, installHint?: string): string | undefined {
+export function describeDependencyState(state: SharedDependencyState | undefined): string | undefined {
   if (!state) return undefined;
   if (state.mode === "linked") {
     return `Dependencies: ${DEPENDENCY_DIR} is a symlink to the primary checkout (${state.reason}). Do not reinstall through it — if you change dependencies, replace the link with your own install and say so in your report.`;
@@ -187,8 +186,7 @@ export function describeDependencyState(state: SharedDependencyState | undefined
   if (state.mode === "own") {
     return `Dependencies: this worktree has its own ${DEPENDENCY_DIR} — ${state.reason}.`;
   }
-  const hint = installHint?.trim();
-  return `Dependencies: this worktree has no ${DEPENDENCY_DIR} — ${state.reason}. Install${hint ? ` (${hint})` : ""} before running the configured checks.`;
+  return `Dependencies: this worktree has no ${DEPENDENCY_DIR} — ${state.reason}. Install dependencies before using project tooling.`;
 }
 
 /** The filesystem surface, injected so the applier tests without a real disk. */

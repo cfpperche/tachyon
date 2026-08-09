@@ -11,19 +11,14 @@ import {
   type PrimerInput,
 } from "../../src/bridge/primer.js";
 
-const fullCheck = "./scripts/verify --scope='all modules'";
-const typecheck = "./scripts/typecheck --no-emit";
-
 /**
  * t-8b8315 — this used to be `gatedAdhoc`, carrying a `gate` with a behavior oracle. Gated
  * delegation was retired with the Delivery machinery and nothing has populated `gate` since, so the
- * richest input the primer can actually receive today is a delegator plus configured checks.
- * Keeping the dead field here would have kept the dead branch alive by exercising only itself.
+ * richest input the primer can actually receive today is a delegator plus measured dependencies.
  */
 const delegatedAdhoc: PrimerInput = {
   agentName: "primerT3",
   delegator: "claude",
-  verify: { full: fullCheck, typecheck },
 };
 
 const plainAdhoc: PrimerInput = {
@@ -52,25 +47,34 @@ const removedProjectPolicies = [
 ];
 
 describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
-  it("delegated Temporary preserves identity, real-target doorbell and sourced configured checks", () => {
+  it("ignores retired project verify input while always stating exact-tree attestation", () => {
+    const legacyInput = {
+      agentName: "legacy",
+      verify: { full: "npm test", typecheck: "npm run typecheck" },
+    };
+    const { primer, beforeFinishing } = renderPrimer(legacyInput);
+    const combined = `${primer}\n${beforeFinishing}`;
+
+    expect(combined).not.toContain("Configured verification");
+    expect(combined).not.toContain("Run configured check");
+    expect(combined).not.toContain("Verification applies only when delivering repository changes");
+    expect(beforeFinishing).toContain(
+      "A check attests the exact TREE it ran on: a pass measured on any other tree is not evidence about what you deliver.",
+    );
+  });
+
+  it("delegated Temporary preserves identity and real-target doorbell without project verification", () => {
     const { primer, beforeFinishing } = renderPrimer(delegatedAdhoc);
     expect(primer.startsWith(PRIMER_OPEN)).toBe(true);
     expect(primer.endsWith(PRIMER_CLOSE)).toBe(true);
     expect(primer).toContain('spawned by "claude"');
     expect(primer).not.toContain("notify_agent");
-    expect(primer).toContain("Configured verification (source: workspace config settings.verify):");
-    expect(primer.split("\n")).toContain(`  - full: ${fullCheck}`);
-    expect(primer.split("\n")).toContain(`  - typecheck: ${typecheck}`);
+    expect(primer).not.toContain("Configured verification");
 
     expect(beforeFinishing.startsWith(BEFORE_FINISHING_OPEN)).toBe(true);
     expect(beforeFinishing.endsWith(BEFORE_FINISHING_CLOSE)).toBe(true);
-    expect(beforeFinishing).toContain(
-      "Verification applies only when delivering repository changes; skip it for read-only investigation, reporting, and task authoring.",
-    );
-    expect(beforeFinishing.split("\n")).toContain(
-      `Run configured check (workspace config settings.verify.full): ${fullCheck}`,
-    );
-    expect(beforeFinishing).not.toContain("workspace config settings.verify.typecheck");
+    expect(beforeFinishing).not.toContain("Verification applies only when delivering repository changes");
+    expect(beforeFinishing).not.toContain("Run configured check");
     expect(beforeFinishing).toContain('notify_agent(to: "claude"');
     expect(beforeFinishing).not.toMatch(/green|tree clean|full verify/i);
   });
@@ -101,18 +105,11 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
   const ATTESTS = "A check attests the exact TREE it ran on: a pass measured on any other tree is not evidence about what you deliver.";
   const FOCUSED = "Use focused tests while implementing";
 
-  it("prices verification per delivery, and only where a check was actually configured", () => {
-    const configured = renderPrimer(delegatedAdhoc).beforeFinishing.split("\n");
-    expect(configured).toContain(ATTESTS);
-    // Ordering is the meaning: the qualifier describes the check below it. Above the check it reads
-    // as a rule about the whole section; below it, as an afterthought about something already run.
-    expect(configured.indexOf(ATTESTS)).toBeLessThan(
-      configured.indexOf(`Run configured check (workspace config settings.verify.full): ${fullCheck}`),
-    );
-
-    for (const input of [declared, plainAdhoc]) {
+  it("states exact-tree attestation for every spawn even without configured verification", () => {
+    for (const input of [delegatedAdhoc, declared, plainAdhoc]) {
       const { primer, beforeFinishing } = renderPrimer(input);
-      expect(`${primer}\n${beforeFinishing}`).not.toContain(ATTESTS);
+      expect(beforeFinishing.split("\n")).toContain(ATTESTS);
+      expect(`${primer}\n${beforeFinishing}`).not.toContain("Run configured check");
     }
   });
 
@@ -223,22 +220,6 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     expect(beforeFinishing).toContain('notify_agent(to: "parent"');
   });
 
-  it("renders only explicitly configured verification keys without a fallback", () => {
-    const fullOnly = renderPrimer({ agentName: "full", verify: { full: fullCheck } });
-    expect(fullOnly.primer.split("\n")).toContain(`  - full: ${fullCheck}`);
-    expect(fullOnly.primer).not.toContain("typecheck:");
-    expect(fullOnly.beforeFinishing).toContain("skip it for read-only investigation, reporting, and task authoring");
-    expect(fullOnly.beforeFinishing).toContain(`workspace config settings.verify.full): ${fullCheck}`);
-    expect(fullOnly.beforeFinishing).not.toContain("settings.verify.typecheck");
-
-    const typecheckOnly = renderPrimer({ agentName: "types", verify: { typecheck } });
-    expect(typecheckOnly.primer.split("\n")).toContain(`  - typecheck: ${typecheck}`);
-    expect(typecheckOnly.primer).not.toContain("  - full:");
-    expect(typecheckOnly.beforeFinishing).toContain(`workspace config settings.verify.typecheck): ${typecheck}`);
-    expect(typecheckOnly.beforeFinishing).not.toContain("settings.verify.full");
-    expect(typecheckOnly.beforeFinishing).not.toContain("npm test");
-  });
-
   it("renders byte-identical output for the same facts", () => {
     expect(renderPrimer({ ...delegatedAdhoc })).toEqual(renderPrimer({ ...delegatedAdhoc }));
   });
@@ -253,9 +234,8 @@ describe("renderPrimer (spec 363 T3, ownership boundary from spec 383)", () => {
     { label: "agent name", input: { agentName: "worker\u001b[2J" } },
     { label: "delegator", input: { agentName: "worker", delegator: "boss\u001b]8;;https://example.test\u0007" } },
     { label: "parent", input: { agentName: "worker", parent: "boss\u001b[2J" } },
-    { label: "configured check", input: { agentName: "worker", verify: { full: "npm test\u007f" } } },
     { label: "C1 in delegator", input: { agentName: "worker", delegator: "boss\u009b2J" } },
-    { label: "Unicode line separator", input: { agentName: "worker", verify: { full: "npm test\u2028spoof" } } },
+    { label: "Unicode line separator", input: { agentName: "worker", dependencies: "deps\u2028spoof" } },
     { label: "bidi isolate", input: { agentName: "worker", parent: "boss\u2066spoof" } },
   ])("rejects control characters in interpolated $label facts", ({ input }) => {
     expect(() => renderPrimer(input)).toThrow(/control characters/);

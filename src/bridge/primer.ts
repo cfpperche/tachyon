@@ -3,7 +3,7 @@
  * GATE — doorbell witness + canonical stub name, T1/T2 — is the enforcement; this module never
  * blocks anything). ONE renderer, two outputs, from ONE input struct, so the primer (pushed at the
  * opening of a brief) and the Before-finishing block (pushed at the END, for recency — dueto major
- * #2) can never drift apart: both are derived from the same `spawner`/`gate`/`verify` facts in a
+ * #2) can never drift apart: both are derived from the same identity and checkout facts in a
  * single pass. Pure module (no bridge/manager imports) so it stays table-testable, mirroring
  * spawnContract.ts's shape.
  */
@@ -12,13 +12,6 @@ import { containsUnsafeFramingCharacter } from "../config/framingSafety.js";
 
 /** Narrow read-only gated Delivery shape so this module stays a leaf
  *  (no bridge-internal coupling beyond the pure stub-path helper). */
-/** Mirrors TachyonConfig["settings"]["verify"] (src/config/loadConfig.ts) — the SAME shape
- *  the agent is told to run, so the primer never invents commands. */
-export interface PrimerVerifySettings {
-  full?: string;
-  typecheck?: string;
-}
-
 export interface PrimerInput {
   /** The spawned agent's own name (TACHYON_AGENT_NAME). */
   agentName: string;
@@ -26,16 +19,14 @@ export interface PrimerInput {
   delegator?: string;
   /** Plain Temporary lineage parent. */
   parent?: string;
-  /** Explicit settings.verify facts from tachyon.yml; undefined commands are omitted, never inferred. */
-  verify?: PrimerVerifySettings;
   /**
    * t-3f93b4 — one already-rendered sentence about this checkout's dependencies, from
    * `describeDependencyState`. Undefined means "nothing measured", and the line is omitted rather
    * than guessed at.
    *
-   * This is the half of that task that is a contract and not an optimization. The primer has always
-   * told the agent to run `settings.verify.typecheck` and focused tests; until this field existed it
-   * said nothing at all about whether the checkout it was handing over could run them. Three
+   * This is the half of that task that is a contract and not an optimization. Until this field
+   * existed the primer said nothing at all about whether the checkout it was handing over could
+   * run project tooling. Three
    * delegated children measured on 2026-08-02 each answered that silence independently with their
    * own 478 MB `npm ci`. A product that asks for verification says whether verification is possible.
    */
@@ -98,15 +89,7 @@ function protocolLines(): string[] {
   ];
 }
 
-function configuredVerificationLines(input: PrimerInput): string[] {
-  const checks = [
-    ...(input.verify?.full !== undefined ? [`  - full: ${input.verify.full}`] : []),
-    ...(input.verify?.typecheck !== undefined ? [`  - typecheck: ${input.verify.typecheck}`] : []),
-  ];
-  return checks.length > 0 ? ["Configured verification (source: workspace config settings.verify):", ...checks] : [];
-}
-
-/** t-3f93b4 — sits directly under the configured checks, because it is the answer to "can I run them?". */
+/** t-3f93b4 — reports the measured dependency state of the checkout handed to the agent. */
 function dependencyLines(input: PrimerInput): string[] {
   const line = input.dependencies?.trim();
   return line ? [line] : [];
@@ -151,37 +134,23 @@ function precedenceLines(): string[] {
   ];
 }
 
-function beforeFinishingVerificationLines(input: PrimerInput): string[] {
-  const check = input.verify?.full !== undefined
-    ? `Run configured check (workspace config settings.verify.full): ${input.verify.full}`
-    : input.verify?.typecheck !== undefined
-      ? `Run configured check (workspace config settings.verify.typecheck): ${input.verify.typecheck}`
-      : undefined;
-  return check
-    ? [
-        // t-21bcb7 — the full suite holds a machine-wide lock every agent queues behind, so it is
-        // priced per DELIVERY, not per step. That is a fact about a shared host resource, which is
-        // why it survived t-486f43's separation.
-        "Verification applies only when delivering repository changes; skip it for read-only investigation, reporting, and task authoring.",
-        // t-486f43 — this used to read "Use focused tests while implementing; run this on the tree
-        // you deliver", fusing a working method with what a check actually covers. The method (WHICH
-        // smaller checks to run along the way) is the project's and lives in project-owned guidance;
-        // what a run attests is the product's own fact and stays.
-        "A check attests the exact TREE it ran on: a pass measured on any other tree is not evidence about what you deliver.",
-        check,
-      ]
-    : [];
+function beforeFinishingVerificationLines(): string[] {
+  return [
+    // t-486f43 — this used to read "Use focused tests while implementing; run this on the tree
+    // you deliver", fusing a working method with what a check actually covers. The method (WHICH
+    // smaller checks to run along the way) is the project's and lives in project-owned guidance;
+    // what a run attests is the product's own fact and stays. It is unconditional because the
+    // worktree verify gate is resolved outside the primer rather than echoed into it.
+    "A check attests the exact TREE it ran on: a pass measured on any other tree is not evidence about what you deliver.",
+  ];
 }
 
-/** Renders both sections from ONE pass over the input (single source of truth — spec.md dueto #7):
- *  precedence, spawner and verify facts are computed once and read by both outputs. */
+/** Renders both sections from ONE pass over the input (single source of truth — spec.md dueto #7). */
 export function renderPrimer(input: PrimerInput): RenderedPrimer {
   const interpolated = [
     input.agentName,
     input.delegator,
     input.parent,
-    input.verify?.full,
-    input.verify?.typecheck,
     input.dependencies,
   ].filter((value): value is string => value !== undefined);
   if (interpolated.some(containsUnsafeFramingCharacter)) {
@@ -192,7 +161,6 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
     PRIMER_OPEN,
     ...identityLines(input),
     ...protocolLines(),
-    ...configuredVerificationLines(input),
     ...dependencyLines(input),
     ...precedenceLines(),
     PRIMER_CLOSE,
@@ -200,7 +168,7 @@ export function renderPrimer(input: PrimerInput): RenderedPrimer {
 
   const beforeFinishingLines = [
     BEFORE_FINISHING_OPEN,
-    ...beforeFinishingVerificationLines(input),
+    ...beforeFinishingVerificationLines(),
     ...(spawner
       // t-21bcb7 — a notify is best-effort pane input, not history: it points at durable detail
       // instead of carrying it, which is also what keeps it inside the one-line cap.

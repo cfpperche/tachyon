@@ -16,7 +16,6 @@ import { ATTESTED_RUNTIMES } from "../runtime/attestedRuntimes.js";
 import { parseLaunchCommand } from "../runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import { parseCardTemplate, type CardTemplateConfig } from "../sidebar/cardTemplate.js";
-import { parseArgvCommand } from "./argvCommand.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
@@ -514,15 +513,6 @@ export interface TachyonConfig {
      * from the retired `tachyon.worktrees.revealInWorkspace` VS Code setting.
      */
     worktree?: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean; shareDependencies?: boolean };
-    /** spec 362/385 — the project's own verification commands, shown in the primer. */
-    verify?: {
-      full?: string;
-      typecheck?: string;
-      /** Optional argv command that materializes dependencies independently in every BASE/HEAD clone. */
-      prepare?: string;
-      /** Argv prefix; existing changed paths are appended as option-safe relative args. Omitted means no affected-test tier. */
-      affected?: string;
-    };
     /** spec 383 — explicit project-owned onboarding documents, transported verbatim by Tachyon. */
     projectGuidance?: ProjectGuidanceSettings;
     /** spec 216 — auto re-anchor an agent's role after a detected compaction (OFF by default; risky live injection) */
@@ -1283,22 +1273,6 @@ function buildDeclaredOwner(
   return declaredOwner;
 }
 
-/** Validates the parsed YAML by hand — keeps the extension dependency-light; the JSON Schema covers editor-time validation. */
-function normalizedArgvCommand(value: unknown, field: string, discarded: string[]): string | undefined {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    discarded.push(`${field}: must be a non-empty argv command string`);
-    return undefined;
-  }
-  const normalized = value.trim();
-  try {
-    parseArgvCommand(normalized);
-  } catch (error) {
-    discarded.push(`${field}: invalid argv command (${error instanceof Error ? error.message : String(error)})`);
-    return undefined;
-  }
-  return normalized;
-}
-
 export function parseConfig(yamlText: string): ParseResult {
   /**
    * t-48dd8d — every message collected here names something the parser DROPPED, not a reason to
@@ -1699,50 +1673,6 @@ export function parseConfig(yamlText: string): ParseResult {
             if (!["base", "branch", "verify", "revealInWorkspace", "shareDependencies"].includes(key)) discarded.push(`settings.worktree: unknown key '${key}'`);
           }
           settings.worktree = out;
-        }
-      }
-      if (raw.settings.verify !== undefined) {
-        if (!isPlainObject(raw.settings.verify)) {
-          discarded.push("settings.verify: must be a mapping with project-owned verification commands");
-        } else {
-          const vf = raw.settings.verify;
-          const out: NonNullable<TachyonConfig["settings"]["verify"]> = {};
-          if (vf.full !== undefined) {
-            const command = normalizedArgvCommand(vf.full, "settings.verify.full", discarded);
-            if (command) out.full = command;
-          }
-          if (vf.typecheck !== undefined) {
-            const command = normalizedArgvCommand(vf.typecheck, "settings.verify.typecheck", discarded);
-            if (command) out.typecheck = command;
-          }
-          if (vf.prepare !== undefined) {
-            const command = normalizedArgvCommand(vf.prepare, "settings.verify.prepare", discarded);
-            if (command) out.prepare = command;
-          }
-          if (vf.affected !== undefined) {
-            const command = normalizedArgvCommand(vf.affected, "settings.verify.affected", discarded);
-            if (command) out.affected = command;
-          }
-          /**
-           * t-e88c8a — the named-behavior adapter bound a project-owned oracle to a gated spawn, and
-           * `verify_task` was the only thing that ever redeemed it. Both are retired, so the block is
-           * accepted-and-ignored rather than made an unknown key: a workspace that configured it gets
-           * told what happened instead of hunting for a spelling mistake.
-           *
-           * `full`, `typecheck`, `prepare` and `affected` are untouched — those are plain project
-           * commands the primer still hands to agents.
-           */
-          if (vf.behavior !== undefined) {
-            warnings.push(
-              "settings.verify.behavior was ignored because verify_task and gated delegation were retired; remove settings.verify.behavior from tachyon.yml",
-            );
-          }
-          for (const key of Object.keys(vf)) {
-            if (!["full", "typecheck", "prepare", "affected", "behavior"].includes(key)) {
-              discarded.push(`settings.verify: unknown key '${key}'`);
-            }
-          }
-          settings.verify = out;
         }
       }
       if (raw.settings.projectGuidance !== undefined) {
@@ -2198,7 +2128,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "verify", "projectGuidance", "anchor", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) discarded.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "projectGuidance", "anchor", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) discarded.push(`settings: unknown key '${key}'`);
       }
     }
   }
