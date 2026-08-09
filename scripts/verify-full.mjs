@@ -3,9 +3,16 @@ import { execFileSync, spawn } from "node:child_process";
 import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { decideHeavyGate } from "./host-resources.mjs";
+import hostResourceSizing from "../shared/host-resource-sizing.cjs";
 import { UNHANDLED_OUTPUT_ENV } from "./vitest-unhandled-reporter.mjs";
 import { auditTrunk, formatTrunkAudit, recordVerification, reuseDecision, verifiableTree, verifierFingerprint } from "./verify-record.mjs";
+
+/**
+ * t-da6b78 — the sizing rules come from `shared/host-resource-sizing.cjs`, the SAME module
+ * `src/host/hostResources.ts` re-exports. They used to live twice: here (via a hand-kept ESM twin
+ * at `scripts/host-resources.mjs`) and in the TypeScript module, synchronised by human memory.
+ */
+const { decideHeavyGate } = hostResourceSizing;
 
 export const FAILURE_LIMITS = Object.freeze({ assertions: 10, assertionBytes: 2 * 1024, totalBytes: 24 * 1024 });
 
