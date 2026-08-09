@@ -2,7 +2,13 @@
 
 _Created 2026-08-09._
 
-**Status:** in-progress
+**Status:** shipped
+
+**Closure:** Attempts live in `.tachyon/tasks/<id>.attempts` (JSONL, no refusing cap). `TaskStore`
+derives `currentAssignee` and `lastDeliverer` at read time and persists neither; `boardModel`'s
+`delivered by` and Evolution's four sites read the delivered value. 1 051 historical assignees were
+backfilled as `delivered` attempts, marked as backfill rather than carrying an invented timestamp.
+Merged in `fc3be5cb`.
 
 <!-- The maintainer owns the intent; this is a transcription awaiting ratification.
      The measurements below were taken before writing, and the central one killed the
