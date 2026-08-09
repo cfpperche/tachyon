@@ -103,9 +103,8 @@ describe("webview convention (spec 279)", () => {
       tachyonWorktrees: "WORKTREES_VIEW_TYPE",
       tachyonExecutionGraph: "EXECUTION_GRAPH_VIEW_TYPE",
       tachyonPinPreview: "PIN_DETAIL_VIEW_TYPE",
-      [["tachyon", "Mission", "Control"].join("")]: "RETIRED_BOARD_VIEW_TYPE",
       // SDD 485 C5 — the Board's own viewType, and the first app on `SectionPanelManager` that genuinely
-      // revives (the legacy id above stays a dispose+redirect INTO this one).
+      // revives.
       tachyonBoard: "BOARD_VIEW_TYPE",
       tachyonTaskDetail: "TASK_DETAIL_VIEW_TYPE",
       tachyonTaskStudio: "TASK_STUDIO_VIEW_TYPE",
