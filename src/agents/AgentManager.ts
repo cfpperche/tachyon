@@ -1610,10 +1610,9 @@ export class AgentManager {
       if (agent !== null) out.set(agent, state);
     }
     if (seq > this.tmuxReadAppliedSeq) {
-      // SDD 480 §3.4 gap 3 — nothing used to record an exit. Compare against the previous inventory
-      // BEFORE replacing it: the alive→dead TRANSITION is the event, and it is observable exactly here
-      // and nowhere later. Emitting on every poll instead would fill the ledger with one death repeated
-      // until the pane is dismissed.
+      // Compare against the previous inventory BEFORE replacing it: the alive→dead transition is
+      // observable exactly here. Reprocessing a standing dead state on every poll would lose the
+      // one-shot boundary needed to persist a requested stop.
       //
       // Guarded by `seq` for the same reason the cache is: a read dispatched earlier must not resolve
       // later and re-announce a death against a newer inventory.

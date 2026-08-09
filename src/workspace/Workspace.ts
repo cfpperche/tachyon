@@ -495,11 +495,6 @@ export class Workspace {
   readonly terminals: TerminalPresentation;
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
-  /**
-   * SDD 480 Phase 2 — re-exposed from deps so a Workspace structurally satisfies
-   * `ManagedAgentInputSource`, which is how the input-submission seam (turnId, §7.1) reaches the
-   * ledger without engineService having to thread a second object through the call.
-   */
   readonly worktrees: WorktreeManager;
   /** spec 392 — product registry + change worktrees over WorktreeManager. */
   readonly managedWorktrees: ManagedWorktreeService;
@@ -696,7 +691,8 @@ export class Workspace {
       // subprocess churn) + event-driven lifecycle; subprocess fallback when down.
       const engine = new ControlModeClient({
         wsHash: this.wsHash,
-        // SDD 480 — the control client's anchor is where `attached`/`shared` enter the real graph.
+        // Dead-map changes are lifecycle signals; handle them immediately instead of waiting for
+        // the subprocess polling fallback.
         onDeadMapChanged: () => this.triggerLifecycle(),
         onActivityMapChanged: (map) => {
           this.activityBySession = map;
@@ -824,7 +820,6 @@ export class Workspace {
       // t-8168a7 — list() carries Attention's real-turn latch. The manager is constructed before the
       // monitor, but this thunk is first read after construction, when the monitor exists.
       hasStartedTurn: (name) => this.monitor?.hasStartedTurn(name),
-      // SDD 480 — the seam that genuinely carries the id into the child's environment.
       // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
       // SecretStorage, and AgentManager is constructed before that. A getter keeps the wiring honest
       // instead of capturing an undefined that would never fill in.
@@ -1843,7 +1838,6 @@ export class Workspace {
         writeTachyonConfig: (yamlText) => this.writeTachyonConfigText(yamlText),
         manager: this.manager,
         tmux: this.tmux,
-        // SDD 480 §7.3 — every Bridge tool call becomes an InternalOperation through this sink.
         pins: this.pinStore,
         tasks: this.taskStore,
         evolution: this.evolutionStore,

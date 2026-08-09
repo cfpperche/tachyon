@@ -380,10 +380,6 @@ export async function startDaemonEngineService(
       },
       claudeStatusLineCapture,
       piBridgeExtensionPath: path.join(__dirname, "pi-bridge-extension.mjs"),
-      // SDD 480 Phase 2 — the line that turns the graph from two tested halves into a real record:
-      // every seam's sealed event now reaches a durable, sanitized, byte-bounded ledger. Refusals are
-      // counted rather than silent, but recording must never throw into a spawn path, so the guard is
-      // here as well as inside each seam.
     });
     await workspace.start();
     const runningWorkspace = workspace;
