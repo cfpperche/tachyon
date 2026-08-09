@@ -5,16 +5,17 @@ adversarial review in `.tachyon/reviews/366-html-ui-task-prototypes-fable.md`._
 
 **Status:** shipped
 **Closure:** 2026-07-12 — Static-only v1 of HTML UI task prototypes: content-addressed store, strict prototype HTML
-**Verify:** `npm test -- --run test/unit/taskPrototypeStore.test.ts test/unit/prototypeHtmlPolicy.test.ts test/unit/taskDetailPanel.test.ts test/unit/taskStudioPanel.test.ts`
-**Verify:** `npm run test:browser -- taskPrototypeFrame`
-**Verify:** `npm run typecheck`
-**Verify:** `npm run verify:full`
-**Dogfood:** `npm run test:browser -- taskPrototypeFrame`
 policy, Bridge draft-only attach, Task Detail/Studio static previews with empty sandbox + first-party decision chrome,
 interactive panel omitted after T3 real-host egress proof unavailable. T9: typecheck + focused suites +
 `verify:full` (308 files / 3684 tests) green; browser `taskPrototypeFrame` 3/3; scrollable tall static mocks fixed
 via static pointer-guard overflow. Evidence `.tachyon/evidence/366-html-ui-task-prototypes/`. Worktree
 `tachyon/htmlUiPrototypes366T9`.
+
+**Verify:** `npm test -- --run test/unit/taskPrototypeStore.test.ts test/unit/prototypeHtmlPolicy.test.ts test/unit/taskDetailPanel.test.ts test/unit/taskStudioPanel.test.ts`
+**Verify:** `npm run test:browser -- taskPrototypeFrame`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full`
+**Dogfood:** `npm run test:browser -- taskPrototypeFrame`
 
 ## Intent
 

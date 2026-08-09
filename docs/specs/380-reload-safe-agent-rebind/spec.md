@@ -4,8 +4,6 @@ _Created 2026-07-14._
 
 **Status:** shipped
 **Closure:** Tachyon 0.56.4 (`42ef0d51`, production fix `b85da800`) shipped the bounded
-**Verify:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck`
-**Dogfood:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts -t "reload-safe"`
 post-activation survivor rescan; installed generation-47 dogfood recorded `codex` through
 `preflight_ok -> stop -> dead -> resume_ok`, advanced its durable Bridge binding to generation 47,
 and restored this session's native MCP calls without a stale-client hang.
@@ -13,6 +11,9 @@ and restored this session's native MCP calls without a stale-client hang.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts && npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/agentManager.test.ts test/unit/bridgeClientRebind.test.ts -t "reload-safe"`
 
 ## Intent
 

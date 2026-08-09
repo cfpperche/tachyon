@@ -5,13 +5,14 @@ _Created 2026-07-22._
 **Status:** shipped
 
 **Closure:** Shipped 2026-07-22 — trusted profile loading, lossless offline migration, durable
+reconciliation/rollback, command-palette operations, operator documentation and isolated dogfood are
+complete. Focused, invariant, typecheck and full verification gates pass.
+
 **Verify:** `npm test -- test/unit/agentProfileMigration.test.ts test/unit/config.test.ts test/unit/yamlEditor.test.ts test/unit/configFailure.test.ts test/unit/workspaceHeadless.test.ts`
 **Verify:** `npm run test:invariants`
 **Verify:** `npm run typecheck`
 **Verify:** `npm run verify:full:quiet`
 **Dogfood:** `npx vitest run test/unit/agentProfileMigration.test.ts -t "dogfood: commits and rolls back an isolated profile fixture"`
-reconciliation/rollback, command-palette operations, operator documentation and isolated dogfood are
-complete. Focused, invariant, typecheck and full verification gates pass.
 
 ## Intent
 

@@ -4,13 +4,14 @@ _Created 2026-07-03._
 
 **Status:** shipped
 **Closure:** Implemented 2026-07-03 — `write_input`'s `submit=true` path now consults `deps.attentionOf` and refuses (structured `refused-busy` error) against working/throttled/needs-input recipients instead of a raw `sendKeys` paste, routing the safe path through `TmuxService.sendSubmittedLine`; `submit=false` is unchanged bar the tool description. `update_task` now fires a best-effort assign notice (via `deliverNotice`/fallback) when a patch changes `assignee` to a live running agent. Both in `src/bridge/tools.ts` only. Verified: `npm test -- test/unit/bridge.test.ts` (40/40) + `npm run typecheck` (main+webview+browser-test), see `notes.md`. Human dogfood is a documented maintainer follow-up (`tasks.md`) — not run in this session, so this spec is NOT closed yet.
-**Verify:** `npm test -- test/unit/bridge.test.ts`
-**Verify:** `npm run typecheck`
-**Dogfood:** `npm test -- test/unit/bridge.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm test -- test/unit/bridge.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- test/unit/bridge.test.ts`
 
 ## Intent
 

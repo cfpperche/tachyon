@@ -5,6 +5,7 @@ _Created 2026-06-10._
 **Status:** shipped
 
 **Closure:** 2026-06-10 — unit 175/175 (controlMode 11 + real-socket 3 new), xvfb integration 21 passing unchanged; dead-map latency measured 945ms on the real socket (~1.3s worst-case in-extension vs 3s+ before); residual: none
+
 **Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
 
 **UI impact:** none

@@ -5,6 +5,7 @@ _Created 2026-07-18._
 **Status:** shipped-partial
 
 **Closure:** Exact positively-owned native Pi Fork shipped in `ee97ff02`; automated/human dogfood closure landed in `1e7f42e9` with Dev Host proof at `397cea17`. SDD 408 commit `97c2c215` temporarily refuses a simultaneous live Pi sibling for OAuth safety; follow-up `t-a1da29` restores live Fork after upstream shared-auth support.
+
 **Verify:** `npx vitest run test/unit/adapters.test.ts test/unit/piBridgeExtension.test.ts test/unit/agentManager.test.ts test/unit/piSession.test.ts test/unit/resume.test.ts --maxWorkers=2 && npm run build && npm run check:engine-boundary && npm run test:invariants`
 **Dogfood:** `node scripts/dogfood/pi-native-fork.mjs`
 

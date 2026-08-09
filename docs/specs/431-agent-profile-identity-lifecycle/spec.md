@@ -4,6 +4,7 @@ _Created 2026-07-22._
 
 **Status:** shipped
 **Closure:** Shipped through `t-152041` (`599441cc`), `t-c3605c` (`885f8e9d`) and `t-980e6e` (`c8bcf33c`); all child SDDs and final compatibility gates are green.
+
 **Verify:** `npm run typecheck`
 **Verify:** `npm run verify:full:quiet`
 

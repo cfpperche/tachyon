@@ -4,15 +4,16 @@ _Created 2026-07-04._
 
 **Status:** shipped
 **Closure:** shipped 2026-07-04 — digest-only caller registry (HMAC key in SecretStorage, persistence
-**Verify:** `npm test -- --run test/unit/callerIdentity.test.ts test/unit/bridge.test.ts`
-**Verify:** `npm run typecheck`
-**Dogfood:** `npm test -- --run test/unit/callerIdentity.test.ts -t "mismatch"`
 preserving the no-plaintext invariant + surviving-tmux resolution), per-agent token mint/revoke at
 spawn/resume, Bridge per-request caller snapshots with reason codes, actor resolution + mismatch across all
 self-identifying tools, self-assign suppression, probe per-run tokens, fenced+logged legacy compat,
 diagnostics redaction. Implemented by ad-hoc Sonnet identityB (aaf9b34..286908f, incl. an API-error stall
 rescued via the 341 idle queue); suite 2482 green; live dogfood PASS on 0.55.17 (see notes). Follow-up:
 t-600324 (dedicated external token).
+
+**Verify:** `npm test -- --run test/unit/callerIdentity.test.ts test/unit/bridge.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/callerIdentity.test.ts -t "mismatch"`
 
 ## Intent
 

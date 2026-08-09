@@ -4,11 +4,12 @@ _Created 2026-07-03._
 
 **Status:** shipped
 **Closure:** Implemented standalone Validation queue under `.tachyon/validations/`, Bridge validation tools, discovery candidates, `next_validation`, and Mission Control pending/closure UI. Evidence after Opus review fixes: `npm test -- test/unit/bridge.test.ts test/unit/auth.test.ts test/unit/boardSnapshot.test.ts test/unit/missionControlPanel.test.ts test/unit/validationStore.test.ts test/unit/nextValidation.test.ts test/unit/validationDiscovery.test.ts && npm run typecheck && npm run build`.
-**Verify:** `npm test -- test/unit/validationStore.test.ts test/unit/nextValidation.test.ts test/unit/bridge.test.ts && npm run typecheck && npm run build`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm test -- test/unit/validationStore.test.ts test/unit/nextValidation.test.ts test/unit/bridge.test.ts && npm run typecheck && npm run build`
 
 ## Intent
 

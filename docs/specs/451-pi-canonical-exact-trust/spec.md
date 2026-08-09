@@ -4,12 +4,13 @@ _Created 2026-07-25._
 
 **Status:** shipped
 **Closure:** `t-20c856` shipped exact canonical Pi trust across fresh/restart/resume, with Pi 0.80.10 TTY dogfood and integrated verification recorded in `notes.md`.
-**Verify:** `npm run typecheck`
-**Verify:** `npm run verify:full:quiet`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 
 ## Intent
 

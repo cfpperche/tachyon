@@ -4,12 +4,13 @@ _Created 2026-06-30._
 
 **Status:** shipped
 **Closure:** Shipped 2026-06-30: Codex Activity now resolves rollout paths safely (`resolveCodexSession` + ownership/shared-cwd policy), writes structured durable `runtime:"codex"` events through a Codex normalizer, preserves Claude Activity behavior through a runtime normalizer factory, and includes focused tests plus headless dogfood against a real local Codex rollout schema proof. Validation: focused verify, `npm run typecheck`, `npm test`, and `node scripts/dogfood-codex-activity.mjs` passed.
-**Verify:** `npm test -- --run test/unit/resume.test.ts test/unit/agentManager.test.ts test/unit/codexNormalizer.test.ts test/unit/activityLog.integration.test.ts && npm run typecheck`
-**Dogfood:** `node scripts/dogfood-codex-activity.mjs`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm test -- --run test/unit/resume.test.ts test/unit/agentManager.test.ts test/unit/codexNormalizer.test.ts test/unit/activityLog.integration.test.ts && npm run typecheck`
+**Dogfood:** `node scripts/dogfood-codex-activity.mjs`
 
 ## Intent
 

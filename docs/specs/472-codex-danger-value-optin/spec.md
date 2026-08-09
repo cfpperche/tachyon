@@ -4,8 +4,6 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped in the t-b0440a worktree: `approval_policy`/`sandbox_mode` held to enums
-**Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- codex-danger-optin`
 measured against `codex-cli 0.145.0`, the two dangerous values gated behind per-agent
 `authorize: [neverAskForApproval|dangerFullAccess]`, the SDD 471 authorization gate generalized
 per runtime, Agent Studio controls with localized risk copy, and fresh/restart/resume projection.
@@ -15,6 +13,9 @@ screenshots under `evidence/`.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- codex-danger-optin`
 
 ## Intent
 

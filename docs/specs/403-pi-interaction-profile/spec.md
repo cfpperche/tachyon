@@ -5,6 +5,7 @@ _Created 2026-07-18._
 **Status:** shipped
 
 **Closure:** Measured framed-composer Attention and graceful Stop shipped in `e18f2e77`; dogfood closure landed in `c6cf5f96` with human idle/draft/active-turn approval at `27c1f433`.
+
 **Verify:** `npx vitest run test/unit/runtimeProfile.test.ts test/unit/attention.test.ts test/unit/cxComposerFixBehavior.gen.test.ts test/unit/cxManifestsBehavior.gen.test.ts test/unit/launchReadinessRecovery.test.ts test/unit/agentManager.test.ts --maxWorkers=2 && npm run build && npm run check:engine-boundary && npm run test:invariants`
 **Dogfood:** `node scripts/dogfood/pi-interaction-profile.mjs`
 

@@ -5,6 +5,7 @@ _Created 2026-07-18._
 **Status:** shipped
 
 **Closure:** Exact minted Pi session identity, private session directory and fail-closed Resume shipped in `dc3e8a60`; dogfood closure landed in `6dc5d197` with human Stop → Resume evidence at `ff71e6c3`.
+
 **Verify:** `npx vitest run test/unit/adapters.test.ts test/unit/resume.test.ts test/unit/agentManager.test.ts test/unit/piSession.test.ts`
 **Verify:** `npm run test:invariants`
 **Dogfood:** `node scripts/dogfood/pi-session-continuity.mjs`

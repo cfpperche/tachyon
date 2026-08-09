@@ -7,6 +7,7 @@ _Created 2026-07-16._
 **Branch:** `grok/agent-restart-modes`
 
 **Closure:** Shipped 2026-07-16 — restart matrix stop×session; Bridge defaults graceful+resume; UI one-click Restart=force+resume + overflow new/force-new (no QuickPick); clearStopping on resume; terminal attach socket fix for Dev Host; headless dogfood + maintainer EDH approve.
+
 **Verify:** `npx vitest run test/unit/agentManager.test.ts -t "spec 389" test/unit/engineServiceProtocol.test.ts test/integration/restartModesDogfood.test.ts`
 **Dogfood:** `npm run dogfood -- restart-modes` (real tmux, private `TMUX_TMPDIR`; evidence `.tachyon/evidence/restart-modes-dogfood/latest.json`)
 

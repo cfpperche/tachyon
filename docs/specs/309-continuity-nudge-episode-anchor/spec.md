@@ -4,6 +4,7 @@ _Created 2026-07-01._
 
 **Status:** shipped
 **Closure:** Shipped continuity nudge same-episode suppression with `lastNudgeSeq`; verified by focused unit tests, typecheck, and spec dogfood on 2026-07-01. Commit pending in this working turn.
+
 **Verify:** `npm test -- --run test/unit/continuityWiring.test.ts test/unit/continuityClassifier.test.ts && npm run typecheck`
 **Dogfood:** `npm test -- --run test/unit/continuityWiring.test.ts -t "spec 309"`
 
