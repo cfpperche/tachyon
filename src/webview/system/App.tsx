@@ -1,4 +1,4 @@
-import type { CockpitModel } from "../../cockpit/model";
+import type { CockpitModel } from "../../sections/model";
 import type { ControlInspectorWorkspaceRow } from "../../control-inspector/model";
 import { EngineLogPanel } from "../shared/control/EngineLogPanel";
 import { Badge, Button, PageChrome } from "../shared/ui";

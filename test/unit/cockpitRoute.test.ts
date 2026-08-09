@@ -11,9 +11,9 @@ import {
   isStudioRoute,
   type CockpitRoute,
   type CockpitNonStudioRoute,
-} from "../../src/cockpit/route.js";
-import { COCKPIT_SECTION_ORDER } from "../../src/cockpit/model.js";
-import { resolveCockpitSection } from "../../src/cockpit/resolveSection.js";
+} from "../../src/sections/route.js";
+import { COCKPIT_SECTION_ORDER } from "../../src/sections/model.js";
+import { resolveCockpitSection } from "../../src/sections/resolveSection.js";
 import { STUDIO_IDS } from "../../src/cockpit/studioIds.js";
 
 describe("routes.section / routeKey / formatRoute", () => {

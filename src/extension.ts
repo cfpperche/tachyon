@@ -18,10 +18,10 @@ import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesP
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
-import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
+import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./sections/model.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
-import { resolveCockpitSection } from "./cockpit/resolveSection.js";
-import { resolveSectionDestination } from "./cockpit/route.js";
+import { resolveCockpitSection } from "./sections/resolveSection.js";
+import { resolveSectionDestination } from "./sections/route.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
 import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";

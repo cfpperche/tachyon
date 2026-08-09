@@ -1,4 +1,4 @@
-import type { CockpitModel } from "../../cockpit/model.js";
+import type { CockpitModel } from "../../sections/model.js";
 import { READY, readyMessage, type ReadyMessage } from "../shared/ready.js";
 
 export { READY, readyMessage, type ReadyMessage };

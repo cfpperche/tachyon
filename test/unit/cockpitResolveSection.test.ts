@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveCockpitSection, isCockpitSectionId } from "../../src/cockpit/resolveSection.js";
+import { resolveCockpitSection, isCockpitSectionId } from "../../src/sections/resolveSection.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 
 describe("resolveCockpitSection (spec 410)", () => {

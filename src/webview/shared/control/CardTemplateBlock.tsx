@@ -29,7 +29,7 @@ import {
   validate,
   type CardEditorState,
 } from "../../../cockpit/cardTemplateEditor";
-import type { CockpitCardTemplateState } from "../../../cockpit/model";
+import type { CockpitCardTemplateState } from "../../../sections/model";
 import type { CockpitStrings } from "./messages";
 
 declare global {

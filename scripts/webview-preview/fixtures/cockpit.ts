@@ -2,8 +2,8 @@
  * Control panel fixtures for dev-host preview (production-facing copy only).
  */
 
-import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/cockpit/model";
-import { routes as cockpitRoutes } from "../../../src/cockpit/route";
+import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../../src/sections/model";
+import { routes as cockpitRoutes } from "../../../src/sections/route";
 import type { CockpitStrings } from "../../../src/webview/shared/control/messages";
 import type { WorktreesStrings } from "../../../src/webview/worktrees/messages";
 import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/types";

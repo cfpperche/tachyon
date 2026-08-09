@@ -4,7 +4,7 @@ import {
   collectNeedsFor,
   formatCockpitDiagnostics,
   type CockpitWorkspaceBundle,
-} from "../cockpit/model.js";
+} from "../sections/model.js";
 import { cockpitStrings } from "./controlStrings.js";
 import {
   SectionPanelManager,

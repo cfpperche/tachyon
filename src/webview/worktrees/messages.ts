@@ -1,4 +1,4 @@
-import type { CockpitModel } from "../../cockpit/model";
+import type { CockpitModel } from "../../sections/model";
 import { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 
 export { READY, readyMessage, type ReadyMessage };

@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
 import { isAgentRow, type FleetVM, type AgentVM } from "../sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
-import { isCockpitSectionId } from "../cockpit/resolveSection.js";
+import { isCockpitSectionId } from "../sections/resolveSection.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import type { ActionId } from "../sidebar/actions.js";
 import { agentContextValue } from "../presentation/contextValue.js";

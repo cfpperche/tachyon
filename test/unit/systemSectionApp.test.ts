@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { COCKPIT_SECTION_IDS, collectNeedsFor, type CockpitSectionId } from "../../src/cockpit/model.js";
-import { resolveSectionDestination } from "../../src/cockpit/route.js";
-import { isCockpitSectionId, resolveCockpitSection } from "../../src/cockpit/resolveSection.js";
+import { COCKPIT_SECTION_IDS, collectNeedsFor, type CockpitSectionId } from "../../src/sections/model.js";
+import { resolveSectionDestination } from "../../src/sections/route.js";
+import { isCockpitSectionId, resolveCockpitSection } from "../../src/sections/resolveSection.js";
 import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
 import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
@@ -47,7 +47,7 @@ describe("SDD 500 S1 — overview and engine resolve to system", () => {
   it("route.ts's eight default fallbacks are untouched — they still name overview", () => {
     // The whole argument of plan.md § D1: because `overview` keeps decoding, not one of these has to
     // change. If a future edit rewrites them to `system`, that is a different decision and this goes red.
-    const route = readFileSync("src/cockpit/route.ts", "utf8");
+    const route = readFileSync("src/sections/route.ts", "utf8");
     const fallbacks = [...route.matchAll(/section:\s*"overview"/g)].length;
     expect(fallbacks, "the three parentRoute overview fallbacks moved or were rewritten").toBe(3);
     expect(route).toContain('routes.section("overview")');

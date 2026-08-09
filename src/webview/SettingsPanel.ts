@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { buildCockpitModel, collectNeedsFor, type CockpitModel, type CockpitWorkspaceBundle } from "../cockpit/model.js";
+import { buildCockpitModel, collectNeedsFor, type CockpitModel, type CockpitWorkspaceBundle } from "../sections/model.js";
 import { parseCardTemplate } from "../sidebar/cardTemplate.js";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
 import { cockpitStrings } from "./controlStrings.js";

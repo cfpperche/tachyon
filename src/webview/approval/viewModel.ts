@@ -11,7 +11,7 @@ import {
   type ApprovalResolution,
   type ApprovalStatus,
 } from "../../bridge/approvalRequest.js";
-import type { CockpitApprovalRow } from "../../cockpit/model.js";
+import type { CockpitApprovalRow } from "../../sections/model.js";
 
 export interface ApprovalViewItem {
   id: string;

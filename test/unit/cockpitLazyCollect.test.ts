@@ -4,7 +4,7 @@ import {
   COLLECT_EVERYTHING,
   buildCockpitModel,
   type CockpitWorkspaceBundle,
-} from "../../src/cockpit/model.js";
+} from "../../src/sections/model.js";
 
 /**
  * t-af3eef — navigation used to block on a serial collect of the whole world.

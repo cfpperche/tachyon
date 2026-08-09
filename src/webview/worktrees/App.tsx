@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
-import type { CockpitModel, CockpitWorktreeRow } from "../../cockpit/model";
+import type { CockpitModel, CockpitWorktreeRow } from "../../sections/model";
 import { Badge, Button, EmptyState, ListRow, PageChrome } from "../shared/ui";
 import type { WorktreesAction, WorktreesStrings as Strings } from "./messages";
 

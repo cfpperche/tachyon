@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import path from "node:path";
-import { buildCockpitModel, type CockpitWorkspaceBundle } from "../../src/cockpit/model.js";
+import { buildCockpitModel, type CockpitWorkspaceBundle } from "../../src/sections/model.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import type { CockpitStrings } from "../../src/webview/shared/control/messages.js";
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCockpitModel, COCKPIT_SECTION_ORDER, formatCockpitDiagnostics } from "../../src/cockpit/model.js";
+import { buildCockpitModel, COCKPIT_SECTION_ORDER, formatCockpitDiagnostics } from "../../src/sections/model.js";
 
 describe("cockpit model", () => {
   it("orders sections by ops frequency (no soon slots)", () => {

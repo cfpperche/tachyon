@@ -3,7 +3,7 @@ import { Uri } from "vscode";
 import { __createdPanels, __getWarningMessageCalls, __resetVscodeMock } from "../mocks/vscode.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager, type WorktreesDeps } from "../../src/webview/WorktreesPanel.js";
 import { readyMessage } from "../../src/webview/worktrees/messages.js";
-import type { CockpitWorkspaceBundle, CockpitWorktreeRow } from "../../src/cockpit/model.js";
+import type { CockpitWorkspaceBundle, CockpitWorktreeRow } from "../../src/sections/model.js";
 
 /**
  * SDD 485 D6 — retargeted from Control's retired Worktrees handler to the standalone dashboard host.

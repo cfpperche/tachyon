@@ -7,7 +7,7 @@ import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js"
 import { ControlWorkspaceScope, controlWorkspaceScope } from "../../src/webview/shared/ControlWorkspaceScope.js";
 import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
 import { SAMPLE, TABS, type FleetVM, type TabId } from "../../src/sidebar/types.js";
-import { buildCockpitModel } from "../../src/cockpit/model.js";
+import { buildCockpitModel } from "../../src/sections/model.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 

@@ -5,7 +5,7 @@ import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
-import { buildCockpitModel, type CockpitWorkspaceBundle, type CockpitWorktreeRow } from "../../src/cockpit/model.js";
+import { buildCockpitModel, type CockpitWorkspaceBundle, type CockpitWorktreeRow } from "../../src/sections/model.js";
 import { landSuggestion, type LandFacts } from "../../src/worktree/land.js";
 
 /**

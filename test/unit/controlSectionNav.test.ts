@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { COCKPIT_SECTION_ORDER } from "../../src/cockpit/model.js";
+import { COCKPIT_SECTION_ORDER } from "../../src/sections/model.js";
 import { CONTROL_SECTION_NAV } from "../../src/cockpit/sectionNav.js";
 
 describe("CONTROL_SECTION_NAV (t-6e2952)", () => {

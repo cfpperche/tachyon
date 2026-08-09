@@ -16,7 +16,7 @@ import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
-import { buildCockpitModel, type CockpitWorkspaceBundle, type CockpitWorktreeRow } from "../../src/cockpit/model.js";
+import { buildCockpitModel, type CockpitWorkspaceBundle, type CockpitWorktreeRow } from "../../src/sections/model.js";
 
 const SHELL_TSX = path.join(__dirname, "../../src/webview/worktrees/App.tsx");
 

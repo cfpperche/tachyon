@@ -9,7 +9,7 @@ import {
   type ApprovalRequest,
 } from "../../src/bridge/approvalRequest.js";
 import { buildApprovalViewModel, listApprovalViewItems, pendingApprovalRows } from "../../src/webview/approval/viewModel.js";
-import { buildCockpitModel, type CockpitWorkspaceBundle } from "../../src/cockpit/model.js";
+import { buildCockpitModel, type CockpitWorkspaceBundle } from "../../src/sections/model.js";
 
 const roots: string[] = [];
 

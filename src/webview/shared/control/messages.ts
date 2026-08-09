@@ -1,4 +1,4 @@
-import type { CockpitModel, CockpitSectionId } from "../../../cockpit/model.js";
+import type { CockpitModel, CockpitSectionId } from "../../../sections/model.js";
 import { READY } from "../ready.js";
 
 export const INIT = "init" as const;

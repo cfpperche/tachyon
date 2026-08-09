@@ -23,7 +23,7 @@
  */
 
 import { controlSectionIcon } from "../cockpit/sectionNav.js";
-import type { CockpitSectionId } from "../cockpit/model.js";
+import type { CockpitSectionId } from "../sections/model.js";
 
 /**
  * How many panels of one app may exist at once, and — equivalently — what a panel's KEY is made of.

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../src/cockpit/model.js";
+import { buildCockpitModel, type CockpitModel, type CockpitWorkspaceBundle } from "../../src/sections/model.js";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "../../src/webview/SystemPanel.js";
@@ -201,7 +201,7 @@ describe("SDD 500 — the workspace-wide counts keep their own sources", () => {
     // Measured rather than assumed: the field is not dead just because the screen stopped reading it
     // whole. Deleting it would silently empty three lines of the diagnostics a human copies when
     // something is already wrong.
-    const model = readFileSync("src/cockpit/model.ts", "utf8");
+    const model = readFileSync("src/sections/model.ts", "utf8");
     for (const line of ["model.overview.approvalsPending", "model.overview.inboxPending", "model.overview.worktreesActive"]) {
       expect(model, `formatCockpitDiagnostics lost ${line}`).toContain(line);
     }
