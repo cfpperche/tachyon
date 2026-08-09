@@ -12,7 +12,7 @@
  */
 import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
-import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
+import { loadWebviewModule, renderStatic, renderStaticWithElements, type RenderedElement } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
 import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "../../src/sections/model.js";
 import { landSuggestion, type LandFacts } from "../../src/worktree/land.js";
@@ -154,6 +154,53 @@ describe("t-7cb971 — the land suggestion on a Worktrees row", () => {
       expect(hasCommand, JSON.stringify(override)).toBe(html.includes(fixtureStrings.landCopyCommand));
       expect(hasCommand, JSON.stringify(override)).toBe(land.command !== undefined);
     }
+  });
+
+  /**
+   * t-ea5425 — the block is the ROW's, not its text column's.
+   *
+   * `detail` sits inside `.ds-list-row-main`, which shares the row's line with the action buttons, so a
+   * land block placed there is laid out in whatever is left over: measured at 880 with the preview
+   * harness, 480px of an 824px card (0.58), with the one actionable `Fix:` sentence broken over three
+   * lines. The pixel claim belongs to the visual pass (`scripts/visual-qa/worktrees-land-card.mjs`);
+   * what is asserted HERE is the structural fact that pass depends on, because a later refactor that
+   * moves the block back into `detail` would keep every other assertion in this file green.
+   */
+  it("renders the block in the row footer, never inside the row's text column", () => {
+    const { elements } = renderStaticWithElements(Shell({
+      strings: fixtureStrings,
+      model: buildSectionsModel([bundle([row()])], { section: "worktrees", wsHash: "h" }),
+      post: () => {},
+    }));
+    const withClass = (name: string): RenderedElement[] =>
+      elements.filter((el) => String(el.props.class ?? "").split(" ").includes(name));
+
+    const footers = withClass("ds-list-row-footer");
+    expect(footers).toHaveLength(1);
+    expect(footers[0].html).toContain('data-testid="worktree-land"');
+    // The path stays in `detail`, where `word-break: break-all` is right for it — and the block does not.
+    for (const detail of withClass("ds-list-row-detail")) {
+      expect(detail.html).not.toContain('data-testid="worktree-land"');
+      expect(detail.html).toContain("/cache/wt/h/change/x");
+    }
+    // The wrap modifier is what lets the footer take a line of its own; without it the block would be
+    // laid out beside the actions again, on a row that merely LOOKS like it has a footer.
+    expect(withClass("ds-list-row-has-footer")).toHaveLength(1);
+  });
+
+  /** A row with no land suggestion asks for no footer at all — and so keeps the unwrapped row it had. */
+  it("adds no footer to a row the engine sent no suggestion for", () => {
+    const { elements } = renderStaticWithElements(Shell({
+      strings: fixtureStrings,
+      model: buildSectionsModel([bundle([row({
+        land: undefined,
+        classification: { ...UNLANDED, state: "ready-to-remove", reasons: [], aheadOfBase: 0, containedInBase: true, containedInTrunk: true },
+      })])], { section: "worktrees", wsHash: "h" }),
+      post: () => {},
+    }));
+    const classes = elements.map((el) => String(el.props.class ?? ""));
+    expect(classes.some((c) => c.split(" ").includes("ds-list-row-footer"))).toBe(false);
+    expect(classes.some((c) => c.split(" ").includes("ds-list-row-has-footer"))).toBe(false);
   });
 
   it("two rows with different verdicts do not decide for each other", () => {

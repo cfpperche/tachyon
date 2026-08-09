@@ -26,9 +26,11 @@
 /* t-43c6fa — classifier reasons on a Delivery row (why it is in the state the badge claims). */
 .ck-dlv-reasons { display: block; color: var(--ds-muted); font-size: var(--ds-small); margin-top: var(--ds-1); }
 /* ── t-7cb971 — the land suggestion block on a row with unlanded work ─────── */
-/* `word-break: break-all` is inherited from .ds-list-row-detail, whose content is a filesystem path.
-   Prose is not a path: measured at 880 it wrapped "checked out" as "chec / ked out" on every line.
-   Reset it here and let only the command — the one genuinely unbreakable string — break anywhere. */
+/* The block states its own text rules rather than inheriting them: it used to sit inside
+   .ds-list-row-detail, whose `word-break: break-all` is right for a filesystem path and wrong for prose
+   (measured at 880 it wrapped "checked out" as "chec / ked out" on every line). t-ea5425 moved it to the
+   row FOOTER, which breaks nothing — the declarations stay so the block cannot be re-parented into a
+   path column and quietly get that wrap back. Only the command breaks anywhere. */
 .ck-land { margin-top: var(--ds-2); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-2) var(--ds-3); background: color-mix(in srgb, var(--ds-card) 60%, transparent); word-break: normal; overflow-wrap: break-word; }
 .ck-land-head { display: flex; align-items: baseline; gap: var(--ds-2); flex-wrap: wrap; }
 .ck-land-title { font-size: var(--ds-section); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -45,7 +47,10 @@
 .ck-land-bad { color: var(--ds-warn); }
 .ck-land-ok .ck-land-mark { color: var(--ds-ok); }
 .ck-land-bad .ck-land-mark { color: var(--ds-err); }
-.ck-land-fix { display: block; color: var(--ds-muted); }
+/* t-ea5425 — the exit reads at full strength. It is the ONE line on the card a human can act on, and
+   muted grey under an amber verdict made it the quietest thing in the block; the bold `Fix:` term gives
+   the eye the same handle the check label above it has. */
+.ck-land-fix { display: block; color: var(--ds-fg); }
 /* Column, not a row: at 360 a command and its button side by side leave the command a few characters
    wide, and a land command is the one string on this surface that must be readable in full. */
 .ck-land-command { display: flex; flex-direction: column; align-items: flex-start; gap: var(--ds-1); margin-top: var(--ds-2); }

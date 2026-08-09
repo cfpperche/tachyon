@@ -37,6 +37,16 @@ export interface ListRowProps {
   meta?: ComponentChildren;
   detail?: ComponentChildren;
   actions?: ComponentChildren;
+  /**
+   * t-ea5425 — a block that belongs to the whole row rather than to its text column: it starts under
+   * the leading edge and runs to the card's far border, BELOW both the main column and the actions.
+   *
+   * `detail` is the wrong slot for such a block and the difference is measurable, not stylistic. It
+   * lives inside `.ds-list-row-main`, which shares the row with `.ds-list-row-actions`; measured on the
+   * Worktrees land block at 880, that left it 480px of an 824px card (0.58) and wrapped its one
+   * actionable sentence over five lines. A row with no `footer` renders exactly as before.
+   */
+  footer?: ComponentChildren;
   class?: string;
   onClick?: JSX.MouseEventHandler<HTMLElement>;
 }
@@ -50,10 +60,13 @@ export function ListRow({
   meta,
   detail,
   actions,
+  footer,
   class: cls,
   onClick,
 }: ListRowProps) {
-  const className = cx("ds-list-row", cls);
+  // The wrap modifier is a class rather than `:has(> .ds-list-row-footer)` so the row a footer changes
+  // is the row that ASKED for one: every existing row keeps `nowrap` and its measured behaviour.
+  const className = cx("ds-list-row", footer != null ? "ds-list-row-has-footer" : undefined, cls);
   const dataState = state === "idle" ? undefined : state;
   const body = (
     <>
@@ -64,6 +77,7 @@ export function ListRow({
         {detail != null ? <div class="ds-list-row-detail">{detail}</div> : null}
       </div>
       {actions ? <div class="ds-list-row-actions">{actions}</div> : null}
+      {footer != null ? <div class="ds-list-row-footer">{footer}</div> : null}
     </>
   );
   if (as === "li") {
