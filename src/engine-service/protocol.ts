@@ -287,7 +287,6 @@ export interface WorkspaceStudioFormV1 {
   worktree: boolean;
   branch: string;
   worktreeSetup: string;
-  verify: string;
   isolate: boolean;
   schedTiming: "every" | "at";
   schedEvery: string;
@@ -1291,7 +1290,7 @@ export function workspacePinStudioApplySuccessV1(
 
 const STUDIO_FORM_STRING_KEYS = [
   "name", "cmd", "instructions", "role", "watch", "steps", "cwd", "branch", "worktreeSetup",
-  "verify", "schedEvery", "schedAt", "schedTarget",
+  "schedEvery", "schedAt", "schedTarget",
 ] as const;
 const STUDIO_FORM_BOOLEAN_KEYS = [
   "autostart", "restartOnCrash", "attention", "soul", "selfEvolution", "worktree", "isolate", "catchUp",

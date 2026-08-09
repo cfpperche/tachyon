@@ -141,7 +141,6 @@ describe("SDD 479 phase 4 — the rows the preview shows", () => {
   it("includes a row carrying states a template may not hide, so re-admission is visible", () => {
     const error = CARD_PREVIEW_ROWS.find((r) => r.id === "error")!.row;
     expect(error.authRequired).toBeDefined();
-    expect(error.verify).toBe("fail");
     expect(error.configInvalid).toBe(true);
   });
 

@@ -37,7 +37,6 @@ const BASE: FormState = {
   worktree: false,
   branch: "",
   worktreeSetup: "",
-  verify: "",
   schedTiming: "every",
   schedEvery: "1h",
   schedAt: "09:00",
@@ -153,14 +152,6 @@ describe("formLogic", () => {
     // round-trips from a declared worktree agent
     const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    worktree: true\n    branch: feat/x\n    worktreeSetup:\n      - pnpm i\n");
     expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ worktree: true, branch: "feat/x", worktreeSetup: "pnpm i" });
-  });
-
-  it("toEntry persists the verify-gate; fromDef round-trips it (spec 214)", () => {
-    expect(toEntry({ ...BASE, worktree: true, verify: "  npm test  " })).toMatchObject({ verify: "npm test" });
-    expect(toEntry({ ...BASE }).verify).toBeUndefined(); // none by default, clean yml
-    const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    worktree: true\n    verify: test\n");
-    expect(fromDef("rev", config!.agents.rev).verify).toBe("test");
-    expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ verify: "test" });
   });
 
   it("round-trips only the enabled Agent Evolution opt-in (spec 421)", () => {

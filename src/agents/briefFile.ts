@@ -42,8 +42,8 @@ export function shellEscapedBodyBytes(body: string): number {
 
 /**
  * Guard the complete pane-bound brief after all primer/gate/config framing has been added. Body
- * diversion normally keeps it small; this catches oversized dynamic protocol facts (for example a
- * configured verify command or gate identifier) before tmux can reject the argv opaquely.
+ * diversion normally keeps it small; this catches oversized dynamic protocol facts before tmux can
+ * reject the argv opaquely.
  */
 export function assertSafeBriefTransport(body: string, context: string): void {
   const transportBytes = shellEscapedBodyBytes(body);
@@ -51,7 +51,7 @@ export function assertSafeBriefTransport(body: string, context: string): void {
   throw new Error(
     `${context} is ${Buffer.byteLength(body, "utf8")} UTF-8 bytes ` +
       `(${transportBytes} shell-escaped transport bytes), above the safe pane-delivery ceiling ` +
-      `(${SAFE_INLINE_CEILING} bytes); shorten configured verification/gate facts or task framing`,
+      `(${SAFE_INLINE_CEILING} bytes); shorten configured protocol facts or task framing`,
   );
 }
 

@@ -12,7 +12,6 @@ import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidat
 import { agentForgetPlanResultSchemaV1, type AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
 import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
 import { scanAgentRosterDirectory } from "../config/agentRosterDirectory.js";
-import { collectVerifyCandidates } from "../config/verifyCandidates.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import {
@@ -105,7 +104,6 @@ export class ClientWorkspaceStudioTarget implements WorkspaceAgentStudioTarget {
       detectClis: this.detectClis,
       takenNames: () => Object.keys(this.config?.agents ?? {}),
       commandNames: () => Object.keys(this.config?.commands ?? {}),
-      verifyCandidates: () => collectVerifyCandidates(this.workspaceRoot, this.config),
       defaultCwd: this.workspaceRoot,
       suggestKindForCommand,
       onSubmit: this.studioSubmit,

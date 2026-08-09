@@ -25,10 +25,10 @@ describe("SDD 479 phase 2 — settings.sidebar.cardTemplate", () => {
   sidebar:
     cardTemplate:
       version: 1
-      meta: [branch, verify, harness]
+      meta: [branch, evidence, harness]
 `);
     expect(result.errors).toEqual([]);
-    expect(result.config?.settings.sidebar?.cardTemplate?.base.meta).toEqual(["branch", "verify", "harness"]);
+    expect(result.config?.settings.sidebar?.cardTemplate?.base.meta).toEqual(["branch", "evidence", "harness"]);
     // A region the template does not mention keeps the default, so a person reordering badges does not
     // silently lose their actions row.
     expect(result.config?.settings.sidebar?.cardTemplate?.base.footer).toEqual(DEFAULT_CARD_TEMPLATE.footer);
@@ -81,7 +81,7 @@ describe("SDD 479 phase 2 — settings.sidebar.cardTemplate", () => {
   sidebar:
     cardTemplate:
       version: 1
-      meta: [branch, verify, branch]
+      meta: [branch, evidence, branch]
 `);
     expect(result.config?.settings.sidebar?.cardTemplateRefusal?.join("\n")).toContain("duplicate component 'branch'");
   });

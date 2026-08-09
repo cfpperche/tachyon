@@ -815,7 +815,6 @@ function studioForm(): WorkspaceStudioFormV1 {
     worktree: false,
     branch: "",
     worktreeSetup: "",
-    verify: "",
     isolate: false,
     schedTiming: "every",
     schedEvery: "1h",

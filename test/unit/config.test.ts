@@ -322,30 +322,24 @@ describe("parseConfig", () => {
     expect(parseConfig(`${base}settings:\n  worktree:\n    nope: 1\n`).warnings[0]).toContain("unknown key 'nope'");
   });
 
-  // spec 214 — verify-gate config surface
-  it("parses agent verify + global settings.worktree.verify (trimmed)", () => {
-    const { config, errors } = parseConfig(
-      `agents:\n  rev:\n    cmd: claude\n    worktree: true\n    verify: "  npm test  "\nsettings:\n  worktree:\n    verify: ci\n`,
-    );
-    expect(errors).toEqual([]);
-    expect(asAgent(config?.agents.rev)?.verify).toBe("npm test");
-    expect(config?.settings.worktree?.verify).toBe("ci");
+  it("warns and drops removed agent and worktree verify keys", () => {
+    const parsed = parseConfig(`agents:\n  a:\n    cmd: x\n    verify: npm test\nsettings:\n  worktree:\n    verify: ci\n`);
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.warnings).toContain("agents.a: unknown key 'verify'");
+    expect(parsed.warnings).toContain("settings.worktree: unknown key 'verify'");
+    expect(parsed.config?.agents.a).not.toHaveProperty("verify");
+    expect(parsed.config?.settings.worktree).not.toHaveProperty("verify");
   });
 
-  it("rejects an empty / non-string verify (agent + global)", () => {
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    verify: "   "\n`).warnings[0]).toContain("verify");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\n    verify: 3\n`).warnings[0]).toContain("verify");
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  worktree:\n    verify: ""\n`).warnings[0]).toContain("settings.worktree.verify");
-  });
-
-  it("warns and drops retired settings.verify without touching worktree verify", () => {
+  it("warns and drops retired settings.verify and worktree.verify", () => {
     const { config, errors, warnings } = parseConfig(
       `agents:\n  a:\n    cmd: x\nsettings:\n  verify:\n    full: "  npm run test:all  "\n    typecheck: " npm run typecheck "\n    prepare: " npm ci --ignore-scripts "\n    affected: " npx vitest related --run "\n  worktree:\n    verify: ci\n`,
     );
     expect(errors).toEqual([]);
     expect(config?.settings).not.toHaveProperty("verify");
     expect(warnings).toContain("settings: unknown key 'verify'");
-    expect(config?.settings.worktree?.verify).toBe("ci");
+    expect(warnings).toContain("settings.worktree: unknown key 'verify'");
+    expect(config?.settings.worktree).not.toHaveProperty("verify");
   });
 
   it("parses ordered project-owned guidance paths, trimming only their outer whitespace", () => {

@@ -142,7 +142,7 @@ import type { FormationAdoptionRecord, FormationAdoptionState } from "../agents/
 import { readCanonicalAgentProfile, readCanonicalAgentProfileEntry, closeCanonicalAgentProfile } from "../config/agentProfileReader.js";
 import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsumer.js";
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
-import { shareDependencies, auditSharedDependencies } from "../worktree/dependencySharing.js";
+import { shareDependencies } from "../worktree/dependencySharing.js";
 import { resolveParentLocation } from "../worktree/parentLocation.js";
 import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
@@ -161,11 +161,9 @@ import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registr
 import { adapterFor, binaryOf, harnessable, managesOwnSession, runtimeOf } from "../resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
-import { effectiveVerify, verifySteps, verifyStale, verifyBadge, worktreeUnchanged, type VerifyState, type VerifyBadge } from "../worktree/verify.js";
-import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, summarizeEvidence, viewEvidence, isSafeArtifactRef, type WorktreeEvidence, type Severity, type EvidenceSummary, type EvidenceView } from "../worktree/evidence.js";
+import { EVIDENCE_SCHEMA_VERSION, summarizeEvidence, viewEvidence, isSafeArtifactRef, type WorktreeEvidence, type EvidenceSummary, type EvidenceView } from "../worktree/evidence.js";
 import { copyEvidenceArtifacts } from "../worktree/evidenceArtifacts.js";
 import type { AttachEvidenceInput } from "../bridge/tools.js";
-import { collectVerifyCandidates } from "../config/verifyCandidates.js";
 import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
@@ -324,16 +322,6 @@ const ATTENTION_POLL_MS = 3000;
 const LEGACY_FLEET_RECHECK_ATTEMPTS = 15;
 const LEGACY_FLEET_RECHECK_INTERVAL_MS = 4_000;
 
-/**
- * spec 214 — internal label a verify run uses with the runbook executor. MUST be tmux-safe:
- * a `:` is tmux's session:window target separator, so the label can NOT contain one (review
- * fix: `verify:<agent>` broke new-session). The leading `_` is also NAME_RE-impossible (names
- * must start with a letter), so it can never collide with a user-declared runbook/command name
- * (round-2 review fix: `verify-<agent>` could clash with a runbook literally named that).
- */
-const VERIFY_LABEL_PREFIX = "_verify-";
-const verifyLabel = (agent: string): string => `${VERIFY_LABEL_PREFIX}${agent}`;
-
 /** spec 230/231 — the pipeline-node completion guidance now lives in `nodePrompt.ts` (`assembleNodePrompt`),
  *  which owns the byte-identical guidance literal + the run-input/upstream sections. */
 
@@ -466,7 +454,7 @@ type Translate = (message: string, ...args: (string | number | boolean)[]) => st
 
 const warnedPatterns = new Set<string>();
 
-/** Best-effort file read for the verify-stack framework hints (composer/Gemfile); undefined on any failure. */
+/** Best-effort project config read; undefined on any failure. */
 function safeRead(p: string): string | undefined {
   try {
     return fs.readFileSync(p, "utf8");
@@ -1416,7 +1404,7 @@ export class Workspace {
     });
 
     // spec 230 — the pipeline executor. Constructed before the Bridge so its `completeNode` dep can
-    // reference it. Deps bind to the real WorktreeManager / AgentManager / verify gate.
+    // reference it. Deps bind to the real WorktreeManager / AgentManager.
     this.runLedger = new RunLedger(workspaceRoot);
     this.pipelines = new PipelineManager(this.pipelineDeps());
 
@@ -1807,9 +1795,6 @@ export class Workspace {
       getConfig: () => this.config,
       onFinished: (job) => {
         deps.onViewsChanged("commands");
-        // spec 214 — verify-gate runs use the runbook executor under a `_verify-<agent>` label;
-        // runVerify owns their messaging + badge, so skip the generic runbook toast here.
-        if (job.runbook.startsWith(VERIFY_LABEL_PREFIX)) return;
         if (job.outcome === "passed") {
           this.host.notify(this.t("runbook '{0}' passed ({1} steps)", job.runbook, job.steps.length));
         } else {
@@ -2208,21 +2193,6 @@ export class Workspace {
           deps.onViewsChanged("schedules");
           deps.onScheduleProposed?.(this, { id: proposal.id, name: proposal.name, proposer: proposal.by });
         },
-        // spec 214 — verify-gate handoff over MCP: list_agents reads this, verify_agent runs it.
-        verifyInfo: async (agent) => {
-          const info = await this.verifyInfo(agent);
-          if (!info) return undefined;
-          return { command: info.command, passed: info.state?.passed, atCommit: info.state?.atCommit, ranAt: info.state?.ranAt, stale: info.stale, evidence: await this.evidenceHandoff(agent) };
-        },
-        runVerify: async (agent) => {
-          const s = await this.runVerify(agent);
-          // Recompute staleness freshly (review fix: never hardcode stale:false — HEAD may have
-          // moved or the tree gone dirty during a long verify, and a dirty run is stale at once).
-          const info = await this.verifyInfo(agent);
-          // If verifyInfo vanished (config/ledger changed mid-run), default to STALE — never
-          // hand back a non-stale verdict we can no longer validate (round-2 review fix).
-          return { command: s.command, passed: s.passed, atCommit: s.atCommit, ranAt: s.ranAt, stale: info?.stale ?? true, evidence: await this.evidenceHandoff(agent) };
-        },
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),
@@ -2496,9 +2466,8 @@ export class Workspace {
   /**
    * spec 230 — bind the pipeline executor's side effects to the real subsystems. A node is spawned as
    * a Temporary instance named `pl-<runId>-<nodeId>` into the RUN's worktree (registered for the
-   * resolveSpawnCwd override just before the spawn); the run worktree is `run-<id>`. The verify gate is
-   * the worktree-scoped one (settings.worktree.verify) run in the run worktree; empty-diff staleness is
-   * a follow (MVP returns stale:false). cmd-node exit-code wiring is a follow — agent nodes complete via
+   * resolveSpawnCwd override just before the spawn); the run worktree is `run-<id>`. cmd-node exit-code
+   * wiring is a follow — agent nodes complete via
    * complete_node and the per-node timeout is the backstop.
    */
   private pipelineDeps(): PipelineDeps {
@@ -2538,7 +2507,7 @@ export class Workspace {
         const wt = this.pipelineRunWt.get(`run-${runId}`);
         if (wt) this.pipelineNodeCwd.set(name, { cwd, worktree: wt }); // resolveSpawnCwd override
         this.pipelineNodeOf.set(name, { runId, nodeId });
-        const signalBased = def.done === "signal" || def.done === "signal_then_verify";
+        const signalBased = def.done === "signal";
         // spec 231 — compose task (optional) + the run input + upstream handoffs; byte-identical to the
         // 230 prompt when there is no input and no upstream summaries.
         const taskInstr = assembleNodePrompt({ task: def.task, input, upstream });
@@ -2577,35 +2546,12 @@ export class Workspace {
           });
         }
       },
-      runVerify: async ({ runId, nodeId }) => {
-        const def = nodeDefOf(runId, nodeId);
-        // spec 230 — stale = the run worktree produced NOTHING vs its base (a no-op node fails even if
-        // verify is green). Captured BEFORE verify (codex B1: verify artifacts — coverage/build output —
-        // would otherwise mask a no-op). Uses `status` (counts untracked new files), not a bare diff.
-        // FAIL CLOSED (codex M2): if we can't prove the node changed anything, treat it as stale.
-        // Run-level (vs the run base); per-node-baseline staleness is a follow. A node that declares
-        // `expectsChange: false` (read-only/review/planning) opts OUT — verify-passed alone completes it.
-        let stale = false;
-        if (def?.expectsChange !== false) {
-          stale = true;
-          const rec = this.pipelineRunWorktree(runId);
-          if (rec) {
-            try {
-              stale = worktreeUnchanged(await this.worktrees.status(rec.path, rec.baseRef));
-            } catch {
-              stale = true; // probe failed → can't prove a change → stale
-            }
-          }
-        }
-        const st = await this.runVerify(nodeSpawnName(runId, nodeId, def ?? {})); // worktree-scoped; node row carries the run worktree
-        return { passed: st.passed, stale };
-      },
       dismissNode: (runId, nodeId) => {
         const def = nodeDefOf(runId, nodeId);
         const name = nodeSpawnName(runId, nodeId, def ?? {});
         // kill the session + drop the pipeline-tagged ledger row. A DECLARED `agent:` node reverts to a
         // clean config-listed STOPPED agent (no stale def.pipeline/nonce/run-worktree overlay — codex M1,
-        // so planResume/verify never read a removed worktree); an inline `cmd:` node vanishes entirely.
+            // so resume never reads a removed worktree); an inline `cmd:` node vanishes entirely.
         return this.manager.kill(name)
           .catch(async (error) => {
             // A naturally exited/missing pane is already safe. Any still-live or unprovable pane keeps
@@ -3086,7 +3032,7 @@ export class Workspace {
     // Fail closed on a provably-can't node; warn (with the fix) on an unprovable one, then proceed.
     const bridgeUp = !!this.bridgeUrl();
     for (const [nodeId, node] of Object.entries(pipeline.nodes)) {
-      if (node.done !== "signal" && node.done !== "signal_then_verify") continue;
+      if (node.done !== "signal") continue;
       const cmd = node.agent ? (this.config?.agents[node.agent]?.cmd ?? "") : (node.cmd ?? "");
       const runtime = nodeRuntimeOf(binaryOf(cmd));
       // spec 236 — claude --safe-mode disables MCP, so even the injected Bridge can't load → can't signal.
@@ -5047,103 +4993,6 @@ export class Workspace {
     this.host.notify(this.t("worktree setup complete for '{0}'", rec.branch), "info");
   }
 
-  /**
-   * spec 214 (C3) — run an agent's verify-gate IN its worktree and record the result. Resolves
-   * the effective verify (per-agent `verify:` > global `settings.worktree.verify`) and treats it
-   * like a runbook step: a declared runbook → its steps; else a single step (a declared command
-   * name → its cmd, else inline shell). Reuses RunbookRunner with the worktree cwd (no new
-   * executor). The verdict is keyed to the worktree HEAD, so it goes stale when work moves on.
-   * Advisory — surfaces a badge + a toast; never blocks. Returns the recorded state.
-   */
-  async runVerify(agent: string): Promise<VerifyState> {
-    const rec = this.ledger.get(agent);
-    const wt = rec?.worktree;
-    if (!wt) throw new Error(this.t("'{0}' has no worktree — verify is worktree-scoped", agent));
-    if (!fs.existsSync(wt.path)) throw new Error(this.t("'{0}' worktree is gone ({1}) — nothing to verify", agent, wt.path));
-    const verify = effectiveVerify(asAgent(this.config?.agents[agent]) ?? {}, this.config?.settings ?? {});
-    if (!verify) throw new Error(this.t("'{0}' has no verify declared (set 'verify:' on the agent, or settings.worktree.verify)", agent));
-
-    // t-3f93b4 — the one door a MID-SESSION lockfile edit comes through. Creation and relaunch are
-    // re-decided by `shareDependencies`, but an agent that edits `package-lock.json` at 10:00 reaches
-    // neither, and this is where that edit would otherwise turn into a recorded green computed from
-    // the primary checkout's packages. Refusing here is the same class of refusal as the three above
-    // it — "I cannot produce a truthful verdict" — not a new gate. Two file reads and a hash, paid
-    // once per verify run, ahead of a check that costs minutes.
-    const diverged = auditSharedDependencies({
-      workspaceRoot: this.workspaceRoot,
-      worktreePath: wt.path,
-      state: wt.dependencies,
-    });
-    if (diverged) {
-      const message = this.t(
-        "'{0}' cannot be verified: {1}. Replace the link with this branch's own install, then re-run verify.",
-        agent,
-        diverged,
-      );
-      this.host.notify(message, "error");
-      throw new Error(message);
-    }
-
-    // Snapshot HEAD BEFORE running, so the verdict is keyed to the commit it actually ran against.
-    const { headRef } = await this.worktrees.headState(wt.path);
-    const steps = verifySteps(verify, this.config?.commands ?? {}, this.config?.runbooks ?? {});
-    const job = await this.runbookRunner.runSteps(verifyLabel(agent), steps, wt.path);
-    const passed = job.outcome === "passed";
-
-    const ranAt = new Date().toISOString();
-    const state: VerifyState = { command: verify, passed, atCommit: headRef, ranAt };
-    this.ledger.recordVerify(agent, state);
-
-    // spec 273 — record per-step evidence (the data runVerify already computed but used to discard).
-    // REPLACE the prior verify step-set (dedup on re-run); the binary VerifyState above is unchanged.
-    const verifyRunId = `${ranAt}:${this.evidenceSeq++}`; // unique even if two runs share a tick (codex)
-    const stepEvidence: WorktreeEvidence[] = job.steps.map((st) => ({
-      schemaVersion: EVIDENCE_SCHEMA_VERSION,
-      id: `verify:${verifyRunId}:${st.index}`,
-      targetAgent: agent,
-      producer: VERIFY_PRODUCER,
-      sourceRunId: verifyRunId,
-      atCommit: headRef,
-      producedAt: ranAt,
-      kind: STEP_RESULT_KIND,
-      severity: (st.state === "failed" ? "error" : st.state === "skipped" ? "warn" : "info") as Severity,
-      summary: `${st.state}: ${st.step}`,
-      data: { index: st.index, step: st.step, cmd: st.cmd, exitCode: st.exitCode, durationMs: st.durationMs, state: st.state },
-    }));
-    this.ledger.replaceVerifyEvidence(agent, stepEvidence);
-    this.refreshAgentsViews();
-    if (passed) {
-      this.host.notify(this.t("✓ '{0}' verified — {1} passed", agent, verify));
-    } else {
-      const failed = job.steps.find((st) => st.state === "failed");
-      this.host.notify(this.t("'{0}' verify FAILED — {1}", agent, failed?.step ?? verify), "error", [
-        { label: this.t("Inspect"), run: () => failed && this.openRunbookStepPane(verifyLabel(agent), failed.index) },
-      ]);
-    }
-    return state;
-  }
-
-  /**
-   * spec 214 — the verify-gate render/handoff view for an agent: the recorded result + a freshly
-   * computed staleness (HEAD moved past the verified commit, or the tree is dirty). Returns
-   * undefined when verify doesn't apply (no worktree, or no `verify:` declared) → no badge. Used
-   * by the sidebar badge AND the MCP handoff (list_agents / verify_agent), one source of truth.
-   */
-  async verifyInfo(agent: string): Promise<{ command: string; state?: VerifyState; stale: boolean; badge: VerifyBadge } | undefined> {
-    const wt = this.ledger.get(agent)?.worktree;
-    const command = effectiveVerify(asAgent(this.config?.agents[agent]) ?? {}, this.config?.settings ?? {});
-    if (!wt || !command) return undefined;
-    // A recorded result only counts if it ran the CURRENTLY-effective verify command (review fix:
-    // changing `verify:` must not show the old command's result as fresh — treat it as not-verified).
-    const state = wt.verify && wt.verify.command === command ? wt.verify : undefined;
-    let stale = true;
-    if (state && fs.existsSync(wt.path)) {
-      const { headRef, dirty } = await this.worktrees.headState(wt.path);
-      stale = verifyStale(state, headRef, dirty);
-    }
-    return { command, state, stale, badge: verifyBadge(state, stale) };
-  }
-
   // ── spec 273 — the worktree evidence channel ─────────────────────────────
   private evidenceSeq = 0;
 
@@ -5152,7 +5001,7 @@ export class Workspace {
     return fs.existsSync(wt.path) ? (await this.worktrees.headState(wt.path)).headRef : "";
   }
 
-  /** A compact, mechanical evidence summary folded into the verify handoff (undefined when none). */
+  /** A compact, mechanical evidence summary for agent handoffs (undefined when none). */
   async evidenceHandoff(agent: string): Promise<EvidenceSummary | undefined> {
     const wt = this.ledger.get(agent)?.worktree;
     if (!wt) return undefined;
@@ -5177,9 +5026,6 @@ export class Workspace {
   async attachEvidence(input: AttachEvidenceInput): Promise<{ ok: boolean; id?: string; reason?: string }> {
     const wt = this.ledger.get(input.targetAgent)?.worktree;
     if (!wt) return { ok: false, reason: `'${input.targetAgent}' has no worktree — evidence is worktree-scoped` };
-    // Reject impersonation of the reserved built-in producer (codex): a self-declared `producer:"verify"` could
-    // spoof verify step-results AND would be silently dropped by the next verify-set replacement.
-    if (input.producer === VERIFY_PRODUCER) return { ok: false, reason: `producer '${VERIFY_PRODUCER}' is reserved for the built-in verify producer` };
     const artifacts = input.artifacts ?? [];
     const bad = artifacts.find((a) => !isSafeArtifactRef(a));
     if (bad) return { ok: false, reason: `unsafe artifact ref rejected: ${bad}` };
@@ -5592,7 +5438,7 @@ export class Workspace {
   }
 
   /**
-   * t-afc86e — the Studio save, now carrying the agent's own verify gate and worktree setup.
+   * t-afc86e — the Studio save, including the agent's worktree setup.
    *
    * The mutation holds those two as COMMAND TEXT; the profile holds them as pinned reference ids.
    * This is where the two meet: `workspaceCommandWriteFor` turns the text into bytes plus digests
@@ -7625,7 +7471,6 @@ export class Workspace {
       detectClis: detectInstalledClis,
       takenNames: () => Object.keys(this.config?.agents ?? {}),
       commandNames: () => Object.keys(this.config?.commands ?? {}),
-      verifyCandidates: () => this.verifyCandidates(),
       defaultCwd: this.workspaceRoot,
       suggestKindForCommand,
       onSubmit: this.studioSubmit,
@@ -7638,15 +7483,6 @@ export class Workspace {
 
   private terminalManifestStateKey(): string {
     return `tachyon.terminals.open.v1.${this.wsHash}`;
-  }
-
-  /**
-   * spec 214 — the Studio's verify-gate suggestions: stack-derived candidates (Node package.json
-   * scripts, cargo/go/pytest/…) FIRST, then the project's already-declared command + runbook
-   * names. Offered as pick-or-edit chips; the human always has the final word (can type their own).
-   */
-  verifyCandidates(): string[] {
-    return collectVerifyCandidates(this.workspaceRoot, this.config);
   }
 
   /**

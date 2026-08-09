@@ -36,7 +36,7 @@ describe("SDD 479 phase 3 — a runtime override declares its own inheritance", 
   sidebar:
     cardTemplate:
       version: 1
-      meta: [branch, verify]
+      meta: [branch, evidence]
       footer: [actions]
       runtimes:
         claude:
@@ -57,7 +57,7 @@ describe("SDD 479 phase 3 — a runtime override declares its own inheritance", 
   sidebar:
     cardTemplate:
       version: 1
-      meta: [branch, verify]
+      meta: [branch, evidence]
       runtimes:
         codex:
           extends: replace
@@ -72,7 +72,7 @@ describe("SDD 479 phase 3 — a runtime override declares its own inheritance", 
       footer: ["actions"],
     });
     // the project's meta did NOT leak in
-    expect(config?.base.meta).toEqual(["branch", "verify"]);
+    expect(config?.base.meta).toEqual(["branch", "evidence"]);
   });
 
   it("refuses a PARTIAL replace, naming the regions it would silently blank", () => {
@@ -187,7 +187,7 @@ describe("SDD 479 phase 3 — a runtime override declares its own inheritance", 
       runtimes:
         claude:
           extends: default
-          meta: [verify]
+          meta: [evidence]
         codex:
           extends: merge
           meta: [harness]

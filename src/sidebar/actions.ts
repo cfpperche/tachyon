@@ -9,7 +9,7 @@ import { isAgentRow, type AgentVM } from "./types";
 export type ActionId =
   | "activity" | "probes" | "inspect" | "openPane" | "stop" | "kill"
   | "restart" | "restartNew" | "restartForceNew"
-  | "spawn" | "resume" | "fork" | "verify" | "reanchor" | "reinjectContinuity" | "injectPrompt"
+  | "spawn" | "resume" | "fork" | "reanchor" | "reinjectContinuity" | "injectPrompt"
   // t-41117e — Continue task in… (webview opens destination picker; host only runs agent.continue-task).
   | "continueTask"
   // t-4662e9 — no `rename`. Renaming a canonical agent is the Agent Form's operation (it carries the
@@ -39,7 +39,6 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   spawn: { icon: "play", label: "Start" },
   resume: { icon: "debug-continue", label: "Resume (with context)" },
   fork: { icon: "git-branch", label: "Fork session" },
-  verify: { icon: "verified", label: "Verify" },
   reanchor: { icon: "compass", label: "Re-anchor to role" },
   reinjectContinuity: { icon: "history", label: "Re-inject continuity" },
   injectPrompt: { icon: "symbol-snippet", label: "Inject prompt template" },
@@ -102,7 +101,6 @@ export function actionsFor(a: AgentVM): ActionId[] {
   else out.push("spawn");
   if (canResume(a)) out.push("resume");
   if (a.forkable) out.push("fork");
-  if (a.verifiable) out.push("verify");
   // spec 381 — injectPrompt joins reanchor/reinject as mid-session operator ops on live AI panes
   if (isRunning(a) && isAgentRow(a)) out.push("reanchor", "reinjectContinuity", "injectPrompt");
   // t-41117e — Saved Agent only (not Temporary, not terminal). Webview opens the destination picker.

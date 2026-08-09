@@ -33,7 +33,6 @@ const referenceData: CommandStudioReferenceData = {
     bash: ["-lc", "-euxo pipefail"],
   },
   defaultCwd: "/home/dev/project",
-  verifyCandidates: ["npm test", "npm run lint", "npm run typecheck"],
 };
 
 const newEntity: CommandStudioEntity = {

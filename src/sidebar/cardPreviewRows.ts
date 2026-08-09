@@ -54,7 +54,6 @@ export const CARD_PREVIEW_ROWS: readonly CardPreviewRow[] = [
       liveBranch: "tachyon/change/reviewer",
       worktree: "tachyon/change/reviewer",
       worktreePath: "/cache/reviewer",
-      verify: "stale",
       harness: true,
       continuity: "stale",
     },
@@ -71,7 +70,6 @@ export const CARD_PREVIEW_ROWS: readonly CardPreviewRow[] = [
       status: "idle",
       // The two states a template may never hide, so the preview shows re-admission actually happening.
       authRequired: { runtime: "claude", action: "run `claude login`" },
-      verify: "fail",
       configInvalid: true,
       liveBranch: "main",
       evidence: { total: 4, stale: 1, warn: 1, error: 2 },

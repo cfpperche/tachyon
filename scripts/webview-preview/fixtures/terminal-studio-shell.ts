@@ -50,8 +50,8 @@ const denseEntity: TerminalStudioEntity = {
     autostart: true,
     restartOnCrash: true,
     attention: true,
-    // t-b54ead — worktree/branch/worktreeSetup/verify stay at their blank defaults on purpose: the
-    // Terminal Studio has no controls for them (they are agent-only, and the loader refuses all four
+    // t-b54ead — worktree/branch/worktreeSetup stay at their blank defaults on purpose: the
+    // Terminal Studio has no controls for them (they are agent-only, and the loader refuses all three
     // under `terminals:`). A fixture that set them would render nothing and prove nothing.
   },
 };

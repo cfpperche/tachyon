@@ -9,7 +9,7 @@ const PIPELINE = loadPipeline(
   `name: feature
 nodes:
   research: {agent: researcher, task: r, done: signal, timeout: 20m}
-  implement: {agent: coder, task: i, needs: [research], done: signal_then_verify, timeout: 45m}
+  implement: {agent: coder, task: i, needs: [research], done: signal, timeout: 45m}
   review: {agent: reviewer, task: v, needs: [implement], done: signal, gate: approve, timeout: 30m}
 `,
   AGENTS,
@@ -20,7 +20,6 @@ const settle = async () => {
 };
 
 function makeHarness(opts?: {
-  verify?: (nodeId: string) => { passed: boolean; stale: boolean };
   failSpawn?: Set<string>;
   failPersist?: boolean;
   failFinalize?: boolean;
@@ -28,7 +27,6 @@ function makeHarness(opts?: {
   releaseWorktree?: () => void | Promise<void>;
 }) {
   const spawns: SpawnNodeArgs[] = [];
-  const verifyCalls: string[] = [];
   const released: string[] = [];
   const dismissed: string[] = [];
   const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
@@ -65,10 +63,6 @@ function makeHarness(opts?: {
       startOrder.push("spawn");
       spawns.push(args);
     },
-    runVerify: async ({ nodeId }) => {
-      verifyCalls.push(nodeId);
-      return opts?.verify ? opts.verify(nodeId) : { passed: true, stale: false };
-    },
     mintNonce: () => `nonce-${++nonceN}`,
     genRunId: () => "r1",
     persist: () => {
@@ -87,11 +81,11 @@ function makeHarness(opts?: {
   };
   const manager = new PipelineManager(deps);
   const nonceOf = (nodeId: string) => spawns.find((s) => s.nodeId === nodeId)!.env.TACHYON_NODE_NONCE;
-  return { manager, spawns, verifyCalls, released, dismissed, timers, nonceOf, startOrder, initialWrites };
+  return { manager, spawns, released, dismissed, timers, nonceOf, startOrder, initialWrites };
 }
 
 describe("PipelineManager — full run", () => {
-  it("drives research → implement(verify) → review(approve) to completion", async () => {
+  it("drives research → implement → review(approve) to completion", async () => {
     const h = makeHarness();
     const id = await h.manager.start(PIPELINE);
     await settle();
@@ -108,10 +102,9 @@ describe("PipelineManager — full run", () => {
     await settle();
     expect(h.spawns.map((s) => s.nodeId)).toEqual(["research", "implement"]);
 
-    // implement signals → verify runs (green) → review spawns
+    // implement signals → review spawns
     await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") });
     await settle();
-    expect(h.verifyCalls).toEqual(["implement"]);
     expect(h.spawns.map((s) => s.nodeId)).toEqual(["research", "implement", "review"]);
 
     // review signals → parks at the approval gate
@@ -152,21 +145,6 @@ describe("PipelineManager — failure paths", () => {
     // The rejected start is not executable in memory, but the required ledger write is its durable handle.
     expect(h.manager.getRun("r1")).toBeUndefined();
     expect(h.initialWrites).toMatchObject([{ worktreeReady: false, worktree: { path: "/wt/r1" } }]);
-  });
-
-  it("a red verify fails the node, blocks downstream, releases the worktree", async () => {
-    const h = makeHarness({ verify: () => ({ passed: false, stale: false }) });
-    const id = await h.manager.start(PIPELINE);
-    await settle();
-    await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research") });
-    await settle();
-    await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") });
-    await settle();
-    const run = h.manager.getRun(id)!; // a failed run is KEPT (Tier A: re-run-from-step / dismiss)
-    expect(run.nodes.implement).toMatchObject({ status: "failed", reason: "verify gate red" });
-    expect(run.nodes.review.status).toBe("blocked");
-    expect(runStatus(run)).toBe("failed");
-    expect(h.released).toEqual([]); // failed → worktree NOT released (kept for re-run / dismiss)
   });
 
   it("a node timeout fails the run", async () => {
@@ -269,12 +247,12 @@ describe("PipelineManager — spawn contention never kills a contended session (
 
 describe("PipelineManager — re-run from a step (Tier A)", () => {
   it("a failed run keeps its worktree; re-run-from-node resets that node + downstream and re-runs", async () => {
-    const h = makeHarness({ verify: () => ({ passed: false, stale: false }) });
+    const h = makeHarness();
     const id = await h.manager.start(PIPELINE);
     await settle();
     await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research") });
     await settle();
-    await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") }); // verify red → implement fails
+    h.timers[1].fn(); // implement timeout → failure retained for re-run
     await settle();
     expect(h.manager.getRun(id)!.nodes.implement.status).toBe("failed");
     expect(h.released).toEqual([]); // failed run keeps its worktree
@@ -291,12 +269,12 @@ describe("PipelineManager — re-run from a step (Tier A)", () => {
   });
 
   it("dismiss releases the worktree of a kept (failed) run", async () => {
-    const h = makeHarness({ verify: () => ({ passed: false, stale: false }) });
+    const h = makeHarness();
     const id = await h.manager.start(PIPELINE);
     await settle();
     await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research") });
     await settle();
-    await h.manager.completeSignal({ runId: id, nodeId: "implement", nonce: h.nonceOf("implement") });
+    h.timers[1].fn();
     await settle();
     expect(h.released).toEqual([]);
     h.manager.dismiss(id);
@@ -399,12 +377,12 @@ describe("PipelineManager — run input + handoff bus (spec 231)", () => {
   });
 
   it("rerunFrom prunes the reset node's handoff summary", async () => {
-    const h = makeHarness({ verify: () => ({ passed: false, stale: false }) });
+    const h = makeHarness();
     const id = await h.manager.start(PIPELINE, "x");
     await settle();
     await h.manager.completeSignal({ runId: id, nodeId: "research", nonce: h.nonceOf("research"), summary: "r-notes" });
     await settle();
-    // implement runs, verify red → implement fails (its summary, if any, is irrelevant); research summary stays
+    // implement is running; research summary stays until its node is reset
     expect(h.manager.getRun(id)!.summaries).toEqual([{ nodeId: "research", summary: "r-notes" }]);
     await h.manager.rerunFrom(id, "research"); // reset research + everything downstream
     await settle();

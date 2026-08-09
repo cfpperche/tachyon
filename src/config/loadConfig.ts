@@ -144,7 +144,7 @@ export interface ManagedEntryBase {
  * whole point: `terminal.harness` is a compile error rather than a validator someone must remember
  * to add. Before this split all seventeen fields below were structurally present on every terminal
  * and only five were actually refused; the other twelve (`worktree`, `branch`, `worktreeSetup`,
- * `verify`, `harness`, `subagents`, and the profile projections) were declarable and silently never
+ * `harness`, `subagents`, and the profile projections) were declarable and silently never
  * read — validation drifting per field, which is why the boundary is a type and not a validator.
  */
 export interface AgentEntry extends ManagedEntryBase {
@@ -166,8 +166,6 @@ export interface AgentEntry extends ManagedEntryBase {
   branch?: string;
   /** commands run ONCE in the fresh worktree before the agent starts (sequential, stop-on-failure); normalized to a list */
   worktreeSetup?: string[];
-  /** spec 214 (C3) — verify-gate: a command/runbook name (or inline shell) run IN the worktree to prove it shippable; resolves like a runbook step (command name > runbook name > inline) */
-  verify?: string;
   /** spec 226 — isolated harness: agent-scoped MCP/config materialized into a private config home. */
   harness?: HarnessDef;
   /** Internal canonical-profile launch snapshot. It is attached after YAML parsing and is not an accepted config key. */
@@ -211,7 +209,7 @@ export interface AgentEntry extends ManagedEntryBase {
 
 /**
  * SDD 478 M2 — the Terminal arm: a generic process and deliberately nothing else. There is no
- * `harness`, no `worktree`, no `verify`, no `soul` — not optional, ABSENT. A terminal has no
+ * `harness`, no `worktree`, no `soul` — not optional, ABSENT. A terminal has no
  * identity, task, memory, model, provider authentication or agent lifecycle, and the type is now
  * what says so.
  */
@@ -509,10 +507,10 @@ export interface TachyonConfig {
     tmux?: Record<string, string>;
     /**
      * spec 210 — global worktree location root + branch-name template ({agent} placeholder);
-     * spec 214 — global default verify-gate; t-aaad95 — `revealInWorkspace` (default true), migrated
+     * t-aaad95 — `revealInWorkspace` (default true), migrated
      * from the retired `tachyon.worktrees.revealInWorkspace` VS Code setting.
      */
-    worktree?: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean; shareDependencies?: boolean };
+    worktree?: { base?: string; branch?: string; revealInWorkspace?: boolean; shareDependencies?: boolean };
     /** spec 383 — explicit project-owned onboarding documents, transported verbatim by Tachyon. */
     projectGuidance?: ProjectGuidanceSettings;
     /** spec 216 — auto re-anchor an agent's role after a detected compaction (OFF by default; risky live injection) */
@@ -683,7 +681,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 /** Every recognized entry key. `isolate` remains recognized only as a deprecated read-compat key. `kind`/
  *  `instructions` are recognized everywhere (so they're never "unknown"); under `terminals:` they're rejected
  *  explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "soul", "selfEvolution", "worktree", "branch", "worktreeSetup", "verify", "harness", "isolate", "subagents"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "soul", "selfEvolution", "worktree", "branch", "worktreeSetup", "harness", "isolate", "subagents"];
 
 /** Recognized harness keys (spec 226/228 plus spec 406 Pi resources). */
 const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills", "extensions", "prompts", "themes", "packages"];
@@ -1159,15 +1157,6 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       discarded.push(agentOnlyKeyRefusal(section, name, "worktreeSetup", "this entry is a terminal — it gets no worktree to set up"));
     }
   }
-  if (def.verify !== undefined) {
-    if (typeof def.verify !== "string" || def.verify.trim().length === 0) {
-      discarded.push(`${section}.${name}.verify: must be a non-empty command/runbook name or inline command string`);
-    } else if (agentEntry) {
-      agentEntry.verify = def.verify.trim();
-    } else {
-      discarded.push(agentOnlyKeyRefusal(section, name, "verify", "this entry is a terminal — a verify gate proves an agent's work shippable"));
-    }
-  }
   if (def.harness !== undefined) {
     const harness = parseHarness(section, name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", discarded);
     if (harness && agentEntry) agentEntry.harness = harness;
@@ -1632,7 +1621,7 @@ export function parseConfig(yamlText: string): ParseResult {
           discarded.push("settings.worktree: must be a mapping with 'base' and/or 'branch'");
         } else {
           const wt = raw.settings.worktree;
-          const out: { base?: string; branch?: string; verify?: string; revealInWorkspace?: boolean; shareDependencies?: boolean } = {};
+          const out: { base?: string; branch?: string; revealInWorkspace?: boolean; shareDependencies?: boolean } = {};
           if (wt.base !== undefined) {
             if (typeof wt.base !== "string" || wt.base.trim().length === 0) discarded.push("settings.worktree.base: must be a non-empty path string");
             else out.base = wt.base;
@@ -1644,13 +1633,6 @@ export function parseConfig(yamlText: string): ParseResult {
               discarded.push("settings.worktree.branch: template must contain '{agent}' (else every agent collides on one branch)");
             } else {
               out.branch = wt.branch;
-            }
-          }
-          if (wt.verify !== undefined) {
-            if (typeof wt.verify !== "string" || wt.verify.trim().length === 0) {
-              discarded.push("settings.worktree.verify: must be a non-empty command/runbook name or inline command string");
-            } else {
-              out.verify = wt.verify.trim();
             }
           }
           // t-aaad95 — migrated from the `tachyon.worktrees.revealInWorkspace` VS Code key. Per-folder
@@ -1670,7 +1652,7 @@ export function parseConfig(yamlText: string): ParseResult {
             else out.shareDependencies = wt.shareDependencies;
           }
           for (const key of Object.keys(wt)) {
-            if (!["base", "branch", "verify", "revealInWorkspace", "shareDependencies"].includes(key)) discarded.push(`settings.worktree: unknown key '${key}'`);
+            if (!["base", "branch", "revealInWorkspace", "shareDependencies"].includes(key)) discarded.push(`settings.worktree: unknown key '${key}'`);
           }
           settings.worktree = out;
         }

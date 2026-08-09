@@ -4,37 +4,12 @@ import type { Severity } from "../../worktree/evidence.js";
 import { type BridgeDeps, AGENT_NAME, fail, ok, resolveDeclaredActor } from "./shared.js";
 
 export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps): void {
-
-  mcp.registerTool(
-    "verify_agent",
-    {
-      description:
-        "Run a worktree agent's declared verify-gate (verify: in tachyon.yml) IN its worktree and " +
-        "return {command, passed, atCommit, ranAt, stale}. The validated-handoff primitive: call this " +
-        "BEFORE you accept a delegated child's handoff (not only at merge) and gate on 'passed' — a child " +
-        "going idle or saying it's done is NOT evidence its gate is green; run this to get the evidence. " +
-        "Advisory — it never merges, PRs, or blocks; it returns evidence. Errors if the agent has no " +
-        "worktree or no verify declared.",
-      inputSchema: { name: AGENT_NAME.describe("the worktree agent to verify") },
-    },
-    async ({ name }) => {
-      try {
-        if (!deps.runVerify) return fail(new Error("verify is not available on this Bridge"));
-        return ok(JSON.stringify(await deps.runVerify(name)));
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
-
-
   mcp.registerTool(
     "attach_evidence",
     {
       description:
-        "Attach ONE non-binary EVIDENCE record to a worktree agent (spec 273) — the home for things the binary " +
-        "verify gate can't hold: an advisory, a review judgment, a Visual-QA verdict + screenshot refs, a note. " +
-        "Evidence INFORMS a parent reading the handoff; it NEVER gates/blocks (the verify badge stays the gate). " +
+        "Attach ONE EVIDENCE record to a worktree agent (spec 273): an advisory, a review judgment, " +
+        "a Visual-QA verdict + screenshot refs, or a note. Evidence informs readers and never gates/blocks. " +
         "Provide targetAgent, kind (free label e.g. 'judgment'|'advisory'), severity (info|warn|error), a one-line " +
         "summary, and optionally detail, data (structured), artifacts (worktree-relative refs), producer (your " +
         "agent name — provenance, not authentication). Tachyon stamps id/time/commit. Errors if the target has no " +
@@ -86,7 +61,7 @@ export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps):
       description:
         "Read a worktree agent's non-binary EVIDENCE records (spec 273), newest-first, each flagged fresh/stale " +
         "(stale = the worktree HEAD moved past the commit it was produced against). Use it to read advisories, " +
-        "per-step verify details, and review judgments a child produced — context the binary verify gate omits.",
+        "review judgments and other evidence a child produced.",
       inputSchema: { name: AGENT_NAME.describe("the worktree agent whose evidence to read") },
     },
     async ({ name }) => {
@@ -105,8 +80,7 @@ export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps):
       description:
         "Signal that THIS pipeline node's task is finished (spec 230). Pass runId, nodeId, and nonce " +
         "from your environment (TACHYON_RUN_ID / TACHYON_NODE_ID / TACHYON_NODE_NONCE). The node is " +
-        "authenticated by its nonce, not by identity. After a valid signal Tachyon runs the node's " +
-        "verify gate if its done-contract requires it. Errors on a bad token, a non-running node, a " +
+        "authenticated by its nonce, not by identity. Errors on a bad token, a non-running node, a " +
         "duplicate signal, or an unknown/closed run. Optionally pass a short `summary` of what you did " +
         "and where (e.g. 'plan in docs/plan.md; chose CSS vars') — it is handed to the next node as " +
         "context.",

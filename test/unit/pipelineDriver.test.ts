@@ -9,7 +9,7 @@ const LINEAR = loadPipeline(
   `name: feature
 nodes:
   research: {agent: researcher, task: r, done: signal, timeout: 20m}
-  implement: {agent: coder, task: i, needs: [research], done: signal_then_verify, timeout: 45m}
+  implement: {agent: coder, task: i, needs: [research], done: signal, timeout: 45m}
 `,
   AGENTS,
 ).pipeline!;
@@ -36,43 +36,18 @@ describe("advance — spawning", () => {
   });
 });
 
-describe("advance — verify gate request", () => {
-  it("requests verify for a running signal_then_verify node that has signalled", () => {
+describe("advance — signal completion", () => {
+  it("completes a running signal node as soon as it has signalled", () => {
     let run = startNode(initRun("r", LINEAR, "run-r"), "research");
     run = advance(run, { research: { signalled: true } }).run; // research done
     run = startNode(run, "implement");
-    const { actions } = advance(run, { implement: { signalled: true } });
-    expect(actions).toEqual([{ type: "runVerify", nodeId: "implement" }]);
-  });
-
-  it("does NOT re-request verify once it's been requested", () => {
-    let run = startNode(initRun("r", LINEAR, "run-r"), "research");
-    run = advance(run, { research: { signalled: true } }).run;
-    run = startNode(run, "implement");
-    const { actions } = advance(run, { implement: { signalled: true } }, new Set(["implement"]));
-    expect(actions).toEqual([]); // verify already in flight
-  });
-
-  it("completes the node when verify comes back green and not stale", () => {
-    let run = startNode(initRun("r", LINEAR, "run-r"), "research");
-    run = advance(run, { research: { signalled: true } }).run;
-    run = startNode(run, "implement");
-    const res = advance(run, { implement: { signalled: true, verify: { passed: true, stale: false } } }, new Set(["implement"]));
+    const res = advance(run, { implement: { signalled: true } });
     expect(res.run.nodes.implement.status).toBe("done");
     expect(res.actions).toEqual([]);
   });
 });
 
 describe("advance — failure", () => {
-  it("fails a node on a red verify and blocks nothing downstream of a leaf", () => {
-    let run = startNode(initRun("r", LINEAR, "run-r"), "research");
-    run = advance(run, { research: { signalled: true } }).run;
-    run = startNode(run, "implement");
-    const res = advance(run, { implement: { signalled: true, verify: { passed: false, stale: false } } }, new Set(["implement"]));
-    expect(res.run.nodes.implement).toMatchObject({ status: "failed", reason: "verify gate red" });
-    expect(res.actions).toEqual([]);
-  });
-
   it("fails a node on timeout and stops spawning downstream", () => {
     const run = startNode(initRun("r", LINEAR, "run-r"), "research");
     const res = advance(run, { research: { timedOut: true } });

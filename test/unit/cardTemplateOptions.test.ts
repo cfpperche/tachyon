@@ -27,7 +27,7 @@ const at = "settings.sidebar.cardTemplate";
 const sketch = {
   version: 1,
   header: ["status-dot", "name", "model", "model-provenance", "metrics-pill"],
-  meta: ["branch", "attention", "auth-required", "verify", "harness"],
+  meta: ["branch", "attention", "auth-required", "evidence", "harness"],
   footer: ["focus", "metrics-lanes", "actions"],
   options: { model: { maxChars: 24 }, focus: { lines: 1 } },
 };

@@ -10,7 +10,6 @@ export {
   type NoticeDeliveryResult,
   type NoticeSourceMetadata,
   type BridgeDeps,
-  type VerifyHandoff,
   type AttachEvidenceInput,
   contextRenewalRequestRefusal,
   validateProposedSchedule,

@@ -40,7 +40,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     editable: {
       displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" }, role: "reviewer",
       cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-      worktree: { enabled: true, branch: "feature/web", setup: [] }, verify: "", selfEvolution: false,
+      worktree: { enabled: true, branch: "feature/web", setup: [] }, selfEvolution: false,
       isolation: "transcript",
     },
     bindings: {
@@ -80,7 +80,6 @@ function fakeWorkspace(opts: {
       detectClis: async () => opts.detected ?? [],
       takenNames: () => Object.keys(agents),
       commandNames: () => [],
-      verifyCandidates: () => ["npm test"],
       defaultCwd: "/ws/root",
       suggestKindForCommand: () => "agent",
       onSubmit: () => undefined,
@@ -97,7 +96,7 @@ function fakeWorkspace(opts: {
 }
 
 describe("AgentStudioAdapter — load", () => {
-  it("returns a blank new-mode entity with reference data (chips/flagMap/defaultCwd/verifyCandidates)", async () => {
+  it("returns a blank new-mode entity with reference data", async () => {
     const { ws } = fakeWorkspace({ agents: { existing: { cmd: "claude", kind: "agent", watch: [], autostart: false, attention: { enabled: true } } }, detected: ["claude"] });
     const adapter = new AgentStudioAdapter(ws);
     const result = await adapter.load(undefined);
@@ -107,7 +106,6 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.storage).toBe("canonical");
     expect(result.entity.fields).toEqual(canonicalAgentFields());
     expect(result.entity.defaultCwd).toBe("/ws/root");
-    expect(result.entity.verifyCandidates).toEqual(["npm test"]);
     expect(result.entity.persistentInstructionsHelp).toBe("When supported, delivered at startup through the selected runtime.");
     expect(result.entity.chips.find((c) => c.bin === "claude")?.detected).toBe(true);
     expect(result.entity.evolutionLabels.title).toBe("Agent Evolution");
@@ -283,7 +281,6 @@ describe("AgentStudioAdapter — save", () => {
       // declares none, so they serialize as the empty values that mean "no gate, no setup" — which
       // is what CLEARING them looks like too, and why they are always sent rather than omitted.
       worktree: { enabled: true, branch: "feature/web", setup: [] },
-      verify: "",
       // t-f96b2f — the toggle travels on every save for the same reason: `false` is how the human
       // turns Evolution OFF, so an omitted field would be indistinguishable from "leave it alone".
       selfEvolution: false,

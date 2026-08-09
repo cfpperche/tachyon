@@ -63,7 +63,6 @@ export const CARD_COMPONENT_IDS = [
   "attention",
   "awaiting-human",
   "auth-required",
-  "verify",
   "evidence",
   "external-tools",
   "harness",
@@ -116,7 +115,6 @@ export const CARD_CATALOG: Readonly<Record<CardComponentId, CardComponentSpec>> 
   attention: { region: "meta", describes: "Attention state reported by the monitor" },
   "awaiting-human": { region: "meta", critical: true, describes: "The agent asked for a human (request_human_attention)" },
   "auth-required": { region: "meta", critical: true, describes: "The runtime reports it is not authenticated (SDD 477)" },
-  verify: { region: "meta", critical: true, describes: "Verify gate result: pass, fail or stale" },
   evidence: { region: "meta", describes: "Evidence record counts (spec 273)" },
   "external-tools": { region: "meta", describes: "External GUI/tool attribution (t-327f81)" },
   harness: { region: "meta", describes: "Runs under a harness" },
@@ -131,8 +129,7 @@ export const CARD_CATALOG: Readonly<Record<CardComponentId, CardComponentSpec>> 
 };
 
 /**
- * Components a template may not hide (fork 3, ratified). `verify` is here for its FAIL state only; the
- * re-admission phase 2 implements is per-row and per-state, not "always show verify".
+ * Components a template may not hide (fork 3, ratified).
  */
 export const CRITICAL_CARD_COMPONENTS: readonly CardComponentId[] = CARD_COMPONENT_IDS.filter(
   (id) => CARD_CATALOG[id].critical === true,
@@ -215,7 +212,6 @@ export const DEFAULT_CARD_TEMPLATE: CardTemplate = {
     "attention",
     "awaiting-human",
     "auth-required",
-    "verify",
     "evidence",
     "external-tools",
     "harness",
@@ -690,9 +686,6 @@ export function criticalComponentActive(id: CardComponentId, row: AgentVM): bool
     case "refused": return !!row.refused;
     case "awaiting-human": return !!row.awaitingHuman;
     case "auth-required": return !!row.authRequired;
-    // `verify` is critical for its FAIL state only — a passing or stale gate is information, not an
-    // emergency, and re-admitting those would make "critical" mean "always shown".
-    case "verify": return row.verify === "fail";
     default: return false;
   }
 }

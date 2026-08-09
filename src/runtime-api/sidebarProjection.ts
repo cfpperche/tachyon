@@ -108,7 +108,6 @@ const agent = z.object({
     cpuPct: z.number().finite().min(0).max(999).optional(),
     memMb: count,
   }).strict().optional(),
-  verify: z.enum(["pass", "fail", "stale"]).optional(),
   harness: z.boolean().optional(),
   resumable: z.boolean().optional(),
   freshStart: z.boolean().optional(),
@@ -135,7 +134,6 @@ const agent = z.object({
   // not silently trimmed. That is why removing `ai` had to land here in the same change.
   kind: z.enum(["agent", "terminal"]),
   adhoc: z.boolean().optional(),
-  verifiable: z.boolean().optional(),
   forkable: z.boolean().optional(),
   canDismiss: z.boolean().optional(),
 }).strict().superRefine((value, context) => {

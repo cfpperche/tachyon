@@ -1,6 +1,6 @@
 /**
- * spec 223 — open a GitHub PR from a worktree agent's branch, carrying the verify verdict into the
- * body. Mirrors src/resume & WorktreeManager: PURE helpers (readiness decision, github-url detection,
+ * spec 223 — open a GitHub PR from a worktree agent's branch. Mirrors src/resume & WorktreeManager:
+ * PURE helpers (readiness decision, github-url detection,
  * title/body composition) here, with the git/gh process calls behind an injectable `CliExec` seam so
  * tests never touch the network. The human stays at the publish gate (the command layer confirms
  * before calling this). No `--base`: baseRef is a fork-point SHA, not a branch, so let `gh` default to
@@ -8,7 +8,6 @@
  */
 import { execFile } from "node:child_process";
 import { defaultGitExec, type GitExec } from "./WorktreeManager.js";
-import type { VerifyBadge } from "./verify.js";
 
 export interface CliResult {
   stdout: string;
@@ -49,11 +48,6 @@ export function prReadiness(f: { inWorktree: boolean; remoteUrl: string | null; 
   return { ready: true };
 }
 
-export interface VerifySummary {
-  badge: VerifyBadge;
-  command?: string;
-}
-
 /** Humanize the branch leaf into a PR title: `tachyon/fix-resume` → `Fix resume`. */
 export function composePrTitle(branch: string): string {
   const leaf = branch.split("/").pop() ?? branch;
@@ -61,16 +55,11 @@ export function composePrTitle(branch: string): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : branch;
 }
 
-/** PR body carrying the verify verdict (the headline value) + branch context + a Tachyon footer. Takes
+/** PR body carrying branch context + a Tachyon footer. Takes
  *  the resolved base BRANCH (not the fork-point SHA) so the line is true for both forked and attached
  *  branches — never claims a false "forked from <sha>" provenance (codex MINOR). */
-export function composePrBody(opts: { branch: string; base?: string; verify?: VerifySummary }): string {
+export function composePrBody(opts: { branch: string; base?: string }): string {
   const lines: string[] = [];
-  const v = opts.verify;
-  if (v?.badge === "verified") lines.push(`✓ **Verify passed**${v.command ? `: \`${v.command}\`` : ""}`);
-  else if (v?.badge === "failing") lines.push(`✗ **Verify FAILED**${v.command ? `: \`${v.command}\`` : ""} — review before merge`);
-  else if (v) lines.push(`⊘ **Not verified**${v.command ? ` (\`${v.command}\` is stale)` : ""}`);
-  if (lines.length) lines.push("");
   lines.push(opts.base ? `Branch \`${opts.branch}\` → \`${opts.base}\`.` : `Branch \`${opts.branch}\`.`);
   lines.push("");
   lines.push("🤖 Opened from a Tachyon worktree.");

@@ -117,7 +117,7 @@ describe("merging the two homes records which one is in effect", () => {
       runtimes: { codex: { extends: "default", meta: ["harness"] } },
     });
     const personalConfig = personal(
-      { runtimes: { claude: { extends: "default", meta: ["verify"] } } },
+      { runtimes: { claude: { extends: "default", meta: ["evidence"] } } },
       projectConfig.base,
     ).config!;
     const merged = mergeCardTemplateConfigs(projectConfig, personalConfig)!;
@@ -127,7 +127,7 @@ describe("merging the two homes records which one is in effect", () => {
     expect(resolveCardTemplateFor(agent({ runtime: "codex" }), merged)).toMatchObject({ source: "project" });
     expect(resolveCardTemplateFor(agent({ runtime: "claude" }), merged)).toMatchObject({ source: "personal" });
     expect(resolveCardTemplate(agent({ runtime: "codex" }), merged).meta).toEqual(["harness"]);
-    expect(resolveCardTemplate(agent({ runtime: "claude" }), merged).meta).toEqual(["verify"]);
+    expect(resolveCardTemplate(agent({ runtime: "claude" }), merged).meta).toEqual(["evidence"]);
   });
 
   it("a personal runtime override replaces the project's for that runtime only", () => {

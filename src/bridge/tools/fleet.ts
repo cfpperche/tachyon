@@ -923,13 +923,10 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         const agents = await deps.manager.list();
         const enriched = await Promise.all(
           agents.map(async (a) => {
-            // spec 214 — surface the verify-gate state so a parent can read "child done AND green".
-            const verify = deps.verifyInfo ? await deps.verifyInfo(a.name) : undefined;
             return {
               ...a,
               capabilities: outputCapabilities(a, deps),
               ...(a.running && deps.attentionOf?.(a.name) ? { attention: deps.attentionOf(a.name) } : {}),
-              ...(verify ? { verify } : {}),
             };
           }),
         );

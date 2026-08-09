@@ -4,12 +4,11 @@ import { evaluateDone, type NodeSignals } from "./doneContract.js";
 /**
  * spec 230 — the PURE driver. Given the current run + per-node signals, it (1) applies the
  * signal-driven transitions for RUNNING nodes (done/failed via the done-contract) and (2) returns the
- * side-effect actions the executor (PipelineManager) should perform: spawn newly-runnable nodes, and
- * request the verify gate for a running node whose done-contract is waiting on it. Idempotent given
- * (run, signals, verifyRequested) — so the adapter can de-dupe by what it already started. No side effects.
+ * side-effect actions the executor (PipelineManager) should perform: spawn newly-runnable nodes.
+ * No side effects.
  */
 
-export type DriverAction = { type: "spawn"; nodeId: string } | { type: "runVerify"; nodeId: string };
+export type DriverAction = { type: "spawn"; nodeId: string };
 
 export interface AdvanceResult {
   run: PipelineRun;
@@ -19,7 +18,6 @@ export interface AdvanceResult {
 export function advance(
   run: PipelineRun,
   signals: Record<string, NodeSignals>,
-  verifyRequested: ReadonlySet<string> = new Set(),
 ): AdvanceResult {
   let next = run;
   const actions: DriverAction[] = [];
@@ -32,8 +30,6 @@ export function advance(
       next = completeNode(next, nodeId);
     } else if (verdict.status === "failed") {
       next = failNode(next, nodeId, verdict.reason);
-    } else if (verdict.waitingFor === "verify gate" && !verifyRequested.has(nodeId)) {
-      actions.push({ type: "runVerify", nodeId });
     }
   }
 

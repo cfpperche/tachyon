@@ -86,7 +86,6 @@ describe("SDD 479 — the component catalog is closed and complete", () => {
     expect(meta.indexOf("sub")).toBe(0);
     expect(meta.indexOf("branch")).toBeLessThan(meta.indexOf("config-invalid"));
     expect(meta.indexOf("branch")).toBeLessThan(meta.indexOf("attention"));
-    expect(meta.indexOf("branch")).toBeLessThan(meta.indexOf("verify"));
     expect(meta.indexOf("hidden-count")).toBeLessThan(meta.indexOf("branch"));
   });
 
@@ -96,7 +95,7 @@ describe("SDD 479 — the component catalog is closed and complete", () => {
     // agent that vanishes from the sidebar, taking with it the route into Agent Studio where the
     // refusal is repaired. A template able to suppress it could make the agent unreachable again.
     expect([...CRITICAL_CARD_COMPONENTS].sort()).toEqual(
-      ["auth-required", "awaiting-human", "config-invalid", "refused", "verify"],
+      ["auth-required", "awaiting-human", "config-invalid", "refused"],
     );
   });
 

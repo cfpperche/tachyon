@@ -554,8 +554,6 @@ export async function executeExtensionCommand(
       const result = await workspace.managedWorktrees.releaseLock(command.id, { actor: { kind: "human" } });
       return json(result as unknown as JsonValue);
     }
-    case "agent.verify":
-      return json(await workspace.runVerify(command.agent));
     case "agent.reanchor":
       await workspace.reanchor(command.agent);
       return json({ changed: true });
@@ -914,7 +912,6 @@ async function inspectWorktree(workspace: Workspace, identity: string, isAgent: 
     record,
     status,
     changedFiles,
-    ...(isAgent ? { verify: await workspace.verifyInfo(identity) ?? null } : {}),
   });
 }
 

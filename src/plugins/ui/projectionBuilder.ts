@@ -83,9 +83,6 @@ function toPluginAttention(attention: string | undefined, status: AgentVM["statu
 
 function badgesFor(agent: AgentVM): PluginAgentBadgeV1[] {
   const badges: PluginAgentBadgeV1[] = [];
-  if (agent.verify === "pass") badges.push("verify-pass");
-  if (agent.verify === "fail") badges.push("verify-fail");
-  if (agent.verify === "stale") badges.push("verify-stale");
   if (agent.continuity === "fresh") badges.push("continuity-fresh");
   if (agent.continuity === "stale") badges.push("continuity-stale");
   if (agent.continuity === "missing") badges.push("continuity-missing");

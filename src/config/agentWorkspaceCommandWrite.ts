@@ -4,11 +4,8 @@ import type { AgentProfileStudioEditableV1 } from "./agentProfileStudio.js";
 import {
   WORKSPACE_SETUP_PATH,
   WORKSPACE_SETUP_REFERENCE_ID,
-  WORKSPACE_VERIFY_PATH,
-  WORKSPACE_VERIFY_REFERENCE_ID,
   studioOwnsWorkspaceCommands,
   workspaceCommandLinesText,
-  workspaceCommandText,
 } from "./agentWorkspaceCommands.js";
 
 /**
@@ -22,8 +19,7 @@ import {
  * ids and the ownership rule are pure and shared; the bytes are computed here, host-side only.
  *
  * The two halves cannot drift silently: `agentProfileSchemaV1`'s own `requireKind` refinement fails a
- * profile whose `workspace.verify` names an id with no matching `verification` reference, so a
- * caller that set the field and forgot the entry gets a refused transaction, not a dangling pointer.
+ * profile whose setup names an id with no matching reference.
  */
 
 const digest = (text: string): string => createHash("sha256").update(text).digest("hex");
@@ -39,39 +35,20 @@ export interface WorkspaceCommandWrite {
 }
 
 /**
- * What this mutation should publish for `workspace.verify` / `worktree.setup`.
+ * What this mutation should publish for `worktree.setup`.
  *
  * Returns nothing for a field the human left blank (that is how the field is CLEARED — the id and
  * the reference simply stop being written) and nothing for a field whose current reference is
  * FOREIGN, which the Studio neither displays nor overwrites.
  *
- * Note the orphan this deliberately accepts: clearing a verify leaves `workspace-verify` on disk
- * with nothing pointing at it. Nothing reads an unreferenced file — `resolveReferences` iterates
- * `profile.references`, not the directory — so it is inert residue, and removing it would mean
- * teaching the lifecycle transaction to DELETE artifacts, a compensation path with real failure
- * modes, to reclaim a few dozen bytes.
  */
 export function workspaceCommandWriteFor(
-  editable: Pick<AgentProfileStudioEditableV1, "verify" | "worktree">,
-  current?: Pick<NonNullable<AgentProfileV1["workspace"]>, "verify" | "worktree">,
+  editable: Pick<AgentProfileStudioEditableV1, "worktree">,
+  current?: Pick<NonNullable<AgentProfileV1["workspace"]>, "worktree">,
 ): WorkspaceCommandWrite {
-  const owned = studioOwnsWorkspaceCommands({ verify: current?.verify, setup: current?.worktree?.setup });
+  const owned = studioOwnsWorkspaceCommands({ setup: current?.worktree?.setup });
   const artifacts: WorkspaceCommandWrite["artifacts"] = [];
   const localReferences: LocalWorkspaceCommandReference[] = [];
-
-  const verify = editable.verify.trim();
-  if (owned.verify && verify.length > 0) {
-    const text = workspaceCommandText(verify);
-    const sha256 = digest(text);
-    artifacts.push({ path: WORKSPACE_VERIFY_PATH, text, sha256 });
-    localReferences.push({
-      id: WORKSPACE_VERIFY_REFERENCE_ID,
-      kind: "verification",
-      path: WORKSPACE_VERIFY_PATH,
-      mode: "pinned",
-      sha256,
-    });
-  }
 
   const setup = editable.worktree.setup.map((command) => command.trim()).filter((command) => command.length > 0);
   if (owned.setup && setup.length > 0) {
@@ -105,7 +82,7 @@ export function mergedWorkspaceCommandReferences(
   current: AgentProfileV1,
   write: WorkspaceCommandWrite,
 ): AgentProfileReferenceV1[] {
-  const owned = new Set([WORKSPACE_VERIFY_REFERENCE_ID, WORKSPACE_SETUP_REFERENCE_ID]);
+  const owned = new Set([WORKSPACE_SETUP_REFERENCE_ID]);
   const kept = (current.references ?? []).filter((reference) => !owned.has(reference.id));
   return [
     ...kept,

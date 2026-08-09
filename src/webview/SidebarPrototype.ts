@@ -78,7 +78,6 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "openPane" | "activity" |
   spawn: "tachyon.spawnAgentItem",
   resume: "tachyon.resumeAgentItem",
   fork: "tachyon.forkAgentItem",
-  verify: "tachyon.verifyAgentItem",
   reanchor: "tachyon.reanchorAgentItem",
   reinjectContinuity: "tachyon.reinjectContinuityItem",
   injectPrompt: "tachyon.injectPromptTemplateItem",
@@ -560,7 +559,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
 /** Reconstruct the contextValue the command handlers expect, from the agent VM's capability flags. */
 function ctxOf(a: AgentVM): string {
   const state = a.status === "crashed" ? "crashed" : a.status === "stopped" ? "stopped" : "running";
-  return agentContextValue({ state, ai: isAgentRow(a), temporary: !!a.adhoc, worktree: !!a.worktree, verifiable: !!a.verifiable, forkable: !!a.forkable, harness: !!a.harness });
+  return agentContextValue({ state, ai: isAgentRow(a), temporary: !!a.adhoc, worktree: !!a.worktree, forkable: !!a.forkable, harness: !!a.harness });
 }
 
 export function pinDocPreview(doc: TiptapJSON | null): string {

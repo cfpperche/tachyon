@@ -30,11 +30,11 @@ const PROFILE_ID = "22222222-2222-4222-8222-222222222222";
 const digest = (value: string): string => crypto.createHash("sha256").update(value).digest("hex");
 
 const foreignReference: AgentProfileReferenceV1 = {
-  id: "workspace-verify",
-  kind: "verification",
+  id: "workspace-setup",
+  kind: "worktree-setup",
   scope: "profile",
   owner: AGENT_ID,
-  path: "workspace-verify",
+  path: "workspace-setup",
   mode: "pinned",
   sha256: digest("npm test\n"),
 } as AgentProfileReferenceV1;

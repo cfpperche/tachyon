@@ -67,11 +67,11 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
     vm: {
       ...base,
       agents: [
-        { name: "feature-auth", status: "running", worktree: "tachyon/feature-auth", verify: "pass", verifiable: true, kind: "agent",
+        { name: "feature-auth", status: "running", worktree: "tachyon/feature-auth", kind: "agent",
           evidence: { total: 3, stale: 0, warn: 1, error: 0 } },
-        { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", verify: "stale", verifiable: true, kind: "agent",
+        { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", kind: "agent",
           evidence: { total: 2, stale: 2, warn: 0, error: 0 } },
-        { name: "migration", status: "running", worktree: "tachyon/migration", verify: "fail", verifiable: true, kind: "agent",
+        { name: "migration", status: "running", worktree: "tachyon/migration", kind: "agent",
           evidence: { total: 5, stale: 1, warn: 2, error: 1 } },
       ],
     } as FleetVM,
@@ -96,7 +96,7 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
 
   error: {
     provenance: "synthetic-edge",
-    vm: { ...base, agents: [{ name: "migration", status: "crashed", sub: "exited (1)", verify: "fail", verifiable: true, kind: "agent" }] } as FleetVM,
+    vm: { ...base, agents: [{ name: "migration", status: "crashed", sub: "exited (1)", kind: "agent" }] } as FleetVM,
   },
 
   /**
@@ -152,7 +152,7 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
         { name: "codex", model: "GPT-5.1 Codex", status: "running", kind: "agent" },
         { name: "reviewer", model: "Sonnet 5", status: "running", declaredOwner: "claude", kind: "agent" },
         { name: "runtime-reviewer", model: "Sonnet 5", status: "running", parent: "codex", declaredOwner: "claude", kind: "agent" },
-        { name: "gated-reviewer", model: "GPT-5.1 Codex", status: "running", delegator: "codex", worktree: "tachyon/gated-reviewer", verify: "stale", verifiable: true, kind: "agent" },
+        { name: "gated-reviewer", model: "GPT-5.1 Codex", status: "running", delegator: "codex", worktree: "tachyon/gated-reviewer", kind: "agent" },
         { name: "orphan-owned", status: "stopped", declaredOwner: "missing-owner", kind: "agent" },
       ],
     } as FleetVM,
@@ -310,7 +310,7 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
         base: {
           version: 1,
           header: ["status-dot", "name", "model", "model-provenance", "metrics-pill"],
-          meta: ["branch", "attention", "auth-required", "verify", "harness"],
+          meta: ["branch", "attention", "auth-required", "harness"],
           footer: ["focus", "metrics-lanes", "actions"],
           options: { model: { maxChars: 12 }, focus: { lines: 3 } },
         },

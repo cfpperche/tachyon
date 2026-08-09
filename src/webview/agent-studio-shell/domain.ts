@@ -583,7 +583,7 @@ export function validateAgentStudioHostDomainMessage(raw: unknown): boolean {
 }
 
 /** The load-time snapshot: the agent's current FormState (kind fixed "agent") plus the reference data the
- *  form needs to render (quick-add chips, flag suggestions, default cwd, verify-gate suggestions). Mirrors
+ *  form needs to render (quick-add chips, flag suggestions, default cwd). Mirrors
  *  TaskDetailEntity's convention of carrying read-only reference data alongside the editable snapshot. */
 export interface AgentStudioEntity {
   /** undefined in "new" mode. */
@@ -597,7 +597,6 @@ export interface AgentStudioEntity {
   chips: QuickAddChip[];
   flagMap: Record<string, string[]>;
   defaultCwd: string;
-  verifyCandidates: string[];
   persistentInstructionsHelp: string;
   evolutionLabels: AgentEvolutionLabels;
   profileLabels?: AgentProfileLabels;
@@ -900,7 +899,6 @@ export function blankAgentFields(): FormState {
     worktree: false,
     branch: "",
     worktreeSetup: "",
-    verify: "",
     isolate: false,
     schedTiming: "every",
     schedEvery: "1h",
@@ -937,7 +935,6 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   // snapshot carries the artifact bytes: without it the field renders blank for an agent that has a
   // gate, and the next save writes that blank over the real one.
   fields.worktreeSetup = (snapshot?.editable.worktree.setup ?? []).join("\n");
-  fields.verify = snapshot?.editable.verify ?? "";
   fields.isolate = snapshot?.editable.isolation === "transcript";
   fields.canonical = {
     kind: "agent-instance",
@@ -1205,17 +1202,14 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
         restart: fields.restartOnCrash ? "on-crash" : "never",
         attention: fields.attention,
       },
-      // t-afc86e — the verify gate and the setup commands, as TEXT. The webview never learns that the
+      // t-afc86e — setup commands as text. The webview never learns that the
       // profile stores them as pinned references; the host turns the text into bytes, a digest and a
       // reference entry. Blank and empty are meaningful values here, not omissions — they are how a
-      // human CLEARS a gate, and sending nothing would make "no verify" indistinguishable from
-      // "don't touch verify".
       worktree: {
         enabled: fields.worktree,
         branch: fields.branch.trim(),
         setup: fields.worktreeSetup.split("\n").map((line) => line.trim()).filter(Boolean),
       },
-      verify: fields.verify.trim(),
       // t-f96b2f — Evolution travels as the toggle's own state, on every save. Sending it only when
       // it changed would make "off" and "don't touch" the same payload, and off has to be able to
       // remove a binding that exists — the host turns it into the selector bytes, the pinned

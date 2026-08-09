@@ -102,13 +102,8 @@ describe("composePrTitle / composePrBody", () => {
     expect(composePrTitle("tachyon/fix-resume-bug")).toBe("Fix resume bug");
     expect(composePrTitle("feature/foo_bar")).toBe("Foo bar");
   });
-  it("carries the verify verdict (✓/✗/⊘), omits the block when there's no verify", () => {
-    expect(composePrBody({ branch: "b", base: "main", verify: { badge: "verified", command: "npm test" } })).toContain("✓ **Verify passed**: `npm test`");
-    expect(composePrBody({ branch: "b", base: "main", verify: { badge: "failing", command: "npm test" } })).toContain("✗ **Verify FAILED**");
-    expect(composePrBody({ branch: "b", base: "main", verify: { badge: "stale" } })).toContain("⊘ **Not verified**");
-    const none = composePrBody({ branch: "b", base: "main" });
-    expect(none).toContain("`b`");
-    expect(none).not.toContain("Verify");
+  it("contains only branch context and the Tachyon footer", () => {
+    expect(composePrBody({ branch: "b", base: "main" })).toBe("Branch `b` → `main`.\n\n🤖 Opened from a Tachyon worktree.");
   });
   it("names the base branch when known, never a false forked-from provenance", () => {
     expect(composePrBody({ branch: "feat/x", base: "develop" })).toContain("`feat/x` → `develop`");

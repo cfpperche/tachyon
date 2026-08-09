@@ -21,7 +21,7 @@ const LINEAR = loadPipeline(
   `name: feature
 nodes:
   research: {agent: researcher, task: r, done: signal, timeout: 20m}
-  implement: {agent: coder, task: i, needs: [research], done: signal_then_verify, timeout: 45m}
+  implement: {agent: coder, task: i, needs: [research], done: signal, timeout: 45m}
   review: {agent: reviewer, task: v, needs: [implement], done: signal, gate: approve, timeout: 30m}
 `,
   AGENTS,

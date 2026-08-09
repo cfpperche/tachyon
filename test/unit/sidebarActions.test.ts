@@ -129,9 +129,8 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "crashed", resumable: true }))).toContain("resume");
     expect(actionsFor(A({ status: "crashed" }))).not.toContain("resume");
   });
-  it("capability gates: fork/verify/reanchor/promote/worktree", () => {
+  it("capability gates: fork/reanchor/promote/worktree", () => {
     expect(actionsFor(A({ status: "running", forkable: true }))).toContain("fork");
-    expect(actionsFor(A({ status: "idle", verifiable: true }))).toContain("verify");
     expect(actionsFor(A({ status: "running", kind: "agent" }))).toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", kind: "terminal" }))).not.toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
@@ -268,7 +267,7 @@ describe("sidebar action matrix (spec 237)", () => {
     }
   });
   it("primary is capped at 5 and inline+more partition the set with no overlap", () => {
-    const a = A({ status: "running", forkable: true, verifiable: true, worktree: "b", adhoc: true });
+    const a = A({ status: "running", forkable: true, worktree: "b", adhoc: true });
     const prim = primaryActions(a), more = moreActions(a);
     expect(prim.length).toBeLessThanOrEqual(5);
     expect(prim.filter((x) => more.includes(x))).toEqual([]); // disjoint

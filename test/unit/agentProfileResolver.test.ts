@@ -443,47 +443,11 @@ describe("resolveAgentProfile", () => {
 
   it("fails when an explicitly named inherited value is unavailable", () => {
     const root = workspace();
-    writeProfile(root, canonical({ inherit: { environment: ["LANG"], workspace: ["verify"] } }));
+    writeProfile(root, canonical({ inherit: { environment: ["LANG"] } }));
     const result = resolve(root);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected failure");
-    expect(result.errors.map((error) => error.code)).toEqual(["profile/missing-inheritance", "profile/missing-inheritance"]);
-  });
-
-  it("inherits verification only through a matching resolved pinned reference", () => {
-    const root = workspace();
-    const verifyDigest = digest("npm run verify:full:quiet");
-    writeProfile(root, canonical({
-      inherit: { workspace: ["verify"] },
-      references: [{
-        id: "workspace-verify",
-        kind: "verification",
-        scope: "project",
-        owner: "workspace",
-        path: "config/verify/full",
-        mode: "pinned",
-        sha256: verifyDigest,
-      }],
-    }));
-    const externalReferences = [{
-      id: "workspace-verify",
-      scope: "project" as const,
-      owner: "workspace",
-      path: "config/verify/full",
-      sha256: verifyDigest,
-    }];
-    const value = expectSuccess(resolve(root, {
-      externalReferences,
-      workspaceDefaults: { verify: { referenceId: "workspace-verify", sha256: verifyDigest } },
-    }));
-    expect(value.definition.workspace?.verify).toBe("workspace-verify");
-    expect(value.provenance).toContainEqual(expect.objectContaining({ field: "workspace.verify", sha256: verifyDigest }));
-
-    const failed = resolve(root, {
-      externalReferences,
-      workspaceDefaults: { verify: { referenceId: "workspace-verify", sha256: "f".repeat(64) } },
-    });
-    expect(failed).toMatchObject({ ok: false, errors: [expect.objectContaining({ code: "profile/missing-inheritance", field: "workspace.verify" })] });
+    expect(result.errors.map((error) => error.code)).toEqual(["profile/missing-inheritance"]);
   });
 
   it("uses explicit channel classification and never adopts an ambient secret", () => {
@@ -524,12 +488,12 @@ describe("resolveAgentProfile", () => {
     expect(JSON.stringify(value)).not.toContain("command-secret");
   });
 
-  it("returns only digests for opaque legacy setup and verification commands", () => {
+  it("digests opaque legacy setup commands and discards the retired verification command", () => {
     const root = workspace();
     const definition = legacyAgent("codex", "    worktreeSetup:\n      - echo setup-secret\n    verify: echo verify-secret\n");
     const value = expectSuccess(resolve(root, { legacy: legacySource(definition) }));
     expect(value.definition.workspace?.worktree?.legacySetupSha256).toEqual([digest("echo setup-secret")]);
-    expect(value.definition.workspace?.legacyVerifySha256).toBe(digest("echo verify-secret"));
+    expect(value.definition.workspace).not.toHaveProperty("legacyVerifySha256");
     expect(JSON.stringify(value)).not.toContain("setup-secret");
     expect(JSON.stringify(value)).not.toContain("verify-secret");
   });

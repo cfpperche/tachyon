@@ -3,8 +3,7 @@ import type { DoneKind } from "./loadPipeline.js";
 /**
  * spec 230 — pure done-contract evaluator. Given a node's declared `done` kind and the signals
  * observed so far, decide whether the node's WORK is complete, has failed, or is still pending (and
- * what it's waiting on). The executor reads `pending.waitingFor` to know what to do next (e.g. run the
- * verify gate). No side effects. Interactive-idle is never an input — completion is signal/exit + verify.
+ * what it's waiting on). No side effects. Interactive-idle is never an input — completion is signal/exit.
  */
 
 export interface NodeSignals {
@@ -14,8 +13,6 @@ export interface NodeSignals {
   exited?: boolean;
   /** agent nodes: `complete_node` was called (authenticated). */
   signalled?: boolean;
-  /** result of the on-demand verify gate (undefined = not run yet / running). */
-  verify?: { passed: boolean; stale: boolean } | null;
   /** the node's timeout elapsed. */
   timedOut?: boolean;
 }
@@ -27,7 +24,6 @@ export type DoneVerdict =
 
 const PENDING_EXIT: DoneVerdict = { status: "pending", waitingFor: "process exit" };
 const PENDING_SIGNAL: DoneVerdict = { status: "pending", waitingFor: "complete_node signal" };
-const PENDING_VERIFY: DoneVerdict = { status: "pending", waitingFor: "verify gate" };
 
 function fromExit(s: NodeSignals): DoneVerdict {
   if (s.exitCode === undefined || s.exitCode === null) return PENDING_EXIT;
@@ -40,27 +36,12 @@ function fromSignal(s: NodeSignals): DoneVerdict {
   return PENDING_SIGNAL;
 }
 
-function fromVerify(s: NodeSignals): DoneVerdict {
-  if (s.verify === undefined || s.verify === null) return PENDING_VERIFY;
-  if (!s.verify.passed) return { status: "failed", reason: "verify gate red" };
-  if (s.verify.stale) return { status: "failed", reason: "verify stale (no-op diff)" };
-  return { status: "done" };
-}
-
 export function evaluateDone(done: DoneKind, s: NodeSignals): DoneVerdict {
   if (s.timedOut) return { status: "failed", reason: "timed out" };
   switch (done) {
     case "exit":
       return fromExit(s);
-    case "exit_then_verify": {
-      const e = fromExit(s);
-      return e.status === "done" ? fromVerify(s) : e;
-    }
     case "signal":
       return fromSignal(s);
-    case "signal_then_verify": {
-      const sig = fromSignal(s);
-      return sig.status === "done" ? fromVerify(s) : sig;
-    }
   }
 }

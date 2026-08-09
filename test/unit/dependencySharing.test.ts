@@ -4,7 +4,6 @@ import path from "node:path";
 import { makeTempDir } from "../helpers/tempDir.js";
 import {
   DEPENDENCY_DIR,
-  auditSharedDependencies,
   dependencyDirState,
   describeDependencyState,
   fingerprintLockfiles,
@@ -25,7 +24,6 @@ import {
  * The actor × trigger list this covers, named the way the code names it:
  *   create (fresh worktree)      → link when the lockfiles match, refuse when they do not
  *   relaunch (restart/resume)    → RE-decide; a link that went stale is removed and said out loud
- *   mid-session lockfile edit    → `auditSharedDependencies`, the door verify runs through
  *   an agent that installed      → a real `node_modules` is never replaced by a link
  */
 
@@ -263,52 +261,5 @@ describe("shareDependencies (real fs) — create, relaunch, and the divergence i
   it("a project with no lockfile gets no claim at all", () => {
     const { primary, worktree } = tmpPair();
     expect(shareDependencies({ workspaceRoot: primary, worktreePath: worktree })).toBeUndefined();
-  });
-});
-
-describe("auditSharedDependencies — the mid-session door, which no relaunch passes through", () => {
-  it("stays quiet while the recorded digest still holds", () => {
-    const { primary, worktree } = tmpPair();
-    writeLock(primary, "L1");
-    writeLock(worktree, "L1");
-    fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
-    const state = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
-
-    expect(auditSharedDependencies({ workspaceRoot: primary, worktreePath: worktree, state })).toBeUndefined();
-  });
-
-  it("DETECTS a lockfile the agent edited after the link was made, and says both digests", () => {
-    const { primary, worktree } = tmpPair();
-    writeLock(primary, "L1");
-    writeLock(worktree, "L1");
-    fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
-    const state = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
-
-    writeLock(worktree, "L2-the-agent-added-a-dependency-mid-session");
-    const message = auditSharedDependencies({ workspaceRoot: primary, worktreePath: worktree, state });
-
-    expect(message).toBeDefined();
-    expect(message).toContain(state!.lockDigest.slice(0, 12));
-    expect(message).toContain("no longer match this branch");
-  });
-
-  it("has nothing to say about a checkout that owns its dependencies", () => {
-    const { primary, worktree } = tmpPair();
-    const own = { mode: "own" as const, lockDigest: "x", reason: "r", at: "t" };
-    expect(auditSharedDependencies({ workspaceRoot: primary, worktreePath: worktree, state: own })).toBeUndefined();
-    expect(auditSharedDependencies({ workspaceRoot: primary, worktreePath: worktree, state: undefined })).toBeUndefined();
-  });
-
-  it("goes quiet once the link is gone — it only speaks for links it can still see", () => {
-    const { primary, worktree } = tmpPair();
-    writeLock(primary, "L1");
-    writeLock(worktree, "L1");
-    fs.mkdirSync(path.join(primary, DEPENDENCY_DIR));
-    const state = shareDependencies({ workspaceRoot: primary, worktreePath: worktree });
-
-    fs.unlinkSync(path.join(worktree, DEPENDENCY_DIR));
-    writeLock(worktree, "L2");
-
-    expect(auditSharedDependencies({ workspaceRoot: primary, worktreePath: worktree, state })).toBeUndefined();
   });
 });

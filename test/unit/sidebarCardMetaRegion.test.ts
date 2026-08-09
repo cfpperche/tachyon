@@ -67,19 +67,18 @@ describe("SDD 479 phase 2 — the meta region and its wrapper", () => {
   });
 
   it("renders only the components the template lists, in the order it lists them", () => {
-    const a = agent({ name: "curated", liveBranch: "main", harness: true, verify: "pass", continuity: "missing" });
+    const a = agent({ name: "curated", liveBranch: "main", harness: true, continuity: "missing" });
     const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: { base: templateOf(["harness", "branch"]) } }));
     expect(html).toContain("⚙ harness");
     expect(html).toContain("⎇ main");
     // listed order wins over the default's (branch-first) order
     expect(html.indexOf("⚙ harness")).toBeLessThan(html.indexOf("⎇ main"));
     // omitted components are absent — not merely reordered
-    expect(html).not.toContain("✓ verified");
     expect(html).not.toContain("no continuity");
   });
 
   it("hides every meta badge when the template says `meta: []`", () => {
-    const a = agent({ name: "spartan", liveBranch: "main", harness: true, verify: "pass" });
+    const a = agent({ name: "spartan", liveBranch: "main", harness: true });
     const html = renderStatic(AgentRow({ a, flash: false, cardTemplate: { base: templateOf([]) } }));
     expect(html).not.toContain("row-meta");
     expect(html).toContain('class="name"'); // the rest of the card is untouched
@@ -102,22 +101,14 @@ describe("SDD 479 phase 2 — critical states are re-admitted, not overridable (
     expect(html).toContain("Your card template omits this badge");
   });
 
-  it("puts back awaiting-human, config-invalid and a FAILING verify gate", () => {
+  it("puts back awaiting-human and config-invalid", () => {
     for (const [row, needle] of [
       [agent({ name: "h", awaitingHuman: { reason: "review the diff" } }), "◆ needs you"],
       [agent({ name: "c", configInvalid: true }), "config invalid"],
-      [agent({ name: "v", verify: "fail" }), "✗ verify"],
     ] as const) {
       const html = renderStatic(AgentRow({ a: row, flash: false, cardTemplate: { base: HIDE_EVERYTHING } }));
       expect(html, `${needle} must survive a template that omits it`).toContain(needle);
       expect(html).toContain("Your card template omits this badge");
-    }
-  });
-
-  it("does NOT re-admit a passing or stale gate — critical means the row cannot recover, not 'important'", () => {
-    for (const verify of ["pass", "stale"] as const) {
-      const html = renderStatic(AgentRow({ a: agent({ name: verify, verify }), flash: false, cardTemplate: { base: HIDE_EVERYTHING } }));
-      expect(html).not.toContain("row-meta");
     }
   });
 

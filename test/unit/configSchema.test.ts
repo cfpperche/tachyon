@@ -114,14 +114,14 @@ describe("tachyon.schema.json — settings.projectGuidance", () => {
   });
 });
 
-describe("tachyon.schema.json — verify surfaces", () => {
-  it("removes settings.verify while preserving per-agent and worktree verify", () => {
+describe("tachyon.schema.json — retired verify surfaces", () => {
+  it("publishes no workspace, worktree, or per-agent execution verify setting", () => {
     const settings = schema.properties?.settings;
     const entrySchema = schema.properties?.agents?.additionalProperties;
     const agentVerify = typeof entrySchema === "object" ? entrySchema.properties?.verify : undefined;
 
     expect(settings?.properties?.verify).toBeUndefined();
-    expect(settings?.properties?.worktree?.properties?.verify).toMatchObject({ type: "string", minLength: 1 });
-    expect(agentVerify).toMatchObject({ type: "string", minLength: 1 });
+    expect(settings?.properties?.worktree?.properties?.verify).toBeUndefined();
+    expect(agentVerify).toBeUndefined();
   });
 });

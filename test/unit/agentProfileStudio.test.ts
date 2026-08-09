@@ -65,7 +65,6 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       cwd: "apps/tester",
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
-      verify: "",
       selfEvolution: false,
       isolation: "",
       nativeConfig: {
@@ -89,11 +88,10 @@ describe("canonical Agent Studio projection", () => {
       role: "reviewer",
       cwd: "apps/reviewer",
       lifecycle: { autostart: true, restart: "on-crash", attention: false },
-      // t-afc86e — `setup`/`verify` come back EMPTY here because this fixture's profile declares no
-      // workspace-command references, so the snapshot carries no artifact bytes. The populated case
+      // t-afc86e — `setup` comes back EMPTY here because this fixture's profile declares no
+      // workspace-command reference, so the snapshot carries no artifact bytes. The populated case
       // is the round trip in `agentWorkspaceCommands.test.ts`, which is what proves the read-back.
       worktree: { enabled: true, branch: "feature/reviewer", setup: [] },
-      verify: "",
       // t-f96b2f — this fixture pins `prompt.evolution`, so the toggle projects ON. It is the same
       // fact `bindings.prompt.evolution` asserts below, deliberately: the form saves the editable
       // view back, so a snapshot whose toggle disagreed with its own binding would write the
@@ -286,9 +284,9 @@ describe("canonical Agent Studio projection", () => {
         enabled: false, autostart: false, restart: "never",
         attention: { enabled: true, silenceSec: 12 },
       },
-      // t-afc86e — `verify`/`setup` are explicit `undefined` for the same reason `branch` already
-      // was: the patch states every field it owns, and absence is how a cleared one is written.
-      workspace: { cwd: "apps/tester", verify: undefined, worktree: { enabled: false, branch: undefined, setup: undefined } },
+      // t-afc86e — `setup` is explicit `undefined` for the same reason `branch` already was: the
+      // patch states every field it owns, and absence is how a cleared one is written.
+      workspace: { cwd: "apps/tester", worktree: { enabled: false, branch: undefined, setup: undefined } },
       isolation: undefined,
       nativeConfig: {
         selectors: {
