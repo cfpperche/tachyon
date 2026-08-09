@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadManagedWorktreeStore, managedWorktreeStorePath } from "../worktree/managedWorktree.js";
 import { sliceJournal, TaskJournalStore } from "./TaskJournalStore.js";
+import { TaskAttemptStore } from "./TaskAttemptStore.js";
 import { compareTasksForListing } from "./listOrder.js";
 import { nextTask } from "./nextTask.js";
 import { rebalancedRanks } from "./rank.js";
@@ -144,12 +145,15 @@ export class TaskStore {
   private readonly listCache = new Map<string, { signature: TaskFileSignature; read: TaskRead }>();
   private cachedListing: Task[] | undefined;
   readonly journal: TaskJournalStore;
+  readonly attempts: TaskAttemptStore;
 
   constructor(
     private readonly workspaceRoot: string,
     private readonly options: TaskStoreOptions = {},
   ) {
     this.journal = new TaskJournalStore(workspaceRoot);
+    this.attempts = new TaskAttemptStore(workspaceRoot);
+    this.backfillLegacyAttempts();
   }
 
   get dir(): string {
@@ -169,7 +173,6 @@ export class TaskStore {
         ...optionalPriority(input.priority),
         ...optionalStringField("rank", input.rank, 64),
         ...optionalStringField("kind", input.kind, TASK_AUTHORING_LIMITS.kind),
-        ...optionalStringField("assignee", input.assignee, 64),
         ...optionalArtifactRefs(input.artifact_refs),
         ...optionalDeps(input.deps),
       };
@@ -292,12 +295,18 @@ export class TaskStore {
     return options.status ? tasks.filter((task) => task.status === options.status).length : tasks.length;
   }
 
+  /** Attempts with an observed ending other than delivery; deliberately carries no retry policy. */
+  attemptsEndedWithoutDelivery(id: string): number {
+    assertTaskId(id);
+    return this.attempts.read(id).filter((event) => event.type === "released" || event.type === "dropped").length;
+  }
+
   async update(id: string, input: TaskUpdateInput): Promise<Task> {
     return this.withMutation(async () => {
       assertTaskId(id);
       const current = this.get(id);
       assertExpect(current, input.expect);
-      const next = applyUpdate(current, input);
+      let next = applyUpdate(current, input);
       // t-370286 — returning a task to inbox unscopes it: assignee is forbidden in inbox, and forcing the
       // caller to clear it first would make the board's drop gesture fail on a task the user is explicitly
       // sending back for re-evaluation. The store clears it as part of the transition.
@@ -306,10 +315,6 @@ export class TaskStore {
       // clear the authored flag regardless of whether this same patch also tried to set/replace it.
       if (next.status !== current.status) delete next.awaitingHuman;
       if (next.status !== current.status) delete next.evolutionCompletion;
-      if (current.status !== "done" && next.status === "done") {
-        const marker = this.options.evolutionCompletionFor?.({ before: current, after: next });
-        if (marker) next.evolutionCompletion = marker;
-      }
       if (JSON.stringify({ ...current, updatedAt: next.updatedAt }) === JSON.stringify(next)) {
         throw new Error("update_task requires at least one changed field");
       }
@@ -320,10 +325,7 @@ export class TaskStore {
       // string (a priority quick-edit always sends `rank:null`, dueto F5); guard against two concurrent drags
       // minting the identical midpoint between the same observed neighbors (dueto F2 — reject, never last-write).
       if (typeof input.rank === "string") this.assertNoRankCollision(next);
-      // t-f33480 — a status move is a weighty mutation; leave author + reason in the journal the same
-      // way reconcile does. Without this, triage (and every other lane change) only moved updatedAt,
-      // so "who triaged, and why" was invisible even when the Bridge had a resolved caller. Journal
-      // first: if the cap refuses, the status has not moved.
+      // Journal first: if its existing cap refuses, neither the attempt ledger nor the task moves.
       if (next.status !== current.status) {
         const reasonParts = [`status ${current.status} -> ${next.status}`];
         if ("priority" in input && input.priority !== undefined) {
@@ -335,6 +337,32 @@ export class TaskStore {
           author: input.actor ?? "human",
           text: reasonParts.join("; "),
         });
+      }
+      const open = this.attempts.open(id);
+      const desiredAssignee = next.status === "triaged" || next.status === "active" ? next.assignee : undefined;
+      const terminalType = next.status === "landed" || next.status === "done"
+        ? "delivered"
+        : next.status === "dropped" ? "dropped" : undefined;
+      if (open && (terminalType || desiredAssignee !== open.agent)) {
+        this.attempts.end(id, {
+          type: terminalType ?? "released",
+          attemptId: open.attemptId,
+          agent: open.agent,
+          evidence: terminalType ? `status ${current.status} -> ${next.status}` : `ownership changed by ${input.actor ?? "human"}`,
+          now: input.now,
+        });
+      }
+      if (desiredAssignee && desiredAssignee !== open?.agent) {
+        this.attempts.claim(id, {
+          agent: desiredAssignee,
+          evidence: `claim accepted by ${input.actor ?? "human"}`,
+          now: input.now,
+        });
+      }
+      next = this.withAttemptDerivations(next);
+      if (current.status !== "done" && next.status === "done") {
+        const marker = this.options.evolutionCompletionFor?.({ before: current, after: next });
+        if (marker) next.evolutionCompletion = marker;
       }
       this.writeTask(next);
       this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
@@ -367,6 +395,9 @@ export class TaskStore {
           author: actor,
           text: `ownership released; status remains active; assignee '${assignee}' cleared: ${evidence}`,
         });
+        const open = this.attempts.open(task.id);
+        if (open) this.attempts.end(task.id, { type: "released", attemptId: open.attemptId, agent: open.agent, evidence, now });
+        Object.assign(next, this.withAttemptDerivations(next));
         this.writeTask(next);
         this.emitMutation({ before: task, after: next, actor });
         returned.push(next);
@@ -408,18 +439,20 @@ export class TaskStore {
             : `cannot reconcile '${id}' from '${current.status}' to '${input.status}'; allowed: ${allowed.join(", ")}`,
         );
       }
-      const next: Task = { ...current, status: input.status, updatedAt: input.now ?? new Date().toISOString() };
+      let next: Task = { ...current, status: input.status, updatedAt: input.now ?? new Date().toISOString() };
       // Same two derived clears `update` performs on any status move: an advancing task is no longer
       // waiting on the human, and the completion marker is recomputed rather than carried.
       delete next.awaitingHuman;
       delete next.evolutionCompletion;
+      // Journal first: if the existing journal cap refuses, no attempt or task state moves.
+      this.journal.append(id, { author: input.actor ?? "human", text: `reconciled ${current.status} -> ${input.status}: ${evidence}` });
+      const open = this.attempts.open(id);
+      if (open) this.attempts.end(id, { type: "delivered", attemptId: open.attemptId, agent: open.agent, evidence, now: input.now });
+      next = this.withAttemptDerivations(next);
       if (input.status === "done") {
         const marker = this.options.evolutionCompletionFor?.({ before: current, after: next });
         if (marker) next.evolutionCompletion = marker;
       }
-      // Journal first: if the cap rejects the evidence, the status has not moved and the caller is
-      // told why, rather than getting a silent reconciliation with no record of what made it true.
-      this.journal.append(id, { author: input.actor ?? "human", text: `reconciled ${current.status} -> ${input.status}: ${evidence}` });
       this.writeTask(next);
       this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
       return next;
@@ -497,7 +530,7 @@ export class TaskStore {
       return { ok: false, absent: false, defect: "the file is not valid JSON" };
     }
     const result = normalizeTask(parsed, id);
-    return "task" in result ? { ok: true, task: result.task } : { ok: false, absent: false, defect: result.defect };
+    return "task" in result ? { ok: true, task: this.withAttemptDerivations(result.task) } : { ok: false, absent: false, defect: result.defect };
   }
 
   private fileSignature(id: string): TaskFileSignature | undefined {
@@ -514,8 +547,49 @@ export class TaskStore {
     fs.mkdirSync(this.dir, { recursive: true });
     const target = this.pathFor(task.id);
     const tmp = `${target}.tmp.${process.pid}.${crypto.randomBytes(3).toString("hex")}`;
-    fs.writeFileSync(tmp, `${JSON.stringify(task, null, 2)}\n`, "utf8");
+    const { assignee: _assignee, currentAssignee: _currentAssignee, lastDeliverer: _lastDeliverer, ...persisted } = task;
+    fs.writeFileSync(tmp, `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
     fs.renameSync(tmp, target);
+  }
+
+  private withAttemptDerivations(task: Task): Task {
+    const events = this.attempts.read(task.id);
+    if (events.length === 0) return task;
+    const ended = new Set(events.filter((event) => event.type !== "claimed").map((event) => event.attemptId));
+    const current = [...events].reverse().find((event) => event.type === "claimed" && !ended.has(event.attemptId));
+    const delivered = [...events].reverse().find((event) => event.type === "delivered");
+    const { assignee: _legacy, currentAssignee: _current, lastDeliverer: _deliverer, ...base } = task;
+    return {
+      ...base,
+      ...(current ? { currentAssignee: current.agent, assignee: current.agent } : {}),
+      ...(delivered ? { lastDeliverer: delivered.agent } : {}),
+    };
+  }
+
+  private backfillLegacyAttempts(): void {
+    let names: string[];
+    try { names = fs.readdirSync(this.dir); } catch { return; }
+    for (const name of names) {
+      if (!/^t-[0-9a-f]{6}\.json$/.test(name)) continue;
+      const id = name.slice(0, -5);
+      if (fs.existsSync(this.attempts.pathFor(id))) continue;
+      try {
+        const row = JSON.parse(fs.readFileSync(path.join(this.dir, name), "utf8")) as Partial<Task>;
+        if (typeof row.assignee !== "string" || !row.assignee.trim() || typeof row.updatedAt !== "string") continue;
+        const terminal = row.status === "landed" || row.status === "done" || row.status === "dropped";
+        if (!terminal && row.status !== "active") continue;
+        const event = {
+          type: terminal ? "delivered" as const : "claimed" as const,
+          attemptId: `a-backfill-${id.slice(2)}`,
+          agent: row.assignee.trim(),
+          ts: row.updatedAt,
+          evidence: `backfill inferred from legacy assignee; timestamp derived from task.updatedAt, not observed claim time`,
+          origin: "backfill" as const,
+          inferredFromUpdatedAt: row.updatedAt,
+        };
+        this.attempts.appendBackfill(id, event);
+      } catch { /* an unreadable task is reported through the normal Task reader */ }
+    }
   }
 
   private emitMutation(event: TaskMutationEvent): void {

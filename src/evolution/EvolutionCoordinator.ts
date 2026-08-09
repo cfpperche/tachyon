@@ -57,7 +57,7 @@ export class EvolutionCoordinator {
 
   completionMarker(event: TaskMutationEvent, nonce: string = randomUUID()): Task["evolutionCompletion"] {
     if (event.before.status === "done" || event.after.status !== "done") return undefined;
-    const agent = event.after.assignee;
+    const agent = event.after.lastDeliverer;
     if (!agent) return undefined;
     const definition = asAgent(this.deps.declaredAgent(agent));
     if (definition?.selfEvolution?.enabled !== true) return undefined;
@@ -67,7 +67,7 @@ export class EvolutionCoordinator {
   async reconcileCompletedTasks(tasks: readonly Task[]): Promise<void> {
     for (const task of tasks) {
       const marker = task.evolutionCompletion;
-      if (task.status !== "done" || !marker || task.assignee !== marker.agent) continue;
+      if (task.status !== "done" || !marker || task.lastDeliverer !== marker.agent) continue;
       await this.ensureReview(task, marker.revision);
     }
   }
@@ -81,7 +81,7 @@ export class EvolutionCoordinator {
   }
 
   private async ensureReview(task: Task, completionRevision: string): Promise<void> {
-    const agent = task.assignee;
+    const agent = task.lastDeliverer;
     if (!agent) return;
     const definition = asAgent(this.deps.declaredAgent(agent));
     if (definition?.selfEvolution?.enabled !== true) return;
