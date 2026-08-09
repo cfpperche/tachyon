@@ -34,6 +34,17 @@ export type RestartPolicy = "never" | "on-crash";
 export type EntryKind = "agent" | "terminal";
 
 /**
+ * Attention is on for an agent and off for a terminal (servers, shells and builds are silent by
+ * nature). Stated ONCE because three layers depend on the same answer and disagreeing about it is
+ * silent: the parser applies it to an entry with no `attention:` key, the Studio form omits the key
+ * when the human's choice equals it, and `upsertAgent` must know which boolean an OMITTED key means
+ * before it can merge a preserved `silenceSec`/`patterns` back onto it (t-26ba8f).
+ */
+export function defaultAttentionEnabled(kind: EntryKind): boolean {
+  return kind === "agent";
+}
+
+/**
  * Binaries that are AI CLIs but that Tachyon does NOT attest — it cannot vouch for their native
  * inputs, so none of them may back a canonical agent. They exist for authoring convenience: the
  * quick-add catalog and the kind suggestion a human sees and can override.
@@ -1075,9 +1086,9 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     } else {
       discarded.push(`${section}.${name}.attention: must be a boolean or a mapping`);
     }
-  } else if (agent.kind === "terminal") {
-    // Terminals (servers, shells, builds) are silent by nature — attention defaults off.
-    agent.attention.enabled = false;
+  } else {
+    // No `attention:` key — the entry's kind decides, through the one statement of that rule.
+    agent.attention.enabled = defaultAttentionEnabled(agent.kind);
   }
   if (!forceTerminal && def.instructions !== undefined) {
     if (typeof def.instructions !== "string") {

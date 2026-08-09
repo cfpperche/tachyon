@@ -9,6 +9,7 @@ import { isAlias, isScalar, parseDocument, stringify, visit, YAMLMap, YAMLSeq } 
  */
 
 import { AGENT_NAME_PATTERN } from "./nameValidation.js";
+import { defaultAttentionEnabled, type EntryKind } from "./loadConfig.js";
 
 export interface EditResult {
   text: string;
@@ -76,6 +77,91 @@ function sanitizeForSection(section: Section, entry: Record<string, unknown>): R
   return rest;
 }
 
+/**
+ * t-26ba8f — entry keys the Studio forms never author, carried forward from the entry a save
+ * REPLACES instead of dying with it.
+ *
+ * A closed list, and that is the whole design. "Preserve everything the form did not send" would be
+ * wrong twice over: the form deletes BY OMISSION for the fields it does own (unchecking autostart
+ * removes the key), so a blanket rule would make those fields unclearable; and a key the loader
+ * REFUSES for this section has to keep being dropped (t-b54ead), or the next save writes a file
+ * `mutateConfig` will not persist because the loader would discard from it.
+ *
+ * `env` is here because it is what the measurement found next to `attention` — accepted by
+ * `parseAgentEntry` for both sections, rendered by no Studio, and replaced away by the same
+ * `doc.setIn`. `test/unit/studioSaveKeepsUnauthoredFields.test.ts` is what keeps this list honest: it
+ * probes every schema-declared entry key against the real parser and fails if an accepted one is
+ * neither authored by the form nor listed here.
+ */
+const UNAUTHORED_ENTRY_KEYS = ["env"] as const;
+
+/**
+ * The sub-keys of `attention:` no Studio renders. Every form models attention as ONE boolean, so a
+ * save used to flatten `{enabled, silenceSec, patterns}` down to that boolean — measured 2026-08-08:
+ * `attention: {enabled: true, silenceSec: 30, patterns: ["waiting for approval"]}` came back as
+ * `attention: true`, and both dropped fields were live (`AttentionMonitor`'s idle threshold and its
+ * `extra_prompt_patterns` rule).
+ */
+const UNAUTHORED_ATTENTION_KEYS = ["silenceSec", "patterns"] as const;
+
+function plainRecordOf(node: unknown): Record<string, unknown> | undefined {
+  const plain = (node as { toJSON?: () => unknown } | undefined)?.toJSON?.() ?? node;
+  return typeof plain === "object" && plain !== null && !Array.isArray(plain)
+    ? (plain as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * The kind the entry being written will load as — from the block and the DECLARED `kind:`, never
+ * inferred from the command.
+ *
+ * `parseAgentEntry` does fall back to `suggestKindForCommand` for an `agents:` entry with no `kind:`,
+ * and this deliberately does not follow it there: t-c003e1 forbids that inference wherever the result
+ * is persisted, because a later edit to `KNOWN_AI_CLIS` would then silently reclassify an entry
+ * already on disk — here, by flipping the attention default of a mapping this writer is about to
+ * write. The gap is unreachable in production anyway: `loadProfileAwareConfig` deletes the legacy
+ * `agents:` block before parsing (`replaceAgentsBlock`), so no inline `agents:` entry can be loaded
+ * into a Studio and come back through this door.
+ */
+function kindOfEntry(section: Section, entry: Record<string, unknown>): EntryKind {
+  return section === "terminals" || entry.kind === "terminal" ? "terminal" : "agent";
+}
+
+/**
+ * Merge what the form did not author back onto what it did. `prior` is the entry this save replaces;
+ * `undefined` on a create, where there is nothing to preserve.
+ *
+ * `attention` needs the effective boolean rather than the written one: the form OMITS the key when
+ * the human's choice equals the kind's default, so an omission still carries a decision, and writing
+ * a bare `{silenceSec: 30}` would flip a terminal's attention ON (a mapping with no `enabled` loads
+ * as enabled). `defaultAttentionEnabled` is the one statement of that default, shared with the
+ * parser and the form.
+ */
+function carryUnauthoredForward(
+  section: Section,
+  prior: Record<string, unknown> | undefined,
+  entry: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!prior) return entry;
+  const merged = { ...entry };
+  for (const key of UNAUTHORED_ENTRY_KEYS) {
+    if (!(key in merged) && key in prior) merged[key] = prior[key];
+  }
+  const priorAttention = plainRecordOf(prior.attention);
+  if (priorAttention) {
+    const carried = Object.fromEntries(
+      UNAUTHORED_ATTENTION_KEYS.filter((key) => key in priorAttention).map((key) => [key, priorAttention[key]]),
+    );
+    if (Object.keys(carried).length > 0) {
+      const enabled = typeof merged.attention === "boolean"
+        ? merged.attention
+        : defaultAttentionEnabled(kindOfEntry(section, merged));
+      merged.attention = { enabled, ...carried };
+    }
+  }
+  return merged;
+}
+
 function assertValidName(name: string): void {
   if (!AGENT_NAME_PATTERN.test(name)) {
     throw new Error(`invalid agent name '${name}' (must match ${AGENT_NAME_PATTERN})`);
@@ -130,6 +216,10 @@ export function upsertAgent(
     target = cur;
   }
 
+  // t-26ba8f — read the node this save replaces BEFORE anything mutates the document: the rename
+  // branch below deletes it, and a rename loses the same fields an edit would if it reads after.
+  const prior = replaceName !== undefined ? plainRecordOf(doc.getIn([target, replaceName], true)) : undefined;
+
   if (replaceName !== undefined && replaceName !== name) {
     // form-driven rename: the new name must be free in BOTH blocks; drop the old key.
     if (sectionOf(doc, name)) throw new Error(`agent '${name}' already exists`);
@@ -139,7 +229,8 @@ export function upsertAgent(
     throw new Error(`agent '${name}' already exists`);
   }
 
-  doc.setIn([target, name], doc.createNode(sanitizeForSection(target, entry)));
+  // Sanitize LAST, so a preserved key can never re-introduce one this section refuses.
+  doc.setIn([target, name], doc.createNode(sanitizeForSection(target, carryUnauthoredForward(target, prior, entry))));
   return { text: String(doc), warnings };
 }
 
