@@ -26,8 +26,9 @@ deletes.
 - [ ] `inboxPending` and `worktreesActive` keep their current sources and the Inbox counter still
       navigates.
 - [ ] All four actions present: auto-refresh, refresh, copy diagnostics, open doctor.
-- [ ] Collapse rule from plan.md § D4: one workspace expanded; more than one collapsed; an engine in
-      `error` expanded regardless.
+- [ ] **No collapse rule** — plan.md § D4 is cancelled; `control.workspaces` is always 0 or 1.
+- [ ] `workspaceCount` is a window count (`model.ts:528`, unfiltered). It renders as an explicitly
+      scoped sub-line, never as a metric that appears to describe the card on screen (§ D4b).
 - [ ] Do not delete `model.overview` yet — `model.ts:563-565` reads it for diagnostics. Measure its
       consumers and report them.
 
@@ -47,9 +48,11 @@ deletes.
 
 Required — spec.md says so, and Open question 3 is the reason.
 
-- [ ] One workspace: does the page read as one screen, or as two stapled together?
-- [ ] Two or more workspaces: is the second visible without scrolling past a wall?
-- [ ] A workspace with its engine in `error`: is it obvious which one, from the top of the page?
-- [ ] Evidence: screenshots of all three, plus the old Overview and Engine for comparison.
+- [ ] Does the page read as one screen, or as two stapled together?
+- [ ] Does the summary earn its height above a single card, or does it push the only real content
+      down while adding nothing? This is the density risk that survived — see spec.md § Open q. 3.
+- [ ] Engine in `error`: is the failure legible from the top of the page?
+- [ ] Evidence: screenshots of both cases, plus the old Overview and Engine for comparison. No
+      multi-workspace shot — that state does not exist.
 - [ ] Verdict: recorded after looking, including anything fixed as a result. If the collapse default is
       wrong, fix the layout — do not revert the merge.

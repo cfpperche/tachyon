@@ -54,16 +54,35 @@ stay as they are — they have no per-row source, which is precisely why they ar
 **Do not delete `model.overview`.** Measure its other consumers first — `model.ts:563-565` builds
 diagnostics text from it.
 
-### D4 — detail collapsed by default when there is more than one workspace
+### D4 — CANCELLED. There is never more than one workspace on screen.
 
-Open question 3 is the one that can make System worse than the pair. Engine's card is three
-sub-cards plus `EngineLogPanel`; with a summary above it, the second workspace may be below the fold.
+This decision originally specified a collapse rule for the second and later workspace rows. It was
+written on a false premise of mine, and the agent implementing this measured it away before coding:
 
-Rule: one workspace → expanded, nothing to scan past. More than one → collapsed to a header row
-carrying name, hash and state badge, expandable. A workspace whose engine is in `error` starts
-expanded regardless — the failing one is what you came for.
+```
+model.ts:439   const selected = requested ?? workspaces[0]?.hash;
+model.ts:440   const scoped = selected ? bundles.filter((b) => b.control.wsHash === selected) : bundles;
+```
 
-This is a starting position for Visual QA to overturn, not a conclusion.
+With at least one bundle, `selected` always resolves, so `scoped` holds exactly one and `control` is
+built from it. **`control.workspaces` is always 0 or 1.** The `t-72ff5a` comment at `:427` records the
+history: the "All workspaces" aggregate was removed. Engine has been mapping a one-element array ever
+since.
+
+**Build no collapse rule.** Code reachable only from a test fixture is the "machinery without an
+inlet" class this project swept the same morning (`t-e50995`, five findings, the worst of them a
+recover-on-restart that never ran). One workspace, one card, no collapse. If multi-root scope ever
+returns, the rule gets written with the real case in front of it.
+
+### D4b — `workspaceCount` is a window count, and must say so
+
+`model.ts:528` sets `workspaceCount: workspaces.length` from the **unfiltered** list — the roots
+attached to the window, not the rows on screen. Above a single card, "workspaces: 3" is exactly the
+contradiction spec.md § Acceptance forbids, and it is the only real instance of it.
+
+The engine/agent metrics derive from the rendered rows (§ D3). The window count survives as an
+explicitly scoped sub-line ("of N in this window"). A label that lets the reader assume the number
+describes what is on screen is not acceptable.
 
 ### D5 — the actions survive, and any that do not are a recorded decision
 
