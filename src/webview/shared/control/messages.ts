@@ -7,8 +7,6 @@ export const MODEL = "model" as const;
 export interface CockpitStrings {
   title: string;
   subtitle: string;
-  navOverview: string;
-  navEngine: string;
   navFleet: string;
   /** t-e76acc — the unified Human Inbox tab (approvals + validations, one navigation). */
   navInbox: string;
@@ -35,9 +33,10 @@ export interface CockpitStrings {
   openSettings: string;
   openDoctor: string;
   copied: string;
-  overviewTitle: string;
-  overviewHint: string;
-  engineTitle: string;
+  /** SDD 500 — the merged screen's own title and hint; `overviewTitle`/`overviewHint`/`engineTitle`
+   *  went with the two surfaces they named. */
+  systemTitle: string;
+  systemHint: string;
   fleetTitle: string;
   fleetHint: string;
   approvalsTitle: string;
@@ -49,12 +48,18 @@ export interface CockpitStrings {
   settingsTitle: string;
   settingsHint: string;
   workspaces: string;
+  /**
+   * SDD 500 — the scope line under the Workspaces value, `{0}` = this WINDOW's attached count. It
+   * exists because that count describes something other than what is on screen (t-72ff5a keeps it
+   * unscoped on purpose), and a number that looks like it describes the cards while counting something
+   * else is the contradiction the merged screen must never show.
+   */
+  workspacesInWindow: string;
   engines: string;
   agents: string;
   errors: string;
-  bridges: string;
   approvals: string;
-  /** t-e76acc — Overview's single "waiting on a human" metric label. */
+  /** t-e76acc — the single "waiting on a human" metric label. */
   inbox: string;
   worktrees: string;
   attached: string;

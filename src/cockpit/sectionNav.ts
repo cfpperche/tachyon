@@ -28,8 +28,11 @@ export interface ControlSectionNav {
 
 /** Top-level only (not approvals/validations deep-links). Keyed by id for O(1) lookup. */
 const NAV_BY_ID: ReadonlyMap<CockpitSectionId, Omit<ControlSectionNav, "id">> = new Map([
-  ["overview", { icon: "dashboard", label: "Overview" }],
-  ["engine", { icon: "server-environment", label: "Engine" }],
+  // SDD 500 — one tile where Overview and Engine were two. Neither old id has an entry here: this map
+  // is the launcher's metadata, and a tile for an id that resolves elsewhere would open the same app
+  // twice under two names. They stay decodable ids (`resolveSectionDestination` in route.ts) — the same
+  // separation `fleet` records below, applied to a merge instead of a deletion.
+  ["system", { icon: "dashboard", label: "System" }],
   ["inbox", { icon: "inbox", label: "Inbox" }],
   ["mission", { icon: "checklist", label: "Board" }],
   ["worktrees", { icon: "folder-library", label: "Worktrees" }],
@@ -52,10 +55,14 @@ const NAV_BY_ID: ReadonlyMap<CockpitSectionId, Omit<ControlSectionNav, "id">> = 
  * (owner decision, 2026-08-07: the sidebar Agents tab is the only fleet, so the tile had nowhere worth
  * going) while staying a `CockpitSectionId`: it is still the parent section of the agent-activity and
  * agent-probes subroutes and of five studios, so it must still decode. Eleven tiles now, not twelve.
+ *
+ * SDD 500 — ten, and this time two ids left together for ONE new one. `system` takes the position
+ * Overview held (a tile does not move; here two collapse into one), and `overview`/`engine` keep
+ * decoding for the same reason `fleet` does — the eight default fallbacks in `route.ts` name
+ * `"overview"` at the call site by a documented decision, so the id must stay readable.
  */
 const LAUNCHER_ORDER: readonly CockpitSectionId[] = [
-  "overview",
-  "engine",
+  "system",
   "inbox",
   "mission",
   "worktrees",

@@ -29,12 +29,15 @@ describe("t-aa2780 — the engine log-error dot has a destination", () => {
     expect(html).toContain('aria-label="Control, errors in engine log"');
   });
 
-  it("lights the Engine TILE, so the alarm has an address", () => {
+  it("lights the System TILE, so the alarm has an address", () => {
+    // SDD 500 — the Engine tile was merged into System, and the dot moved with the log panel it is
+    // about. What must not change is that the alarm still names ONE tile a human can click.
     const html = renderStatic(SidebarApp({ fleets: [erroring], initialTab: "Control" }));
     expect(html).toContain('data-testid="control-tile-engine-dot"');
-    expect(html).toContain('aria-label="Engine, errors in engine log"');
-    // exactly one tile lights: eleven other sections are not the engine.
+    expect(html).toContain('aria-label="System, errors in engine log"');
     expect((html.match(/class="ds-btn ctl-tile has-err"/g) ?? []).length).toBe(1);
+    // and it is on the System tile specifically — a dot on the wrong tile is worse than no dot.
+    expect(html).toMatch(/data-testid="control-tile-system"[^>]*/);
   });
 
   it("stays dark when no root reports errors, and when no root MEASURED them", () => {

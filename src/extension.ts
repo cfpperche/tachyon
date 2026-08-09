@@ -14,14 +14,14 @@ import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
-import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
-import { OVERVIEW_VIEW_TYPE, OverviewPanelManager } from "./webview/OverviewPanel.js";
+import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
 import { COLLECT_EVERYTHING, type CockpitCollectNeeds, type CockpitWorkspaceBundle } from "./cockpit/model.js";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { resolveCockpitSection } from "./cockpit/resolveSection.js";
+import { resolveSectionDestination } from "./cockpit/route.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
 import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";
@@ -2348,17 +2348,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => probesPanels.dispose() });
 
   const engineHost = makeControlModelHost();
-  const enginePanels = new EnginePanelManager(context.extensionUri, {
+  // SDD 500 — ONE manager where Overview's and Engine's were two, wired from the union of both dep
+  // sets: the collect + doctor + engine-log doors Engine needed, and the `openSection` shortcut the
+  // "waiting on you" counter posts (t-3bcd57 left it as that counter's only caller).
+  const systemPanels = new SystemPanelManager(context.extensionUri, {
     collect: engineHost.collect,
     openDoctor: engineHost.openDoctor,
+    openSection: (section) => {
+      void vscode.commands.executeCommand("tachyon.openControl", section);
+    },
     clearEngineLog,
     openEngineJournal,
   }, undefined, controlWorkspaceScope);
-  context.subscriptions.push({ dispose: () => enginePanels.dispose() });
-  const openEngineTab = (hash?: string): boolean => {
+  context.subscriptions.push({ dispose: () => systemPanels.dispose() });
+  const openSystemTab = (hash?: string): boolean => {
     const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
     if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
-    enginePanels.open(ws.wsHash); return true;
+    systemPanels.open(ws.wsHash); return true;
   };
 
   // SDD 485 D6 — Worktrees uses the same validated model source as Control did, but the standalone
@@ -2429,29 +2435,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     return true;
   };
 
-  const overviewPanels = new OverviewPanelManager(context.extensionUri, {
-    collect: engineHost.collect,
-    // t-3bcd57 — JUMP card removed; openSection remains for the inbox metric shortcut only.
-    // Project handoff is tachyon.openProjectHandoff; Doctor is tachyon.doctor (palette + other panels).
-    openSection: (section) => {
-      void vscode.commands.executeCommand("tachyon.openControl", section);
-    },
-  }, undefined, controlWorkspaceScope);
-  context.subscriptions.push({ dispose: () => overviewPanels.dispose() });
-  const openOverviewTab = (hash?: string): boolean => {
-    const ws = (hash ? byHash(hash) : undefined) ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0];
-    if (!ws) { notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn"); return false; }
-    overviewPanels.open(ws.wsHash); return true;
-  };
-
   // SDD 485 C5 — the Board app's own restore: the panel VS Code hands back is REUSED, keyed on the project
   // it persisted, so a reload puts the Board back in its tab instead of opening a second one.
   registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
-  registerTrustedPanelSerializer<SectionPanelState>(context, ENGINE_VIEW_TYPE, (panel, state) => enginePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
+  registerTrustedPanelSerializer<SectionPanelState>(context, SYSTEM_VIEW_TYPE, (panel, state) => systemPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<SectionPanelState>(context, OVERVIEW_VIEW_TYPE, (panel, state) => overviewPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
   // redirects into Control → the task's subroute; same claimed-singleton guard as Board/tmux above
   // (open() was already unreachable — nothing to "keep working" here beyond this revive path).
@@ -2542,7 +2532,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // panel VS Code handed us and open Overview, the sensible default for an unscoped legacy shell.
   registerTrustedPanelSerializer<{ schemaVersion: 1 | 2; view: string; wsHash?: unknown }>(context, "tachyonCockpit", (panel, state) => {
     panel.dispose();
-    openOverviewTab(typeof state?.wsHash === "string" ? state.wsHash : undefined);
+    openSystemTab(typeof state?.wsHash === "string" ? state.wsHash : undefined);
   });
   // SDD 485 C1 — `tachyonSectionAppFixture` is dispose-only for the same reason `tachyonAgentFixtureStudio`
   // is: it is a dev-only proof surface that nothing here instantiates, so there is no manager to revive a
@@ -2552,7 +2542,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // t-5f2b5b — `tachyonFleet` joins them: the Fleet app is deleted, so a tab a human left open before the
   // deletion has no manager to revive into. Without this row VS Code hands the panel back to nobody and the
   // human gets a dead editor tab; with it the stale panel is disposed on the spot.
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet"]) {
+  // SDD 500 — `tachyonOverview` and `tachyonEngine` join them for the same reason, with one difference
+  // worth naming: the Fleet app was deleted and these two were MERGED, so a redirect into System was
+  // representable. It was rejected (D2). Each old tab carries the title and icon of a surface that no
+  // longer exists, and reviving it as System would leave a human holding a tab that says Overview and
+  // draws something else. Disposing says the honest thing; the launcher's one tile is a click away.
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine"]) {
     registerDisposePanelSerializer(context, viewType);
   }
 
@@ -2864,7 +2859,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // SDD 485 C5 — the launcher tile is still ONE door for all twelve; what changed is where the Board's
         // id lands. Routed here rather than in the sidebar so the sidebar never has to learn which of the
         // twelve are apps — Phase D flips ten more ids through this same line.
-        const resolved = resolveCockpitSection(section);
+        // SDD 500 — the raw id is decoded first, then resolved to the section that actually RENDERS
+        // it. Two steps, because they answer two questions: `overview` and `engine` still decode (the
+        // eight defaults in route.ts name `"overview"` at the call site by decision), and both land on
+        // System. Composing them here rather than folding the alias into the decoder keeps a persisted
+        // or deep-linked id READABLE instead of rewriting it.
+        const resolved = resolveSectionDestination(resolveCockpitSection(section));
         if (resolved === "mission") {
           openBoard();
           return Promise.resolve();
@@ -2896,10 +2896,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openHumanInboxTab();
           return Promise.resolve();
         }
-        if (resolved === "engine") {
-          openEngineTab();
-          return Promise.resolve();
-        }
         if (resolved === "worktrees") {
           openWorktreesTab();
           return Promise.resolve();
@@ -2912,24 +2908,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           openSettingsTab();
           return Promise.resolve();
         }
-        if (resolved === "overview") {
-          openOverviewTab();
+        // SDD 500 — `overview` and `engine` reach this arm ALIASED, so there is no branch of their own
+        // to read: `resolveSectionDestination` mapped both to `system` above, which is the whole of D1.
+        if (resolved === "system") {
+          openSystemTab();
           return Promise.resolve();
         }
         // t-5f2b5b — `fleet` has NO arm any more and deliberately falls through here. The app is deleted
         // (owner decision: the sidebar Agents tab is the only fleet), but the id still DECODES, because it
         // is the parent section of the agent-activity/agent-probes subroutes and of five studios. A stale
-        // deep link or a persisted pre-deletion state therefore lands on Overview instead of a section
+        // deep link or a persisted pre-deletion state therefore lands on System instead of a section
         // nothing renders — the same answer the retired `tachyonCockpit` tombstone gives.
-        openOverviewTab();
+        openSystemTab();
         return Promise.resolve();
       }
-      openOverviewTab();
+      openSystemTab();
       return Promise.resolve();
     }),
     // legacy aliases (palette hidden for openCockpit)
-    vscode.commands.registerCommand("tachyon.openCockpit", () => { openOverviewTab(); }),
-    vscode.commands.registerCommand("tachyon.inspectEngine", () => { openEngineTab(); }),
+    vscode.commands.registerCommand("tachyon.openCockpit", () => { openSystemTab(); }),
+    // SDD 500 — `tachyon.inspectEngine` keeps its name and its palette entry and lands on System: the
+    // engine detail it opened is still the whole lower half of that screen, so this is one destination
+    // changing, not a command retiring.
+    vscode.commands.registerCommand("tachyon.inspectEngine", () => { openSystemTab(); }),
     // SDD 485 C5 — the Board opens as its own editor tab (same as tachyon.board without the pick).
     vscode.commands.registerCommand("tachyon.openControlMission", () => { openBoard(); }),
     // SDD 485 D3 — Runtime Ops opens as its own editor tab, or reveals the one already open. The command

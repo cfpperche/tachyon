@@ -78,7 +78,19 @@
 }
 .ci-kv .v {
   font-size: 10px;
-  word-break: break-all;
+  /*
+   * SDD 500 — `overflow-wrap: anywhere`, not `word-break: break-all`.
+   *
+   * Found by looking, in the Visual QA pass for the merged System screen: an engine in `error` renders
+   * its failure text in this cell, and `break-all` had it read "no re / sponse on 127.0.0.1:7421 after
+   * 5s" in the narrow Engine column at 880. Every OTHER value here is a token (a root path, a hash, a
+   * bundle id, a URL) where mid-token breaking is what you want, so the rule was right for eleven
+   * values and wrong for the one a human reads when something is already broken.
+   *
+   * `anywhere` keeps the containment — a token too long for its column still breaks, so nothing
+   * overflows — and only stops breaking words that would have fit on a line of their own.
+   */
+  overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 .ci-log {

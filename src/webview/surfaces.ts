@@ -226,10 +226,24 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // (D2 had to move a rule, D3 had to delete two, this one had nothing to do).
   { viewId: "tachyonHumanInbox", view: "human-inbox", hostFile: "src/webview/HumanInboxPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
-  { viewId: "tachyonEngine", view: "engine", hostFile: "src/webview/EnginePanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonWorktrees", view: "worktrees", hostFile: "src/webview/WorktreesPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonSettings", view: "settings", hostFile: "src/webview/SettingsPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
-  { viewId: "tachyonOverview", view: "overview", hostFile: "src/webview/OverviewPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
+  // SDD 500 (2026-08-09) — System: one row where `tachyonOverview` (D11) and `tachyonEngine` (D5) were
+  // two. This does NOT reverse 485's app-count decision by analogy; it is the one case 485's own
+  // argument never covered, because these two were never two subjects. Overview's counters were read
+  // straight off `control.summary`, computed from the very `control.workspaces` array Engine renders row
+  // by row, in the same call — a summary and its detail, shipped as two editor tabs.
+  //
+  // Both old viewTypes are RETIRED rather than reused, and neither keeps a manifest row: a row here
+  // means "this surface still creates a panel", and they do not. They stay in `extension.ts`'s
+  // dispose-only serializer loop so a tab left open across a reload is disposed instead of handed back
+  // to nobody — `tachyonFleet`'s answer (t-5f2b5b), for the same reason.
+  //
+  // `conform`, and the contract checks it rather than trusting this sentence: it mounts through the
+  // shared shell (via SectionPanelManager), links design-system.css, and `system.css` styles no page
+  // frame, mints no `--ds-*` values and gives `#root` no height — a page-scrolling document, so no
+  // `page-frame.css` either.
+  { viewId: "tachyonSystem", view: "system", hostFile: "src/webview/SystemPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this
   // manifest entry is a dev-tooling/catalog-completeness concern (preview harness + convention guard), NOT a
   // user-facing activation — extension.ts never instantiates PipelineStudioPanelManager or registers a command.

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { ControlInspectorWorkspaceRow } from "../../../control-inspector/model";
 import { Button, Input, Select } from "../ui";
-import type { EngineAction } from "../../engine/messages";
+// SDD 500 — the log panel's protocol moved with its one host: the Engine app became System, and this
+// component's three actions (copyText / engineLogClear / engineLogJournal) are members of that union.
+import type { SystemAction as EngineAction } from "../../system/messages";
 
 export type LogSource = "daemon" | "events" | "bridge";
 type Since = "all" | "2m" | "15m";
