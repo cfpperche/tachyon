@@ -99,8 +99,22 @@ export function treeOf(commitish, cwd = process.cwd()) {
 
 function readLockfiles(dir) {
   return (name) => {
-    try { return fs.readFileSync(path.join(dir, name)); } catch { return null; }
+    try {
+      return fs.readFileSync(path.join(dir, name));
+    } catch (error) {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    }
   };
+}
+
+function missingDependencyDirIsNotApplicable(dependencyDir) {
+  try {
+    return fs.lstatSync(dependencyDir);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 /**
@@ -116,7 +130,8 @@ function sharedDependencyDivergenceReason(cwd) {
     if (path.resolve(checkout) === path.resolve(primary)) return null;
 
     const dependencyDir = path.join(checkout, "node_modules");
-    if (!fs.lstatSync(dependencyDir).isSymbolicLink()) return null;
+    const dependencyDirStat = missingDependencyDirIsNotApplicable(dependencyDir);
+    if (!dependencyDirStat || !dependencyDirStat.isSymbolicLink()) return null;
     const target = path.resolve(path.dirname(dependencyDir), fs.readlinkSync(dependencyDir));
     if (target !== path.resolve(primary, "node_modules")) return null;
 
@@ -125,8 +140,9 @@ function sharedDependencyDivergenceReason(cwd) {
     if (primaryFingerprint.files.length === 0 && worktreeFingerprint.files.length === 0) return null;
     if (primaryFingerprint.digest === worktreeFingerprint.digest) return null;
     return lockfileDivergenceReason(primaryFingerprint, worktreeFingerprint);
-  } catch {
-    return null;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return `could not determine whether dependencies match this tree: ${detail}`;
   }
 }
 
