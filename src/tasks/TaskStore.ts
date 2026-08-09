@@ -23,7 +23,6 @@ import {
   type ArtifactRef,
   type ArtifactRefRole,
   type NextTaskResult,
-  type SddDerivedStage,
   type SddStatus,
   type Task,
   type TaskAttention,
@@ -89,7 +88,6 @@ interface TaskDerivationBatch {
 }
 
 const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
-const RETRIAGE_SDD = new Set<SddStatus>(["superseded", "abandoned", "deferred"]);
 const TASK_AUTHORING_LIMIT_FIELDS = new Set<string>(["title", "body", "kind", "artifact_refs", "artifact_refs.type", "artifact_refs.ref"]);
 
 // spec 335 — hoisted so the Board snapshot can compute per-task drag affordances from the SAME
@@ -319,8 +317,6 @@ export class TaskStore {
         throw new Error("update_task requires at least one changed field");
       }
       assertTransition(current, next, input);
-      this.assertSddArtifactRefsUpdateAllowed(current, next, input);
-      this.assertSddStatusUpdateAllowed(current, next, input);
       // spec 335 (Gated v1.1) — the board's reorder gesture is the only caller that ever sets a literal rank
       // string (a priority quick-edit always sends `rank:null`, dueto F5); guard against two concurrent drags
       // minting the identical midpoint between the same observed neighbors (dueto F2 — reject, never last-write).
@@ -602,7 +598,7 @@ export class TaskStore {
 
   private viewFor(task: Task, allTasks: Task[], options: TaskViewOptions = {}, derivationBatch?: TaskDerivationBatch): TaskView {
     const derived = this.derive(task, derivationBatch);
-    const attention = attentionFor(task, allTasks, derived);
+    const attention = attentionFor(task, allTasks);
     const wantsJournal = options.includeJournal || options.journalWindow !== undefined;
     // Read once: count and window come from the same materialization, so a concurrent append
     // cannot make the declared total disagree with the entries beside it.
@@ -650,30 +646,6 @@ export class TaskStore {
       if (specPath) return specPath;
     }
     return null;
-  }
-
-  private assertSddStatusUpdateAllowed(current: Task, next: Task, input: TaskUpdateInput): void {
-    if (input.status !== "done") return;
-    for (const sdd of [this.sddStage(current), this.sddStage(next)]) {
-      if (sdd?.status && sdd.status !== "shipped") throw new Error(`task '${next.id}' cannot be marked done while SDD artifact '${sdd.ref}' is ${sdd.status}`);
-    }
-  }
-
-  private assertSddArtifactRefsUpdateAllowed(current: Task, next: Task, input: TaskUpdateInput): void {
-    if (!("artifact_refs" in input)) return;
-    const currentSdd = this.sddStage(current);
-    const nextSdd = this.sddStage(next);
-    if (currentSdd?.ref === nextSdd?.ref) return;
-    if (currentSdd?.status && next.status !== "triaged") {
-      throw new Error(`SDD artifact '${currentSdd.ref}' can be cleared or replaced only while task is triaged`);
-    }
-    if (nextSdd && next.status !== "triaged" && next.status !== "active") {
-      throw new Error("SDD artifact refs can be set only while task is triaged or active");
-    }
-  }
-
-  private sddStage(task: Task): SddDerivedStage | undefined {
-    return this.derive(task)?.sdd;
   }
 
   private assertNoRankCollision(next: Task): void {
@@ -1007,7 +979,7 @@ function assertTransition(current: Task, next: Task, input: TaskUpdateInput): vo
   if (!allowedTransitions(current.status).includes(next.status)) throw new Error(`invalid status transition ${current.status} -> ${next.status}`);
 }
 
-function attentionFor(task: Task, allTasks: Task[], derived?: TaskDerived): TaskAttention[] {
+function attentionFor(task: Task, allTasks: Task[]): TaskAttention[] {
   const byId = new Map(allTasks.map((t) => [t.id, t]));
   const attention: TaskAttention[] = [];
   // t-1339a8 — authored-only signal (never heuristically derived): the coordinator's own `awaitingHuman`
@@ -1016,12 +988,6 @@ function attentionFor(task: Task, allTasks: Task[], derived?: TaskDerived): Task
   if (task.awaitingHuman) attention.push({ code: "awaiting_human", message: task.awaitingHuman.reason });
   for (const dep of task.deps ?? []) {
     if (!byId.has(dep)) attention.push({ code: "dangling_dep", message: `dependency '${dep}' does not exist`, ref: dep });
-  }
-  const sdd = derived?.sdd;
-  if (sdd?.missing) attention.push({ code: "missing_sdd_spec", message: `SDD artifact '${sdd.ref}' was not found`, ref: sdd.ref });
-  if (task.status === "landed" && sdd?.status === "shipped") attention.push({ code: "ready_to_close", message: `SDD artifact '${sdd.ref}' is shipped; close the task explicitly`, ref: sdd.ref });
-  if (task.status === "active" && sdd?.status && RETRIAGE_SDD.has(sdd.status)) {
-    attention.push({ code: "sdd_needs_retriage", message: `SDD artifact '${sdd.ref}' is ${sdd.status}; retriage the task`, ref: sdd.ref });
   }
   return attention;
 }
