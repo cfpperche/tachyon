@@ -386,7 +386,7 @@ Stated explicitly, because "I did not find it" and "it does not exist" are diffe
 - The config file watcher at `Workspace.ts:3265-3272` watches `.tachyon/agents/*/agent.yml` — the
   FILE glob. Creating or deleting an empty directory under `.tachyon/agents/` fires nothing. (The
   broader `.tachyon/*` watch at `:3277` is one level deep and refreshes pins/schedules only.)
-- `reconcile_worktree_hygiene`, `worktree_hygiene` and `worktree_process_hygiene`: none of them joins
+- `reconcile_worktrees`, `worktree_audit` and `worktree_processes`: none of them joins
   `.tachyon/agents`.
 
 ---

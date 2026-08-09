@@ -543,7 +543,7 @@ create state it then refused to load, display or remove.
 - **`reconcile_roster`** names which records disagree about a Saved Agent, and **which door would
   remove it** (`t-6c029b`, SDD 494 Part 4). Five states derived from four presence facts; nothing
   stored.
-- **`worktree_process_hygiene`** reports processes that outlived their worktree (`t-1926ce`). It
+- **`worktree_processes`** reports processes that outlived their worktree (`t-1926ce`). It
   reports only — killing another process stays the human's. Post-dismiss retention is now
   disclosed before you dismiss, including that it differs per runtime (`t-23ee99`).
 - The packaged VSIX smoke now opens a door **with the engine running**, on an Electron extension

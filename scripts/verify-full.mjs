@@ -74,6 +74,8 @@ function tryGitOutput(args, cwd = process.cwd()) {
 
 /** The suite's own definition — true whatever it happens to import. */
 const BROWSER_SUITE_OWN = Object.freeze(["test/browser/", "vitest.browser.config.ts"]);
+const BROWSER_IMPORT_DEPTH = 2;
+const SOURCE_EXTENSIONS = Object.freeze([".ts", ".tsx", ".mts", ".js", ".mjs", ".cjs"]);
 
 /**
  * t-e2c8a2 — the trigger set is DERIVED from what the browser suite actually reads, never written
@@ -90,30 +92,57 @@ const BROWSER_SUITE_OWN = Object.freeze(["test/browser/", "vitest.browser.config
  * Granularity is two path segments (`src/sidebar`, not `src/sidebar/cardTemplate.ts`): a browser
  * test importing one file from a directory is evidence that the directory is rendered, not that
  * the single file is. Resolution is per-file because the suite is two levels deep in places.
+ *
+ * t-fbd2ce — the live graph measured 11 roots at level one, 22 at level two (+11, including
+ * src/tasks), and 26 at level three (+4). Two is the first level that covers the Board's
+ * boardModel dependency; walking transitively would eventually make this gate unconditional.
  */
 export function browserSuiteRoots({ cwd = process.cwd() } = {}) {
   const roots = new Set(BROWSER_SUITE_OWN);
-  const suiteDir = path.join(cwd, "test", "browser");
-  const walk = (dir) => {
+  const suiteFiles = [];
+  const walkSuite = (dir) => {
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) { walk(full); continue; }
+      if (entry.isDirectory()) { walkSuite(full); continue; }
       if (!/\.(?:m?ts|tsx|m?js)$/.test(entry.name)) continue;
+      suiteFiles.push(full);
+    }
+  };
+  const resolveImport = (file, spec) => {
+    const base = path.resolve(path.dirname(file), spec);
+    const parsed = path.parse(base);
+    const stem = path.join(parsed.dir, parsed.name);
+    const candidates = [base,
+      ...SOURCE_EXTENSIONS.map((extension) => `${base}${extension}`),
+      ...SOURCE_EXTENSIONS.map((extension) => `${stem}${extension}`),
+      ...SOURCE_EXTENSIONS.map((extension) => path.join(base, `index${extension}`))];
+    return candidates.find((candidate) => {
+      try { return statSync(candidate).isFile(); } catch { return false; }
+    });
+  };
+
+  walkSuite(path.join(cwd, "test", "browser"));
+  let frontier = suiteFiles;
+  for (let depth = 0; depth < BROWSER_IMPORT_DEPTH; depth += 1) {
+    const next = new Set();
+    for (const full of frontier) {
       let source;
       try { source = readFileSync(full, "utf8"); } catch { continue; }
-      for (const [, spec] of source.matchAll(/\bfrom\s+"(\.\.?\/[^"]+)"/g)) {
+      for (const [, spec] of source.matchAll(/\bfrom\s+["'](\.\.?\/[^"']+)["']/g)) {
         const resolved = path.relative(cwd, path.resolve(path.dirname(full), spec));
         if (resolved.startsWith("..") || path.isAbsolute(resolved)) continue;
         const segments = resolved.split(path.sep);
         if (segments.length < 2) continue;
         const root = `${segments.slice(0, 2).join("/")}/`;
         if (!root.startsWith("test/browser/")) roots.add(root);
+        const imported = resolveImport(full, spec);
+        if (imported) next.add(imported);
       }
     }
-  };
-  walk(suiteDir);
+    frontier = [...next];
+  }
   return [...roots].sort();
 }
 

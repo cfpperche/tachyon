@@ -50,7 +50,7 @@ Nothing else. No lease, no store, no authority check — the first non-goal.
   tree is merely untidy.
 
   So the requirement becomes: the preserved checkout must be **findable**. It is registered, and
-  `worktree_hygiene` already reports orphans, so `tasks.md` verifies that surface covers it rather
+  `worktree_audit` already reports orphans, so `tasks.md` verifies that surface covers it rather
   than adding a second one.
 
 - **Fail closed when isolation was requested and could not be delivered.** `WorktreeManager.ts:1126-1128`

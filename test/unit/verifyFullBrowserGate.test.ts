@@ -121,6 +121,26 @@ describe("on main the base is what is UNPUSHED, not the last merge (t-d858f5)", 
 });
 
 describe("the trigger set is DERIVED from what the browser suite reads (t-e2c8a2)", () => {
+  it("runs for the real Board path when src/tasks/boardModel.ts changes (t-fbd2ce)", () => {
+    const cwd = repo();
+    browserSuite(cwd, { "board.test.ts": 'import { App } from "../../src/webview/board/App.js";\n' });
+    const app = path.join(cwd, "src", "webview", "board", "App.tsx");
+    const boardModel = path.join(cwd, "src", "tasks", "boardModel.ts");
+    fs.mkdirSync(path.dirname(app), { recursive: true });
+    fs.mkdirSync(path.dirname(boardModel), { recursive: true });
+    fs.writeFileSync(app, 'import { buildBoardModel } from "../../tasks/boardModel";\nexport const App = buildBoardModel;\n');
+    fs.writeFileSync(boardModel, "export const buildBoardModel = () => ({});\n");
+    git(cwd, ["add", "test/browser/board.test.ts", "src/webview/board/App.tsx", "src/tasks/boardModel.ts"]);
+    git(cwd, ["commit", "-m", "board baseline"]);
+    git(cwd, ["update-ref", "refs/heads/main", "HEAD"]);
+    fs.writeFileSync(boardModel, "export const buildBoardModel = () => ({ changed: true });\n");
+
+    expect(browserGateDecision({ cwd })).toMatchObject({
+      run: true,
+      webviewPaths: ["src/tasks/boardModel.ts"],
+    });
+  });
+
   it("triggers on the browser suite's OWN files — the author of a browser test was the one person the old gate never covered", () => {
     const cwd = repo();
     browserSuite(cwd, { "layout.test.ts": "export {};\n" });
@@ -163,6 +183,8 @@ describe("the trigger set is DERIVED from what the browser suite reads (t-e2c8a2
     expect(roots).toEqual(expect.arrayContaining([
       "test/browser/", "vitest.browser.config.ts",
       "src/webview/", "src/sidebar/", "src/agents/", "src/sections/", "scripts/webview-preview/",
+      // t-fbd2ce: the board rendered by the live suite imports this through src/webview/board/App.tsx.
+      "src/tasks/",
     ]));
   });
 });

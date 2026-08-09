@@ -1,7 +1,9 @@
 # SDD 480 — Execution Graph
 
-**Status:** **CLOSED** (2026-07-28). All five phases delivered, dogfooded against real operating-system
-objects, and verified. The closure evidence — what was proven and on what — is in `plan.md` § Closure.
+**Status:** abandoned
+**Closure:** All five phases were delivered and verified on 2026-07-28, then the Execution graph was
+removed on 2026-08-09 by `t-af240d` (merge `566c7e36`). No replacement graph exists, so this spec is
+abandoned rather than superseded; the document and `plan.md` remain as historical design evidence.
 Phase 1 was ratified by the human on 2026-07-27 and the contract below is what shipped.
 
 **Tasks:** `t-5e6822` (spec) → `t-28da05` (identity + ledger) → `t-2f69de` (projection) →

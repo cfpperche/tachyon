@@ -807,6 +807,11 @@ export function canonicalAgentFields(snapshot?: AgentProfileStudioSnapshotV1): A
   // snapshot carries the artifact bytes: without it the field renders blank for an agent that has a
   // gate, and the next save writes that blank over the real one.
   fields.worktreeSetup = (snapshot?.editable.worktree.setup ?? []).join("\n");
+  // t-d48775 — read the persistent instructions BACK into the form, and for exactly the reason the
+  // line above exists: without it the field renders blank for an agent that HAS instructions, and
+  // the next save writes that blank over them. It was the disabled field's other half — a control
+  // with no value to show and no value to send.
+  fields.instructions = snapshot?.editable.instructions ?? "";
   fields.isolate = snapshot?.editable.isolation === "transcript";
   fields.canonical = {
     kind: "agent-instance",
@@ -1086,6 +1091,11 @@ export function serializeAgentPatch(fields: AgentStudioFields, dirty: boolean): 
       // remove a binding that exists — the host turns it into the selector bytes, the pinned
       // reference and `prompt.evolution`, or removes all three.
       selfEvolution: fields.selfEvolution,
+      // t-d48775 — the instructions travel as TEXT, on every save. The webview never learns that the
+      // profile stores them as a pinned document plus a `prompt.instructions` naming it; the host
+      // turns the text into bytes, a digest and a reference entry — or removes all three. Blank is a
+      // meaningful value here, not an omission: it is how the binding is cleared.
+      instructions: fields.instructions,
       isolation: fields.isolate ? "transcript" : "",
       nativeConfig,
       capabilities: structuredClone(fields.canonical.capabilities),

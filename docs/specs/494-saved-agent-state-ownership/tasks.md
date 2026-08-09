@@ -65,7 +65,7 @@ Ship Part 1 alone if the rest is deferred.
       `vscode.l10n.t(...)` and update the bundles. `Workspace.refusedAgents()` is the one place the
       string is built, so the sidebar row and `list_agents` carry the same line; the injected
       `this.t` is the host's `vscode.l10n.t`, and both `l10n/` bundles gained the five keys.
-- [x] Add the on-demand roster reconciliation tool beside `reconcile_worktree_hygiene`. It
+- [x] Add the on-demand roster reconciliation tool beside `reconcile_worktrees`. It
       answers, per agent: membership, the four owner facts, the derived state, and the door that
       would remove it. `reconcile_roster`, in `src/bridge/tools/fleet.ts`.
 - [x] Resolve the third open question. Enumerate the doors that could create

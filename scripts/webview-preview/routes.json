@@ -776,6 +776,24 @@
   },
   {
     "view": "agent-studio-shell",
+    "fixture": "foreign-persistent-instructions",
+    "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=foreign-persistent-instructions",
+    "frame": {
+      "w": 900,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Agent Studio",
+    "aliases": [
+      "agent studio",
+      "new agent",
+      "edit agent"
+    ]
+  },
+  {
+    "view": "agent-studio-shell",
     "fixture": "canonical-claude-bypass-off",
     "url": "/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=canonical-claude-bypass-off",
     "frame": {

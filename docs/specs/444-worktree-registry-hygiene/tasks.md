@@ -23,7 +23,7 @@ _Generated from `plan.md` on 2026-07-24. Work top-to-bottom. Check boxes as task
       per entry (parallelized; one entry's classification failure doesn't fail the batch — caught
       per-entry, rendered `needs-review: classification failed`). 5 real-git integration tests added
       to `managedWorktree.test.ts` (clean, dirty, ahead, occupied, tombstone) — 21/21 in the file.
-- [x] `src/bridge/tools.ts`: register `worktree_hygiene` (read-only, reuses `list_worktrees`'s
+- [x] `src/bridge/tools.ts`: register `worktree_audit` (read-only, reuses `list_worktrees`'s
       auth/filter shape, returns classified rows via `listClassified()`). Catalog test updated
       (71→72 canonical tools); real behavioral coverage lives in `managedWorktree.test.ts`'s
       `listClassified()` suite, same precedent as `list_worktrees`/`create_worktree`'s own coverage
@@ -115,5 +115,5 @@ _Optional for UI/interface/rendered-output work. Keep prose-based: real surface 
 _Optional operator/agent how-to. Not scaffolded by `new`. When this ship adds a Bridge tool, CLI, registry lifecycle, or other usable surface, add `cookbook.md` (via `sdd-cookbook.sh <444>`) and declare **Cookbook:** yes — or **Cookbook-Opt-Out:** &lt;reason&gt;. `close` warns (does not hard-fail) if a likely operator surface ships without either._
 
 **Cookbook:** yes
-<!-- ships a new Bridge tool (worktree_hygiene) plus new destructive actions (Remove checkout,
+<!-- ships a new Bridge tool (worktree_audit) plus new destructive actions (Remove checkout,
      Forget record, batch cleanup) — a short operator how-to belongs here before this ships. -->

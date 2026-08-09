@@ -110,6 +110,7 @@ import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAut
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../config/agentWorkspaceCommandWrite.js";
+import { mergedPersistentInstructionsReferences, persistentInstructionsWriteFor } from "../config/agentInstructionsWrite.js";
 import {
   evolutionSelectorNeedsProfileId,
   evolutionSelectorWriteFor,
@@ -494,11 +495,6 @@ export class Workspace {
   readonly terminals: TerminalPresentation;
   readonly manager: AgentManager;
   readonly ledger: SessionLedger;
-  /**
-   * SDD 480 Phase 2 — re-exposed from deps so a Workspace structurally satisfies
-   * `ManagedAgentInputSource`, which is how the input-submission seam (turnId, §7.1) reaches the
-   * ledger without engineService having to thread a second object through the call.
-   */
   readonly worktrees: WorktreeManager;
   /** spec 392 — product registry + change worktrees over WorktreeManager. */
   readonly managedWorktrees: ManagedWorktreeService;
@@ -695,7 +691,8 @@ export class Workspace {
       // subprocess churn) + event-driven lifecycle; subprocess fallback when down.
       const engine = new ControlModeClient({
         wsHash: this.wsHash,
-        // SDD 480 — the control client's anchor is where `attached`/`shared` enter the real graph.
+        // Dead-map changes are lifecycle signals; handle them immediately instead of waiting for
+        // the subprocess polling fallback.
         onDeadMapChanged: () => this.triggerLifecycle(),
         onActivityMapChanged: (map) => {
           this.activityBySession = map;
@@ -823,7 +820,6 @@ export class Workspace {
       // t-8168a7 — list() carries Attention's real-turn latch. The manager is constructed before the
       // monitor, but this thunk is first read after construction, when the monitor exists.
       hasStartedTurn: (name) => this.monitor?.hasStartedTurn(name),
-      // SDD 480 — the seam that genuinely carries the id into the child's environment.
       // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
       // SecretStorage, and AgentManager is constructed before that. A getter keeps the wiring honest
       // instead of capturing an undefined that would never fill in.
@@ -1842,7 +1838,6 @@ export class Workspace {
         writeTachyonConfig: (yamlText) => this.writeTachyonConfigText(yamlText),
         manager: this.manager,
         tmux: this.tmux,
-        // SDD 480 §7.3 — every Bridge tool call becomes an InternalOperation through this sink.
         pins: this.pinStore,
         tasks: this.taskStore,
         evolution: this.evolutionStore,
@@ -3860,7 +3855,7 @@ export class Workspace {
         if (report.removed.length === 0) return;
         // Only the removals are announced. Refusals at startup are the NORMAL state — every worktree
         // with work still in it is a refusal — so surfacing them here would train people to ignore
-        // the notification. `reconcile_worktree_hygiene` reports them in full when someone asks.
+        // the notification. `reconcile_worktrees` reports them in full when someone asks.
         this.host.notify(
           this.t("worktree hygiene: removed {0} landed change worktree(s)", report.removed.length),
           "info",
@@ -4046,7 +4041,7 @@ export class Workspace {
   /**
    * SDD 494 Part 4 — the on-demand roster reconciliation, read-only and computed on every call.
    *
-   * `reconcile_worktree_hygiene` and `reconcile_task` answer "what is residue?" and "what happened?".
+   * `reconcile_worktrees` and `reconcile_task` answer "what is residue?" and "what happened?".
    * Nothing answered "these records disagree about this agent, and here is the door that removes it",
    * which is the question `claude23` forced a human to answer by reading five sources.
    */
@@ -4969,7 +4964,7 @@ export class Workspace {
 
   /**
    * t-7bc276 — name the private runtime homes nobody owns any more. REPORT ONLY, deliberately:
-   * `worktree_process_hygiene` reports an orphan process and never kills one, and orphan BYTES had no
+   * `worktree_processes` reports an orphan process and never kills one, and orphan BYTES had no
    * equivalent at all until here. Removal belongs to the end-of-life door somebody actually opened
    * (`forgetAgent`), not to a sweep that runs on its own at start — the homes this finds are the ones
    * that predate that door or whose agent vanished without passing through it, and deleting them
@@ -5261,19 +5256,24 @@ export class Workspace {
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
     if (mutation.expectedRevision === undefined) {
       const write = workspaceCommandWriteFor(mutation.editable);
+      // t-d48775 — the instructions document rides the same create transaction, for the same reason.
+      const instructions = persistentInstructionsWriteFor(mutation.editable);
+      const localReferences = [...write.localReferences, ...instructions.localReferences];
+      const artifacts = [...write.artifacts, ...instructions.artifacts];
       const result = await this.commitAgentProfileLifecycle({
         agentName: mutation.agentName,
         operation: "create",
         createProfile: createProfileFromStudioMutation(mutation),
         // A new agent's id is minted inside the transaction, and a profile-local reference is owned
         // by it — so the entries go in without scope/owner and the transaction stamps both.
-        ...(write.localReferences.length > 0 ? { createProfileLocalReferences: write.localReferences } : {}),
-        ...(write.artifacts.length > 0 ? { artifacts: write.artifacts } : {}),
+        ...(localReferences.length > 0 ? { createProfileLocalReferences: localReferences } : {}),
+        ...(artifacts.length > 0 ? { artifacts } : {}),
       });
       return projectAgentProfileStudioSnapshot(result.snapshot);
     }
     const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
     const write = workspaceCommandWriteFor(mutation.editable, current.profile.workspace);
+    const instructions = persistentInstructionsWriteFor(mutation.editable, current.profile.prompt);
     const evolution = await this.evolutionSelectorWriteFor(current, mutation.editable.selfEvolution);
     const patch = patchProfileFromStudioMutation(mutation, current);
     const result = await this.commitAgentProfileLifecycle({
@@ -5287,14 +5287,23 @@ export class Workspace {
       patch: {
         ...patch,
         prompt: promptWithEvolutionSelector(patch.prompt, evolution),
-        references: mergedEvolutionSelectorReferences(
+        // t-d48775 — a THIRD writer joins the chain, and it chains for the reason the other two do:
+        // each merge that rebuilt from `current.profile.references` would drop what the previous one
+        // just added. `patch.prompt` already carries (or has dropped) `prompt.instructions` —
+        // `patchProfileFromStudioMutation` resolves that id, because unlike the Evolution selector it
+        // needs nothing host-owned.
+        references: mergedPersistentInstructionsReferences(
           current.profile,
-          evolution,
-          mergedWorkspaceCommandReferences(current.profile, write),
+          instructions,
+          mergedEvolutionSelectorReferences(
+            current.profile,
+            evolution,
+            mergedWorkspaceCommandReferences(current.profile, write),
+          ),
         ),
       },
-      ...(write.artifacts.length + evolution.artifacts.length > 0
-        ? { artifacts: [...write.artifacts, ...evolution.artifacts] }
+      ...(write.artifacts.length + evolution.artifacts.length + instructions.artifacts.length > 0
+        ? { artifacts: [...write.artifacts, ...evolution.artifacts, ...instructions.artifacts] }
         : {}),
     });
     return projectAgentProfileStudioSnapshot(result.snapshot);
@@ -5335,6 +5344,19 @@ export class Workspace {
     createProfile: Parameters<typeof commitCanonicalAgentProfileLifecycle>[0]["createProfile"];
     owner?: string;
   }): Promise<AgentProfileLifecycleCommitResult> {
+    // t-d48775 — this door publishes a PROFILE and no documents, so a `prompt.instructions` arriving
+    // through it would name a reference nothing satisfies. The schema catches that, but as a
+    // reference-integrity error that says nothing about which door the caller wanted. Both callers
+    // today (`agent-profile.saved-agent-create` and its v2) come from Saved Agent approval, whose
+    // mutation deliberately carries no instructions — this refusal is for the third caller, which is
+    // the one that always arrives after the plan stops being read.
+    if (input.createProfile?.prompt?.instructions) {
+      throw new Error(
+        "persistent instructions cannot be published by the Saved Agent creation door: it commits a profile "
+        + "and no profile-local documents. Create the agent here, then author them in Agent Studio, which "
+        + "publishes the document in the same transaction as the binding.",
+      );
+    }
     await this.assertAgentStoppedForProfileMutation(input.agentName);
     if (!input.owner) {
       return this.runAgentProfileLifecycleCommit({

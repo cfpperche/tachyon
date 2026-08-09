@@ -5,6 +5,7 @@ import { TASK_AUTHORING_LIMITS } from "../../tasks/taskAuthoring.js";
 import { orderTaskViewsForListing } from "../../tasks/listOrder.js";
 import { asAgent } from "../../config/loadConfig.js";
 import { TaskPrototypeStore } from "../../tasks/TaskPrototypeStore.js";
+import { reconcileLanded } from "../../tasks/reconcileLanded.js";
 import type { EvolutionCandidateInputTarget } from "../../evolution/EvolutionStore.js";
 import { type BridgeDeps, AGENT_NAME, CREATE_TASK_ARTIFACT_REF, EVOLUTION_PROPOSAL, EVOLUTION_REVIEW_ID, TASK_ARTIFACT_REF, TASK_AWAITING_HUMAN_KIND, TASK_EXPECT, TASK_ID, TASK_PRIORITY, TASK_STATUS, createTaskLimitErrorMap, createTaskString, definedPatch, emitTaskNotification, fail, notifyTaskJournalAppended, ok, prototypeBridgeView, resolveDeclaredActor, resolvedJournalAuthor, taskNotificationActor, taskReceipt } from "./shared.js";
 
@@ -270,6 +271,33 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
           to: status,
         });
         return ok(taskReceipt(priorTask, task, ["status"]));
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
+    "reconcile_landed",
+    {
+      description:
+        "Audit every task in the landed lane against commits reachable from main, then reconcile only proved tasks to done. " +
+        "Proof is either the task id in a reachable commit message or a commit SHA in that task's journal which is an ancestor " +
+        "of main. Every applied task journals its own full SHA. Unproved or changed tasks are reported with a reason. Dry-run is the default.",
+      inputSchema: {
+        dry_run: z.boolean().optional().default(true),
+      },
+    },
+    async ({ dry_run }) => {
+      try {
+        const callerAgent = deps.caller?.kind === "agent" ? deps.caller.name : undefined;
+        const report = await reconcileLanded(deps.tasks, deps.workspaceRoot, { dryRun: dry_run, actor: callerAgent });
+        if (!dry_run) {
+          for (const row of report.rows) {
+            if (row.outcome === "reconciled") deps.onTasksChanged?.({ reason: "task-mutated", id: row.id });
+          }
+        }
+        return ok(JSON.stringify(report, null, 2));
       } catch (err) {
         return fail(err);
       }

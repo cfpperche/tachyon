@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
-  MATERIALIZED_WORKSPACE_REFERENCE_KINDS,
   WORKSPACE_SETUP_PATH,
   WORKSPACE_SETUP_REFERENCE_ID,
   parseWorkspaceCommandLines,
@@ -58,8 +57,7 @@ describe("workspace setup profile references", () => {
       .toEqual({ artifacts: [], localReferences: [] });
   });
 
-  it("materializes only worktree setup and parses nonblank command lines", () => {
-    expect([...MATERIALIZED_WORKSPACE_REFERENCE_KINDS]).toEqual(["worktree-setup"]);
+  it("parses nonblank command lines", () => {
     expect(parseWorkspaceCommandLines("npm ci\n\n  npm run build  \n")).toEqual(["npm ci", "npm run build"]);
   });
 });

@@ -12,6 +12,12 @@ import { adapterForRuntime, forkable, runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile, type CanonicalRuntimeLimitation } from "../runtime/runtimeProfile.js";
 import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../runtime/attestedRuntimes.js";
 import { studioOwnsWorkspaceCommands, studioWorkspaceCommandIds } from "./agentWorkspaceCommands.js";
+import {
+  PERSISTENT_INSTRUCTIONS_MAX_CHARS,
+  persistentInstructionsRefusal,
+  studioOwnsPersistentInstructions,
+  studioPersistentInstructionsId,
+} from "./agentInstructionsDocument.js";
 
 const ID = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const REVISION = /^[a-f0-9]{64}$/;
@@ -107,6 +113,18 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
    * between on and off, and this field's "off" has to be able to REMOVE a binding that exists.
    */
   selfEvolution: z.boolean(),
+  /**
+   * t-d48775 — the agent's persistent instructions, authored as the TEXT a human types.
+   *
+   * The profile stores them as a pinned `instructions.md` plus a `prompt.instructions` naming it,
+   * and — exactly like `worktree.setup` and `selfEvolution` above — that indirection stops here.
+   * `agentInstructionsWrite` turns the text into bytes, a digest and a reference inside the same
+   * transaction as the rest of the save.
+   *
+   * A plain value rather than an optional, for the reason those two are: blank is not "leave it
+   * alone", blank is how the binding is CLEARED, and absence would be a third state between the two.
+   */
+  instructions: text(PERSISTENT_INSTRUCTIONS_MAX_CHARS),
   isolation: z.enum(["", "transcript"]),
   nativeConfig: agentNativeConfigSchemaV1.optional(),
   /** Existing, authority-bound capability references only; Studio cannot author a new reference. */
@@ -338,6 +356,14 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
      */
     foreignWorkspaceCommands: z.boolean(),
     /**
+     * t-d48775 — true when `prompt.instructions` names a binding this Studio does not own.
+     *
+     * Same contract as `foreignWorkspaceCommands` directly above, and the same danger it avoids:
+     * the form disables the field and says the binding belongs to someone else, rather than
+     * rendering blank over a value the human cannot see and the next save would erase.
+     */
+    foreignPersistentInstructions: z.boolean(),
+    /**
      * t-3bde32 — the profile's own `grants`, surfaced so Studio can show and change them.
      *
      * NOT `provenance.authority.grants`, which is a COUNT of host-custodied capability grants for
@@ -405,6 +431,12 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       // saves back. One expression, read twice: a snapshot whose toggle disagreed with its own
       // binding would be a form that shows one state and writes the other.
       selfEvolution: evolutionBound,
+      // t-d48775 — the instructions come back as TEXT, read from the pinned document by
+      // `inspectAgentProfileLifecycle`. This line is the whole reason the snapshot carries those
+      // bytes: `profile.prompt.instructions` is only a reference id, so projecting from it would
+      // hand the form an empty box for an agent that has instructions, and the next save would
+      // write that emptiness back over them.
+      instructions: snapshot.persistentInstructions ?? "",
       isolation: profile.isolation ?? "",
       nativeConfig: structuredClone(profile.nativeConfig ?? {}),
       capabilities: {
@@ -443,6 +475,7 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       foreignWorkspaceCommands: !studioOwnsWorkspaceCommands({
         setup: profile.workspace?.worktree?.setup,
       }).setup,
+      foreignPersistentInstructions: !studioOwnsPersistentInstructions(profile.prompt),
     },
     provenance: {
       canonical: { ...snapshot.provenance.canonical },
@@ -516,9 +549,17 @@ export function createProfileFromStudioMutation(
   const createIds = studioWorkspaceCommandIds({
     setup: parsed.editable.worktree.setup,
   });
+  // t-d48775 — creation CAN bind persistent instructions, unlike Evolution above. The difference is
+  // where the id comes from: Evolution's names a `profileId` only its store can mint, so binding it
+  // before the transaction commits would strand a store profile for an agent that never existed.
+  // This id is a constant, and its document rides the same transaction as the profile that pins it.
+  const instructionsRefusal = persistentInstructionsRefusal(parsed.editable.instructions);
+  if (instructionsRefusal) throw new Error(instructionsRefusal);
+  const instructionsId = studioPersistentInstructionsId({ instructions: parsed.editable.instructions });
   return {
     ...(parsed.editable.displayName ? { displayName: parsed.editable.displayName } : {}),
     runtime: { ...parsed.editable.runtime },
+    ...(instructionsId ? { prompt: { instructions: instructionsId } } : {}),
     lifecycle: {
       // t-ca9086 / SDD 482 decision 9 (revised 2026-07-29): human-authorized create writes ENABLED.
       // "Saving is not starting" is enforced by absence of spawn/autostart — not by disabling the
@@ -569,6 +610,19 @@ export function patchProfileFromStudioMutation(
   // Evolution store can mint, which is async and host-owned, so the whole rule lives in
   // `agentEvolutionSelectorWrite` and is applied by `Workspace.commitAgentProfileStudio` over this
   // patch. Resolving the "off" half here and the "on" half there would be two records of one fact.
+  //
+  // t-d48775 — `prompt.instructions` IS resolved here, because unlike Evolution it needs nothing
+  // host-owned: the id is a constant and the rule is pure. Setting it and DELETING it both happen
+  // here, so clearing the field removes the binding instead of leaving a pin the writer no longer
+  // publishes bytes for. A FOREIGN binding is returned unchanged by `studioPersistentInstructionsId`.
+  const instructionsRefusal = persistentInstructionsRefusal(parsed.editable.instructions);
+  if (instructionsRefusal) throw new Error(instructionsRefusal);
+  const instructionsId = studioPersistentInstructionsId({
+    instructions: parsed.editable.instructions,
+    current: current.profile.prompt,
+  });
+  if (instructionsId) prompt.instructions = instructionsId;
+  else delete (prompt as { instructions?: string }).instructions;
   const lifecycle = {
     ...(current.profile.lifecycle ?? {}),
     autostart: parsed.editable.lifecycle.autostart,

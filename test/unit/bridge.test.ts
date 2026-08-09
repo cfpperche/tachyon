@@ -108,7 +108,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // hand-written "who's touching what" list.
   // t-167b5c — 77 → 78: read_notices, the durable read door onto .tachyon/doorbells.jsonl (spec 493).
   // t-1926ce — 78 → 79: read-only orphan process reporting for deleted managed worktrees.
-  it("exposes exactly the 80 canonical tools, including the explicit Terminal operation", async () => {
+  it("exposes exactly the 81 canonical tools, including the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -160,10 +160,11 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "propose_schedule",
       "read_notices",
       "read_output",
+      "reconcile_landed",
       "reconcile_roster",
       "reconcile_runtime_credentials",
       "reconcile_task",
-      "reconcile_worktree_hygiene",
+      "reconcile_worktrees",
       "register_worktree",
       "remove_worktree",
       "renew_context",
@@ -185,8 +186,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "update_validation",
       "wait_for_agent",
       "wait_for_output",
-      "worktree_hygiene",
-      "worktree_process_hygiene",
+      "worktree_audit",
+      "worktree_processes",
       "write_input",
       "write_tachyon_config",
     ]);
@@ -196,7 +197,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(description("kill_agent")).toContain("the private runtime home under .tachyon/bridge-mcp");
     expect(description("dismiss_agent")).toContain("the private runtime home under .tachyon/bridge-mcp");
     expect(description("dismiss_agent")).toContain("Tachyon activity and pane transcripts are deleted");
-    expect(description("worktree_process_hygiene")).toContain("does not terminate reported processes automatically");
+    expect(description("worktree_processes")).toContain("does not terminate reported processes automatically");
   });
 
   // Legacy generated guard: it("exposes exactly the 60 tools (17 agent ...")

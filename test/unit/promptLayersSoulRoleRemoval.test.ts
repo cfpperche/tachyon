@@ -33,7 +33,7 @@ describe("prompt composition without Soul or Role", () => {
     expect(composed.manifest).toEqual({
       persistentInstructions: true,
       instructions: {
-        source: "legacy-definition",
+        source: "profile-definition",
         sha256: crypto.createHash("sha256").update(instructions).digest("hex"),
       },
       canonicalEvolution: true,

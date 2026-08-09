@@ -117,7 +117,7 @@ cleanup` — and the checkout is BOTH on disk and still in `.tachyon/managed-wor
 mechanisms make that so, and both are deliberate: `Workspace.resolveSpawnCwd` calls
 `syncAgentRecord` the moment the resolver hands the record back — before the HEAD probe, before any
 launch step can fail — and `rollbackPreparedWorktree`'s implementation states "Registry rows stay
-active so reveal still points at the recovery path". So `worktree_hygiene`, which classifies
+active so reveal still points at the recovery path". So `worktree_audit`, which classifies
 registered entries, sees the debt. Verified by mutation: deleting that `syncAgentRecord` call turns
 the test red with an empty registry, which is exactly the invisible-debt state the criterion exists
 to prevent.

@@ -71,8 +71,6 @@ export function workspaceHandoffDistillOperations(
         reveal: options.reveal,
       });
     },
-    // SDD 480 — the minted turnId is discarded here on purpose: this adapter's contract is
-    // `Promise<void>` and distillation has no use for the id. The turn is still recorded at the seam.
     sendAgentInput: async (agent, prompt) => { await sendManagedAgentInput(source, agent, prompt, true); },
   };
 }
