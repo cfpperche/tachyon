@@ -20,7 +20,7 @@ describe("spec 377 T14 soul enablement in Agent Studio", () => {
     expect(toEntry(enabled).soul).toBe(true);
     expect(toEntry(disabled).soul).toBeUndefined();
 
-    expect(computeAgentDirty({ fields: enabled, chips: [], flagMap: {}, defaultCwd: "", verifyCandidates: [], persistentInstructionsHelp: "", evolutionLabels: createAgentEvolutionLabels() }, { ...enabled, soul: false })).toBe(true);
+    expect(computeAgentDirty({ fields: enabled, chips: [], flagMap: {}, defaultCwd: "", persistentInstructionsHelp: "", evolutionLabels: createAgentEvolutionLabels() }, { ...enabled, soul: false })).toBe(true);
     expect(serializeAgentPatch({ ...enabled, soul: false }, true)?.soul).toBe(false);
   });
 

@@ -297,14 +297,6 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     )).rejects.toMatchObject({ reason: "recovery-preserved" });
   });
 
-  it("reuse carries the prior verify state forward (spec 214 — restart keeps the badge)", async () => {
-    const m = mgr();
-    const { record: first } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });
-    const prior = { ...first, verify: { command: "npm test", passed: true, atCommit: "abc", ranAt: "t" } };
-    const { record: again } = await m.ensure({ agent: "rev", branch: "tachyon/rev", prior });
-    expect(again.verify).toEqual({ command: "npm test", passed: true, atCommit: "abc", ranAt: "t" });
-  });
-
   it("ensure REJECTS reuse when the worktree drifted to another branch", async () => {
     const m = mgr();
     const { record: rec } = await m.ensure({ agent: "rev", branch: "tachyon/rev" });

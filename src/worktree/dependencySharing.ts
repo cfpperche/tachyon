@@ -32,7 +32,7 @@
  * well as their contents.
  *
  * Pure decision + a thin injected-fs applier, so the whole matrix table-tests with no real
- * filesystem, mirroring how `verify.ts` splits its pure gate from `Workspace.runVerify`.
+ * filesystem, keeping policy separate from filesystem effects.
  */
 
 import { createHash } from "node:crypto";
@@ -62,7 +62,7 @@ export const LOCKFILES = [
 export type DependencyDirState = "absent" | "shared-link" | "foreign";
 
 /**
- * Persisted on the WorktreeRecord (mirrors `verify`): the decision, and the digest that justified it.
+ * Persisted on the WorktreeRecord: the decision and the digest that justified it.
  *
  * Three modes because "not linked" is two different facts and collapsing them would put a plausible
  * value where a distinction belongs: `absent` means the agent has to install before anything runs,
@@ -306,28 +306,4 @@ export function shareDependencies(
       }
       return { mode: "linked", lockDigest: plan.digest, target, reason: plan.reason, at };
   }
-}
-
-/**
- * Re-measure a recorded decision against the checkout as it is NOW. Returns undefined when the
- * recorded state still holds; otherwise the divergence sentence to say out loud.
- *
- * This is the door a mid-session edit comes through. Creation and relaunch are the doors Tachyon
- * already owns; a lockfile the agent edits at 10:00 reaches neither, so anything that turns a run in
- * this worktree into a DURABLE verdict has to ask again first. Cheap by construction: two lockfile
- * reads and a hash.
- */
-export function auditSharedDependencies(
-  o: { workspaceRoot: string; worktreePath: string; state: SharedDependencyState | undefined; io?: DependencyFsLike },
-): string | undefined {
-  if (o.state?.mode !== "linked") return undefined;
-  const io = o.io ?? nodeFs;
-  const target = path.join(o.workspaceRoot, DEPENDENCY_DIR);
-  if (dependencyDirState(o.worktreePath, target, io) !== "shared-link") return undefined; // no longer ours to speak for
-  const now = fingerprintLockfiles(readLockfiles(o.worktreePath, io));
-  if (now.digest === o.state.lockDigest) return undefined;
-  return (
-    `${DEPENDENCY_DIR} is shared with the primary checkout for lockfile ${o.state.lockDigest.slice(0, 12)}, ` +
-    `but this worktree's lockfile is now ${now.digest.slice(0, 12)} — the shared dependencies no longer match this branch`
-  );
 }

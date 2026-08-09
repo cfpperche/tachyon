@@ -81,7 +81,7 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
     attention: z.boolean(),
   }).strict(),
   /**
-   * t-afc86e — `setup` and `verify` are authored as COMMAND TEXT here, never as reference ids.
+   * t-afc86e — `setup` is authored as command text here, never as reference ids.
    *
    * The profile stores them as pinned profile-local references, and that indirection stops at this
    * boundary on purpose: the form authors what a human types, and the writer below turns it into
@@ -96,12 +96,11 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
     branch: text(1024),
     setup: z.array(text(4096).min(1)).max(64),
   }).strict(),
-  verify: text(4096),
   /**
    * t-f96b2f — Agent Evolution, authored as the plain fact a human toggles: on or off.
    *
    * The profile stores it as a pinned `evolution-selector.json` plus a `prompt.evolution` pointing
-   * at it, and — exactly like `verify` and `worktree.setup` above — that indirection stops here. The
+   * at it, and — exactly like `worktree.setup` above — that indirection stops here. The
    * form authors intent; `agentEvolutionSelectorWrite` turns it into bytes, a digest and a reference
    * inside the same transaction as the rest of the save.
    *
@@ -333,8 +332,7 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
     }).strict(),
     externalReferences: z.number().int().nonnegative().max(128),
     /**
-     * t-afc86e — true when `workspace.verify` or `worktree.setup` names a reference this Studio does
-     * not own (a project-scoped verifier a workspace publishes, for instance).
+     * t-afc86e — true when `worktree.setup` names a reference this Studio does not own.
      *
      * The form disables both fields and says who owns them instead of rendering blank. Rendering
      * blank would be the dangerous shape: the value is real, the human cannot see it, and the next
@@ -406,7 +404,6 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
         branch: profile.workspace?.worktree?.branch ?? "",
         setup: [...(snapshot.workspaceCommands?.setup ?? [])],
       },
-      verify: snapshot.workspaceCommands?.verify ?? "",
       // t-f96b2f — the same fact `bindings.prompt.evolution` reports, in the editable view the form
       // saves back. One expression, read twice: a snapshot whose toggle disagreed with its own
       // binding would be a form that shows one state and writes the other.
@@ -447,10 +444,9 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
           .sort((left, right) => left.id.localeCompare(right.id))];
       })),
       externalReferences: (profile.references ?? []).filter((reference) => reference.scope !== "profile").length,
-      foreignWorkspaceCommands: Object.values(studioOwnsWorkspaceCommands({
-        verify: profile.workspace?.verify,
+      foreignWorkspaceCommands: !studioOwnsWorkspaceCommands({
         setup: profile.workspace?.worktree?.setup,
-      })).some((owned) => !owned),
+      }).setup,
     },
     provenance: {
       canonical: { ...snapshot.provenance.canonical },
@@ -522,7 +518,6 @@ export function createProfileFromStudioMutation(
     throw new Error("Evolution is enabled on an existing agent: save this agent first, then turn it on");
   }
   const createIds = studioWorkspaceCommandIds({
-    verify: parsed.editable.verify,
     setup: parsed.editable.worktree.setup,
   });
   return {
@@ -546,10 +541,9 @@ export function createProfileFromStudioMutation(
     // Declaring an id here with no entry to match is caught by `agentProfileSchemaV1`'s own
     // `requireKind` refinement, so the two halves cannot silently disagree.
     ...((parsed.editable.cwd || parsed.editable.worktree.enabled || parsed.editable.worktree.branch
-      || createIds.verify || createIds.setup.length > 0) ? {
+      || createIds.setup.length > 0) ? {
       workspace: {
         ...(parsed.editable.cwd ? { cwd: parsed.editable.cwd } : {}),
-        ...(createIds.verify ? { verify: createIds.verify } : {}),
         ...((parsed.editable.worktree.enabled || parsed.editable.worktree.branch || createIds.setup.length > 0) ? {
           worktree: {
             ...(parsed.editable.worktree.enabled ? { enabled: true } : {}),
@@ -600,9 +594,8 @@ export function patchProfileFromStudioMutation(
   // FOREIGN (published by someone other than this Studio) is preserved verbatim: the form does not
   // display it, so it must not be able to clear it either.
   const commandIds = studioWorkspaceCommandIds({
-    verify: parsed.editable.verify,
     setup: parsed.editable.worktree.setup,
-    current: { verify: current.profile.workspace?.verify, setup: current.profile.workspace?.worktree?.setup },
+    current: { setup: current.profile.workspace?.worktree?.setup },
   });
   const worktree = {
     ...(current.profile.workspace?.worktree ?? {}),
@@ -624,7 +617,6 @@ export function patchProfileFromStudioMutation(
   const workspace = {
     ...(current.profile.workspace ?? {}),
     cwd: parsed.editable.cwd || undefined,
-    verify: commandIds.verify,
     worktree,
   };
   const selected = parsed.editable.capabilities;

@@ -153,7 +153,6 @@ const newEntity: AgentStudioEntity = {
   chips,
   flagMap,
   defaultCwd: "/home/dev/project",
-  verifyCandidates: ["npm test", "npm run lint"],
   persistentInstructionsHelp: "When supported, delivered at startup through the selected runtime.",
   evolutionLabels,
   profileLabels,
@@ -173,12 +172,10 @@ const denseEntity: AgentStudioEntity = {
     worktree: true,
     branch: "feature/auth-redesign",
     worktreeSetup: 'pnpm install\ncp "$TACHYON_WORKSPACE_ROOT/.env.local" .env.local',
-    verify: "npm test",
   },
   chips,
   flagMap,
   defaultCwd: "/home/dev/project",
-  verifyCandidates: ["npm test", "npm run lint"],
   persistentInstructionsHelp: "When supported, delivered at startup through the selected runtime.",
   evolutionLabels,
   profileLabels,
@@ -196,7 +193,7 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer",
     cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true },
     worktree: { enabled: true, branch: "feature/reviewer", setup: ["pnpm install", "pnpm --filter web build"] },
-    verify: "npm run typecheck", selfEvolution: true, isolation: "transcript",
+    selfEvolution: true, isolation: "transcript",
     capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },
   bindings: {
@@ -227,11 +224,10 @@ const canonicalEntity: AgentStudioEntity = {
 };
 
 /**
- * t-afc86e — an agent whose verify gate and setup commands were published by the WORKSPACE rather
- * than by this profile.
+ * An agent whose setup commands were published by the WORKSPACE rather than by this profile.
  *
- * The one case where the two fields stay read-only after this task. It is worth a fixture of its own
- * because the failure it guards against is invisible: a form that rendered those fields blank and
+ * The one case where the setup field stays read-only. It is worth a fixture of its own because the
+ * failure it guards against is invisible: a form that rendered the field blank and
  * editable would let the next save delete a value the human was never shown. The screen has to say
  * who owns them instead.
  */
@@ -239,12 +235,12 @@ const foreignWorkspaceCommandsEntity: AgentStudioEntity = {
   ...canonicalEntity,
   profile: {
     ...canonicalSnapshot,
-    editable: { ...canonicalSnapshot.editable, verify: "", worktree: { ...canonicalSnapshot.editable.worktree, setup: [] } },
+    editable: { ...canonicalSnapshot.editable, worktree: { ...canonicalSnapshot.editable.worktree, setup: [] } },
     bindings: { ...canonicalSnapshot.bindings, foreignWorkspaceCommands: true },
   },
   fields: canonicalAgentFields({
     ...canonicalSnapshot,
-    editable: { ...canonicalSnapshot.editable, verify: "", worktree: { ...canonicalSnapshot.editable.worktree, setup: [] } },
+    editable: { ...canonicalSnapshot.editable, worktree: { ...canonicalSnapshot.editable.worktree, setup: [] } },
     bindings: { ...canonicalSnapshot.bindings, foreignWorkspaceCommands: true },
   }),
 };

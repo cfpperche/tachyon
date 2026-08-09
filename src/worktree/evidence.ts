@@ -1,12 +1,12 @@
 /**
  * Worktree EVIDENCE channel (spec 273) — pure helpers. A neutral, non-binary companion to the
- * binary verify-gate (spec 214): producers attach structured evidence records to a worktree agent
+ * evidence channel: producers attach structured evidence records to a worktree agent
  * (keyed to a commit); consumers (parent agents over the bridge, the UI) read them. This is
  * engine+format, NOT governance — Tachyon defines the record SHAPE, never what `kind`/`severity`
- * MEAN, and evidence NEVER gates (the verify badge stays the gate).
+ * MEAN, and evidence never gates.
  *
  * This module owns the pure parts: the record shape, HEAD-only staleness, the write-side cap +
- * verify-set replacement, and the mechanical summary. The side-effecting persistence + the
+ * mechanical summary. The side-effecting persistence + the
  * artifact dir live on the host (EvidenceStore); the bridge tools live in the MCP layer. Impure
  * stamps (id, producedAt, derived producer) are applied by the host BEFORE these helpers see a
  * record — so everything here is unit-tested with no IO, no clock, no randomness.
@@ -19,10 +19,6 @@ export const EVIDENCE_SCHEMA_VERSION = 1 as const;
 
 /** Max evidence records retained per agent (oldest dropped). */
 export const MAX_EVIDENCE_PER_AGENT = 100;
-
-/** The reserved producer + kind the built-in verify step-result producer uses (replace-on-rerun). */
-export const VERIFY_PRODUCER = "verify";
-export const STEP_RESULT_KIND = "step-result";
 
 /** spec 274 — the managed evidence-artifact dir (workspace-relative, posix). Copied screenshots/logs live OUTSIDE
  *  the worktree (under `.tachyon/`, gitignored) so a verdict's artifact survives a worktree rebuild/removal. */
@@ -42,7 +38,7 @@ export interface WorktreeEvidence {
   producer: string;
   /** optional sub-context the producer acted for */
   onBehalfOf?: string;
-  /** optional run/verify id that produced it (drives verify-set replacement) */
+  /** optional source run id that produced it */
   sourceRunId?: string;
   /** worktree HEAD when produced → HEAD-only staleness */
   atCommit: string;
@@ -67,8 +63,8 @@ export interface WorktreeEvidence {
 }
 
 /**
- * HEAD-only staleness (DIVERGES from verify on purpose): evidence is stale when the worktree HEAD
- * moved past the commit it was produced against. Unlike verify, an unrelated DIRTY worktree does
+ * HEAD-only staleness: evidence is stale when the worktree HEAD
+ * moved past the commit it was produced against. An unrelated DIRTY worktree does
  * NOT stale evidence — a visual judgment must not silently rot because of uncommitted scratch files.
  */
 export function evidenceStale(record: Pick<WorktreeEvidence, "atCommit">, headRef: string): boolean {
@@ -98,27 +94,6 @@ export function appendCapped(
   return capOldest([...existing, added], max);
 }
 
-/**
- * Replace the built-in verify step-result set (spec 273 producer dedup): a re-run at the same (or a
- * new) commit must REPLACE the prior verify-produced step records for this agent, never append a
- * second pile. All non-verify evidence is preserved untouched; the cap still applies. Pure.
- */
-export function replaceVerifySet(
-  existing: readonly WorktreeEvidence[],
-  newStepRecords: readonly WorktreeEvidence[],
-  max: number = MAX_EVIDENCE_PER_AGENT,
-): WorktreeEvidence[] {
-  const priorVerify = existing.filter((r) => r.producer === VERIFY_PRODUCER && r.kind === STEP_RESULT_KIND);
-  // Guard a concurrent-run race (codex): a verify run that STARTED earlier but FINISHES later must not clobber a
-  // newer set. Keep the prior set when it is strictly newer (by max producedAt) than the incoming one.
-  const maxAt = (rs: readonly WorktreeEvidence[]): string => rs.reduce((m, r) => (r.producedAt > m ? r.producedAt : m), "");
-  if (priorVerify.length > 0 && newStepRecords.length > 0 && maxAt(priorVerify) > maxAt(newStepRecords)) {
-    return [...existing];
-  }
-  const kept = existing.filter((r) => !(r.producer === VERIFY_PRODUCER && r.kind === STEP_RESULT_KIND));
-  return capOldest([...kept, ...newStepRecords], max);
-}
-
 function capOldest(records: WorktreeEvidence[], max: number): WorktreeEvidence[] {
   const cap = Math.max(0, Math.floor(max));
   if (records.length <= cap) return records;
@@ -139,7 +114,7 @@ export function isSafeArtifactRef(ref: string): boolean {
   return !segments.some((s) => s === ".." || s === "");
 }
 
-/** A compact, MECHANICAL evidence summary for the verify handoff — neutral counts, NO privileged kind. */
+/** A compact, MECHANICAL evidence summary for handoffs — neutral counts, NO privileged kind. */
 export interface EvidenceSummary {
   total: number;
   fresh: number;
@@ -168,7 +143,7 @@ export function evidenceBadge(summary: EvidenceSummary | undefined): EvidenceBad
 }
 
 /**
- * Mechanical summary folded into `verify_agent`/`list_agents`: total, fresh/stale, counts by
+ * Mechanical summary used by evidence consumers: total, fresh/stale, counts by
  * severity, and the latest N summaries. Deliberately neutral — it never special-cases a `kind`
  * (e.g. "judgment"), which would re-introduce opinion into a format meant to be opinion-free.
  */

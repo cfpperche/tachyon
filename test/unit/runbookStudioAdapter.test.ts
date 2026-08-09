@@ -16,7 +16,6 @@ function fakeWorkspace(opts: { runbooks?: Record<string, RunbookDef>; commands?:
       detectClis: async () => [],
       takenNames: () => Object.keys(runbooks),
       commandNames: () => Object.keys(commands),
-      verifyCandidates: () => [],
       defaultCwd: "/ws/root",
       suggestKindForCommand: () => "runbook",
       onSubmit: () => undefined,

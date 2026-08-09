@@ -11,7 +11,6 @@ import type { TiptapJSON } from "../richDoc/types.js";
 import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
 
 export type AgentStatus = "running" | "needs" | "throttled" | "done" | "idle" | "stopping" | "stop-failed" | "stopped" | "crashed";
-export type Verify = "pass" | "fail" | "stale";
 /** spec 378 — where `AgentVM.model` came from: a live transcript observation, an explicit `--model` flag,
  *  or the runtime's profile default (no explicit flag, no observation yet). */
 export type ModelSource = "observed" | "declared" | "profile";
@@ -73,7 +72,6 @@ export interface AgentVM {
   worktreePath?: string;
   /** spec 386 — live CPU/RSS for the agent pane subtree (running agents only). */
   resources?: { cpuPct?: number; memMb: number };
-  verify?: Verify;
   harness?: boolean;
   resumable?: boolean;
   /** resumable, but the saved transcript is gone → ↻ Resume degrades to a fresh start (spec 221). */
@@ -129,7 +127,6 @@ export interface AgentVM {
   kind: EntryKind;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
   adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
-  verifiable?: boolean; // has a declared verify gate
   forkable?: boolean; // CAN be forked (running claude session) → offers the Fork action
   canDismiss?: boolean; // legacy capability bit: stopped Temporary postmortem row is removable without tachyon.yml edits
 }
@@ -338,18 +335,18 @@ export const SAMPLE: FleetVM = {
   agents: [
     { name: "orchestrator", model: "Opus 4.8", status: "running", attention: "working", liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 12, memMb: 420 }, kind: "agent" },
     { name: "reviewer", model: "Sonnet 5", status: "running", parent: "orchestrator", harness: true, liveBranch: "main", worktreePath: "/ws", resources: { cpuPct: 8, memMb: 310 }, kind: "agent", adhoc: true },
-    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", liveBranch: "tachyon/feature-auth", worktreePath: "/cache/feature-auth", resources: { cpuPct: 55, memMb: 920 }, verify: "pass", verifiable: true, forked: true, forkable: true, kind: "agent" },
+    { name: "feature-auth", model: "GPT-5.1 Codex", status: "running", attention: "needs input", worktree: "tachyon/feature-auth", liveBranch: "tachyon/feature-auth", worktreePath: "/cache/feature-auth", resources: { cpuPct: 55, memMb: 920 }, forked: true, forkable: true, kind: "agent" },
     { name: "researcher", status: "needs", attention: "needs input", harness: true, liveBranch: "main", worktreePath: "/ws", kind: "agent" },
     { name: "docs-writer", status: "idle", liveBranch: "main", worktreePath: "/ws", kind: "agent" },
-    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", liveBranch: "feat/billing-wip", branchDrift: true, worktreePath: "/cache/feature-billing", verify: "stale", verifiable: true, kind: "agent" },
-    { name: "migration", status: "crashed", sub: "exited (1)", liveBranch: "main", worktreePath: "/ws", verify: "fail", verifiable: true, kind: "agent" },
+    { name: "feature-billing", status: "idle", worktree: "tachyon/feature-billing", liveBranch: "feat/billing-wip", branchDrift: true, worktreePath: "/cache/feature-billing", kind: "agent" },
+    { name: "migration", status: "crashed", sub: "exited (1)", liveBranch: "main", worktreePath: "/ws", kind: "agent" },
     // t-9d76b1 — a stop the HUMAN asked for, on a runtime that acknowledges SIGINT by exiting 130
     // (grok, hermes). It sits next to `migration` on purpose: these two rows are the pair a person has
     // to be able to tell apart, and while this state was absent from the sample it was absent from
     // every preview and every visual check too.
     { name: "grok-builder", status: "stopped", sub: "stopped (exit 130)", pane: true, resumable: true, liveBranch: "main", worktreePath: "/ws", kind: "agent" },
     { name: "old-spike", status: "stopped", resumable: true, liveBranch: "main", worktreePath: "/ws", kind: "agent", adhoc: true },
-    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", liveBranch: "tachyon/qa", worktreePath: "/cache/qa", verifiable: true, kind: "agent" },
+    { name: "qa", status: "stopped", resumable: true, worktree: "tachyon/qa", liveBranch: "tachyon/qa", worktreePath: "/cache/qa", kind: "agent" },
   ],
   terminals: [
     { name: "dev", kind: "terminal", status: "running", sub: "npm run dev" },

@@ -156,11 +156,6 @@
               }
             ]
           },
-          "verify": {
-            "description": "Verify-gate (spec 214): a command/runbook name (or inline shell) run IN the worktree to prove it shippable. Resolves like a runbook step (command name > runbook name > inline). Advisory — surfaces a pass/fail/stale badge, never blocks.",
-            "type": "string",
-            "minLength": 1
-          },
           "harness": {
             "description": "Isolated harness (spec 226/228/298/311/406): agent-scoped resources materialized into a private config home so they never leak to sibling agents. Supported: claude, codex, opencode, grok, hermes, pi (a harness on another runtime/terminal entry is a config error). Claude supports rules/skills/hooks/MCP; Codex supports instructions/skills/hooks/MCP; OpenCode/Grok/Hermes support mcp/skills/hooks (and empty harness:{} for private home + Bridge). Pi supports only workspace-local extensions/skills/prompts/themes/package directories, requires a non-empty resource list, and rejects inherit:none; its exact resource mode disables ambient Pi discovery and never fetches or installs packages. Tachyon owns runtime config-home and resource plumbing. NOTE: cross-field rules are enforced by the loadConfig validator (not expressible in pure JSON Schema).",
             "type": "object",
@@ -320,11 +315,6 @@
               "type": "string",
               "description": "Global branch-name template; MUST contain {agent}. Default tachyon/{agent}.",
               "pattern": ".*\\{agent\\}.*"
-            },
-            "verify": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Global default verify-gate (spec 214) for worktree agents that don't declare their own. A command/runbook name or inline shell; a per-agent verify wins."
             },
             "revealInWorkspace": {
               "type": "boolean",

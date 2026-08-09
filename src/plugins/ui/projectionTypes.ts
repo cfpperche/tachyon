@@ -9,9 +9,6 @@
 export type PluginAgentStatusV1 = "running" | "needs" | "throttled" | "done" | "idle" | "stopped" | "crashed";
 export type PluginAgentAttentionV1 = "working" | "needs-input" | "throttled";
 export type PluginAgentBadgeV1 =
-  | "verify-pass"
-  | "verify-fail"
-  | "verify-stale"
   | "continuity-fresh"
   | "continuity-stale"
   | "continuity-missing"

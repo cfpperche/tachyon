@@ -11,7 +11,7 @@ import type { DoneKind } from "./loadPipeline.js";
 export type SignalVerdict = "ok" | "cannot" | "unprovable";
 export type NodeRuntime = "claude" | "codex" | "other";
 
-const EXIT_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["exit", "exit_then_verify"]);
+const EXIT_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["exit"]);
 
 export interface Signalability {
   done: DoneKind;

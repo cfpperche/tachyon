@@ -7,7 +7,6 @@ export interface TerminalStudioEntity {
   fields: FormState;
 }
 
-/** t-b54ead — no `verifyCandidates`: a verify gate is agent-only, so a terminal form has no chip to serve. */
 export interface TerminalStudioReferenceData {
   flagMap: Record<string, string[]>;
   defaultCwd: string;
@@ -34,7 +33,6 @@ export function blankTerminalFields(): FormState {
     worktree: false,
     branch: "",
     worktreeSetup: "",
-    verify: "",
     isolate: false,
     schedTiming: "every",
     schedEvery: "1h",

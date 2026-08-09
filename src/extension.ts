@@ -781,13 +781,12 @@ function changedFilesFrom(value: unknown): ChangedFile[] {
 async function worktreeReview(
   ws: WorkspaceShellHandle,
   input: { agent: string } | { runId: string },
-): Promise<{ record: WorktreeRecord | null; status: WorktreeStatus | null; changedFiles: ChangedFile[]; verify?: JsonValue }> {
+): Promise<{ record: WorktreeRecord | null; status: WorktreeStatus | null; changedFiles: ChangedFile[] }> {
   const payload = jsonObject(await extensionQuery(ws, { action: "worktree.review", ...input }), "worktree.review");
   return {
     record: payload.record === null ? null : worktreeRecordFrom(payload.record),
     status: payload.status === null ? null : worktreeStatusFrom(payload.status),
     changedFiles: changedFilesFrom(payload.changedFiles),
-    ...(payload.verify !== undefined ? { verify: payload.verify } : {}),
   };
 }
 
@@ -3589,21 +3588,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await reviewWorktreeDiff(review.record, review.changedFiles, runId);
     }),
-    vscode.commands.registerCommand("tachyon.verifyAgentItem", async (item: AgentItem) => {
-      // spec 214 / C3 — run the agent's declared verify-gate in its worktree, update the badge.
-      // Advisory: a failure surfaces but never blocks. Errors (no worktree/verify) are notified.
-      const ws = wsOf(item);
-      if (!ws) return;
-      try {
-        await extensionInvoke(ws, { action: "agent.verify", agent: item.agentName });
-      } catch (err) {
-        notify(err instanceof Error ? err.message : String(err), "warn");
-      }
-      refreshAll();
-    }),
     vscode.commands.registerCommand("tachyon.createWorktreePrItem", async (item: AgentItem) => {
-      // spec 223 — open a GitHub PR from the worktree's branch, carrying the verify verdict into the
-      // body. Human stays at the gate: readiness is probed at CLICK (no per-refresh gh spawn), then an
+      // spec 223 — open a GitHub PR from the worktree's branch. Human stays at the gate: readiness is probed at CLICK (no per-refresh gh spawn), then an
       // editable title + a modal body preview confirm before `gh pr create` fires.
       const ws = wsOf(item);
       if (!ws) return;
@@ -3628,20 +3614,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // default and say so in the confirm (honest > a confident wrong guess). Detect dirty too
         // (uncommitted changes are NOT pushed → would silently miss the PR).
         const base = rec.baseBranch ?? null;
-        const verifyInfo = review.verify && typeof review.verify === "object" && !Array.isArray(review.verify)
-          ? jsonObject(review.verify, "worktree verify")
-          : undefined;
         const dirty = await isWorktreeDirty(rec.path, ws.git.gitExec);
         const body = composePrBody({
           branch: rec.branch,
           base: base ?? undefined,
-          verify: verifyInfo && (verifyInfo.badge === "verified" || verifyInfo.badge === "failing" || verifyInfo.badge === "stale") && typeof verifyInfo.command === "string"
-            ? { badge: verifyInfo.badge, command: verifyInfo.command }
-            : undefined,
         });
         const title = await vscode.window.showInputBox({
           title: vscode.l10n.t("Create PR for '{0}'", item.agentName),
-          prompt: vscode.l10n.t("PR title — the body carries the verify verdict"),
+          prompt: vscode.l10n.t("PR title"),
           value: composePrTitle(rec.branch),
         });
         if (!title) return; // cancelled / empty

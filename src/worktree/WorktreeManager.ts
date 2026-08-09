@@ -18,12 +18,11 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentEntry, TachyonConfig } from "../config/loadConfig.js";
 import { parseNameStatus, mergeChanges, type ChangedFile } from "./review.js";
-import type { VerifyState } from "./verify.js";
 import type { WorktreeEvidence } from "./evidence.js";
 import type { SharedDependencyState } from "./dependencySharing.js";
 import { resolveGitBinary, gitNotFoundError } from "./gitBinary.js";
 
-/** Persisted source of truth for cleanup + the diff-review (C2) + the verify-gate (C3). Never recomputed from (possibly drifted) config. */
+/** Persisted source of truth for cleanup + diff review. Never recomputed from possibly drifted config. */
 export interface WorktreeRecord {
   /** absolute worktree path (the agent's cwd) */
   path: string;
@@ -38,11 +37,9 @@ export interface WorktreeRecord {
    *  (then a PR falls back to a best-effort name-rev guess). */
   baseBranch?: string;
   createdAt: string;
-  /** spec 214 (C3) — last verify-gate result, keyed to the commit it ran against (staleness). */
-  verify?: VerifyState;
   /**
    * t-3f93b4 — whether this checkout's `node_modules` is shared with the primary, and the lockfile
-   * digest that made sharing legitimate. Persisted for the same reason `verify` is: the value is a
+   * digest that made sharing legitimate. Persisted because the value is a
    * claim about a commit-shaped state, so it has to travel with the record that outlives the launch
    * in order for a later divergence to be a COMPARISON rather than a guess.
    */
@@ -884,9 +881,6 @@ export class WorktreeManager {
         baseRef: o.prior?.baseRef ?? currentHead,
         ...(baseBranch ? { baseBranch } : {}), // carry forward (spec 223), else re-derived above (t-2dd637)
         createdAt: o.prior?.createdAt ?? this.nowIso(),
-        // spec 214 — carry the persisted verify result across reuse/restart (review fix: a restart
-        // wrote a fresh record and dropped the badge; staleness re-checks HEAD/dirty anyway).
-        ...(o.prior?.verify ? { verify: o.prior.verify } : {}),
         ...(dependencies ? { dependencies } : {}),
       };
       return {
@@ -1206,10 +1200,7 @@ export class WorktreeManager {
     }
   }
 
-  /**
-   * C3 (spec 214) — the worktree's current HEAD sha + a cheap dirty flag, for verify staleness.
-   * Best-effort: "" / false on any git failure (removed/absent), which the badge reads as stale.
-   */
+  /** The worktree's current HEAD sha + a cheap dirty flag. Best-effort on git failure. */
   async headState(cwd: string): Promise<{ headRef: string; dirty: boolean }> {
     try {
       // ONE subprocess (review fix: was two): porcelain=v2 --branch carries `# branch.oid <sha>`
@@ -1222,7 +1213,7 @@ export class WorktreeManager {
         if (line.startsWith("# branch.oid ")) headRef = line.slice("# branch.oid ".length).trim();
         else if (line.length > 0 && !line.startsWith("#")) dirty = true;
       }
-      if (headRef === "(initial)") headRef = ""; // unborn HEAD → no verifiable commit
+      if (headRef === "(initial)") headRef = ""; // unborn HEAD
       return { headRef, dirty };
     } catch {
       return { headRef: "", dirty: false };

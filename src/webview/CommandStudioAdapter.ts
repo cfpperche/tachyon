@@ -34,7 +34,6 @@ export class CommandStudioAdapter implements StudioHostAdapter<CommandStudioEnti
     const referenceData: CommandStudioReferenceData = {
       flagMap: FLAG_SUGGESTIONS,
       defaultCwd: deps.defaultCwd,
-      verifyCandidates: deps.verifyCandidates(),
     };
     if (entityId === undefined) {
       return { status: "ok", entity: { fields: blankCommandFields() }, referenceData };

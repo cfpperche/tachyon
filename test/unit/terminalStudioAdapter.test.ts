@@ -26,7 +26,6 @@ function fakeWorkspace(opts: { agents?: Record<string, AgentDef>; submitResult?:
       detectClis: async () => [],
       takenNames: () => Object.keys(agents),
       commandNames: () => [],
-      verifyCandidates: () => ["npm test"],
       defaultCwd: "/ws/root",
       suggestKindForCommand: () => "terminal",
       onSubmit: () => undefined,
@@ -48,9 +47,6 @@ describe("TerminalStudioAdapter", () => {
     expect(result.entity).toEqual({ fields: blankTerminalFields() });
     expect(result.referenceData).toMatchObject({ defaultCwd: "/ws/root" });
     expect(result.entity).not.toHaveProperty("defaultCwd");
-    // t-b54ead — a verify gate is agent-only, so the terminal form is served no candidate chips at all.
-    expect(result.referenceData).not.toHaveProperty("verifyCandidates");
-    expect(result.entity).not.toHaveProperty("verifyCandidates");
   });
 
   it("resolves only existing terminal-kind entries through formLogic's fromDef", () => {

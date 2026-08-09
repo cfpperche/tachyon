@@ -27,7 +27,6 @@ function fakeWorkspace(opts: {
       detectClis: async () => [],
       takenNames: () => Object.keys(agents),
       commandNames: () => Object.keys(commands),
-      verifyCandidates: () => [],
       defaultCwd: "/ws/root",
       suggestKindForCommand: () => "schedule",
       onSubmit: () => undefined,

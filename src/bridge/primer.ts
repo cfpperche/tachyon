@@ -140,7 +140,6 @@ function beforeFinishingVerificationLines(): string[] {
     // you deliver", fusing a working method with what a check actually covers. The method (WHICH
     // smaller checks to run along the way) is the project's and lives in project-owned guidance;
     // what a run attests is the product's own fact and stays. It is unconditional because the
-    // worktree verify gate is resolved outside the primer rather than echoed into it.
     "A check attests the exact TREE it ran on: a pass measured on any other tree is not evidence about what you deliver.",
   ];
 }

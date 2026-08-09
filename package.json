@@ -171,11 +171,6 @@
         "icon": "$(git-compare)"
       },
       {
-        "command": "tachyon.verifyAgentItem",
-        "title": "%command.verifyAgentItem%",
-        "icon": "$(verified)"
-      },
-      {
         "command": "tachyon.createWorktreePrItem",
         "title": "%command.createWorktreePrItem%",
         "icon": "$(git-pull-request)"
@@ -737,10 +732,6 @@
         },
         {
           "command": "tachyon.reviewWorktreeItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.verifyAgentItem",
           "when": "false"
         },
         {

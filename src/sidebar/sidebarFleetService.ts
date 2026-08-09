@@ -20,7 +20,7 @@ import type { ProposalStore } from "../schedule/ProposalStore.js";
 import type { Scheduler } from "../schedule/Scheduler.js";
 import { toAgentVM, type ObservedModelInput } from "./agentModel.js";
 import { resolveAgentFocus, type FocusTaskInput } from "./agentFocus.js";
-import type { AgentStatus, AgentVM, EvidenceBadge, FleetVM, RunState, Verify } from "./types.js";
+import type { AgentStatus, AgentVM, EvidenceBadge, FleetVM, RunState } from "./types.js";
 import type { TmuxService } from "../tmux/TmuxService.js";
 import { evidenceBadge, type EvidenceSummary } from "../worktree/evidence.js";
 import type { WorktreeManager } from "../worktree/WorktreeManager.js";
@@ -74,7 +74,6 @@ export interface SidebarFleetSource {
     path?: string;
     updatedAt?: string;
   } | undefined;
-  verifyInfo(agent: string): Promise<{ badge: "verified" | "failing" | "stale" } | undefined>;
   evidenceHandoff(agent: string): Promise<EvidenceSummary | undefined>;
   readConfigLkg(): ConfigLkgSnapshot | null;
 }
@@ -119,11 +118,8 @@ export async function buildSidebarFleet(
     return !!command && !asAgent(definition)?.harness && forkable(adapterFor(command)) && !managesOwnSession(command);
   };
 
-  const verifyOf = new Map<string, Verify>();
   const evidenceOf = new Map<string, EvidenceBadge>();
   await Promise.all([...worktrees.keys()].map(async (name) => {
-    const info = await source.verifyInfo(name);
-    if (info) verifyOf.set(name, info.badge === "verified" ? "pass" : info.badge === "failing" ? "fail" : "stale");
     const badge = evidenceBadge(await source.evidenceHandoff(name));
     if (badge) evidenceOf.set(name, badge);
   }));
@@ -222,8 +218,6 @@ export async function buildSidebarFleet(
         branchDrift: liveGit?.branchDrift,
         worktreePath: liveGit?.worktreePath,
         resources: agent.running && !agent.dead ? resourcesOf.get(agent.name) : undefined,
-        verify: verifyOf.get(agent.name),
-        verifiable: verifyOf.has(agent.name),
         evidence: evidenceOf.get(agent.name),
         harness: !!asAgent(definition)?.harness,
         forkable: canFork(agent.name, agent.running, agent.kind),

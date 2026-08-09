@@ -29,7 +29,7 @@ nodes:
     agent: coder
     task: "Implement it"
     needs: [research]
-    done: signal_then_verify
+    done: signal
     gate: approve
     timeout: 45m
 `;
@@ -42,7 +42,7 @@ describe("loadPipeline — happy path", () => {
     expect(pipeline?.worktree).toBe("own");
     expect(Object.keys(pipeline!.nodes)).toEqual(["research", "implement"]);
     expect(pipeline!.nodes.research).toMatchObject({ agent: "researcher", done: "signal", needs: [], timeoutMs: 20 * 60_000 });
-    expect(pipeline!.nodes.implement).toMatchObject({ agent: "coder", done: "signal_then_verify", gate: "approve", needs: ["research"], timeoutMs: 45 * 60_000 });
+    expect(pipeline!.nodes.implement).toMatchObject({ agent: "coder", done: "signal", gate: "approve", needs: ["research"], timeoutMs: 45 * 60_000 });
   });
 
   it("accepts a cmd node with done: signal — an EPHEMERAL interactive LLM agent (e.g. cmd: codex)", () => {
@@ -51,17 +51,12 @@ describe("loadPipeline — happy path", () => {
     expect(pipeline?.nodes.ask).toMatchObject({ cmd: "codex", done: "signal" });
   });
 
-  it("parses expectsChange:false (a read-only node opts out of staleness)", () => {
-    const { pipeline, errors } = loadPipeline(
-      `name: p\nnodes:\n  audit: {agent: coder, task: t, done: signal_then_verify, expectsChange: false, timeout: 5m}\n`,
-      AGENTS,
-    );
-    expect(errors).toEqual([]);
-    expect(pipeline?.nodes.audit.expectsChange).toBe(false);
-  });
-  it("expectsChange defaults to undefined (= expects change) when omitted", () => {
-    const { pipeline } = loadPipeline(`name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, timeout: 1s}\n`, AGENTS);
-    expect(pipeline?.nodes.a.expectsChange).toBeUndefined();
+  it("refuses removed verify completion contracts", () => {
+    for (const done of ["signal_then_verify", "exit_then_verify"]) {
+      const { pipeline, errors } = loadPipeline(`name: p\nnodes:\n  a: {cmd: codex, task: t, done: ${done}, timeout: 1s}\n`, AGENTS);
+      expect(pipeline).toBeUndefined();
+      expect(errors).toContain(`nodes.a.done: required, one of exit | signal`);
+    }
   });
 
   it("defaults worktree to 'own' when omitted", () => {
@@ -122,8 +117,11 @@ describe("loadPipeline — validation (fail-closed)", () => {
     expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: whenever, timeout: 1s}\n", "done:"));
   it("bad gate", () =>
     expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, gate: maybe, timeout: 1s}\n", "gate:"));
-  it("bad expectsChange (non-boolean)", () =>
-    expectError("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, expectsChange: yes, timeout: 1s}\n", "expectsChange:"));
+  it("discards the retired expectsChange field", () => {
+    const result = loadPipeline("name: p\nnodes:\n  a: {cmd: x, task: t, done: exit, expectsChange: yes, timeout: 1s}\n", AGENTS);
+    expect(result.errors).toEqual([]);
+    expect(result.pipeline?.nodes.a).not.toHaveProperty("expectsChange");
+  });
 
   it("agent node with exit-based done is rejected (a declared LLM agent is interactive)", () =>
     expectError("name: p\nnodes:\n  a: {agent: coder, task: t, done: exit, timeout: 1s}\n", "exit-based"));
@@ -243,18 +241,18 @@ describe("loadPipeline — input mode + work-source rule (spec 231)", () => {
 describe("an inline node declares its kind through `done` (t-c003e1)", () => {
   it("a signal-based node on an operable runtime is an agent", () => {
     const { pipeline, errors } = loadPipeline(
-      `name: p\nnodes:\n  ask: {cmd: codex, task: "review this", done: signal_then_verify, timeout: 20m}\n`,
+      `name: p\nnodes:\n  ask: {cmd: codex, task: "review this", done: signal, timeout: 20m}\n`,
       AGENTS,
     );
     expect(errors).toEqual([]);
     // The kind is materialized, not left for the spawn door to guess from the command text.
-    expect(pipeline?.nodes.ask).toMatchObject({ cmd: "codex", done: "signal_then_verify", kind: "agent" });
+    expect(pipeline?.nodes.ask).toMatchObject({ cmd: "codex", done: "signal", kind: "agent" });
   });
 
   it("an exit-based node is a terminal, whatever the command is", () => {
     const { pipeline, errors } = loadPipeline(
       `name: p\nnodes:\n  build: {cmd: "sh -c 'npm run build'", task: "build it", done: exit, timeout: 5m}\n`
-      + `  once: {cmd: "codex exec 'summarize'", task: "summarize", needs: [build], done: exit_then_verify, timeout: 5m}\n`,
+      + `  once: {cmd: "codex exec 'summarize'", task: "summarize", needs: [build], done: exit, timeout: 5m}\n`,
       AGENTS,
     );
     expect(errors).toEqual([]);

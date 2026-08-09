@@ -275,7 +275,7 @@ function cardTitle(slot: CardSlot, id: CardComponentId, base?: string): string |
   const note = "Your card template omits this badge — Tachyon is showing it because this row is in that state.";
   if (!slot.readmitted.includes(id)) return base;
   return base ? `${base}\n\n${note}` : note;
-  // `base` is optional because not every critical badge carries a tooltip today (`✗ verify` does not).
+  // `base` is optional because not every critical badge necessarily carries a tooltip.
   // Returning undefined leaves the attribute off entirely, so an un-configured card is unchanged —
   // which the phase-1 equality proof checks on every run.
 }
@@ -401,14 +401,6 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
       </Badge>
     ) : null,
 
-  // Returns null rather than an empty fragment when no gate result applies: `CardMetaRegion` decides
-  // whether `.row-meta` exists from whether its components RENDERED, so "nothing" has to be nothing.
-  verify: (slot) =>
-    slot.a.verify === "pass" ? <Badge tone="ok">✓ verified</Badge>
-      : slot.a.verify === "fail" ? <Badge tone="err" title={cardTitle(slot, "verify")}>✗ verify</Badge>
-        : slot.a.verify === "stale" ? <Badge>⊘ stale</Badge>
-          : null,
-
   evidence: ({ a }) =>
     a.evidence ? (
       <Badge
@@ -443,7 +435,7 @@ export const CARD_COMPONENTS: Record<CardComponentId, CardComponentRenderer> = {
 
   fork: ({ a }) => (a.forked ? <Badge>⑂ fork</Badge> : null),
 
-  // Null, not an empty fragment, when the brief is fresh — see the note on `verify`.
+  // Null, not an empty fragment, when the brief is fresh.
   continuity: ({ a }) =>
     a.continuity === "stale" ? (
       <Badge tone="warn" title="Continuity brief is behind recent activity — the agent should checkpoint (set_continuity)">

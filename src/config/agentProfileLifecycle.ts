@@ -27,8 +27,6 @@ import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAge
 import {
   WORKSPACE_SETUP_PATH,
   WORKSPACE_SETUP_REFERENCE_ID,
-  WORKSPACE_VERIFY_PATH,
-  WORKSPACE_VERIFY_REFERENCE_ID,
   parseWorkspaceCommandLines,
 } from "./agentWorkspaceCommands.js";
 import { isSupersededRuntimeInspector, profileRuntimeInspectorFor } from "./agentProfileProjection.js";
@@ -44,7 +42,7 @@ const ARTIFACTS = "artifacts";
 /** t-afc86e — prior bytes of any artifact this transaction REPLACES, so a rollback can restore them. */
 const ARTIFACT_BACKUPS = "artifact-backups";
 const DIGEST_RE = /^[a-f0-9]{64}$/;
-const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md", WORKSPACE_VERIFY_PATH, WORKSPACE_SETUP_PATH]);
+const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md", WORKSPACE_SETUP_PATH]);
 /**
  * `t-d185e1` — profile-local documents an EDIT may publish.
  *
@@ -62,7 +60,7 @@ const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md", WORKSPACE_V
  * gesture that writes the rest of the form, so an edit must be able to republish them — the reason
  * `SOUL.md` is create-only does not apply: nothing else owns these bytes under another contract.
  */
-const EDIT_ARTIFACT_NAMES = new Set(["evolution-selector.json", WORKSPACE_VERIFY_PATH, WORKSPACE_SETUP_PATH]);
+const EDIT_ARTIFACT_NAMES = new Set(["evolution-selector.json", WORKSPACE_SETUP_PATH]);
 const ARTIFACT_NAMES_FOR = { create: CREATE_ARTIFACT_NAMES, edit: EDIT_ARTIFACT_NAMES } as const;
 const ALL_ARTIFACT_NAMES = new Set([...CREATE_ARTIFACT_NAMES, ...EDIT_ARTIFACT_NAMES]);
 const CREATE_ARTIFACT_MAX_BYTES = 64 * 1024;
@@ -159,15 +157,13 @@ export interface AgentProfileLifecycleSnapshot {
    * the profile directory was open.
    *
    * This is not convenience data, it is what makes the fields editable at all. `profile` carries only
-   * the reference IDS, so a form built from the snapshot alone would render an empty verify box for
-   * an agent that has one — and the next save would write that emptiness back. That failure mode is
-   * the t-bd14d8 watch trap inverted: there a stale value survived every edit and could never leave,
-   * here a live value would leave on every edit without anyone asking.
+   * the reference IDS, so a form built from the snapshot alone would render an empty setup box for
+   * an agent that has setup commands — and the next save would write that emptiness back.
    *
    * Absent when the profile declares no such reference, or when it names one this Studio does not
    * own (`bindings.foreignWorkspaceCommands` on the projected snapshot).
    */
-  workspaceCommands?: { verify?: string; setup?: string[] };
+  workspaceCommands?: { setup?: string[] };
   provenance: {
     canonical: { scope: "profile"; writable: true; sha256: string };
     authority: { scope: "host"; writable: false; revision: string; grants: number; /** Content-free IDs of grants eligible for Studio selection. */ capabilityReferenceIds?: string[] };
@@ -404,7 +400,7 @@ function validateCreateArtifacts(input: CommitAgentProfileLifecycleInput): Array
  *
  * t-afc86e made these REPLACEABLE. Until then every artifact was new by construction — `SOUL.md` on
  * create, the Evolution selector on a one-time enable — so `writeNew` was the whole story and a
- * second publish of the same path threw. That is exactly what a verify gate does on its second save:
+ * second publish of the same path threw. That is exactly what setup does on its second save:
  * the human edits the command, and the transaction has to overwrite bytes it published last time.
  *
  * The replacement is still CAS-guarded. `priorSha256` is what the file held when this transaction was
@@ -525,7 +521,7 @@ function savedAgentProfile(workspaceRoot: string, agentName: string): {
   profile: AgentProfileV1;
   text: string;
   sha256: string;
-  workspaceCommands?: { verify?: string; setup?: string[] };
+  workspaceCommands?: { setup?: string[] };
 } | undefined {
   const source = readCanonicalAgentProfile(workspaceRoot, agentName);
   if (!source) return undefined;
@@ -554,10 +550,8 @@ function savedAgentProfile(workspaceRoot: string, agentName: string): {
  * t-afc86e — the bytes behind the two references Agent Studio OWNS, or undefined when the profile
  * declares neither.
  *
- * Ownership is the fixed reference id. A `workspace.verify` naming anything else belongs to whoever
- * published it — a project-scoped verifier a workspace supplies, say — and is deliberately not read
- * here: the Studio must not display, and therefore must not be able to overwrite, a value it does
- * not own. The projected snapshot reports that case as `bindings.foreignWorkspaceCommands`.
+ * Ownership is the fixed reference id. Any other setup reference belongs to whoever published it and
+ * is deliberately not read here: the Studio must not display or overwrite a value it does not own.
  *
  * A digest mismatch throws, which fails the whole inspect. That is correct and deliberate: the
  * alternative is opening a form on bytes that disagree with what the profile pins, and saving from
@@ -566,8 +560,8 @@ function savedAgentProfile(workspaceRoot: string, agentName: string): {
 function readStudioWorkspaceCommands(
   source: CanonicalAgentProfileSource,
   profile: AgentProfileV1,
-): { verify?: string; setup?: string[] } | undefined {
-  const owned = (id: string | undefined, expected: string, kind: "verification" | "worktree-setup") => {
+): { setup?: string[] } | undefined {
+  const owned = (id: string | undefined, expected: string, kind: "worktree-setup") => {
     if (id !== expected) return undefined;
     const reference = profile.references?.find((candidate) => candidate.id === expected);
     if (!reference || reference.kind !== kind || reference.scope !== "profile"
@@ -576,14 +570,12 @@ function readStudioWorkspaceCommands(
     }
     return readAgentProfileReference(source, reference.path, reference.sha256).text;
   };
-  const verifyText = owned(profile.workspace?.verify, WORKSPACE_VERIFY_REFERENCE_ID, "verification");
   const setupIds = profile.workspace?.worktree?.setup ?? [];
   const setupText = setupIds.length === 1
     ? owned(setupIds[0], WORKSPACE_SETUP_REFERENCE_ID, "worktree-setup")
     : undefined;
-  if (verifyText === undefined && setupText === undefined) return undefined;
+  if (setupText === undefined) return undefined;
   return {
-    ...(verifyText !== undefined ? { verify: parseWorkspaceCommandLines(verifyText)[0] ?? "" } : {}),
     ...(setupText !== undefined ? { setup: parseWorkspaceCommandLines(setupText) } : {}),
   };
 }

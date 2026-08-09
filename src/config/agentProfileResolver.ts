@@ -80,8 +80,7 @@ export interface ResolvedProfileReference extends AgentProfileReferenceV1 {
    * runtime entry (`MATERIALIZED_WORKSPACE_REFERENCE_KINDS`).
    *
    * The file was already opened and digest-checked here; before this the text was read, verified and
-   * dropped, which is why `workspace.verify` could resolve to an id and still have no content to
-   * project. Excluded from the effective digest in `finalize` — `resolvedSha256` already binds these
+   * dropped. Excluded from the effective digest in `finalize` — `resolvedSha256` already binds these
    * bytes, so digesting them twice would only make the same content look like two facts.
    */
   resolvedText?: string;
@@ -129,7 +128,6 @@ export interface ResolvedAgentCapabilityProjection {
 export interface WorkspaceProfileDefaults {
   worktreeBase?: string;
   worktreeBranch?: string;
-  verify?: { referenceId: string; sha256: string };
   bridgeGuidance?: boolean;
   projectGuidance?: Array<{ sourcePath: string; sha256: string }>;
 }
@@ -208,8 +206,6 @@ export interface NormalizedAgentWorkspace extends Omit<NonNullable<AgentProfileV
     /** Compatibility provenance only; raw setup commands stay in the legacy launch input. */
     legacySetupSha256?: string[];
   };
-  /** Compatibility provenance only; raw verifier stays in the legacy launch input. */
-  legacyVerifySha256?: string;
 }
 
 export interface NormalizedAgentDefinition {
@@ -1236,7 +1232,7 @@ function legacyDefinition(definition: AgentEntry, runtime: { adapterId: string; 
       attention: clone(definition.attention),
       restart: definition.restart,
     },
-    ...((definition.cwd || definition.worktree !== undefined || definition.branch || definition.worktreeSetup || definition.verify) ? {
+    ...((definition.cwd || definition.worktree !== undefined || definition.branch || definition.worktreeSetup) ? {
       workspace: {
         ...(definition.cwd ? { cwd: definition.cwd } : {}),
         ...((definition.worktree !== undefined || definition.branch || definition.worktreeSetup) ? {
@@ -1246,7 +1242,6 @@ function legacyDefinition(definition: AgentEntry, runtime: { adapterId: string; 
             ...(definition.worktreeSetup ? { legacySetupSha256: definition.worktreeSetup.map((command) => sha256(command)) } : {}),
           },
         } : {}),
-        ...(definition.verify ? { legacyVerifySha256: sha256(definition.verify) } : {}),
       },
     } : {}),
     ...(definition.isolate ? { isolation: definition.isolate } : {}),
@@ -1258,7 +1253,6 @@ function applyInheritance(
   profile: AgentProfileV1,
   definition: NormalizedAgentDefinition,
   input: ResolveAgentProfileInput,
-  resolvedReferences: readonly ResolvedProfileReference[],
 ): { errors: AgentProfileDiagnostic[]; provenance: AgentProfileFieldProvenance[] } {
   const errors: AgentProfileDiagnostic[] = [];
   const provenance: AgentProfileFieldProvenance[] = [];
@@ -1299,25 +1293,6 @@ function applyInheritance(
       definition.workspace.worktree ??= {};
       definition.workspace.worktree.branch = defaults.worktreeBranch;
       provenance.push({ field: "workspace.worktree.branch", sourceKind: "workspace", source: "settings.worktree.branch" });
-    }
-  }
-  if (inherited.has("verify") && definition.workspace?.verify === undefined) {
-    const inheritedVerifier = defaults?.verify;
-    const resolvedVerifier = inheritedVerifier
-      ? resolvedReferences.find((reference) => reference.id === inheritedVerifier.referenceId)
-      : undefined;
-    if (!inheritedVerifier
-      || !SHA256_RE.test(inheritedVerifier.sha256)
-      || !resolvedVerifier
-      || resolvedVerifier.kind !== "verification"
-      || resolvedVerifier.mode !== "pinned"
-      || resolvedVerifier.resolvedSha256 !== inheritedVerifier.sha256) {
-      missing("workspace.verify");
-    }
-    else {
-      definition.workspace ??= {};
-      definition.workspace.verify = inheritedVerifier.referenceId;
-      provenance.push({ field: "workspace.verify", sourceKind: "workspace", source: "settings.worktree.verify", sha256: inheritedVerifier.sha256 });
     }
   }
   if (inherited.has("bridgeGuidance")) {
@@ -1553,7 +1528,7 @@ export function resolveAgentProfile(input: ResolveAgentProfileInput): ResolveAge
     // entered it: the agent does not carry sources it was not given.
     const deliveredReferences = referenceResult.references.filter((reference) => !capabilityWithheldIds.has(reference.id));
     const definition = canonicalDefinition(profile);
-    const inheritance = applyInheritance(profile, definition, input, deliveredReferences);
+    const inheritance = applyInheritance(profile, definition, input);
     const errors = [
       ...referenceResult.errors,
       ...inheritance.errors,

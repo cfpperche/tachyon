@@ -19,8 +19,6 @@ export interface AgentContextParts {
   temporary: boolean;
   /** runs in its own git worktree. */
   worktree: boolean;
-  /** declares a verify gate (worktree agent). */
-  verifiable: boolean;
   /** running on a fork-capable runtime (claude) → "Fork session" offered. */
   forkable: boolean;
   /** spec 226 — runs with an isolated harness (its own MCP config home). Informational badge. */
@@ -34,7 +32,6 @@ export function agentContextValue(p: AgentContextParts): string {
     (p.ai ? "-ai" : "") +
     (p.temporary ? "-temporary" : "") +
     (p.worktree ? "-worktree" : "") +
-    (p.verifiable ? "-verifiable" : "") +
     (p.forkable ? "-forkable" : "") +
     (p.harness ? "-harness" : "")
   );

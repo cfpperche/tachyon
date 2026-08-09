@@ -15,7 +15,7 @@ import {
   type ResumeRuntime,
 } from "../../src/resume/adapters.js";
 import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
-import { EVIDENCE_SCHEMA_VERSION, VERIFY_PRODUCER, STEP_RESULT_KIND, type WorktreeEvidence } from "../../src/worktree/evidence.js";
+import { EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
 import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveAntigravityId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession, resolveHermesId } from "../../src/resume/resolvers.js";
 
@@ -392,28 +392,6 @@ describe("SessionLedger", () => {
     expect(fs.readFileSync(ledger.path, "utf8")).not.toContain("SENSITIVE_");
   });
 
-  // spec 214 — verify-gate state persisted on the worktree block
-  it("recordVerify updates the worktree's verify block and round-trips", () => {
-    const ws = tmpWs();
-    const l = new SessionLedger(ws);
-    const worktree = { path: "/wt/rev", branch: "tachyon/rev", tachyonCreatedBranch: true, baseRef: "base", baseBranch: "develop", createdAt: "t0" };
-    l.record("rev", { def: { cmd: "claude", kind: "agent" }, worktree, cwd: "/wt/rev", instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
-    l.recordVerify("rev", { command: "npm test", passed: true, atCommit: "abc123", ranAt: "2026-06-14T00:00:00Z" });
-
-    const back = new SessionLedger(ws).get("rev");
-    expect(back?.worktree?.verify).toEqual({ command: "npm test", passed: true, atCommit: "abc123", ranAt: "2026-06-14T00:00:00Z" });
-    expect(back?.worktree?.branch).toBe("tachyon/rev"); // rest of the record untouched
-    expect(back?.worktree?.baseBranch).toBe("develop"); // spec 223 — PR base persists across reload
-  });
-
-  it("recordVerify is a no-op for an agent with no worktree (verify is worktree-scoped)", () => {
-    const ws = tmpWs();
-    const l = new SessionLedger(ws);
-    l.record("plain", { def: { cmd: "claude", kind: "agent" }, cwd: ws, instance: { lifetime: "saved", resumePolicy: "restartable", lifecycleHooks: true } });
-    l.recordVerify("plain", { command: "npm test", passed: false, atCommit: "x", ranAt: "t" });
-    expect(l.get("plain")?.worktree).toBeUndefined();
-  });
-
   // spec 273 — the evidence channel persisted on the worktree block
   describe("evidence channel (spec 273)", () => {
     let evSeq = 0;
@@ -456,19 +434,6 @@ describe("SessionLedger", () => {
       withWorktree(l);
       for (let i = 0; i < 5; i++) l.appendEvidence("rev", evi({ id: `a${i}` }));
       expect(new SessionLedger(ws).getEvidence("rev")).toHaveLength(5);
-    });
-
-    it("replaceVerifyEvidence swaps the verify step-set, preserves other evidence", () => {
-      const ws = tmpWs();
-      const l = new SessionLedger(ws);
-      withWorktree(l);
-      l.appendEvidence("rev", evi({ id: "judg", producer: "claude", kind: "judgment", summary: "looks right" }));
-      l.replaceVerifyEvidence("rev", [evi({ id: "s1", producer: VERIFY_PRODUCER, kind: STEP_RESULT_KIND })]);
-      l.replaceVerifyEvidence("rev", [evi({ id: "s2", producer: VERIFY_PRODUCER, kind: STEP_RESULT_KIND }), evi({ id: "s3", producer: VERIFY_PRODUCER, kind: STEP_RESULT_KIND })]);
-      const back = new SessionLedger(ws).getEvidence("rev").map((r) => r.id);
-      expect(back).toContain("judg"); // non-verify preserved
-      expect(back).not.toContain("s1"); // first verify set replaced
-      expect(back).toEqual(expect.arrayContaining(["s2", "s3"]));
     });
 
     it("drops a malformed evidence record on read (defensive parse), keeps valid ones", () => {

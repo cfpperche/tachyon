@@ -37,7 +37,7 @@ const HIDE_ALL: CardTemplate = { version: CARD_TEMPLATE_VERSION, header: ["statu
 const CURATED: CardTemplate = {
   version: CARD_TEMPLATE_VERSION,
   header: ["status-dot", "name", "model", "metrics-pill"],
-  meta: ["harness", "branch", "verify"],
+  meta: ["harness", "branch", "evidence"],
   footer: ["focus", "actions"],
 };
 

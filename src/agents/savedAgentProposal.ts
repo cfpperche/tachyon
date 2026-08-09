@@ -184,10 +184,9 @@ export function savedAgentCreateMutation(
       cwd: "",
       // t-bd14d8 — no `watch`: the editable schema is strict and an Agent has no file watch.
       lifecycle: { autostart: false, restart: "never", attention: true },
-      // t-afc86e — a proposal carries no verify gate or setup commands: the proposer describes an
+      // t-afc86e — a proposal carries no setup commands: the proposer describes an
       // agent, and workspace-local build steps are the human's to add after approval.
       worktree: { enabled: proposedWorktreeEnabled(spec), branch: "", setup: [] },
-      verify: "",
       // t-f96b2f — a proposal never grants Evolution. Creation refuses it outright (the selector
       // names a profile id the store mints for an agent that already exists), and letting an agent
       // ASK for a self-evolving agent would be a capability arriving through the one door whose

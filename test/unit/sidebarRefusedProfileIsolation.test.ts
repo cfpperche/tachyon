@@ -36,7 +36,6 @@ function source(): SidebarFleetSource {
     attentionOf: () => undefined,
     continuityBadge: () => undefined,
     persistenceHookHealth: () => undefined,
-    verifyInfo: async () => undefined,
     evidenceHandoff: async () => undefined,
     readConfigLkg: () => null,
   } as unknown as SidebarFleetSource;

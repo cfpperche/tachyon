@@ -22,7 +22,6 @@ function fakeWorkspace(opts: { commands?: Record<string, CommandDef>; agents?: R
       detectClis: async () => [],
       takenNames: () => [...Object.keys(agents), ...Object.keys(commands)],
       commandNames: () => Object.keys(commands),
-      verifyCandidates: () => ["npm test"],
       defaultCwd: "/ws/root",
       suggestKindForCommand: () => "command",
       onSubmit: () => undefined,
@@ -42,9 +41,8 @@ describe("CommandStudioAdapter", () => {
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity).toEqual({ fields: blankCommandFields() });
-    expect(result.referenceData).toMatchObject({ defaultCwd: "/ws/root", verifyCandidates: ["npm test"] });
+    expect(result.referenceData).toMatchObject({ defaultCwd: "/ws/root" });
     expect(result.entity).not.toHaveProperty("defaultCwd");
-    expect(result.entity).not.toHaveProperty("verifyCandidates");
   });
 
   it("resolves only existing command entries through formLogic's fromCommandDef", () => {

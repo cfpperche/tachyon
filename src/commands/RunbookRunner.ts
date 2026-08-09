@@ -133,7 +133,7 @@ export class RunbookRunner {
   /**
    * Core executor (spec 214) — run an arbitrary ordered `steps` list under `label` to
    * completion, exit-code gated, in `cwdOverride ?? workspaceRoot`. `run()` delegates here for
-   * a declared runbook; the verify-gate delegates here for a single command-name/inline step.
+   * a declared runbook; other callers may execute an arbitrary command-name/inline step list.
    * Each step resolves via `resolveStep` (declared command name → its cmd, else inline shell).
    * Concurrent runs of the same `label` are refused.
    */
@@ -164,7 +164,7 @@ export class RunbookRunner {
         const started = this.now();
         const session = this.stepSession(label, step.index);
         // A referenced command brings its own cwd/env; a relative cwd resolves under the
-        // effective root (the worktree for verify, else workspaceRoot) — same rule as CommandRunner.
+        // effective root supplied by the caller — the same relative-cwd rule as CommandRunner.
         const def = this.resolveStepDef(step.step);
         const stepCwd = def.cwd ? (def.cwd.startsWith("/") ? def.cwd : `${cwd.replace(/\/$/, "")}/${def.cwd}`) : cwd;
         await this.opts.tmux.newSession({ name: session, cmd: def.cmd, cwd: stepCwd, env: def.env });

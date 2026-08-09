@@ -14,8 +14,6 @@ export interface StudioDeps {
   takenNames: () => string[];
   /** Declared commands: names. Drives Runbook step resolution. */
   commandNames: () => string[];
-  /** Stack-derived verify candidates plus declared command/runbook names. */
-  verifyCandidates: () => string[];
   defaultCwd: string;
   suggestKindForCommand: (cmd: string) => EntryKind;
   onSubmit: (submit: StudioSubmit) => string[] | undefined | Promise<string[] | undefined>;

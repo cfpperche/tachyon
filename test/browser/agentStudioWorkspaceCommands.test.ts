@@ -6,19 +6,13 @@ import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 import { openPreview } from "./support/preview";
 
 /**
- * t-afc86e — the verify gate and setup commands are EDITABLE, read off the shipped bundle's DOM.
+ * Agent Studio keeps setup authoring while the retired execution-verify control stays absent.
  *
  * The unit and headless suites prove the bytes are written, read back and projected. Neither can
- * prove the human can reach them: the two controls existed the whole time and were rendered
- * `disabled={canonical}` — with `canonical` always true — under a hint promising a binding that no
- * task carried. A form that renders a control nobody can type into is exactly what this task was
- * filed for, so the assertion has to be made against the rendered document.
+ * prove the human can reach setup or that the removed control is absent from the shipped document,
+ * so both assertions are made against the rendered bundle.
  *
- * Measured at BOTH widths: a field that reflows out of view at 360 reads as absent when it is only
- * off-screen, and `disabled` survives every layout.
- *
- * Watched fail on the pre-fix tree at both widths: both controls reported `disabled: true`, and the
- * read-only hint was in the document.
+ * Measured at BOTH widths so the narrow layout is covered too.
  */
 
 let browser: Browser;
@@ -40,7 +34,7 @@ afterAll(async () => {
 
 interface CommandFields {
   setup?: { disabled: boolean; value: string };
-  verify?: { disabled: boolean; value: string };
+  retiredVerifyPresent: boolean;
   hints: string[];
 }
 
@@ -51,14 +45,14 @@ const readFields = (): CommandFields => {
   };
   return {
     setup: read("ash-setup"),
-    verify: read("ash-verify"),
+    retiredVerifyPresent: document.getElementById("ash-verify") !== null,
     hints: [...document.querySelectorAll(".sf-region-fields .hint")].map((hint) => (hint.textContent || "").trim()),
   };
 };
 
-describe("t-afc86e — Agent Studio can author a verify gate and setup commands", () => {
+describe("Agent Studio workspace commands", () => {
   for (const width of [880, 360]) {
-    it(`at ${width}px, both controls are editable and show the profile's own values`, async () => {
+    it(`at ${width}px, setup remains editable and execution verify is absent`, async () => {
       const page = await browser.newPage();
       try {
         await page.bringToFront();
@@ -70,21 +64,15 @@ describe("t-afc86e — Agent Studio can author a verify gate and setup commands"
         const read = await surface.evaluate(readFields);
 
         expect(read.setup, "the setup control is missing from the shipped form").toBeDefined();
-        expect(read.verify, "the verify control is missing from the shipped form").toBeDefined();
         expect(read.setup!.disabled).toBe(false);
-        expect(read.verify!.disabled).toBe(false);
-        // Populated, not merely enabled: an editable box that renders blank for an agent that HAS a
-        // gate is the destructive shape — the next save writes the blank back over it.
-        expect(read.verify!.value).toBe("npm run typecheck");
         expect(read.setup!.value).toBe("pnpm install\npnpm --filter web build");
-        // The hint that promised a future binding is gone; the binding is what shipped instead.
-        expect(read.hints.join(" | ")).not.toContain("remain read-only");
+        expect(read.retiredVerifyPresent).toBe(false);
       } finally {
         await page.close();
       }
     }, HANG_TIMEOUT_MS);
 
-    it(`at ${width}px, a workspace-published gate stays read-only and says who owns it`, async () => {
+    it(`at ${width}px, workspace-published setup stays read-only and says who owns it`, async () => {
       const page = await browser.newPage();
       try {
         await page.bringToFront();
@@ -96,9 +84,7 @@ describe("t-afc86e — Agent Studio can author a verify gate and setup commands"
         const read = await surface.evaluate(readFields);
 
         expect(read.setup!.disabled).toBe(true);
-        expect(read.verify!.disabled).toBe(true);
-        // Read-only here is not the old permanent disablement: it is scoped to a value this Studio
-        // did not publish, and the screen says so rather than promising a future binding.
+        expect(read.retiredVerifyPresent).toBe(false);
         expect(read.hints.join(" | ")).toContain("published by the workspace");
       } finally {
         await page.close();

@@ -2,7 +2,6 @@ import type {
   AgentFocus,
   AgentVM,
   AgentStatus,
-  Verify,
   ContinuityBadge,
   EvidenceBadge,
   PersistenceHookBadge,
@@ -248,8 +247,6 @@ export interface AgentExtras {
   forkable?: boolean;
   resumable?: boolean;
   freshStart?: boolean;
-  verify?: Verify;
-  verifiable?: boolean;
   /** SDD 478 M5 — the managed-entry arm; absent means the caller had no entry to read. */
   kind?: EntryKind;
   adhoc?: boolean;
@@ -350,7 +347,6 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.branchDrift ? { branchDrift: true } : {}),
     ...(x.worktreePath ? { worktreePath: x.worktreePath } : {}),
     ...(x.resources ? { resources: x.resources } : {}),
-    ...(x.verify ? { verify: x.verify } : {}),
     ...(x.harness ? { harness: true } : {}),
     ...(x.resumable ? { resumable: true } : {}),
     ...(x.freshStart ? { freshStart: true } : {}),
@@ -358,7 +354,6 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     ...(x.forkable ? { forkable: true } : {}),
     kind: x.kind ?? "agent",
     ...(x.adhoc ? { adhoc: true } : {}),
-    ...(x.verifiable ? { verifiable: true } : {}),
     ...(x.canDismiss ? { canDismiss: true } : {}),
     ...(x.continuity ? { continuity: x.continuity } : {}),
     ...(x.focus ? { focus: x.focus } : {}),

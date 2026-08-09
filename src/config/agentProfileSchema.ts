@@ -58,7 +58,6 @@ const referenceKindSchema = z.enum([
   "pi-package",
   "project-guidance",
   "bridge-guidance",
-  "verification",
   "worktree-setup",
   "runtime-adapter",
 ]);
@@ -79,7 +78,7 @@ export const agentProfileReferenceSchema = z.object({
   if (reference.scope === "profile" && reference.mode !== "pinned") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: "profile-local references must be pinned" });
   }
-  if (["soul", "instructions", "role", "evolution", "memory", "skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package", "bridge-guidance", "verification", "worktree-setup", "runtime-adapter"].includes(reference.kind)
+  if (["soul", "instructions", "role", "evolution", "memory", "skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package", "bridge-guidance", "worktree-setup", "runtime-adapter"].includes(reference.kind)
     && reference.mode !== "pinned") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: `${reference.kind} references must be pinned` });
   }
@@ -161,7 +160,6 @@ const workspaceSchema = z.object({
     branch: boundedText("worktree branch", 1024).optional(),
     setup: z.array(z.string().regex(ID_RE)).max(64).optional(),
   }).strict().optional(),
-  verify: z.string().regex(ID_RE).optional(),
 }).strict();
 
 const capabilitiesSchema = z.object({
@@ -216,7 +214,7 @@ export const agentProfileSchemaV1 = z.object({
   guidance: guidanceSchema.optional(),
   inherit: z.object({
     environment: z.array(z.string().regex(ENV_NAME_RE)).max(128).optional(),
-    workspace: z.array(z.enum(["worktree.base", "worktree.branch", "verify", "projectGuidance", "bridgeGuidance"])).max(16).optional(),
+    workspace: z.array(z.enum(["worktree.base", "worktree.branch", "projectGuidance", "bridgeGuidance"])).max(16).optional(),
   }).strict().optional(),
   references: z.array(agentProfileReferenceSchema).max(AGENT_PROFILE_MAX_REFERENCES).optional(),
 }).strict().superRefine((profile, ctx) => {
@@ -273,7 +271,6 @@ export const agentProfileSchemaV1 = z.object({
   for (const [index, id] of (profile.guidance?.project ?? []).entries()) requireKind(id, ["guidance", "project", index], ["project-guidance"]);
   for (const [index, id] of (profile.guidance?.bridge ?? []).entries()) requireKind(id, ["guidance", "bridge", index], ["bridge-guidance"]);
   for (const [index, id] of (profile.workspace?.worktree?.setup ?? []).entries()) requireKind(id, ["workspace", "worktree", "setup", index], ["worktree-setup"]);
-  requireKind(profile.workspace?.verify, ["workspace", "verify"], ["verification"]);
 });
 
 export type AgentProfileReferenceV1 = z.infer<typeof agentProfileReferenceSchema>;

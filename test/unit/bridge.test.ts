@@ -14,7 +14,7 @@ import { ContinuityStore } from "../../src/continuity/ContinuityStore.js";
 import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
 import { validateCompleteNode } from "../../src/pipeline/completeNode.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, summarizeEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
+import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import type { ChangedFile } from "../../src/worktree/review.js";
 import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
 import { projectRuntimeCondition, NO_QUOTA_CHANNEL } from "../../src/runtimeOps/runtimeCondition.js";
@@ -184,7 +184,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "update_pin",
       "update_task",
       "update_validation",
-      "verify_agent",
       "wait_for_agent",
       "wait_for_output",
       "worktree_hygiene",
@@ -237,7 +236,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   const validations = new ValidationStore(pinsRoot);
   const continuity = new ContinuityStore(pinsRoot);
   const handoff = new ProjectHandoffStore(pinsRoot);
-  const verifyRuns: string[] = [];
   let taskChanges = 0;
   let noticeMode: "immediate" | "queued" = "immediate";
   let deliveredNoticeMetadata: NoticeSourceMetadata | undefined;
@@ -287,26 +285,12 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       return { status: "notified" };
     },
     authoredNoticeMetadata: (agent: string) => ({ origin: "agent-authored" as const, sourceChild: agent, sourceIncarnation: 7 }),
-    // spec 214 — claude is a worktree agent with a verified-but-now-stale gate; others have none.
-    // spec 273 — fold the evidence summary into the handoff (additive).
-    verifyInfo: async (agent) =>
-      agent === "claude"
-        ? {
-            command: "npm test",
-            passed: true,
-            atCommit: "abc123",
-            ranAt: "2026-06-14T00:00:00Z",
-            stale: true,
-            evidence: evLedger.getEvidence(agent).length ? summarizeEvidence(evLedger.getEvidence(agent), EV_HEAD) : undefined,
-          }
-        : undefined,
     // t-75e9c7 — agent_touched_files' worktree-diff read; no deps.agentWorktrees ledger is wired in
     // this harness, so every live agent falls into the honest no-worktree branch.
     touchedFiles: async (cwd) => touchedFilesByCwd[cwd] ?? [],
     // spec 273 — the evidence channel deps (mirror Workspace.attachEvidence/listEvidence; fixed HEAD for git).
     attachEvidence: async (input) => {
       if (!evLedger.get(input.targetAgent)?.worktree) return { ok: false, reason: "no worktree" };
-      if (input.producer === "verify") return { ok: false, reason: "producer 'verify' is reserved" };
       const bad = (input.artifacts ?? []).find((a) => !isSafeArtifactRef(a));
       if (bad) return { ok: false, reason: `unsafe artifact ref rejected: ${bad}` };
       const id = `ev-${evSeq++}`;
@@ -328,12 +312,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       return { ok: true, id };
     },
     listEvidence: async (agent) => viewEvidence(evLedger.getEvidence(agent), EV_HEAD),
-    runVerify: async (agent) => {
-      verifyRuns.push(agent);
-      // spec 273 — the real Workspace.runVerify folds the evidence summary into the handoff; mirror it.
-      const ev = evLedger.getEvidence(agent);
-      return { command: "npm test", passed: true, atCommit: "def456", ranAt: "2026-06-14T01:00:00Z", stale: false, evidence: ev.length ? summarizeEvidence(ev, EV_HEAD) : undefined };
-    },
     // spec 230 — a tiny in-test run registry: run-1/implement is running with a known nonce.
     completeNode: async (input) =>
       validateCompleteNode(input, (rid, nid) =>
@@ -1877,10 +1855,10 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(JSON.stringify(missing.content)).toContain("not found");
   });
 
-  it("list_agents surfaces the verify-gate state (validated handoff)", async () => {
+  it("list_agents has no product-run verification state", async () => {
     const result = await client.callTool({ name: "list_agents", arguments: {} });
-    const list = JSON.parse((result.content as Array<{ text: string }>)[0].text) as Array<{ name: string; verify?: { passed: boolean; atCommit: string; stale: boolean } }>;
-    expect(list.find((a) => a.name === "claude")?.verify).toMatchObject({ passed: true, atCommit: "abc123", stale: true });
+    const list = JSON.parse((result.content as Array<{ text: string }>)[0].text) as Array<{ name: string; verify?: unknown }>;
+    expect(list.find((a) => a.name === "claude")).not.toHaveProperty("verify");
   });
 
   it("agent_touched_files reports one row per LIVE agent, and never folds a missing worktree into an empty file list (t-75e9c7)", async () => {
@@ -1918,14 +1896,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     }
   });
 
-  it("verify_agent runs the gate and returns the result", async () => {
-    const result = await client.callTool({ name: "verify_agent", arguments: { name: "claude" } });
-    expect(result.isError).toBeFalsy();
-    expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toMatchObject({ passed: true, atCommit: "def456" });
-    expect(verifyRuns).toContain("claude");
-  });
-
-  it("evidence channel: attach_evidence → list_evidence round-trips; verify_agent folds the summary (spec 273)", async () => {
+  it("evidence channel: attach_evidence → list_evidence round-trips (spec 273)", async () => {
     // attach a judgment + a warn advisory + an artifact ref to the worktree agent
     const att = await client.callTool({
       name: "attach_evidence",
@@ -1945,16 +1916,9 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const bad = await client.callTool({ name: "attach_evidence", arguments: { targetAgent: "claude", producer: "x", kind: "artifact", severity: "info", summary: "x", artifacts: ["../escape"] } });
     expect(bad.isError).toBeTruthy();
 
-    // the reserved built-in producer name is rejected (no spoofing verify step-results)
+    // No producer name is reserved now that Tachyon has no built-in check producer.
     const spoof = await client.callTool({ name: "attach_evidence", arguments: { targetAgent: "claude", producer: "verify", kind: "step-result", severity: "info", summary: "fake" } });
-    expect(spoof.isError).toBeTruthy();
-
-    // verify_agent now carries the compact, mechanical evidence summary (additive; passed unchanged)
-    const v = await client.callTool({ name: "verify_agent", arguments: { name: "claude" } });
-    const handoff = JSON.parse((v.content as Array<{ text: string }>)[0].text) as { passed: boolean; evidence?: { total: number; bySeverity: Record<string, number> } };
-    expect(handoff.passed).toBe(true);
-    expect(handoff.evidence?.total).toBe(2);
-    expect(handoff.evidence?.bySeverity).toMatchObject({ warn: 1, info: 1 });
+    expect(spoof.isError).toBeFalsy();
   });
 
   it("complete_node accepts a valid nonce and rejects a bad token / unknown run", async () => {

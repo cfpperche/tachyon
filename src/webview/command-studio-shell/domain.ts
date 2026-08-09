@@ -10,7 +10,6 @@ export interface CommandStudioEntity {
 export interface CommandStudioReferenceData {
   flagMap: Record<string, string[]>;
   defaultCwd: string;
-  verifyCandidates: string[];
 }
 
 export type CommandStudioFields = FormState;
@@ -34,7 +33,6 @@ export function blankCommandFields(): FormState {
     worktree: false,
     branch: "",
     worktreeSetup: "",
-    verify: "",
     isolate: false,
     schedTiming: "every",
     schedEvery: "1h",

@@ -68,17 +68,16 @@ describe("ManagedEntry union — agent-only capabilities are unrepresentable on 
 
   it("parses an agent's declared capabilities onto the Agent arm", () => {
     const { config, errors } = parseConfig(
-      "agents:\n  rev:\n    cmd: claude\n    worktree: true\n    verify: npm test\n    harness: {}\n",
+      "agents:\n  rev:\n    cmd: claude\n    worktree: true\n    harness: {}\n",
     );
     expect(errors).toEqual([]);
     const agent = asAgent(config?.agents.rev);
     expect(agent?.worktree).toBe(true);
-    expect(agent?.verify).toBe("npm test");
     expect(agent?.harness).toEqual({ inherit: "workspace" });
   });
 
   it("parses a terminal with no agent-only property on it at all", () => {
-    // `worktree`, `branch`, `worktreeSetup` and `verify` were the load-bearing finding of the SDD 478
+    // `worktree`, `branch`, and `worktreeSetup` were the load-bearing finding of the SDD 478
     // inventory: declarable on a terminal, never read, never refused — validation that drifted per
     // field. The union removed the field, so a parsed terminal cannot carry one; M6 then made
     // DECLARING one a refusal rather than a silent drop (failClosedDoors.test.ts owns those cases,

@@ -183,7 +183,6 @@ function agentInstanceMutation(agentName: string) {
       cwd: "",
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
-      verify: "",
       selfEvolution: false,
       isolation: "",
     },

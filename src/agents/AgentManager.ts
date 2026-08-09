@@ -2923,9 +2923,8 @@ export class AgentManager {
         "warn",
       );
     };
-    // `resolveSpawnCwd` may bind a project-configured named verifier's existing oracle/mechanics and
-    // enrich the gate with their fixed hashes. Runner-neutral `cmd:` gates deliberately do neither. Compose
-    // only afterwards so the primer carries the authoritative result, before any tmux mutation.
+    // Compose only after the worktree is prepared so the primer carries the authoritative dependency
+    // fact before any tmux mutation.
     const effectivePrimerCtx = { ...primerCtx, freshWorktree: !!worktree, ...this.dependencyPrimerFact(worktree) };
     let preparedRuntimeHarness: MaterializedHarness | null | undefined;
     let createdRuntimeHome = false;

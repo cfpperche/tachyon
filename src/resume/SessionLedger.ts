@@ -5,8 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
 import { type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
-import { appendCapped, replaceVerifySet, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
-import type { VerifyState } from "../worktree/verify.js";
+import { appendCapped, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { SharedDependencyState } from "../worktree/dependencySharing.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { Role } from "../roles/templates.js";
@@ -58,8 +57,8 @@ export interface SessionDef {
    */
   pipeline?: { runId: string; nodeId: string };
   /** spec 246 — the structured delegation contract this child was spawned under (Bridge spawn-contract gate).
-   *  Persisted as TYPED metadata (D8) so it survives a reload and is queryable for audit / the future verify
-   *  increment — not just flattened into the delivered instructions. */
+   *  Persisted as TYPED metadata (D8) so it survives a reload and is queryable for audit — not just
+   *  flattened into the delivered instructions. */
   contract?: SpawnContract;
   /** t-c8949c — a persisted contract field existed but failed structural validation. Content-free
    *  sentinel: restart must refuse it rather than silently treating it as no structured contract. */
@@ -342,19 +341,6 @@ export class SessionLedger {
     }
   }
 
-  /**
-   * spec 214 — record the verify-gate result on the agent's worktree block (no-op if the agent
-   * has no worktree row; verify is worktree-scoped). Keeps the rest of the record untouched.
-   */
-  recordVerify(name: string, verify: VerifyState): void {
-    const all = this.all();
-    const rec = all.get(name);
-    if (!rec?.worktree) return;
-    rec.worktree = { ...rec.worktree, verify };
-    all.set(name, rec);
-    this.write(all);
-  }
-
   /** spec 273 — the worktree's evidence records (empty if none / no worktree). Returns a COPY so a caller
    *  mutating the array can't bypass caps/replacement/write discipline. */
   getEvidence(name: string): WorktreeEvidence[] {
@@ -363,7 +349,7 @@ export class SessionLedger {
 
   /**
    * spec 273 — append one evidence record to the agent's worktree block (no-op if no worktree;
-   * evidence is worktree-scoped like verify). SYNCHRONOUS read→mutate→write, so concurrent
+   * evidence is worktree-scoped). SYNCHRONOUS read→mutate→write, so concurrent
    * producers in the extension process are serialized by the event loop — no lost-write race
    * (the "racy array RMW" risk applies only to async/multi-process writers, which this is not).
    */
@@ -372,19 +358,6 @@ export class SessionLedger {
     const rec = all.get(name);
     if (!rec?.worktree) return;
     rec.worktree = { ...rec.worktree, evidence: appendCapped(rec.worktree.evidence ?? [], record) };
-    all.set(name, rec);
-    this.write(all);
-  }
-
-  /**
-   * spec 273 — replace the built-in verify step-result set (dedup on re-run), preserving all other
-   * evidence. No-op if the agent has no worktree.
-   */
-  replaceVerifyEvidence(name: string, stepRecords: readonly WorktreeEvidence[]): void {
-    const all = this.all();
-    const rec = all.get(name);
-    if (!rec?.worktree) return;
-    rec.worktree = { ...rec.worktree, evidence: replaceVerifySet(rec.worktree.evidence ?? [], stepRecords) };
     all.set(name, rec);
     this.write(all);
   }
@@ -592,7 +565,6 @@ function parseWorktree(w: unknown): WorktreeRecord | undefined {
     baseRef: typeof o.baseRef === "string" ? o.baseRef : "",
     ...(typeof o.baseBranch === "string" ? { baseBranch: o.baseBranch } : {}), // spec 223
     createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date(0).toISOString(),
-    ...(parseVerify(o.verify) ? { verify: parseVerify(o.verify) } : {}),
     ...((): { dependencies?: SharedDependencyState } => {
       const deps = parseDependencies(o.dependencies);
       return deps ? { dependencies: deps } : {};
@@ -605,12 +577,9 @@ function parseWorktree(w: unknown): WorktreeRecord | undefined {
 }
 
 /**
- * t-3f93b4 — defensive parse of the dependency-sharing decision, in the shape of `parseVerify`.
+ * t-3f93b4 — defensive parse of the dependency-sharing decision.
  *
- * It has to survive the round-trip for the same reason the verify verdict does: it is the value a
- * later divergence is MEASURED AGAINST. Dropped here, `auditSharedDependencies` would read
- * `undefined`, conclude "nothing to check", and let the verify gate grade a worktree against the
- * primary checkout's packages — the silence this task exists to end, reintroduced one layer down.
+ * It survives the round-trip because it is shown to the agent on later launches.
  *
  * A malformed or unrecognized mode yields undefined rather than a default: "I do not know what this
  * checkout's dependencies are" is a fact worth keeping, and every consumer already handles it by
@@ -666,18 +635,6 @@ function parseEvidence(r: unknown): WorktreeEvidence | undefined {
     ...(str(o.detail) ? { detail: o.detail } : {}),
     ...(o.data && typeof o.data === "object" && !Array.isArray(o.data) ? { data: o.data as Record<string, unknown> } : {}),
     ...(Array.isArray(o.artifacts) ? { artifacts: o.artifacts.filter(str) } : {}),
-  };
-}
-
-function parseVerify(v: unknown): VerifyState | undefined {
-  if (typeof v !== "object" || v === null) return undefined;
-  const o = v as Record<string, unknown>;
-  if (typeof o.command !== "string" || typeof o.atCommit !== "string") return undefined;
-  return {
-    command: o.command,
-    passed: o.passed === true,
-    atCommit: o.atCommit,
-    ranAt: typeof o.ranAt === "string" ? o.ranAt : new Date(0).toISOString(),
   };
 }
 

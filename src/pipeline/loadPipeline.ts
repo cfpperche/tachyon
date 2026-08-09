@@ -9,14 +9,14 @@ import { admitAgentRuntimeCommand } from "../agents/agentRuntimeAdmission.js";
 
 const NAME_RE = /^[a-zA-Z][a-zA-Z0-9_-]*$/; // matches loadConfig's agent/node name rule
 
-export const DONE_KINDS = ["signal_then_verify", "exit", "exit_then_verify", "signal"] as const;
+export const DONE_KINDS = ["exit", "signal"] as const;
 export type DoneKind = (typeof DONE_KINDS)[number];
 
-export const GATE_KINDS = ["exit:0", "verify", "approve"] as const;
+export const GATE_KINDS = ["exit:0", "approve"] as const;
 export type GateKind = (typeof GATE_KINDS)[number];
 
 /** done kinds that detect completion by process exit — a declared (interactive) agent can't use these. */
-const EXIT_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["exit", "exit_then_verify"]);
+const EXIT_DONE: ReadonlySet<DoneKind> = new Set<DoneKind>(["exit"]);
 
 /**
  * SDD 478 (`t-c003e1`) — what an inline `cmd:` node BECOMES, declared rather than guessed.
@@ -61,13 +61,6 @@ export interface NodeDef {
   gate?: GateKind;
   /** hard cap; the node fails closed on timeout. Parsed to ms. */
   timeoutMs: number;
-  /**
-   * spec 230 — does this node expect to change the run worktree? Default true: a verify-path node
-   * (`*_then_verify`) that passes verify but left the worktree unchanged is a no-op → fails as stale.
-   * Set `false` for a read-only / review / planning node that legitimately produces nothing → it skips
-   * the staleness check (verify-passed alone completes it). (`undefined` = default true.)
-   */
-  expectsChange?: boolean;
 }
 
 export interface PipelineDef {
@@ -187,8 +180,8 @@ function parseNode(
     // a declared agent is an interactive LLM — it doesn't process-exit; it must signal.
     errors.push(`nodes.${id}.done: '${done}' is exit-based — a declared agent is interactive and must use a signal kind`);
   }
-  // NOTE: a `cmd:` node may use EITHER kind: `exit`/`exit_then_verify` for a non-interactive one-shot
-  // (sh / codex exec / claude -p), OR `signal`/`signal_then_verify` for an EPHEMERAL interactive LLM
+  // NOTE: a `cmd:` node may use EITHER kind: `exit` for a non-interactive one-shot
+  // (sh / codex exec / claude -p), OR `signal` for an EPHEMERAL interactive LLM
   // agent (e.g. `cmd: codex` with the workspace's default config — it gets the task + complete_node
   // protocol + nonce, signals when done, then is dismissed). spec 230.
   //
@@ -201,7 +194,7 @@ function parseNode(
     if (!admission.ok) {
       errors.push(
         `nodes.${id}.cmd: '${(raw.cmd as string).trim()}' cannot run as an agent node — ${admission.reason}`
-        + ` In a pipeline, the Terminal form of a node is \`done: exit\` or \`done: exit_then_verify\`,`
+        + ` In a pipeline, the Terminal form of a node is \`done: exit\`,`
         + ` which runs the command as-is and judges it by its exit code; \`agent: <name>\` runs a declared agent instead.`,
       );
     }
@@ -211,9 +204,6 @@ function parseNode(
     errors.push(`nodes.${id}.gate: must be one of ${GATE_KINDS.join(" | ")}`);
   }
 
-  if (raw.expectsChange !== undefined && typeof raw.expectsChange !== "boolean") {
-    errors.push(`nodes.${id}.expectsChange: must be a boolean`);
-  }
 
   const timeoutMs = parseDuration(raw.timeout);
   if (timeoutMs === null) {
@@ -227,7 +217,6 @@ function parseNode(
     needs,
     done: done as DoneKind,
     ...(raw.gate !== undefined ? { gate: raw.gate as GateKind } : {}),
-    ...(typeof raw.expectsChange === "boolean" ? { expectsChange: raw.expectsChange } : {}),
     timeoutMs: timeoutMs as number,
   };
 }

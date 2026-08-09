@@ -40,7 +40,7 @@ export interface CommandStudioAppProps {
 }
 
 const firstToken = (cmd: string): string => (cmd.trim().split(/\s+/)[0] || "").split("/").pop() || "";
-const emptyReferenceData = (): CommandStudioReferenceData => ({ flagMap: {}, defaultCwd: "", verifyCandidates: [] });
+const emptyReferenceData = (): CommandStudioReferenceData => ({ flagMap: {}, defaultCwd: "" });
 
 export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: CommandStudioAppProps) {
   const [mode, setMode] = useState<"new" | "edit">("new");

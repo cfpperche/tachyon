@@ -28,7 +28,7 @@ import type { Scheduler } from "../../schedule/Scheduler.js";
 import type { ProposalStore } from "../../schedule/ProposalStore.js";
 import { parseEvery, parseAt } from "../../config/loadConfig.js";
 import type { ScheduleDef } from "../../config/loadConfig.js";
-import type { Severity, EvidenceSummary, EvidenceView } from "../../worktree/evidence.js";
+import type { Severity, EvidenceView } from "../../worktree/evidence.js";
 import type { ProbeService } from "../../probe/ProbeService.js";
 import type { NoticeQueueMetadata } from "../NoticeQueue.js";
 import { resolveActor } from "../callerIdentity.js";
@@ -410,10 +410,6 @@ export interface BridgeDeps {
   proposals?: ProposalStore;
   /** Fired after a proposal is created — routed to the exact Human Inbox item. */
   onScheduleProposed?: (proposal: { id: string; name: string; by: string }) => void;
-  /** spec 214 — verify-gate handoff: the recorded result + freshly-computed staleness for an agent (undefined → no verify/worktree). Enables verify state in list_agents. */
-  verifyInfo?: (agent: string) => Promise<VerifyHandoff | undefined>;
-  /** spec 214 — run an agent's declared verify-gate in its worktree, returning the result. Enables verify_agent. */
-  runVerify?: (agent: string) => Promise<VerifyHandoff>;
   /** spec 273 — attach one non-binary evidence record to a worktree agent. Enables attach_evidence. */
   attachEvidence?: (input: AttachEvidenceInput) => Promise<{ ok: boolean; id?: string; reason?: string }>;
   /** spec 273 — read a worktree agent's evidence records (fresh + stale-flagged). Enables list_evidence. */
@@ -537,22 +533,6 @@ export function lifecycleScopeGuard(
   if (caller?.kind !== "agent" || !caller.name) return undefined;
   if (inLifecycleScope(caller.name, target, deps.manager)) return undefined;
   return lifecycleScopeRefusal(tool, caller.name, target, deps.manager);
-}
-
-/** The verify-gate view exposed over MCP — the validated-handoff payload a parent gates on. */
-export interface VerifyHandoff {
-  /** the verify command/runbook name (or inline) that applies */
-  command: string;
-  /** last run passed (exit 0); undefined when never run */
-  passed?: boolean;
-  /** the worktree HEAD the verdict was recorded against; undefined when never run */
-  atCommit?: string;
-  /** ISO timestamp of the last run; undefined when never run */
-  ranAt?: string;
-  /** the recorded verdict no longer reflects the worktree (HEAD moved or dirty) — re-verify */
-  stale: boolean;
-  /** spec 273 — a compact, mechanical summary of the worktree's NON-BINARY evidence (additive; never gates) */
-  evidence?: EvidenceSummary;
 }
 
 export function contextRenewalRequestRefusal(input: {

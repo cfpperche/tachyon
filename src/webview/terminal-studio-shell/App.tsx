@@ -20,9 +20,8 @@ import type { TerminalStudioEntity, TerminalStudioFields, TerminalStudioHostMess
  * domain compute functions — the generic machinery is a straight port.
  *
  * t-b54ead — there is deliberately NO "Git worktree isolation" section here, and re-adding one is a
- * regression rather than a feature. `worktree`, `branch`, `worktreeSetup` and `verify` are agent-only
- * BY CONSUMPTION (`ManagedWorktreeKind` is "agent" | "change"; `effectiveVerify` is typed on
- * `AgentEntry`), so `parseAgentEntry` refuses all four under `terminals:` — and `Workspace.mutateConfig`
+ * regression rather than a feature. `worktree`, `branch`, and `worktreeSetup` are agent-only by
+ * consumption, so `parseAgentEntry` refuses all three under `terminals:` — and `Workspace.mutateConfig`
  * refuses to write a config the loader would discard from, which made Save fail with a message pointing
  * at Agent Studio. The section arrived on 2026-07-06 (`aa99c066`) by mirroring Agent Studio's footer-void
  * LAYOUT fix (t-a1ba6c) and taking its fields along; the parser refusals landed later, in SDD 478 M6.
@@ -119,7 +118,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Term
       // StudioId, not gated to Runbook/Schedule specifically (the retired Control host's
       // refreshStudioReferenceData fan-out; standalone panels use refreshReferenceData). An external
       // tachyon.yml change while a Terminal Studio is open pushes this here too. Without this branch
-      // it fell through to a silent no-op, leaving flagMap/defaultCwd/verifyCandidates stale until
+      // it fell through to a silent no-op, leaving flagMap/defaultCwd stale until
       // the next full load — never a crash, but a real staleness regression vs the prior panel host
       // (which had no live-refresh trigger of its own, but also never lost one once Runbook/Schedule
       // started sharing the same generic fan-out).

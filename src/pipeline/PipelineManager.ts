@@ -10,7 +10,7 @@ import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
  * spec 230 — the executor. Owns run state + side effects; all the DECISION logic lives in the pure
  * `advance()` driver, so this class is the thin glue + lifecycle (worktree, nonce, timers, persistence).
  * Deps are injected so the orchestration is testable with fakes (no real tmux/git). The real Workspace
- * wiring (AgentManager spawn, runVerify, resolveSpawnCwd override, .tachyon/runs persistence) supplies
+ * wiring (AgentManager spawn, resolveSpawnCwd override, .tachyon/runs persistence) supplies
  * these deps — that integration + a codex review come next.
  */
 
@@ -33,7 +33,6 @@ export interface PipelineDeps {
   allocateWorktree(runId: string): Promise<{ cwd: string; key: string; worktree: WorktreeRecord; finalizeOwnership: () => Promise<void> }>;
   releaseWorktree(key: string): Promise<void>;
   spawnNode(args: SpawnNodeArgs): Promise<void>;
-  runVerify(args: { runId: string; nodeId: string; cwd: string }): Promise<{ passed: boolean; stale: boolean }>;
   mintNonce(): string;
   genRunId(): string;
   /** dismiss a node's agent: kill its session + drop its ledger row. Awaitable so re-run can ensure the
@@ -53,7 +52,6 @@ const isTerminal = (s: NodeState["status"]) => s === "done" || s === "failed" ||
 export class PipelineManager {
   private runs = new Map<string, PipelineRun>();
   private signals = new Map<string, Record<string, NodeSignals>>();
-  private verifyRequested = new Map<string, Set<string>>();
   private nonces = new Map<string, string>(); // runId/nodeId -> nonce
   private timers = new Map<string, () => void>(); // runId/nodeId -> cancel
   private cwd = new Map<string, string>(); // runId -> run worktree cwd
@@ -108,7 +106,6 @@ export class PipelineManager {
     this.cwd.set(runId, cwd);
     this.wtKey.set(runId, wtKey);
     this.signals.set(runId, {});
-    this.verifyRequested.set(runId, new Set());
     this.runs.set(runId, run);
     this.tick(runId);
     return runId;
@@ -129,7 +126,6 @@ export class PipelineManager {
       this.cwd.set(run.id, cwd);
       this.wtKey.set(run.id, run.worktreeKey);
       this.signals.set(run.id, {});
-      this.verifyRequested.set(run.id, new Set());
       for (const [nodeId, nonce] of Object.entries(nonces)) {
         const k = key(run.id, nodeId);
         this.nonces.set(k, nonce);
@@ -247,12 +243,12 @@ export class PipelineManager {
     this.tick(runId);
   }
 
-  /** Synchronous state advance + dispatch of side-effect actions. Marks running/verify-requested
-   *  synchronously so a re-entrant tick can't double-spawn or double-verify. */
+  /** Synchronous state advance + dispatch of side-effect actions. Marks running synchronously so a
+   *  re-entrant tick can't double-spawn. */
   private tick(runId: string): void {
     const run0 = this.runs.get(runId);
     if (!run0) return;
-    const { run, actions } = advance(run0, this.signals.get(runId) ?? {}, this.verifyRequested.get(runId) ?? new Set());
+    const { run, actions } = advance(run0, this.signals.get(runId) ?? {});
     let cur = run;
 
     for (const a of actions) {
@@ -262,9 +258,6 @@ export class PipelineManager {
         cur = startNode(cur, a.nodeId); // status=running prevents re-dispatch; `spawned` is set on success
         this.runs.set(runId, cur);
         void this.doSpawn(runId, a.nodeId, nonce);
-      } else {
-        this.verifyRequested.get(runId)?.add(a.nodeId);
-        void this.doVerify(runId, a.nodeId);
       }
     }
 
@@ -326,17 +319,6 @@ export class PipelineManager {
       key(runId, nodeId),
       this.deps.setTimer(def.timeoutMs, () => this.onTimeout(runId, nodeId)),
     );
-  }
-
-  private async doVerify(runId: string, nodeId: string): Promise<void> {
-    const cwd = this.cwd.get(runId) ?? "";
-    try {
-      const v = await this.deps.runVerify({ runId, nodeId, cwd });
-      this.setSignal(runId, nodeId, (s) => (s.verify = v));
-    } catch {
-      this.setSignal(runId, nodeId, (s) => (s.verify = { passed: false, stale: false })); // verify error → treat as red
-    }
-    this.tick(runId);
   }
 
   /** Start one idempotent terminal-node teardown. A rejected kill never becomes a completed
@@ -411,7 +393,6 @@ export class PipelineManager {
       this.dismissing.delete(k);
     }
     this.signals.delete(runId);
-    this.verifyRequested.delete(runId);
     this.cwd.delete(runId);
     this.runs.delete(runId); // terminal teardown — the run leaves memory (the def tree shows it idle)
     this.wtKey.delete(runId);
@@ -445,7 +426,6 @@ export class PipelineManager {
         this.timers.delete(k);
       }
       delete sig[id];
-      this.verifyRequested.get(runId)?.delete(id);
       cur = resetNode(cur, id);
     }
     cur = pruneHandoffs(cur, reset); // spec 231 — drop stale handoffs for the reset node + downstream

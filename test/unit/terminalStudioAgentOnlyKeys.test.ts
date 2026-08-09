@@ -36,7 +36,6 @@ const AGENT_VALID_VALUES: Record<string, unknown> = {
   worktree: true,
   branch: "feature/x",
   worktreeSetup: "npm ci",
-  verify: "npm test",
 };
 
 /** Declare `key` on a `terminals:` entry and report every discard the loader raises for it. */
@@ -67,7 +66,6 @@ const MAXIMAL_TERMINAL_FORM: FormState = {
   worktree: true,
   branch: "feature/x",
   worktreeSetup: "npm ci\nnpm run build",
-  verify: "npm test",
   isolate: true,
   schedTiming: "at",
   schedEvery: "30m",

@@ -27,7 +27,7 @@ export const PIPELINE_NODE_GUIDANCE =
   "When this task is FULLY complete, signal Tachyon by calling the `complete_node` MCP tool with the " +
   "runId, nodeId, and nonce from your environment (read them with `printenv TACHYON_RUN_ID`, " +
   "`printenv TACHYON_NODE_ID`, `printenv TACHYON_NODE_NONCE`). The pipeline will not advance until you do. " +
-  "Do not call it until the work is genuinely finished (a verify gate may run after your signal).";
+  "Do not call it until the work is genuinely finished.";
 
 /** Default cap for an agent-reported handoff summary (codex 231 MAJOR-3: untrusted, size-bound). */
 export const SUMMARY_CAP_BYTES = 4096;

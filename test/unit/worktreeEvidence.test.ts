@@ -3,13 +3,10 @@ import {
   evidenceStale,
   viewEvidence,
   appendCapped,
-  replaceVerifySet,
   summarizeEvidence,
   evidenceBadge,
   isSafeArtifactRef,
   EVIDENCE_SCHEMA_VERSION,
-  VERIFY_PRODUCER,
-  STEP_RESULT_KIND,
   type WorktreeEvidence,
   type Severity,
 } from "../../src/worktree/evidence.js";
@@ -66,34 +63,6 @@ describe("worktree evidence — pure helpers (spec 273)", () => {
       expect(out).toHaveLength(3);
       expect(out.map((r) => r.id)).not.toContain("e0"); // oldest dropped
       expect(out.map((r) => r.id)).toContain("new");
-    });
-  });
-
-  describe("replaceVerifySet — dedup the built-in verify step-results", () => {
-    const stepRec = (id: string) =>
-      ev({ id, producer: VERIFY_PRODUCER, kind: STEP_RESULT_KIND, summary: `step ${id}` });
-
-    it("replaces prior verify step-results, preserves non-verify evidence", () => {
-      const existing = [
-        ev({ id: "judg", producer: "claude", kind: "judgment", summary: "looks right" }),
-        stepRec("old1"),
-        stepRec("old2"),
-      ];
-      const fresh = [stepRec("new1"), stepRec("new2"), stepRec("new3")];
-      const out = replaceVerifySet(existing, fresh);
-      const ids = out.map((r) => r.id);
-      expect(ids).toContain("judg"); // non-verify preserved
-      expect(ids).not.toContain("old1"); // prior verify set gone
-      expect(ids).not.toContain("old2");
-      expect(ids).toEqual(expect.arrayContaining(["new1", "new2", "new3"]));
-      expect(out.filter((r) => r.producer === VERIFY_PRODUCER)).toHaveLength(3); // exactly the new set
-    });
-
-    it("does NOT clobber a newer verify set with an older-finishing run's (concurrent-run guard)", () => {
-      const existing = [stepRec("newer")]; // producedAt defaults strictly increase with seq → "newer" is latest
-      const incoming = [{ ...stepRec("older"), producedAt: "2026-06-27T00:00:00Z" }]; // an earlier-finishing run
-      const out = replaceVerifySet(existing, incoming);
-      expect(out.map((r) => r.id)).toEqual(["newer"]); // kept; the stale older run did not replace it
     });
   });
 

@@ -46,7 +46,6 @@ function fakeWorkspace(pins: Pin[] = [], opts: {
     },
     ledger: { all: () => [], get: () => undefined },
     tmux: { panePid: async () => { throw new Error("no fake pane"); } },
-    verifyInfo: async () => undefined,
     evidenceHandoff: async () => undefined,
     attentionOf: opts.attentionOf ?? (() => undefined),
     continuityBadge: opts.continuityBadge ?? (() => undefined),

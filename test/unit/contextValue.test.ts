@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { agentContextValue, isTemporaryItem, type AgentContextParts, type AgentItemStateName } from "../../src/presentation/contextValue.js";
 
-/** Every combination the builder can emit (3 states × 2^6 boolean segments = 192). */
+/** Every combination the builder can emit. */
 function allParts(): AgentContextParts[] {
   const states: AgentItemStateName[] = ["running", "stopped", "crashed"];
   const out: AgentContextParts[] = [];
@@ -9,9 +9,8 @@ function allParts(): AgentContextParts[] {
     for (const ai of [false, true])
       for (const temporary of [false, true])
         for (const worktree of [false, true])
-          for (const verifiable of [false, true])
-            for (const forkable of [false, true])
-              for (const harness of [false, true]) out.push({ state, ai, temporary, worktree, verifiable, forkable, harness });
+          for (const forkable of [false, true])
+            for (const harness of [false, true]) out.push({ state, ai, temporary, worktree, forkable, harness });
   return out;
 }
 
@@ -24,10 +23,10 @@ describe("agentContextValue / isTemporaryItem", () => {
   });
 
   it("emits the expected segments in a fixed order", () => {
-    expect(agentContextValue({ state: "stopped", ai: true, temporary: true, worktree: true, verifiable: false, forkable: false, harness: false })).toBe("agent-stopped-ai-temporary-worktree");
-    expect(agentContextValue({ state: "running", ai: true, temporary: false, worktree: false, verifiable: false, forkable: true, harness: false })).toBe("agent-running-ai-forkable");
-    expect(agentContextValue({ state: "running", ai: true, temporary: false, worktree: false, verifiable: false, forkable: true, harness: true })).toBe("agent-running-ai-forkable-harness");
-    expect(agentContextValue({ state: "crashed", ai: false, temporary: false, worktree: false, verifiable: false, forkable: false, harness: false })).toBe("agent-crashed");
+    expect(agentContextValue({ state: "stopped", ai: true, temporary: true, worktree: true, forkable: false, harness: false })).toBe("agent-stopped-ai-temporary-worktree");
+    expect(agentContextValue({ state: "running", ai: true, temporary: false, worktree: false, forkable: true, harness: false })).toBe("agent-running-ai-forkable");
+    expect(agentContextValue({ state: "running", ai: true, temporary: false, worktree: false, forkable: true, harness: true })).toBe("agent-running-ai-forkable-harness");
+    expect(agentContextValue({ state: "crashed", ai: false, temporary: false, worktree: false, forkable: false, harness: false })).toBe("agent-crashed");
   });
 
   it("does NOT match a declared agent (no -temporary segment)", () => {
