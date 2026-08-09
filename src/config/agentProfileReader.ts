@@ -335,7 +335,7 @@ export function withCanonicalAgentProfileDirectory<T>(source: CanonicalAgentProf
 
 export function readCanonicalAgentProfileEntry(
   source: CanonicalAgentProfileSource,
-  name: "agent.yml" | "SOUL.md" | "profile.json" | "instructions.md",
+  name: "agent.yml" | "instructions.md",
 ): BoundAgentProfileFile | undefined {
   if (source.profileDirectoryFd < 0) fail("profile/changed-during-read", source.source, "profile directory descriptor is already closed");
   return readBoundFileAt(source.profileDirectoryFd, name, name, path.join(source.profileRoot, name), AGENT_PROFILE_REFERENCE_MAX_BYTES, true);
@@ -344,7 +344,7 @@ export function readCanonicalAgentProfileEntry(
 /** Low-level descriptor-pinned CAS primitive. Callers must hold their host authority mutation barrier. */
 export function replaceCanonicalAgentProfileEntry(input: {
   source: CanonicalAgentProfileSource;
-  name: "agent.yml" | "SOUL.md" | "profile.json" | "instructions.md";
+  name: "agent.yml" | "instructions.md";
   expectedSha256: string | null;
   bytes: Buffer | null;
   mode?: number;

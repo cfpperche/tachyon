@@ -54,7 +54,7 @@ export interface SavedAgentSpec {
   selectors?: { model?: string; provider?: string; reasoningEffort?: string; serviceTier?: string };
   role?: "coder" | "reviewer" | "tester" | "orchestrator" | "custom";
   /**
-   * Not projectable, and t-50bbd4 established that this is permanent rather than pending: Soul,
+   * Not projectable, and t-50bbd4 established that this is permanent rather than pending: profile data,
    * instructions and memory are formation LANES published under transaction and authority, not
    * `prompt.*` fields, so `projectDefinition` refuses them by design. The comment used to say they
    * "belong to t-a2827d" — a task that closed on 2026-07-22 — which read as "coming soon" and was

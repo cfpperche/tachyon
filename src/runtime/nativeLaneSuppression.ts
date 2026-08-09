@@ -58,7 +58,7 @@ export interface RuntimeNativeLaneSuppressionV1 {
   readonly surfaces: {
     /**
      * Project/home instruction files: CLAUDE.md, AGENTS.md, and each runtime's equivalent.
-     * Maps to formation soul + instructions lanes.
+     * Maps to the formation instructions lane.
      */
     readonly instructions: LaneSurfaceSuppression;
     /**

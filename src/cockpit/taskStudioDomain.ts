@@ -37,7 +37,7 @@ export function handleTaskStudioDomainMessage(target: WorkspaceTaskStudioTarget,
 async function importPrototype(target: WorkspaceTaskStudioTarget, ctx: StudioDomainContext): Promise<void> {
   // t-610705 (Phase D, D2) — the old panel called `this.onTasksChanged()` here; `StudioDomainContext`
   // (post + entityId only) has no onChanged-equivalent hook to port it to — the SAME already-accepted
-  // gap D1b's soul-profile mutations (agentStudioDomain.ts, genuinely more mutation-heavy than this)
+  // gap D1b's profile mutations (agentStudioDomain.ts, genuinely more mutation-heavy than this)
   // already carry, not a new regression this port introduces. Cross-cutting fix (extending
   // StudioDomainContext for every studio) is out of scope here.
   if (!ctx.entityId) return;

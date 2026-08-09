@@ -57,29 +57,22 @@
 .ash-runtime-readiness-heading { display: flex; gap: var(--ds-3); align-items: flex-start; justify-content: space-between; }
 .ash-runtime-readiness ul { display: grid; gap: var(--ds-1); margin: 0; padding-left: var(--ds-4); }
 .ash-runtime-readiness-limited { border-color: var(--vscode-editorWarning-foreground, var(--vscode-notificationsWarningIcon-foreground)); }
-.ash-soul-state { flex: none; padding: 2px var(--ds-2); border: 1px solid var(--ds-border); border-radius: 999px; font-size: var(--ds-small); font-weight: 600; }
-.ash-soul-state-active { border-color: var(--vscode-testing-iconPassed); }
-.ash-soul-state-invalid, .ash-soul-state-unowned { border-color: var(--vscode-errorForeground); }
-.ash-soul-status, .ash-soul-meta { color: var(--ds-muted); font-size: var(--ds-small); }
-.ash-soul-meta { display: flex; flex-wrap: wrap; gap: var(--ds-2); }
-.ash-soul-warning { padding: var(--ds-2); border-left: 3px solid var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
-.ash-soul-delete-confirm { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid color-mix(in srgb, var(--ds-err) 65%, var(--ds-border)); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--ds-err) 8%, var(--ds-card)); }
-.ash-soul-delete-confirm-title { color: var(--ds-err); font-weight: var(--tachyon-weight-semibold); }
-.ash-soul-delete-confirm ul { margin: 0; padding-left: var(--ds-5); }
-.ash-soul-delete-confirm code { overflow-wrap: anywhere; }
-.ash-soul-delete-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-2); }
+.ash-profile-state { flex: none; padding: 2px var(--ds-2); border: 1px solid var(--ds-border); border-radius: 999px; font-size: var(--ds-small); font-weight: 600; }
+.ash-profile-state-active { border-color: var(--vscode-testing-iconPassed); }
+.ash-profile-status { color: var(--ds-muted); font-size: var(--ds-small); }
+.ash-profile-delete-confirm { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid color-mix(in srgb, var(--ds-err) 65%, var(--ds-border)); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--ds-err) 8%, var(--ds-card)); }
+.ash-profile-delete-confirm-title { color: var(--ds-err); font-weight: var(--tachyon-weight-semibold); }
+.ash-profile-delete-confirm ul { margin: 0; padding-left: var(--ds-5); }
+.ash-profile-delete-confirm code { overflow-wrap: anywhere; }
+.ash-profile-delete-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-2); }
 /* t-4c113c — declared subagents picker inside the Agent lifecycle section. */
 .ash-ownership { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--ds-card); }
 .ash-ownership-list { display: grid; gap: var(--ds-1); margin: 0; padding: 0; list-style: none; max-height: 14rem; overflow-y: auto; }
 .ash-ownership-list label { display: flex; align-items: center; gap: var(--ds-2); }
-.ash-soul-replace-confirm { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--vscode-focusBorder); border-radius: var(--ds-radius); background: var(--ds-card); }
-.ash-soul-replace-confirm-title { font-weight: var(--tachyon-weight-semibold); }
-.ash-soul-replace-confirm code { overflow-wrap: anywhere; }
-.ash-soul-replace-digests { display: grid; gap: var(--ds-1); margin: 0; color: var(--ds-muted); font-size: var(--ds-small); }
-.ash-soul-replace-digests > div { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--ds-2); }
-.ash-soul-replace-digests dt, .ash-soul-replace-digests dd { margin: 0; }
-.ash-soul-replace-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-2); }
-.ash-soul-preview { max-height: 220px; overflow: auto; margin: 0; padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: var(--vscode-textCodeBlock-background); color: var(--vscode-editor-foreground); font: var(--vscode-editor-font-size) / 1.45 var(--vscode-editor-font-family); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ash-profile-replace-confirm { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--vscode-focusBorder); border-radius: var(--ds-radius); background: var(--ds-card); }
+.ash-profile-replace-confirm-title { font-weight: var(--tachyon-weight-semibold); }
+.ash-profile-replace-confirm code { overflow-wrap: anywhere; }
+.ash-profile-replace-confirm-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ds-2); }
 .ash-evolution { display: grid; gap: var(--ds-2); padding: var(--ds-3); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); background: color-mix(in srgb, var(--vscode-editor-background) 94%, var(--vscode-testing-iconPassed)); }
 .ash-evolution-heading, .ash-evolution-toolbar, .ash-evolution-detail-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--ds-3); }
 .ash-evolution-state, .ash-evolution-candidate-status { flex: none; padding: 2px var(--ds-2); border: 1px solid var(--ds-border); border-radius: 999px; font-size: var(--ds-small); font-weight: 600; }
@@ -157,6 +150,6 @@
   .ash-forget-plan-step { grid-template-columns: 1fr; gap: 0; }
   .ash-forget-plan-step-resolution, .ash-forget-plan-step-code { grid-column: 1; }
   .ash-evolution-candidate { grid-template-columns: 1fr; }
-  .ash-soul-state { align-self: flex-start; }
+  .ash-profile-state { align-self: flex-start; }
   .ash-evolution-state { align-self: flex-start; }
 }

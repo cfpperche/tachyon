@@ -223,7 +223,6 @@ export interface NormalizedAgentDefinition {
   environment?: NormalizedAgentEnvironment;
   prompt?: AgentProfileV1["prompt"] & {
     legacyInstructionsSha256?: string;
-    legacySoulEnabled?: boolean;
     legacyEvolutionEnabled?: boolean;
   };
   lifecycle?: AgentProfileV1["lifecycle"];
@@ -1218,11 +1217,9 @@ function legacyDefinition(definition: AgentEntry, runtime: { adapterId: string; 
       legacyCommandSha256: sha256(definition.cmd),
     },
     ...(legacyEnvironmentNames.length > 0 ? { environment: { legacyUnclassifiedNames: legacyEnvironmentNames } } : {}),
-    ...((definition.instructions || definition.role || definition.soul || definition.selfEvolution) ? {
+    ...((definition.instructions || definition.selfEvolution) ? {
       prompt: {
         ...(definition.instructions ? { legacyInstructionsSha256: sha256(definition.instructions) } : {}),
-        ...(definition.role ? { role: definition.role } : {}),
-        ...(definition.soul ? { legacySoulEnabled: true } : {}),
         ...(definition.selfEvolution?.enabled ? { legacyEvolutionEnabled: true } : {}),
       },
     } : {}),

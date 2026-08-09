@@ -5,7 +5,7 @@ import { agentStudioFixtureFixtures } from "../../scripts/webview-preview/fixtur
 import type { AgentFixtureVM } from "../../src/webview/agent-studio-fixture/types.js";
 
 // spec 350 T5 — Fake 2 (Agent-entity fixture): proves the message contract AND that the fixture data actually
-// exercises every dense domain component the spec names (quick-add chips, role select, instructions, worktree
+// exercises every dense domain component the spec names (quick-add chips, instructions, worktree
 // section) across BOTH shell regions (`fields` + `sideActions`) — the region-composition proof the DOM-free
 // vitest environment can make (App.tsx's own rendering is proven by the preview harness + agent visual pass).
 
@@ -14,8 +14,7 @@ describe("agent-studio-fixture host<->webview envelope", () => {
     const vm: AgentFixtureVM = {
       mode: "new",
       chips: [],
-      roleOptions: [],
-      fields: { name: "", command: "", role: null, instructions: "", worktree: { enabled: false, branch: "", setupCommands: "" } },
+      fields: { name: "", command: "", instructions: "", worktree: { enabled: false, branch: "", setupCommands: "" } },
     };
     expect(loadMessage(vm)).toEqual({ type: "load", entity: vm, concurrency: { kind: "none" }, studioProtocolVersion: STUDIO_PROTOCOL_VERSION });
   });
@@ -35,12 +34,6 @@ describe("the dense Agent-tab fixture actually populates every domain component 
     expect(dense.chips.some((c) => !c.installed)).toBe(true);
   });
 
-  it("a role template is selected from a non-trivial option set", () => {
-    expect(dense.roleOptions.length).toBeGreaterThan(1);
-    expect(dense.fields.role).toBeTruthy();
-    expect(dense.roleOptions).toContain(dense.fields.role);
-  });
-
   it("instructions are populated (the `fields` region's rich-text-adjacent content)", () => {
     expect(dense.fields.instructions.trim().length).toBeGreaterThan(0);
   });
@@ -54,6 +47,6 @@ describe("the dense Agent-tab fixture actually populates every domain component 
   it("the `new` fixture starts empty (proves the same regions render for both new and edit modes)", () => {
     const fresh = agentStudioFixtureFixtures.new!.vm;
     expect(fresh.mode).toBe("new");
-    expect(fresh.fields).toEqual({ name: "", command: "", role: null, instructions: "", worktree: { enabled: false, branch: "", setupCommands: "" } });
+    expect(fresh.fields).toEqual({ name: "", command: "", instructions: "", worktree: { enabled: false, branch: "", setupCommands: "" } });
   });
 });

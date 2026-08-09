@@ -12,7 +12,7 @@ import {
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
 import { PRIMER_OPEN, renderPrimer, type PrimerInput } from "../../src/bridge/primer.js";
-import { bridgeGuidanceTail } from "../../src/roles/templates.js";
+import { bridgeGuidanceTail } from "../../src/agents/bridgeGuidance.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 
 // Promoted out of the Product Invariant registry on 2026-07-25 (maintainer decision: the ceremony

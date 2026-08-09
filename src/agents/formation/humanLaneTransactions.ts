@@ -39,8 +39,6 @@ interface HumanLaneTransactionIntent {
   entries: {
     agentProfile: EncodedEntry;
     instructions?: EncodedEntry;
-    soulSource?: EncodedEntry;
-    soulManifest?: EncodedEntry;
     config?: EncodedEntry & { path: string };
   };
 }
@@ -86,8 +84,8 @@ function parseIntent(barrier: FormationMutationBarrier): HumanLaneTransactionInt
     || intent.nextVector.profile.agentName !== intent.agentName) {
     throw new FormationAuthorityStoreError("human-lane mutation intent does not match its authority barrier");
   }
-  for (const entry of [intent.entries.agentProfile, intent.entries.instructions, intent.entries.soulSource,
-    intent.entries.soulManifest, intent.entries.config].filter((candidate): candidate is EncodedEntry => !!candidate)) {
+  for (const entry of [intent.entries.agentProfile, intent.entries.instructions,
+    intent.entries.config].filter((candidate): candidate is EncodedEntry => !!candidate)) {
     for (const side of ["prior", "next"] as const) {
       const bytes = decode(entry[side]);
       const digest = entry[`${side}Sha256`];
@@ -244,30 +242,10 @@ function ensureProfileDirectory(workspaceRoot: string, agentName: string): strin
   return directories.at(-1)!;
 }
 
-function nextSoulManifest(prior: Buffer | undefined, agentName: string, agentId: string, expectedProfileId: string): Buffer | undefined {
-  if (!prior) return undefined;
-  let parsed: Record<string, unknown>;
-  try { parsed = JSON.parse(prior.toString("utf8")) as Record<string, unknown>; }
-  catch { throw new FormationAuthorityStoreError("Soul manifest is not valid JSON"); }
-  if ((parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2) || parsed.owner !== agentName || parsed.profileId !== expectedProfileId
-    || parsed.state !== "active") {
-    throw new FormationAuthorityStoreError("Soul manifest identity does not match the selected Soul lane");
-  }
-  if (parsed.schemaVersion === 2 && parsed.agentId !== agentId) throw new FormationAuthorityStoreError("Soul manifest belongs to another agentId");
-  return Buffer.from(`${JSON.stringify({
-    schemaVersion: 2,
-    profileId: parsed.profileId,
-    owner: agentName,
-    state: parsed.state,
-    agentId,
-  }, null, 2)}\n`, "utf8");
-}
-
 function validateNextProfile(bytes: Buffer, intentInput: {
   agentId: string;
   nextVector: FormationAuthorityVector;
   nextInstructions?: Buffer | null;
-  nextSoul?: Buffer;
 }): void {
   if (sha256(bytes) !== intentInput.nextVector.profile.canonicalSha256) {
     throw new FormationAuthorityStoreError("next agent.yml digest does not match ProfileActivationHeadV2");
@@ -288,17 +266,6 @@ function validateNextProfile(bytes: Buffer, intentInput: {
     }
   } else if (intentInput.nextInstructions !== undefined) {
     throw new FormationAuthorityStoreError("disabled Persistent Instructions lane cannot publish source bytes");
-  }
-  const soulLane = intentInput.nextVector.profile.lanes.soul;
-  if (soulLane.mode === "profile") {
-    const reference = parsed.data.references?.find((candidate) => candidate.id === soulLane.selectorId);
-    if (!reference || reference.kind !== "soul" || reference.scope !== "profile"
-      || reference.owner !== intentInput.agentId || reference.path !== soulLane.path || reference.sha256 !== soulLane.sourceSha256
-      || !intentInput.nextSoul || sha256(intentInput.nextSoul) !== soulLane.sourceSha256) {
-      throw new FormationAuthorityStoreError("next Soul reference does not match active lane authority");
-    }
-  } else if (intentInput.nextSoul !== undefined) {
-    throw new FormationAuthorityStoreError("disabled Soul lane cannot publish source bytes");
   }
 }
 
@@ -367,18 +334,11 @@ export class HumanLaneTransactionService {
         ? undefined
         : Buffer.isBuffer(input.nextInstructions) ? Buffer.from(input.nextInstructions) : Buffer.from(input.nextInstructions, "utf8");
       const priorInstructions = readCanonicalAgentProfileEntry(source, "instructions.md")?.bytes;
-      const priorSoul = readCanonicalAgentProfileEntry(source, "SOUL.md")?.bytes;
       validateNextProfile(nextAgentProfile, {
         agentId: input.agentId,
         nextVector: input.nextVector,
         nextInstructions,
-        ...(input.nextVector.profile.lanes.soul.mode === "profile" && priorSoul ? { nextSoul: priorSoul } : {}),
       });
-      const priorSoulManifest = readCanonicalAgentProfileEntry(source, "profile.json")?.bytes;
-      const soulLane = input.nextVector.profile.lanes.soul;
-      const boundSoulManifest = soulLane.mode === "profile"
-        ? nextSoulManifest(priorSoulManifest, input.agentName, input.agentId, soulLane.subjectId)
-        : undefined;
       const intent: HumanLaneTransactionIntent = {
         schemaVersion: 1,
         kind,
@@ -390,8 +350,6 @@ export class HumanLaneTransactionService {
         entries: {
           agentProfile: encoded(source.bytes, nextAgentProfile),
           ...(nextInstructions !== undefined ? { instructions: encoded(priorInstructions, nextInstructions) } : {}),
-          ...(priorSoul && soulLane.mode === "profile" ? { soulSource: encoded(priorSoul, priorSoul) } : {}),
-          ...(boundSoulManifest ? { soulManifest: encoded(priorSoulManifest, boundSoulManifest) } : {}),
         },
       };
       return this.store.beginMutationBarrier({
@@ -465,21 +423,11 @@ export class HumanLaneTransactionService {
     if (priorAgentProfile) throw new FormationAuthorityStoreError("legacy migration found an existing canonical agent.yml");
     const priorInstructions = readSafeFile(path.join(profileDirectory, "instructions.md"), true);
     if (priorInstructions && nextInstructions) throw new FormationAuthorityStoreError("legacy migration refuses to adopt pre-existing Persistent Instructions bytes");
-    const priorSoulManifest = readSafeFile(path.join(profileDirectory, "profile.json"), true);
-    const priorSoul = readSafeFile(path.join(profileDirectory, "SOUL.md"), true);
     validateNextProfile(nextAgentProfile, {
       agentId: input.agentId,
       nextVector: input.nextVector,
       nextInstructions,
-      ...(input.nextVector.profile.lanes.soul.mode === "profile" && priorSoul ? { nextSoul: priorSoul } : {}),
     });
-    const soulLane = input.nextVector.profile.lanes.soul;
-    const boundSoulManifest = soulLane.mode === "profile"
-      ? nextSoulManifest(priorSoulManifest, input.agentName, input.agentId, soulLane.subjectId)
-      : undefined;
-    if (soulLane.mode === "profile" && (!priorSoul || sha256(priorSoul) !== soulLane.sourceSha256)) {
-      throw new FormationAuthorityStoreError("legacy Soul bytes do not match the target Soul lane authority");
-    }
     const intent: HumanLaneTransactionIntent = {
       schemaVersion: 1,
       kind: "human-lane-legacy-migration",
@@ -491,8 +439,6 @@ export class HumanLaneTransactionService {
       entries: {
         agentProfile: encoded(undefined, nextAgentProfile),
         ...(nextInstructions ? { instructions: encoded(undefined, nextInstructions) } : {}),
-        ...(priorSoul && soulLane.mode === "profile" ? { soulSource: encoded(priorSoul, priorSoul) } : {}),
-        ...(boundSoulManifest ? { soulManifest: encoded(priorSoulManifest, boundSoulManifest) } : {}),
         config: { ...encoded(priorConfig, nextConfig), path: configPath },
       },
     };
@@ -662,7 +608,6 @@ export class HumanLaneTransactionService {
   inspect(agentId: string, caller: FormationCaller): {
     vector: FormationAuthorityVector | undefined;
     activeMutation?: { operationId: string; mutation: FormationMutationBarrier["mutation"]; phase: FormationMutationBarrier["phase"] };
-    soul: "legacy" | "disabled" | "profile" | "absent";
     instructions: "legacy" | "disabled" | "profile" | "absent";
   } {
     const vector = this.store.currentVector(agentId);
@@ -670,7 +615,6 @@ export class HumanLaneTransactionService {
     return {
       vector,
       ...(barrier ? { activeMutation: { operationId: barrier.operationId, mutation: barrier.mutation, phase: barrier.phase } } : {}),
-      soul: vector?.profile.lanes.soul.mode ?? "absent",
       instructions: vector?.profile.lanes.instructions.mode ?? "absent",
     };
   }
@@ -688,11 +632,9 @@ export class HumanLaneTransactionService {
       throw new FormationAuthorityStoreError("canonical profile disappeared during human-lane mutation");
     }
     try {
-      const entries: Array<["agent.yml" | "SOUL.md" | "instructions.md" | "profile.json", EncodedEntry]> = [];
+      const entries: Array<["agent.yml" | "instructions.md", EncodedEntry]> = [];
       if (side === "next" && intent.entries.agentProfile.priorSha256 !== null) entries.push(["agent.yml", intent.entries.agentProfile]);
       if (intent.entries.instructions) entries.push(["instructions.md", intent.entries.instructions]);
-      if (intent.entries.soulSource) entries.push(["SOUL.md", intent.entries.soulSource]);
-      if (intent.entries.soulManifest) entries.push(["profile.json", intent.entries.soulManifest]);
       if (side === "prior") entries.push(["agent.yml", intent.entries.agentProfile]);
       for (const [name, entry] of entries) {
         const desiredDigest = side === "next" ? entry.nextSha256 : entry.priorSha256;

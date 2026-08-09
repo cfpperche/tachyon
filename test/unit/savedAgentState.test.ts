@@ -155,7 +155,7 @@ describe("SDD 494 Part 4 — the six states derived from five presence facts", (
     expect(removal.reason).toContain(".tachyon/agents/<name>/");
     expect(removal.reason).toContain("never deletes a profile directory automatically");
     expect(removal.reason).toContain("rmdir");
-    expect(removal.reason).toContain("refuses when it still holds Soul, Evolution or memory bytes");
+    expect(removal.reason).toContain("refuses when it still holds Evolution, memory, or unknown bytes");
     // It must not read as "nothing is there", which is the sentence this state exists to replace.
     expect(removal.reason).not.toContain("there is nothing to remove");
   });

@@ -44,7 +44,7 @@ export interface SavedAgentPresenceFacts {
    *
    * `profileOnDisk` implies this fact — an `agent.yml` cannot exist without its parent. The reverse
    * does not hold, and the gap is exactly the residue: an interrupted create, a `forgetAgent` that
-   * took `evolution/`, or a Soul import that wrote `SOUL.md` under a name with no roster row.
+   * took `evolution/`, or a profile write under a name with no roster row.
    */
   profileHomeOnDisk: boolean;
 }
@@ -88,7 +88,7 @@ export interface SavedAgentRemovalDoor {
  * the other end: among the states that hold no member, the one that names bytes on disk must win
  * over the one that names a record with no bytes. `unlisted-profile` already beat
  * `stranded-authority` for that reason, and `orphan-home` joins it on the same ground — a directory
- * may hold a human's Soul, an authority record holds nothing anyone can lose. The caller reads every
+ * may hold human-authored data, an authority record holds nothing anyone can lose. The caller reads every
  * fact alongside the state, so nothing is hidden by the state that wins.
  */
 /**
@@ -172,7 +172,7 @@ export function savedAgentRemovalDoor(state: SavedAgentState): SavedAgentRemoval
           "no roster row, no agent.yml and no authority, but .tachyon/agents/<name>/ is still on disk. There "
           + "is no member to remove, and Tachyon never deletes a profile directory automatically. Run "
           + "`rmdir .tachyon/agents/<name>/`: it succeeds when the directory is empty residue from an "
-          + "interrupted create or forget, and refuses when it still holds Soul, Evolution or memory bytes — "
+          + "interrupted create or forget, and refuses when it still holds Evolution, memory, or unknown bytes — "
           + "read those before deleting them, or restore the roster row to adopt what is there",
       };
     case "absent":

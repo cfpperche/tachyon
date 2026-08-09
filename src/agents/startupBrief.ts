@@ -74,8 +74,6 @@ export function renderStartupBriefSummary(manifest: StartupBriefManifest): strin
   const sourceLabel = manifest.projectGuidanceSources === 1 ? "source" : "sources";
   const contents = [
     `project guidance (${manifest.projectGuidanceSources} ${sourceLabel})`,
-    `soul (${present(prompt.soul)})`,
-    `role (${present(prompt.role)})`,
     `persistent instructions (${present(prompt.persistentInstructions)})`,
     ...(prompt.evolution ? [`Agent Evolution (v${prompt.evolution.version}; ${prompt.evolution.digest})`] : []),
     `Bridge guidance (${present(prompt.bridgeGuidance)})`,
@@ -97,8 +95,6 @@ export function renderStartupBriefInventory(manifest: StartupBriefManifest): str
   const rendered = [
     "── STARTUP BRIEF CONTENTS ──",
     `Project guidance: ${manifest.projectGuidanceSources} ${sourceLabel}`,
-    `Soul: ${present(prompt.soul)}`,
-    `Role: ${present(prompt.role)}`,
     `Persistent instructions: ${present(prompt.persistentInstructions)}`,
     ...(prompt.evolution ? [`Agent Evolution: present (version ${prompt.evolution.version}; digest ${prompt.evolution.digest})`] : []),
     `Bridge guidance: ${present(prompt.bridgeGuidance)}`,

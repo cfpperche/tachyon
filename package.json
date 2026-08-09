@@ -181,11 +181,6 @@
         "icon": "$(repo-forked)"
       },
       {
-        "command": "tachyon.reanchorAgentItem",
-        "title": "%command.reanchorAgentItem%",
-        "icon": "$(compass)"
-      },
-      {
         "command": "tachyon.reinjectContinuityItem",
         "title": "%command.reinjectContinuityItem%",
         "icon": "$(history)"
@@ -592,10 +587,6 @@
         },
         {
           "command": "tachyon.restartAgentForceNewItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.reanchorAgentItem",
           "when": "false"
         },
         {

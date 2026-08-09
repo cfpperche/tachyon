@@ -71,27 +71,17 @@ export interface InjectionTextInput {
   /** the staleness threshold past which the brief is flagged "may be stale" (D4) */
   staleLag?: number;
   briefStatus?: ContinuityStatus;
-  /** the role doc (.tachyon/roles/<agent>.md) actually exists → include its pointer; else omit (a `cat` of a
-   *  non-existent file is just noise). The caller (which has fs) decides; pure here. */
-  hasRole?: boolean;
 }
 
 /**
  * The exact text typed into the pane (D5 — the only thing that goes to the pane; the badge is the quiet
  * channel). Pure so the wording is unit-tested. States the EXACT lag and a stale caveat (D4); never claims
- * the brief is correct — the activity log is the source of truth. The role pointer is included only when the
- * role doc exists (`hasRole`).
+ * the brief is correct — the activity log is the source of truth.
  */
 export function injectionText(i: InjectionTextInput): string {
-  const role = `  cat .tachyon/roles/${i.agent}.md`;
   const cont = `  cat .tachyon/continuity/${i.agent}.md`;
   if (i.reason === "cold-start") {
-    const lines = [
-      i.hasRole
-        ? "[Tachyon] No continuity brief yet. Re-read your role, then checkpoint your working state once your goal/current state are clear:"
-        : "[Tachyon] No continuity brief yet — checkpoint your working state once your goal/current state are clear:",
-    ];
-    if (i.hasRole) lines.push(role);
+    const lines = ["[Tachyon] No continuity brief yet — checkpoint your working state once your goal/current state are clear:"];
     // the agent doesn't know its own Tachyon name → spell out the EXACT call (Tachyon knows it; the agent must
     // not guess — a wrong `agent` writes the brief under the wrong file and breaks the whole loop).
     lines.push(`  → set_continuity(agent: "${i.agent}", content: "# Current Goal …\\n# Working State …\\n# Next Steps …\\n# Open Threads …")`);
@@ -101,7 +91,6 @@ export function injectionText(i: InjectionTextInput): string {
   const lagNote = i.lag !== undefined ? ` (brief is ${i.lag} activity records behind${stale ? " — MAY BE STALE; reconcile with recent activity" : ""})` : "";
   const pausedNote = i.briefStatus === "paused" ? " [status: paused — re-scope before treating as active]" : "";
   const lines = ["[Tachyon] Continuity available — rebuild your working context before continuing:" + lagNote + pausedNote];
-  if (i.hasRole) lines.push(role);
   lines.push(cont);
   return lines.join("\n");
 }

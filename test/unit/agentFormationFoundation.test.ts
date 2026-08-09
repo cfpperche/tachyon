@@ -49,7 +49,6 @@ function profile(revision = 1): ProfileActivationHeadV2 {
     effectiveSha256: HEX_B,
     runtimeInspector: { adapter: "codex", id: "inspector", version: "1", sha256: HEX_C },
     lanes: {
-      soul: { mode: "disabled" },
       instructions: { mode: "disabled" },
       evolution: { mode: "disabled" },
       memory: { mode: "disabled" },
@@ -132,10 +131,9 @@ describe("agent formation authority foundation", () => {
       { mode: "disabled" },
       { mode: "disabled" },
       { mode: "disabled" },
-      { mode: "disabled" },
     ]);
     expect(JSON.stringify(upgraded)).not.toContain("plugin");
-    expect(FORMATION_GOVERNED_LANES).toEqual(["soul", "instructions", "evolution", "memory"]);
+    expect(FORMATION_GOVERNED_LANES).toEqual(["instructions", "evolution", "memory"]);
   });
 
   it("rejects mixed identities and unbound active heads", () => {

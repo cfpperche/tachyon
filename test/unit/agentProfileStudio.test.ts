@@ -31,7 +31,7 @@ function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {
         values: { PUBLIC: "private-enough-not-to-project" },
         secrets: { TOKEN: { provider: "vault", id: "secret-handle", purpose: "auth" } },
       },
-      prompt: { soul: "soul", evolution: "evolution", role: "reviewer" },
+      prompt: { evolution: "evolution" },
       lifecycle: {
         enabled: false, autostart: true, restart: "on-crash",
         attention: { enabled: false, silenceSec: 12 }, watch: ["src/**"],
@@ -39,7 +39,6 @@ function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {
       workspace: { cwd: "apps/reviewer", worktree: { enabled: true, branch: "feature/reviewer" } },
       isolation: "transcript",
       references: [
-        { id: "soul", kind: "soul", scope: "profile", owner: "123e4567-e89b-42d3-a456-426614174000", path: "SOUL.md", mode: "pinned", sha256: "b".repeat(64) },
         { id: "evolution", kind: "evolution", scope: "product", owner: "tachyon", path: "evolution.md", mode: "pinned", sha256: "c".repeat(64), version: "1" },
       ],
     },
@@ -61,7 +60,6 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
     editable: {
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
-      role: "tester",
       cwd: "apps/tester",
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
@@ -85,7 +83,6 @@ describe("canonical Agent Studio projection", () => {
     expect(projected.editable).toEqual({
       displayName: "Reviewer",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-example" },
-      role: "reviewer",
       cwd: "apps/reviewer",
       lifecycle: { autostart: true, restart: "on-crash", attention: false },
       // t-afc86e — `setup` comes back EMPTY here because this fixture's profile declares no
@@ -104,14 +101,13 @@ describe("canonical Agent Studio projection", () => {
     expect(projected.bindings).toMatchObject({
       environmentValueNames: ["PUBLIC"],
       secretNames: ["TOKEN"],
-      prompt: { soul: true, evolution: true },
+      prompt: { evolution: true },
     });
     expect(projected.readiness).toEqual({ state: "limited", limitations: ["fork-unavailable"] });
     const serialized = JSON.stringify(projected);
     expect(serialized).not.toContain("private-enough-not-to-project");
     expect(serialized).not.toContain("secret-handle");
     expect(serialized).not.toContain("vault");
-    expect(serialized).not.toContain("SOUL.md");
     expect(serialized).not.toContain("capabilityReferenceIds");
   });
 
@@ -140,7 +136,6 @@ describe("canonical Agent Studio projection", () => {
     expect(createProfileFromStudioMutation(mutation())).toEqual({
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
-      prompt: { role: "tester" },
       // t-bd14d8 — no `watch`: a created Agent has none, and the editable mutation has no field to
       // carry one (the strict schema refuses it outright rather than dropping it silently).
       lifecycle: { enabled: true },
@@ -275,7 +270,7 @@ describe("canonical Agent Studio projection", () => {
     expect(patchProfileFromStudioMutation(mutation(current.revision), current)).toEqual({
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
-      prompt: { soul: "soul", evolution: "evolution", role: "tester" },
+      prompt: { evolution: "evolution" },
       // t-bd14d8 — the stored profile in `lifecycleSnapshot()` carries `watch: ["src/**"]`, and this
       // patch has no `watch` key at all: the edit STRIPS it from disk rather than carrying it forward
       // through the lifecycle spread. That is what makes the first Agent Studio save the repair for a

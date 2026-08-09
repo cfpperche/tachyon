@@ -39,7 +39,7 @@ export const AGENT_PROFILE_REFUSAL_CODES = [
    * every time and never said so.
    */
   "agent-profile/agent-running",
-  /** A session, pane, provisional registration or soul reservation still holds the agent. */
+  /** A session, pane, or provisional registration still holds the agent. */
   "agent-profile/forget-agent-running",
   /** The session ledger still claims a checkout for the agent. */
   "agent-profile/forget-worktree-owned",

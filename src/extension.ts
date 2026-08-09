@@ -3652,17 +3652,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("PR failed: {0}", err instanceof Error ? err.message : String(err)), "error");
       }
     }),
-    vscode.commands.registerCommand("tachyon.reanchorAgentItem", async (item: AgentItem) => {
-      // spec 216 — re-anchor the agent to its role: rewrite .tachyon/roles/<agent>.md + type a
-      // reminder into the pane. Manual path (always on); the auto path is settings.anchor.auto.
-      const ws = wsOf(item);
-      if (!ws) return;
-      try {
-        await extensionInvoke(ws, { action: "agent.reanchor", agent: item.agentName });
-      } catch (err) {
-        notify(err instanceof Error ? err.message : String(err), "warn");
-      }
-    }),
     vscode.commands.registerCommand("tachyon.reinjectContinuityItem", async (item: AgentItem) => {
       // spec 241 — manually re-inject the agent's continuity brief (type the rebuild-context pointer into the
       // pane). Always-on manual path; the auto path fires on a detected discontinuity at idle.

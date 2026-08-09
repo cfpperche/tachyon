@@ -6,7 +6,7 @@
  * compile error, not a silent `undefined` at a Map lookup (round-2 F14's rule).
  *
  * D0 shipped "command". D1a (this PR) adds terminal/runbook/schedule — D1b (Agent Studio, split out
- * for its much larger evolution/soul-profile domain-message surface), D2 (task), D3 (pin) each add
+ * for its much larger evolution/profile domain-message surface), D2 (task), D3 (pin) each add
  * their entry here — this file, `studioIds.ts`, and every exhaustive switch in `route.ts` are the
  * whole checklist; the compiler enforces the rest.
  */
@@ -109,7 +109,7 @@ export const STUDIO_REGISTRY: Record<StudioId, StudioRegistryEntry> = {
   agent: {
     legacyViewType: "tachyonAgentStudioShell",
     // t-610705 (Phase D, D1b) — WorkspaceStudioTarget is a structural subset of the
-    // WorkspaceAgentStudioTarget AgentStudioAdapter actually needs (createSoulProfile/
+    // WorkspaceAgentStudioTarget AgentStudioAdapter actually needs (
     // readAgentEvolutionOverview/etc); the RUNTIME object (WorkspaceShellHandle) already implements
     // the full agent-specific surface — same "adapter surface collapses to unknown" cast the Adapter
     // alias itself already uses, just one layer up at the workspace-target boundary.

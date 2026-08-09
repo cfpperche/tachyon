@@ -187,12 +187,9 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
     {
       why: "a HISTORICAL fixture key (`ad-hoc-contract`) that three files must match byte for byte, or a dated dogfood",
       files: [
-        "scripts/capture-agent-soul-legacy.mjs",
         "scripts/dogfood/grok-attention-midturn.ts",
         "test/fixtures/agent-focus-line-dogfood/.tachyon/sessions.json",
         "test/fixtures/agent-focus-line-dogfood/README.md",
-        "test/fixtures/agent-soul-legacy/prompt-command-cases.json",
-        "test/unit/agentSoulLegacyParity.test.ts",
       ],
     },
     {

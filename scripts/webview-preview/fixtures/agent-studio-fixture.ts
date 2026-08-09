@@ -17,11 +17,9 @@ const denseAgent: AgentFixtureVM = {
     { cli: "agy", installed: false },
     { cli: "gemini", installed: false },
   ],
-  roleOptions: ["coder", "reviewer", "tester", "orchestrator"],
   fields: {
     name: "reviewer",
     command: "claude",
-    role: "reviewer",
     instructions: "you are a code reviewer; read the diff and flag correctness issues before style ones.",
     worktree: { enabled: true, branch: "feature/auth-redesign", setupCommands: 'pnpm install\ncp "$TACHYON_WORKSPACE_ROOT/.env.local" .env.local' },
   },
@@ -30,8 +28,7 @@ const denseAgent: AgentFixtureVM = {
 const newAgent: AgentFixtureVM = {
   mode: "new",
   chips: denseAgent.chips,
-  roleOptions: denseAgent.roleOptions,
-  fields: { name: "", command: "", role: null, instructions: "", worktree: { enabled: false, branch: "", setupCommands: "" } },
+  fields: { name: "", command: "", instructions: "", worktree: { enabled: false, branch: "", setupCommands: "" } },
 };
 
 export const agentStudioFixtureFixtures: Record<string, Fixture<AgentFixtureVM>> = {

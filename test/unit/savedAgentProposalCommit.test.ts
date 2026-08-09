@@ -349,7 +349,6 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
       editable: {
         displayName: "",
         runtime: { adapter: "claude", executable: "claude" },
-        role: "",
         cwd: "",
         lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "", setup: [] },
@@ -391,7 +390,6 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
       editable: {
         displayName: "",
         runtime: { adapter: "claude", executable: "claude" },
-        role: "",
         cwd: "",
         lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "", setup: [] },

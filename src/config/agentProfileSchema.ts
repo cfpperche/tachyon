@@ -44,9 +44,7 @@ const relativePathSchema = z.string().superRefine((value, ctx) => {
 });
 
 const referenceKindSchema = z.enum([
-  "soul",
   "instructions",
-  "role",
   "evolution",
   "memory",
   "skill",
@@ -78,7 +76,7 @@ export const agentProfileReferenceSchema = z.object({
   if (reference.scope === "profile" && reference.mode !== "pinned") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: "profile-local references must be pinned" });
   }
-  if (["soul", "instructions", "role", "evolution", "memory", "skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package", "bridge-guidance", "worktree-setup", "runtime-adapter"].includes(reference.kind)
+  if (["instructions", "evolution", "memory", "skill", "mcp", "hook", "pi-extension", "pi-prompt", "pi-theme", "pi-package", "bridge-guidance", "worktree-setup", "runtime-adapter"].includes(reference.kind)
     && reference.mode !== "pinned") {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: `${reference.kind} references must be pinned` });
   }
@@ -124,9 +122,7 @@ const environmentSchema = z.object({
 });
 
 const promptSchema = z.object({
-  soul: z.string().regex(ID_RE).optional(),
   instructions: z.string().regex(ID_RE).optional(),
-  role: z.enum(["coder", "reviewer", "tester", "orchestrator", "custom"]).optional(),
   evolution: z.string().regex(ID_RE).optional(),
   memory: z.object({
     policy: z.enum(["disabled", "runtime-managed", "human-approved"]),
@@ -243,7 +239,6 @@ export const agentProfileSchemaV1 = z.object({
     }
   };
 
-  requireKind(profile.prompt?.soul, ["prompt", "soul"], ["soul"]);
   requireKind(profile.prompt?.instructions, ["prompt", "instructions"], ["instructions"]);
   requireKind(profile.prompt?.evolution, ["prompt", "evolution"], ["evolution"]);
   requireKind(profile.prompt?.memory?.reference, ["prompt", "memory", "reference"], ["memory"]);

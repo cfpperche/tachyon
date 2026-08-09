@@ -25,7 +25,7 @@ const FLEET: AgentVM[] = [
   a({ name: "codex", status: "running", attention: "working" }),
   a({ name: "codex-budget", status: "stopped", resumable: true }),
   a({ name: "codex-regression", status: "stop-failed", attention: "working" }),
-  a({ name: "codex-soul", status: "stopped", resumable: true }),
+  a({ name: "codex-worker", status: "stopped", resumable: true }),
   a({ name: "grok", status: "idle" }),
   a({ name: "grok-claudex", status: "stopped", resumable: true }),
   a({ name: "grok-hermes", status: "stopped" }),
@@ -89,7 +89,7 @@ describe("agentStatusFilter (t-eddf90)", () => {
   it("Stopped filter keeps hollow-dot cemetery", () => {
     expect(names(filterAgentsByStatus(FLEET, "stopped"))).toEqual([
       "codex-budget",
-      "codex-soul",
+      "codex-worker",
       "grok-claudex",
       "grok-hermes",
     ]);

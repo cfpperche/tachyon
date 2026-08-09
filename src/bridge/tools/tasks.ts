@@ -129,7 +129,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         "Submit the result of YOUR pending Tachyon Agent Evolution review. The review id comes from " +
         "Tachyon's task-completion notice and is bound to the Bridge-resolved caller. Submit proposals:[] " +
         "when nothing should be retained. Learning and standard Agent Skill proposals remain inert until " +
-        "a human approves them in Agent Studio; this tool never changes Soul or Persistent Instructions.",
+        "a human approves them in Agent Studio; this tool never changes Persistent Instructions.",
       inputSchema: {
         review_id: EVOLUTION_REVIEW_ID,
         proposals: z.array(EVOLUTION_PROPOSAL).max(8),

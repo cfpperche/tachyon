@@ -70,7 +70,6 @@ async function fixture() {
     effectiveSha256: "a".repeat(64),
     runtimeInspector: { adapter: "codex", id: "inspector", version: "1", sha256: "b".repeat(64) },
     lanes: {
-      soul: { mode: "disabled" },
       instructions: { mode: "disabled" },
       evolution: { mode: "disabled" },
       memory: {

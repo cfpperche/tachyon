@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { parseAgentMemoryMax } from "../agents/agentMemoryScope.js";
-import { type Role, isRole, ROLES } from "../roles/templates.js";
 import { binaryOf, binaryIndex } from "../resume/adapters.js";
 import { TASK_NOTIFICATION_EVENT_IDS, type TaskNotificationSettingsInput } from "../tasks/taskNotificationPolicy.js";
 import {
@@ -151,11 +150,6 @@ export interface AgentEntry extends ManagedEntryBase {
   kind: "agent";
   /** role prompt, delivered as a positional arg on spawn for CLIs that accept one */
   instructions?: string;
-  /** spec 216 — built-in role template (coder/reviewer/tester/orchestrator/custom); composed
-   *  with `instructions` at delivery (template first). agents-only — terminals have no AI. */
-  role?: Role;
-  /** spec 377 — enable the canonical, Tachyon-owned per-agent SOUL.md profile. */
-  soul?: boolean;
   /** spec 421 — opt in to Tachyon-owned, human-reviewed agent evolution. */
   selfEvolution?: SelfEvolutionDef;
   /** Internal canonical selector. Active bytes still require the host-custodied Evolution head. */
@@ -209,7 +203,7 @@ export interface AgentEntry extends ManagedEntryBase {
 
 /**
  * SDD 478 M2 — the Terminal arm: a generic process and deliberately nothing else. There is no
- * `harness`, no `worktree`, no `soul` — not optional, ABSENT. A terminal has no
+ * `harness`, no `worktree` — not optional, ABSENT. A terminal has no
  * identity, task, memory, model, provider authentication or agent lifecycle, and the type is now
  * what says so.
  */
@@ -513,8 +507,6 @@ export interface TachyonConfig {
     worktree?: { base?: string; branch?: string; revealInWorkspace?: boolean; shareDependencies?: boolean };
     /** spec 383 — explicit project-owned onboarding documents, transported verbatim by Tachyon. */
     projectGuidance?: ProjectGuidanceSettings;
-    /** spec 216 — auto re-anchor an agent's role after a detected compaction (OFF by default; risky live injection) */
-    anchor?: { auto?: boolean };
     /** spec 216 — append Bridge-coordination guidance to agents spawned via the Bridge (default true) */
     bridgeGuidance?: boolean;
     /**
@@ -681,7 +673,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 /** Every recognized entry key. `isolate` remains recognized only as a deprecated read-compat key. `kind`/
  *  `instructions` are recognized everywhere (so they're never "unknown"); under `terminals:` they're rejected
  *  explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "role", "soul", "selfEvolution", "worktree", "branch", "worktreeSetup", "harness", "isolate", "subagents"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "selfEvolution", "worktree", "branch", "worktreeSetup", "harness", "isolate", "subagents"];
 
 /** Recognized harness keys (spec 226/228 plus spec 406 Pi resources). */
 const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills", "extensions", "prompts", "themes", "packages"];
@@ -1003,7 +995,6 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   if (forceTerminal) {
     if (def.kind !== undefined) discarded.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
     if (def.instructions !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "instructions", "a terminal receives no brief"));
-    if (def.soul !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "soul", "a terminal has no AI identity"));
     if (def.selfEvolution !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "a terminal has no AI to evolve"));
   } else if (def.kind !== undefined) {
     if (def.kind !== "agent" && def.kind !== "terminal") discarded.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
@@ -1086,26 +1077,6 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       discarded.push(`agents.${name}.instructions: must be a string`);
     } else if (agentEntry && def.instructions.trim().length > 0) {
       agentEntry.instructions = def.instructions;
-    }
-  }
-  if (def.role !== undefined) {
-    // role is agents-only — reject under terminals: AND under agents: with kind: terminal
-    // (codex r1 m5: the old terminal-declaration style must honor the same contract).
-    if (forceTerminal || agent.kind === "terminal") {
-      discarded.push(agentOnlyKeyRefusal(section, name, "role", "this entry is a terminal — it has no AI to take a role"));
-    } else if (typeof def.role !== "string" || !isRole(def.role)) {
-      discarded.push(`agents.${name}.role: must be one of ${ROLES.join(", ")}`);
-    } else {
-      agent.role = def.role;
-    }
-  }
-  if (def.soul !== undefined) {
-    if (forceTerminal || agent.kind === "terminal") {
-      if (!forceTerminal) discarded.push(agentOnlyKeyRefusal(section, name, "soul", "this entry is a terminal — it has no AI identity"));
-    } else if (typeof def.soul !== "boolean") {
-      discarded.push(`agents.${name}.soul: must be a boolean`);
-    } else {
-      agent.soul = def.soul;
     }
   }
   if (def.selfEvolution !== undefined) {
@@ -1326,30 +1297,10 @@ export function parseConfig(yamlText: string): ParseResult {
       const agent = parseAgentEntry("agents", name, def, discarded, warnings);
       if (agent) agents[name] = agent;
     }
-    const enabledByFold = new Map<string, string>();
     const evolutionEnabledByFold = new Map<string, string>();
     for (const [name, entry] of Object.entries(agents)) {
       const folded = asciiFoldAgentName(name);
       const agent = asAgent(entry);
-      /**
-       * t-48dd8d — the COLLIDING declaration is discarded; the one already registered keeps its
-       * capability. While any complaint refused the file this was only a message, and leaving both
-       * would let two agents claim the one profile that `SOUL.md` is keyed by. Dropping the second is
-       * the smallest discard that resolves it, and it is the one the message already named — file
-       * order decides, exactly as it does for the `agents:`/`terminals:` namespace.
-       */
-      if (agent?.soul === true) {
-        const prior = enabledByFold.get(folded);
-        if (prior !== undefined) {
-          discarded.push(
-            `agents.${name}.soul: conflicts with soul-enabled agent '${prior}' after ASCII case folding` +
-            ` — dropped from '${name}'; rename one of them`,
-          );
-          delete agent.soul;
-        } else {
-          enabledByFold.set(folded, name);
-        }
-      }
       if (agent?.selfEvolution?.enabled === true) {
         const prior = evolutionEnabledByFold.get(folded);
         if (prior !== undefined) {
@@ -1710,22 +1661,6 @@ export function parseConfig(yamlText: string): ParseResult {
               discarded.push("settings.projectGuidance: no usable path remained, so no project guidance is transported");
             }
           }
-        }
-      }
-      if (raw.settings.anchor !== undefined) {
-        if (!isPlainObject(raw.settings.anchor)) {
-          discarded.push("settings.anchor: must be a mapping with 'auto'");
-        } else {
-          const an = raw.settings.anchor;
-          const out: { auto?: boolean } = {};
-          if (an.auto !== undefined) {
-            if (typeof an.auto !== "boolean") discarded.push("settings.anchor.auto: must be a boolean");
-            else out.auto = an.auto;
-          }
-          for (const key of Object.keys(an)) {
-            if (key !== "auto") discarded.push(`settings.anchor: unknown key '${key}'`);
-          }
-          settings.anchor = out;
         }
       }
       if (raw.settings.companion !== undefined) {
@@ -2110,7 +2045,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "projectGuidance", "anchor", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) discarded.push(`settings: unknown key '${key}'`);
+        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) discarded.push(`settings: unknown key '${key}'`);
       }
     }
   }

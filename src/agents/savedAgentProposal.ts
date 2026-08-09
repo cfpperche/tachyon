@@ -180,7 +180,6 @@ export function savedAgentCreateMutation(
         ...(spec.model ? { model: spec.model } : {}),
         ...(spec.reasoningEffort ? { reasoningEffort: spec.reasoningEffort } : {}),
       },
-      role: "",
       cwd: "",
       // t-bd14d8 — no `watch`: the editable schema is strict and an Agent has no file watch.
       lifecycle: { autostart: false, restart: "never", attention: true },

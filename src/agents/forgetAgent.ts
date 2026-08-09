@@ -15,7 +15,7 @@ export const FORGET_AGENT_FOOTPRINTS = [
   "private bridge-mcp runtime home",
   "legacy/idempotent Pi session subtree",
   "per-spawn settings file",
-  "generated spawn brief and soul anchor",
+  "generated spawn brief",
   "durable pane transcript",
   "Agent Evolution Profile",
   "emptied Agent Profile home",
@@ -61,7 +61,7 @@ export function forgetAgent(name: string, deps: ForgetAgentDeps): void {
   // parent left an `.tachyon/agents/<name>/` nobody would ever list again: this helper writes no
   // journal, so no reconcile revisits it. `removeEmptyAgentProfileHome` states why the removal is
   // `rmdir` and not `rm -rf`; the short version is that this function is also reached for names that
-  // may still own a canonical `agent.yml` or a human's `SOUL.md` — the declared-terminal delete
+  // may still own a canonical `agent.yml` or a human-authored profile data — the declared-terminal delete
   // (`deleteConfiguredAgent`) and the startup ledger GC (`Workspace.gcLedger`) — and the kernel
   // refusing a non-empty directory is the guard that keeps those bytes, unraceably.
   attempt(() => removeEmptyAgentProfileHome(deps.workspaceRoot, name));

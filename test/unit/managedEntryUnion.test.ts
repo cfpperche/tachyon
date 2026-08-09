@@ -41,10 +41,6 @@ describe("ManagedEntry union — agent-only capabilities are unrepresentable on 
     terminal.verify = "npm test";
     // @ts-expect-error a terminal has no transcript to isolate
     terminal.isolate = "transcript";
-    // @ts-expect-error a terminal has no AI identity
-    terminal.soul = true;
-    // @ts-expect-error a terminal has no AI to take a role
-    terminal.role = "reviewer";
     // @ts-expect-error a terminal receives no brief
     terminal.instructions = "be helpful";
     // @ts-expect-error a terminal has no AI to evolve
@@ -87,18 +83,17 @@ describe("ManagedEntry union — agent-only capabilities are unrepresentable on 
     const dev = config?.agents.dev;
     expect(dev?.kind).toBe("terminal");
     expect(asAgent(dev)).toBeUndefined();
-    for (const key of ["worktree", "branch", "worktreeSetup", "verify", "harness", "soul", "role", "instructions"]) {
+    for (const key of ["worktree", "branch", "worktreeSetup", "verify", "harness", "instructions"]) {
       expect(dev, `terminal must not carry '${key}'`).not.toHaveProperty(key);
     }
   });
 
   it("keeps refusing the agent-only keys the parser already refused", () => {
-    // `harness`, `soul`, `selfEvolution`, `instructions`, `role`, `isolate` and `subagents` were
+    // `harness`, `selfEvolution`, `instructions`, `isolate` and `subagents` were
     // already refused for a terminal imperatively; the union does not weaken those diagnostics.
     const { warnings } = parseConfig(
-      "terminals:\n  dev:\n    cmd: npm run dev\n    harness: {}\n    soul: true\n",
+      "terminals:\n  dev:\n    cmd: npm run dev\n    harness: {}\n",
     );
     expect(warnings.some((error) => error.includes("'harness' applies only to agents"))).toBe(true);
-    expect(warnings.some((error) => error.includes("'soul' applies only to agents"))).toBe(true);
   });
 });

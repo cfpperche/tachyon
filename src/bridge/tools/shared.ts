@@ -414,8 +414,6 @@ export interface BridgeDeps {
   attachEvidence?: (input: AttachEvidenceInput) => Promise<{ ok: boolean; id?: string; reason?: string }>;
   /** spec 273 — read a worktree agent's evidence records (fresh + stale-flagged). Enables list_evidence. */
   listEvidence?: (agent: string) => Promise<EvidenceView[]>;
-  /** spec 216 — re-anchor an agent to its role (rewrite its role doc + type a reminder). Enables reanchor_agent. */
-  reanchor?: (agent: string) => Promise<void>;
   /** t-6f0377 — cheap, non-destructive self-context renewal, deferred by the host until idle. */
   requestContextCompaction?: (agent: string) => Promise<{ status: "pending"; replaced?: "compact" | "fresh" }>;
   /** t-6f0377 — destructive fresh-context renewal. Kept as a separate port so it cannot be selected accidentally. */

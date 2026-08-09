@@ -38,7 +38,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     enabled: false,
     readiness: { state: "limited", limitations: ["fork-unavailable"] },
     editable: {
-      displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" }, role: "reviewer",
+      displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" },
       cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false },
       worktree: { enabled: true, branch: "feature/web", setup: [] }, selfEvolution: false,
       isolation: "transcript",
@@ -48,7 +48,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
       foreignWorkspaceCommands: false,
       environmentValueNames: ["PUBLIC_VALUE"],
       secretNames: ["API_TOKEN"],
-      prompt: { soul: true, instructions: false, evolution: true },
+      prompt: { instructions: false, evolution: true },
       capabilities: { skills: 1, mcp: 0, hooks: 0, pi: 0 },
       tooling: { skills: [], mcp: [], hooks: [] },
       externalReferences: 1,
@@ -193,7 +193,6 @@ describe("AgentStudioAdapter — load", () => {
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity.storage).toBe("canonical");
     expect(result.entity.fields.cmd).toBe("codex");
-    expect(result.entity.fields.role).toBe("reviewer");
     expect(result.entity.fields).toMatchObject({
       cwd: "apps/web",
       autostart: true,
@@ -267,13 +266,11 @@ describe("AgentStudioAdapter — save", () => {
     const { ws, submits } = fakeWorkspace({ commit: async (mutation) => { mutations.push(mutation); return profileSnapshot(mutation.agentName); } });
     const adapter = new AgentStudioAdapter(ws);
     const fields = canonicalAgentFields(profileSnapshot());
-    fields.role = "tester";
     const patch = serializeAgentPatch(fields, true)!;
 
     expect(await adapter.save("frontend", patch)).toEqual({ status: "ok" });
     expect(mutations).toEqual([expect.objectContaining({ kind: "agent-instance", agentName: "frontend", expectedRevision: "a".repeat(64) })]);
     expect(mutations[0]?.editable).toEqual(expect.objectContaining({
-      role: "tester",
       runtime: expect.objectContaining({ executable: "codex" }),
       cwd: "apps/web",
       lifecycle: { autostart: true, restart: "on-crash", attention: false },
@@ -307,7 +304,6 @@ describe("AgentStudioAdapter — save", () => {
 
     const fields = canonicalAgentFields(evolving);
     expect(fields.selfEvolution).toBe(true);
-    fields.role = "tester";
 
     expect(await adapter.save("frontend", serializeAgentPatch(fields, true)!)).toEqual({ status: "ok" });
     expect(mutations[0]?.editable.selfEvolution).toBe(true);
@@ -440,10 +436,8 @@ describe("AgentStudioAdapter — save", () => {
   it("maps a stale canonical save to a redacted Studio conflict", async () => {
     const { ws } = fakeWorkspace({ commit: async () => { throw new Error("agent 'frontend' profile revision conflict"); } });
     const fields = canonicalAgentFields(profileSnapshot());
-    fields.role = "tester";
     const result = await new AgentStudioAdapter(ws).save("frontend", serializeAgentPatch(fields, true)!);
     expect(result).toEqual({ status: "conflict", error: { code: "agent-profile/revision-conflict", message: "This profile changed. Reload before saving again." } });
-    expect(JSON.stringify(result)).not.toContain("tester");
   });
 
   it("delegates to Workspace.studioSubmit (WRAPS toEntry/upsertAgent — no parallel write path)", async () => {

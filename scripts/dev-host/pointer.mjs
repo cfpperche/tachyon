@@ -14,7 +14,7 @@
  * Layout under <repo>/.tachyon/dev-host/ (gitignored via .tachyon/):
  *   extension  → worktree root (symlink) — --extensionDevelopmentPath
  *   workspace  → real directory opened in EDH (child symlinks into fixture;
- *                `.tachyon` is a REAL copy — not a symlink — so Soul launch stays inside the workspace)
+ *                `.tachyon` is a REAL copy — not a symlink — so managed state stays inside the workspace)
  *   meta.json  — pointer metadata for agents/humans
  *   runtime → the Node executable that may safely outlive the Extension Host
  *   tmux/, cache/ — private TMUX_TMPDIR / XDG_CACHE_HOME for the EDH process
@@ -907,7 +907,7 @@ export async function status(repoRoot, opts = {}) {
           continue;
         }
         // The single-root mirror's own invariant, checked per root: `.tachyon` must be a REAL
-        // directory. A symlinked one makes AgentManager fail closed ("Soul launch reservation parent
+        // directory. A symlinked one makes AgentManager fail closed ("managed state parent
         // escapes workspace") only once an agent is spawned — a failure the dogfooder would read as
         // a product bug rather than as a broken mirror.
         const tachyonDir = path.join(abs, ".tachyon");
@@ -945,7 +945,7 @@ export async function status(repoRoot, opts = {}) {
   if (!runtimeOk) warnings.push("Dev Host engine runtime missing — re-point");
   if (!wsOk) warnings.push("workspace mirror missing or is a symlink (must be a real directory)");
 
-  // Mirror `.tachyon` must be a real directory (Soul launch refuses parent-outside-workspace).
+  // Mirror `.tachyon` must be a real directory (managed state refuses parent-outside-workspace).
   const mirrorTachyon = path.join(p.workspace, ".tachyon");
   let tachyonMirrorIsRealDir = null;
   if (wsOk && fs.existsSync(mirrorTachyon)) {
@@ -953,7 +953,7 @@ export async function status(repoRoot, opts = {}) {
       const st = fs.lstatSync(mirrorTachyon);
       tachyonMirrorIsRealDir = st.isDirectory() && !st.isSymbolicLink();
       if (!tachyonMirrorIsRealDir) {
-        warnings.push("mirror .tachyon is a symlink — re-point (must be a real copy; SoulError risk)");
+        warnings.push("mirror .tachyon is a symlink — re-point (must be a real copy)");
       }
     } catch {
       tachyonMirrorIsRealDir = false;
@@ -1277,7 +1277,7 @@ Dependencies (node_modules, .tachyon/bin) are still borrowed from the primary ch
         ? "  workspace:   real per-folder mirror + .tachyon/dev-host/workspace.code-workspace"
         : "  workspace:   real mirror under .tachyon/dev-host/workspace",
     );
-    console.log("  .tachyon:    real copy in mirror (not a symlink — Soul-safe)");
+    console.log("  .tachyon:    real copy in mirror (not a symlink)");
     console.log("");
     console.log("Human next step:");
     for (const line of meta.howTo) console.log(`  • ${line}`);

@@ -42,9 +42,7 @@ function sectionOf(doc: ReturnType<typeof parseDocument>, name: string): Section
 /**
  * `t-359469` — which block declares `name`, for a caller that must treat the two blocks differently.
  *
- * `agentStanzaCasToken` deliberately does NOT carry this: the token is persisted inside profile
- * transaction journals (`schemaVersion: 1`) and compared field-by-field, so adding a field would make
- * every in-flight journal fail validation or CAS. A separate read keeps the token wire-stable.
+ * Kept separate so callers can distinguish the two managed-entry blocks without parsing YAML.
  */
 export function agentStanzaSection(text: string | undefined, name: string): Section | undefined {
   if (text === undefined || text.trim().length === 0) return undefined;
@@ -67,7 +65,7 @@ export function agentStanzaSection(text: string | undefined, name: string): Sect
  * here that the loader accepts would be silent data loss, and that is the assertion.
  */
 export const TERMINAL_STRIPPED_AGENT_KEYS = [
-  "kind", "instructions", "soul", "selfEvolution", "worktree", "branch", "worktreeSetup",
+  "kind", "instructions", "selfEvolution", "worktree", "branch", "worktreeSetup",
 ] as const;
 
 /** A `terminals:` entry must not carry agent-only fields (kind is implied; no AI, no worktree) — strip them. */
@@ -455,63 +453,6 @@ export function agentEntryLine(text: string, name: string): number | undefined {
   const offset = (node?.key as { range?: [number, number, number] })?.range?.[0];
   if (offset === undefined) return undefined;
   return text.slice(0, offset).split("\n").length - 1;
-}
-
-/**
- * spec 377 T15A — CAS token for one affected agent stanza only.
- * Unrelated `tachyon.yml` edits outside this stanza do not change the token.
- */
-export interface AgentStanzaCasToken {
-  present: boolean;
-  soulEnabled: boolean;
-  /** sha256 of the stable JSON form of the agent entry; null when absent. */
-  hash: string | null;
-}
-
-export function agentStanzaCasToken(text: string | undefined, name: string): AgentStanzaCasToken {
-  if (text === undefined || text.trim().length === 0) {
-    return { present: false, soulEnabled: false, hash: null };
-  }
-  const doc = load(text);
-  const section = sectionOf(doc, name);
-  if (!section) return { present: false, soulEnabled: false, hash: null };
-  const plain = doc.getIn([section, name]) as unknown;
-  const json = (plain as { toJSON?: () => unknown })?.toJSON?.() ?? plain;
-  if (json === undefined || json === null) return { present: false, soulEnabled: false, hash: null };
-  const record = typeof json === "object" && json !== null ? (json as Record<string, unknown>) : {};
-  const soulEnabled = record.soul === true;
-  const hash = createHash("sha256").update(JSON.stringify(record)).digest("hex");
-  return { present: true, soulEnabled, hash };
-}
-
-/**
- * Set or clear only `soul` on a declared agent entry. Used by journaled profile
- * enable/disable so recovery can CAS the affected stanza without rewriting the form.
- * Disabled normalizes to field absence (T14).
- */
-export function setAgentSoulEnablement(
-  text: string | undefined,
-  name: string,
-  enabled: boolean,
-): EditResult {
-  assertValidName(name);
-  if (text === undefined || text.trim().length === 0) {
-    throw new Error(`agent '${name}' does not exist`);
-  }
-  const doc = load(text);
-  const section = sectionOf(doc, name);
-  if (!section) throw new Error(`agent '${name}' does not exist`);
-  if (section === "terminals") throw new Error(`soul is not valid on terminal '${name}'`);
-  const node = doc.getIn([section, name]);
-  if (!(node instanceof YAMLMap) && (typeof node !== "object" || node === null)) {
-    throw new Error(`agent '${name}' has an unexpected shape`);
-  }
-  if (enabled) {
-    doc.setIn([section, name, "soul"], true);
-  } else {
-    doc.deleteIn([section, name, "soul"]);
-  }
-  return { text: String(doc), warnings: [] };
 }
 
 export interface AgentStanzaSourceSlice {

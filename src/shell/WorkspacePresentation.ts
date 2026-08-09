@@ -5,7 +5,6 @@ import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import type { ProbeView } from "../probe/probeView.js";
 import { isAgentRow, type AgentStatus, type FleetVM } from "../sidebar/types.js";
 import type { WorkspaceAgentProjectionV1 } from "../runtime-api/workspaceProjection.js";
-import type { SoulProfileStatusMessage } from "../webview/agent-studio-shell/domain.js";
 import type {
   EvolutionStudioCandidateDetail,
   EvolutionStudioOverview,
@@ -44,12 +43,6 @@ export interface WorkspaceStudioTarget extends WorkspacePresentationTarget {
   studioSubmit(submit: StudioSubmit): string[] | undefined | Promise<string[] | undefined>;
 }
 
-export interface SoulProfileMutationTargetResult {
-  status: SoulProfileStatusMessage;
-  selfSelected?: boolean;
-}
-
-/** Agent Studio's operational identity mutations remain daemon-owned after the shell cutover. */
 export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   inspectAgentProfileStudio(agent: string): Promise<AgentProfileStudioSnapshotV1>;
   /**
@@ -98,15 +91,6 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   exportAgentProfileStudioBundle(agent: string, expectedRevision: string): Promise<AgentProfileStudioBundleExportResultV1>;
   cloneAgentProfileStudioBundle(agent: string, expectedRevision: string, destinationAgentName: string): Promise<AgentProfileStudioBundleCreatedResultV1>;
   importAgentProfileStudioBundle(destinationAgentName: string, bytes: Buffer): Promise<AgentProfileStudioBundleCreatedResultV1>;
-  createSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult>;
-  importSoulProfileBytes(agent: string, bytes: Buffer): Promise<SoulProfileMutationTargetResult>;
-  replaceSoulProfileBytes(agent: string, bytes: Buffer, expectedDigest: string): Promise<SoulProfileMutationTargetResult>;
-  adoptSoulProfile(agent: string, expectedDigest: string): Promise<SoulProfileMutationTargetResult>;
-  enableSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult>;
-  disableSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult>;
-  deleteSoulProfile(agent: string): Promise<SoulProfileMutationTargetResult>;
-  refreshSoulProfile(agent: string): Promise<SoulProfileStatusMessage>;
-  canonicalSoulPathForOpen(agent: string): Promise<string>;
   readAgentEvolutionOverview(agent: string): Promise<EvolutionStudioOverview>;
   readAgentEvolutionCandidate(agent: string, candidateId: string): Promise<EvolutionStudioCandidateDetail>;
   approveAgentEvolutionCandidate(agent: string, candidateId: string, input: {

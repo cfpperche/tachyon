@@ -321,7 +321,7 @@ function convergeRuntimeStep(): AgentForgetPlanStepV1 {
   return step(
     "converge-runtime",
     "will-run",
-    "drops the session ledger row, the generated spawn brief and soul anchor, and the pane transcript",
+    "drops the session ledger row, the generated spawn brief, and the pane transcript",
   );
 }
 

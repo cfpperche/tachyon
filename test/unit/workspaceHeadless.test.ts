@@ -17,7 +17,6 @@ import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 import { Terminals } from "../../src/presentation/Terminals.js";
 import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPresentation.js";
 import { harnessHome, harnessRoot } from "../../src/harness/HarnessManager.js";
-import { briefFilePath } from "../../src/agents/briefFile.js";
 import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
 import type { FormState } from "../../src/webview/formLogic.js";
 import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
@@ -43,10 +42,6 @@ skipTestsWithoutOptionalRuntimeAuth({
     "uses Workspace authority for Evolution profile creation and rejects tampered production startup",
     "SDD 369 T3 composes the extension-global Claude capture into the existing per-spawn settings layer",
     "SDD 369 T3 does not compose capture across an explicit Claude settings-source filter",
-    "re-anchor transports configured project guidance without overwriting the startup brief",
-    "SDD 421 re-anchor reuses the session's pinned Evolution snapshot",
-    "re-anchor leaves a running pane untouched when configured guidance becomes invalid",
-    "surfaces an automatic re-anchor guidance failure instead of swallowing it",
     "blocks reloadWindow while another agent is actively working",
     "spec 484: a delegated Temporary child is born on a per-SPAWN branch, and the name-derived one is never minted",
     "spec 484: two spawns of the SAME Temporary name get two different branches, and the first child's commits are left alone",
@@ -641,7 +636,7 @@ it("t-6f0377 refuses an unmeasured runtime by name", async () => {
 
 it("discards an unreadable key on reload instead of taking the workspace down", async () => {
   // SDD 478 M7 — this used to prove that a rejected edit leaves the last known-good config live, with
-  // an unreadable `restart` standing in for the retired inline `soul:`.
+  // an unreadable `restart` standing in for the retired inline identity field.
   //
   // t-48dd8d moved that boundary. A key the loader cannot read no longer refuses the FILE: it is
   // discarded, the rest of the workspace loads, and `restart` falls to `never` — the closed side,
@@ -708,7 +703,7 @@ it("loads a canonical agent profile only after host-custodied authority is avail
     schemaVersion: 1,
     agentId: "11111111-1111-4111-8111-111111111111",
     runtime: { adapter: "codex", executable: "codex" },
-    prompt: { role: "reviewer" },
+    displayName: "Reviewer",
   });
   fs.writeFileSync(path.join(profileDir, "agent.yml"), profile);
   fs.writeFileSync(
@@ -735,7 +730,7 @@ it("loads a canonical agent profile only after host-custodied authority is avail
   );
   try {
     expect(ws.configFailure).toBeUndefined();
-    expect(ws.config?.agents.codex).toMatchObject({ cmd: "codex", role: "reviewer" });
+    expect(ws.config?.agents.codex).toMatchObject({ cmd: "codex" });
     expect((ws.config as unknown as { agentSources: Record<string, { mode: string }> }).agentSources.codex?.mode).toBe("profile");
     expect(ws.authEnabled).toBe(false);
     expect(ws.readConfigLkg()?.agents.find((agent) => agent.name === "codex")).toMatchObject({
@@ -746,10 +741,10 @@ it("loads a canonical agent profile only after host-custodied authority is avail
     });
     const profileWatch = host.watches.find((watch) => watch.glob === ".tachyon/agents/*/agent.yml");
     expect(profileWatch).toBeTruthy();
-    fs.writeFileSync(path.join(profileDir, "agent.yml"), profile.replace("reviewer", "coder"));
+    fs.writeFileSync(path.join(profileDir, "agent.yml"), profile.replace("Reviewer", "Coder"));
     profileWatch!.onEvent();
     expect(ws.configFailure?.errors.join("\n")).toContain("profile/authority-boundary");
-    expect(asAgent(ws.config?.agents.codex)?.role).toBe("reviewer");
+    expect(ws.config?.agents.codex?.cmd).toBe("codex");
     expect(() => ws.assertNotLkgOnlySpawn("codex")).toThrow("trusted configuration is invalid");
   } finally {
     ws.dispose();
@@ -883,7 +878,7 @@ it("t-afc86e: an agent's setup commands survive a save that does not touch them"
     { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
   );
   const editable = (over: Partial<AgentProfileStudioMutationV1["editable"]> = {}): AgentProfileStudioMutationV1["editable"] => ({
-    displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+    displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
     cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
     worktree: { enabled: true, branch: "", setup: ["python -m venv .venv", "pip install -e ."] },
     selfEvolution: false, isolation: "",
@@ -972,7 +967,7 @@ it("t-f96b2f: the Evolution toggle survives a save that does not touch it, ON an
     references?: Array<Record<string, unknown>>;
   };
   const editable = (over: Partial<AgentProfileStudioMutationV1["editable"]> = {}): AgentProfileStudioMutationV1["editable"] => ({
-    displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+    displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
     cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
     // A verify gate rides along on purpose: the two writers CHAIN over one reference list, and a
     // rebuild from the stored list instead of from the previous writer's output would drop this
@@ -1085,15 +1080,14 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       kind: "agent-instance",
       agentName: "reviewer",
       editable: {
-        displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+        displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
         worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, selfEvolution: false, isolation: "transcript",
       },
     });
     // t-ca9086: human-authorized Studio create writes enabled; start/autostart remain separate.
     expect(created.enabled).toBe(true);
-    expect(created.editable.role).toBe("reviewer");
-    expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).not.toContain("cmd:");
+        expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).not.toContain("cmd:");
 
     const edited = await ws.commitAgentProfileStudio({
       schemaVersion: 1,
@@ -1101,19 +1095,19 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       agentName: "reviewer",
       expectedRevision: created.revision,
       editable: {
-        displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" }, role: "tester",
+        displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
         worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, selfEvolution: false, isolation: "transcript",
       },
     });
-    expect(edited.editable).toMatchObject({ displayName: "Review Agent", role: "tester", runtime: { adapter: "codex", executable: "codex" } });
+    expect(edited.editable).toMatchObject({ displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" } });
     await expect(ws.commitAgentProfileStudio({
       schemaVersion: 1,
       kind: "agent-instance",
       agentName: "reviewer",
       expectedRevision: created.revision,
       editable: {
-        displayName: "Stale", runtime: { adapter: "codex", executable: "codex" }, role: "coder",
+        displayName: "Stale", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, isolation: "",
       },
@@ -1139,7 +1133,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
       kind: "agent-instance",
       agentName: "reviewer",
       editable: {
-        displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" }, role: "reviewer",
+        displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, isolation: "",
       },
@@ -1219,7 +1213,7 @@ it("exports, imports and clones portable profiles through the Workspace boundary
     const source = await ws.commitAgentProfileLifecycle({
       agentName: "source",
       operation: "create",
-      createProfile: { displayName: "Source", runtime: { adapter: "codex", executable: "codex" }, prompt: { role: "reviewer" } },
+      createProfile: { displayName: "Source", runtime: { adapter: "codex", executable: "codex" } },
     });
     await expect(ws.exportAgentProfileStudioBundle("source", "f".repeat(64))).rejects.toThrow("revision conflict");
     const exported = await ws.exportAgentProfileStudioBundle("source", source.snapshot.revision);
@@ -1432,7 +1426,7 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
  *  - **A1 Human, sidebar x config.agent.delete** — `extension.ts:3632` reaches the third arm of
  *    `deleteConfiguredAgent`, the only arm with no governed transaction behind it.
  *  - **A2 Agent or API client, extension.invoke x config.agent.delete** — the SAME arm, reached
- *    without the sidebar and with no section filter. `t-359469` measured this asymmetry on the Soul
+ *    without the sidebar and with no section filter. `t-359469` measured this asymmetry on the removed profile door
  *    door: the human path never renders for a terminal and the API path does, so a case that only
  *    drives the button measures the door nobody uses.
  *  - **A3 Agent, Bridge x dismiss_agent** — refused ahead of every side effect.
@@ -1501,15 +1495,15 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
     }
   });
 
-  it("A1 Human, sidebar x config.agent.delete, over a home holding a human's SOUL.md", async () => {
+  it("A1 Human, sidebar x config.agent.delete, over a home holding a human's notes.md", async () => {
     const { ws, root } = await terminalWithFootprint();
     try {
-      fs.writeFileSync(path.join(homeOf(root), "SOUL.md"), "# a human wrote this\n");
+      fs.writeFileSync(path.join(homeOf(root), "notes.md"), "# a human note\n");
       await runDoor(ws, deleteCommand);
       expect(ws.config?.agents.b).toBeUndefined();
       // The `rmdir` refuses, which is the guard rather than a check in front of one, so the bytes
       // stay — and since t-8b58b3 what stays is named instead of reported as `absent`.
-      expect(fs.readFileSync(path.join(homeOf(root), "SOUL.md"), "utf8")).toContain("a human wrote this");
+      expect(fs.readFileSync(path.join(homeOf(root), "notes.md"), "utf8")).toContain("a human note");
       expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(false);
       expect(await sweepState(ws)).toBe("orphan-home");
     } finally {
@@ -1846,7 +1840,7 @@ it("refuses the bare canonical forget while a tmux binding exists, and plans the
 
 it("directs legacy Agent Studio submissions to canonical Agent Studio", async () => {
   const { ws } = await makeWorkspace();
-  const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex", soul: "yes" } as unknown as FormState;
+  const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex" } as unknown as FormState;
   expect(ws.studioSubmit({ state: invalid })).toEqual([
     "inline agent editing is retired — create or edit the canonical agent in Agent Studio",
   ]);
@@ -1952,58 +1946,6 @@ it("rolls back a declared agent rename when the Evolution destination already ex
   await ws.dispose();
 });
 
-/**
- * t-359469 — ACTOR A3: an agent or API client reaching `soul.profile.*` over `extension.invoke`.
- *
- * `extensionOperationService.ts:623-644` forwards `command.agent` to these Workspace methods with no
- * section filter, so this door does not care what the sidebar would have offered. It is the LIVE one:
- * the human doors A1/A2 never render a Soul button for a terminal (measured — `extension.ts:3569`
- * routes by `def.kind` to Terminal Studio, which has no Soul panel, and Control's Agent Studio load
- * goes through `asAgent`, which returns undefined for a terminal, so the entity comes back not-found).
- * The gate is at the engine funnel precisely because that asymmetry is not a reason to trust callers.
- */
-it("t-359469 refuses a Soul mutation on a declared terminal, from the door an API client uses", async () => {
-  // `makeWorkspace`'s default fixture declares `a` and `b` under `terminals:`.
-  const { ws } = await makeWorkspace();
-  try {
-    await expect(ws.createSoulProfile("a")).rejects.toMatchObject({ code: "soul/not-an-agent" });
-    await expect(ws.enableSoulProfile("a")).rejects.toMatchObject({ code: "soul/not-an-agent" });
-    await expect(ws.deleteSoulProfile("a")).rejects.toMatchObject({ code: "soul/not-an-agent" });
-    // The message is the point: "not declared in tachyon.yml" would send the reader to add a row
-    // that is already there, in the block next door.
-    await expect(ws.createSoulProfile("a")).rejects.toThrow(/under 'terminals:', not 'agents:'/);
-    await flushMicrotasks();
-    expect(fs.existsSync(path.join(ws.workspaceRoot, ".tachyon", "agents", "a"))).toBe(false);
-    const transactions = path.join(ws.workspaceRoot, ".tachyon", "agent-profile-transactions");
-    const entries = fs.existsSync(transactions) ? fs.readdirSync(transactions) : [];
-    expect(entries.filter((entry) => /^[0-9a-f-]{36}$/i.test(entry))).toEqual([]);
-  } finally {
-    ws.dispose();
-  }
-});
-
-it("refuses a soul mutation a canonical pointer cannot accept, structurally and by name", async () => {
-  // SDD 478 M7 — `createSoulProfile` mutates a declared agent by adding an inline `soul:` key, and
-  // every declared agent is now a canonical profile pointer, which cannot coexist with an inline
-  // field. t-e81ec5: the refusal used to happen deep in the config writer as `soul/io-error`, a code
-  // that blames the disk for something no retry can fix, while Agent Studio still offered the button.
-  // It is now refused up front, with a code and a message that name the reason and where soul lives.
-  // What this case has always been about survives both changes: nothing is half-applied.
-  const { ws } = await makeWorkspace(() => {}, { canonical: [{ name: "Ada", spec: { runtime: "codex" } }] });
-  try {
-    await expect(ws.createSoulProfile("Ada")).rejects.toMatchObject({ code: "soul/canonical-profile-unsupported" });
-    await expect(ws.createSoulProfile("Ada")).rejects.toThrow(/canonical profile pointer/);
-    // The refusal names where the capability actually lives, so the operator is not left guessing.
-    await expect(ws.createSoulProfile("Ada")).rejects.toThrow(/t-e50d4f/);
-    await flushMicrotasks();
-    const transactions = path.join(ws.workspaceRoot, ".tachyon", "agent-profile-transactions");
-    const entries = fs.existsSync(transactions) ? fs.readdirSync(transactions) : [];
-    expect(entries.filter((entry) => /^[0-9a-f-]{36}$/i.test(entry))).toEqual([]);
-  } finally {
-    ws.dispose();
-  }
-});
-
 /** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`
  *  fires without the lifecycle tick awaiting it. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -2087,132 +2029,6 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     } finally {
       ws.dispose();
       await fake.cleanup();
-    }
-  });
-
-  it("re-anchor transports configured project guidance without overwriting the startup brief", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "guidance.md"), `REANCHOR_GUIDANCE_${"g".repeat(5_000)}`, "utf8");
-    const { host } = canonicalHost(root, [{ name: "a", spec: { runtime: "claude" } }], "settings:\n  projectGuidance:\n    files: [guidance.md]\n");
-    const fake = fakeTmux();
-    const ws = await Workspace.createForTest(
-      root,
-      { host, onViewsChanged: () => {} },
-      { tmux: fake.tmux, startBridge: false },
-    );
-    try {
-      await ws.manager.spawn("a");
-      const spawnFile = briefFilePath(root, "a");
-      const originalSpawnBrief = fs.readFileSync(spawnFile, "utf8");
-
-      await ws.reanchor("a");
-
-      const session = ws.manager.session("a");
-      const injected = fake.sent.get(session) ?? "";
-      const reanchorFile = briefFilePath(root, "a", "reanchor");
-      const reanchorBrief = fs.readFileSync(reanchorFile, "utf8");
-      expect(injected).toContain("── TACHYON PRIMER ──");
-      expect(injected).toContain(reanchorFile);
-      expect(injected.indexOf("── END PRIMER ──")).toBeLessThan(injected.indexOf(reanchorFile));
-      expect(injected.indexOf(reanchorFile)).toBeLessThan(injected.indexOf("── BEFORE FINISHING ──"));
-      expect(reanchorBrief).toContain("── PROJECT GUIDANCE (PROJECT-OWNED) ──");
-      expect(reanchorBrief).toContain("REANCHOR_GUIDANCE_");
-      expect(reanchorBrief).toContain("cat .tachyon/roles/a.md");
-      expect(fs.readFileSync(spawnFile, "utf8")).toBe(originalSpawnBrief);
-    } finally {
-      ws.dispose();
-    }
-  });
-
-  it("SDD 421 re-anchor reuses the session's pinned Evolution snapshot", async () => {
-    const fake = fakeTmux();
-    const { ws } = await createEvolvingWorkspace(["a"], "claude", fake);
-    try {
-      const first = await ws.evolutionStore.createCandidate("a", {
-        reviewId: "review-first",
-        taskId: "t-111111",
-        target: { kind: "learning", content: "Pinned first-session learning.", reason: "Approved before spawn." },
-      });
-      const firstDetail = await ws.evolutionStore.candidateDetail("a", first.id);
-      await ws.evolutionStore.approveCandidate("a", first.id, {
-        expectedActiveVersion: 0,
-        expectedTargetDigest: firstDetail.currentTargetDigest,
-      });
-      await ws.manager.spawn("a");
-      expect(ws.ledger.get("a")?.evolution?.version).toBe(1);
-
-      const second = await ws.evolutionStore.createCandidate("a", {
-        reviewId: "review-second",
-        taskId: "t-222222",
-        target: { kind: "learning", content: "Next-session-only learning.", reason: "Approved after spawn." },
-      });
-      const secondDetail = await ws.evolutionStore.candidateDetail("a", second.id);
-      await ws.evolutionStore.approveCandidate("a", second.id, {
-        expectedActiveVersion: 1,
-        expectedTargetDigest: secondDetail.currentTargetDigest,
-      });
-
-      await ws.reanchor("a");
-      const reanchorPayload = fake.sent.get(ws.manager.session("a")) ?? "";
-      expect(reanchorPayload).toContain("Pinned first-session learning.");
-      expect(reanchorPayload).not.toContain("Next-session-only learning.");
-      expect(ws.ledger.get("a")?.evolution?.version).toBe(1);
-    } finally {
-      ws.dispose();
-      await fake.cleanup();
-    }
-  });
-
-  it("re-anchor leaves a running pane untouched when configured guidance becomes invalid", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "guidance.md"), "valid guidance", "utf8");
-    const { host } = canonicalHost(root, [{ name: "a", spec: { runtime: "claude" } }], "settings:\n  projectGuidance:\n    files: [guidance.md]\n");
-    const fake = fakeTmux();
-    const ws = await Workspace.createForTest(
-      root,
-      { host, onViewsChanged: () => {} },
-      { tmux: fake.tmux, startBridge: false },
-    );
-    try {
-      await ws.manager.spawn("a");
-      const session = ws.manager.session("a");
-      fs.rmSync(path.join(root, "guidance.md"));
-
-      await expect(ws.reanchor("a")).rejects.toThrow(/guidance\.md/);
-      expect(fake.sessions.has(session)).toBe(true);
-      expect(fake.sent.has(session)).toBe(false);
-      expect(fs.existsSync(briefFilePath(root, "a", "reanchor"))).toBe(false);
-    } finally {
-      ws.dispose();
-    }
-  });
-
-  it("surfaces an automatic re-anchor guidance failure instead of swallowing it", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "guidance.md"), "valid guidance", "utf8");
-    const { host } = canonicalHost(root, [{ name: "a", spec: { runtime: "claude" } }], "settings:\n  projectGuidance:\n    files: [guidance.md]\n");
-    const fake = fakeTmux();
-    const ws = await Workspace.createForTest(
-      root,
-      { host, onViewsChanged: () => {} },
-      { tmux: fake.tmux, startBridge: false },
-    );
-    try {
-      await ws.manager.spawn("a");
-      fs.rmSync(path.join(root, "guidance.md"));
-      const recoverOnIdle = (ws as unknown as {
-        recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void>;
-      }).recoverOnIdle.bind(ws);
-
-      await recoverOnIdle("a", true);
-
-      expect(host.notices.some((notice) =>
-        notice.level === "warn" &&
-        notice.message.includes("could not re-anchor agent 'a'") &&
-        notice.message.includes("guidance.md")
-      )).toBe(true);
-    } finally {
-      ws.dispose();
     }
   });
 

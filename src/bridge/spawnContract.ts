@@ -219,8 +219,8 @@ export function identityLine(name: string): string {
 
 /**
  * Compose the validated contract (+ optional free-form instructions) into the child's opening brief.
- * Order downstream is role → THIS → guidance (the caller passes this as `instructions` to spawn,
- * which prepends the role template and appends Bridge guidance). LOSSLESS: no slot is truncated —
+ * Order downstream is persistent instructions → THIS → guidance (the caller passes this as `instructions` to spawn,
+ * which appends Bridge guidance). LOSSLESS: no slot is truncated —
  * AgentManager.effectiveCmd diverts an over-threshold body to the agent's brief file (briefFile.ts)
  * before it ever reaches tmux, so the full contract always reaches the child, inline or via file.
  * The identity line (before) and the spec-332 notify-parent guidance (when `parent` is given, after)

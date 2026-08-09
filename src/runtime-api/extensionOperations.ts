@@ -11,8 +11,6 @@ const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 const tmuxSession = z.string().min(1).max(256).regex(/^[^\0\r\n]+$/u);
 const terminalAgent = z.string().min(1).max(128).regex(/^[^\0\r\n]+$/u);
 const terminalTitle = z.string().min(1).max(256).regex(/^[^\0\r\n]+$/u);
-const soulPayload = z.custom<StagedPayloadRefV1>(isStagedPayloadRefV1)
-  .refine((value) => value.byteSize <= 64 * 1024, "Soul payload exceeds 64 KiB");
 const agentProfileBundlePayload = z.custom<StagedPayloadRefV1>(isStagedPayloadRefV1)
   .refine((value) => value.byteSize <= PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES, "Agent profile bundle payload exceeds 256 KiB");
 
@@ -34,7 +32,7 @@ const schedule = z.union([
 export const EXTENSION_QUERY_ACTIONS = [
   "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.session-inspection", "agent.fork-preview", "prompt.catalog", "worktree.review",
-  "worktrees.list", "worktrees.classified", "pipeline.inspect", "agent.wait", "soul.profile.status",
+  "worktrees.list", "worktrees.classified", "pipeline.inspect", "agent.wait",
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
   "agent-profile.forget-plan",
   "agent-profile.authorizable-capabilities",
@@ -49,15 +47,13 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "config.companion.tabTools",
   "config.companion.allowedHosts",
   "config.ideBrowser.enabled",
-  "agent.fork", "agent.continue-task", "worktree.remove", "worktree.delete-branch", "worktree.forget-record", "worktree.remove-managed", "worktree.release-lock", "agent.reanchor",
+  "agent.fork", "agent.continue-task", "worktree.remove", "worktree.delete-branch", "worktree.forget-record", "worktree.remove-managed", "worktree.release-lock",
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
   "bridge.restart", "bridge.stop", "bridge.refresh-tools", "config.health",
   "companion.unpair",
   "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
   "runtime-config.mark-pending",
-  "soul.profile.create", "soul.profile.import", "soul.profile.replace", "soul.profile.adopt",
-  "soul.profile.enable", "soul.profile.disable", "soul.profile.delete",
   "evolution.approve", "evolution.reject",
   "tmux.kill", "tmux.recover", "terminal.open", "terminal.close",
   "agent-profile.studio-commit", "agent-profile.studio-lifecycle",
@@ -109,7 +105,6 @@ export const extensionQuerySchema = z.union([
    *  outright instead of decoding a changed payload. Read-only; editing lives in Agent Studio. */
   z.object({ action: z.literal("agent.session-inspection"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
-  z.object({ action: z.literal("soul.profile.status"), agent: name }).strict(),
   z.object({ action: z.literal("evolution.overview"), agent: name }).strict(),
   z.object({ action: z.literal("evolution.candidate"), agent: name, candidateId: text(256, 1).regex(/^candidate-[A-Za-z0-9_-]+$/) }).strict(),
   z.object({ action: z.literal("tmux.snapshot") }).strict(),
@@ -240,7 +235,6 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   // t-d29398 — release a preserved checkout's Git quarantine. Registry-id-scoped like the two above,
   // human-initiated from the Worktrees tab, and non-destructive: it removes the lock, never the tree.
   z.object({ action: z.literal("worktree.release-lock"), id: text(256, 1) }).strict(),
-  z.object({ action: z.literal("agent.reanchor"), agent: name }).strict(),
   z.object({ action: z.literal("agent.inject-continuity"), agent: name }).strict(),
   z.object({ action: z.literal("agent.resume-all") }).strict(),
   z.object({ action: z.literal("workspace.stop-all") }).strict(),
@@ -264,13 +258,6 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     title: terminalTitle.optional(),
   }).strict(),
   z.object({ action: z.literal("terminal.close"), agent: terminalAgent, session: tmuxSession }).strict(),
-  z.object({ action: z.literal("soul.profile.create"), agent: name }).strict(),
-  z.object({ action: z.literal("soul.profile.import"), agent: name, payload: soulPayload }).strict(),
-  z.object({ action: z.literal("soul.profile.replace"), agent: name, payload: soulPayload, expectedDigest: sha256 }).strict(),
-  z.object({ action: z.literal("soul.profile.adopt"), agent: name, expectedDigest: sha256 }).strict(),
-  z.object({ action: z.literal("soul.profile.enable"), agent: name }).strict(),
-  z.object({ action: z.literal("soul.profile.disable"), agent: name }).strict(),
-  z.object({ action: z.literal("soul.profile.delete"), agent: name }).strict(),
   z.object({
     action: z.literal("evolution.approve"),
     agent: name,

@@ -41,7 +41,7 @@ const profileLaneSchema = z.object({
 
 export const formationLaneSchema = z.discriminatedUnion("mode", [legacyLaneSchema, disabledLaneSchema, profileLaneSchema]);
 export type FormationLane = z.infer<typeof formationLaneSchema>;
-export type FormationLaneName = "soul" | "instructions" | "evolution" | "memory";
+export type FormationLaneName = "instructions" | "evolution" | "memory";
 
 export const formationNativeSuppressionEvidenceV1Schema = z.object({
   schemaVersion: z.literal(1),
@@ -49,7 +49,7 @@ export const formationNativeSuppressionEvidenceV1Schema = z.object({
   sourceVectorSha256: digest,
   runtimeAdapter: publicId,
   runtimeTrustClass: publicId,
-  lanes: z.array(z.enum(["soul", "instructions", "evolution", "memory"])).max(4),
+  lanes: z.array(z.enum(["instructions", "evolution", "memory"])).max(3),
   issuedAt: z.string().datetime(),
   mac: digest,
 }).strict();
@@ -71,7 +71,6 @@ export const profileActivationHeadV2Schema = z.object({
     sha256: digest,
   }).strict(),
   lanes: z.object({
-    soul: formationLaneSchema,
     instructions: formationLaneSchema,
     evolution: formationLaneSchema,
     memory: formationLaneSchema,
@@ -364,7 +363,6 @@ export function profileActivationHeadV2FromV1(input: {
     effectiveSha256: input.effectiveSha256,
     runtimeInspector: input.legacy.runtimeInspector,
     lanes: {
-      soul: { mode: "disabled" },
       instructions: { mode: "disabled" },
       evolution: { mode: "disabled" },
       memory: { mode: "disabled" },

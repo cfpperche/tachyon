@@ -1,11 +1,11 @@
 import { useEffect, useState } from "preact/hooks";
 import { StudioFrame } from "../shared/studio/StudioFrame";
-import { Chip, Select } from "../shared/ui";
+import { Chip } from "../shared/ui";
 import { cancelMessage, readyMessage, saveMessage } from "./messages";
 import type { AgentFixtureFields, AgentFixtureHostMessage, AgentFixtureVM } from "./types";
 
 /**
- * spec 350 T5 — Fake 2: the Agent tab's densest real fields (quick-add chips, role select, instructions,
+ * spec 350 T5 — Fake 2: the Agent tab's densest real fields (quick-add chips, instructions,
  * worktree section) rendered as domain components inside the shell's declared regions. No dirty/validation/
  * persistence proof here (Fake 1 owns that) — this is a REGION-composition proof only.
  */
@@ -72,15 +72,7 @@ export function App({ dispatch }: { dispatch: AgentFixtureDispatch }) {
               ))}
             </div>
 
-            <label class="asf-label" for="asf-role">Role template</label>
-            <Select id="asf-role" value={fields.role ?? ""} onChange={(e) => setField("role", (e.currentTarget as HTMLSelectElement).value || null)}>
-              <option value="">(none)</option>
-              {vm.roleOptions.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </Select>
-
-            <label class="asf-label" for="asf-instructions">Instructions (role prompt)</label>
+            <label class="asf-label" for="asf-instructions">Persistent instructions</label>
             <textarea id="asf-instructions" class="ds-input asf-instructions" value={fields.instructions} onInput={(e) => setField("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
           </div>
         ),

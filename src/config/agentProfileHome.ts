@@ -16,12 +16,12 @@ import path from "node:path";
  *
  * `savedAgentState.ts` already states the rule these helpers have to obey — a profile directory may
  * hold work a human wants, and Tachyon never deletes it automatically. An EMPTY directory holds
- * nothing; a directory holding `SOUL.md` holds a great deal. So the only removal that is safe on
+ * nothing; a directory holding human-authored data may hold a great deal. So the only removal that is safe on
  * both paths is the one that refuses when anything is inside.
  *
  * `rmdir` is that removal, and its refusal is the guard itself rather than a check written in front
  * of one. "Read the directory, and if it is empty `rm -rf` it" is the same policy with a race in the
- * middle: between the read and the delete, a Soul import or an Evolution write can put bytes inside,
+ * middle: between the read and the delete, an Evolution or memory write can put bytes inside,
  * and the recursive delete would take them. The kernel's `ENOTEMPTY` cannot be raced.
  *
  * ## Why failing is never fatal here

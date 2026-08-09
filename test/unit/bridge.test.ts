@@ -160,7 +160,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "propose_schedule",
       "read_notices",
       "read_output",
-      "reanchor_agent",
       "reconcile_roster",
       "reconcile_runtime_credentials",
       "reconcile_task",

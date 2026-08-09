@@ -8,8 +8,6 @@ import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { isAgentProfileRefusal } from "../config/agentProfileRefusal.js";
 import type { AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
-import { SoulError, SOUL_MAX_BYTES, type SoulProfileStatus } from "../agents/soul.js";
-import type { ProfileMutationResult } from "../agents/soulProfileTransactions.js";
 import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
 import { executeWait, type BridgeDeps } from "../bridge/tools.js";
 import { APPROVAL_CHANNEL_VSCODE_COMMAND, resolveApproval } from "../bridge/approvalRequest.js";
@@ -175,8 +173,6 @@ export async function executeExtensionQuery(
       return json(await workspace.inspectAgentSession(query.agent));
     case "agent.fork-preview":
       return json(await workspace.manager.planFork(query.agent));
-    case "soul.profile.status":
-      return soulProfileOutcome(() => workspace.refreshSoulProfile(query.agent));
     case "evolution.overview":
       return json(await workspace.readAgentEvolutionOverview(query.agent));
     case "evolution.candidate":
@@ -554,9 +550,6 @@ export async function executeExtensionCommand(
       const result = await workspace.managedWorktrees.releaseLock(command.id, { actor: { kind: "human" } });
       return json(result as unknown as JsonValue);
     }
-    case "agent.reanchor":
-      await workspace.reanchor(command.agent);
-      return json({ changed: true });
     case "agent.inject-continuity":
       await workspace.injectContinuity(command.agent, "manual", { origin: "ui" });
       return json({ changed: true });
@@ -627,29 +620,6 @@ export async function executeExtensionCommand(
       assertTachyonSession(command.session);
       workspace.terminals.close(command.agent, command.session);
       return json({ closed: true, session: command.session });
-    case "soul.profile.create":
-      return soulProfileMutation(() => workspace.createSoulProfile(command.agent), onViewsChanged);
-    case "soul.profile.import": {
-      if (!stagedPayloads) throw new Error("Soul payload transport is unavailable");
-      const bytes = stagedPayloads.consume(command.payload, SOUL_MAX_BYTES);
-      return soulProfileMutation(() => workspace.importSoulProfileBytes(command.agent, bytes), onViewsChanged);
-    }
-    case "soul.profile.replace": {
-      if (!stagedPayloads) throw new Error("Soul payload transport is unavailable");
-      const bytes = stagedPayloads.consume(command.payload, SOUL_MAX_BYTES);
-      return soulProfileMutation(
-        () => workspace.replaceSoulProfileBytes(command.agent, bytes, command.expectedDigest),
-        onViewsChanged,
-      );
-    }
-    case "soul.profile.adopt":
-      return soulProfileMutation(() => workspace.adoptSoulProfile(command.agent, command.expectedDigest), onViewsChanged);
-    case "soul.profile.enable":
-      return soulProfileMutation(() => workspace.enableSoulProfile(command.agent), onViewsChanged);
-    case "soul.profile.disable":
-      return soulProfileMutation(() => workspace.disableSoulProfile(command.agent), onViewsChanged);
-    case "soul.profile.delete":
-      return soulProfileMutation(() => workspace.deleteSoulProfile(command.agent), onViewsChanged);
     case "evolution.approve":
       return evolutionCandidateMutation(() => workspace.approveAgentEvolutionCandidate(command.agent, command.candidateId, {
         expectedActiveVersion: command.expectedActiveVersion,
@@ -702,15 +672,6 @@ function samePaneIdentity(
     && row.createdAt === expected.createdAt;
 }
 
-async function soulProfileMutation(
-  run: () => Promise<ProfileMutationResult>,
-  onViewsChanged: (view: ViewKind) => void,
-): Promise<JsonValue> {
-  const outcome = await soulProfileOutcome(run);
-  if (isSuccessfulSoulProfileOutcome(outcome)) onViewsChanged("agents");
-  return outcome;
-}
-
 async function evolutionCandidateMutation(
   run: () => Promise<{ candidateId: string; activeVersion: number }>,
 ): Promise<JsonValue> {
@@ -720,44 +681,6 @@ async function evolutionCandidateMutation(
     if (error instanceof EvolutionStoreError) return json({ outcome: "error", code: error.code });
     throw error;
   }
-}
-
-async function soulProfileOutcome(
-  run: () => Promise<ProfileMutationResult | SoulProfileStatus>,
-): Promise<JsonValue> {
-  try {
-    const raw = await run();
-    const mutation: ProfileMutationResult | undefined = "status" in raw ? raw : undefined;
-    const status: SoulProfileStatus = mutation ? mutation.status : raw as SoulProfileStatus;
-    return json({
-      outcome: "ok",
-      status: projectSoulProfileStatus(status),
-      ...(mutation?.selfSelected !== undefined ? { selfSelected: mutation.selfSelected } : {}),
-    });
-  } catch (error) {
-    if (error instanceof SoulError) return json({ outcome: "error", code: error.code });
-    throw error;
-  }
-}
-
-function projectSoulProfileStatus(status: SoulProfileStatus): JsonValue {
-  return json({
-    agent: status.agent,
-    relativePath: status.relativePath,
-    lifecycle: status.lifecycle,
-    ...(status.profileId !== undefined ? { profileId: status.profileId } : {}),
-    ...(status.sha256 !== undefined ? { sha256: status.sha256 } : {}),
-    ...(status.chars !== undefined ? { chars: status.chars } : {}),
-    ...(status.bytes !== undefined ? { bytes: status.bytes } : {}),
-    soulEnabled: status.soulEnabled,
-    resolvable: status.resolvable,
-    transactionDegraded: status.transactionDegraded,
-    ...(status.preview !== undefined ? { preview: status.preview } : {}),
-  });
-}
-
-function isSuccessfulSoulProfileOutcome(value: JsonValue): boolean {
-  return !!value && typeof value === "object" && !Array.isArray(value) && value.outcome === "ok";
 }
 
 async function configHealth(workspace: Workspace): Promise<JsonValue> {

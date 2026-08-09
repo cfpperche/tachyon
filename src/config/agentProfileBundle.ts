@@ -50,9 +50,7 @@ export const portableAgentProfileBundleSchemaV1 = z.object({
   profile: z.object({
     displayName: text(256).optional(),
     runtime: runtimeSchema,
-    role: z.enum(["coder", "reviewer", "tester", "orchestrator", "custom"]).optional(),
     documents: z.object({
-      soul: documentSchema.optional(),
       instructions: documentSchema.optional(),
     }).strict().optional(),
   }).strict(),
@@ -136,7 +134,7 @@ function portableDocument(
   workspaceRoot: string,
   agentName: string,
   profile: AgentProfileV1,
-  field: "soul" | "instructions",
+  field: "instructions",
 ): { document?: z.infer<typeof documentSchema>; requirement?: PortableAgentProfileRequirementV1 } {
   const id = profile.prompt?.[field];
   if (!id) return {};
@@ -206,10 +204,8 @@ export function exportPortableAgentProfileBundle(input: {
   try {
     if (source.sha256 !== input.snapshot.provenance.canonical.sha256) throw new Error("canonical profile changed after lifecycle inspection");
   } finally { closeCanonicalAgentProfile(source); }
-  const soul = portableDocument(input.workspaceRoot, input.snapshot.agentName, input.snapshot.profile, "soul");
   const instructions = portableDocument(input.workspaceRoot, input.snapshot.agentName, input.snapshot.profile, "instructions");
   const consumed = new Set<string>();
-  if (soul.document && input.snapshot.profile.prompt?.soul) consumed.add(input.snapshot.profile.prompt.soul);
   if (instructions.document && input.snapshot.profile.prompt?.instructions) consumed.add(input.snapshot.profile.prompt.instructions);
   const bundle: PortableAgentProfileBundleV1 = {
     schemaVersion: 1,
@@ -218,14 +214,11 @@ export function exportPortableAgentProfileBundle(input: {
     profile: {
       ...(input.snapshot.profile.displayName ? { displayName: input.snapshot.profile.displayName } : {}),
       runtime: { ...input.snapshot.profile.runtime },
-      ...(input.snapshot.profile.prompt?.role ? { role: input.snapshot.profile.prompt.role } : {}),
-      ...(soul.document || instructions.document ? { documents: {
-        ...(soul.document ? { soul: soul.document } : {}),
+      ...(instructions.document ? { documents: {
         ...(instructions.document ? { instructions: instructions.document } : {}),
       } } : {}),
     },
     requiresReauthorization: [
-      ...(soul.requirement ? [soul.requirement] : []),
       ...(instructions.requirement ? [instructions.requirement] : []),
       ...excludedRequirements(input.snapshot.profile, consumed),
     ].sort((left, right) => {
@@ -256,12 +249,6 @@ export async function importPortableAgentProfileBundle(input: BundleLifecycleDep
   const artifacts: Array<{ path: string; text: string; sha256: string }> = [];
   const references: Array<Omit<AgentProfileReferenceV1, "scope" | "owner">> = [];
   const prompt: NonNullable<Omit<AgentProfileV1, "schemaVersion" | "agentId">["prompt"]> = {};
-  if (parsed.bundle.profile.role) prompt.role = parsed.bundle.profile.role;
-  if (documents?.soul) {
-    prompt.soul = "portable-soul";
-    artifacts.push({ path: "SOUL.md", text: documents.soul.text, sha256: documents.soul.sha256 });
-    references.push({ id: "portable-soul", kind: "soul", path: "SOUL.md", mode: "pinned", sha256: documents.soul.sha256 });
-  }
   if (documents?.instructions) {
     prompt.instructions = "portable-instructions";
     artifacts.push({ path: "instructions.md", text: documents.instructions.text, sha256: documents.instructions.sha256 });

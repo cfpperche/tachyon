@@ -13,7 +13,7 @@ export type AgentItemStateName = "running" | "stopped" | "crashed";
 
 export interface AgentContextParts {
   state: AgentItemStateName;
-  /** AI agent (vs a terminal) — gates AI-only actions (re-anchor, fork). */
+  /** AI agent (vs a terminal) — gates AI-only actions such as fork. */
   ai: boolean;
   /** temporary: not saved in tachyon.yml (MCP-spawned or a forked sibling). */
   temporary: boolean;

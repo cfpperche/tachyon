@@ -1,4 +1,3 @@
-import type { Role } from "../../roles/templates.js";
 import type { EvolutionStore } from "../../evolution/EvolutionStore.js";
 import type { SelectedMemoryStore } from "../../memory/SelectedMemoryStore.js";
 import { composeAgentPrompt } from "../promptLayers.js";
@@ -35,7 +34,7 @@ export function completeFormationRendererContractsSha256(vector: FormationAuthor
     human: HUMAN_FORMATION_RENDERER_CONTRACTS_SHA256,
     evolution: evolution ? EVOLUTION_FORMATION_RENDERER_SHA256 : "disabled",
     memory: memory ? SELECTED_MEMORY_RENDERER_SHA256 : "disabled",
-    order: ["soul", "role", "instructions", "evolution", "memory", "bridge-guidance", "task"],
+    order: ["instructions", "evolution", "memory", "bridge-guidance", "task"],
     reanchor: "same-formation-without-task-v1",
   });
 }
@@ -47,7 +46,6 @@ export interface ResolveCompleteFormationInput {
   agentId: string;
   agentName: string;
   vector: FormationAuthorityVector;
-  role?: Role;
   bridgeGuidance: boolean;
   projectGuidance?: string;
   taskBrief?: string;
@@ -104,8 +102,6 @@ export async function resolveCompleteFormationPayload(input: ResolveCompleteForm
   }
 
   const layers = {
-    soul: human.soul,
-    role: input.role,
     instructions: human.instructions?.body,
     formationEvolution: evolution ? payloadText(evolution.startupPrompt) : undefined,
     selectedMemory: memory ? payloadText(memory.startupPrompt) : undefined,
