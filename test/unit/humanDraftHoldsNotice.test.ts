@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { skipTestsWithoutOptionalRuntimeAuth, useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, expect, it, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -186,8 +186,21 @@ async function withCoordAndChild(composerLine = EMPTY_COMPOSER) {
 
 const doorbellMetadataFor = (ws: Workspace, sender: string) => priv(ws).sourceNoticeMetadata(sender, "agent-authored");
 
+/**
+ * t-a12966 — this file needs TWO different things from the machine, and only one of them is
+ * substrate.
+ *
+ * The coordinator is a claude agent: its harness wants a credential FILE to link, which is injected
+ * below. The child it pokes is spawned with `cmd: opencode`, and opencode is a different animal —
+ * its launch preflight EXECUTES the installed runtime to ask whether it is authenticated, so no
+ * fixture can stand in. Measured while classifying: the list here declared `claude`, which is the
+ * dependency that does NOT bind. On a host with claude credentials and no opencode these twelve
+ * went red rather than pending, blaming the composer guard for a missing runtime.
+ */
+useDisposableRuntimeAuth(["claude"]);
+
 skipTestsWithoutOptionalRuntimeAuth({
-  claude: [
+  opencode: [
     "an unsent composer tells the human the agent is idle and names the remedy exactly once",
     "THE MEASURED BUG: the poll says the composer is free, the pane says a human is typing — nothing is injected",
     "the sender is TOLD a human is holding it — a queued doorbell that waits on a person says so",

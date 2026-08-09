@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -134,12 +134,14 @@ function envValue(argv: string[], varName: string): string | undefined {
   return undefined;
 }
 
-skipTestsWithoutOptionalRuntimeAuth({
-  claude: [
-    "restart (a session-recreation event, same env-injection path as resume) mints a FRESH token — prior token stays valid during supersede grace",
-    "stale-pane case: a tmux session surviving an extension-host reload keeps its PRE-reload token valid (does not silently strand)",
-  ],
-});
+/**
+ * t-a12966 — the claude credential these cases need is SUBSTRATE: the harness materializer links a
+ * credential file so the spawn can proceed, and nothing below launches a real runtime. Listing the
+ * titles here for `skipTestsWithoutOptionalRuntimeAuth` made the result depend on whether the HOST was
+ * logged in — measured green on the maintainer's checkout and pending in every agent worktree with a
+ * private, credential-free config home. Injected through the door production reads instead.
+ */
+useDisposableRuntimeAuth(["claude"]);
 
 describe("resume env integration proof (spec 351 T6)", () => {
   const dirs: string[] = [];

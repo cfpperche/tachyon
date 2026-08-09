@@ -14,6 +14,7 @@ import { TmuxService, defaultExecutor } from "../../src/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { gateCmdRuntimeChange } from "../../src/agents/cmdRuntimeGate.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
+import { requireMachineDependency } from "../helpers/machineDependency.js";
 
 /** Seeded by the fixture setup below, then handed to every DogfoodHost this run builds. */
 let canonicalSecrets = new Map<string, string>();
@@ -97,9 +98,26 @@ class DogfoodHost {
   onViewsChanged(): void {}
 }
 
-describe.skipIf(!grokAvailable() || !grokCredentialAvailable() || !tmuxAvailable())(
+/**
+ * t-a12966 — resolved ONCE, at module load, and read by both the skip and the fixture.
+ *
+ * The preconditions above were already correct; what was missing is that they said nothing in the
+ * report — a machine without grok produced a pending test and no reason, which is indistinguishable
+ * from coverage that quietly stopped running. The reason now rides the skipped result. Read once so
+ * the guard the fixture consults and the guard the tests consult can never disagree.
+ */
+const GROK_DOGFOOD_UNAVAILABLE = !grokAvailable()
+  ? "grok CLI not installed (this dogfood spawns REAL grok agents)"
+  : !grokCredentialAvailable()
+    ? `no grok credential at ${path.join(os.homedir(), ".grok", "auth.json")} (recover with \`grok login\`)`
+    : !tmuxAvailable()
+      ? "tmux not installed (this dogfood drives a real tmux server)"
+      : undefined;
+
+describe(
   "SDD 443 dogfood — continue_task with real grok agents (tmux)",
   () => {
+    requireMachineDependency(() => GROK_DOGFOOD_UNAVAILABLE);
     let base: string;
     let workspace: string;
     let tmuxTmp: string;
@@ -110,6 +128,8 @@ describe.skipIf(!grokAvailable() || !grokCredentialAvailable() || !tmuxAvailable
     const evidence: Record<string, unknown>[] = [];
 
     beforeAll(async () => {
+      // The fixture SPAWNS real agents, so it must not run when the tests it feeds are skipping.
+      if (GROK_DOGFOOD_UNAVAILABLE) return;
       base = makeSocketTemp("sc-grok-");
       workspace = path.join(base, "ws");
       tmuxTmp = path.join(base, "t");
@@ -152,6 +172,7 @@ describe.skipIf(!grokAvailable() || !grokCredentialAvailable() || !tmuxAvailable
     }, 60_000);
 
     afterAll(async () => {
+      if (GROK_DOGFOOD_UNAVAILABLE) return;
       for (const name of ["source", "dest"] as const) {
         try {
           await ws.manager.kill(name);

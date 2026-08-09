@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { skipTestsWithoutOptionalRuntimeAuth, useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -38,48 +38,15 @@ import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
  * lifecycle are wired together correctly. Substrate is injected via `Workspace.createForTest`.
  */
 
+/** Substrate, not subject: the harness materializer needs a credential FILE to link, nothing more. */
+useDisposableRuntimeAuth(["claude", "codex"]);
+
+/**
+ * t-a12966 — claude and codex used to be listed here too; both were substrate, so both are injected
+ * now (`useDisposableRuntimeAuth` above) and the tests below run on any machine. What is left is the
+ * one dependency a fixture cannot supply: opencode's preflight runs the installed runtime.
+ */
 skipTestsWithoutOptionalRuntimeAuth({
-  claude: [
-    "uses Workspace authority for Evolution profile creation and rejects tampered production startup",
-    "SDD 369 T3 composes the extension-global Claude capture into the existing per-spawn settings layer",
-    "SDD 369 T3 does not compose capture across an explicit Claude settings-source filter",
-    "blocks reloadWindow while another agent is actively working",
-    "spec 484: a delegated Temporary child is born on a per-SPAWN branch, and the name-derived one is never minted",
-    "spec 484: two spawns of the SAME Temporary name get two different branches, and the first child's commits are left alone",
-    "t-28bf8f: a kill refused by a live root process moves nothing, and the retry after it dies finishes the removal",
-    "t-28bf8f: neither a forced Kill nor Stop All collects a Temporary row that still owns a checkout",
-    "authorizes a skill for a RUNNING agent and reports that it lands at the next launch",
-    "leaves the live session's delivered skills untouched, and delivers on the next launch",
-    "reauthorizes changed content while the agent runs, re-pinning the new digest",
-    "still refuses to REVOKE under a live session, naming the sequence",
-    "names the stop/apply/start sequence for a mutation that does need the agent stopped",
-  ],
-  // t-70fda0 — real HarnessManager materialize for codex. Measured under empty HOME: these were hard
-  // reds (`no credentials at …/.codex/auth.json`) while claude/opencode were already classified by
-  // t-eccb00. Host codex auth is often present on the primary machine, so the hole stayed quiet.
-  codex: [
-    "t-6f0377 defers one replaceable context-renewal gesture until idle",
-    "t-af6803 isolates one invalid profile without invalidating or stopping the healthy fleet",
-    "renames a running canonical profile and keeps the same live session through the Workspace transaction boundary",
-    "refuses the bare canonical forget while a tmux binding exists, and plans the kill in the Studio door",
-    "blocks reloadWindow while another agent is actively working",
-    "an unexpected crash pokes the live parent with the death envelope",
-    "a clean self-exit (code 0) also pokes the live parent",
-    "a deliberate kill_agent (manager.kill) suppresses the poke — cancellation isn't completion",
-    "a genuinely vanished session (external kill, two consecutive ticks) pokes 'killed' once confirmed",
-    "skips the 'killed' poke when the child's own session is actually still there (false alarm)",
-    "still pokes 'killed' when the recheck confirms the child's session is genuinely gone",
-    "a confirmed crash/clean-exit poke (confirmVanished not set) ignores the child's current session state",
-    "toasts and sidebars an idle prose question from a declared top-level agent",
-    "does not derive awaiting-human for declared subagents or Temporary children",
-    "flushes a notice queued behind an occupied composer when the monitor observes the composer clear (t-f45313)",
-    "declares ownership while the owner is running — ownership has no runtime lifecycle role",
-    "t-e722ce: the forget plan names the blocking precondition and changes nothing",
-    // Needs host codex auth to reach the intentional post-worktree session-creation failure; without
-    // it the spawn dies earlier at harness materialize and the assertion becomes a misleading red.
-    "t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the checkout it just made, registry row and all",
-    "t-d29398: a failed launch preserves — and keeps registered — a checkout that has something in it",
-  ],
   opencode: [
     "pokes the live parent with the child's matched prompt line when it enters needs-input",
     "falls back to a generic line when no matched prompt text is available",

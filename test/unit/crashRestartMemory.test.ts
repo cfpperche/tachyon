@@ -11,6 +11,7 @@ import { Terminals } from "../../src/presentation/Terminals.js";
 import { encodeClaudeCwd } from "../../src/resume/adapters.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 
 /**
  * t-f6aa7c — a process that died on its own must not cost an AGENT its memory.
@@ -104,6 +105,22 @@ afterEach(() => {
   __resetVscodeMock();
   for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
+
+/**
+ * t-a12966 — the claude credential these cases need is SUBSTRATE, not subject.
+ *
+ * Spawning a Saved claude agent materializes its isolated harness home, and that refuses without a
+ * real credential to link (`HarnessUnavailableError: … run claude /login first`). Nothing below
+ * launches a real claude — the tmux channel is fake-exec'd and the assertions read the command line
+ * — so requiring the MACHINE to be logged in made four of these cases answer "is this host
+ * credentialed?" instead of "does a crash cost an agent its memory?". Measured: green in the primary
+ * checkout, red in every agent worktree whose private `CLAUDE_CONFIG_DIR` has no credential, which
+ * is how it landed four unrelated reds on an agent that had written only markdown.
+ *
+ * The state goes in through the door production reads it from — `CLAUDE_CONFIG_DIR`, resolved by
+ * `realConfigHome()` when the Workspace builds its `HarnessManager`.
+ */
+useDisposableRuntimeAuth(["claude"]);
 
 /** `worker` is a canonical Saved AGENT on `restart: on-crash`; `dev` is a TERMINAL on the same policy. */
 async function makeWorkspace() {

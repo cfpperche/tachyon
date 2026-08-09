@@ -23,7 +23,15 @@ import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
  */
 
 const WEBVIEW_DIR = "dist/webview";
-const built = existsSync(join(WEBVIEW_DIR, "cockpit.js"));
+/**
+ * t-a12966 — this probe was `existsSync("dist/webview/cockpit.js")`, the exact hardcoded filename
+ * the header above mocks its predecessor for. `t-5a0c1c` retired the cockpit bundle, so the probe
+ * answered "not built" on a fully built tree and all three measurements below had been skipping in
+ * every gate since — silently, because a `runIf` reports a pending test and no reason. Derived from
+ * the manifest instead: it cannot go stale without the manifest itself being wrong, which the two
+ * unconditional tests above already catch.
+ */
+const built = WEBVIEW_APPS.every((app) => existsSync(join(WEBVIEW_DIR, `${app.view}.js`)));
 
 let reachableWebviewChunkBasenames: (dir: string, entries?: string[]) => Set<string>;
 

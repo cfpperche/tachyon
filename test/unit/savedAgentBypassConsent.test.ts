@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -77,11 +77,14 @@ function fakeTmux() {
   return { sessions, tmux: new TmuxService(exec) };
 }
 
-skipTestsWithoutOptionalRuntimeAuth({
-  claude: [
-    "writes skipDangerousModePermissionPrompt into the per-spawn settings a Saved Agent launches with",
-  ],
-});
+/**
+ * t-a12966 — the claude credential these cases need is SUBSTRATE: the harness materializer links a
+ * credential file so the spawn can proceed, and nothing below launches a real runtime. Listing the
+ * titles here for `skipTestsWithoutOptionalRuntimeAuth` made the result depend on whether the HOST was
+ * logged in — measured green on the maintainer's checkout and pending in every agent worktree with a
+ * private, credential-free config home. Injected through the door production reads instead.
+ */
+useDisposableRuntimeAuth(["claude"]);
 
 describe("t-084b28 — Saved Agent bypass consent is seeded, not asked every launch", () => {
   const dirs: string[] = [];
