@@ -7,7 +7,7 @@
  * `authorityStore.ts` has always been able to publish generation 1 (`mutation: "bootstrap"`), and the
  * only production store that ever opened it is the spawn path's, which is deliberately read-only
  * (`lifecycleHost.ts` — `authorizeMutation: () => false`). So the mutation existed and nothing could
- * reach it, which is why `soul` and `instructions` have delivered to no agent since 2026-07-25.
+ * reach it, which is why persistent instructions delivered to no agent when this lane shipped.
  *
  * The 490 review (C2) named the trap precisely: `HumanLaneTransactionService` cannot be that door,
  * because every one of its paths reads `currentVector` first and throws a CAS mismatch without one.
@@ -62,16 +62,12 @@ import {
   HUMAN_FORMATION_RENDERER_CONTRACTS_SHA256,
   HUMAN_INSTRUCTIONS_RENDERER_CONTRACT,
   HUMAN_INSTRUCTIONS_RENDERER_SHA256,
-  HUMAN_SOUL_RENDERER_CONTRACT,
-  HUMAN_SOUL_RENDERER_SHA256,
 } from "./humanLanes.js";
 import { closeCanonicalAgentProfile, readCanonicalAgentProfile } from "../../config/agentProfileReader.js";
 import { agentProfileSchemaV1, type AgentProfileV1 } from "../../config/agentProfileSchema.js";
-import { resolveSoul } from "../soul.js";
 import { resolvePersistentInstructions } from "../persistentInstructions.js";
 
 /** The conventional sources the human lanes read; adoption binds these exact paths or refuses. */
-const SOUL_SOURCE_PATH = "SOUL.md";
 const INSTRUCTIONS_SOURCE_PATH = "instructions.md";
 
 export class FormationBootstrapError extends Error {
@@ -115,7 +111,6 @@ export interface FormationAdoptionRecord {
     agentName: string;
     workspaceId: string;
     profileSha256: string;
-    soulSha256?: string;
     instructionsSha256?: string;
   };
 }
@@ -127,9 +122,7 @@ export type FormationAdoptionState =
   | { state: "adopted"; agentId: string; vector: FormationAuthorityVector };
 
 interface BoundLanes {
-  soul: FormationLane;
   instructions: FormationLane;
-  soulSha256?: string;
   instructionsSha256?: string;
 }
 
@@ -217,7 +210,6 @@ export class FormationBootstrapService {
         agentName: input.agentName,
         agentId,
         profileSha256,
-        ...(lanes.soulSha256 ? { soulSha256: lanes.soulSha256 } : {}),
         ...(lanes.instructionsSha256 ? { instructionsSha256: lanes.instructionsSha256 } : {}),
         nextVector: vector,
       },
@@ -321,11 +313,10 @@ export class FormationBootstrapService {
   }
 
   /**
-   * Derive the soul and instructions lanes from the bytes already on disk.
+   * Derive the instructions lane from the bytes already on disk.
    *
    * A declared lane that cannot be bound is a REFUSAL, never a quiet `disabled`. Adopting an agent
-   * whose `agent.yml` asks for a Soul and silently handing it authority without one is precisely the
-   * "appearance of a fix" this spec exists to avoid — the human would see "adopted" and get nothing.
+   * A declared lane that cannot be bound is a refusal, never a quiet disabled result.
    */
   private async bindLanes(
     workspaceRoot: string,
@@ -334,33 +325,7 @@ export class FormationBootstrapService {
     profile: AgentProfileV1,
     profileSha256: string,
   ): Promise<BoundLanes> {
-    const bound: BoundLanes = { soul: { mode: "disabled" }, instructions: { mode: "disabled" } };
-
-    const soulReferenceId = profile.prompt?.soul;
-    if (soulReferenceId !== undefined) {
-      const reference = profile.references?.find((candidate) => candidate.id === soulReferenceId);
-      if (!reference || reference.kind !== "soul" || reference.scope !== "profile"
-        || reference.owner !== agentId || reference.path !== SOUL_SOURCE_PATH || !reference.sha256) {
-        throw new FormationBootstrapError(`Soul reference '${soulReferenceId}' must be a profile-owned pinned '${SOUL_SOURCE_PATH}'`);
-      }
-      // The lane's own resolver, so adoption binds exactly what delivery will later read — including
-      // the v2 manifest/agentId binding it enforces.
-      const soul = await resolveSoul(workspaceRoot, agentName, agentId);
-      if (soul.sha256 !== reference.sha256) {
-        throw new FormationBootstrapError("SOUL.md bytes do not match the digest pinned in agent.yml");
-      }
-      bound.soul = {
-        mode: "profile",
-        required: true,
-        selectorId: reference.id,
-        subjectId: soul.profileId,
-        path: SOUL_SOURCE_PATH,
-        sourceSha256: soul.sha256,
-        rendererContract: HUMAN_SOUL_RENDERER_CONTRACT,
-        rendererSha256: HUMAN_SOUL_RENDERER_SHA256,
-      };
-      bound.soulSha256 = soul.sha256;
-    }
+    const bound: BoundLanes = { instructions: { mode: "disabled" } };
 
     const instructionsReferenceId = profile.prompt?.instructions;
     if (instructionsReferenceId !== undefined) {
@@ -395,23 +360,21 @@ export class FormationBootstrapService {
       bound.instructionsSha256 = resolved.sha256;
     }
 
-    if (bound.soul.mode !== "profile" && bound.instructions.mode !== "profile") {
+    if (bound.instructions.mode !== "profile") {
       throw new FormationBootstrapError(
-        `agent '${agentName}' declares no Soul or Persistent Instructions lane, so there is nothing to place under authority`,
+        `agent '${agentName}' declares no Persistent Instructions lane, so there is nothing to place under authority`,
       );
     }
     return bound;
   }
 
   private sourceOf(vector: FormationAuthorityVector, lanes?: BoundLanes): FormationAdoptionRecord["source"] {
-    const soul = vector.profile.lanes.soul;
     const instructions = vector.profile.lanes.instructions;
     return {
       agentId: vector.profile.agentId,
       agentName: vector.profile.agentName,
       workspaceId: vector.profile.workspaceId,
       profileSha256: vector.profile.canonicalSha256,
-      ...(soul.mode === "profile" ? { soulSha256: soul.sourceSha256 } : lanes?.soulSha256 ? { soulSha256: lanes.soulSha256 } : {}),
       ...(instructions.mode === "profile"
         ? { instructionsSha256: instructions.sourceSha256 }
         : lanes?.instructionsSha256 ? { instructionsSha256: lanes.instructionsSha256 } : {}),
@@ -446,7 +409,6 @@ function buildGenerationOne(input: {
     effectiveSha256: input.effectiveSha256,
     runtimeInspector: { ...input.runtimeInspector },
     lanes: {
-      soul: input.lanes.soul,
       instructions: input.lanes.instructions,
       evolution: { mode: "disabled" },
       memory: { mode: "disabled" },

@@ -113,17 +113,6 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   exportAgentProfileStudioBundle(agent: string, expectedRevision: string) { return this.studio.exportAgentProfileStudioBundle(agent, expectedRevision); }
   cloneAgentProfileStudioBundle(agent: string, expectedRevision: string, destinationAgentName: string) { return this.studio.cloneAgentProfileStudioBundle(agent, expectedRevision, destinationAgentName); }
   importAgentProfileStudioBundle(destinationAgentName: string, bytes: Buffer) { return this.studio.importAgentProfileStudioBundle(destinationAgentName, bytes); }
-  createSoulProfile(agent: string) { return this.studio.createSoulProfile(agent); }
-  importSoulProfileBytes(agent: string, bytes: Buffer) { return this.studio.importSoulProfileBytes(agent, bytes); }
-  replaceSoulProfileBytes(agent: string, bytes: Buffer, expectedDigest: string) {
-    return this.studio.replaceSoulProfileBytes(agent, bytes, expectedDigest);
-  }
-  adoptSoulProfile(agent: string, expectedDigest: string) { return this.studio.adoptSoulProfile(agent, expectedDigest); }
-  enableSoulProfile(agent: string) { return this.studio.enableSoulProfile(agent); }
-  disableSoulProfile(agent: string) { return this.studio.disableSoulProfile(agent); }
-  deleteSoulProfile(agent: string) { return this.studio.deleteSoulProfile(agent); }
-  refreshSoulProfile(agent: string) { return this.studio.refreshSoulProfile(agent); }
-  canonicalSoulPathForOpen(agent: string) { return this.studio.canonicalSoulPathForOpen(agent); }
   readAgentEvolutionOverview(agent: string) { return this.studio.readAgentEvolutionOverview(agent); }
   readAgentEvolutionCandidate(agent: string, candidateId: string) {
     return this.studio.readAgentEvolutionCandidate(agent, candidateId);

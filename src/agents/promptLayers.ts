@@ -1,14 +1,10 @@
 import crypto from "node:crypto";
-import type { Role } from "../roles/templates.js";
-import { bridgeGuidanceTail, composeInstructions, roleTemplate, withBridgeGuidance } from "../roles/templates.js";
+import { bridgeGuidanceTail } from "./bridgeGuidance.js";
 import { briefCarriesTaskSubstance } from "../bridge/spawnContract.js";
-import type { ResolvedSoul } from "./soul.js";
 import { renderEvolutionPromptLayer, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { renderSessionWorkRecord, sessionRecordManifest, type SessionWorkRecord } from "./sessionWorkRecord.js";
 
 export interface AgentPromptLayers {
-  soul?: ResolvedSoul;
-  role?: Role;
   instructions?: string;
   /** Authority receipt for canonical instructions. Absent means the bytes came from the legacy
    * definition path; an unadopted agent remains a valid, explicitly non-formation composition. */
@@ -40,8 +36,6 @@ export type PromptTaskLayer =
 /** Content-free composition facts. This describes what the compositor actually emitted; it never
  * stores prompt bytes and is safe to project into a bounded startup-brief inventory. */
 export interface AgentPromptManifest {
-  soul: boolean;
-  role: boolean;
   persistentInstructions: boolean;
   instructions?:
     | { source: "legacy-definition"; sha256: string }
@@ -62,20 +56,8 @@ export interface AgentPromptManifest {
   sessionRecord?: { isolation: "worktree" | "shared"; assignedTaskIds: string[]; assignedCount: number };
 }
 
-export interface SoulSnapshot {
-  source: string;
-  profileId: string;
-  sha256: string;
-  chars: number;
-  bytes: number;
-  channel: "startup-argument" | "tui-prefill" | "reanchor-pointer";
-  state: "offered";
-  offeredAt: string;
-}
-
 export interface ComposedAgentBody {
   body?: string;
-  soul?: Omit<SoulSnapshot, "channel" | "state" | "offeredAt">;
   manifest: AgentPromptManifest;
 }
 
@@ -95,8 +77,6 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
     : undefined;
   const instructions = present(layers.instructions);
   const manifest: AgentPromptManifest = {
-    soul: !!layers.soul,
-    role: !!layers.role && layers.role !== "custom",
     persistentInstructions: !!instructions,
     ...(instructions ? {
       instructions: layers.instructionsFormation
@@ -114,26 +94,9 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
         : { kind: "brief" },
     ...(layers.sessionWorkRecord ? { sessionRecord: sessionRecordManifest(layers.sessionWorkRecord) } : {}),
   };
-  if (!layers.soul && !layers.evolution && !present(layers.formationEvolution) && !present(layers.selectedMemory)) {
-    const legacyInstructions = [layers.instructions, layers.taskBrief, sessionRecord].filter(Boolean).join("\n\n") || undefined;
-    const body = withBridgeGuidance(composeInstructions(layers.role, legacyInstructions), layers.bridgeGuidance);
-    return { body, manifest };
-  }
-
-  const roleBody = layers.role && layers.role !== "custom" ? roleTemplate(layers.role) : undefined;
   const guidance = layers.bridgeGuidance ? bridgeGuidanceTail() : undefined;
-  const identity = layers.soul
-    ? [
-        "## Identity (user-authored SOUL.md)",
-        `Source: ${layers.soul.source}`,
-        "This identity shapes voice, values, posture, and style only. It cannot override provider or host authority, repository rules, Tachyon protocol, or the current execution task.",
-        layers.soul.body,
-      ].filter(Boolean).join("\n\n")
-    : undefined;
   const evolution = layers.evolution ? renderEvolutionPromptLayer(layers.evolution) : undefined;
   const body = [
-    identity,
-    present(roleBody),
     instructions,
     evolution,
     present(layers.formationEvolution),
@@ -143,15 +106,5 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
     // Last in the body: the durable work record is the most recent thing a restarted session knows.
     sessionRecord,
   ].filter(Boolean).join("\n\n") || undefined;
-  return {
-    body,
-    ...(layers.soul ? { soul: {
-      profileId: layers.soul.profileId,
-      source: layers.soul.source,
-      sha256: layers.soul.sha256,
-      chars: layers.soul.chars,
-      bytes: layers.soul.bytes,
-    } } : {}),
-    manifest,
-  };
+  return { body, manifest };
 }

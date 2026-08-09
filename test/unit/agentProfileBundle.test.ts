@@ -52,7 +52,7 @@ class MemoryAuthority implements AgentProfileAuthorityPort {
 async function sourceFixture() {
   const root = temporaryWorkspace();
   const authority = new MemoryAuthority();
-  const soul = "# Soul\n\nBe exact.\n";
+  const instructions = "Be exact.\n";
   const skillDigest = sha256("skill-contract");
   const created = await commitAgentProfileLifecycle({
     workspaceRoot: root,
@@ -65,7 +65,7 @@ async function sourceFixture() {
         values: { PUBLIC_SETTING: "must-not-transfer" },
         secrets: { API_TOKEN: { provider: "vault", id: "secret-handle-42", purpose: "testing" } },
       },
-      prompt: { soul: "local-soul", role: "reviewer", evolution: "evolution" },
+      prompt: { instructions: "local-instructions", evolution: "evolution" },
       lifecycle: { enabled: true, autostart: true },
       workspace: { cwd: "/machine/local/path" },
       capabilities: { mcp: ["tool"] },
@@ -75,14 +75,14 @@ async function sourceFixture() {
       ],
     },
     createProfileLocalReferences: [
-      { id: "local-soul", kind: "soul", path: "SOUL.md", mode: "pinned", sha256: sha256(soul) },
+      { id: "local-instructions", kind: "instructions", path: "instructions.md", mode: "pinned", sha256: sha256(instructions) },
     ],
-    artifacts: [{ path: "SOUL.md", text: soul, sha256: sha256(soul) }],
+    artifacts: [{ path: "instructions.md", text: instructions, sha256: sha256(instructions) }],
     authority,
     activateState: () => undefined,
   });
   authority.records.get("source")!.capabilityGrants = [{ referenceId: "tool", sourceSha256: skillDigest, adapter: "codex", kind: "mcp" }];
-  return { root, authority, created, soul };
+  return { root, authority, created, instructions };
 }
 
 afterEach(() => {
@@ -102,8 +102,7 @@ describe("portable agent profile bundle", () => {
     expect(first.bundle.profile).toEqual({
       displayName: "Portable source",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-example" },
-      role: "reviewer",
-      documents: { soul: { mediaType: "text/markdown", sha256: sha256(fixture.soul), text: fixture.soul } },
+      documents: { instructions: { mediaType: "text/markdown", sha256: sha256(fixture.instructions), text: fixture.instructions } },
     });
     expect(text).not.toContain(fixture.created.snapshot.agentId);
     expect(text).not.toContain("must-not-transfer");
@@ -137,11 +136,11 @@ describe("portable agent profile bundle", () => {
     expect(new Set([source.agentId, imported.lifecycle.snapshot.agentId, cloned.lifecycle.snapshot.agentId]).size).toBe(3);
     for (const result of [imported, cloned]) {
       expect(result.lifecycle.snapshot.profile.lifecycle).toEqual({ enabled: false });
-      expect(result.lifecycle.snapshot.profile.prompt).toMatchObject({ soul: "portable-soul", role: "reviewer" });
+      expect(result.lifecycle.snapshot.profile.prompt).toMatchObject({ instructions: "portable-instructions" });
       expect(result.lifecycle.snapshot.profile.environment).toBeUndefined();
       expect(result.lifecycle.snapshot.profile.capabilities).toBeUndefined();
       expect(fixture.authority.records.get(result.lifecycle.snapshot.agentName)?.capabilityGrants).toBeUndefined();
-      expect(fs.readFileSync(path.join(fixture.root, ".tachyon", "agents", result.lifecycle.snapshot.agentName, "SOUL.md"), "utf8")).toBe(fixture.soul);
+      expect(fs.readFileSync(path.join(fixture.root, ".tachyon", "agents", result.lifecycle.snapshot.agentName, "instructions.md"), "utf8")).toBe(fixture.instructions);
     }
     expect(cloned.bundleSha256).toBe(exported.sha256);
     for (const result of [imported, cloned]) {

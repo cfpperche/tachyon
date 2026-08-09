@@ -908,7 +908,6 @@ function canonicalAgentCreate(agentName: string) {
         editable: {
           displayName: agentName,
           runtime: { adapter: "codex", executable: "codex" },
-          role: "" as const,
           cwd: "",
           lifecycle: { autostart: false, restart: "never" as const, attention: false },
           worktree: { enabled: false, branch: "", setup: [] },

@@ -166,16 +166,6 @@ settings:
     expect(editedChild).not.toContain("declaredOwner");
   });
 
-  it("round-trips agent soul and strips it from terminal entries", () => {
-    const agentText = upsertAgent(undefined, "ada", { cmd: "codex", soul: true }).text;
-    expect(asAgent(expectValid(agentText).agents.ada)?.soul).toBe(true);
-    expect(agentText).toContain("soul: true");
-
-    const terminalText = upsertAgent(undefined, "shell", { cmd: "bash", kind: "terminal", soul: true }, undefined, "terminals").text;
-    expect(asAgent(expectValid(terminalText).agents.shell)?.soul).toBeUndefined();
-    expect(terminalText).not.toContain("soul:");
-  });
-
   it("round-trips Agent Evolution and strips it from terminal entries", () => {
     const agentText = upsertAgent(undefined, "ada", { cmd: "codex", selfEvolution: { enabled: true } }).text;
     expect(asAgent(expectValid(agentText).agents.ada)?.selfEvolution).toEqual({ enabled: true });
@@ -190,11 +180,6 @@ settings:
     ).text;
     expect(asAgent(expectValid(terminalText).agents.shell)?.selfEvolution).toBeUndefined();
     expect(terminalText).not.toContain("selfEvolution:");
-  });
-
-  it("declares soul as a JSON-schema boolean", () => {
-    const soul = schema.properties.agents.additionalProperties.properties.soul;
-    expect(soul.type).toBe("boolean");
   });
 
   it("declares Agent Evolution as a closed JSON-schema opt-in", () => {

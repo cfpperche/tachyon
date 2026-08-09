@@ -185,10 +185,9 @@ describe("Agent Studio Evolution protocol and component contract", () => {
     }))).toBe(true);
   });
 
-  it("keeps Identity, Persistent Instructions, and Agent Evolution as separate component regions", () => {
+  it("keeps Persistent Instructions before Agent Evolution as separate component regions", () => {
     const app = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/App.tsx"), "utf8");
     const section = fs.readFileSync(path.resolve("src/webview/agent-studio-shell/EvolutionSection.tsx"), "utf8");
-    expect(app.indexOf("Identity (SOUL.md)")).toBeLessThan(app.indexOf("Persistent instructions"));
     expect(app.indexOf("Persistent instructions")).toBeLessThan(app.indexOf("<EvolutionSection"));
     expect(app).toContain("entity.persistentInstructionsHelp");
     expect(app).not.toContain("claude / codex / agy / gemini");

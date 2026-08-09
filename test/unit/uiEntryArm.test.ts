@@ -34,7 +34,7 @@ describe("t-6ebdc8 — the sidebar reads the managed-entry arm", () => {
     const agent = actionsFor(row({ name: "a", kind: "agent", status: "running" }));
     const terminal = actionsFor(row({ name: "t", kind: "terminal", status: "running" }));
 
-    for (const action of ["reanchor", "reinjectContinuity", "injectPrompt"]) {
+    for (const action of ["reinjectContinuity", "injectPrompt"]) {
       expect(agent).toContain(action);
       expect(terminal).not.toContain(action);
     }

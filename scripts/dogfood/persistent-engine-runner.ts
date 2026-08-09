@@ -334,35 +334,6 @@ try {
     throw new Error("remote Board validation close did not persist");
   }
   await expectAgentStopped(first, "after Board reads and mutations");
-  let soulOperation = 0;
-  const soulStudio = new ClientWorkspaceStudioTarget(first, {
-    extensionUri: {} as StudioDeps["extensionUri"],
-    detectClis: async () => [],
-    operationId: () => `dogfood-soul-operation-${String(++soulOperation).padStart(4, "0")}`,
-  });
-  const soulCreated = await soulStudio.createSoulProfile("dogfood-worker");
-  if (soulCreated.status.lifecycle !== "active"
-    || !soulCreated.status.soulEnabled
-    || !soulCreated.status.sha256) {
-    throw new Error(`remote SOUL creation failed: ${JSON.stringify(soulCreated)}`);
-  }
-  const soulReplacement = Buffer.from("# Dogfood worker\n\nPersistent-engine SOUL replacement.\n");
-  const soulReplaced = await soulStudio.replaceSoulProfileBytes(
-    "dogfood-worker",
-    soulReplacement,
-    soulCreated.status.sha256,
-  );
-  if (soulReplaced.status.lifecycle !== "active"
-    || soulReplaced.status.sha256 === soulCreated.status.sha256
-    || fs.readFileSync(await soulStudio.canonicalSoulPathForOpen("dogfood-worker")).compare(soulReplacement) !== 0) {
-    throw new Error(`remote SOUL replacement failed: ${JSON.stringify(soulReplaced)}`);
-  }
-  const soulDisabled = await soulStudio.disableSoulProfile("dogfood-worker");
-  if (soulDisabled.status.lifecycle !== "retained"
-    || soulDisabled.status.soulEnabled
-    || soulDisabled.status.resolvable) {
-    throw new Error(`remote SOUL disable/retention failed: ${JSON.stringify(soulDisabled)}`);
-  }
   const studio = new ClientWorkspaceStudioTarget(first, {
     extensionUri: {} as StudioDeps["extensionUri"],
     detectClis: async () => [],
@@ -634,9 +605,9 @@ try {
     engine: { pid: identity.pid, instanceId: identity.instanceId, bundleId: identity.bundleId },
     bridge: identity.bridge,
     snapshotSeq: snapshot.seq,
-    queries: ["activity.context", probes.method, "handoff.view", "sidebar.view", "task.board", "task.detail", "task.studio", "pin.studio", "soul.profile.status"],
+    queries: ["activity.context", probes.method, "handoff.view", "sidebar.view", "task.board", "task.detail", "task.studio", "pin.studio"],
     pluginFleet: pluginFleet.agents.map((agent) => ({ name: agent.name, status: agent.status })),
-    commands: ["handoff.ensure", "sidebar.mutate", "agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", "soul.profile.create", "soul.profile.replace", "soul.profile.disable", started.method, restarted.method, killed.method],
+    commands: ["handoff.ensure", "sidebar.mutate", "agent.input", "pin.studio.apply", "task.studio.apply", "task.prototype.review", "task.update", "task.reorder-lane", "validation.close", "studio.submit", started.method, restarted.method, killed.method],
   }, null, 2)}\n`);
 } finally {
   try { execFileSync("systemctl", ["--user", "stop", unitName], { stdio: "ignore" }); } catch { /* absent/failed unit */ }

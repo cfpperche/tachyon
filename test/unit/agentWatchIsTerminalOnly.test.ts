@@ -76,7 +76,6 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
     editable: {
       displayName: "",
       runtime: { adapter: "codex", executable: "codex" },
-      role: "",
       cwd: "",
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },

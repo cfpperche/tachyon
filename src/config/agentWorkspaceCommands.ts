@@ -34,7 +34,7 @@ export const WORKSPACE_SETUP_REFERENCE_ID = "workspace-setup";
  * Reference kinds whose BYTES the projection turns into fields on the runtime entry, and which the
  * resolver therefore carries the text of.
  *
- * Deliberately not every non-capability kind: Soul, instructions and memory are formation lanes
+ * Deliberately not every non-capability kind: instructions and memory are formation lanes
  * delivered under their own authority, and carrying their bytes here would put prompt content into a
  * value that is passed around, digested and logged for entirely different reasons.
  */

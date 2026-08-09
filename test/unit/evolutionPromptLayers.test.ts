@@ -73,7 +73,6 @@ describe("Agent Evolution startup snapshot (SDD 421 Slice 3)", () => {
     expect(await fs.readFile(snapshot.skills[0]!.skillMdPath, "utf8")).toContain("Use the helper.");
 
     const prompt = composeAgentPrompt({
-      role: "reviewer",
       instructions: "Persistent instructions.",
       evolution: snapshot,
       bridgeGuidance: true,

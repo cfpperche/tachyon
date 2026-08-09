@@ -265,7 +265,6 @@ describe("agent profile lifecycle kernel", () => {
       editable: {
         displayName: "",
         runtime: { adapter: "claude", executable: "claude" },
-        role: "",
         cwd: "",
         lifecycle: { autostart: false, restart: "never", attention: true },
         worktree: { enabled: false, branch: "", setup: [] },
@@ -297,15 +296,15 @@ describe("agent profile lifecycle kernel", () => {
   it("publishes digest-bound profile artifacts and compensates them with a failed create", async () => {
     const root = temporaryWorkspace();
     const authority = new MemoryAuthority();
-    const content = "# Imported soul\n";
-    const artifact = { path: "SOUL.md", text: content, sha256: sha256(content) };
+    const content = "Imported instructions\n";
+    const artifact = { path: "instructions.md", text: content, sha256: sha256(content) };
 
     await expect(commitAgentProfileLifecycle({
       workspaceRoot: root,
       agentName: "codex",
       operation: "create",
-      createProfile: { ...initialProfile, prompt: { soul: "portable-soul" } },
-      createProfileLocalReferences: [{ id: "portable-soul", kind: "soul", path: artifact.path, mode: "pinned", sha256: artifact.sha256 }],
+      createProfile: { ...initialProfile, prompt: { instructions: "portable-instructions" } },
+      createProfileLocalReferences: [{ id: "portable-instructions", kind: "instructions", path: artifact.path, mode: "pinned", sha256: artifact.sha256 }],
       artifacts: [artifact],
       authority,
       onPhase: (phase) => { if (phase === "profile-published") throw new Error("interrupt-artifact-create"); },
@@ -491,7 +490,7 @@ describe("agent profile lifecycle kernel", () => {
    *
    * `savedAgentState.ts` says a profile directory may hold work a human wants and that Tachyon never
    * deletes it automatically. A compensation that recursively cleared the home it created would
-   * break that rule for anything that arrived in the meantime — a Soul import writes `SOUL.md` into
+   * break that rule for anything that arrived in the meantime — another writer may add a file to
    * the same directory. So the rollback removes only what it can remove EMPTY, the stray bytes
    * survive, and the leftover is now `orphan-home` in `reconcile_roster` rather than invisible.
    */
@@ -500,7 +499,7 @@ describe("agent profile lifecycle kernel", () => {
     const authority = new MemoryAuthority();
     const originalConfig = configText(root);
     const home = path.join(root, ".tachyon", "agents", "codex");
-    const soul = path.join(home, "SOUL.md");
+    const note = path.join(home, "notes.txt");
 
     await expect(commitAgentProfileLifecycle({
       workspaceRoot: root,
@@ -509,7 +508,7 @@ describe("agent profile lifecycle kernel", () => {
       createProfile: initialProfile,
       authority,
       onPhase: (current) => {
-        if (current === "authority-published") fs.writeFileSync(soul, "# a human's soul\n", "utf8");
+        if (current === "authority-published") fs.writeFileSync(note, "human-authored note\n", "utf8");
         if (current === "activated") throw new Error("fail-activated");
       },
     })).rejects.toThrow("fail-activated");
@@ -520,8 +519,8 @@ describe("agent profile lifecycle kernel", () => {
     expect(authority.records.has("codex")).toBe(false);
     expect(agentProfileLifecycleBlocked(root, "codex")).toBe(false);
     expect(fs.existsSync(path.join(home, "agent.yml"))).toBe(false);
-    expect(fs.readFileSync(soul, "utf8")).toBe("# a human's soul\n");
-    expect(fs.readdirSync(home)).toEqual(["SOUL.md"]);
+    expect(fs.readFileSync(note, "utf8")).toBe("human-authored note\n");
+    expect(fs.readdirSync(home)).toEqual(["notes.txt"]);
   });
 
   it("sets canonical enablement without making it authorable in tachyon.yml", async () => {

@@ -41,12 +41,12 @@ describe("workspace setup profile references", () => {
       agentId: AGENT_ID,
       runtime: { adapter: "codex", executable: "codex" },
       references: [
-        { id: "soul", kind: "soul" as const, scope: "profile" as const, owner: AGENT_ID, path: "SOUL.md", mode: "pinned" as const, sha256: "b".repeat(64) },
+        { id: "instructions", kind: "instructions" as const, scope: "profile" as const, owner: AGENT_ID, path: "instructions.md", mode: "pinned" as const, sha256: "b".repeat(64) },
         { id: WORKSPACE_SETUP_REFERENCE_ID, kind: "worktree-setup" as const, scope: "profile" as const, owner: AGENT_ID, path: WORKSPACE_SETUP_PATH, mode: "pinned" as const, sha256: "c".repeat(64) },
       ],
     };
     const rewritten = mergedWorkspaceCommandReferences(current, workspaceCommandWriteFor(editable(["npm ci"])));
-    expect(rewritten.map((reference) => reference.id)).toEqual(["soul", WORKSPACE_SETUP_REFERENCE_ID]);
+    expect(rewritten.map((reference) => reference.id)).toEqual(["instructions", WORKSPACE_SETUP_REFERENCE_ID]);
     expect(rewritten.find((reference) => reference.id === WORKSPACE_SETUP_REFERENCE_ID)?.sha256).toBe(digest("npm ci\n"));
   });
 

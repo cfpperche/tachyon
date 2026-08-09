@@ -8,35 +8,18 @@ import type { StartupBriefManifest } from "../../src/agents/startupBrief.js";
 const guidanceOnly: StartupBriefManifest = {
   projectGuidanceSources: 2,
   prompt: {
-    soul: false,
-    role: false,
     persistentInstructions: false,
     bridgeGuidance: false,
     task: { kind: "absent" },
   },
 };
 
-describe("purpose-specific brief files", () => {
+describe("startup brief files", () => {
   const roots: string[] = [];
 
   afterEach(() => {
     vi.restoreAllMocks();
     for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
-  });
-
-  it("keeps a long re-anchor from overwriting the startup brief", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-brief-purpose-"));
-    roots.push(root);
-    const spawnBody = `spawn:${"s".repeat(BRIEF_FILE_THRESHOLD)}`;
-    const reanchorBody = `reanchor:${"r".repeat(BRIEF_FILE_THRESHOLD)}`;
-
-    deliverableBody(root, "worker", spawnBody);
-    const pointer = deliverableBody(root, "worker", reanchorBody, "reanchor");
-
-    expect(fs.readFileSync(briefFilePath(root, "worker"), "utf8")).toBe(spawnBody);
-    expect(fs.readFileSync(briefFilePath(root, "worker", "reanchor"), "utf8")).toBe(reanchorBody);
-    expect(pointer).toContain("re-anchor context");
-    expect(pointer).toContain(briefFilePath(root, "worker", "reanchor"));
   });
 
   it("atomically preserves an existing brief and removes its temporary file when rename fails", () => {
@@ -60,7 +43,7 @@ describe("purpose-specific brief files", () => {
     roots.push(root);
     const body = `GUIDANCE:${"g".repeat(BRIEF_FILE_THRESHOLD)}`;
 
-    const pointer = deliverableBody(root, "worker", body, "spawn", guidanceOnly);
+    const pointer = deliverableBody(root, "worker", body, guidanceOnly);
     const stored = fs.readFileSync(briefFilePath(root, "worker"), "utf8");
 
     expect(pointer).toContain("Your full startup brief is long");
@@ -77,9 +60,9 @@ describe("purpose-specific brief files", () => {
     const longBody = `LONG:${"l".repeat(BRIEF_FILE_THRESHOLD)}`;
     const shortBody = "short current launch";
     const file = briefFilePath(root, "worker");
-    deliverableBody(root, "worker", longBody, "spawn", guidanceOnly);
+    deliverableBody(root, "worker", longBody, guidanceOnly);
 
-    const current = deliverableBody(root, "worker", shortBody, "spawn", guidanceOnly);
+    const current = deliverableBody(root, "worker", shortBody, guidanceOnly);
 
     expect(current).toBe(shortBody);
     expect(current).not.toContain(file);

@@ -8,9 +8,8 @@
  * overhead are added on top.
  *
  * Mirrors the manual "file = deliverable, notify = doorbell" pattern already used by hand for
- * review briefs (spec 363 notes) and reanchor's `.tachyon/roles/<agent>.md` (Workspace.reanchor):
- * the long artifact goes to a purpose-specific file under the gitignored `.tachyon/` dir, the pane
- * gets a pointer. Separate spawn/reanchor paths keep a refresh from destroying startup context.
+ * review briefs (spec 363 notes): the long artifact goes to a file under the gitignored
+ * `.tachyon/` directory and the pane gets a pointer.
  */
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -55,10 +54,8 @@ export function assertSafeBriefTransport(body: string, context: string): void {
   );
 }
 
-export type BriefPurpose = "spawn" | "reanchor";
-
-export function briefFilePath(workspaceRoot: string, agent: string, purpose: BriefPurpose = "spawn"): string {
-  return path.join(workspaceRoot, ".tachyon", "briefs", purpose, `${agent}.md`);
+export function briefFilePath(workspaceRoot: string, agent: string): string {
+  return path.join(workspaceRoot, ".tachyon", "briefs", "spawn", `${agent}.md`);
 }
 
 /** Pure preview of the body that deliverableBody will return after a successful file write. Callers
@@ -67,29 +64,26 @@ export function previewDeliverableBody(
   workspaceRoot: string,
   agent: string,
   body: string,
-  purpose: BriefPurpose = "spawn",
   startupManifest?: StartupBriefManifest,
 ): string {
   if (shellEscapedBodyBytes(body) <= BRIEF_FILE_THRESHOLD) return body;
-  const file = briefFilePath(workspaceRoot, agent, purpose);
-  const label = purpose === "spawn" ? "startup brief" : "re-anchor context";
-  const timing = purpose === "spawn" ? "before starting" : "before continuing";
-  const storedBody = purpose === "spawn" && startupManifest
+  const file = briefFilePath(workspaceRoot, agent);
+  const storedBody = startupManifest
     ? `${renderStartupBriefInventory(startupManifest)}\n\n${body}`
     : body;
-  const summary = purpose === "spawn" && startupManifest
+  const summary = startupManifest
     ? `\n${renderStartupBriefSummary(startupManifest)}`
     : "";
-  const paneContents = purpose === "spawn" && startupManifest
+  const paneContents = startupManifest
     ? "the primer, this summary, the pointer, and the before-finishing reminder"
     : "the primer, this pointer, and the before-finishing reminder";
-  return `Your full ${label} is long (${Buffer.byteLength(storedBody, "utf8")} UTF-8 bytes) — written in full to ${file}.${summary}\nRead it ${timing}; this pane carries only ${paneContents}.`;
+  return `Your full startup brief is long (${Buffer.byteLength(storedBody, "utf8")} UTF-8 bytes) — written in full to ${file}.${summary}\nRead it before starting; this pane carries only ${paneContents}.`;
 }
 
 /**
  * Returns `body` unchanged when its UTF-8 encoding is at or under BRIEF_FILE_THRESHOLD (byte-identical short-brief
  * delivery). Past the threshold, writes the full body to the agent's brief file and returns a
- * short pointer to embed in the pane instead — the file carries the startup/re-anchor body in full, the pane
+ * short pointer to embed in the pane instead — the file carries the startup body in full, the pane
  * payload stays small. Best-effort: a write failure falls back to inlining the full body while it
  * remains below SAFE_INLINE_CEILING; above that, fail at the file-write boundary with the original
  * fs error instead of sending an oversized body onward to tmux's less actionable hard reject.
@@ -98,15 +92,14 @@ export function deliverableBody(
   workspaceRoot: string,
   agent: string,
   body: string,
-  purpose: BriefPurpose = "spawn",
   startupManifest?: StartupBriefManifest,
 ): string {
   const bodyBytes = Buffer.byteLength(body, "utf8");
   const transportBytes = shellEscapedBodyBytes(body);
   if (transportBytes <= BRIEF_FILE_THRESHOLD) return body;
-  const file = briefFilePath(workspaceRoot, agent, purpose);
-  const briefLabel = purpose === "spawn" ? "startup brief" : "re-anchor context";
-  const storedBody = purpose === "spawn" && startupManifest
+  const file = briefFilePath(workspaceRoot, agent);
+  const briefLabel = "startup brief";
+  const storedBody = startupManifest
     ? `${renderStartupBriefInventory(startupManifest)}\n\n${body}`
     : body;
   let temporaryFile: string | undefined;
@@ -137,5 +130,5 @@ export function deliverableBody(
     }
     return body;
   }
-  return previewDeliverableBody(workspaceRoot, agent, body, purpose, startupManifest);
+  return previewDeliverableBody(workspaceRoot, agent, body, startupManifest);
 }

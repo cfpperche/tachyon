@@ -1,4 +1,4 @@
-import { asAgent, suggestKindForCommand, instructionsDeliverable, openingPromptCapability, parseEvery, parseAt, resolveBinary, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, suggestKindForCommand, instructionsDeliverable, parseEvery, parseAt, resolveBinary, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
 import { isAttestedRuntime } from "../runtime/attestedRuntimes.js";
 
 /**
@@ -119,12 +119,8 @@ export interface FormState {
   cmd: string;
   kind: StudioKind;
   instructions: string;
-  /** spec 377 T14 — opt in to the agent's persistent soul profile. */
-  soul: boolean;
   /** spec 421 — opt in to Tachyon-owned, human-reviewed evolution. */
   selfEvolution: boolean;
-  /** spec 216 — built-in role template ("" = none); agent kind only */
-  role: string;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
   watch: string;
   /** newline-separated steps (runbook kind) — each line a command name or inline shell */
@@ -173,8 +169,6 @@ export interface FormIssue {
     | "cmd-required"
     | "steps-required"
     | "instructions-not-deliverable"
-    | "soul-invalid"
-    | "soul-runtime-unsupported"
     | "self-evolution-invalid"
     | "timing-invalid"
     | "target-required"
@@ -211,14 +205,6 @@ export function validateForm(state: FormState, takenNames: string[], editingName
   }
   if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
     issues.push({ code: "instructions-not-deliverable", blocking: false });
-  }
-  if (state.soul !== undefined && typeof state.soul !== "boolean") {
-    issues.push({ code: "soul-invalid", blocking: true });
-  } else if (state.kind === "agent" && state.soul) {
-    const capability = openingPromptCapability(state.cmd);
-    if (capability.status !== "prompt") {
-      issues.push({ code: "soul-runtime-unsupported", blocking: true, param: capability.runtime });
-    }
   }
   if (state.selfEvolution !== undefined && typeof state.selfEvolution !== "boolean") {
     issues.push({ code: "self-evolution-invalid", blocking: true });
@@ -258,8 +244,6 @@ export function toEntry(state: FormState): Record<string, unknown> {
   const inferred = suggestKindForCommand(state.cmd);
   if (state.kind !== inferred) entry.kind = state.kind;
   if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
-  if (state.kind === "agent" && state.role.trim().length > 0) entry.role = state.role.trim();
-  if (state.kind === "agent" && state.soul === true) entry.soul = true;
   if (state.kind === "agent" && state.selfEvolution === true) entry.selfEvolution = { enabled: true };
   const watch = state.kind === "terminal" ? parseWatch(state.watch) : [];
   if (watch.length === 1) entry.watch = watch[0];
@@ -298,9 +282,7 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     branch: "",
     worktreeSetup: "",
     instructions: def.instructions ?? "",
-    soul: false,
     selfEvolution: false,
-    role: "",
     watch: "",
     steps: "",
     cwd: "",
@@ -327,9 +309,7 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     branch: "",
     worktreeSetup: "",
     instructions: "",
-    soul: false,
     selfEvolution: false,
-    role: "",
     watch: "",
     steps: "",
     cwd: def.cwd ?? "",
@@ -351,9 +331,7 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     branch: "",
     worktreeSetup: "",
     instructions: "",
-    soul: false,
     selfEvolution: false,
-    role: "",
     watch: "",
     steps: def.steps.join("\n"),
     cwd: "",
@@ -375,9 +353,7 @@ export function fromDef(name: string, entry: AgentDef): FormState {
     cmd: entry.cmd,
     kind: entry.kind,
     instructions: def?.instructions ?? "",
-    soul: def?.soul === true,
     selfEvolution: def?.selfEvolution?.enabled === true,
-    role: def?.role ?? "",
     watch: entry.watch.join(", "),
     steps: "",
     cwd: entry.cwd ?? "",

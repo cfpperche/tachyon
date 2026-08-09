@@ -60,7 +60,7 @@ const executableForgetPlan: AgentForgetPlanResultV1 = {
       {
         id: "converge-runtime",
         state: "will-run",
-        detail: "drops the session ledger row, the generated spawn brief and soul anchor, and the pane transcript",
+        detail: "drops the session ledger row, the generated spawn brief, and the pane transcript",
       },
     ],
     dissent: [
@@ -106,7 +106,7 @@ const blockedForgetPlan: AgentForgetPlanResultV1 = {
       {
         id: "converge-runtime",
         state: "will-run",
-        detail: "drops the session ledger row, the generated spawn brief and soul anchor, and the pane transcript",
+        detail: "drops the session ledger row, the generated spawn brief, and the pane transcript",
       },
     ],
     dissent: [],
@@ -164,8 +164,6 @@ const denseEntity: AgentStudioEntity = {
     ...blankAgentFields(),
     name: "reviewer",
     cmd: "claude --model sonnet",
-    soul: true,
-    role: "reviewer",
     instructions: "you are a code reviewer; read the diff and flag correctness issues before style ones.",
     autostart: true,
     attention: true,
@@ -190,7 +188,7 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
   enabled: false,
   readiness: { state: "limited", limitations: ["fork-unavailable"] },
   editable: {
-    displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" }, role: "reviewer",
+    displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" },
     cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true },
     worktree: { enabled: true, branch: "feature/reviewer", setup: ["pnpm install", "pnpm --filter web build"] },
     selfEvolution: true, isolation: "transcript",
@@ -200,7 +198,7 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     grants: { proposeSavedAgent: false },
     foreignWorkspaceCommands: false,
     environmentValueNames: ["NODE_ENV"], secretNames: ["GITHUB_TOKEN"],
-    prompt: { soul: true, instructions: true, evolution: true, memoryPolicy: "human-approved" },
+    prompt: { instructions: true, evolution: true, memoryPolicy: "human-approved" },
     capabilities: { skills: 3, mcp: 1, hooks: 1, pi: 0 }, externalReferences: 2,
     tooling: {
       skills: [{ id: "review-checklist", scope: "profile" }, { id: "repo-search", scope: "project" }],

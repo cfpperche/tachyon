@@ -42,7 +42,7 @@ const ARTIFACTS = "artifacts";
 /** t-afc86e — prior bytes of any artifact this transaction REPLACES, so a rollback can restore them. */
 const ARTIFACT_BACKUPS = "artifact-backups";
 const DIGEST_RE = /^[a-f0-9]{64}$/;
-const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md", WORKSPACE_SETUP_PATH]);
+const CREATE_ARTIFACT_NAMES = new Set(["instructions.md", WORKSPACE_SETUP_PATH]);
 /**
  * `t-d185e1` — profile-local documents an EDIT may publish.
  *
@@ -52,13 +52,12 @@ const CREATE_ARTIFACT_NAMES = new Set(["SOUL.md", "instructions.md", WORKSPACE_S
  * bytes on disk, so publishing them separately would leave a window where the profile references a
  * digest nothing satisfies — and the authority is re-signed over the profile, not over the artifact.
  *
- * Keeping create's set separate stops an edit from re-publishing `SOUL.md` behind the soul
- * transaction's back, which owns that document under a different contract.
+ * Keeping create's set separate prevents edits from republishing create-only documents.
  */
 /*
  * t-afc86e adds the two workspace-command documents to BOTH sets. They are authored by the same
  * gesture that writes the rest of the form, so an edit must be able to republish them — the reason
- * `SOUL.md` is create-only does not apply: nothing else owns these bytes under another contract.
+ * Nothing else owns these bytes under another contract.
  */
 const EDIT_ARTIFACT_NAMES = new Set(["evolution-selector.json", WORKSPACE_SETUP_PATH]);
 const ARTIFACT_NAMES_FOR = { create: CREATE_ARTIFACT_NAMES, edit: EDIT_ARTIFACT_NAMES } as const;
@@ -398,8 +397,8 @@ function validateCreateArtifacts(input: CommitAgentProfileLifecycleInput): Array
 /**
  * Publish this transaction's artifacts into the profile directory.
  *
- * t-afc86e made these REPLACEABLE. Until then every artifact was new by construction — `SOUL.md` on
- * create, the Evolution selector on a one-time enable — so `writeNew` was the whole story and a
+ * t-afc86e made these replaceable. Until then every artifact was new by construction, so `writeNew`
+ * was the whole story and a
  * second publish of the same path threw. That is exactly what setup does on its second save:
  * the human edits the command, and the transaction has to overwrite bytes it published last time.
  *

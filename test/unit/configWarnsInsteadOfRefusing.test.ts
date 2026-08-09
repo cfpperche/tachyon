@@ -225,17 +225,6 @@ describe("ambiguity is discarded, which is not the same as closing a door", () =
     expect(warnings.some((warning) => warning.includes("BOTH entries were dropped"))).toBe(true);
   });
 
-  it("drops the colliding soul declaration and leaves the one already registered", () => {
-    // File order decides, and the message already named the second one. Both keeping their `soul`
-    // would let two agents claim the single profile SOUL.md is keyed by.
-    const { config, errors, warnings } = parseConfig(
-      "agents:\n  Ada:\n    cmd: claude\n    soul: true\n  ada:\n    cmd: codex\n    soul: true\n",
-    );
-    expect(errors).toEqual([]);
-    expect(asAgent(config?.agents.Ada)?.soul).toBe(true);
-    expect(asAgent(config?.agents.ada)?.soul).toBeUndefined();
-    expect(warnings.some((warning) => warning.includes("agents.ada.soul: conflicts"))).toBe(true);
-  });
 });
 
 describe("a harness never carries a capability its runtime does not support", () => {

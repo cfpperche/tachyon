@@ -219,7 +219,7 @@ describe("loadProfileAwareConfig", () => {
     expect(result.config?.settings.auth).toBe(true);
   });
 
-  it("refuses a canonical custom role because no instructions can reach it", () => {
+  it("refuses the removed canonical role field as an unknown schema key", () => {
     const root = temporaryRoot("tachyon-agent-profile-custom-role-");
     const bytes = writeProfile(root, { prompt: { role: "custom" } });
 
@@ -227,7 +227,7 @@ describe("loadProfileAwareConfig", () => {
 
     expect(result.config?.agents.codex).toBeUndefined();
     expect(result.errors).toContain(
-      "agents.codex.profile: profile/projection: role 'custom' requires instructions, but canonical profiles cannot declare that formation lane",
+      "agents.codex.profile: profile/schema: prompt: Unrecognized key(s) in object: 'role'",
     );
   });
 
@@ -1436,7 +1436,6 @@ describe("loadProfileAwareConfig", () => {
   it("loads a profile and retains its trusted source metadata beside terminals", () => {
     const root = temporaryRoot("tachyon-agent-profile-workspace-");
     const bytes = writeProfile(root, {
-      prompt: { role: "reviewer" },
       lifecycle: { enabled: false, autostart: true, restart: "on-crash" },
     });
     const result = load(root, authority(bytes), {
@@ -1454,7 +1453,6 @@ describe("loadProfileAwareConfig", () => {
     expect(result.errors).toEqual([]);
     expect(result.config?.agents.codex).toMatchObject({
       cmd: "codex",
-      role: "reviewer",
       autostart: true,
       restart: "on-crash",
       profileLifecycle: {

@@ -67,15 +67,12 @@ import { authRequiredFromPreflight, authRequiredOf, classifyAuthRequired, descri
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
 import { AgentProfileRefusal, type AgentProfileRefusalCode } from "../config/agentProfileRefusal.js";
-import { openingPromptCapability } from "./openingPromptCapability.js";
-import { cleanupStaleSoulLaunchReservationsSync, ensureSoulLaunchReservationsDirSync, SOUL_LAUNCH_RESERVATION_BOOT_ID, SoulError, resolveSoul, resolveSoulWithRetry, withSoulProfileAdmission, type ResolvedSoul } from "./soul.js";
-import { principalBlockedByProfileTransaction } from "./soulProfileTransactions.js";
-import { composeAgentPrompt, type SoulSnapshot } from "./promptLayers.js";
+import { composeAgentPrompt } from "./promptLayers.js";
 import type { SessionLaunchKind, SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { sweepSessions } from "../tmux/sessionSweep.js";
-import { chooseLifecycleSoul, type FormationLifecyclePort, type FormationSoulOutcome } from "./formation/lifecycleConsumer.js";
+import type { FormationLifecyclePort } from "./formation/lifecycleConsumer.js";
 import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { mintExecution } from "../executionGraph/executionIdentity.js";
 import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
@@ -594,8 +591,6 @@ export interface AgentManagerOptions {
    * as before, which is what keeps this wiring reversible.
    */
   formation?: FormationLifecyclePort;
-  /** t-50bbd4 — a formation lane that REFUSED. Surfaced so a refusal never reads as "no Soul". */
-  onFormationSoulRefused?: (agent: string, reason: string) => void;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
   /**
@@ -917,14 +912,12 @@ function launchCompensationError(primary: unknown, outcome: LaunchCompensation, 
  * rehydrate path could produce an `AgentDef` from a row, so everything else read a map. It is total
  * rather than lossy because a Temporary's lifecycle buttons are CONSTANTS, not authored data — nobody
  * can give one an autostart, a watch list or a restart policy, so there is nothing about it to lose.
- * The row carries the only authored parts: cmd, instructions, role, soul, env and kind.
+ * The row carries the only authored parts: cmd, instructions, env and kind.
  */
 function temporaryDefinitionFrom(def: NonNullable<SessionRecord["def"]>, worktree: SessionRecord["worktree"]): AgentDef {
   return {
     cmd: def.cmd,
     instructions: def.instructions,
-    ...(def.role ? { role: def.role } : {}),
-    ...(def.soul ? { soul: true } : {}),
     ...(def.env ? { env: def.env } : {}), // spec 225 — a forked sibling's inherited env survives reload
     autostart: false,
     watch: [],
@@ -952,57 +945,6 @@ export function applyNativeLaneSuppressionCommand(cmd: string): { cmd: string; a
 }
 
 export class AgentManager {
-  private readonly soulReservations = new Map<string, string>();
-
-  private soulPrincipal(name: string): string {
-    const source = this.opts.ledger?.get(name)?.identity?.soul.source;
-    return source?.match(/^\.tachyon\/agents\/([a-zA-Z][a-zA-Z0-9_-]*)\/SOUL\.md$/)?.[1] ?? name;
-  }
-
-  private async reserveSoulLaunch(executionName: string, principal: string, def: AgentDef): Promise<ResolvedSoul> {
-    return withSoulProfileAdmission(this.opts.workspaceRoot, principal, async () => {
-      const soul = await this.preflightSoul(principal, def);
-      const dir = ensureSoulLaunchReservationsDirSync(this.opts.workspaceRoot);
-      const file = path.join(dir, `${principal.toLowerCase()}--${executionName}--${crypto.randomUUID()}.json`);
-      const reservation = JSON.stringify({ principal, execution: executionName, profileId: soul.profileId, sha256: soul.sha256, ownerPid: process.pid, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID, createdAt: new Date().toISOString() });
-      let fd: number | undefined;
-      try {
-        fd = fs.openSync(file, "wx", 0o600);
-        fs.writeFileSync(fd, reservation);
-        fs.fsyncSync(fd);
-      } finally {
-        if (fd !== undefined) fs.closeSync(fd);
-      }
-      try {
-        const dirFd = fs.openSync(dir, fs.constants.O_RDONLY);
-        try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
-      } catch (error) {
-        if (process.platform !== "win32" && !["EINVAL", "ENOTSUP", "EISDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
-      }
-      this.soulReservations.set(executionName, file);
-      return soul;
-    });
-  }
-
-  private releaseSoulReservation(name: string): void {
-    const file = this.soulReservations.get(name);
-    if (!file) return;
-    this.soulReservations.delete(name);
-    try {
-      fs.unlinkSync(file);
-      try {
-        const dirFd = fs.openSync(path.dirname(file), fs.constants.O_RDONLY);
-        try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
-      } catch (error) {
-        if (process.platform !== "win32" && !["EINVAL", "ENOTSUP", "EISDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
-      }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.opts.notify?.(`failed to clear soul launch reservation for '${name}'`, "warn");
-    }
-  }
-  private soulSnapshot(soul: ResolvedSoul, channel: SoulSnapshot["channel"]): SoulSnapshot {
-    return { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel, state: "offered" };
-  }
 
   private async evolutionForFreshSession(
     name: string,
@@ -1028,21 +970,6 @@ export class AgentManager {
     return undefined;
   }
 
-  private async preflightSoul(name: string, def: AgentDef): Promise<ResolvedSoul> {
-    const capability = openingPromptCapability(def.cmd);
-    if (capability.status !== "prompt") {
-      throw new SoulError("soul/runtime-unsupported", `Soul delivery is unsupported for ${capability.runtime}: ${capability.detail}`);
-    }
-    if (await principalBlockedByProfileTransaction(this.opts.workspaceRoot, name)) {
-      throw new SoulError(
-        "soul/profile-transaction-degraded",
-        `Soul profile for '${name}' is blocked by a profile-transaction-degraded journal`,
-      );
-    }
-    return resolveSoulWithRetry(async () => {
-        return await resolveSoul(this.opts.workspaceRoot, name);
-    });
-  }
   static readonly STOPPING_FALLBACK_MS = 15_000;
   static readonly POSTMORTEM_MAX_LINES = 1000;
   static readonly POSTMORTEM_MAX_BYTES = 64 * 1024;
@@ -1177,7 +1104,6 @@ export class AgentManager {
   private readonly notifiedDelegatedToolkitConditions = new Set<string>();
 
   constructor(private readonly opts: AgentManagerOptions) {
-    cleanupStaleSoulLaunchReservationsSync(opts.workspaceRoot);
     this.launchPreflight = opts.launchPreflight ?? createDefaultLaunchPreflightRegistry();
     this.launchReadiness = opts.launchReadiness ?? new LaunchReadiness();
   }
@@ -1434,40 +1360,9 @@ export class AgentManager {
   }
 
   /** Public read of an agent's definition (the saved config wins, then a Temporary definition) — spec 216 needs
-   *  cmd/role/instructions to detect compaction and rebuild the role reminder. */
+   *  command/instructions to detect compaction and rebuild persistent context. */
   defOf(name: string): AgentDef | undefined {
     return this.definitionOf(name);
-  }
-
-  /** Resolve the current canonical identity at an explicit lifecycle boundary. */
-  async resolveSoulForLifecycle(name: string, nativeSuppressionApplied = false): Promise<ResolvedSoul | undefined> {
-    const def = this.agentDefinitionOf(name);
-    const principal = this.soulPrincipal(name);
-    const declared = def?.soul
-      ? await withSoulProfileAdmission(this.opts.workspaceRoot, principal, () => this.preflightSoul(principal, def))
-      : undefined;
-    // t-50bbd4 — the formation lane is consulted only when nothing was declared. SDD 427 shipped the
-    // lanes and SDD 429 shipped lifecycle/Studio, and this call is the seam neither wrote: without it
-    // a canonical agent's Soul could be authored, transacted and authority-checked and still never
-    // reach a spawn, because this method read `def.soul` and nothing else.
-    let formation: FormationSoulOutcome | undefined;
-    if (!declared && this.opts.formation) {
-      try {
-        formation = await this.opts.formation.resolveSoul({
-          agentName: name,
-          operationId: `soul-${name}-${Date.now()}`,
-          nativeSuppressionApplied,
-        });
-      } catch (err) {
-        // A lane that throws is a refusal, not an absence. Identity is never guessed.
-        formation = { state: "refused", reason: err instanceof Error ? err.message : String(err) };
-      }
-    }
-    const chosen = chooseLifecycleSoul({ declared, formation });
-    // Never silent: a refused formation that read as "this agent has no Soul" is how an operator ends
-    // up believing a profile is live when it is not.
-    if (chosen.refusal) this.opts.onFormationSoulRefused?.(name, chosen.refusal);
-    return chosen.soul;
   }
 
   /** An agent's kind (config wins, then Temporary def, else infer from a running session's
@@ -1849,11 +1744,9 @@ export class AgentManager {
    * the cache the other readers depend on.
    */
   async probeAgentOccupancy(name: string): Promise<AgentOccupancyVerdict> {
-    // A soul reservation is an authority lock held by the current lifecycle operation. A provisional
-    // launch marker is only a belief about tmux: it must be reconciled against the world below before
-    // it can veto removal (t-dbddeb).
+    // A provisional launch marker is only a belief about tmux: it must be reconciled against the
+    // world below before it can veto removal (t-dbddeb).
     const provisionalLaunch = this.provisionalAgents.has(name);
-    if (this.soulReservations.has(name)) return { state: "occupied", detail: "a soul launch reservation is held for this name" };
 
     // Retry the fresh inventory before giving up: a transient `list-panes` failure (racing a
     // concurrent kill, a momentarily busy server) is the common cause of `null`, and re-asking is
@@ -2067,7 +1960,7 @@ export class AgentManager {
   }
 
   /**
-   * spec 216 — the launch command with role + Bridge guidance applied. The role template
+   * spec 216 — The launch command with persistent instructions and Bridge guidance applied. The prompt
    * composes with the agent's instructions (template first); a child spawned via the Bridge
    * (it has a parent) also gets the Bridge-coordination guidance, unless disabled. Resume does
    * NOT use this — a resumed session already carries its original instructions in its transcript.
@@ -2082,7 +1975,7 @@ export class AgentManager {
    * threshold passes through unchanged — short-brief delivery stays byte-identical.
    */
   /**
-   * Composed spawn brief (project guidance + role/instructions + primer + brief-file diversion). Shared by
+   * Composed spawn brief (project guidance + instructions + primer + brief-file diversion). Shared by
    * `effectiveCmd` (argv delivery) and Hermes `HERMES_TUI_QUERY` (env delivery).
    */
   /**
@@ -2105,13 +1998,12 @@ export class AgentManager {
     primerCtx?: { delegator?: string; freshWorktree?: boolean; dependencies?: string },
     taskBrief?: string,
     taskContract?: SpawnContract,
-    soul?: ResolvedSoul,
     evolution?: EvolutionStartupSnapshot,
     projectGuidance?: RenderedProjectGuidanceBundle,
     sessionWorkRecord?: SessionWorkRecord,
   ): string | undefined {
     // An explicit --resume/--continue/--session-id command owns its transcript and argv. Do not add
-    // even declared role/instructions as a positional startup prompt; several runtimes reject or
+    // even declared instructions as a positional startup prompt; several runtimes reject or
     // reinterpret extra arguments on their resume form.
     const agent = asAgent(def);
     if (managesOwnSession(def.cmd) || (agent && !instructionsDeliverable(agent.cmd))) return undefined;
@@ -2123,8 +2015,6 @@ export class AgentManager {
     }
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
     const composed = composeAgentPrompt({
-      soul,
-      role: asAgent(def)?.role,
       instructions: asAgent(def)?.instructions,
       evolution,
       bridgeGuidance: guidance,
@@ -2132,7 +2022,7 @@ export class AgentManager {
       taskContractCompletion,
       sessionWorkRecord,
     });
-    // Project-owned policy is body content, not product protocol. Put it before the task/role body
+    // Project-owned policy is body content, not product protocol. Put it before the task body
     // (task-specific instructions stay more recent) and before the long-brief diversion so an
     // arbitrarily long configured document can never bypass tmux's measured payload ceiling.
     const body = [projectGuidance?.body, composed.body].filter((part): part is string => !!part?.trim()).join("\n\n");
@@ -2151,11 +2041,11 @@ export class AgentManager {
     // Size-check the exact successful-write pointer before deliverableBody atomically replaces any
     // prior brief. Thus an oversized dynamic fact cannot change what the still-running pane's old
     // pointer reads when restart is rejected.
-    const preview = body ? previewDeliverableBody(this.opts.workspaceRoot, name, body, "spawn", startupManifest) : undefined;
+    const preview = body ? previewDeliverableBody(this.opts.workspaceRoot, name, body, startupManifest) : undefined;
     const previewInstructions = frame(preview);
     if (previewInstructions) assertSafeBriefTransport(previewInstructions, `agent '${name}' startup brief`);
 
-    const deliverable = body ? deliverableBody(this.opts.workspaceRoot, name, body, "spawn", startupManifest) : undefined;
+    const deliverable = body ? deliverableBody(this.opts.workspaceRoot, name, body, startupManifest) : undefined;
     const instructions = frame(deliverable);
     if (instructions) assertSafeBriefTransport(instructions, `agent '${name}' startup brief`);
     return instructions?.trim() ? instructions : undefined;
@@ -2475,16 +2365,12 @@ export class AgentManager {
   }
 
   private async spawnUnlocked(name: string, opts?: SpawnOptions): Promise<void> {
-    try {
-      // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
-      // An explicit cmd creates a Temporary identity only when the name is not already declared.
-      const declared = this.opts.getConfig()?.agents[name];
-      if (!opts?.cmd || declared) this.opts.assertSpawnAllowed?.(name);
-      this.assertProfileLifecycleEnabled(name, declared ?? (opts?.cmd ? undefined : this.definitionOf(name)));
-      return await this.spawnCore(name, opts);
-    } finally {
-      this.releaseSoulReservation(name);
-    }
+    // t-8354ae — config-failure / LKG-only refusal (before any delivery or occupancy mutation).
+    // An explicit cmd creates a Temporary identity only when the name is not already declared.
+    const declared = this.opts.getConfig()?.agents[name];
+    if (!opts?.cmd || declared) this.opts.assertSpawnAllowed?.(name);
+    this.assertProfileLifecycleEnabled(name, declared ?? (opts?.cmd ? undefined : this.definitionOf(name)));
+    return this.spawnCore(name, opts);
   }
 
   /** The mutex key is a worktree's canonical realpath, so two different-looking paths to the
@@ -2788,9 +2674,6 @@ export class AgentManager {
     // preparation so its probe sees the exact prospective environment and owns explicit compensation.
     const suppression = this.applyFormationNativeSuppression(name, def);
     def = suppression.def;
-    const resolvedSoul = asAgent(def)?.soul
-      ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def)
-      : await this.resolveSoulForLifecycle(name, suppression.applied);
     const resolvedEvolution = await this.evolutionForFreshSession(name, def);
 
     const session = this.session(name);
@@ -2956,7 +2839,6 @@ export class AgentManager {
       effectivePrimerCtx,
       taskBrief,
       opts?.contract,
-      resolvedSoul,
       resolvedEvolution,
       projectGuidance,
       spawnWorkRecord,
@@ -3240,8 +3122,6 @@ export class AgentManager {
       cmd: originalCmd,
       kind: def.kind,
       ...(asAgent(def)?.instructions ? { instructions: asAgent(def)!.instructions } : {}),
-      ...(asAgent(def)?.role ? { role: asAgent(def)!.role } : {}),
-      ...(asAgent(def)?.soul ? { soul: true } : {}),
       ...(taskBrief ? { taskBrief } : {}),
       ...(parent ? { parent } : {}),
       ...(delegator ? { delegator } : {}), // t-bae303 — persist so rehydrate can restore gated lineage after a reload
@@ -3251,8 +3131,6 @@ export class AgentManager {
       ...(opts?.contractSkipReason ? { contractSkipReason: opts.contractSkipReason } : {}), // spec 246 D6 — auditable bypass
     };
     const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
-    const promptCapability = openingPromptCapability(def.cmd);
-    const identity = resolvedSoul ? this.soulSnapshot(resolvedSoul, promptCapability.status === "prompt" ? promptCapability.channel : "startup-argument") : undefined;
     const shouldPersistLaunch = !!this.opts.ledger && !!(temporary || adapter || worktree || parent || resolvedEvolution);
     // A gated launch is restart-denied from its very first durable row. The marker is removed only
     // after the host has authenticated and persisted the delegation authority. This two-phase row
@@ -3272,7 +3150,6 @@ export class AgentManager {
       instance: temporary
         ? { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false }
         : { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
-      ...(identity ? { identity: { soul: identity, health: "offered" as const } } : {}),
       ...(resolvedEvolution ? { evolution: resolvedEvolution } : {}),
     };
     try {
@@ -4228,7 +4105,7 @@ export class AgentManager {
    * Remove captured projections and generated per-agent files; private runtime homes and external
    * bindings are retained (see the transaction's `retainedBindings`).
    *
-   * t-33ae3f — the generated spawn brief / soul anchor and the durable pane transcript are removed
+   * t-33ae3f — the generated spawn brief and the durable pane transcript are removed
    * here. `FORGET_AGENT_FOOTPRINTS` has always named them as end-of-life footprints, but only the
    * Temporary dismiss path ran `forgetAgent()`; the Saved Agent forget left them behind while the
    * journal's `retainedBindings` never claimed them, so they were neither cleaned nor declared —
@@ -4663,9 +4540,6 @@ export class AgentManager {
     const projectGuidance = this.projectGuidanceFor(def);
     const suppression = this.applyFormationNativeSuppression(name, def);
     def = suppression.def;
-    const resolvedSoul = asAgent(def)?.soul
-      ? await this.reserveSoulLaunch(name, this.soulPrincipal(name), def)
-      : await this.resolveSoulForLifecycle(name, suppression.applied);
     const resolvedEvolution = await this.evolutionForFreshSession(name, def);
     const session = this.session(name);
     let worktree: WorktreeRecord | undefined;
@@ -4739,7 +4613,6 @@ export class AgentManager {
       { ...restartPrimerCtx, ...this.dependencyPrimerFact(worktree) },
       persistedDef?.taskBrief,
       persistedDef?.contract,
-      resolvedSoul,
       resolvedEvolution,
       projectGuidance,
       restartWorkRecord,
@@ -4823,9 +4696,6 @@ export class AgentManager {
           // refreshOwnership still PRESERVE — they re-attach to an EXISTING session, where the old home is right.)
           { ...existing?.resume, runtime: injected.adapter.runtime, sessionId: injected.resumeId, configHome: this.runtimeConfigHome(injected.adapter.runtime, name, def) }
         : existing?.resume;
-      const capability = openingPromptCapability(def.cmd);
-      const soul = resolvedSoul && capability.status === "prompt" ? this.soulSnapshot(resolvedSoul, capability.channel) : existing?.identity?.soul;
-      const identity = soul ? { soul, health: "offered" as const } : existing?.identity;
       // t-04052d — this fallback (no prior row) used to supply `declared` and nothing else, which left
       // the new row with NO instance policy. That was invisible while `declared` still answered for
       // readers; with the field gone it would write a row this build cannot describe and the
@@ -4844,7 +4714,6 @@ export class AgentManager {
         cwd,
         ...(worktree ? { worktree } : {}),
         resume,
-        identity,
         evolution: resolvedEvolution,
       });
     }
@@ -4894,8 +4763,6 @@ export class AgentManager {
         throw new AggregateError(failures, `agent '${name}' restart failed: ${primary.message}`, { cause: primary });
       }
       throw primary;
-    } finally {
-      this.releaseSoulReservation(name);
     }
   }
 
@@ -5451,8 +5318,6 @@ export class AgentManager {
       attention: { enabled: true, silenceSec: 8, patterns: [] },
       restart: "never",
       ...(src.instructions ? { instructions: src.instructions } : {}),
-      ...(sourceDefinition?.role ? { role: sourceDefinition.role } : sourceRecord?.def?.role ? { role: sourceRecord.def.role } : {}),
-      ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
       ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
       ...(src.env ? { env: src.env } : {}),
       // A canonical fork is still a Temporary sibling, so it must not inherit profileLifecycle
@@ -5484,14 +5349,11 @@ export class AgentManager {
         cmd: src.baseCmd,
         kind: "agent" as const,
         ...(src.instructions ? { instructions: src.instructions } : {}),
-        ...(sourceDefinition?.role ? { role: sourceDefinition.role } : sourceRecord?.def?.role ? { role: sourceRecord.def.role } : {}),
-        ...(sourceDefinition?.soul || sourceRecord?.def?.soul ? { soul: true } : {}),
         ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
         ...(src.env ? { env: src.env } : {}),
         fork: true,
       },
       resume: this.withConfigHome(forkName, forkDefinition, { runtime: src.runtime, sessionId: forkSessionId }),
-      ...(sourceRecord?.identity ? { identity: structuredClone(sourceRecord.identity) } : {}),
       ...(sourceRecord?.evolution ? { evolution: structuredClone(sourceRecord.evolution) } : {}),
       ...(worktree ? { worktree } : {}),
       cwd,

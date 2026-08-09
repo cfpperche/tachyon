@@ -33,7 +33,7 @@ export function evolutionCompletionRevision(event: TaskMutationEvent, nonce: str
 
 export function composeEvolutionReviewNotice(review: EvolutionReview): string {
   return `[tachyon] Evolution review ${review.id} for completed task ${review.taskId}: reflect on reusable `
-    + "learnings from this work. Do not change Soul or Persistent Instructions. Call submit_evolution_review "
+    + "learnings from this work. Do not change Persistent Instructions. Call submit_evolution_review "
     + `with review_id '${review.id}' and zero or more independent learning/skill proposals; submit an empty `
     + "proposals list when nothing should be retained.";
 }

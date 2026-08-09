@@ -179,7 +179,7 @@ describe("dev-host pointer", () => {
     expect(fs.lstatSync(path.join(ws, "README.md")).isSymbolicLink()).toBe(true);
     expect(fs.readFileSync(path.join(ws, "tachyon.yml"), "utf8")).toContain("agents:");
     expect(fs.existsSync(path.join(ws, ".tachyon", "prompts", "hi.md"))).toBe(true);
-    // Spec 393 / 390: mirror `.tachyon` must be a REAL directory (not a symlink) for Soul launch.
+    // Spec 393 / 390: mirror `.tachyon` must be a REAL directory (not a symlink) for managed state.
     expect(fs.lstatSync(path.join(ws, ".tachyon")).isSymbolicLink()).toBe(false);
     expect(fs.statSync(path.join(ws, ".tachyon")).isDirectory()).toBe(true);
     expect(fs.readFileSync(path.join(ws, ".tachyon", "prompts", "hi.md"), "utf8")).toContain("hello");

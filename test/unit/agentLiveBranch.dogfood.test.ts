@@ -61,11 +61,11 @@ describe("spec 384 dogfood — live branch (real git)", () => {
 
   it("worktree agent: live matches config, then drift after checkout", async () => {
     const m = mgr();
-    const { record } = await m.ensure({ agent: "soul", branch: "tachyon/soul" });
-    expect(await m.currentBranch(record.path)).toBe("tachyon/soul");
+    const { record } = await m.ensure({ agent: "worker", branch: "tachyon/worker" });
+    expect(await m.currentBranch(record.path)).toBe("tachyon/worker");
 
     const aligned = toAgentVM(
-      { name: "soul", running: true, dead: false, crashed: false },
+      { name: "worker", running: true, dead: false, crashed: false },
       {
         worktree: record.branch,
         liveBranch: (await m.currentBranch(record.path))!,
@@ -73,7 +73,7 @@ describe("spec 384 dogfood — live branch (real git)", () => {
         kind: "agent",
       },
     );
-    expect(aligned).toMatchObject({ liveBranch: "tachyon/soul", worktree: "tachyon/soul" });
+    expect(aligned).toMatchObject({ liveBranch: "tachyon/worker", worktree: "tachyon/worker" });
     expect(aligned.branchDrift).toBeUndefined();
 
     git(["checkout", "-b", "feat/live-demo"], record.path);
@@ -83,7 +83,7 @@ describe("spec 384 dogfood — live branch (real git)", () => {
     expect(drift).toBe(true);
 
     const drifted = toAgentVM(
-      { name: "soul", running: true, dead: false, crashed: false },
+      { name: "worker", running: true, dead: false, crashed: false },
       {
         worktree: record.branch,
         liveBranch: live!,
@@ -94,7 +94,7 @@ describe("spec 384 dogfood — live branch (real git)", () => {
     );
     expect(drifted).toMatchObject({
       liveBranch: "feat/live-demo",
-      worktree: "tachyon/soul",
+      worktree: "tachyon/worker",
       branchDrift: true,
     });
   });

@@ -105,24 +105,4 @@ export function registerVerificationCoreTools(mcp: McpServer, deps: BridgeDeps):
     },
   );
 
-  mcp.registerTool(
-    "reanchor_agent",
-    {
-      description:
-        "Re-anchor an agent to its role (spec 216): rewrite its durable role doc (.tachyon/roles/" +
-        "<agent>.md) and type a compact reminder into its terminal. Use when a sub-agent has drifted " +
-        "from its task after its CLI compacted/summarized. Types into the live pane — prefer it when " +
-        "the agent is idle. The same thing happens automatically if settings.anchor.auto is on.",
-      inputSchema: { name: AGENT_NAME.describe("the agent to re-anchor") },
-    },
-    async ({ name }) => {
-      try {
-        if (!deps.reanchor) return fail(new Error("re-anchoring is not available on this Bridge"));
-        await deps.reanchor(name);
-        return ok(`re-anchored '${name}' to its role`);
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
 }

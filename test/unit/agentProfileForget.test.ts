@@ -283,11 +283,11 @@ describe("canonical agent profile forget", () => {
       live: input.live,
       activateState: () => undefined,
       onPhase: (phase) => {
-        if (phase === "authority-retired") fs.writeFileSync(path.join(input.home, "SOUL.md"), "# written mid-forget\n");
+        if (phase === "authority-retired") fs.writeFileSync(path.join(input.home, "notes.md"), "human note written mid-forget\n");
       },
     })).rejects.toThrow("canonical profile home changed outside the forget transaction");
     expect(agentProfileForgetBlocked(input.root, "reviewer")).toBe(true);
     expect(fs.existsSync(input.home)).toBe(true);
-    expect(fs.readFileSync(path.join(input.home, "SOUL.md"), "utf8")).toBe("# written mid-forget\n");
+    expect(fs.readFileSync(path.join(input.home, "notes.md"), "utf8")).toBe("human note written mid-forget\n");
   });
 });

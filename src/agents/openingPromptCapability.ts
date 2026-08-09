@@ -20,7 +20,7 @@ export function openingPromptCapability(cmd: string): OpeningPromptCapability {
     return {
       status: "native-external",
       runtime: "hermes",
-      detail: "Hermes SOUL.md is externally managed; Tachyon does not own a per-agent Hermes home in phase 1",
+      detail: "Hermes opening prompts are delivered through its native TUI query environment",
     };
   }
   return {

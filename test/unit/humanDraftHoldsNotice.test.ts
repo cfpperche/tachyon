@@ -151,12 +151,11 @@ function forceStateOf(ws: Workspace, agent: string, state: string, extra: Record
 
 const priv = (ws: Workspace) => ws as unknown as {
   deliverNotice(agent: string, line: string, metadata?: NoticeQueueMetadata): Promise<{ status: string; heldFor?: string }>;
-  recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void>;
+  recoverOnIdle(agent: string): Promise<void>;
   sourceNoticeMetadata(agent: string, origin: "host-poke" | "agent-authored"): NoticeQueueMetadata;
   pokeParentOnNeedsInput(agent: string, matchedLine: string | undefined): void;
   tryRateLimitAutoContinue(agent: string, episodeKey: string, attempt: number): Promise<void>;
   noticeQueue: { count(t: string): number; queues: Map<string, Array<{ createdAt: number }>> };
-  pendingAnchor: Set<string>;
   rateLimitRetries: Map<string, unknown>;
 };
 
@@ -197,8 +196,6 @@ skipTestsWithoutOptionalRuntimeAuth({
     "the held notice arrives when the draft leaves — waiting, not discarding",
     "a queued notice is not flushed into a pane the human started typing in meanwhile",
     "the HOST poke rides the same guard — the fix cannot be walked around through the other door",
-    "the idle re-anchor is deferred, not typed, while the human holds the composer",
-    "the same re-anchor is consumed once the composer is free — the deferral is not a mute button",
     "the rate-limit auto-continue does not press Enter on a human's draft, and re-arms instead of dying",
     "with a free composer the auto-continue still presses Enter, exactly as before",
     "an abandoned draft cannot hold the notice forever: the TTL is swept even while the composer is held",
@@ -298,7 +295,7 @@ describe("t-a53dd9 — a human typing is not idleness", () => {
 
     // The human submits (or clears): the composer is empty again, and the next idle pass delivers.
     type(EMPTY_COMPOSER);
-    await priv(ws).recoverOnIdle("coord", false);
+    await priv(ws).recoverOnIdle("coord");
     await flush();
 
     expect((sent.get(session) ?? []).join("")).toContain("t-99");
@@ -317,7 +314,7 @@ describe("t-a53dd9 — a human typing is not idleness", () => {
 
     type(HUMAN_DRAFT); // the human starts typing while the agent finishes its turn
     forceStateOf(ws, "coord", "idle");
-    await priv(ws).recoverOnIdle("coord", false);
+    await priv(ws).recoverOnIdle("coord");
     await flush();
 
     expect(sent.has(session)).toBe(false);
@@ -344,7 +341,7 @@ describe("t-a53dd9 — a human typing is not idleness", () => {
  * "Who else can reach this?" — the repo's own rule, applied to the effect rather than to the caller.
  * The effect is TYPING INTO A PANE A HUMAN MAY OWN, and the actor×trigger list is: an Agent through
  * notify_agent, an Agent through write_input (covered in bridge.test.ts), Tachyon through the host
- * poke and the queued drain, Tachyon through the idle re-anchor, Tachyon through context renewal,
+ * poke and the queued drain, Tachyon through context renewal,
  * and Tachyon through the rate-limit auto-continue timer. This block is the tail of that list.
  *
  * Deliberately NOT covered, and named so the gap is visible rather than assumed away: the continuity
@@ -353,32 +350,6 @@ describe("t-a53dd9 — a human typing is not idleness", () => {
  * command aimed at a terminal.
  */
 describe("t-a53dd9 — the other doors onto the same pane", () => {
-  it("the idle re-anchor is deferred, not typed, while the human holds the composer", async () => {
-    const { ws, sent, session } = await withCoordAndChild(HUMAN_DRAFT);
-    forceStateOf(ws, "coord", "idle");
-    priv(ws).pendingAnchor.add("coord");
-
-    await priv(ws).recoverOnIdle("coord", true);
-    await flush();
-
-    expect(sent.has(session)).toBe(false);
-    // Deferred, not dropped: the flag is consumed only by the branch that actually injects.
-    expect(priv(ws).pendingAnchor.has("coord")).toBe(true);
-    ws.dispose();
-  });
-
-  it("the same re-anchor is consumed once the composer is free — the deferral is not a mute button", async () => {
-    const { ws } = await withCoordAndChild(EMPTY_COMPOSER);
-    forceStateOf(ws, "coord", "idle");
-    priv(ws).pendingAnchor.add("coord");
-
-    await priv(ws).recoverOnIdle("coord", true);
-    await flush();
-
-    expect(priv(ws).pendingAnchor.has("coord")).toBe(false);
-    ws.dispose();
-  });
-
   it("the rate-limit auto-continue does not press Enter on a human's draft, and re-arms instead of dying", async () => {
     // This one is a BARE ENTER with no text of its own, which is why it never looked like an
     // injection: it types nothing, it just submits whatever is already in the composer — the human's
@@ -417,7 +388,7 @@ describe("t-a53dd9 — the wait has a declared exit", () => {
     expect(priv(ws).noticeQueue.count("coord")).toBe(1);
 
     ageQueuePastTtl(ws, "coord"); // the human walked away and left the draft on screen
-    await priv(ws).recoverOnIdle("coord", false);
+    await priv(ws).recoverOnIdle("coord");
     await flush();
 
     expect(priv(ws).noticeQueue.count("coord")).toBe(0);

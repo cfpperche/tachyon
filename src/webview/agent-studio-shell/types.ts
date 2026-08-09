@@ -5,7 +5,6 @@ import type {
   AgentEvolutionSummaryMessage,
   AgentStudioEntity,
   AgentStudioPatch,
-  SoulProfileStatusMessage,
 } from "./domain";
 import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
@@ -20,15 +19,12 @@ export type {
   AgentStudioEntity,
   AgentStudioFields,
   AgentStudioPatch,
-  SoulProfileStatusMessage,
 } from "./domain";
 
 /** Host -> webview messages this surface actually receives. */
 export type AgentStudioHostMessage =
   | StudioHostCoreMessage<AgentStudioEntity, string, AgentStudioPatch>
   | StudioDomainMessage<{ type: "cwd"; value: string }>
-  | StudioDomainMessage<{ type: "soulProfileStatus"; status: SoulProfileStatusMessage }>
-  | StudioDomainMessage<{ type: "soulProfileError"; agent: string; code: string; message: string }>
   | StudioDomainMessage<{ type: "evolutionSummary"; summary: AgentEvolutionSummaryMessage }>
   | StudioDomainMessage<{ type: "evolutionCandidates"; agent: string; candidates: AgentEvolutionCandidateSummaryMessage[] }>
   | StudioDomainMessage<{ type: "evolutionCandidateDetail"; agent: string; detail: AgentEvolutionCandidateDetailMessage }>
@@ -61,16 +57,6 @@ export type AgentStudioWebviewMessage =
   | StudioDomainMessage<{ type: "authorizeSkill"; agent: string; skillName: string }>
   | StudioDomainMessage<{ type: "authorizePlugin"; agent: string; pluginName: string }>
   | StudioDomainMessage<{ type: "refreshAuthorizableCapabilities"; agent: string }>
-  | StudioDomainMessage<{ type: "createSoul"; agent: string }>
-  | StudioDomainMessage<{ type: "importSoul"; agent: string; contentBase64: string }>
-  | StudioDomainMessage<{ type: "replaceSoul"; agent: string; contentBase64: string; expectedDigest: string }>
-  | StudioDomainMessage<{ type: "openSoul"; agent: string }>
-  | StudioDomainMessage<{ type: "refreshSoul"; agent: string }>
-  | StudioDomainMessage<{ type: "previewSoul"; agent: string }>
-  | StudioDomainMessage<{ type: "adoptSoulProfile"; agent: string; expectedDigest: string }>
-  | StudioDomainMessage<{ type: "enableSoul"; agent: string }>
-  | StudioDomainMessage<{ type: "disableSoul"; agent: string }>
-  | StudioDomainMessage<{ type: "deleteSoulProfile"; agent: string }>
   | StudioDomainMessage<{ type: "refreshEvolution"; agent: string }>
   | StudioDomainMessage<{ type: "loadEvolutionCandidate"; agent: string; candidateId: string }>
   | StudioDomainMessage<{

@@ -62,7 +62,6 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
     reasoningEffort: text(128).optional(),
     serviceTier: text(128).optional(),
   }).strict(),
-  role: z.enum(["", "coder", "reviewer", "tester", "orchestrator", "custom"]),
   cwd: text(4096),
   /**
    * t-bd14d8 — no `watch` here, and the object is `.strict()`, so a mutation that carries one is
@@ -314,7 +313,6 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
     environmentValueNames: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).max(128),
     secretNames: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).max(128),
     prompt: z.object({
-      soul: z.boolean(),
       instructions: z.boolean(),
       evolution: z.boolean(),
       memoryPolicy: z.enum(["disabled", "runtime-managed", "human-approved"]).optional(),
@@ -384,7 +382,6 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
     editable: {
       displayName: profile.displayName ?? "",
       runtime: { ...profile.runtime },
-      role: profile.prompt?.role ?? "",
       cwd: profile.workspace?.cwd ?? "",
       // t-bd14d8 — a stored `lifecycle.watch` is NOT projected into the editable view. The form has
       // no control for it, so surfacing it would offer a value with nowhere to render and no way to
@@ -421,7 +418,6 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       environmentValueNames: Object.keys(profile.environment?.values ?? {}).sort(),
       secretNames: Object.keys(profile.environment?.secrets ?? {}).sort(),
       prompt: {
-        soul: profile.prompt?.soul !== undefined,
         instructions: profile.prompt?.instructions !== undefined,
         evolution: evolutionBound,
         ...(profile.prompt?.memory ? { memoryPolicy: profile.prompt.memory.policy } : {}),
@@ -523,7 +519,6 @@ export function createProfileFromStudioMutation(
   return {
     ...(parsed.editable.displayName ? { displayName: parsed.editable.displayName } : {}),
     runtime: { ...parsed.editable.runtime },
-    ...(parsed.editable.role ? { prompt: { role: parsed.editable.role } } : {}),
     lifecycle: {
       // t-ca9086 / SDD 482 decision 9 (revised 2026-07-29): human-authorized create writes ENABLED.
       // "Saving is not starting" is enforced by absence of spawn/autostart — not by disabling the
@@ -569,8 +564,6 @@ export function patchProfileFromStudioMutation(
     throw new Error(`agent '${parsed.agentName}' profile revision conflict`);
   }
   const prompt = { ...(current.profile.prompt ?? {}) };
-  if (parsed.editable.role) prompt.role = parsed.editable.role;
-  else delete prompt.role;
   // t-f96b2f — `editable.selfEvolution` is NOT resolved here, and the spread above deliberately
   // carries the stored `prompt.evolution` forward untouched. Binding it needs a profile id only the
   // Evolution store can mint, which is async and host-owned, so the whole rule lives in

@@ -78,7 +78,6 @@ const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "openPane" | "activity" |
   spawn: "tachyon.spawnAgentItem",
   resume: "tachyon.resumeAgentItem",
   fork: "tachyon.forkAgentItem",
-  reanchor: "tachyon.reanchorAgentItem",
   reinjectContinuity: "tachyon.reinjectContinuityItem",
   injectPrompt: "tachyon.injectPromptTemplateItem",
   promote: "tachyon.promoteAgentItem",

@@ -8,8 +8,6 @@ import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { SharedDependencyState } from "../worktree/dependencySharing.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
-import type { Role } from "../roles/templates.js";
-import type { SoulSnapshot } from "../agents/promptLayers.js";
 import { immutableEvolutionStartupSnapshot, isEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 
 /**
@@ -31,8 +29,6 @@ export interface SessionDef {
   cmd: string; // the ORIGINAL spawn command (no minted-id injection)
   kind: EntryKind;
   instructions?: string;
-  role?: Role;
-  soul?: boolean;
   taskBrief?: string;
   parent?: string; // lineage — who spawned it
   /** spec 362 — the Bridge-resolved requester of a GATED delegation (t-bae303). Gated spawns force
@@ -147,7 +143,6 @@ export interface SessionRecord {
    */
   /** spec 364 — durable Bridge-client generation stamp for rebind after host reload. */
   bridgeClient?: BridgeClientBinding;
-  identity?: SessionIdentity;
   /**
    * SDD 482 phase 2 — the declared Agent Instance policy. Optional because rows written before the
    * split have no honest value: absent means "predates the split", and inventing one from `declared`
@@ -176,13 +171,6 @@ export interface SessionRecord {
 export interface SessionLifecycle {
   state: "clean-exited" | "stopped";
   exitedAt: string;
-}
-
-export interface SessionIdentity {
-  soul: SoulSnapshot;
-  health: "offered" | "identity-degraded";
-  degradedAt?: string;
-  degradedCode?: string;
 }
 
 /** A row may drive resume only when it has a runtime AND that runtime still has an adapter. */
@@ -400,21 +388,20 @@ function normalize(r: unknown): SessionRecord | null {
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
   // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.identity !== undefined || o.evolution !== undefined || o.lifecycle !== undefined) {
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.evolution !== undefined || o.lifecycle !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
     const bridgeClient = parseBridgeClient(o.bridgeClient);
-    const identity = parseIdentity(o.identity);
     const evolution = parseEvolution(o.evolution);
     const lifecycle = parseLifecycle(o.lifecycle);
     const instance = parseInstancePolicy(o.instance);
-    if (!def && !resume && !worktree && !bridgeClient && !identity && !evolution) return null;
+    if (!def && !resume && !worktree && !bridgeClient && !evolution) return null;
     // t-04052d — a row whose `instance` did not parse is KEPT, not dropped. Dropping it would delete
     // the very evidence the activation gate refuses on, turning its ledger check into a no-op and
     // discarding a pre-cut operator's rows without telling them. It survives here and is refused
     // there; no reader can get a policy answer out of it in the meantime.
-    return { def, resume, worktree, bridgeClient, identity, evolution, lifecycle, instance, cwd: o.cwd, updatedAt };
+    return { def, resume, worktree, bridgeClient, evolution, lifecycle, instance, cwd: o.cwd, updatedAt };
   }
 
   // SDD 478 M4 — the pre-211 flat record (`{runtime, sessionId, cwd, cmd, declared}`) predates the
@@ -481,8 +468,6 @@ function parseDef(d: unknown): SessionDef | undefined {
     cmd: o.cmd,
     kind,
     ...(typeof o.instructions === "string" ? { instructions: o.instructions } : {}),
-    ...(o.role === "coder" || o.role === "reviewer" || o.role === "tester" || o.role === "orchestrator" || o.role === "custom" ? { role: o.role } : {}),
-    ...(o.soul === true ? { soul: true as const } : {}),
     ...(typeof o.taskBrief === "string" ? { taskBrief: o.taskBrief } : {}),
     ...(typeof o.parent === "string" ? { parent: o.parent } : {}),
     ...(typeof o.delegator === "string" ? { delegator: o.delegator } : {}),
@@ -494,28 +479,6 @@ function parseDef(d: unknown): SessionDef | undefined {
       ? { contractInvalid: "invalid-shape" as const }
       : {}),
     ...(typeof o.contractSkipReason === "string" ? { contractSkipReason: o.contractSkipReason } : {}), // spec 246 D6
-  };
-}
-
-function parseIdentity(value: unknown): SessionIdentity | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const o = value as Record<string, unknown>;
-  if (typeof o.soul !== "object" || o.soul === null || (o.health !== "offered" && o.health !== "identity-degraded")) return undefined;
-  const s = o.soul as Record<string, unknown>;
-  if (typeof s.profileId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.profileId) ||
-      typeof s.source !== "string" || !/^\.tachyon\/agents\/[a-zA-Z][a-zA-Z0-9_-]*\/SOUL\.md$/.test(s.source) ||
-      typeof s.sha256 !== "string" || !/^[0-9a-f]{64}$/.test(s.sha256) ||
-      !Number.isInteger(s.chars) || (s.chars as number) < 1 || (s.chars as number) > 20_000 ||
-      !Number.isInteger(s.bytes) || (s.bytes as number) < 1 || (s.bytes as number) > 65_536 ||
-      typeof s.offeredAt !== "string" || !Number.isFinite(Date.parse(s.offeredAt)) || s.state !== "offered" ||
-      (s.channel !== "startup-argument" && s.channel !== "tui-prefill" && s.channel !== "reanchor-pointer")) return undefined;
-  if (o.degradedAt !== undefined && (typeof o.degradedAt !== "string" || !Number.isFinite(Date.parse(o.degradedAt)))) return undefined;
-  return {
-    soul: { profileId: s.profileId, source: s.source, sha256: s.sha256, chars: s.chars as number, bytes: s.bytes as number,
-      offeredAt: s.offeredAt, channel: s.channel, state: "offered" },
-    health: o.health,
-    ...(typeof o.degradedAt === "string" ? { degradedAt: o.degradedAt } : {}),
-    ...(typeof o.degradedCode === "string" && /^soul\/[a-z-]+$/.test(o.degradedCode) ? { degradedCode: o.degradedCode } : {}),
   };
 }
 

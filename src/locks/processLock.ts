@@ -20,7 +20,7 @@ import path from "node:path";
  *  - `acquireVerifyFullLock` in `scripts/verify-full.mjs` — the build gate's own mutex, in tmpdir,
  *    outside the bundle, with a different contract (one gate at a time, queued by the CLI). It is a
  *    script, not product code, and cannot import TypeScript.
- *  - `withSoulProfileAdmission` in `src/agents/soul.ts` — IN-PROCESS admission per principal. It is
+ *  - `profile admission` — IN-PROCESS admission per principal. It is
  *    not an answer to "another window is writing this file" and never was.
  *
  * ## Who else can reach a lock, and what happens

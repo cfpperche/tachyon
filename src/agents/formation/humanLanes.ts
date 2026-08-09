@@ -1,10 +1,8 @@
 import crypto from "node:crypto";
 import { parseDocument } from "yaml";
-import type { Role } from "../../roles/templates.js";
 import { closeCanonicalAgentProfile, readCanonicalAgentProfile } from "../../config/agentProfileReader.js";
 import { agentProfileSchemaV1, type AgentProfileV1 } from "../../config/agentProfileSchema.js";
 import { composeAgentPrompt } from "../promptLayers.js";
-import { resolveSoul, type ResolvedSoul } from "../soul.js";
 import { resolvePersistentInstructions, type ResolvedPersistentInstructions } from "../persistentInstructions.js";
 import {
   formationDigest,
@@ -14,13 +12,10 @@ import {
 } from "./domain.js";
 import type { ResolvedFormationPayload } from "./authorityStore.js";
 
-export const HUMAN_SOUL_RENDERER_CONTRACT = "tachyon-soul-prompt-v1";
 export const HUMAN_INSTRUCTIONS_RENDERER_CONTRACT = "tachyon-persistent-instructions-v1";
 export const HUMAN_REANCHOR_RENDERER_CONTRACT = "tachyon-formation-reanchor-v1";
-export const HUMAN_SOUL_RENDERER_SHA256 = formationDigest({ contract: HUMAN_SOUL_RENDERER_CONTRACT, order: 1, framing: "promptLayers.identity" });
-export const HUMAN_INSTRUCTIONS_RENDERER_SHA256 = formationDigest({ contract: HUMAN_INSTRUCTIONS_RENDERER_CONTRACT, order: 3, framing: "promptLayers.instructions" });
+export const HUMAN_INSTRUCTIONS_RENDERER_SHA256 = formationDigest({ contract: HUMAN_INSTRUCTIONS_RENDERER_CONTRACT, order: 1, framing: "promptLayers.instructions" });
 export const HUMAN_FORMATION_RENDERER_CONTRACTS_SHA256 = formationDigest({
-  soul: HUMAN_SOUL_RENDERER_SHA256,
   instructions: HUMAN_INSTRUCTIONS_RENDERER_SHA256,
   reanchor: formationDigest({ contract: HUMAN_REANCHOR_RENDERER_CONTRACT, framing: "fixed-v1" }),
 });
@@ -55,7 +50,7 @@ export class HumanLaneSuppressionAuthority {
     issuedAt: string;
   }): HumanLaneSuppressionReceipt {
     const lanes = [...input.lanes].sort();
-    const expected = (["soul", "instructions", "evolution", "memory"] as const)
+    const expected = (["instructions", "evolution", "memory"] as const)
       .filter((lane) => input.vector.profile.lanes[lane].mode === "profile").sort();
     if (new Set(lanes).size !== lanes.length || formationDigest(lanes) !== formationDigest(expected)) {
       throw new HumanFormationLaneError("suppression receipt must cover every enabled human lane exactly once");
@@ -85,7 +80,7 @@ export class HumanLaneSuppressionAuthority {
     const { mac, ...payload } = receipt;
     const expectedMac = crypto.createHmac("sha256", this.key).update(suppressionPayload(payload)).digest();
     const actualMac = /^[a-f0-9]{64}$/.test(mac) ? Buffer.from(mac, "hex") : Buffer.alloc(0);
-    const enabled = (["soul", "instructions", "evolution", "memory"] as const)
+    const enabled = (["instructions", "evolution", "memory"] as const)
       .filter((lane) => vector.profile.lanes[lane].mode === "profile").sort();
     const issuedAt = Date.parse(receipt.issuedAt);
     const now = Date.parse(verifiedAt);
@@ -101,14 +96,13 @@ export class HumanLaneSuppressionAuthority {
 }
 
 export interface ResolvedHumanFormationPayload extends ResolvedFormationPayload {
-  soul?: ResolvedSoul;
   instructions?: ResolvedPersistentInstructions;
   suppression: HumanLaneSuppressionReceipt;
 }
 
 function validateLaneRenderer(
   vector: FormationAuthorityVector,
-  laneName: "soul" | "instructions",
+  laneName: "instructions",
   contract: string,
   rendererSha256: string,
 ): void {
@@ -120,7 +114,7 @@ function validateLaneRenderer(
 }
 
 function rejectLegacyModes(vector: FormationAuthorityVector): void {
-  for (const laneName of ["soul", "instructions", "evolution", "memory"] as FormationLaneName[]) {
+  for (const laneName of ["instructions", "evolution", "memory"] as FormationLaneName[]) {
     if (vector.profile.lanes[laneName].mode === "legacy") throw new HumanFormationLaneError("canonical human-lane resolution cannot consume legacy authority");
   }
 }
@@ -129,7 +123,6 @@ export async function resolveHumanFormationPayload(input: {
   operationId: string;
   workspaceRoot: string;
   vector: FormationAuthorityVector;
-  role?: Role;
   bridgeGuidance: boolean;
   projectGuidance?: string;
   taskBrief?: string;
@@ -147,7 +140,6 @@ export async function resolveHumanFormationPayload(input: {
     throw new HumanFormationLaneError("formation generation does not bind the human renderer contract set");
   }
   rejectLegacyModes(vector);
-  validateLaneRenderer(vector, "soul", HUMAN_SOUL_RENDERER_CONTRACT, HUMAN_SOUL_RENDERER_SHA256);
   validateLaneRenderer(vector, "instructions", HUMAN_INSTRUCTIONS_RENDERER_CONTRACT, HUMAN_INSTRUCTIONS_RENDERER_SHA256);
   if (!input.suppressionAuthority.verify(input.suppressionReceipt, vector, input.runtimeTrustClass, input.operationId)) {
     throw new HumanFormationLaneError("human-lane native suppression receipt is invalid");
@@ -167,21 +159,6 @@ export async function resolveHumanFormationPayload(input: {
     closeCanonicalAgentProfile(canonical);
   }
 
-  let soul: ResolvedSoul | undefined;
-  const soulLane = vector.profile.lanes.soul;
-  if (soulLane.mode === "profile") {
-    if (soulLane.path !== "SOUL.md") throw new HumanFormationLaneError("Soul must use the conventional SOUL.md source");
-    const reference = profile.references?.find((candidate) => candidate.id === soulLane.selectorId);
-    if (!reference || reference.kind !== "soul" || reference.scope !== "profile"
-      || reference.owner !== vector.profile.agentId || reference.path !== soulLane.path || reference.sha256 !== soulLane.sourceSha256) {
-      throw new HumanFormationLaneError("Soul selector does not match canonical agent profile authority");
-    }
-    soul = await resolveSoul(input.workspaceRoot, vector.profile.agentName, vector.profile.agentId);
-    if (soul.profileId !== soulLane.subjectId || soul.sha256 !== soulLane.sourceSha256) {
-      throw new HumanFormationLaneError("Soul bytes or subordinate identity do not match active profile authority");
-    }
-  }
-
   let instructions: ResolvedPersistentInstructions | undefined;
   const instructionsLane = vector.profile.lanes.instructions;
   if (instructionsLane.mode === "profile") {
@@ -198,16 +175,12 @@ export async function resolveHumanFormationPayload(input: {
   }
 
   const startup = composeAgentPrompt({
-    soul,
-    role: input.role,
     instructions: instructions?.body,
     bridgeGuidance: input.bridgeGuidance,
     taskBrief: input.taskBrief,
     taskContractCompletion: input.taskContractCompletion,
   }).body;
   const formationOnly = composeAgentPrompt({
-    soul,
-    role: input.role,
     instructions: instructions?.body,
     bridgeGuidance: input.bridgeGuidance,
   }).body;
@@ -225,7 +198,6 @@ export async function resolveHumanFormationPayload(input: {
     reanchorReminder,
     suppression: structuredClone(input.suppressionReceipt),
     nativeSuppression: structuredClone(input.suppressionReceipt),
-    ...(soul ? { soul } : {}),
     ...(instructions ? { instructions } : {}),
   };
 }

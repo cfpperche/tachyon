@@ -9,8 +9,6 @@ import {
 } from "../../src/agents/startupBrief.js";
 
 const emptyPrompt: AgentPromptManifest = {
-  soul: false,
-  role: false,
   persistentInstructions: false,
   bridgeGuidance: false,
   task: { kind: "absent" },
@@ -25,14 +23,12 @@ describe("startup brief manifest rendering", () => {
     const value = manifest({ projectGuidanceSources: 2 });
 
     expect(renderStartupBriefSummary(value)).toBe(
-      "Contains: project guidance (2 sources); soul (absent); role (absent); persistent instructions (absent); Bridge guidance (absent); task contract (absent).\n" +
+      "Contains: project guidance (2 sources); persistent instructions (absent); Bridge guidance (absent); task contract (absent).\n" +
       "Task objective: absent — awaiting assignment.",
     );
     expect(renderStartupBriefInventory(value)).toBe(
       "── STARTUP BRIEF CONTENTS ──\n" +
       "Project guidance: 2 sources\n" +
-      "Soul: absent\n" +
-      "Role: absent\n" +
       "Persistent instructions: absent\n" +
       "Bridge guidance: absent\n" +
       "Task: absent — awaiting assignment\n" +
@@ -46,7 +42,7 @@ describe("startup brief manifest rendering", () => {
   ] as const)("distinguishes a structured %s contract", (completion, display) => {
     const value = manifest({
       projectGuidanceSources: 1,
-      prompt: { ...emptyPrompt, role: true, task: { kind: "contract", completion } },
+      prompt: { ...emptyPrompt, task: { kind: "contract", completion } },
     });
 
     expect(renderStartupBriefSummary(value)).toContain(`task contract (${display})`);
@@ -99,8 +95,6 @@ describe("startup brief manifest rendering", () => {
     const maximal = manifest({
       projectGuidanceSources: 8,
       prompt: {
-        soul: true,
-        role: true,
         persistentInstructions: true,
         bridgeGuidance: true,
         task: { kind: "contract", completion: "done_when" },

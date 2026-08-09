@@ -275,14 +275,12 @@ export interface WorkspaceStudioFormV1 {
   cmd: string;
   kind: "agent" | "terminal" | "command" | "runbook" | "schedule";
   instructions: string;
-  role: string;
   watch: string;
   steps: string;
   cwd: string;
   autostart: boolean;
   restartOnCrash: boolean;
   attention: boolean;
-  soul: boolean;
   selfEvolution: boolean;
   worktree: boolean;
   branch: string;
@@ -1289,11 +1287,11 @@ export function workspacePinStudioApplySuccessV1(
 }
 
 const STUDIO_FORM_STRING_KEYS = [
-  "name", "cmd", "instructions", "role", "watch", "steps", "cwd", "branch", "worktreeSetup",
+  "name", "cmd", "instructions", "watch", "steps", "cwd", "branch", "worktreeSetup",
   "schedEvery", "schedAt", "schedTarget",
 ] as const;
 const STUDIO_FORM_BOOLEAN_KEYS = [
-  "autostart", "restartOnCrash", "attention", "soul", "selfEvolution", "worktree", "isolate", "catchUp",
+  "autostart", "restartOnCrash", "attention", "selfEvolution", "worktree", "isolate", "catchUp",
 ] as const;
 const STUDIO_FORM_KEYS = [
   ...STUDIO_FORM_STRING_KEYS,

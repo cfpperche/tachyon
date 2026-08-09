@@ -15,7 +15,7 @@ import { execFile } from "node:child_process";
 import { isDeepStrictEqual, promisify } from "node:util";
 import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "../tmux/TmuxService.js";
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
-import { agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, shellQuote, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
+import { agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "../config/agentForgetPlan.js";
 import {
@@ -91,7 +91,6 @@ import {
   type AgentProfileStudioMutationV1,
   type AgentProfileStudioSnapshotV1,
 } from "../config/agentProfileStudio.js";
-import { composeAgentPrompt } from "../agents/promptLayers.js";
 import {
   POST_CUT_SESSION_ATTESTATION_ENV,
   describeLegacyFleetRefusal,
@@ -100,22 +99,6 @@ import {
 } from "../agents/legacyFleetGate.js";
 import { scanAgentRosterDirectory } from "../config/agentRosterDirectory.js";
 import { AgentProfileRefusal, isAgentProfileRefusal } from "../config/agentProfileRefusal.js";
-import { SoulError, agentSoulPath, readCanonicalSoulBytes } from "../agents/soul.js";
-import {
-  adoptSoulProfile,
-  createSoulProfile,
-  deleteSoulProfile,
-  disableSoulProfile,
-  enableSoulProfile,
-  importSoulProfileBytesTransaction,
-  replaceSoulProfileBytesTransaction,
-  importSoulProfileTransaction,
-  reconcileProfileTransactions,
-  refreshSoulProfileStatus,
-  type ProfileMutationResult,
-  type ProfileTxConfigAccess,
-} from "../agents/soulProfileTransactions.js";
-import type { SoulProfileStatus } from "../agents/soul.js";
 import { snapshotFromConfig, writeConfigLkg, readConfigLkg, type ConfigLkgSnapshot } from "../config/configLkg.js";
 import {
   type ConfigFailure,
@@ -172,7 +155,6 @@ import { contextRenewalGesture, type ContextRenewalMode } from "../anchor/compac
 import { authRequiredOf, describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { authRequiredLaunchNotice, loginFinishedNotice } from "./authRequiredNotice.js";
 import { LoginRunner } from "../commands/LoginRunner.js";
-import { isNativeSuppressionConfirmed } from "../runtime/nativeLaneSuppression.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
 import { TemporaryBackstopMonitor, idleNotifyThresholdMs } from "./TemporaryBackstopMonitor.js";
 import {
@@ -185,7 +167,6 @@ import {
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { hasDoorbellRung } from "../bridge/doorbell.js";
-import { roleReminder, buildRoleDoc } from "../roles/templates.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
@@ -229,9 +210,6 @@ import {
   type ClientRebindState,
 } from "../bridge/clientRebind.js";
 import type { AuthorityHead, AuthorityHeadPort } from "../evolution/authorityIntegrity.js";
-import { renderPrimer, wrapWithPrimer } from "../bridge/primer.js";
-import { loadAndRenderProjectGuidance } from "../config/projectGuidance.js";
-import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "../agents/briefFile.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { healUnknownBearerFromProc } from "../bridge/agentTokenHeal.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
@@ -285,7 +263,6 @@ import { ActivityLog, agentLogId } from "../activity/logStore.js";
 import { compactSessionOwnerRows, compactSpawnSettings, latestOwnerFor, persistenceHookFailureFile, readPersistenceHookFailures, readSessionOwners, sessionOwnersFile, type OwnershipHookGroup } from "../activity/sessionOwners.js";
 import { planProjectedPluginHooks, readHookProjectionCandidates } from "../plugins/agentHookProjection.js";
 import { forgetAgent as forgetAgentFootprint } from "../agents/forgetAgent.js";
-import { writePrivateFileAtomic } from "../agents/derivedFile.js";
 import {
   HeadlessTerminalPresentation,
   type TerminalPresentation,
@@ -496,10 +473,6 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
       return t("steps: at least one step is required");
     case "instructions-not-deliverable":
       return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
-    case "soul-invalid":
-      return t("soul: choose enabled or disabled, then try again");
-    case "soul-runtime-unsupported":
-      return t("soul: {0} cannot receive a Tachyon-managed soul — use a supported direct agent command or disable soul", issue.param ?? "this runtime");
     case "terminal-cmd-is-attested-runtime":
       return t(
         "command: '{0}' is an LLM runtime Tachyon attests — create it as an agent in Agent Studio; terminals are for generic processes",
@@ -557,8 +530,6 @@ export class Workspace {
   private readonly runtimeSlack: RuntimeSlackMonitor;
   /** t-9552f3 — session-local completion doorbell latch (in-memory). */
   private readonly completionHints = new CompletionHintStore();
-  /** spec 216 — agents whose CLI just compacted; a re-anchor is consumed on their next idle. */
-  private pendingAnchor = new Set<string>();
   /** t-6f0377 — session-local and deliberately non-durable: death cancels the intent. */
   private readonly pendingContextRenewal = new Map<string, ContextRenewalMode>();
   /** t-b88106 — a relaunch never changes whether an agent is visible; this owns that rule. */
@@ -643,8 +614,8 @@ export class Workspace {
   /**
    * t-50bbd4 — the canonical `agentId` for a declared agent, or undefined when it is not a profile
    * agent. Read from the profile on disk rather than cached: the lane validates the profile bytes
-   * against the vector anyway, so a stale id here would only ever produce a refusal, never a wrong
-   * Soul — and reading is the cheap way to stay correct across a rename or an external edit.
+   * against the vector anyway, so reading is the cheap way to stay correct across a rename or an
+   * external edit.
    */
   private canonicalAgentIdOf(agentName: string): string | undefined {
     const source = readCanonicalAgentProfile(this.workspaceRoot, agentName);
@@ -865,12 +836,6 @@ export class Workspace {
       // instead of capturing an undefined that would never fill in.
       formation: {
         suppressionRequired: (agentName) => this.formationLifecycle?.suppressionRequired(agentName) ?? false,
-        resolveSoul: (input) => this.formationLifecycle
-          ? this.formationLifecycle.resolveSoul(input)
-          : Promise.resolve({ state: "absent" as const }),
-      },
-      onFormationSoulRefused: (agent, reason) => {
-        this.host.notify(this.t("agent '{0}': profile Soul was not applied — {1}", agent, reason), "warn");
       },
       // SDD 369 T3 — ordinary Claude sessions inherit this account home. Capture and transcript
       // resolution must use the same value; an unknown external home then fails capture closed.
@@ -1196,9 +1161,8 @@ export class Workspace {
           this.terminals.open(name, this.manager.session(name));
         }
         // spec 216 (codex r1 M2): a fresh session (spawn/restart/resume) clears any stale
-        // re-anchor flag — else a compaction detected before a kill could inject into a brand-new
+        // recovery flag — else a compaction detected before a kill could inject into a brand-new
         // same-name session that never compacted.
-        this.pendingAnchor.delete(name);
         this.pendingContextRenewal.delete(name);
         this.recordSpawnIncarnation(name);
         if (reveal === "preserve") {
@@ -1236,7 +1200,6 @@ export class Workspace {
         this.reconcileGrokAuthIfGrokAgent(name);
         this.terminals.close(name);
         this.surfaces.forget(name); // t-b88106 — a kill ends the agent; nothing to restore
-        this.pendingAnchor.delete(name); // spec 216: don't carry a re-anchor flag past the session
         this.pendingContextRenewal.delete(name); // t-6f0377: death cancels a renewal intent
         this.agentIncarnations.delete(name);
         this.noticeQueue.clear(name);
@@ -1436,9 +1399,8 @@ export class Workspace {
         // initial false. A surviving session with neither stays unknown and gets the generic poke.
         initialTurnState: (agent) =>
           this.hasDurableTurnEvidence(agent) ? true : this.freshTurnBaselines.has(agent) ? false : undefined,
-        // spec 216 (codex r1 M1): compaction detection / re-anchoring is an AI-agent concept only.
-        // Return null for terminals so a terminal running a claude/codex-shaped cmd (attention forced
-        // on) can never enqueue a re-anchor and get injected into.
+        // Compaction detection is an AI-agent concept only. Return null for terminals so a terminal
+        // running a claude/codex-shaped command cannot enqueue continuity recovery.
         cmdOf: (agent) => (this.manager.kindOf(agent) === "agent" ? (this.manager.defOf(agent)?.cmd ?? null) : null),
         // t-10771a v1 — derived prose-question handback is only for declared top-level agents:
         // declared in tachyon.yml, AI-kind, and not a declared subagent. Temporary children and
@@ -1467,15 +1429,9 @@ export class Workspace {
         }
         this.waiters.notifyAttention(agent, this.attentionOf(agent)?.state ?? attention.state);
         this.refreshAgentsViews();
-        // spec 216 (Part C) — re-anchor the role on the first idle AFTER a detected compaction (never
-        // working/needs-input), once per episode, only when opted in. spec 241 — continuity recovery rides
-        // the same idle. codex fix #4: run them SERIALLY (role reminder, then continuity pointer) so two
-        // tmux sendKeys never interleave into the pane.
+        // Continuity recovery runs only after the agent becomes idle so it never writes over a turn.
         if (attention.state === "idle" && this.manager.kindOf(agent) === "agent") {
-          const hasPendingAnchor = this.pendingAnchor.has(agent);
-          const wantAnchor = hasPendingAnchor && (this.config?.settings.anchor?.auto ?? false);
-          if (hasPendingAnchor && !wantAnchor) this.pendingAnchor.delete(agent);
-          void this.recoverOnIdle(agent, wantAnchor).catch(() => {});
+          void this.recoverOnIdle(agent).catch(() => {});
         }
         // t-8605be — a child stuck on an interactive prompt is otherwise unreachable by agents (write_input
         // refuses working/throttled, notify_agent refuses needs-input per 341) until a human notices the
@@ -1544,13 +1500,9 @@ export class Workspace {
           this.pokeParentOnAuthRequired(agent, attention.authRequired);
         }
       },
-      // spec 216 — compaction detected: queue a re-anchor, consumed on the next idle above.
-      // spec 241 — also mark a continuity discontinuity (compaction is in-file, so the activity transition
+      // Compaction is in-file, so the activity transition
       // counter won't see it) so the agent's continuity is re-injected on the next idle.
       (agent) => {
-        // A failed soul-aware compaction anchor is a durable human-attention latch. Do not let later
-        // compaction observations create an automatic retry loop; a manual re-anchor clears health.
-        if (this.ledger.get(agent)?.identity?.health !== "identity-degraded") this.pendingAnchor.add(agent);
         if (this.manager.kindOf(agent) === "agent") this.continuityState.markDiscontinuity(agent, this.currentActivitySeq(agent));
       },
     );
@@ -2196,8 +2148,6 @@ export class Workspace {
         // spec 273 — the worktree evidence channel over MCP.
         attachEvidence: (input) => this.attachEvidence(input),
         listEvidence: (agent) => this.listEvidence(agent),
-        // spec 216 — manual re-anchor over MCP (always available; the auto path is opt-in).
-        reanchor: async (agent) => this.reanchor(agent),
         requestContextCompaction: async (agent) => this.requestContextCompaction(agent),
         requestFreshContext: async (agent) => this.requestFreshContext(agent),
         // t-0bebf6 — the fifth exit on the idle poke. It answers the SAME monitor that authored the
@@ -2677,13 +2627,12 @@ export class Workspace {
 
   /** spec 231 — does this agent carry a persona (so a pipeline node referencing it may omit `task` under
    *  `input: required`)? True iff it declares non-empty instructions, an isolated harness, or a non-custom
-   *  role template. Conservative — an unknown/bare agent returns false (→ `task` stays required). */
+   *  instruction contract. Conservative — an unknown/bare agent returns false (→ `task` stays required). */
   private agentHasPersona = (name: string): boolean => {
     const a = asAgent(this.config?.agents[name]);
     if (!a) return false;
     if (typeof a.instructions === "string" && a.instructions.trim().length > 0) return true;
     if (a.harness) return true;
-    if (a.role && a.role !== "custom") return true;
     return false;
   };
 
@@ -3128,21 +3077,8 @@ export class Workspace {
       // nowhere earlier — and if the key never arrives, the port is simply absent (fail-closed),
       // which the lifecycle reads as "no formation" rather than as a weaker rendering path.
       ws.formationLifecycle = createFormationLifecycleHost({
-        hostKey: hmacKey,
         hostRoot: path.join(workspaceRoot, ".tachyon", "formation-authority"),
-        workspaceId: ws.wsHash,
-        workspaceRoot,
         agentIdOf: (agentName) => ws.canonicalAgentIdOf(agentName),
-        runtimeAdapterOf: (agentName) => {
-          const def = ws.config?.agents?.[agentName];
-          return def ? adapterFor(asAgent(def)?.cmd ?? "")?.runtime : undefined;
-        },
-        // Suppression is confirmed per runtime from the measured registry (SDD 490 Fatia C).
-        // `isNativeSuppressionConfirmed` returns true only when instructions+memory (when native)
-        // are both behaviorally verified for that adapter — never from hope or a hard-coded true.
-        // See src/runtime/nativeLaneSuppression.ts and docs/research/native-lane-suppression-sdd490-fatia-c.md.
-        nativeSuppressionConfirmed: (adapter) => isNativeSuppressionConfirmed(adapter),
-        runtimeTrustClassOf: (adapter) => adapter,
       });
       // SDD 490 Fatia A — moment zero's host, beside the read-only one and pointed at the same
       // authority. The spawn host stays read-only; this one grants `bootstrap` and nothing else.
@@ -3806,117 +3742,6 @@ export class Workspace {
     };
   }
 
-  /**
-   * spec 216 (Part C) — re-anchor an agent to its role: (re)write the durable per-agent role
-   * doc, then type a compact reminder into its terminal pointing back at it. Used both by the
-   * opt-in auto path (on idle-after-compaction) and the always-on manual command/Bridge tool.
-   * Best-effort: no-op if the agent isn't running.
-   */
-  async reanchor(agent: string): Promise<void> {
-    // spec 216 (codex r1 M3): re-anchoring types a role reminder into the pane — agents only.
-    // The UI menu gates on `-ai`, but the Bridge tool calls this directly, so guard here too:
-    // injecting a `cat .tachyon/roles/…` line into a terminal/server would be wrong.
-    if (this.manager.kindOf(agent) !== "agent") throw new Error(`'${agent}' is a terminal — re-anchoring applies only to agents`);
-    const session = this.manager.session(agent);
-    if (!(await this.tmux.hasSession(session))) throw new Error(`agent '${agent}' is not running`);
-    // The kind guard above already refused a terminal, so the Agent arm is the only one left.
-    const def = asAgent(this.manager.defOf(agent));
-    const sessionEvolution = this.ledger.get(agent)?.evolution;
-    if (def?.soul) {
-      const previous = this.ledger.get(agent)?.identity;
-      try {
-        const soul = await this.manager.resolveSoulForLifecycle(agent);
-        if (!soul) throw new Error(`agent '${agent}' has no enabled soul`);
-        const { primer, beforeFinishing } = renderPrimer({
-          agentName: agent,
-          delegator: this.manager.delegatorOf(agent),
-          parent: this.manager.parentOf(agent),
-        });
-        const body = composeAgentPrompt({
-          soul,
-          role: def.role,
-          instructions: def.instructions,
-          evolution: sessionEvolution,
-          bridgeGuidance: !!this.manager.parentOf(agent) && (this.config?.settings.bridgeGuidance ?? true),
-          taskBrief: this.ledger.get(agent)?.def?.taskBrief,
-        }).body ?? "";
-        const dir = path.join(this.workspaceRoot, ".tachyon", "anchors");
-        const abs = path.join(dir, `${agent}.md`);
-        writePrivateFileAtomic(abs, `${body}\n`);
-        const transition = previous?.soul.sha256 && previous.soul.sha256 !== soul.sha256 ? ` (${previous.soul.sha256.slice(0, 12)}→${soul.sha256.slice(0, 12)})` : "";
-        const pointer = `[Tachyon] Re-anchor identity${transition}: read the complete current contract with: cat ${shellQuote(abs)}`;
-        await this.tmux.sendKeys(session, `${primer}\n\n${pointer}\n\n${beforeFinishing}`, true);
-        const rec = this.ledger.get(agent);
-        if (rec) this.ledger.record(agent, { ...rec, identity: { soul: { profileId: soul.profileId, source: soul.source, sha256: soul.sha256, chars: soul.chars, bytes: soul.bytes, offeredAt: new Date().toISOString(), channel: "reanchor-pointer", state: "offered" }, health: "offered" } });
-        return;
-      } catch (error) {
-        const rec = this.ledger.get(agent);
-        if (rec?.identity) this.ledger.record(agent, { ...rec, identity: { ...rec.identity, health: "identity-degraded", degradedAt: new Date().toISOString(), degradedCode: error instanceof SoulError ? error.code : "soul/io-error" } });
-        this.host.notify(this.t("agent '{0}' identity re-anchor failed; repair the soul and retry re-anchor manually", agent), "warn");
-        throw error;
-      }
-    }
-    const relPath = path.join(".tachyon", "roles", `${agent}.md`);
-    // Resolve the complete project-owned block before writing the role artifact or touching the
-    // pane. A configured-but-invalid source must leave the running agent exactly as it was.
-    const projectGuidance = loadAndRenderProjectGuidance(
-      this.workspaceRoot,
-      this.config?.settings.projectGuidance,
-    );
-    if (sessionEvolution) {
-      const composed = composeAgentPrompt({
-        role: def?.role,
-        instructions: def?.instructions,
-        evolution: sessionEvolution,
-        bridgeGuidance: !!this.manager.parentOf(agent) && (this.config?.settings.bridgeGuidance ?? true),
-        taskBrief: this.ledger.get(agent)?.def?.taskBrief,
-      }).body;
-      const body = [projectGuidance, composed]
-        .filter((part): part is string => !!part?.trim())
-        .join("\n\n");
-      const frame = (deliverable: string): string => wrapWithPrimer(deliverable, {
-        agentName: agent,
-        delegator: this.manager.delegatorOf(agent),
-        parent: this.manager.parentOf(agent),
-      });
-      assertSafeBriefTransport(
-        frame(previewDeliverableBody(this.workspaceRoot, agent, body, "reanchor")),
-        `agent '${agent}' re-anchor brief`,
-      );
-      const injection = frame(deliverableBody(this.workspaceRoot, agent, body, "reanchor"));
-      assertSafeBriefTransport(injection, `agent '${agent}' re-anchor brief`);
-      await this.tmux.sendKeys(session, injection, true);
-      return;
-    }
-    try {
-      const abs = path.join(this.workspaceRoot, relPath);
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.writeFileSync(abs, buildRoleDoc(agent, def?.role, def?.instructions), "utf8");
-    } catch {
-      // a missing role doc just weakens the reminder; the inline role name still re-anchors
-    }
-    // Specs 363/383 — re-anchor uses the same ownership ordering as startup: Tachyon protocol,
-    // project-owned body, then the closing protocol reminder. Long bodies go to a purpose-specific
-    // file so the original startup brief remains intact and tmux receives only a compact pointer.
-    const body = [projectGuidance, roleReminder(def?.role, relPath)]
-      .filter((part): part is string => !!part?.trim())
-      .join("\n\n");
-    const frame = (deliverable: string): string => wrapWithPrimer(deliverable, {
-      agentName: agent,
-      delegator: this.manager.delegatorOf(agent),
-      parent: this.manager.parentOf(agent),
-    });
-    // Preflight the exact pointer framing before replacing a prior re-anchor artifact.
-    assertSafeBriefTransport(
-      frame(previewDeliverableBody(this.workspaceRoot, agent, body, "reanchor")),
-      `agent '${agent}' re-anchor brief`,
-    );
-    const deliverable = deliverableBody(this.workspaceRoot, agent, body, "reanchor");
-    const injection = frame(deliverable);
-    assertSafeBriefTransport(injection, `agent '${agent}' re-anchor brief`);
-    await this.tmux.sendKeys(session, injection, true);
-  }
-
   // ───────────────────────── spec 241 — per-agent continuity ─────────────────────────
   /** D4 staleness threshold (activity records) past which an injected brief is flagged "may be stale". */
   private static readonly CONTINUITY_STALE_LAG = CONTINUITY_STALE_LAG;
@@ -4558,31 +4383,15 @@ export class Workspace {
     return { state: "unknown", reason: "no current-spawn hook evidence" };
   }
 
-  /** codex fix #4 — serialize idle recovery so spec-216 re-anchor and spec-241 continuity never interleave
-   *  their pane writes: role reminder first, then the continuity pointer (or the proactive checkpoint reminder). */
-  private async recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> {
+  /** Serialize idle recovery so continuity and handoff reminders never interleave their pane writes. */
+  private async recoverOnIdle(agent: string): Promise<void> {
     if (this.recoveryInFlight.has(agent)) return; // a prior pass is still running — the flag persists for the next idle
     this.recoveryInFlight.add(agent);
     try {
       if (await this.flushQueuedNotice(agent)) {
-        if (wantAnchor) this.pendingAnchor.add(agent);
         return;
       }
       if (await this.applyPendingContextRenewal(agent)) return;
-      // t-a53dd9 — the re-anchor pointer is typed into the SAME composer the notice is, by the same
-      // idle pass, so it needs the same rule: never write over a draft a human owns. The pending flag
-      // is deliberately left armed (not deleted) rather than the anchor being dropped — this is a
-      // deferral, and it re-fires on the first idle after the draft clears, exactly as the branch
-      // above defers it when a notice wins the pass.
-      if (wantAnchor && !(await this.humanDraftPresent(agent))) {
-        try {
-          this.pendingAnchor.delete(agent);
-          await this.reanchor(agent);
-        } catch (error) {
-          const detail = error instanceof Error ? error.message : String(error);
-          this.host.notify(this.t("could not re-anchor agent '{0}': {1}", agent, detail), "warn");
-        }
-      }
       this.detectSessionDiscontinuity(agent);
       if (this.continuityState.read(agent).discontinuitySinceRestore) {
         await this.injectContinuity(agent, "compaction-idle");
@@ -4918,8 +4727,7 @@ export class Workspace {
     const now = Date.now();
     const seq = typeof brief?.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
     const lag = cur !== undefined && seq !== undefined ? Math.max(0, cur - seq) : undefined;
-    const hasRole = fs.existsSync(path.join(this.workspaceRoot, ".tachyon", "roles", `${agent}.md`)); // polish: only point at the role doc if it exists
-    const text = injectionText({ agent, reason: decision.reason, lag, staleLag: Workspace.CONTINUITY_STALE_LAG, briefStatus: brief?.meta.status, hasRole });
+    const text = injectionText({ agent, reason: decision.reason, lag, staleLag: Workspace.CONTINUITY_STALE_LAG, briefStatus: brief?.meta.status });
     await this.tmux.sendKeys(session, text, true);
     // codex fix #1 — advance the session-change baseline at the restore point so the NEXT bump is detected.
     this.continuityState.markRestored(agent, cur);
@@ -5300,8 +5108,6 @@ export class Workspace {
     ) {
       void this.restartBridge().catch(() => undefined);
     }
-    // spec 377 T15A — reconcile incomplete profile journals on every successful reload.
-    void this.reconcileSoulProfileTransactions().catch(() => undefined);
     void this.evolutionCoordinator.reconcileCompletedTasks(this.taskStore.listRaw()).catch((error) => {
       this.host.notify(this.t("Agent Evolution review reconciliation failed: {0}", error instanceof Error ? error.message : String(error)), "error");
     });
@@ -7164,62 +6970,8 @@ export class Workspace {
   // engine/UI decoupling. The broader layout-surface cleanup (applyLayout, the tree provider) is a
   // separate follow.
 
-  /** spec 377 T15A — config accessor for journaled profile mutations (CAS + compensate). */
-  soulProfileConfigAccess(_agentName?: string): ProfileTxConfigAccess {
-    const file = this.configPath() ?? path.join(this.workspaceRoot, "tachyon.yml");
-    return {
-      configPath: file,
-      readConfigText: () => (fs.existsSync(file) ? fs.readFileSync(file, "utf8") : undefined),
-      writeConfigText: (text: string) => {
-        const result = this.writeTachyonConfigText(text);
-        if (!result.ok) throw new Error(result.errors[0] ?? "could not write tachyon.yml");
-        return text;
-      },
-      isSoulEnabled: (name: string) => asAgent(this.config?.agents[name])?.soul === true,
-    };
-  }
-
-  private makeSoulProfileAccess(): (principal: string) => ProfileTxConfigAccess {
-    return (principal) => this.soulProfileConfigAccess(principal);
-  }
-
-  async reconcileSoulProfileTransactions(): Promise<{ reconciled: string[]; degraded: string[] }> {
-    return reconcileProfileTransactions(this.workspaceRoot, this.makeSoulProfileAccess());
-  }
-
-  /**
-   * `t-e81ec5` — refuse a soul mutation the declaration shape can never accept, and say so.
-   *
-   * `createSoulProfile` works by adding an inline `soul:` key to the declared agent. Every declared
-   * agent is now a canonical profile pointer, and a pointer cannot coexist with inline fields, so the
-   * whole transaction used to run and then fail deep in the config writer as `soul/io-error` — a code
-   * that says "the disk misbehaved" for something no retry can fix. Agent Studio still shows the
-   * button, so this was a live surface that always failed and explained nothing.
-   *
-   * The refusal is early and structural. It does not remove the capability: it names why this path is
-   * closed and where soul actually lives, which is the same rule SDD 478 M6 made contractual for every
-   * other door — a refusal must name the fix.
-   */
-  private assertSoulMutable(agentName: string): void {
-    const sources = (this.config as (TachyonConfig & {
-      agentSources?: Record<string, { mode: "terminal" | "profile" }>;
-    }) | undefined)?.agentSources;
-    if (sources?.[agentName]?.mode !== "profile") return;
-    throw new SoulError(
-      "soul/canonical-profile-unsupported",
-      `agent '${agentName}' is a canonical profile pointer, which cannot carry an inline 'soul:' key. `
-      + "Soul for a canonical agent belongs to the formation lane (SDD 427), which is not yet wired to "
-      + "the spawn path — see t-e50d4f (survey: t-50bbd4). This operation would have failed while writing the config.",
-    );
-  }
-
   /**
    * SDD 490 Fatia A — **the** production door to `mutation: "bootstrap"`. Moment zero.
-   *
-   * It sits here, next to `assertSoulMutable`, because that refusal is where a maintainer meets the
-   * problem: "Soul for a canonical agent belongs to the formation lane, which is not yet wired". This
-   * is the wiring, and SDD 478 M6 made "a refusal must name the fix" contractual — the fix should be
-   * one file away from the refusal, not on some other surface.
    *
    * ## What this method is NOT, and must never become
    *
@@ -7306,46 +7058,6 @@ export class Workspace {
     return source?.mode === "profile" ? source.effectiveSha256 : undefined;
   }
 
-  async createSoulProfile(agentName: string): Promise<ProfileMutationResult> {
-    this.assertSoulMutable(agentName);
-    return createSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
-  }
-
-  async importSoulProfile(agentName: string, sourcePath: string): Promise<ProfileMutationResult> {
-    return importSoulProfileTransaction(this.workspaceRoot, agentName, sourcePath, this.soulProfileConfigAccess(agentName));
-  }
-
-  async importSoulProfileBytes(agentName: string, bytes: Buffer): Promise<ProfileMutationResult> {
-    return importSoulProfileBytesTransaction(this.workspaceRoot, agentName, bytes, this.soulProfileConfigAccess(agentName));
-  }
-
-  async replaceSoulProfileBytes(agentName: string, bytes: Buffer, expectedDigest: string): Promise<ProfileMutationResult> {
-    return replaceSoulProfileBytesTransaction(this.workspaceRoot, agentName, bytes, expectedDigest, this.soulProfileConfigAccess(agentName));
-  }
-
-  async adoptSoulProfile(agentName: string, expectedDigest: string): Promise<ProfileMutationResult> {
-    return adoptSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName), {
-      expectedDigest,
-      enable: true,
-    });
-  }
-
-  async enableSoulProfile(agentName: string): Promise<ProfileMutationResult> {
-    return enableSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
-  }
-
-  async disableSoulProfile(agentName: string): Promise<ProfileMutationResult> {
-    return disableSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
-  }
-
-  async deleteSoulProfile(agentName: string): Promise<ProfileMutationResult> {
-    return deleteSoulProfile(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
-  }
-
-  async refreshSoulProfile(agentName: string): Promise<SoulProfileStatus> {
-    return refreshSoulProfileStatus(this.workspaceRoot, agentName, this.soulProfileConfigAccess(agentName));
-  }
-
   async readAgentEvolutionOverview(agentName: string): Promise<EvolutionStudioOverview> {
     const def = this.config?.agents[agentName];
     return readEvolutionStudioOverview(
@@ -7376,16 +7088,6 @@ export class Workspace {
     const candidate = await this.evolutionStore.rejectCandidate(agentName, candidateId, input);
     const profile = await this.evolutionStore.readProfile(agentName);
     return { candidateId: candidate.id, activeVersion: profile?.activeVersion ?? input.expectedActiveVersion };
-  }
-
-  canonicalSoulPath(agentName: string): string {
-    return agentSoulPath(this.workspaceRoot, agentName);
-  }
-
-  async canonicalSoulPathForOpen(agentName: string): Promise<string> {
-    const bytes = await readCanonicalSoulBytes(this.workspaceRoot, agentName);
-    if (!bytes) throw new SoulError("soul/missing", `No canonical SOUL.md exists for '${agentName}'`);
-    return agentSoulPath(this.workspaceRoot, agentName);
   }
 
   /** Agent Studio submit pipeline — webview form and the internal test seam. */
@@ -7531,8 +7233,6 @@ export class Workspace {
         }
         throw error;
       }
-      this.pendingAnchor.delete(newName);
-      if (this.pendingAnchor.delete(oldName)) this.pendingAnchor.add(newName);
       this.pendingContextRenewal.delete(newName);
       const renewal = this.pendingContextRenewal.get(oldName);
       if (renewal) {
@@ -7590,10 +7290,6 @@ export class Workspace {
       }
       throw error;
     }
-    // spec 216 (codex r2): a live rename moves the SAME session (no restart, no onSpawned/onKilled),
-    // so carry any pending re-anchor flag to the new name and clear a stale flag on the new identity.
-    this.pendingAnchor.delete(newName);
-    if (this.pendingAnchor.delete(oldName)) this.pendingAnchor.add(newName);
     this.pendingContextRenewal.delete(newName);
     const renewal = this.pendingContextRenewal.get(oldName);
     if (renewal) {

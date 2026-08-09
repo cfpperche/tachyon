@@ -129,10 +129,8 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(actionsFor(A({ status: "crashed", resumable: true }))).toContain("resume");
     expect(actionsFor(A({ status: "crashed" }))).not.toContain("resume");
   });
-  it("capability gates: fork/reanchor/promote/worktree", () => {
+  it("capability gates: fork/promote/worktree", () => {
     expect(actionsFor(A({ status: "running", forkable: true }))).toContain("fork");
-    expect(actionsFor(A({ status: "running", kind: "agent" }))).toContain("reanchor");
-    expect(actionsFor(A({ status: "stopped", kind: "terminal" }))).not.toContain("reanchor");
     expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
     expect(actionsFor(A({ status: "running", adhoc: true }))).toContain("remove");
     expect(actionsFor(A({ status: "stopped", adhoc: true, canDismiss: true }))).toContain("remove");
@@ -147,7 +145,7 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(A({ status: "running" }))).not.toContain("probes"); // "…" menu only
     expect(moreActions(A({ status: "running" }))).toContain("probes");
   });
-  it("spec 381 — injectPrompt is offered for running AI only (with reanchor family)", () => {
+  it("spec 381 — injectPrompt is offered for running AI only", () => {
     expect(actionsFor(A({ status: "running", kind: "agent" }))).toContain("injectPrompt");
     expect(actionsFor(A({ status: "idle", kind: "agent" }))).toContain("injectPrompt");
     expect(actionsFor(A({ status: "running", kind: "terminal" }))).not.toContain("injectPrompt");
@@ -156,8 +154,7 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(moreActions(A({ status: "running", kind: "agent" }))).toContain("injectPrompt");
   });
 
-  it("spec 306 — a throttled agent is running-like: keeps reanchor/reinjectContinuity", () => {
-    expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("reanchor");
+  it("spec 306 — a throttled agent is running-like: keeps reinjectContinuity", () => {
     expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("injectPrompt");
     expect(actionsFor(A({ status: "throttled", kind: "agent" }))).toContain("reinjectContinuity");
     expect(actionsFor(A({ status: "throttled" }))).toContain("stop");

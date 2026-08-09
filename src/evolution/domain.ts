@@ -1,7 +1,7 @@
 /**
  * SDD 421 — runtime-neutral domain for one Tachyon Agent Evolution Profile.
  *
- * Soul and human-authored instructions are deliberately absent: evolution owns only review records,
+ * Human-authored instructions are deliberately absent: evolution owns only review records,
  * proposed learning/skills, active-version metadata, and promotion history.
  */
 

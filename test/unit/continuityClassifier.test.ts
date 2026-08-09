@@ -40,19 +40,10 @@ describe("continuity classifier (spec 241 D3/D9)", () => {
     expect(classifyInjection({ hasBrief: false, discontinuitySinceRestore: false, transition: "manual" })).toEqual({ inject: true, reason: "cold-start" });
   });
 
-  it("injectionText: cold-start nudges set_continuity; role pointer only when the role doc exists", () => {
-    const noRole = injectionText({ agent: "claude", reason: "cold-start" });
-    expect(noRole).toContain("No continuity brief yet");
-    expect(noRole).toContain("set_continuity");
-    expect(noRole).not.toContain("cat .tachyon/roles/claude.md"); // polish: omitted when no role doc
-    const withRole = injectionText({ agent: "claude", reason: "cold-start", hasRole: true });
-    expect(withRole).toContain("cat .tachyon/roles/claude.md");
-  });
-
-  it("injectionText: role pointer is gated by hasRole on the normal restore path too", () => {
-    expect(injectionText({ agent: "claude", reason: "restart" })).not.toContain("cat .tachyon/roles/claude.md");
-    expect(injectionText({ agent: "claude", reason: "restart", hasRole: true })).toContain("cat .tachyon/roles/claude.md");
-    // the continuity pointer is ALWAYS present on the restore path
+  it("injectionText: cold-start nudges set_continuity and restore points at continuity", () => {
+    const cold = injectionText({ agent: "claude", reason: "cold-start" });
+    expect(cold).toContain("No continuity brief yet");
+    expect(cold).toContain("set_continuity");
     expect(injectionText({ agent: "claude", reason: "restart" })).toContain("cat .tachyon/continuity/claude.md");
   });
 

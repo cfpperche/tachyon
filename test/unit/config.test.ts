@@ -448,38 +448,15 @@ describe("parseConfig", () => {
     expect(viaTerminals).toEqual(viaAgents);
   });
 
-  // spec 216 — role + anchor/bridgeGuidance settings
-  it("parses a valid agent role", () => {
-    const { config, errors } = parseConfig(`agents:\n  rev:\n    cmd: claude\n    role: reviewer\n`);
+  it("warns and ignores removed role and anchor keys while preserving bridgeGuidance", () => {
+    const { config, errors, warnings } = parseConfig(`agents:\n  a:\n    cmd: claude\n    role: reviewer\nsettings:\n  anchor:\n    auto: true\n  bridgeGuidance: false\n`);
     expect(errors).toEqual([]);
-    expect(asAgent(config?.agents.rev)?.role).toBe("reviewer");
-  });
-  it("rejects an unknown role", () => {
-    const { warnings } = parseConfig(`agents:\n  a:\n    cmd: claude\n    role: architect\n`);
-    expect(warnings.some((e) => e.includes("role: must be one of"))).toBe(true);
-  });
-  it("rejects role under terminals:", () => {
-    const { warnings } = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    role: coder\n`);
-    expect(warnings.some((e) => e.includes("'role' applies only to agents"))).toBe(true);
-  });
-  it("rejects role on an agents: entry with kind: terminal (old-style)", () => {
-    const { warnings } = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    role: coder\n`);
-    expect(warnings.some((e) => e.includes("'role' applies only to agents"))).toBe(true);
-  });
-  it("no role = no role field (today's behavior)", () => {
-    const { config } = parseConfig(`agents:\n  a:\n    cmd: claude\n`);
-    expect(asAgent(config?.agents.a)?.role).toBeUndefined();
-  });
-  it("parses settings.anchor.auto and settings.bridgeGuidance", () => {
-    const { config, errors } = parseConfig(`agents:\n  a:\n    cmd: claude\nsettings:\n  anchor:\n    auto: true\n  bridgeGuidance: false\n`);
-    expect(errors).toEqual([]);
-    expect(config?.settings.anchor?.auto).toBe(true);
+    expect(warnings).toContain("agents.a: unknown key 'role'");
+    expect(warnings).toContain("settings: unknown key 'anchor'");
     expect(config?.settings.bridgeGuidance).toBe(false);
   });
-  it("rejects bad anchor/bridgeGuidance types and unknown anchor keys", () => {
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    auto: "yes"\n`).warnings.some((e) => e.includes("anchor.auto: must be a boolean"))).toBe(true);
+  it("rejects a bad bridgeGuidance type", () => {
     expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: 1\n`).warnings.some((e) => e.includes("bridgeGuidance: must be a boolean"))).toBe(true);
-    expect(parseConfig(`agents:\n  a:\n    cmd: x\nsettings:\n  anchor:\n    foo: true\n`).warnings.some((e) => e.includes("anchor: unknown key 'foo'"))).toBe(true);
   });
 
   // t-09edf2 — settings.agentHookProjection: which installed plugins' hooks reach an agent's own session
@@ -906,7 +883,7 @@ describe("parseConfig", () => {
 });
 
 describe("resolveBinary / suggestKindForCommand / composeCommand — launcher see-through (spec 246 codex #1/#3)", () => {
-  it("classifies soul delivery honestly and reuses launcher resolution for instructions", () => {
+  it("classifies opening-prompt delivery and reuses launcher resolution for instructions", () => {
     expect(openingPromptCapability("env FOO=1 opencode")).toEqual({ status: "prompt", runtime: "opencode", channel: "tui-prefill" });
     expect(openingPromptCapability("npx codex")).toMatchObject({ status: "prompt", runtime: "codex", channel: "startup-argument" });
     expect(openingPromptCapability("hermes")).toMatchObject({ status: "native-external", runtime: "hermes" });
@@ -969,21 +946,12 @@ describe("resolveBinary / suggestKindForCommand / composeCommand — launcher se
   });
 });
 
-describe("agent soul config (spec 377)", () => {
-  it("accepts true/false/absence without reading a profile", () => {
-    const result = parseConfig("agents:\n  enabled:\n    cmd: codex\n    soul: true\n  disabled:\n    cmd: claude\n    soul: false\n  legacy:\n    cmd: gemini\n");
+describe("removed agent identity config", () => {
+  it("warns and ignores the removed key without blocking the roster", () => {
+    const result = parseConfig("agents:\n  a:\n    cmd: codex\n    soul: true\n");
     expect(result.errors).toEqual([]);
-    expect(asAgent(result.config?.agents.enabled)?.soul).toBe(true);
-    expect(asAgent(result.config?.agents.disabled)?.soul).toBe(false);
-    expect(asAgent(result.config?.agents.legacy)?.soul).toBeUndefined();
-  });
-
-  it("rejects non-booleans, terminals, and folded enabled-name collisions", () => {
-    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    soul: SOUL.md\n").warnings).toContain("agents.a.soul: must be a boolean");
-    expect(parseConfig("terminals:\n  shell:\n    cmd: bash\n    soul: true\n").warnings.some((error) => error.includes("'soul' applies only to agents"))).toBe(true);
-    const collision = parseConfig("agents:\n  Reviewer:\n    cmd: codex\n    soul: true\n  reviewer:\n    cmd: claude\n    soul: true\n");
-    expect(collision.warnings.some((error) => error.includes("ASCII case folding"))).toBe(true);
-    expect(parseConfig("agents:\n  Reviewer:\n    cmd: codex\n  reviewer:\n    cmd: claude\n").warnings).toEqual([]);
+    expect(result.warnings).toContain("agents.a: unknown key 'soul'");
+    expect(result.config?.agents.a).toBeDefined();
   });
 });
 

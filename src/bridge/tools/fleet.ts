@@ -328,7 +328,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
       description:
         "Start a generic process in this workspace — a shell, a server, a build, a watcher. This is the other half of " +
         "the Agent/Terminal boundary (SDD 478): a terminal is a process, not an entity. It has no task, no lineage, no " +
-        "brief, no delegation contract, no worktree, no soul, no memory and no model — those are agent capabilities, and " +
+        "brief, no delegation contract, no worktree, no memory and no model — those are agent capabilities, and " +
         `there are no parameters here to carry them. Use spawn_agent for a supported LLM runtime (${SUPPORTED_AGENT_RUNTIME_NAMES.join(", ")}). ` +
         "Stop it with kill_agent and remove the stopped row with dismiss_agent, exactly like any other Temporary entry.",
       inputSchema: {

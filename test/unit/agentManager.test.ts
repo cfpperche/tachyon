@@ -25,7 +25,6 @@ import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "../../src/bridge/spawnContract.js";
-import { SOUL_LAUNCH_RESERVATION_BOOT_ID, soulLaunchReservationsDir } from "../../src/agents/soul.js";
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
 import { EvolutionStore } from "../../src/evolution/EvolutionStore.js";
 import { resolveEvolutionStartupSnapshot } from "../../src/evolution/startupSnapshot.js";
@@ -39,19 +38,6 @@ const HASH = workspaceHash(WS);
 
 /** t-0338fc — see the helper: opencode's adapter executes the runtime, so it is stubbed here. */
 const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
-
-const SOUL_LEGACY_LIFECYCLE = JSON.parse(fs.readFileSync(path.resolve("test/fixtures/agent-soul-legacy/lifecycle-bypass-cases.json"), "utf8")) as {
-  cases: Array<{ name: string; bytes: string; sendKeys: string[] }>;
-};
-function soulLegacyLifecycleCase(name: string) {
-  return SOUL_LEGACY_LIFECYCLE.cases.find((item) => item.name === name)!;
-}
-function soulLifecycleBypassSpies(manager: AgentManager) {
-  const compositor = vi.spyOn(manager as never, "effectiveCmd" as never);
-  const soulResolver = vi.fn();
-  Object.defineProperty(manager, "resolveSoul", { configurable: true, value: soulResolver });
-  return { compositor, soulResolver };
-}
 
 
 /**
@@ -320,31 +306,6 @@ skipTestsWithoutOptionalRuntimeAuth({
 });
 
 describe("AgentManager", () => {
-  it("clears legacy, prior-boot, and dead-owner launch reservations while preserving a same-boot live owner", () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-manager-soul-reservations-"));
-    try {
-      const dir = soulLaunchReservationsDir(root);
-      fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const legacy = path.join(dir, "ada--legacy--123e4567-e89b-42d3-a456-426614174000.json");
-      const reusedPid = path.join(dir, "ada--reused--123e4567-e89b-42d3-a456-426614174001.json");
-      const dead = path.join(dir, "ada--dead--123e4567-e89b-42d3-a456-426614174002.json");
-      const live = path.join(dir, "ada--live--123e4567-e89b-42d3-a456-426614174003.json");
-      fs.writeFileSync(legacy, JSON.stringify({ principal: "Ada", ownerPid: process.pid }), { mode: 0o600 });
-      fs.writeFileSync(reusedPid, JSON.stringify({ principal: "Ada", ownerPid: process.pid, ownerBootId: "prior-extension-host" }), { mode: 0o600 });
-      fs.writeFileSync(dead, JSON.stringify({ principal: "Ada", ownerPid: 2_147_483_647, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID }), { mode: 0o600 });
-      fs.writeFileSync(live, JSON.stringify({ principal: "Ada", ownerPid: process.pid, ownerBootId: SOUL_LAUNCH_RESERVATION_BOOT_ID }), { mode: 0o600 });
-      const { tmux } = fakeTmux();
-      const config = configOf("agents:\n  Ada:\n    cmd: codex\n");
-      void new AgentManager({ tmux, wsHash: workspaceHash(root), workspaceRoot: root, getConfig: () => config });
-      expect(fs.existsSync(legacy)).toBe(false);
-      expect(fs.existsSync(reusedPid)).toBe(false);
-      expect(fs.existsSync(dead)).toBe(false);
-      expect(fs.existsSync(live)).toBe(true);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
   it("spawns a declared agent into a namespaced session", async () => {
     const { manager, sessions, spawned } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
@@ -1550,12 +1511,6 @@ describe("AgentManager", () => {
     expect(cmd).toContain("[Tachyon]"); // Bridge guidance (child has a parent)
   });
 
-  it("declared role composes into the launch command, no guidance for a top-level agent (spec 216 Part A)", async () => {
-    const cmd = await captureSpawnCmd("agents:\n  rev:\n    cmd: claude\n    role: reviewer\n", "rev");
-    expect(cmd).toContain("review for quality"); // reviewer template text
-    expect(cmd).not.toContain("[Tachyon]"); // no parent → no Bridge guidance
-  });
-
   it("settings.bridgeGuidance: false suppresses the child guidance (spec 216), but not the spec 363 primer", async () => {
     const cmd = await captureSpawnCmd("agents:\n  a:\n    cmd: x\nsettings:\n  bridgeGuidance: false\n", "w", { cmd: "claude", instructions: "do x", parent: "a" });
     expect(cmd).not.toContain("[Tachyon] You are part of a Tachyon team"); // Bridge guidance suppressed
@@ -2472,7 +2427,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     await expect(h.manager.runningAgentsStrict()).resolves.toBeNull();
   });
 
-  it("t-33ae3f canonical forget removes the generated brief, soul anchor and pane transcript", async () => {
+  it("t-33ae3f canonical forget removes the generated brief, generated context and pane transcript", async () => {
     // These three were left behind by the Saved Agent forget while `retainedBindings` never claimed
     // them: neither cleaned nor declared, which is the one state an audit of a removal cannot
     // classify. Six of seven committed forgets on the dogfood workspace had leaked them.
@@ -3184,60 +3139,6 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("scratch")).toMatchObject({ instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false }, def: { cmd: "claude" }, resume: { sessionId: name } });
   });
 
-  it("deterministic soul preflight preserves a crashed pane, ledger and postmortem with zero resource residue", async () => {
-    let worktrees = 0;
-    let tokens = 0;
-    let harnesses = 0;
-    const { manager, ledger, sessions, dead, ws, hash } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n", {
-      resolveSpawnCwd: async () => { worktrees++; return null; },
-      mintAgentToken: () => { tokens++; return {}; },
-      materializeHarness: () => { harnesses++; return undefined; },
-    });
-    const session = `tachyon-${hash}-reviewer`;
-    sessions.add(session);
-    dead.add(session);
-    const identity = { soul: { source: ".tachyon/agents/reviewer/SOUL.md", profileId: "123e4567-e89b-42d3-a456-426614174000", sha256: "a".repeat(64), chars: 5, bytes: 5, channel: "startup-argument" as const, state: "offered" as const, offeredAt: new Date(0).toISOString() }, health: "offered" as const };
-    ledger.record("reviewer", { def: { cmd: "codex", kind: "agent", soul: true }, resume: { runtime: "codex", sessionId: "prior" }, cwd: ws, instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true }, identity });
-    const postmortem = (manager as unknown as { postmortemOutput: Map<string, { text: string; truncated: boolean; maxLines: number; maxBytes: number }> }).postmortemOutput;
-    postmortem.set("reviewer", { text: "prior crash output", truncated: false, maxLines: 1000, maxBytes: 65_536 });
-
-    await expect(manager.spawn("reviewer")).rejects.toMatchObject({ code: "soul/missing" });
-    expect(sessions.has(session)).toBe(true);
-    expect(dead.has(session)).toBe(true);
-    expect(ledger.get("reviewer")?.identity).toEqual(identity);
-    expect(postmortem.get("reviewer")?.text).toBe("prior crash output");
-    expect({ worktrees, tokens, harnesses }).toEqual({ worktrees: 0, tokens: 0, harnesses: 0 });
-    expect(fs.existsSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toBe(false);
-  });
-
-  it("failed human restart preserves the live session and prior offered identity", async () => {
-    const { manager, ledger, sessions, respawnArgs, ws, hash } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n");
-    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
-    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
-    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
-    await manager.spawn("reviewer");
-    const before = structuredClone(ledger.get("reviewer")?.identity);
-    fs.renameSync(path.join(profile, "SOUL.md"), path.join(profile, "SOUL.removed.md"));
-
-    await expect(manager.restart("reviewer", { stop: "force", session: "new" })).rejects.toMatchObject({ code: "soul/missing" });
-    expect(sessions.has(`tachyon-${hash}-reviewer`)).toBe(true);
-    expect(respawnArgs).toEqual([]);
-    expect(ledger.get("reviewer")?.identity).toEqual(before);
-    expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
-  });
-
-  it("cleans an already-created soul reservation when downstream session launch fails", async () => {
-    const { manager, ws } = resumeHarness("agents:\n  reviewer:\n    cmd: codex\n    soul: true\n", { failNewSession: true });
-    const profile = path.join(ws, ".tachyon", "agents", "reviewer");
-    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(profile, "SOUL.md"), "Exact identity", { mode: 0o600 });
-    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "reviewer", state: "active" }), { mode: 0o600 });
-
-    await expect(manager.spawn("reviewer")).rejects.toThrow("injected downstream newSession failure");
-    expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
-  });
-
 
   it("resume() spawns the runtime's resume command and persists the id", async () => {
     const { manager, ledger, cmds } = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
@@ -3245,16 +3146,10 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
     await manager.spawn("claude"); // mint
     await manager.kill("claude"); // simulate process/session gone
-    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
-    compositor.mockClear();
     const rec = { def: { cmd: "claude --permission-mode plan", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "uuid-1" }, cwd: "/ws", declared: true, updatedAt: "t" };
     await manager.resume("claude", rec);
-    const oracle = soulLegacyLifecycleCase("resume-command");
-    expect(cmds.at(-1)).toBe(oracle.bytes);
+    expect(cmds.at(-1)).toBe("claude --permission-mode plan --resume uuid-1");
     expect(ledger.get("claude")!.resume!.sessionId).toBe("uuid-1");
-    expect(compositor).not.toHaveBeenCalled();
-    expect(soulResolver).not.toHaveBeenCalled();
-    expect(oracle.sendKeys).toEqual([]);
   });
 
   it("t-4d2630: resume with an existing session uses respawn-pane -k (not kill+new)", async () => {
@@ -3464,13 +3359,9 @@ describe("AgentManager — session resume (spec 209)", () => {
       fileExists: () => true,
     });
     const rec = { def: { cmd: "claude --model sonnet", kind: "agent" as const }, resume: { runtime: "claude" as const, sessionId: "session-a" }, cwd: "/ws", declared: true, updatedAt: "t" };
-    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
     await manager.resume("claude", rec, { injectPrimer: false });
-    const oracle = soulLegacyLifecycleCase("host-rebind-command");
-    expect(cmds.at(-1)).toBe(oracle.bytes);
-    expect(paneInjections).toEqual(oracle.sendKeys);
-    expect(compositor).not.toHaveBeenCalled();
-    expect(soulResolver).not.toHaveBeenCalled();
+    expect(cmds.at(-1)).toBe("claude --model sonnet --resume session-a");
+    expect(paneInjections).toEqual([]);
   });
 
   it("resume({ injectPrimer: true }) opt-in still pastes the 363 primer", async () => {
@@ -3755,8 +3646,6 @@ describe("AgentManager — session resume (spec 209)", () => {
     await manager.spawn("claude");
     settings.length = 0;
     const plan = await manager.planFork("claude");
-    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
-    compositor.mockClear();
     const forkName = await manager.commitFork(plan);
     expect(forkName).toBe("claude-fork-1");
     const forkSession = `tachyon-${path.basename(ws)}-claude-fork-1`;
@@ -3769,12 +3658,10 @@ describe("AgentManager — session resume (spec 209)", () => {
       cwd: ws,
       configHome: "/accounts/default-claude",
     }]);
-    const oracle = soulLegacyLifecycleCase("native-fork-command");
     const legacyCommand = cmds.at(-1)
       ?.replace(forkSession, "<FORK_SESSION>")
       .replace(/ --settings '[^']+'$/, "");
-    expect(legacyCommand).toBe(oracle.bytes);
-    expect(oracle.sendKeys).toEqual([]);
+    expect(legacyCommand).toBe("claude -n <FORK_SESSION> --resume abcdef01-2345-6789-abcd-ef0123456789 --fork-session");
     expect(ledger.get("claude-fork-1")).toMatchObject({
       def: { cmd: "claude", kind: "agent", fork: true }, // base cmd → a later resume uses the normal named path, never re-forks
       resume: { runtime: "claude", sessionId: forkSession }, // the fork's OWN name (captured → uuid later)
@@ -3785,33 +3672,6 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(ledger.get("claude-fork-1")?.def?.parent).toBeUndefined(); // sibling, NOT a lineage child
     const names = (await manager.list()).map((a) => a.name);
     expect(names).toContain("claude-fork-1");
-    expect(compositor).not.toHaveBeenCalled();
-    expect(soulResolver).not.toHaveBeenCalled();
-  });
-
-  it("commitFork copies soul/role/task/evolution offer metadata without resolving or composing identity", async () => {
-    const { manager, ledger, ws } = resumeHarness("agents:\n  claude:\n    cmd: claude\n    role: reviewer\n    soul: true\n", { resolveCurrentSession: async () => UUID });
-    const profile = path.join(ws, ".tachyon", "agents", "claude");
-    fs.mkdirSync(profile, { recursive: true, mode: 0o700 });
-    fs.writeFileSync(path.join(profile, "SOUL.md"), "Calm and exact.", { mode: 0o600 });
-    fs.writeFileSync(path.join(profile, "profile.json"), JSON.stringify({ schemaVersion: 1, profileId: "123e4567-e89b-42d3-a456-426614174000", owner: "claude", state: "active" }), { mode: 0o600 });
-    await manager.spawn("claude", { taskBrief: "One-run objective." });
-    expect(fs.readdirSync(path.join(ws, ".tachyon", "agent-profile-transactions", "launch-reservations"))).toEqual([]);
-    const evolution = await resolveEvolutionStartupSnapshot(ws, "claude");
-    ledger.record("claude", { ...ledger.get("claude")!, evolution });
-    const source = ledger.get("claude")!;
-    const plan = await manager.planFork("claude");
-    fs.renameSync(path.join(profile, "SOUL.md"), path.join(profile, "SOUL.removed-after-spawn.md"));
-    const { compositor, soulResolver } = soulLifecycleBypassSpies(manager);
-    compositor.mockClear();
-
-    const forkName = await manager.commitFork(plan);
-    const fork = ledger.get(forkName)!;
-    expect(fork.def).toMatchObject({ role: "reviewer", soul: true, taskBrief: "One-run objective.", fork: true });
-    expect(fork.identity).toEqual(source.identity);
-    expect(fork.evolution).toEqual(source.evolution);
-    expect(compositor).not.toHaveBeenCalled();
-    expect(soulResolver).not.toHaveBeenCalled();
   });
 
   it("commitFork injects the fork's own TACHYON_AGENT_NAME", async () => {
@@ -3988,28 +3848,28 @@ describe("AgentManager — session resume (spec 209)", () => {
    * that enumerates the directory called it `absent`, "there is nothing to remove".
    *
    * The neighbour is the policy argument: the removal is `rmdir`, so a home that still holds a
-   * human's `SOUL.md` loses its Evolution subtree and keeps everything else, directory included.
+   * human-authored note loses its Evolution subtree and keeps everything else, directory included.
    */
-  it("dismissTemporary takes the Agent Profile home it emptied and keeps one that still holds Soul", async () => {
+  it("dismissTemporary takes the Agent Profile home it emptied and keeps one that still holds human data", async () => {
     const { manager, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n");
     const home = (name: string) => path.join(ws, ".tachyon", "agents", name);
     await manager.spawn("eph", { cmd: "opencode", parent: "main" });
-    await manager.spawn("soulful", { cmd: "opencode", parent: "main" });
+    await manager.spawn("noteful", { cmd: "opencode", parent: "main" });
     // Seeded exactly the way EvolutionStore.atomicWrite seeds it: the recursive mkdir of
     // `<home>/evolution/profile.json` is what mints the home in the first place.
-    for (const name of ["eph", "soulful"]) {
+    for (const name of ["eph", "noteful"]) {
       fs.mkdirSync(path.join(home(name), "evolution"), { recursive: true });
       fs.writeFileSync(path.join(home(name), "evolution", "profile.json"), "{}\n", "utf8");
     }
-    fs.writeFileSync(path.join(home("soulful"), "SOUL.md"), "# a human's soul\n", "utf8");
+    fs.writeFileSync(path.join(home("noteful"), "notes.md"), "# a human note\n", "utf8");
 
     manager.dismissTemporary("eph");
-    manager.dismissTemporary("soulful");
+    manager.dismissTemporary("noteful");
 
     expect(fs.existsSync(home("eph"))).toBe(false);
-    expect(fs.existsSync(path.join(home("soulful"), "evolution"))).toBe(false);
-    expect(fs.readdirSync(home("soulful"))).toEqual(["SOUL.md"]);
-    expect(fs.readFileSync(path.join(home("soulful"), "SOUL.md"), "utf8")).toBe("# a human's soul\n");
+    expect(fs.existsSync(path.join(home("noteful"), "evolution"))).toBe(false);
+    expect(fs.readdirSync(home("noteful"))).toEqual(["notes.md"]);
+    expect(fs.readFileSync(path.join(home("noteful"), "notes.md"), "utf8")).toBe("# a human note\n");
     // Idempotent like every other footprint: the dismissNode→kill double-call must not throw.
     expect(() => manager.dismissTemporary("eph")).not.toThrow();
   });
@@ -4044,7 +3904,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "private bridge-mcp runtime home",
       "legacy/idempotent Pi session subtree",
       "per-spawn settings file",
-      "generated spawn brief and soul anchor",
+      "generated spawn brief",
       "durable pane transcript",
       "Agent Evolution Profile",
       "emptied Agent Profile home",
@@ -4075,7 +3935,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     fs.writeFileSync(sessionOwnersFile(ws), `${JSON.stringify({ agent: name, sessionId: "s1", transcriptPath: "/p", cwd: ws, source: "startup", ts: "t1" })}\n`, "utf8");
     fs.mkdirSync(path.dirname(spawnSettingsPath(ws, name)), { recursive: true });
     fs.writeFileSync(spawnSettingsPath(ws, name), "{}\n", "utf8");
-    const briefFile = briefFilePath(ws, name, "spawn");
+    const briefFile = briefFilePath(ws, name);
     fs.mkdirSync(path.dirname(briefFile), { recursive: true });
     fs.writeFileSync(briefFile, "brief\n", "utf8");
     const anchorFile = path.join(ws, ".tachyon", "anchors", `${name}.md`);

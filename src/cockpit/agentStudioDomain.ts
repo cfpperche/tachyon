@@ -1,9 +1,9 @@
 /**
  * t-610705 (SDD 410 Phase D, D1b) — Agent Studio's domain-message handler, ported from the retired
- * AgentStudioPanelManager.handleDomainMessage (+ its private soul/evolution helper methods) onto the
+ * AgentStudioPanelManager.handleDomainMessage onto the
  * generic StudioRegistryEntry.handleDomainMessage extension point (studioRegistry.ts). Kept in its
  * own file rather than inline in studioRegistry.ts — this is by far the largest per-studio domain
- * surface (17 message types across soul-profile and Agent Evolution actions), and studioRegistry.ts
+ * surface across canonical-profile and Agent Evolution actions, and studioRegistry.ts
  * stays a thin per-studio index (command/terminal's handler is a 3-line browse→cwd forward; this one
  * genuinely needs its own module).
  *
@@ -18,16 +18,11 @@
  */
 import * as vscode from "vscode";
 import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
-import { SoulError } from "../agents/soul.js";
 import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
 import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "../config/agentProfileRefusal.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
-import {
-  projectSoulProfileStatus,
-  validateAgentStudioInboundMessage,
-  type SoulProfileStatusMessage,
-} from "../webview/agent-studio-shell/domain.js";
+import { validateAgentStudioInboundMessage } from "../webview/agent-studio-shell/domain.js";
 import {
   evolutionActionResultMessage,
   evolutionCandidateDetailMessage,
@@ -44,8 +39,6 @@ import {
   agentProfileBundleCreatedMessage,
   agentProfileBundleErrorMessage,
   agentProfileBundleExportMessage,
-  soulProfileErrorMessage,
-  soulProfileStatusMessage,
 } from "../webview/agent-studio-shell/messages.js";
 import type { StudioDomainContext } from "./studioRegistry.js";
 
@@ -58,7 +51,7 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     } else if (type.toLowerCase().includes("evolution")) {
       postEvolutionError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed Agent Evolution message"));
     } else {
-      postProfileError(ctx, ctx.entityId ?? "Agent", new SoulError("soul/path-invalid", "Rejected malformed Agent Studio profile message"));
+      postAgentProfileError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed Agent Studio message"));
     }
     return;
   }
@@ -73,7 +66,7 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     } else if (m.type.toLowerCase().includes("evolution")) {
       postEvolutionError(ctx, agent ?? "Agent", new Error("Evolution action does not match this saved Agent Studio entity"));
     } else {
-      postProfileError(ctx, agent ?? "Agent", new SoulError("soul/path-invalid", "Profile action does not match this saved Agent Studio entity"));
+      postAgentProfileError(ctx, agent ?? "Agent", new Error("Action does not match this saved Agent Studio entity"));
     }
     return;
   }
@@ -143,16 +136,6 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName, m.reauthorize); return; }
   if (m.type === "authorizePlugin") { void authorizePlugin(ws, ctx, agent, m.pluginName, m.reauthorize); return; }
   if (m.type === "refreshAuthorizableCapabilities") { void refreshCandidates(ws, ctx, agent); return; }
-  if (m.type === "createSoul") { void runProfileAction(ctx, agent, "create", () => ws.createSoulProfile(agent)); return; }
-  if (m.type === "importSoul") { void importSoul(ws, ctx, agent, m.contentBase64); return; }
-  if (m.type === "replaceSoul") { void replaceSoul(ws, ctx, agent, m.contentBase64, m.expectedDigest); return; }
-  if (m.type === "openSoul") { void openSoul(ws, ctx, agent); return; }
-  if (m.type === "refreshSoul") { void refreshSoul(ws, ctx, agent, "refresh"); return; }
-  if (m.type === "previewSoul") { void refreshSoul(ws, ctx, agent, "preview"); return; }
-  if (m.type === "adoptSoulProfile") { void runProfileAction(ctx, agent, "adopt", () => ws.adoptSoulProfile(agent, m.expectedDigest)); return; }
-  if (m.type === "enableSoul") { void runProfileAction(ctx, agent, "enable", () => ws.enableSoulProfile(agent)); return; }
-  if (m.type === "disableSoul") { void runProfileAction(ctx, agent, "disable", () => ws.disableSoulProfile(agent)); return; }
-  if (m.type === "deleteSoulProfile") { void runProfileAction(ctx, agent, "delete", () => ws.deleteSoulProfile(agent)); return; }
 }
 
 /**
@@ -467,58 +450,6 @@ async function browse(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext):
   if (picked?.[0]) ctx.post(envelope({ type: "cwd" as const, value: picked[0].fsPath }));
 }
 
-async function importSoul(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string, contentBase64: string): Promise<void> {
-  const bytes = Buffer.from(contentBase64, "base64");
-  if (bytes.toString("base64") !== contentBase64) {
-    postProfileError(ctx, agent, new SoulError("soul/path-invalid", "Rejected malformed Agent Studio import bytes"));
-    return;
-  }
-  await runProfileAction(ctx, agent, "import", () => ws.importSoulProfileBytes(agent, bytes));
-}
-
-async function replaceSoul(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string, contentBase64: string, expectedDigest: string): Promise<void> {
-  const bytes = Buffer.from(contentBase64, "base64");
-  if (bytes.toString("base64") !== contentBase64) {
-    postProfileError(ctx, agent, new SoulError("soul/path-invalid", "Rejected malformed Agent Studio replacement bytes"));
-    return;
-  }
-  await runProfileAction(ctx, agent, "replace", () => ws.replaceSoulProfileBytes(agent, bytes, expectedDigest));
-}
-
-async function openSoul(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
-  try {
-    const target = await ws.canonicalSoulPathForOpen(agent);
-    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(target));
-    await vscode.window.showTextDocument(doc, { preview: false });
-    await refreshSoul(ws, ctx, agent, "open");
-  } catch (error) {
-    postProfileError(ctx, agent, error);
-  }
-}
-
-async function refreshSoul(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string, action: NonNullable<SoulProfileStatusMessage["action"]>): Promise<void> {
-  try {
-    const status = await ws.refreshSoulProfile(agent);
-    ctx.post(soulProfileStatusMessage(projectSoulProfileStatus(status, { action })));
-  } catch (error) {
-    postProfileError(ctx, agent, error);
-  }
-}
-
-async function runProfileAction(
-  ctx: StudioDomainContext,
-  agent: string,
-  action: NonNullable<SoulProfileStatusMessage["action"]>,
-  run: () => Promise<{ status: SoulProfileStatusMessage; selfSelected?: boolean }>,
-): Promise<void> {
-  try {
-    const result = await run();
-    ctx.post(soulProfileStatusMessage(projectSoulProfileStatus(result.status, { action, selfSelected: result.selfSelected })));
-  } catch (error) {
-    postProfileError(ctx, agent, error);
-  }
-}
-
 async function refreshEvolution(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
   try {
     const overview = await ws.readAgentEvolutionOverview(agent);
@@ -574,26 +505,4 @@ function postEvolutionError(ctx: StudioDomainContext, agent: string, error: unkn
     ? vscode.l10n.t("This proposal changed or was already reviewed. The latest evolution state was loaded.")
     : vscode.l10n.t("The Agent Evolution action could not be completed.");
   ctx.post(evolutionErrorMessage(agent, code, message, conflict));
-}
-
-function postProfileError(ctx: StudioDomainContext, agent: string, error: unknown): void {
-  if (error instanceof SoulError) {
-    const safeMessage: Record<string, string> = {
-      "soul/profile-adoption-required": "This identity is not enabled yet. Refresh and choose Enable Soul.",
-      "soul/digest-mismatch": "The profile changed; refresh it before trying again.",
-      "soul/missing": "The canonical SOUL.md is missing.",
-      "soul/outside-workspace": "The canonical profile path is outside the workspace.",
-      "soul/final-symlink": "The canonical SOUL.md must be a regular file, not a symlink.",
-      "soul/permission-denied": "Permission denied while accessing the selected profile file.",
-      "soul/profile-transaction-degraded": "The profile transaction is degraded and blocks further actions.",
-      "soul/profile-enabled": "Disable Soul before permanently deleting its identity files.",
-      "soul/path-invalid": "The profile action or canonical path is invalid.",
-      // t-359469 — the generic "invalid" string was the whole defect at this layer: the name is
-      // declared, in the wrong block, and a reader told "invalid" goes looking for a typo.
-      "soul/not-an-agent": "This name is declared under 'terminals:' in tachyon.yml, not 'agents:'. Soul belongs to an agent; a terminal has none.",
-    };
-    ctx.post(soulProfileErrorMessage(agent, error.code, safeMessage[error.code] ?? "The profile action could not be completed."));
-    return;
-  }
-  ctx.post(soulProfileErrorMessage(agent, "soul/io-error", "The profile action could not be completed."));
 }

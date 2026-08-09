@@ -112,10 +112,6 @@
             "description": "Persistent operational specialization for this agent. Distinct from identity and the current execution task.",
             "type": "string"
           },
-          "soul": {
-            "description": "Enable identity from the canonical Tachyon-owned .tachyon/agents/<agent>/SOUL.md profile. true enables; false or absence disables. Agents only.",
-            "type": "boolean"
-          },
           "selfEvolution": {
             "description": "Opt in to Tachyon-owned, human-reviewed Agent Evolution. enabled:false or absence disables it. Agents only.",
             "type": "object",
@@ -126,11 +122,6 @@
                 "type": "boolean"
               }
             }
-          },
-          "role": {
-            "description": "Built-in role template (spec 216): a reusable task contract composed with 'instructions' at delivery (template first). agents-only; not valid for a terminal.",
-            "type": "string",
-            "enum": ["coder", "reviewer", "tester", "orchestrator", "custom"]
           },
           "worktree": {
             "description": "Run this agent in its own git worktree + branch (opt-in, off by default). Isolates parallel agents so they don't clobber each other's files.",
@@ -325,18 +316,6 @@
               "type": "boolean",
               "default": true,
               "description": "Link a fresh worktree's node_modules to the primary checkout's when both checkouts' lockfiles are byte-identical, instead of leaving the agent to install its own copy. Re-decided on every launch: if the lockfiles diverge the link is removed and the agent is told it must install, never left pointing at the wrong packages. Set false for a workspace whose tooling writes into node_modules per-checkout."
-            }
-          }
-        },
-        "anchor": {
-          "type": "object",
-          "description": "Role re-anchoring (spec 216).",
-          "additionalProperties": false,
-          "properties": {
-            "auto": {
-              "type": "boolean",
-              "default": false,
-              "description": "Auto re-inject an agent's role reminder after a detected compaction (claude/codex only), on the next idle window. OFF by default — it types into the live terminal. The manual 'Re-anchor agent' command and .tachyon/ROLE.md work regardless."
             }
           }
         },

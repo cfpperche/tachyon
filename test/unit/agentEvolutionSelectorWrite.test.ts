@@ -140,11 +140,11 @@ describe("t-f96b2f — the Evolution selector write", () => {
 
   it("leaves the rest of the prompt alone in both directions", () => {
     const on = evolutionSelectorWriteFor(profile(), true, PROFILE_ID);
-    expect(promptWithEvolutionSelector({ role: "reviewer", soul: "soul" }, on))
-      .toEqual({ role: "reviewer", soul: "soul", evolution: EVOLUTION_SELECTOR_REFERENCE_ID });
+    expect(promptWithEvolutionSelector({ instructions: "review carefully" }, on))
+      .toEqual({ instructions: "review carefully", evolution: EVOLUTION_SELECTOR_REFERENCE_ID });
     const off = evolutionSelectorWriteFor(bound(), false);
-    expect(promptWithEvolutionSelector({ role: "reviewer", evolution: EVOLUTION_SELECTOR_REFERENCE_ID }, off))
-      .toEqual({ role: "reviewer" });
+    expect(promptWithEvolutionSelector({ instructions: "review carefully", evolution: EVOLUTION_SELECTOR_REFERENCE_ID }, off))
+      .toEqual({ instructions: "review carefully" });
     // Emptied rather than left as `{}`: the lifecycle merge reads an explicit `undefined` as removal,
     // and an empty mapping would persist as a key that says nothing.
     expect(promptWithEvolutionSelector(undefined, off)).toBeUndefined();
