@@ -110,6 +110,7 @@ import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAut
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../config/agentWorkspaceCommandWrite.js";
+import { mergedPersistentInstructionsReferences, persistentInstructionsWriteFor } from "../config/agentInstructionsWrite.js";
 import {
   evolutionSelectorNeedsProfileId,
   evolutionSelectorWriteFor,
@@ -5261,19 +5262,24 @@ export class Workspace {
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
     if (mutation.expectedRevision === undefined) {
       const write = workspaceCommandWriteFor(mutation.editable);
+      // t-d48775 — the instructions document rides the same create transaction, for the same reason.
+      const instructions = persistentInstructionsWriteFor(mutation.editable);
+      const localReferences = [...write.localReferences, ...instructions.localReferences];
+      const artifacts = [...write.artifacts, ...instructions.artifacts];
       const result = await this.commitAgentProfileLifecycle({
         agentName: mutation.agentName,
         operation: "create",
         createProfile: createProfileFromStudioMutation(mutation),
         // A new agent's id is minted inside the transaction, and a profile-local reference is owned
         // by it — so the entries go in without scope/owner and the transaction stamps both.
-        ...(write.localReferences.length > 0 ? { createProfileLocalReferences: write.localReferences } : {}),
-        ...(write.artifacts.length > 0 ? { artifacts: write.artifacts } : {}),
+        ...(localReferences.length > 0 ? { createProfileLocalReferences: localReferences } : {}),
+        ...(artifacts.length > 0 ? { artifacts } : {}),
       });
       return projectAgentProfileStudioSnapshot(result.snapshot);
     }
     const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
     const write = workspaceCommandWriteFor(mutation.editable, current.profile.workspace);
+    const instructions = persistentInstructionsWriteFor(mutation.editable, current.profile.prompt);
     const evolution = await this.evolutionSelectorWriteFor(current, mutation.editable.selfEvolution);
     const patch = patchProfileFromStudioMutation(mutation, current);
     const result = await this.commitAgentProfileLifecycle({
@@ -5287,14 +5293,23 @@ export class Workspace {
       patch: {
         ...patch,
         prompt: promptWithEvolutionSelector(patch.prompt, evolution),
-        references: mergedEvolutionSelectorReferences(
+        // t-d48775 — a THIRD writer joins the chain, and it chains for the reason the other two do:
+        // each merge that rebuilt from `current.profile.references` would drop what the previous one
+        // just added. `patch.prompt` already carries (or has dropped) `prompt.instructions` —
+        // `patchProfileFromStudioMutation` resolves that id, because unlike the Evolution selector it
+        // needs nothing host-owned.
+        references: mergedPersistentInstructionsReferences(
           current.profile,
-          evolution,
-          mergedWorkspaceCommandReferences(current.profile, write),
+          instructions,
+          mergedEvolutionSelectorReferences(
+            current.profile,
+            evolution,
+            mergedWorkspaceCommandReferences(current.profile, write),
+          ),
         ),
       },
-      ...(write.artifacts.length + evolution.artifacts.length > 0
-        ? { artifacts: [...write.artifacts, ...evolution.artifacts] }
+      ...(write.artifacts.length + evolution.artifacts.length + instructions.artifacts.length > 0
+        ? { artifacts: [...write.artifacts, ...evolution.artifacts, ...instructions.artifacts] }
         : {}),
     });
     return projectAgentProfileStudioSnapshot(result.snapshot);
@@ -5335,6 +5350,19 @@ export class Workspace {
     createProfile: Parameters<typeof commitCanonicalAgentProfileLifecycle>[0]["createProfile"];
     owner?: string;
   }): Promise<AgentProfileLifecycleCommitResult> {
+    // t-d48775 — this door publishes a PROFILE and no documents, so a `prompt.instructions` arriving
+    // through it would name a reference nothing satisfies. The schema catches that, but as a
+    // reference-integrity error that says nothing about which door the caller wanted. Both callers
+    // today (`agent-profile.saved-agent-create` and its v2) come from Saved Agent approval, whose
+    // mutation deliberately carries no instructions — this refusal is for the third caller, which is
+    // the one that always arrives after the plan stops being read.
+    if (input.createProfile?.prompt?.instructions) {
+      throw new Error(
+        "persistent instructions cannot be published by the Saved Agent creation door: it commits a profile "
+        + "and no profile-local documents. Create the agent here, then author them in Agent Studio, which "
+        + "publishes the document in the same transaction as the binding.",
+      );
+    }
     await this.assertAgentStoppedForProfileMutation(input.agentName);
     if (!input.owner) {
       return this.runAgentProfileLifecycleCommit({

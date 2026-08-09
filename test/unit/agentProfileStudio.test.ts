@@ -64,6 +64,7 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
       selfEvolution: false,
+      instructions: "",
       isolation: "",
       nativeConfig: {
         selectors: {
@@ -94,6 +95,10 @@ describe("canonical Agent Studio projection", () => {
       // view back, so a snapshot whose toggle disagreed with its own binding would write the
       // opposite of what it displayed.
       selfEvolution: true,
+      // t-d48775 — empty for the same reason `setup` is: this fixture's profile carries no
+      // instructions document, so the snapshot has no bytes to hand back. The populated case is the
+      // round trip in `workspaceHeadless.test.ts`, which is what proves the read-back.
+      instructions: "",
       isolation: "transcript",
       nativeConfig: {},
       capabilities: { skills: [], mcp: [], hooks: [] },

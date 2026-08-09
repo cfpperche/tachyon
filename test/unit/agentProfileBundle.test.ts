@@ -136,7 +136,7 @@ describe("portable agent profile bundle", () => {
     expect(new Set([source.agentId, imported.lifecycle.snapshot.agentId, cloned.lifecycle.snapshot.agentId]).size).toBe(3);
     for (const result of [imported, cloned]) {
       expect(result.lifecycle.snapshot.profile.lifecycle).toEqual({ enabled: false });
-      expect(result.lifecycle.snapshot.profile.prompt).toMatchObject({ instructions: "portable-instructions" });
+      expect(result.lifecycle.snapshot.profile.prompt).toMatchObject({ instructions: "persistent-instructions" });
       expect(result.lifecycle.snapshot.profile.environment).toBeUndefined();
       expect(result.lifecycle.snapshot.profile.capabilities).toBeUndefined();
       expect(fixture.authority.records.get(result.lifecycle.snapshot.agentName)?.capabilityGrants).toBeUndefined();

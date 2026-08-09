@@ -30,18 +30,6 @@ export const WORKSPACE_SETUP_PATH = "workspace-setup";
 /** The reference ids Agent Studio owns. Anything else pointing at these fields is foreign. */
 export const WORKSPACE_SETUP_REFERENCE_ID = "workspace-setup";
 
-/**
- * Reference kinds whose BYTES the projection turns into fields on the runtime entry, and which the
- * resolver therefore carries the text of.
- *
- * Deliberately not every non-capability kind: instructions and memory are formation lanes
- * delivered under their own authority, and carrying their bytes here would put prompt content into a
- * value that is passed around, digested and logged for entirely different reasons.
- */
-export const MATERIALIZED_WORKSPACE_REFERENCE_KINDS: ReadonlySet<string> = new Set([
-  "worktree-setup",
-]);
-
 /** "npm test\n\ncargo test\n" -> ["npm test", "cargo test"] — blank lines are formatting, not commands. */
 export function parseWorkspaceCommandLines(text: string): string[] {
   return text.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
