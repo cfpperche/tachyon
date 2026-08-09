@@ -3127,7 +3127,7 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     const delivered = sent.get(targetSession) ?? "";
     expect(delivered).toContain("t-21101f done");
     expect(delivered).toContain("delayed");
-    expect(delivered).toContain("'a' was dismissed before you read this");
+    expect(delivered).toContain("reported by 'a'; 'a' was dismissed before delivery");
     ws.dispose();
   });
 });

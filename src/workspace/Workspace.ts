@@ -170,7 +170,13 @@ import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
-import { NoticeQueue, type NoticeOrigin, type NoticeQueueItem, type NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
+import {
+  DEFAULT_NOTICE_TTL_MS,
+  NoticeQueue,
+  type NoticeOrigin,
+  type NoticeQueueItem,
+  type NoticeQueueMetadata,
+} from "../bridge/NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
@@ -4557,9 +4563,10 @@ export class Workspace {
    * cannot tell a report retained across a dismissal from something that just happened, which is the
    * confusion t-99ccc9 was filed about. Bounded and single-line, like everything else in the envelope.
    */
-  private staleSenderMarker(sender: string, queuedAt: number): string {
+  private delayedSenderMarker(sender: string, queuedAt: number, dismissed: boolean): string {
     const minutes = Math.max(1, Math.round((Date.now() - queuedAt) / 60_000));
-    return `[delayed ~${minutes}m; '${sender}' was dismissed before you read this]`;
+    const dismissal = dismissed ? `; '${sender}' was dismissed before delivery` : "";
+    return `[delayed ~${minutes}m; reported by '${sender}'${dismissal}]`;
   }
 
   private async flushQueuedNotice(agent: string): Promise<boolean> {
@@ -4584,7 +4591,8 @@ export class Workspace {
         // former case when incarnations disagree (covers both "mismatched" and "killed, no current
         // entry"); an entirely unknown name delivers — the safe default for the latter, undamaged case.
         const everRecorded = this.agentIncarnationCounters.has(item.sourceChild);
-        if (everRecorded && currentIncarnation !== item.sourceIncarnation) {
+        const senderDismissed = everRecorded && currentIncarnation !== item.sourceIncarnation;
+        if (senderDismissed) {
           // t-fb1453 — the sender being gone means different things for the two origins, and treating
           // them alike is what lost the doorbell.
           //
@@ -4608,7 +4616,11 @@ export class Workspace {
           // task's acceptance criteria also say, in as many words, that there must be "nenhuma perda
           // silenciosa de completion signals" and that delayed messages must be "rotuladas como
           // atrasadas [com] idade/proveniência". So: deliver it, and never as if it were fresh news.
-          line = `${item.line} ${this.staleSenderMarker(item.sourceChild, item.createdAt)}`;
+          line = `${item.line} ${this.delayedSenderMarker(item.sourceChild, item.createdAt, true)}`;
+        } else if (item.origin === "agent-authored" && Date.now() - item.createdAt > DEFAULT_NOTICE_TTL_MS) {
+          // t-93bec9 — the common late path is a busy recipient, not a dismissed sender. Preserve
+          // useful age/provenance without claiming a dismissal that did not happen.
+          line = `${item.line} ${this.delayedSenderMarker(item.sourceChild, item.createdAt, false)}`;
         }
       }
       try {

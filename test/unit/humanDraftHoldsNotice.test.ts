@@ -198,7 +198,7 @@ skipTestsWithoutOptionalRuntimeAuth({
     "the HOST poke rides the same guard — the fix cannot be walked around through the other door",
     "the rate-limit auto-continue does not press Enter on a human's draft, and re-arms instead of dying",
     "with a free composer the auto-continue still presses Enter, exactly as before",
-    "an abandoned draft cannot hold the notice forever: the TTL is swept even while the composer is held",
+    "an abandoned draft cannot hold a live-state poke forever: the TTL is swept even while the composer is held",
     "the exit does not depend on an event: the heartbeat sweeps a queue nothing else touches",
   ],
 });
@@ -377,14 +377,14 @@ describe("t-a53dd9 — the other doors onto the same pane", () => {
 });
 
 describe("t-a53dd9 — the wait has a declared exit", () => {
-  it("an abandoned draft cannot hold the notice forever: the TTL is swept even while the composer is held", async () => {
+  it("an abandoned draft cannot hold a live-state poke forever: the TTL is swept even while the composer is held", async () => {
     // Before this task the expiry sweep sat AFTER the composer early-return, so the one queue that
     // could be held indefinitely was the one queue the TTL never reached. The notice would sit past
     // its TTL, unexpired and unreported, until some unrelated event happened to touch the queue.
     const { ws, host, sent, session } = await withCoordAndChild(HUMAN_DRAFT);
 
     forceStateOf(ws, "coord", "idle");
-    await priv(ws).deliverNotice("coord", DOORBELL, doorbellMetadataFor(ws, "child"));
+    await priv(ws).deliverNotice("coord", DOORBELL, priv(ws).sourceNoticeMetadata("child", "host-poke"));
     expect(priv(ws).noticeQueue.count("coord")).toBe(1);
 
     ageQueuePastTtl(ws, "coord"); // the human walked away and left the draft on screen
@@ -406,7 +406,7 @@ describe("t-a53dd9 — the wait has a declared exit", () => {
     const { ws, host } = await withCoordAndChild(HUMAN_DRAFT);
 
     forceStateOf(ws, "coord", "idle");
-    await priv(ws).deliverNotice("coord", DOORBELL, doorbellMetadataFor(ws, "child"));
+    await priv(ws).deliverNotice("coord", DOORBELL, priv(ws).sourceNoticeMetadata("child", "host-poke"));
     ageQueuePastTtl(ws, "coord");
 
     await ws.tick();
