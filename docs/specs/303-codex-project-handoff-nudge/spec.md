@@ -5,6 +5,8 @@ _Created 2026-06-30._
 **Status:** shipped
 
 **Closure:** Shipped 2026-06-30. Codex agents now get the same Tachyon SessionStart ownership + Project Handoff pointer as Claude via a session-scoped `-c hooks.SessionStart=...` override. The change preserves user `.codex/hooks.json`, keeps Claude `--settings` behavior unchanged, and records exact ownership through `TACHYON_AGENT_NAME`. Validation: Claude probe review folded, focused tests + `tsc`, SDD verify, SDD dogfood, and full `npm test && npx tsc --noEmit` passed.
+**Verify:** `npm test -- --run test/unit/sessionOwners.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts test/unit/codexBridge.test.ts && npx tsc --noEmit`
+**Dogfood:** `tmp=$(mktemp -d /tmp/tachyon-codex-hook-dogfood-XXXXXX); mkdir -p "$tmp/.codex"; out="$tmp/out.txt"; agent_file="$tmp/agent.txt"; node -e 'const fs=require("fs"); fs.writeFileSync(process.argv[1], JSON.stringify({hooks:{SessionStart:[{matcher:"startup|resume|clear|compact",hooks:[{type:"command",command:"printf PROJECT_HOOK_CONTEXT"},{type:"command",command:"printf \"$TACHYON_AGENT_NAME\" > \""+process.argv[2]+"\""}]}]}}));' "$tmp/.codex/hooks.json" "$agent_file"; (cd "$tmp" && TACHYON_AGENT_NAME=codex-dogfood codex exec --skip-git-repo-check --enable hooks --dangerously-bypass-hook-trust -c 'hooks.SessionStart=[{matcher="startup|resume|clear|compact",hooks=[{type="command",command="printf FLAG_HOOK_CONTEXT",statusMessage="flag"}]}]' --output-last-message "$out" 'Reply BOTH if PROJECT_HOOK_CONTEXT and FLAG_HOOK_CONTEXT are visible, otherwise reply FAIL.') >/dev/null 2>&1; test "$(cat "$out")" = BOTH && test "$(cat "$agent_file")" = codex-dogfood; rc=$?; rm -rf "$tmp"; exit "$rc"`
 
 ## Intent
 

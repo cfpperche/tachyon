@@ -8,6 +8,10 @@ _Created 2026-07-14._
 **Branch / worktree:** `grok/t-c64647-agent-live-branch` @ `/home/goat/tachyon-worktrees/t-c64647-agent-live-branch`
 
 **Closure:** Shipped 2026-07-14 on branch `grok/t-c64647-agent-live-branch` (maintainer-approved). Live HEAD badge first on every agent row; isolated green `--ds-ok` chip; shared quiet; drift via `⚠` + tooltip (chip stays green); agent-block vertical rhythm. Evidence: unit/dogfood tests, headless EDH S1, human EDH dogfood, preview screenshots under `evidence/`.
+**Verify:** `npx vitest run test/unit/agentModel.test.ts test/unit/sidebarPrototype.test.ts`
+**Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit`
+**Dogfood:** `npx vitest run test/unit/agentLiveBranch.dogfood.test.ts`
+**Dogfood:** `npm run build && npm run dogfood -- dev-host -- headless`
 
 ## Intent
 

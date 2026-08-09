@@ -4,6 +4,8 @@ _Created 2026-07-25._
 
 **Status:** shipped
 **Closure:** Codex canonical permission metadata and the summary matrix now match the private-home
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 lifecycle evidence; fork remains explicitly unavailable.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);

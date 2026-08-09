@@ -4,6 +4,7 @@ _Created 2026-07-25._
 
 **Status:** shipped-partial
 **Closure:** Existing private-home, fork/admission and Soul lifecycle evidence was audited against Pi 0.80.10. Offline print mode emits only a session envelope, so no headless probe was added; OAuth concurrency remains the one-live-Pi admission limit.
+**Dogfood:** `{{representative headless dogfood command}}`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

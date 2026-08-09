@@ -4,6 +4,9 @@ _Created 2026-07-24._
 
 **Status:** shipped
 **Closure:** Merged to main 2026-07-24 (aa96c784, t-9f8dfc). classifyManagedWorktree +
+**Verify:** `npm run typecheck`
+**Verify:** `npx vitest run test/unit/worktreeClassify.test.ts test/product-invariants/PI-002-worktree-cleanup-commit-safety.test.ts`
+**Dogfood:** `npx vitest run test/unit/worktreeClassify.test.ts`
 ManagedWorktreeService.listClassified()/removeClassified() drive a real Worktrees tab in Control
 (ready-to-remove / needs-review / occupied / record-only), replacing the raw disk read
 (`readManagedWorktreesFromDisk` deleted). PI-002 registered. verify:full green pre- and post-merge

@@ -4,6 +4,8 @@ _Created 2026-07-25._
 
 **Status:** shipped
 **Closure:** Shipped under `t-2f37e7`: Claude grant/capture resolution for skills, hooks and MCP,
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 combined private-home materialization with reserved Bridge and manifest-last provenance, lifecycle
 regression, and parity evidence.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.

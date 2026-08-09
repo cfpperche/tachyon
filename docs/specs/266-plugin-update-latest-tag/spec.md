@@ -6,6 +6,7 @@ _Created 2026-06-26._
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 **Closure:** Latest-semver-tag detection in front of the unchanged load→preview→provenance pipeline:
+**Verify:** `env -u TMUX npx vitest run test/unit/pluginSource.test.ts test/unit/pluginFetcher.test.ts test/unit/pluginEngine.test.ts`
 `source.parseSemverTag`/`compareSemver` (now the single comparator — `engine.compareVersions` delegates)/
 `rewriteRef`; `fetcher.resolveLatestSemverTag` (`ls-remote --tags --refs`, returns the full tag list);
 `engine.resolveEffectiveUpdateSpec` (bump only when the current ref is PROVEN a real tag, then to a strictly

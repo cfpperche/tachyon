@@ -5,6 +5,9 @@ _Created 2026-07-22._
 **Status:** shipped
 
 **Closure:** Architecture-only contract ratified by the maintainer on 2026-07-22. This shipment fixes
+**Verify:** `sh /home/goat/tachyon/.agents/skills/sdd/scripts/check-ids.sh`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 the canonical ownership, trust, reference, snapshot and lifecycle requirements; it changes no runtime
 behavior. Implementation remains in the dependency-ordered follow-ups under `t-7d2cc0`. Plugins remain
 outside V1 and may be reconsidered only by their dedicated task chain.

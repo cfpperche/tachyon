@@ -4,6 +4,9 @@ _Created 2026-07-24._
 
 **Status:** shipped
 **Closure:** Merged to main 2026-07-24 (e2fa3da1, t-55a5ac). The dev-host is rooted in the checkout
+**Verify:** `npm run typecheck`
+**Verify:** `npx vitest run test/unit/devHostPointer.test.ts test/unit/devHostBoundary.test.ts test/unit/devHostLane.test.ts test/unit/devHostLauncher.test.ts`
+**Dogfood:** `npm run dogfood -- dev-host -- point --fixture agent-soul-dogfood && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear`
 that owns it; slots, `active`, the primary-monorepo redirect for the dev-host root, and the per-slot
 rewriting of a tracked `launch.json` are deleted (`pointer.mjs` 1501 → 1032 lines). Retired flags fail
 immediately naming their replacement. Two structural guards keep the layout from returning:

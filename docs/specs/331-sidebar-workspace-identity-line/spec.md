@@ -4,6 +4,8 @@ _Created 2026-07-02._
 
 **Status:** shipped
 **Closure:** Shipped locally 2026-07-02 — `App.tsx`'s folder header is now the single, always-present
+**Verify:** `npx tsc -p tsconfig.webview.json --noEmit`
+**Verify:** `env -u TMUX npx vitest run test/unit/sidebarPrototype.test.ts test/unit/sidebarSearch.test.ts test/unit/sidebarActions.test.ts test/unit/webviewPreviewCatalog.test.ts test/unit/webviewPreviewRoutes.test.ts`
 render path for both single-root and multi-root (the `!multi`-gated `.handoff-bar` special case is gone);
 `HandoffBtn` renamed "distill" → "handoff" and goes quiet (glyph-only) when fresh with nothing pending.
 Evidence: `npx tsc --noEmit`, `npx tsc -p tsconfig.webview.json --noEmit`, full `vitest run` (all green

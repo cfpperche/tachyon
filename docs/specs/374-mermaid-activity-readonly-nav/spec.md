@@ -4,6 +4,8 @@ _Created 2026-07-12 from Mission Control task `t-3febb9`._
 
 **Status:** shipped
 **Closure:** 2026-07-12 — Activity Mermaid previews gain first-party read-only zoom/pan chrome (`mermaidViewport` +
+**Verify:** `npx vitest run test/unit/mermaidViewport.test.ts test/unit/markdownEngine.test.ts test/unit/markdownHardening.test.ts test/unit/webviewPreviewRoutes.test.ts test/unit/webviewShellParity.test.ts`
+**Dogfood:** `npx vitest run test/unit/mermaidViewport.test.ts`
 shared `mermaid-block.css`) without mutating source or weakening `securityLevel: "strict"`. Headless verify green
 (57 related tests). Dogfood + Visual QA on preview harness fixture `activity/mermaid-nav` (light/dark × narrow/wide +
 zoom/fit/Source) under `.tachyon/evidence/374-mermaid-activity-readonly-nav/`. Harness gains mermaid bootstrap globals

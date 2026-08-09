@@ -4,6 +4,7 @@ _Created 2026-06-30._
 
 **Status:** shipped
 **Closure:** Implemented first-slice managed-entry terminology cleanup on 2026-06-30: neutral canonical aliases, compatibility MCP descriptions, docs/comment cleanup, Claude ad-hoc review folded in, and targeted tests + typecheck passed.
+**Verify:** `npm test -- --run test/unit/config.test.ts test/unit/agentManager.test.ts test/unit/sidebarActions.test.ts test/unit/bridge.test.ts && npm run -s typecheck`
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes / placeholders). -->

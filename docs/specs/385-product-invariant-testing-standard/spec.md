@@ -4,6 +4,11 @@ _Created 2026-07-14. Task: `t-2b8808`._
 
 **Status:** shipped
 **Closure:** Shipped 2026-07-15 — repository-owned Product Invariant standard and PI-001 gate;
+**Verify:** `npm run test:invariants`
+**Verify:** `npm exec -- vitest run test/unit/config.test.ts test/unit/configSchema.test.ts test/unit/deliveryStore.test.ts test/unit/verifyTask.test.ts test/unit/workspaceHeadless.test.ts test/unit/snBoundaryLocksBehavior.gen.test.ts`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run test:invariants`
 project-neutral verifier configuration; authenticated, fresh delegated authority; preservation-only
 launch recovery; independent RED/GREEN and security closure; full verification green.
 **Affected Product Invariants:** `PI-001` (created and adopted by this decision)

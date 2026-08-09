@@ -4,6 +4,8 @@ _Created 2026-07-25._
 
 **Status:** shipped-partial
 **Closure:** Readiness now projects runtime evidence and adapter fork support into Agent Studio, where
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 localized limitations appear before lifecycle actions. Focused Studio tests, `npm run typecheck`, and
 `npm run verify:full:quiet` passed; visual capture remains explicitly unavailable because the
 provisioned browser launcher is missing from this worktree.
