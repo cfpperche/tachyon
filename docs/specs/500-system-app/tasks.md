@@ -37,9 +37,12 @@ deletes.
 - [x] `inboxPending` and `worktreesActive` keep their current sources and the Inbox counter still
       navigates.
 - [x] All four actions present: auto-refresh, refresh, copy diagnostics, open doctor.
-- [x] ~~Collapse rule from plan.md § D4~~ — **CANCELLED by owner ruling** (t-7b92bd journal,
-      2026-08-09). `control.workspaces` is 0 or 1 in production, so the rule's own trigger is
-      unreachable; shipping it would be machinery with no tap. See notes.md § Deviations.
+- [x] **No collapse rule** — plan.md § D4 is cancelled; `control.workspaces` is always 0 or 1.
+      Nothing was built for it; notes.md § Deviations records the measurement and the ruling.
+- [x] `workspaceCount` is a window count (`model.ts:528`, unfiltered). It renders as an explicitly
+      scoped sub-line, never as a metric that appears to describe the card on screen (§ D4b).
+      — the Workspaces value is `control.workspaces.length`; the window's count appears beneath it as
+      `of {N} in this window`, and only when the two differ.
 - [x] Do not delete `model.overview` yet — `model.ts:563-565` reads it for diagnostics. Measure its
       consumers and report them. — measured, table in notes.md; the field stays whole.
 
@@ -64,15 +67,18 @@ deletes.
 
 Required — spec.md says so, and Open question 3 is the reason.
 
-- [x] One workspace: does the page read as one screen, or as two stapled together? — one screen.
-- [x] ~~Two or more workspaces: is the second visible without scrolling past a wall?~~ — **not
-      photographed, because it does not exist.** Same measurement that cancelled D4; the owner's ruling
-      explicitly dropped this shot rather than fabricating it from a fixture.
-- [x] A workspace with its engine in `error`: is it obvious which one, from the top of the page? — yes.
-- [x] Evidence: screenshots of all three, plus the old Overview and Engine for comparison.
+- [x] Does the page read as one screen, or as two stapled together? — one screen.
+- [x] Does the summary earn its height above a single card, or does it push the only real content
+      down while adding nothing? This is the density risk that survived — see spec.md § Open q. 3.
+      — it earns it: the strip is ONE 65px row, and the whole page is 580px at 880. The card starts
+      immediately under the summary rather than below a fold.
+- [x] Engine in `error`: is the failure legible from the top of the page? — yes: `ERRORS 1` toned red
+      in the strip, `Error` badge on the card, failure text in the Engine cell.
+- [x] Evidence: screenshots of both cases, plus the old Overview and Engine for comparison. No
+      multi-workspace shot — that state does not exist.
       — `.tachyon/visual-qa/sdd-500/`, at 880 and 360, attached to t-7b92bd. Three after-cases
-      (healthy, engine-error, two-roots-one-card), two before-cases, and the two shared-sheet
-      neighbours before and after.
+      (healthy, engine-error, and two roots in the window still drawing one card, which is what proves
+      the § D4b sub-line), two before-cases, and the two shared-sheet neighbours before and after.
 - [x] Verdict: recorded after looking, including anything fixed as a result. If the collapse default is
       wrong, fix the layout — do not revert the merge.
       — one defect found and fixed: the engine failure text broke mid-word at 880. notes.md § Visual QA.

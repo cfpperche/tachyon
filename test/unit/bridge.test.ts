@@ -624,6 +624,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const reopened = await client.callTool({ name: "update_task", arguments: { id: task.id, status: "triaged" } });
     expect(reopened.isError).toBeFalsy();
 
+    const reclaimed = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "codex", expect: { assignee: null } } });
+    expect(reclaimed.isError).toBeFalsy();
     const loser = await client.callTool({ name: "update_task", arguments: { id: task.id, assignee: "claude", expect: { assignee: null } } });
     expect(loser.isError).toBe(true);
     expect((loser.content as Array<{ text: string }>)[0].text).toContain("precondition-failed");
@@ -858,8 +860,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
   it("get_continuity derives open work without storing it and leads with stale lag", async () => {
-    const task = await tasks.create({ title: "Reconcile live continuity", author: "human", assignee: "claude" });
-    await tasks.update(task.id, { status: "triaged" });
+    const task = await tasks.create({ title: "Reconcile live continuity", author: "human" });
+    await tasks.update(task.id, { status: "triaged", assignee: "claude" });
     await tasks.update(task.id, { status: "active" });
     const pin = pins.create("Review continuity contract", "claude");
     pins.create("Another agent's reminder", "codex");

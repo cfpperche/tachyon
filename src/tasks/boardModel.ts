@@ -208,7 +208,7 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
       authorColorVar: colorTokenFor(task.author),
       ...(task.assignee ? { assignee: task.assignee, assigneeColorVar: colorTokenFor(task.assignee) } : {}),
       assigneeLabel: assigneeLabel(task),
-      assigneeHistorical: HISTORICAL_ASSIGNEE_STATUSES.has(task.status) && !!task.assignee,
+      assigneeHistorical: HISTORICAL_ASSIGNEE_STATUSES.has(task.status) && !!task.lastDeliverer,
       canEditAssignee: ASSIGNEE_EDITABLE_STATUSES.has(task.status),
       ...(sdd ? { sddRef: sdd.ref, ...(sdd.status ? { sddStatus: sdd.status } : {}), ...(sdd.missing ? { sddMissing: true } : {}) } : {}),
       ...(snapshot.attachmentCounts?.[task.id] ? { attachmentCount: snapshot.attachmentCounts[task.id] } : {}),
@@ -312,8 +312,9 @@ function isDimmed(task: Task, selectedChip: string | undefined): boolean {
 }
 
 function assigneeLabel(task: Task): string {
-  if (!task.assignee) return "unassigned";
-  return HISTORICAL_ASSIGNEE_STATUSES.has(task.status) ? `delivered by ${task.assignee}` : task.assignee;
+  const agent = HISTORICAL_ASSIGNEE_STATUSES.has(task.status) ? task.lastDeliverer : task.currentAssignee;
+  if (!agent) return "unassigned";
+  return HISTORICAL_ASSIGNEE_STATUSES.has(task.status) ? `delivered by ${agent}` : agent;
 }
 
 function compareValidationCards(a: ValidationSummary, b: ValidationSummary): number {
