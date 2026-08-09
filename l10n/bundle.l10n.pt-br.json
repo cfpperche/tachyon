@@ -734,5 +734,7 @@
   "Open a pull request": "Abrir um pull request",
   "Review shows {0}..{1} — the commits this command would land, not the working tree.": "A revisão mostra {0}..{1} — os commits que este comando levaria para o trunk, não a árvore de trabalho.",
   "Review opens a committed-history comparison, not the working tree.": "A revisão abre uma comparação do histórico de commits, não da árvore de trabalho.",
-  "No local trunk to compare against — review shows this branch against the ref it was forked from.": "Não há trunk local para comparar — a revisão mostra esta branch contra o ref de onde ela saiu."
+  "No local trunk to compare against — review shows this branch against the ref it was forked from.": "Não há trunk local para comparar — a revisão mostra esta branch contra o ref de onde ela saiu.",
+  "No changed file matches": "Nenhum arquivo alterado corresponde",
+  "'{0}' is no longer among the changed files of '{1}'.": "'{0}' não está mais entre os arquivos alterados de '{1}'."
 }

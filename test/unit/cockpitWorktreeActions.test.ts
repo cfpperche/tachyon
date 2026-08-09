@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Uri } from "vscode";
-import { __createdPanels, __getExecutedCommands, __getWarningMessageCalls, __resetVscodeMock } from "../mocks/vscode.js";
+import { __createdPanels, __getExecutedCommands, __getQuickPickCalls, __getWarningMessageCalls, __resetVscodeMock, __setCommandResult } from "../mocks/vscode.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager, type WorktreesDeps } from "../../src/webview/WorktreesPanel.js";
 import { readyMessage } from "../../src/webview/worktrees/messages.js";
 import type { WorkspaceBundle, WorktreeRow } from "../../src/sections/model.js";
@@ -178,8 +178,10 @@ describe("SDD 501 — review and propose dispatch to the commands that already e
     const panelA = await open(h.manager, "ws-a");
     panelA.webview.__receive({ type: "worktreeReviewDiff", id: "a-only" });
     await flush();
+    // t-ea5425 — `select: "list"` is the whole change on this door: the same command, asked for its
+    // candidates instead of asked to draw a native list.
     expect(dispatched()).toEqual([
-      { command: "tachyon.reviewWorktreeItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only" }] },
+      { command: "tachyon.reviewWorktreeItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only", select: "list" }] },
     ]);
   });
 
@@ -200,7 +202,7 @@ describe("SDD 501 — review and propose dispatch to the commands that already e
     panelA.webview.__receive({ type: "worktreeReviewDiff", id: "a-only", wsHash: "ws-b" });
     await flush();
     expect(dispatched()).toEqual([
-      { command: "tachyon.reviewWorktreeItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only" }] },
+      { command: "tachyon.reviewWorktreeItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only", select: "list" }] },
     ]);
   });
 
@@ -210,6 +212,87 @@ describe("SDD 501 — review and propose dispatch to the commands that already e
    * pre-checked whether a PR were possible would have to reach the host to do it, and this is where
    * that reach would show up.
    */
+  /**
+   * t-ea5425 — the file is picked in OUR chrome, and this is the host half of that.
+   *
+   * The defect was placement: `vscode.window.showQuickPick` floats its list at the top of the window,
+   * away from the card that opened it, and it is VS Code's surface rather than the product's. So the
+   * panel asks the same command for its candidates, posts them to the webview (which draws
+   * `shared/ui/QuickPicker.tsx`), and sends the choice back through the same command. Two properties
+   * are asserted here because either alone would let the defect back in: the panel opens NO native
+   * quick pick, and the choice reaches the one review command instead of some second opener.
+   */
+  const CANDIDATES = {
+    label: "tachyon/change/a",
+    base: "main",
+    current: "9f3c1ab27d5e",
+    files: [
+      { path: "src/one.ts", status: "M" },
+      { path: "src/two.ts", status: "A", from: "src/old.ts" },
+    ],
+  };
+
+  const posted = (panel: typeof __createdPanels[number], type: string): unknown[] =>
+    panel.webview.posted.filter((item) => (item as { type?: string }).type === type);
+
+  it("hands the changed files to the webview's own picker, and opens no native quick pick", async () => {
+    __setCommandResult("tachyon.reviewWorktreeItem", CANDIDATES);
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeReviewDiff", id: "a-only" });
+    await flush();
+    expect(posted(panelA, "worktreeReviewFiles")).toEqual([
+      { type: "worktreeReviewFiles", review: { id: "a-only", ...CANDIDATES } },
+    ]);
+    expect(__getQuickPickCalls()).toEqual([]);
+  });
+
+  it("sends the chosen file back through the SAME review command", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeOpenReviewFile", id: "a-only", path: "src/two.ts" });
+    await flush();
+    expect(dispatched()).toEqual([
+      { command: "tachyon.reviewWorktreeItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only", select: { file: "src/two.ts" } }] },
+    ]);
+    expect(__getQuickPickCalls()).toEqual([]);
+  });
+
+  /**
+   * A refusal is the command's to make and to name (no committed history, no changed files). It answers
+   * nothing, and nothing is what the webview must be given: an empty picker would read as "no changes"
+   * on a checkout the host never managed to inspect.
+   */
+  it("opens no picker when the command refuses", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeReviewDiff", id: "a-only" });
+    await flush();
+    expect(posted(panelA, "worktreeReviewFiles")).toEqual([]);
+  });
+
+  /** Same for an answer that is not a candidate set, or one whose file rows are malformed. */
+  it("opens no picker for a malformed answer", async () => {
+    for (const answer of [{ label: "b", base: "main", current: "c", files: [] }, { files: [{ path: 1 }] }, "nope"]) {
+      __resetVscodeMock();
+      __setCommandResult("tachyon.reviewWorktreeItem", answer);
+      const h = harness();
+      const panelA = await open(h.manager, "ws-a");
+      panelA.webview.__receive({ type: "worktreeReviewDiff", id: "a-only" });
+      await flush();
+      expect(posted(panelA, "worktreeReviewFiles"), JSON.stringify(answer)).toEqual([]);
+    }
+  });
+
+  /** The choice carries a path or it is not a choice: a malformed message reaches no command at all. */
+  it("ignores an open-file message with no path", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeOpenReviewFile", id: "a-only" });
+    await flush();
+    expect(dispatched()).toEqual([]);
+  });
+
   it("opening and refreshing the dashboard dispatches nothing", async () => {
     const h = harness();
     const panelA = await open(h.manager, "ws-a");
