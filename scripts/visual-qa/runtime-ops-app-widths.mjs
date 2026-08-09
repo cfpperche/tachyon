@@ -32,7 +32,7 @@
  *    browser suite drove at 340px; `duplicate-workspace` is the one whose whole point is two workspaces
  *    with same-named agents, which is the cardinality's own case.
  *
- * Prereq: `node esbuild.mjs` and `npm run preview:webview` in another shell.
+ * Prereq: `node esbuild.mjs` and `node scripts/webview-preview/serve.mjs` in another shell.
  * Run: `node scripts/visual-qa/runtime-ops-app-widths.mjs [outDir]`
  */
 import puppeteer from "puppeteer-core";

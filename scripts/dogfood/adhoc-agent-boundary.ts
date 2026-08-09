@@ -12,7 +12,7 @@
  *
  * Nothing here starts an agent, sends a prompt or touches a credential.
  *
- * Run: npm run dogfood -- adhoc-agent-boundary
+ * Run: node scripts/dogfood/run.mjs adhoc-agent-boundary
  */
 import { spawnSync } from "node:child_process";
 import {

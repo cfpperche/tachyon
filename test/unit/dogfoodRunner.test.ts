@@ -6,12 +6,12 @@ import { describe, expect, it } from "vitest";
 const repoRoot = process.cwd();
 
 describe("dogfood command surface", () => {
-  it("keeps one stable npm entry instead of one script per scenario", () => {
+  it("keeps the development harness out of the npm script surface", () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8")) as {
       scripts: Record<string, string>;
     };
-    expect(Object.keys(pkg.scripts).filter((name) => name === "dogfood" || name.startsWith("dogfood:"))).toEqual(["dogfood"]);
-    expect(pkg.scripts.dogfood).toBe("node scripts/dogfood/run.mjs");
+    const developmentAliases = ["dogfood", "preview:webview", "preview:webview:catalog", "activity:preview"];
+    expect(Object.keys(pkg.scripts).filter((name) => developmentAliases.includes(name) || name.startsWith("dogfood:"))).toEqual([]);
   });
 
   it("lists the migrated scenarios through the runner", () => {

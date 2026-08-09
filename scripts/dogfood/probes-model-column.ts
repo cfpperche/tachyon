@@ -8,7 +8,7 @@
  * The property that matters: the cell never prints a REQUESTED model in the position a reader takes
  * for the model that answered.
  *
- * Run: npm run dogfood -- probes-model-column
+ * Run: node scripts/dogfood/run.mjs probes-model-column
  */
 import fs from "node:fs";
 import os from "node:os";

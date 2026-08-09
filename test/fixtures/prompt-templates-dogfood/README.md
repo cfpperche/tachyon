@@ -16,7 +16,7 @@ Isolated temporary workspace for **Tachyon: Dev Host** (Extension Development Ho
 
 ```bash
 # monorepo root — once per session (agent or human)
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --worktree /home/goat/tachyon-worktrees/prompt-templates \
   --workspace /home/goat/tachyon-worktrees/prompt-templates/test/fixtures/prompt-templates-dogfood \
   --spec 381 --slug prompt-templates
@@ -30,7 +30,7 @@ Then in the monorepo VS Code window:
    - Wait for sidebar agent `dogfood` (autostart)
    - Command Palette → **Tachyon: Inject Prompt Template…**
    - Stage a template into `dogfood` (body without Enter)
-4. Close EDH when done. Optional: `npm run dogfood -- dev-host -- clear`
+4. Close EDH when done. Optional: `scripts/dev-host/cli.sh clear`
 
 ## Templates on disk
 

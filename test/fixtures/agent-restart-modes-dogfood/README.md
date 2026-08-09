@@ -27,5 +27,5 @@ One **stopped Grok** agent for human validation of Restart modes.
 ## Headless matrix (bash, no LLM)
 
 ```bash
-npm run dogfood -- restart-modes
+node scripts/dogfood/run.mjs restart-modes
 ```

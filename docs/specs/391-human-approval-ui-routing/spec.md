@@ -12,7 +12,7 @@ request. Current repository-wide baseline failures reproduce unchanged on main a
 project-guidance ownership promise or oracle.
 
 **Verify:** `npx vitest run test/unit/daemonEngineHost.test.ts test/unit/cxApproval2Behavior.gen.test.ts test/unit/i18n.test.ts && npm run typecheck`
-**Dogfood:** `npm run dogfood -- persistent-engine`
+**Dogfood:** `node scripts/dogfood/run.mjs persistent-engine`
 
 ## Intent
 

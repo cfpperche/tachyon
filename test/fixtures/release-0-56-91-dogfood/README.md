@@ -29,7 +29,7 @@ git add test/fixtures/release-0-56-91-dogfood/tachyon.yml test/fixtures/release-
 
 ```bash
 # from monorepo:
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --worktree <worktree-or-repo> \
   --fixture release-0-56-91 \
   --spec 410 --slug release-0-56-91

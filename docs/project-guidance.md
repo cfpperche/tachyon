@@ -144,9 +144,9 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   This is **this repository's directive, not Tachyon product behavior**. Tachyon delivers this file to
   agents as project guidance; it does not encode this policy in the product. Another project may decide
   the opposite.
-- Use `npm run dogfood -- <scenario>`; list scenarios with `npm run dogfood -- --list`. Dogfood must
+- Use `node scripts/dogfood/run.mjs <scenario>`; list scenarios with `node scripts/dogfood/run.mjs --list`. Dogfood must
   use existing harnesses rather than add one-off package scripts.
-- Dev Host is checkout-local: `npm run dogfood -- dev-host -- point --fixture <slug>`; `--worktree`
+- Dev Host is checkout-local: `scripts/dev-host/cli.sh point --fixture <slug>`; `--worktree`
   explicitly targets another checkout. On completion, run `point-clear`, confirm with `point-status`,
   then remove the change worktree. The retired flags
   `--owner`, `--slot`, `--activate`, `--no-activate`, `--require-owner`, and `--all` must not return.

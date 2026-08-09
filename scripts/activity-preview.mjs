@@ -3,7 +3,7 @@
 // feed as plain text — no EDH, no live agent. Drives the SAME pure normalizer + view-model the webview uses.
 //
 //   node scripts/activity-preview.mjs <transcript.jsonl>
-//   npm run activity:preview -- ~/.claude/projects/<enc-cwd>/<uuid>.jsonl
+//   node scripts/activity-preview.mjs ~/.claude/projects/<enc-cwd>/<uuid>.jsonl
 //
 // Use it to eyeball how a real (or fixture) session renders, or to spot transcript shapes the normalizer
 // drops to `raw`. Bundles src/activity on the fly via esbuild (already a dep).

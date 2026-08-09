@@ -8,14 +8,14 @@ model and the runtime's reported identities, persisted in metadata and carried o
 `model_mismatch` fails always and `model_unproven` fails a capable runtime; the Claude adapter now
 preserves the provider-native `modelUsage` keys; historical runs derive an honest verdict on read
 without rewriting artifacts. Evidence: `npm run verify:full:quiet` (518 files, 5818 tests) and
-`npm run dogfood -- probe-model-proof` (7/7), which reproduces both recorded incidents.
+`node scripts/dogfood/run.mjs probe-model-proof` (7/7), which reproduces both recorded incidents.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
 **Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- probe-model-proof`
+**Dogfood:** `node scripts/dogfood/run.mjs probe-model-proof`
 
 ## Intent
 

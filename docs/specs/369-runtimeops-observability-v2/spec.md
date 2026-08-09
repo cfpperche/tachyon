@@ -9,7 +9,7 @@ normalized host projection, explicit source lifecycle, deterministic degraded-st
 Extension Development Host dogfood. Cost/history enrichment and Grok support remain follow-up slices.
 
 **Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- runtime-observability`
+**Dogfood:** `node scripts/dogfood/run.mjs runtime-observability`
 
 ## Intent
 

@@ -1,5 +1,5 @@
 /**
- * t-0ac2e9 — the decisions behind `npm run dogfood -- runtime-remeasure`.
+ * t-0ac2e9 — the decisions behind `node scripts/dogfood/run.mjs runtime-remeasure`.
  *
  * Every fixture that starts with REAL_ is output captured from codex-cli 0.146.1 on 2026-08-06.
  * The constructed fixtures below them exist to prove the guard turns red: a probe that can only

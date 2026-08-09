@@ -64,7 +64,7 @@ faithful than buying. (Revisit only if a 3rd+ consumer needs an addon ecosystem 
 
 ## What this is (and is NOT)
 
-- It is **dev/test substrate** — the same nature as today's harness: a `npm run preview:webview` thing, NOT shipped in
+- It is **dev/test substrate** — the same nature as today's harness: a `node scripts/webview-preview/serve.mjs` thing, NOT shipped in
   the `.vsix`, NOT a user-facing runtime. It exists so an agent can screenshot a real bundle at a real URL.
 - It is **NOT** the named-surface→route discovery (that's a separate spec — passo 2 — which reads the catalog this
   spec emits), **NOT** a visual-regression / pixel-diff gate, **NOT** a redesign of any view.

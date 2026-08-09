@@ -10,7 +10,7 @@ _Created 2026-07-16._
 **Closure:** 2026-07-16 — Dev Host dogfood ergonomics (P0–P3): mirror `.tachyon` copy locked by test, `point-status` doctor, `--fixture` / `fixture-new`, worktree tool resolve + stale pointer, fixture drift warn, runbook preferred F5 path. Commits `08443142` / `c87ac17a` on branch; landed via merge to main.
 
 **Verify:** `npx vitest run test/unit/devHostPointer.test.ts test/unit/pluginGitHookRegistry.test.ts`
-**Dogfood:** `npm run dogfood -- dev-host -- fixture-new --slug ergonomics-smoke --intent focus && npm run dogfood -- dev-host -- point --worktree "$PWD" --fixture ergonomics-smoke --spec 393 && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear`
+**Dogfood:** `scripts/dev-host/cli.sh fixture-new --slug ergonomics-smoke --intent focus && scripts/dev-host/cli.sh point --worktree "$PWD" --fixture ergonomics-smoke --spec 393 && scripts/dev-host/cli.sh point-status && scripts/dev-host/cli.sh point-clear`
 
 ## Intent
 
@@ -44,7 +44,7 @@ Dev Host is the right isolation model (pointer F5, fixture workspace, never mono
 ### P1 — fixture contract + ergonomic arm
 
 - [x] **Scenario: fixture-new scaffolds a dogfood fixture**
-  - **Given** `npm run dogfood -- dev-host -- fixture-new --slug <s> --spec <NNN>` (or equivalent)
+  - **Given** `scripts/dev-host/cli.sh fixture-new --slug <s> --spec <NNN>` (or equivalent)
   - **When** the command completes
   - **Then** `test/fixtures/<s>-dogfood/` has `tachyon.yml`, README checklist, and seeded `.tachyon/` layout; README notes `git add -f` for ignored `.tachyon/`
 - [x] **Scenario: intent presets are documented**
@@ -85,6 +85,6 @@ Dev Host is the right isolation model (pointer F5, fixture workspace, never mono
 
 ## Open questions
 
-- Exact CLI names: `fixture-new` vs `scaffold-fixture`; keep under `dogfood:dev-host` subcommands.
+- Exact CLI names: `fixture-new` vs `scaffold-fixture`; keep them as `scripts/dev-host/cli.sh` subcommands.
 - Hook fix: change leaf wrappers only vs regenerate managed hook path resolution in core (prefer minimal leaf/common-dir resolve).
 - Whether P3 re-materialize is in v1 or **shipped-partial** after P0–P2.

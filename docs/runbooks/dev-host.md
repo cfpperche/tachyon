@@ -6,7 +6,7 @@ This is the single-owner lane for isolated Extension Development Host dogfood �
 private tmux/cache/state/data, extension bits from a known checkout/worktree, without reloading the monorepo
 fleet window.
 
-**Primary CLI:** `npm run dogfood -- dev-host`
+**Primary CLI:** `scripts/dev-host/cli.sh`
 **Canonical F5 config:** `Tachyon: Dev Host` (pointer under `.tachyon/dev-host/`)
 **Scripts:** `scripts/dev-host/`
 
@@ -37,8 +37,8 @@ pins, journals, or commits should map the old vocabulary here:
 | Era | What it was called | Why |
 |-----|--------------------|-----|
 | Origin | **EDH palliative** / `edh-palliative` | Temporary isolation lane so dogfood would not strangle concurrent Delivery work (368). “Palliative” = workaround name, not a product noun. |
-| Interim | `npm run dogfood -- edh` (+ alias `dogfood:edh-palliative`) | Same scripts; shorter entry while still under the palliative path. |
-| Current (`t-2d1810`) | **Dev Host** / `npm run dogfood -- dev-host` / `scripts/dev-host/` | Semantic product name: isolated Extension Development Host for worktree/fixture dogfood. F5 pointer is first-class (`point` / `point-status` / `point-clear`). |
+| Interim | `node scripts/dogfood/run.mjs edh` (+ alias `dogfood:edh-palliative`) | Same scripts; shorter entry while still under the palliative path. |
+| Current (`t-2d1810`) | **Dev Host** / `scripts/dev-host/cli.sh` / `scripts/dev-host/` | Semantic product name: isolated Extension Development Host for worktree/fixture dogfood. F5 pointer is first-class (`point` / `point-status` / `point-clear`). |
 
 **F5 launch shape (WSL Remote parent window):** keep the same shape as **Run Tachyon (demo)** /
 **Run Tachyon (test fixture)**:
@@ -153,7 +153,7 @@ automatically stolen based on PID or age. A coordinator must investigate and exp
 
 ```bash
 # bounded command: acquires, runs, writes allowlisted latest.json, and releases even on failure
-node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood -- dev-host -- headless
+node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- scripts/dev-host/cli.sh headless
 
 # GUI owner holds the lease across the separate desktop step
 node scripts/dev-host/lane.mjs acquire --owner coordinator --target worktree
@@ -214,7 +214,7 @@ These exist so palliative EDH **cannot** strangle Codex/368 or the human’s liv
    - inherited live Tachyon Bridge/agent identity, Codex session identity, `TMUX`, and `TMUX_PANE` are removed from the
      EDH child; both GUI and headless launches use `--use-inmemory-secretstorage`
 
-4. **Use a compatible executable.** `npm run dogfood -- dev-host -- resolve-code` prefers the current worktree test cache,
+4. **Use a compatible executable.** `scripts/dev-host/cli.sh resolve-code` prefers the current worktree test cache,
    then the primary checkout cache derived from Git's common directory. It rejects WSL `remote-cli/code`, which cannot
    honor the isolated Extension Development Host flags. The detached dev engine itself uses a fixture-local link to
    the standalone Node executable; do not point it at the VS Code Electron binary.
@@ -242,7 +242,7 @@ Runs a real Extension Development Host under **Xvfb** with an in-host runner
 
 ```bash
 npm run build
-npm run dogfood -- dev-host -- headless
+scripts/dev-host/cli.sh headless
 ```
 
 What it asserts (S1 / t-8354ae):
@@ -273,7 +273,7 @@ human clicking" primitive.
 
 ```bash
 # arm the pointer once (any worktree/fixture — primary checkout is fine):
-npm run dogfood -- dev-host -- point --worktree /home/goat/tachyon --fixture <slug> --spec NNN --slug <slug>
+scripts/dev-host/cli.sh point --worktree /home/goat/tachyon --fixture <slug> --spec NNN --slug <slug>
 # build the pointed extension's dev bundle (the harness refuses a missing dist/extension.js):
 TACHYON_ENGINE_CHANNEL=dev npm run build
 
@@ -388,7 +388,7 @@ desktop EDH still interrupts an active session or an F5 dogfood already on scree
 
 | Mode | Command | When |
 |------|---------|------|
-| **Automated / agent** | `npm run dogfood -- dev-host -- headless` | Default for agents — Xvfb, no desktop focus |
+| **Automated / agent** | `scripts/dev-host/cli.sh headless` | Default for agents — Xvfb, no desktop focus |
 | **Human F5 (preferred GUI)** | `point` from your checkout, then F5 `Tachyon: Dev Host` | One dev-host per checkout (spec 448); no slots, no owner flag |
 | **Secondary desktop GUI** | `launch --gui` or `TACHYON_DEV_HOST_GUI=1 … launch` | Explicit only; prints warnings if F5 is armed or caller is an agent |
 
@@ -399,11 +399,11 @@ From the repo root (any clean-enough tree; prefer the SHA under test):
 
 ```bash
 # 1) Seed an isolated fixture (prints paths + the exact launch command)
-npm run dogfood -- dev-host -- seed
+scripts/dev-host/cli.sh seed
 
 # 2) Launch EDH only with explicit GUI consent (always rebuilds the dev channel before opening)
-npm run dogfood -- dev-host -- launch --gui
-# or: TACHYON_DEV_HOST_GUI=1 npm run dogfood -- dev-host -- launch
+scripts/dev-host/cli.sh launch --gui
+# or: TACHYON_DEV_HOST_GUI=1 scripts/dev-host/cli.sh launch
 ```
 
 
@@ -423,7 +423,7 @@ Cleanup:
 
 ```bash
 # Close the isolated EDH window first; a live recorded EDH makes cleanup fail closed.
-npm run dogfood -- dev-host -- clean
+scripts/dev-host/cli.sh clean
 ```
 
 Do not substitute a raw `rm -rf`: a closed desktop EDH intentionally leaves its persistent engine and legacy Bridge
@@ -440,7 +440,7 @@ terminate.
 
 1. Open EDH on the fixture workspace; wait until the Tachyon sidebar lists agents (e.g. `pilot`, `reviewer`).
 2. In the fixture only, break config with a **hard** validation error
-   (`npm run dogfood -- dev-host -- break` uses self-referential `subagents: [pilot]`).
+   (`scripts/dev-host/cli.sh break` uses self-referential `subagents: [pilot]`).
    Note: after t-099be8, a *dangling* name is only a warning — it will not arm fail-visible.
 
 3. In the **EDH** window: Command Palette → `Developer: Reload Window` (EDH only).
@@ -461,7 +461,7 @@ Open EDH, confirm sidebar loads, Bridge line present, `Tachyon: Doctor` runs wit
 ## SDD 370 headless pilot
 
 ```bash
-npm run dogfood -- runtime-launch-preflight
+node scripts/dogfood/run.mjs runtime-launch-preflight
 ```
 
 This exercises exact-model accept/reject, bounded catalog streaming, malformed/timeout/non-zero/oversized handling,
@@ -496,7 +496,7 @@ observed boundary; it does not assert an unmeasured mechanism for the different 
 
 ```bash
 # Optional: scaffold a fixture (intent focus = stopped OK; metrics = autostart loops)
-npm run dogfood -- dev-host -- fixture-new --slug my-feature --spec 393 --intent focus \
+scripts/dev-host/cli.sh fixture-new --slug my-feature --spec 393 --intent focus \
   --worktree /path/to/worktree
 # Force-add .tachyon seeds (gitignored): git add -f test/fixtures/my-feature-dogfood/.tachyon
 
@@ -505,13 +505,13 @@ npm run dogfood -- dev-host -- fixture-new --slug my-feature --spec 393 --intent
 # <checkout>/.tachyon/dev-host/. There is no slot to pick and no `active` pointer to set, so two
 # agents working in two worktrees cannot collide: isolation is structural, not a naming convention.
 cd /path/to/your/worktree
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --fixture my-feature \
   --spec 393 \
   --slug my-feature
 
-npm run dogfood -- dev-host -- point-status          # doctor for this checkout's dev-host
-npm run dogfood -- dev-host -- point-clear           # free this checkout's dev-host
+scripts/dev-host/cli.sh point-status          # doctor for this checkout's dev-host
+scripts/dev-host/cli.sh point-clear           # free this checkout's dev-host
 ```
 
 **Removed by spec 448, no deprecation window** — each fails immediately naming its replacement:
@@ -527,8 +527,8 @@ at all. `point` handles this without a new verb: point it at a fixture that **ca
 
 ```bash
 cd /path/to/your/worktree
-npm run dogfood -- dev-host -- point --fixture multiroot     # test/fixtures/multiroot/ → alpha + beta
-npm run dogfood -- dev-host -- point-status                  # reports: workspace mode: multi-root
+scripts/dev-host/cli.sh point --fixture multiroot     # test/fixtures/multiroot/ → alpha + beta
+scripts/dev-host/cli.sh point-status                  # reports: workspace mode: multi-root
 ```
 
 Then in Run and Debug pick **Tachyon: Dev Host (multi-root)** instead of *Tachyon: Dev Host*.
@@ -586,8 +586,8 @@ Free the dev-host **before** discarding the worktree. Do **not** leave a pointed
 | Step | Command / action |
 |------|------------------|
 | 1 | Close the EDH window for that feature (if open) |
-| 2 | `npm run dogfood -- dev-host -- point-clear` — from that checkout |
-| 3 | `npm run dogfood -- dev-host -- point-status` — confirm it is gone |
+| 2 | `scripts/dev-host/cli.sh point-clear` — from that checkout |
+| 3 | `scripts/dev-host/cli.sh point-status` — confirm it is gone |
 | 4 | Remove the worktree (registry / `git worktree remove` as your land flow requires) |
 
 **Order:** prefer **point-clear → then worktree remove**. If the path disappears first, `point-status`
@@ -626,9 +626,9 @@ For landed UI surfaces that need a glance without a full EDH window:
 
 ```bash
 npm run build
-npm run dogfood -- dev-host -- shortlist
-# or: npm run dogfood -- ui-shortlist
-# subset: npm run dogfood -- dev-host -- shortlist mermaid grok-activity
+scripts/dev-host/cli.sh shortlist
+# or: node scripts/dogfood/run.mjs ui-shortlist
+# subset: scripts/dev-host/cli.sh shortlist mermaid grok-activity
 ```
 
 | Scene | Task | Harness |

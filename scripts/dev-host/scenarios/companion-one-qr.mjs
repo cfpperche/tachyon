@@ -6,7 +6,7 @@
  * and Tailscale up on the host (`tailscale ip -4`) so pair uses the mesh URL.
  * The phone step rewrites openUrl to 127.0.0.1 for local Chromium (same host as EDH).
  *
- *   npm run dogfood -- dev-host -- point --worktree <wt> --fixture companion-track --spec 422 --slug companion-mobile-one-qr
+ *   scripts/dev-host/cli.sh point --worktree <wt> --fixture companion-track --spec 422 --slug companion-mobile-one-qr
  *   TACHYON_ENGINE_CHANNEL=dev npm run build --prefix <wt>
  *   node scripts/dev-host/headless-interactive.mjs --scenario scripts/dev-host/scenarios/companion-one-qr.mjs
  *

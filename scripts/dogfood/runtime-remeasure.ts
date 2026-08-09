@@ -5,7 +5,7 @@
  * the CLI on PATH and compares it to the measured constant. This command answers the other half:
  * does the recorded behaviour still hold on the CLI that is installed now.
  *
- * Run: `npm run dogfood -- runtime-remeasure`
+ * Run: `node scripts/dogfood/run.mjs runtime-remeasure`
  *
  * ## The four dimensions
  *

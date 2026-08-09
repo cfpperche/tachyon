@@ -13,17 +13,17 @@ the whole fleet and `PROVENANCE_EXEMPT` is empty. `ProbeModelProof.evidence` dis
 the model-cell tooltip. A new adapter `cleanup` hook is awaited by the runner on every exit path
 (clean, timeout, cancel, spawn failure, throwing `interpret`), and registering the abort listener
 before the now-async `buildInvocation` closes the cancellation window that widening it opened.
-Evidence: `npm run verify:full:quiet` (521 files, 5887 tests), `npm run dogfood -- probe-codex-model-proof`
+Evidence: `npm run verify:full:quiet` (521 files, 5887 tests), `node scripts/dogfood/run.mjs probe-codex-model-proof`
 (10/10, against the real codex-cli 0.145.0 — proven, isolation, teardown, concurrency, timeout,
-absent rollout), and `npm run dogfood -- probe-provenance-parity` (9/9).
+absent rollout), and `node scripts/dogfood/run.mjs probe-provenance-parity` (9/9).
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
 
 **Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- probe-codex-model-proof`
-**Dogfood:** `npm run dogfood -- probe-provenance-parity`
+**Dogfood:** `node scripts/dogfood/run.mjs probe-codex-model-proof`
+**Dogfood:** `node scripts/dogfood/run.mjs probe-provenance-parity`
 
 ## Intent
 

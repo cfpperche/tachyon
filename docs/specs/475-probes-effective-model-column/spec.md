@@ -7,7 +7,7 @@ _Created 2026-07-26._
 provenance, a single unambiguous model cell derived in `probeView` (proven / mismatch / unproven /
 reported / none), carried across the engine wire contract, and rendered between `runtime` and
 `archetype`. Visual QA found and fixed three readability regressions. Evidence:
-`npm run verify:full:quiet` (520 files, 5842 tests), `npm run dogfood -- probes-model-column` (7/7), and
+`npm run verify:full:quiet` (520 files, 5842 tests), `node scripts/dogfood/run.mjs probes-model-column` (7/7), and
 the wide/narrow screenshots under `evidence/`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
@@ -15,7 +15,7 @@ the wide/narrow screenshots under `evidence/`.
      placeholders, and missing dogfood proof or opt-out). -->
 
 **Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- probes-model-column`
+**Dogfood:** `node scripts/dogfood/run.mjs probes-model-column`
 
 ## Intent
 

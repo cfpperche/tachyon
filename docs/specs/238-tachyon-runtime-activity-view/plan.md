@@ -275,7 +275,7 @@ filter (`activityView.test.ts`). Suite **766** green; typecheck (both) + engine-
   retaining the full event array — only image events are kept (for replay); all other raw (incl. large tool
   outputs) is dropped after folding, bounding extension-side memory (addresses the codex perf note).
 - Tests: Read-strip (`claudeNormalizer.test.ts`), incremental-builder-matches-batch parity
-  (`activityView.test.ts`). Headless `activity:preview` re-confirms Read now shows content, not line numbers.
+  (`activityView.test.ts`). Headless `node scripts/activity-preview.mjs` re-confirms Read now shows content, not line numbers.
   Suite **773** green; typecheck (both) + engine-boundary + build green.
 
 ## Increment 13 — "working…" indicator, 2026-06-20

@@ -68,8 +68,8 @@ const [name, ...extraArgs] = process.argv.slice(2);
 if (extraArgs[0] === "--") extraArgs.shift();
 
 if (!name || name === "--help" || name === "-h") {
-  console.log("Usage: npm run dogfood -- <scenario> [args...]");
-  console.log("       npm run dogfood -- --list");
+  console.log("Usage: node scripts/dogfood/run.mjs <scenario> [args...]");
+  console.log("       node scripts/dogfood/run.mjs --list");
   process.exit(name ? 0 : 1);
 }
 if (name === "--list") {
@@ -77,7 +77,7 @@ if (name === "--list") {
   process.exit(0);
 }
 if (!scenarios.includes(name)) {
-  console.error(`Unknown dogfood scenario '${name}'. Run 'npm run dogfood -- --list'.`);
+  console.error(`Unknown dogfood scenario '${name}'. Run 'node scripts/dogfood/run.mjs --list'.`);
   process.exit(1);
 }
 
