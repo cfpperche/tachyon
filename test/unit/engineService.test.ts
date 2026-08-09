@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import net from "node:net";
@@ -39,11 +39,14 @@ const children: ChildProcessWithoutNullStreams[] = [];
  * t-eccb00: environment must become a named skip, not an assertion failure that looks like a
  * regression. Classify BEFORE the body runs; never rewrite the report afterwards.
  */
-skipTestsWithoutOptionalRuntimeAuth({
-  codex: [
-    "owns a real Workspace and direct Bridge across shell replacement and no-shell time",
-  ],
-});
+/**
+ * t-a12966 — the codex credential these cases need is SUBSTRATE: the harness materializer links a
+ * credential file so the spawn can proceed, and nothing below launches a real runtime. Listing the
+ * titles here for `skipTestsWithoutOptionalRuntimeAuth` made the result depend on whether the HOST was
+ * logged in — measured green on the maintainer's checkout and pending in every agent worktree with a
+ * private, credential-free config home. Injected through the door production reads instead.
+ */
+useDisposableRuntimeAuth(["codex"]);
 
 /** t-c289cf — real tmux ops against the daemon's private TMUX_TMPDIR (never production -L tachyon). */
 function tmuxExecutorForEnv(env: NodeJS.ProcessEnv): (args: string[]) => Promise<ExecResult> {

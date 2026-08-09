@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeEach } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 export type OptionalRuntime = "claude" | "codex" | "opencode";
 
@@ -18,6 +18,49 @@ export function optionalRuntimeCredentialAvailable(runtime: OptionalRuntime): bo
   } catch {
     return false;
   }
+}
+
+/**
+ * t-a12966 — the OTHER verdict for the same dependency: inject it.
+ *
+ * `skipTestsWithoutOptionalRuntimeAuth` below is right when the machine is what the test measures.
+ * It is the wrong answer when the credential is only substrate — a file the harness materializer
+ * symlinks so a spawn can proceed — because then the test's result depends on whether the HOST is
+ * logged in, and the same suite covers 66 more tests on the maintainer's checkout than in an agent's
+ * worktree. Measured 2026-08-09: with a fixture credential in place, every claude- and codex-listed
+ * test in `workspaceHeadless`, `continuityWiring`, `humanDraftHoldsNotice` and their siblings ran and
+ * passed; only the opencode ones stayed red, and those are a different dependency (see below).
+ *
+ * The state goes in through the door production reads it from — `CLAUDE_CONFIG_DIR` / `CODEX_HOME`,
+ * resolved by `realConfigHome()` / `defaultRealCodexHome()` when the Workspace builds its
+ * `HarnessManager` — pointed at a directory this helper owns and deletes.
+ *
+ * `opencode` is deliberately NOT offered. Its launch preflight EXECUTES the runtime
+ * (`opencode providers list`) to answer "is this authenticated?", so a credential file proves
+ * nothing and the binary would still have to be installed. Those stay declared-and-skipped.
+ */
+export function useDisposableRuntimeAuth(runtimes: readonly Exclude<OptionalRuntime, "opencode">[]): void {
+  const homes: string[] = [];
+  beforeEach(() => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-fixture-auth-"));
+    homes.push(base);
+    for (const runtime of runtimes) {
+      const home = path.join(base, runtime);
+      fs.mkdirSync(home, { recursive: true });
+      if (runtime === "claude") {
+        fs.writeFileSync(path.join(home, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"fixture-only"}}\n', "utf8");
+        fs.writeFileSync(path.join(home, ".claude.json"), `${JSON.stringify({ hasCompletedOnboarding: true })}\n`, "utf8");
+        vi.stubEnv("CLAUDE_CONFIG_DIR", home);
+      } else {
+        fs.writeFileSync(path.join(home, "auth.json"), '{"OPENAI_API_KEY":"fixture-only"}\n', "utf8");
+        vi.stubEnv("CODEX_HOME", home);
+      }
+    }
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    for (const home of homes.splice(0)) fs.rmSync(home, { recursive: true, force: true });
+  });
 }
 
 /**

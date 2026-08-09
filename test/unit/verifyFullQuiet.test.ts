@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it } from "vitest";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
-import { FAILURE_LIMITS, STATIC_GATES, describeChildExit, formatFailure, formatSuccess, summarizeReport, summarizeUnavailableCoverage } from "../../scripts/verify-full.mjs";
+import { FAILURE_LIMITS, STATIC_GATES, describeChildExit, formatFailure, formatSuccess, summarizeReport, summarizeUnavailableCoverage, summarizeUndeclaredSkips } from "../../scripts/verify-full.mjs";
 // @ts-expect-error -- same: the reporter the gate hands to Vitest is plain ESM the gate owns.
 import { UNHANDLED_OUTPUT_ENV } from "../../scripts/vitest-unhandled-reporter.mjs";
 
@@ -94,6 +94,45 @@ describe("quiet full verification", () => {
     );
     expect(report.testResults.map((file) => file.assertionResults.map((test) => test.status)))
       .toEqual([["skipped", "skipped", "skipped", "skipped"]]);
+  });
+
+  it("reports a declared machine dependency the same way, and never rewrites the result (t-a12966)", () => {
+    const report = {
+      ...passingReport,
+      testResults: [{ status: "passed", name: "/repo/test/unit/dogfood.test.ts", assertionResults: [
+        { status: "skipped", meta: { machineDependencyUnavailable: "codex CLI not installed" } },
+        { status: "skipped", meta: { machineDependencyUnavailable: "codex CLI not installed" } },
+        { status: "skipped", meta: { optionalRuntimeAuthUnavailable: "claude" } },
+      ] }],
+    };
+    expect(summarizeUnavailableCoverage(report)).toEqual([
+      { reason: "codex CLI not installed", count: 2 },
+      { reason: "optional claude credential unavailable", count: 1 },
+    ]);
+    expect(summarizeUndeclaredSkips(report)).toEqual([]);
+    expect(report.testResults[0]!.assertionResults.map((test) => test.status))
+      .toEqual(["skipped", "skipped", "skipped"]);
+  });
+
+  it("names the FILES whose skips declared nothing — a skip that says nothing is coverage nobody chose to drop", () => {
+    const report = {
+      ...passingReport,
+      testResults: [
+        { status: "passed", name: "/repo/test/unit/budget.test.ts", assertionResults: [
+          { status: "skipped", meta: {} },
+          { status: "skipped" },
+          { status: "passed", meta: {} },
+        ] },
+        { status: "passed", name: "/repo/test/unit/live.test.ts", assertionResults: [
+          { status: "skipped", meta: { machineDependencyUnavailable: "tmux not installed" } },
+        ] },
+      ],
+    };
+    expect(summarizeUndeclaredSkips(report)).toEqual([{ file: "/repo/test/unit/budget.test.ts", count: 2 }]);
+    const output = formatSuccess(report);
+    expect(output).toContain("Skipped with NO declared reason (2 test(s) — coverage that did not run):");
+    expect(output).toContain("- 2: /repo/test/unit/budget.test.ts");
+    expect(output).not.toContain("live.test.ts");
   });
 
   it("bounds assertion count, each assertion, and total diagnostics", () => {

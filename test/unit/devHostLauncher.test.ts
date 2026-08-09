@@ -10,8 +10,16 @@ import { spawn, spawnSync } from "node:child_process";
 import { isWslRemoteCli, resolveEdhCode } from "../../scripts/dev-host/resolve-code.mjs";
 // @ts-expect-error -- static ESM import is intentional for this executable module test.
 import { fixtureEngineUnitName, stopFixtureBridge, stopFixtureEngine } from "../../scripts/dev-host/stop-bridge.mjs";
+import { requireMachineDependency } from "../helpers/machineDependency.js";
 
 const launcher = path.resolve("scripts/dev-host/cli.sh");
+
+/** The user-scope systemd manager the launcher's `clean` inspects; absent in a bare login/container. */
+function systemdUserManagerAvailable(): boolean {
+  const probe = spawnSync("systemctl", ["--user", "show-environment"], { encoding: "utf8", timeout: 10_000 });
+  return probe.error === undefined && probe.status === 0;
+}
+
 const temporaryRoots: string[] = [];
 
 function temporaryRoot(label: string): string {
@@ -318,54 +326,67 @@ describe("EDH fixture cleanup", () => {
     await expect(stopFixtureBridge(fixture)).rejects.toThrow(/descriptor is too large/);
   });
 
-  it("the shell cleanup stops the fixture-private tmux server before deleting the fixture", () => {
-    const root = temporaryRoot("edh-clean-tmux");
-    const base = path.join(root, "fixtures");
-    const env = {
-      ...process.env,
-      TACHYON_DEV_HOST_BASE: base,
-      TACHYON_DEV_HOST_ID: "tmux-cleanup",
-    };
-    const seeded = spawnSync("bash", [launcher, "seed"], { cwd: path.resolve("."), encoding: "utf8", env });
-    expect(seeded.status, seeded.stderr || seeded.stdout).toBe(0);
-    const tmuxDir = path.join(base, "tmux-cleanup/.tmux");
-    const started = spawnSync("tmux", ["-L", "tachyon", "new-session", "-d", "-s", "fixture-cleanup"], {
-      encoding: "utf8",
-      env: { ...env, TMUX_TMPDIR: tmuxDir },
-    });
-    expect(started.status, started.stderr || started.stdout).toBe(0);
+  /**
+   * t-a12966 — these two drive the REAL launcher shell, whose `clean` asks the user systemd manager
+   * about the fixture engine unit. The eight cases above inject `runSystemctl` and need nothing from
+   * the host; these two cannot, because what they measure IS the shell doing it for real. Measured in
+   * a session with no user bus (`env -i`, no `XDG_RUNTIME_DIR`): both went red naming a D-Bus address,
+   * which says nothing about dev-host cleanup. So the dependency is declared and the skip carries it.
+   */
+  describe("through the real launcher shell", () => {
+    requireMachineDependency(() => (systemdUserManagerAvailable()
+      ? undefined
+      : "no systemd user manager on this session (the launcher's clean stops the fixture engine unit)"));
 
-    const cleaned = spawnSync("bash", [launcher, "clean"], { cwd: path.resolve("."), encoding: "utf8", env });
-    expect(cleaned.status, cleaned.stderr || cleaned.stdout).toBe(0);
-    expect(fs.existsSync(path.join(base, "tmux-cleanup"))).toBe(false);
-    const probe = spawnSync("tmux", ["-L", "tachyon", "has-session", "-t", "fixture-cleanup"], {
-      encoding: "utf8",
-      env: { ...env, TMUX_TMPDIR: tmuxDir },
-    });
-    expect(probe.status).not.toBe(0);
-  });
+    it("the shell cleanup stops the fixture-private tmux server before deleting the fixture", () => {
+      const root = temporaryRoot("edh-clean-tmux");
+      const base = path.join(root, "fixtures");
+      const env = {
+        ...process.env,
+        TACHYON_DEV_HOST_BASE: base,
+        TACHYON_DEV_HOST_ID: "tmux-cleanup",
+      };
+      const seeded = spawnSync("bash", [launcher, "seed"], { cwd: path.resolve("."), encoding: "utf8", env });
+      expect(seeded.status, seeded.stderr || seeded.stdout).toBe(0);
+      const tmuxDir = path.join(base, "tmux-cleanup/.tmux");
+      const started = spawnSync("tmux", ["-L", "tachyon", "new-session", "-d", "-s", "fixture-cleanup"], {
+        encoding: "utf8",
+        env: { ...env, TMUX_TMPDIR: tmuxDir },
+      });
+      expect(started.status, started.stderr || started.stdout).toBe(0);
 
-  it("the shell cleanup removes a stale fixture-private tmux socket after proving no server responds", () => {
-    const root = temporaryRoot("edh-clean-stale-tmux");
-    const base = path.join(root, "fixtures");
-    const id = "stale-tmux-cleanup";
-    const env = {
-      ...process.env,
-      TACHYON_DEV_HOST_BASE: base,
-      TACHYON_DEV_HOST_ID: id,
-    };
-    const seeded = spawnSync("bash", [launcher, "seed"], { cwd: path.resolve("."), encoding: "utf8", env });
-    expect(seeded.status, seeded.stderr || seeded.stdout).toBe(0);
-    const socketDir = path.join(base, id, ".tmux", `tmux-${process.getuid?.() ?? 0}`);
-    const socketPath = path.join(socketDir, "tachyon");
-    fs.mkdirSync(socketDir, { recursive: true });
-    const stale = spawnSync("python3", ["-c", "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.close()", socketPath], {
-      encoding: "utf8",
+      const cleaned = spawnSync("bash", [launcher, "clean"], { cwd: path.resolve("."), encoding: "utf8", env });
+      expect(cleaned.status, cleaned.stderr || cleaned.stdout).toBe(0);
+      expect(fs.existsSync(path.join(base, "tmux-cleanup"))).toBe(false);
+      const probe = spawnSync("tmux", ["-L", "tachyon", "has-session", "-t", "fixture-cleanup"], {
+        encoding: "utf8",
+        env: { ...env, TMUX_TMPDIR: tmuxDir },
+      });
+      expect(probe.status).not.toBe(0);
     });
-    expect(stale.status, stale.stderr || stale.stdout).toBe(0);
 
-    const cleaned = spawnSync("bash", [launcher, "clean"], { cwd: path.resolve("."), encoding: "utf8", env });
-    expect(cleaned.status, cleaned.stderr || cleaned.stdout).toBe(0);
-    expect(fs.existsSync(path.join(base, id))).toBe(false);
+    it("the shell cleanup removes a stale fixture-private tmux socket after proving no server responds", () => {
+      const root = temporaryRoot("edh-clean-stale-tmux");
+      const base = path.join(root, "fixtures");
+      const id = "stale-tmux-cleanup";
+      const env = {
+        ...process.env,
+        TACHYON_DEV_HOST_BASE: base,
+        TACHYON_DEV_HOST_ID: id,
+      };
+      const seeded = spawnSync("bash", [launcher, "seed"], { cwd: path.resolve("."), encoding: "utf8", env });
+      expect(seeded.status, seeded.stderr || seeded.stdout).toBe(0);
+      const socketDir = path.join(base, id, ".tmux", `tmux-${process.getuid?.() ?? 0}`);
+      const socketPath = path.join(socketDir, "tachyon");
+      fs.mkdirSync(socketDir, { recursive: true });
+      const stale = spawnSync("python3", ["-c", "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); s.close()", socketPath], {
+        encoding: "utf8",
+      });
+      expect(stale.status, stale.stderr || stale.stdout).toBe(0);
+
+      const cleaned = spawnSync("bash", [launcher, "clean"], { cwd: path.resolve("."), encoding: "utf8", env });
+      expect(cleaned.status, cleaned.stderr || cleaned.stdout).toBe(0);
+      expect(fs.existsSync(path.join(base, id))).toBe(false);
+    });
   });
 });

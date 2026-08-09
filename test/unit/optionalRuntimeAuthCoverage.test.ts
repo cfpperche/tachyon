@@ -100,6 +100,21 @@ function skipMaps(source: string): Array<{ runtime: string; titles: string[] }> 
   return out;
 }
 
+/**
+ * t-a12966 — a file answers for a runtime in one of TWO ways, and the guard accepts either.
+ *
+ * t-70fda0 wrote this check when "declare and skip" was the only answer available, so it demanded a
+ * `codex:` list by name. Injecting a disposable credential home is the BETTER answer wherever the
+ * credential is only substrate — it makes the test run everywhere instead of running only where the
+ * host is logged in — and a guard that rejected it would push the classification back to the worse
+ * option. What must never happen is neither, which is the hole this still catches.
+ */
+function classifiedFor(source: string, runtime: string): boolean {
+  if (new RegExp(`useDisposableRuntimeAuth\\(\\[[^\\]]*"${runtime}"`).test(source)) return true;
+  const map = skipMaps(source).find((entry) => entry.runtime === runtime);
+  return Boolean(map && map.titles.length > 0);
+}
+
 describe("optional runtime auth classification (t-70fda0)", () => {
   it("every listed skip title exists as it(\"…\") in the same file — renames cannot leave a silent hole", () => {
     // Only call sites: a mention inside this guard's own source is not a classification map.
@@ -120,18 +135,13 @@ describe("optional runtime auth classification (t-70fda0)", () => {
     }
   });
 
-  it("measured real-harness codex call sites declare a codex skip list (t-70fda0 scan)", () => {
+  it("measured real-harness codex call sites are CLASSIFIED — injected or declared (t-70fda0, t-a12966)", () => {
     for (const name of REAL_HARNESS_CODEX_FILES) {
       const source = fs.readFileSync(path.join(UNIT, name), "utf8");
       expect(
-        source.includes("skipTestsWithoutOptionalRuntimeAuth"),
-        `test/unit/${name} materializes real codex harness but does not call skipTestsWithoutOptionalRuntimeAuth`,
-      ).toBe(true);
-      const maps = skipMaps(source);
-      const codex = maps.find((m) => m.runtime === "codex");
-      expect(
-        codex && codex.titles.length > 0,
-        `test/unit/${name} must declare skipTestsWithoutOptionalRuntimeAuth({ codex: […] }) — empty HOME made these hard red`,
+        classifiedFor(source, "codex"),
+        `test/unit/${name} materializes real codex harness with no classification — inject it with `
+          + "useDisposableRuntimeAuth([\"codex\"]) or declare it with skipTestsWithoutOptionalRuntimeAuth({ codex: […] })",
       ).toBe(true);
     }
   });
@@ -163,5 +173,11 @@ describe("optional runtime auth classification (t-70fda0)", () => {
     `;
     expect(forgotCodex.includes("skipTestsWithoutOptionalRuntimeAuth")).toBe(false);
     expect(skipMaps(forgotCodex).some((m) => m.runtime === "codex")).toBe(false);
+    expect(classifiedFor(forgotCodex, "codex")).toBe(false);
+
+    // …and the two shapes that DO answer are both accepted, so the guard cannot quietly forbid one.
+    expect(classifiedFor('useDisposableRuntimeAuth(["claude", "codex"]);', "codex")).toBe(true);
+    expect(classifiedFor('useDisposableRuntimeAuth(["claude"]);', "codex")).toBe(false);
+    expect(classifiedFor(renamed, "codex")).toBe(true);
   });
 });

@@ -8,6 +8,7 @@ import { createCodexAdapter } from "../../src/probe/adapters/codex.js";
 import { createGrokAdapter } from "../../src/probe/adapters/grok.js";
 import { ProbeService } from "../../src/probe/ProbeService.js";
 import { ProbeStore } from "../../src/probe/ProbeStore.js";
+import { requireMachineDependency } from "../helpers/machineDependency.js";
 
 /**
  * Spec 257 (D5) — live capability smoke against the REAL claude/codex/grok CLIs, gated on binary
@@ -33,7 +34,16 @@ const codexOk = binaryAvailable("codex");
 const grokOk = binaryAvailable("grok");
 const liveRun = process.env.PROBE_LIVE_SMOKE === "1";
 
-describe.skipIf(!claudeOk)("probe live smoke — real claude capability (D5)", () => {
+/**
+ * t-a12966 — the same gating, with the reason attached to the skipped result.
+ *
+ * `describe.skipIf` reports a pending test and nothing else, so a machine with no runtimes installed
+ * produced six silently absent live probes and a gate that said "6 skipped" with no way to tell what
+ * had stopped running. The binaries stay REQUIRED rather than doubled — the point of this file is
+ * that `detectCapability()` invokes the actual CLI.
+ */
+describe("probe live smoke — real claude capability (D5)", () => {
+  requireMachineDependency(() => (claudeOk ? undefined : "claude CLI not installed (live capability smoke drives the real binary)"));
   it("detectCapability invokes the real claude CLI and records a version", async () => {
     const cap = await createClaudeAdapter().detectCapability();
     expect(cap.available).toBe(true);
@@ -41,7 +51,8 @@ describe.skipIf(!claudeOk)("probe live smoke — real claude capability (D5)", (
   });
 });
 
-describe.skipIf(!codexOk)("probe live smoke — real codex capability (D5)", () => {
+describe("probe live smoke — real codex capability (D5)", () => {
+  requireMachineDependency(() => (codexOk ? undefined : "codex CLI not installed (live capability smoke drives the real binary)"));
   it("detectCapability invokes the real codex CLI and records a version", async () => {
     const cap = await createCodexAdapter().detectCapability();
     expect(cap.available).toBe(true);
@@ -49,7 +60,8 @@ describe.skipIf(!codexOk)("probe live smoke — real codex capability (D5)", () 
   });
 });
 
-describe.skipIf(!grokOk)("probe live smoke — real grok capability (D5 / t-7426de)", () => {
+describe("probe live smoke — real grok capability (D5 / t-7426de)", () => {
+  requireMachineDependency(() => (grokOk ? undefined : "grok CLI not installed (live capability smoke drives the real binary)"));
   it("detectCapability invokes the real grok CLI and records a version", async () => {
     const cap = await createGrokAdapter().detectCapability();
     expect(cap.available).toBe(true);
@@ -63,7 +75,8 @@ afterAll(async () => {
   for (const d of tmpDirs) await fs.rm(d, { recursive: true, force: true }).catch(() => undefined);
 });
 
-describe.skipIf(!liveRun || !grokOk)("probe live smoke — real grok end-to-end (opt-in, t-7426de)", () => {
+describe("probe live smoke — real grok end-to-end (opt-in, t-7426de)", () => {
+  requireMachineDependency(() => (liveRun ? (grokOk ? undefined : "grok CLI not installed (live end-to-end probe)") : "PROBE_LIVE_SMOKE=1 not set (a real model call costs money)"));
   it(
     "a real freeform probe via ProbeService returns a terminal envelope with a captured message",
     async () => {
@@ -91,7 +104,8 @@ describe.skipIf(!liveRun || !grokOk)("probe live smoke — real grok end-to-end 
   );
 });
 
-describe.skipIf(!liveRun || !codexOk)("probe live smoke — real codex end-to-end (opt-in)", () => {
+describe("probe live smoke — real codex end-to-end (opt-in)", () => {
+  requireMachineDependency(() => (liveRun ? (codexOk ? undefined : "codex CLI not installed (live end-to-end probe)") : "PROBE_LIVE_SMOKE=1 not set (a real model call costs money)"));
   it(
     "a real freeform probe returns a terminal envelope with a captured message",
     async () => {

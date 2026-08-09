@@ -5,6 +5,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { HarnessManager } from "../../src/harness/HarnessManager.js";
 import { adapterForRuntime } from "../../src/resume/adapters.js";
+import { requireMachineDependency } from "../helpers/machineDependency.js";
 
 /**
  * t-eaf963 — this real-CLI dogfood lives in its own later Vitest project group.
@@ -19,6 +20,23 @@ import { adapterForRuntime } from "../../src/resume/adapters.js";
  * still drives the installed CLI through its public executable and still proves both model-visible
  * resources; only competition with the unit pool is removed.
  */
+/**
+ * t-a12966 — the dependency this dogfood has always had, said out loud.
+ *
+ * `execFileSync("codex", …)` on a machine without codex installed throws ENOENT, and the test went
+ * red naming a spawn error rather than the missing CLI. It must NOT become a double: what it proves
+ * is that the real codex reads the harness we materialize, and a stubbed codex proves nothing about
+ * that. So it declares the binary and skips with the reason when it is absent.
+ */
+requireMachineDependency(() => {
+  try {
+    execFileSync("codex", ["--version"], { stdio: "ignore", timeout: 10_000 });
+    return undefined;
+  } catch {
+    return "codex CLI not installed (spec 311 dogfood drives the real binary)";
+  }
+});
+
 it("spec 311 dogfood: local codex prompt-input sees harness AGENTS.md and CODEX_HOME skills", () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-codex-dogfood-"));
   try {

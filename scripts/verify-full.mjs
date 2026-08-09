@@ -290,20 +290,60 @@ export function summarizeReport(report) {
   return { files, passedFiles: files - failedFiles, failedFiles, total, passed, failed, skipped, todo };
 }
 
+/**
+ * The reason a skipped test declared, or undefined when it declared none.
+ *
+ * t-eccb00 minted the credential channel; t-a12966 added the general one, because a missing
+ * credential is one machine dependency among several (an installed CLI, a live tmux server, the
+ * user's systemd session) and they all have to answer the same question: WHAT stopped running.
+ */
+function declaredSkipReason(assertion) {
+  const runtime = assertion?.meta?.optionalRuntimeAuthUnavailable;
+  if (typeof runtime === "string") return `optional ${runtime} credential unavailable`;
+  const declared = assertion?.meta?.machineDependencyUnavailable;
+  return typeof declared === "string" && declared.length > 0 ? declared : undefined;
+}
+
 /** t-eccb00: summarize native Vitest skips; never rewrite statuses or the process exit code. */
 export function summarizeUnavailableCoverage(report) {
   const counts = new Map();
   for (const file of Array.isArray(report?.testResults) ? report.testResults : []) {
     for (const assertion of Array.isArray(file?.assertionResults) ? file.assertionResults : []) {
       if (assertion?.status !== "skipped") continue;
-      const runtime = assertion?.meta?.optionalRuntimeAuthUnavailable;
-      if (typeof runtime !== "string") continue;
-      const reason = `optional ${runtime} credential unavailable`;
+      const reason = declaredSkipReason(assertion);
+      if (!reason) continue;
       counts.set(reason, (counts.get(reason) ?? 0) + 1);
     }
   }
   return [...counts].map(([reason, count]) => ({ reason, count }));
 }
+
+/**
+ * t-a12966 — skips that declared NOTHING, counted by file.
+ *
+ * A skip is a piece of coverage that did not run, and the gate's one-word "N skipped" cannot tell a
+ * deliberate live probe from a suite that quietly stopped being measured. Measured while writing
+ * this: `webviewAppBudget.test.ts` gated three SDD 485 budget guards on `dist/webview/cockpit.js`,
+ * a file `t-5a0c1c` had deleted — so they had been skipping in every gate, on a fully built tree,
+ * saying nothing. Naming the FILE is enough to find that; the reason itself belongs on the skip,
+ * which is what `test/helpers/machineDependency.ts` is for.
+ *
+ * Advisory only: it counts what the report already says and can never turn a green red.
+ */
+export function summarizeUndeclaredSkips(report) {
+  const counts = new Map();
+  for (const file of Array.isArray(report?.testResults) ? report.testResults : []) {
+    for (const assertion of Array.isArray(file?.assertionResults) ? file.assertionResults : []) {
+      if (assertion?.status !== "skipped" || declaredSkipReason(assertion)) continue;
+      const name = String(file?.name ?? "unknown file").replace(`${process.cwd()}/`, "");
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  }
+  return [...counts].map(([file, count]) => ({ file, count })).sort((a, b) => b.count - a.count);
+}
+
+/** How many undeclared-skip files the summary names before it says "and N more". */
+const UNDECLARED_SKIP_FILES_SHOWN = 10;
 
 export function formatSuccess(report) {
   const count = summarizeReport(report);
@@ -320,6 +360,14 @@ export function formatSuccess(report) {
   if (unavailable.length) {
     lines.push("Coverage unavailable (native test skips):");
     for (const item of unavailable) lines.push(`- ${item.count}: ${item.reason}`);
+  }
+  const undeclared = summarizeUndeclaredSkips(report);
+  if (undeclared.length) {
+    const total = undeclared.reduce((sum, item) => sum + item.count, 0);
+    lines.push(`Skipped with NO declared reason (${total} test(s) — coverage that did not run):`);
+    for (const item of undeclared.slice(0, UNDECLARED_SKIP_FILES_SHOWN)) lines.push(`- ${item.count}: ${item.file}`);
+    const rest = undeclared.length - UNDECLARED_SKIP_FILES_SHOWN;
+    if (rest > 0) lines.push(`- and ${rest} more file(s)`);
   }
   return lines.join("\n");
 }
