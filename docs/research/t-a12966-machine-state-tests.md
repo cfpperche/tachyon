@@ -46,6 +46,27 @@ Medições:
 | LAB B, depois | **0 falhas, 8118 tests em 715 arquivos, 41 pulados — 0 deles sem motivo declarado** (eram 98 pulados, dos quais 8 mudos) |
 | `test/browser` LAB B | 154 passaram, 1 falha = flake de contenção conhecido (§6) |
 
+O critério de pronto foi PROVADO, não afirmado: `npm run verify:full:quiet` no LAB B, sobre a árvore
+entregue (já com o `main` integrado), sem nenhum estado preparado à mão —
+
+```
+$ env -u CLAUDE_CONFIG_DIR HOME=$(mktemp -d) npm run verify:full:quiet
+verify:full:quiet passed
+Files: 716 passed (716)
+Tests: 8085 passed | 41 skipped (8126)
+Coverage unavailable (native test skips):
+- 1: no grok credential at <HOME>/.grok/auth.json (recover with `grok login`)
+- 36: optional opencode credential unavailable
+- 4: PROBE_LIVE_SMOKE=1 not set (a real model call costs money)
+155 browser tests (2 changes under 22 browser-suite roots)
+```
+
+Três coisas para ler aí: nenhuma linha `Skipped with NO declared reason` (§5) — todo pulo diz o que
+faltou; a suíte de browser rodou nessa mesma execução, verde, porque o merge do `main` tocou
+`src/webview/`; e os 41 pulos são só as três dependências que uma fixture não consegue fornecer.
+(O total sobe de 8118 para 8126 e de 715 para 716 arquivos por causa do `main` integrado ao final —
+a varredura por classe acima foi medida antes desse merge.)
+
 ## 3. A reprodução exata do caso que abriu a task
 
 O agente `adescan` recebeu quatro vermelhos em `crashRestartMemory.test.ts` tendo escrito só markdown.
