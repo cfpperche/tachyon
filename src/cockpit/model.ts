@@ -42,9 +42,6 @@ export type CockpitSectionId =
   // route.ts) opened from the sidebar's `handoff · N` entry, with its breadcrumb back to Overview.
   // It never was a dashboard tab's worth of navigation — one document per workspace.
   | "worktrees"
-  // SDD 480 Phase 4 — the Execution Graph. Read-only by construction: the section's model is a
-  // projection of the append-only ledger, and the projection cannot describe a destructive action.
-  | "execution-graph"
   | "runtime"
   | "runtime-config"
   | "tmux"
@@ -65,8 +62,7 @@ export type CockpitSectionId =
  * not move at all. D2 — `plugins`, the third, by exactly that edit and no other. D3 — `runtime`
  * (Runtime Ops), the fourth. D4 — `inbox` (the Human Inbox), the fifth, and the
  * first whose departure also takes a SUBROUTE with it: `inbox-item` is rendered inside that app now, so
- * both route kinds redirect (see `navigate()` in Cockpit.ts). D9 — `execution-graph`, the ninth:
- * it remains decodable but Control no longer renders it. D10 — `settings`, the tenth, likewise remains
+ * both route kinds redirect (see `navigate()` in Cockpit.ts). D10 — `settings` likewise remains
  * decodable solely so old state and deep links can redirect to its standalone app.
  */
 export const COCKPIT_SECTION_ORDER: CockpitSectionId[] = [
@@ -85,7 +81,6 @@ export const COCKPIT_SECTION_IDS: CockpitSectionId[] = [
   "overview",
   "approvals",
   "engine",
-  "execution-graph",
   "fleet",
   "inbox",
   "mission",
@@ -287,13 +282,6 @@ export interface CockpitWorkspaceBundle {
 
 export interface CockpitModel {
   checkedAt: string;
-  /**
-   * SDD 480 Phase 4 — the Execution Graph view-model for the `execution-graph` section.
-   *
-   * Optional: a host that does not serve the ledger simply omits it and the section renders its
-   * `no-telemetry` state, which is the honest answer rather than an empty diagram.
-   */
-  executionGraph?: import("./executionGraphVm.js").ExecutionGraphVm;
   /** Which NAV TAB reads as active (a subroute's parent section, e.g. task-detail -> "mission"). */
   section: CockpitSectionId;
   /**

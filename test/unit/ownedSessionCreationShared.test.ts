@@ -11,9 +11,7 @@ import path from "node:path";
  * survives in one caller and rots in the other. A behavioural test cannot see a second `newSession`
  * appearing; a reader six months from now cannot either. This can.
  *
- * The ordering being protected: the minted execution env is merged LAST, after agent-declared and
- * bridge env. Everywhere else the agent's own env wins. Here it must not, because a forgeable
- * execution id lets a pane claim an attribution it was never given.
+ * The ordering being protected is the post-cut attestation applied by the shared door.
  */
 const SOURCE = fs.readFileSync(
   path.resolve(__dirname, "../../src/agents/AgentManager.ts"),
@@ -70,17 +68,12 @@ describe("owned session creation is shared (SDD 482 phase 1)", () => {
     expect(body).toMatch(/this\.createOwnedSession\(/);
   });
 
-  it("the minted execution env and the cut attestation are merged last, in one place", () => {
+  it("the cut attestation is applied in the shared door", () => {
     const body = methodBody("private async createOwnedSession(");
     // Spread order is the whole invariant: caller env FIRST, then the things a caller must not be
     // able to forge or clear. t-fab832 added the post-cut attestation to that tail — same reason,
     // same position, and this assertion pins the full order rather than being relaxed to fit it.
-    expect(body).toMatch(
-      /env:\s*withPostCutAttestation\(\{\s*\.\.\.input\.env,\s*\.\.\.input\.minted\.env,?\s*\}\)/,
-    );
-    // And no caller may re-merge minted env itself, which would reintroduce the drift.
-    expect(SOURCE).not.toMatch(/\.\.\.spawnBridge\.env,\s*\.\.\.minted\.env/);
-    expect(SOURCE).not.toMatch(/\.\.\.forkBridge\.env,\s*\.\.\.forkMinted\.env/);
+    expect(body).toMatch(/env:\s*withPostCutAttestation\(input\.env\)/);
   });
 
   /**

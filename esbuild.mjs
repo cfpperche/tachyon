@@ -305,7 +305,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "engine", "worktrees", "execution-graph", "settings", "overview", "activity", "probes"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "engine", "worktrees", "settings", "overview", "activity", "probes"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `src/webview/${view}/main.tsx`])),
@@ -510,7 +510,6 @@ copyFileSync("src/webview/board/board.css", "dist/webview/board.css"); // spec 3
 copyFileSync("src/webview/task-detail/task-detail.css", "dist/webview/task-detail.css"); // spec 335 — Task Detail styles (shared by the webview + the dev preview harness)
 copyFileSync("src/webview/runtime-ops/runtime-ops.css", "dist/webview/runtime-ops.css"); // spec 367 — Runtime Ops bottom-panel styles
 copyFileSync("src/webview/runtime-config/runtime-config.css", "dist/webview/runtime-config.css"); // SDD 485 D8 — standalone Runtime Config styles
-copyFileSync("src/webview/execution-graph/execution-graph.css", "dist/webview/execution-graph.css"); // SDD 485 D9
 copyFileSync("src/webview/settings/settings.css", "dist/webview/settings.css"); // SDD 485 D10
 copyFileSync("src/webview/overview/overview.css", "dist/webview/overview.css"); // SDD 485 D11
 copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // spec 278 — plugins styles (shared by the webview + the dev preview harness)

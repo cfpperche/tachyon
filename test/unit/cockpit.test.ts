@@ -5,7 +5,6 @@ describe("cockpit model", () => {
   it("orders sections by ops frequency (no soon slots)", () => {
     expect(COCKPIT_SECTION_ORDER).not.toContain("overview");
     expect(COCKPIT_SECTION_ORDER).not.toContain("settings");
-    expect(COCKPIT_SECTION_ORDER).not.toContain("execution-graph");
     expect(COCKPIT_SECTION_ORDER).not.toContain("engine");
     // SDD 485 D4 — the Human Inbox is a standalone `dashboard` app: still a CockpitSectionId (so a
     // persisted or deep-linked `section:inbox` decodes and can be redirected) and still a launcher tile,

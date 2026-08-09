@@ -208,9 +208,6 @@ export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
   // t-5f2b5b — SDD 485 D7's Fleet app is GONE (owner decision, 2026-08-07: the sidebar Agents tab is the
   // only fleet). Its `tachyonFleet` viewType lives on only in extension.ts's dispose-only serializer loop,
   // which is where a retired id belongs — not here, where a row means "this surface still creates a panel".
-  // SDD 485 D9 — buildExecutionGraphSectionVm(deps, wsHash) accepts one project. New id: this
-  // surface was born in Control, so there is no retired standalone identity or persisted shape.
-  { view: "execution-graph", viewId: "tachyonExecutionGraph", section: "execution-graph", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },
   // SDD 485 D10 — companion and every mutation accept one wsHash. Settings was born in Control,
   // so there is no retired standalone id or persisted shape to revive.
   { view: "settings", viewId: "tachyonSettings", section: "settings", host: "section", cardinality: "dashboard", eagerBudgetBytes: EAGER_BUDGET_BYTES },

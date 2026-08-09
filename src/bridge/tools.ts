@@ -19,7 +19,6 @@ export {
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { BridgeDeps } from "./tools/shared.js";
-import { instrumentBridge } from "./tools/instrumentation.js";
 import { registerWorktreeTools } from "./tools/worktrees.js";
 import { registerRuntimeSecurityTools } from "./tools/runtime-security.js";
 import { registerHostActionTools } from "./tools/host-actions.js";
@@ -47,12 +46,9 @@ import { registerProbeTools } from "./tools/fleet-probes.js";
  * catalog (names, descriptions, schemas, order) stays byte-identical for inventory comparison.
  */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
-  const instrumented = instrumentBridge(mcp, deps);
-  mcp = instrumented.mcp;
-  const hooks = { emitExecution: instrumented.emitExecution, executionCallerId: instrumented.executionCallerId };
   registerWorktreeTools(mcp, deps);
   registerRuntimeSecurityTools(mcp, deps);
-  registerHostActionTools(mcp, deps, hooks);
+  registerHostActionTools(mcp, deps);
   registerFleetTools(mcp, deps);
   registerUserBrowserTools(mcp, deps);
   registerIdeBrowserTools(mcp, deps);
@@ -65,7 +61,7 @@ export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
   registerValidationTools(mcp, deps);
   registerContinuityTools(mcp, deps);
   registerHandoffTools(mcp, deps);
-  registerCommandTools(mcp, deps, hooks);
+  registerCommandTools(mcp, deps);
   registerWaitTools(mcp, deps);
   registerScheduleTools(mcp, deps);
   registerApprovalTools(mcp, deps);

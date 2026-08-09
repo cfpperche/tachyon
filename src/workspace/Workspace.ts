@@ -118,7 +118,6 @@ import {
 } from "../config/agentEvolutionSelectorWrite.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration } from "../resume/SessionLedger.js";
-import type { SealedExecutionEvent } from "../executionGraph/eventSchema.js";
 import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.js";
 import { createFormationAdoptionHost, type FormationAdoptionHost } from "../agents/formation/adoptionHost.js";
 import type { FormationAdoptionRecord, FormationAdoptionState } from "../agents/formation/bootstrapTransaction.js";
@@ -375,14 +374,6 @@ export interface WorkspaceDeps {
   runtimeQuotaObservations?: () => Omit<RuntimeConditionInputV1, "generatedAt">;
   /** spec 399 — immutable staged Pi Bridge extension shipped beside the persistent engine daemon. */
   piBridgeExtensionPath?: string;
-  /**
-   * SDD 480 Phase 2 — sink for execution-graph events, threaded from here to every seam that starts
-   * something: AgentManager, the Bridge tools, the control-mode client, and input submission.
-   *
-   * Optional on purpose. A Workspace without it behaves exactly as it did before the graph existed,
-   * which is what has kept this wiring reversible one seam at a time.
-   */
-  recordExecution?: (event: SealedExecutionEvent) => void;
 }
 
 /** spec 235 — the slice of the control-mode engine the Workspace lifecycle needs; a test passes a no-op. */
@@ -502,7 +493,6 @@ export class Workspace {
    * `ManagedAgentInputSource`, which is how the input-submission seam (turnId, §7.1) reaches the
    * ledger without engineService having to thread a second object through the call.
    */
-  readonly recordExecution?: (event: SealedExecutionEvent) => void;
   readonly worktrees: WorktreeManager;
   /** spec 392 — product registry + change worktrees over WorktreeManager. */
   readonly managedWorktrees: ManagedWorktreeService;
@@ -685,7 +675,6 @@ export class Workspace {
     seams: WorkspaceSeams = {},
   ) {
     this.agentProfileHomeDir = resolveAgentProfileHomeDir(seams.agentProfileHomeDir);
-    if (deps.recordExecution) this.recordExecution = deps.recordExecution;
     this.wsHash = workspaceHash(workspaceRoot);
     this.gitExec = createGitExec(() => resolveGitBinaryForHost(deps.host, sharedGlobalSettings().current().gitPath));
     this.taskNotifications = new TaskNotificationService(workspaceRoot, this.wsHash, deps.host, () => this.config);
@@ -701,7 +690,6 @@ export class Workspace {
       const engine = new ControlModeClient({
         wsHash: this.wsHash,
         // SDD 480 — the control client's anchor is where `attached`/`shared` enter the real graph.
-        ...(deps.recordExecution ? { recordExecution: deps.recordExecution } : {}),
         onDeadMapChanged: () => this.triggerLifecycle(),
         onActivityMapChanged: (map) => {
           this.activityBySession = map;
@@ -830,7 +818,6 @@ export class Workspace {
       // monitor, but this thunk is first read after construction, when the monitor exists.
       hasStartedTurn: (name) => this.monitor?.hasStartedTurn(name),
       // SDD 480 — the seam that genuinely carries the id into the child's environment.
-      ...(deps.recordExecution ? { recordExecution: deps.recordExecution } : {}),
       // t-50bbd4 — resolved lazily: the port is built later, when the host key arrives from
       // SecretStorage, and AgentManager is constructed before that. A getter keeps the wiring honest
       // instead of capturing an undefined that would never fill in.
@@ -1850,7 +1837,6 @@ export class Workspace {
         manager: this.manager,
         tmux: this.tmux,
         // SDD 480 §7.3 — every Bridge tool call becomes an InternalOperation through this sink.
-        ...(this.deps.recordExecution ? { recordExecution: this.deps.recordExecution } : {}),
         pins: this.pinStore,
         tasks: this.taskStore,
         evolution: this.evolutionStore,

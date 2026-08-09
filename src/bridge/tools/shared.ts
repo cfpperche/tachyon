@@ -41,18 +41,7 @@ import type { TaskNotificationEvent } from "../../tasks/taskNotificationPolicy.j
 import type { TaskPrototypeSnapshot } from "../../tasks/TaskPrototypeStore.js";
 import { RuntimeLaunchPreflightError } from "../../runtime/launchPreflight.js";
 import { RuntimeLaunchReadinessError } from "../../runtime/launchReadiness.js";
-import { AsyncLocalStorage } from "node:async_hooks";
-import type { SealedExecutionEvent } from "../../executionGraph/eventSchema.js";
 import type { EvolutionStore } from "../../evolution/EvolutionStore.js";
-
-/**
- * SDD 480 §3.4 gap 2 — the ambient Bridge call, so an execution started inside a handler can join to
- * the ToolCall that caused it.
- *
- * Async-local rather than module-global on purpose: Bridge handlers interleave freely, and a shared
- * "current call" would hand one tool's child process to whichever call happened to be in flight.
- */
-export const BRIDGE_CALL = new AsyncLocalStorage<{ toolCallId: string; executionId: string }>();
 
 export type NotifyLevel = "info" | "warn" | "error";
 /**
@@ -395,11 +384,6 @@ export interface BridgeDeps {
   onHumanValidationPending?: (validation: { id: string; title: string; author: string }) => void;
   /** Event-driven waiter registry — enables wait_for_agent (absent = tool returns an error). */
   waiters?: Waiters;
-  /**
-   * SDD 480 Phase 2 — sink for execution-graph events. Optional: a Bridge without it behaves exactly
-   * as before, which is what keeps this wiring reversible seam by seam.
-   */
-  recordExecution?: (event: SealedExecutionEvent) => void;
   /** One-shot command runner — enables run_command/list_commands. */
   commands?: CommandRunner;
   /** Step-by-step runbook runner — enables run_runbook. */

@@ -24,7 +24,6 @@ export type DmChatReplyMatch =
 
 /**
  * Mint a host turn id. Prefix makes pane/log grepping obvious and avoids
- * colliding with execution-graph `turn-*` ids from SDD 480.
  */
 export function mintDmChatTurnId(newId: () => string = randomUUID): string {
   return `dm-turn-${newId()}`;

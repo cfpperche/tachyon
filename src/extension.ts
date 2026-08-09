@@ -1,6 +1,5 @@
 import * as vscode from "vscode";
 import { engineSystemdUnitName } from "./engine-service/engineSupervisor.js";
-import { makeExecutionGraphDep } from "./cockpit/executionGraphDep.js";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
@@ -17,7 +16,6 @@ import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/Runtime
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { ENGINE_VIEW_TYPE, EnginePanelManager } from "./webview/EnginePanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
-import { EXECUTION_GRAPH_VIEW_TYPE, ExecutionGraphPanelManager } from "./webview/ExecutionGraphPanel.js";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { OVERVIEW_VIEW_TYPE, OverviewPanelManager } from "./webview/OverviewPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
@@ -2408,25 +2406,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // SDD 485 D9 — the ledger reader accepts a wsHash, so each immutable dashboard project receives
   // its own VM and its own webview-local selection/filter state.
-  const executionGraphPanels = new ExecutionGraphPanelManager(
-    context.extensionUri,
-    { read: makeExecutionGraphDep(byHash) },
-    undefined,
-    controlWorkspaceScope,
-  );
-  context.subscriptions.push({ dispose: () => executionGraphPanels.dispose() });
-  const openExecutionGraphTab = (hash?: string): boolean => {
-    const ws = (hash ? byHash(hash) : undefined)
-      ?? (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
-      ?? workspaces()[0];
-    if (!ws) {
-      notify(vscode.l10n.t("No Tachyon workspace is attached in this window."), "warn");
-      return false;
-    }
-    executionGraphPanels.open(ws.wsHash);
-    return true;
-  };
-
   // SDD 485 D10 — Settings is one immutable project dashboard. Its source and mutations all use
   // that project; client-supplied wsHash fields are deliberately ignored by SettingsPanelManager.
   const settingsPanels = new SettingsPanelManager(context.extensionUri, {
@@ -2471,7 +2450,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   registerTrustedPanelSerializer<SectionPanelState>(context, ENGINE_VIEW_TYPE, (panel, state) => enginePanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, WORKTREES_VIEW_TYPE, (panel, state) => worktreesPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, RUNTIME_CONFIG_VIEW_TYPE, (panel, state) => runtimeConfigPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
-  registerTrustedPanelSerializer<SectionPanelState>(context, EXECUTION_GRAPH_VIEW_TYPE, (panel, state) => executionGraphPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, SETTINGS_VIEW_TYPE, (panel, state) => settingsPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   registerTrustedPanelSerializer<SectionPanelState>(context, OVERVIEW_VIEW_TYPE, (panel, state) => overviewPanels.deserialize(panel, state), { defer: workspacePanelReviveDeferral });
   // t-610705 (Phase C.1) — a revived pre-410 standalone Task Detail panel disposes itself and
@@ -2928,10 +2906,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (resolved === "runtime-config") {
           openRuntimeConfigTab();
-          return Promise.resolve();
-        }
-        if (resolved === "execution-graph") {
-          openExecutionGraphTab();
           return Promise.resolve();
         }
         if (resolved === "settings") {
