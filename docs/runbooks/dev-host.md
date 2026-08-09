@@ -73,6 +73,55 @@ Env vars still **accept** the old `TACHYON_EDH_PALLIATIVE_*` / `EDH_PALLIATIVE_*
 where headless/fixture code already depended on them; prefer `TACHYON_DEV_HOST_*` / `DEV_HOST_*` in
 new material.
 
+## Fixtures — what a fixture can seed, and what it cannot
+
+A fixture is a directory under `test/fixtures/<slug>/`. `point` materializes it into
+`.tachyon/dev-host/workspace`: `tachyon.yml` and `.tachyon/` are **real copies**, everything else is
+symlinked back so live edits show up (see § Mirror layout).
+
+**Seed the state the surface needs, or the surface renders empty.** This is the failure that
+motivated this section: a spec's UI was dogfooded against `control-embed-dogfood`, whose roster is
+empty, and the screen under test had nothing to draw. F5 worked perfectly and showed nothing.
+
+### Seedable — check these into the fixture
+
+Measured from the fixtures in this repository:
+
+| what | where in the fixture | seen in |
+|------|----------------------|---------|
+| settings, agent pointers | `tachyon.yml` | every fixture |
+| board tasks | `.tachyon/tasks/` | `control-embed-dogfood`, `agent-focus-line-dogfood` |
+| continuity briefs | `.tachyon/continuity/` | `companion-track-dogfood` |
+| session index | `.tachyon/sessions.json` | `release-0-56-91-dogfood` |
+| agent profiles | `.tachyon/agents/` | `runtime-config-prototype-dogfood` |
+| installed plugins | `.tachyon/plugins/` + `plugins.lock.json` | `agent-capability-reauth-dogfood` |
+| prompt templates | `.tachyon/prompts/` | `prompt-templates-dogfood` |
+
+Copy the shape from whichever of those is closest to the surface you are exercising.
+
+### Not seedable — and why, so you stop trying
+
+- **Managed worktrees.** `.tachyon/managed-worktrees.json` entries are validated against the
+  filesystem: an `active` entry whose `path` does not exist is reconciled to **`abandoned`** on load
+  (`src/worktree/managedWorktree.ts:195`), and the live list filters on `pathExists` (`:213`). The
+  paths are machine-specific, so a checked-in registry does not merely fail to help — it marks its own
+  entries abandoned.
+- **Agent authority.** Custodied by the host in VS Code secret storage; a checked-in fixture cannot
+  ship it. `control-embed-dogfood`'s own header says so: create the agents with **Tachyon: Agent
+  Studio** after opening the Dev Host.
+
+### Consequence: which surfaces the Dev Host can show you
+
+| surface | how to exercise it |
+|---------|--------------------|
+| board, continuity, prompts, plugins, agent config | seed the fixture; F5 shows it immediately |
+| agents actually running | seed profiles, then start them inside the EDH |
+| **worktrees, and the land block** | **not fixture-seedable.** Create a worktree inside the EDH (Agent Studio → an agent with its own checkout), or look at the surface through the webview preview harness / browser screenshots |
+
+If the surface you are shipping is in the last row, decide **before** arming the Dev Host: either
+budget the in-EDH setup, or point the reviewer at preview shots and say so. Handing someone an F5 that
+opens an empty screen wastes their time and reads as a broken build.
+
 ## Target matrix
 
 | Target | Extension bits | Workspace | Automated? | Use |
