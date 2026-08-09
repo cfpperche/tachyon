@@ -6,6 +6,57 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.71.0 — Soul and Role are gone, and proof of a green run is now a git ref
+
+Ten thousand lines leave in this release, and what they have in common is that nobody was using
+them. An agent no longer has a persona or a job title; a verification record is no longer a file only
+this repository knows how to write.
+
+### Removed
+
+- **Soul and Role, entirely** (`t-77caa7`). Soul resolution, its lifecycle, its legacy capture, its
+  whole transaction subsystem; Role templates and every Role surface in config, runtime, the Bridge,
+  the sidebar, Agent Studio, the profile, the schema, the brief and localization. 163 files, ~9,900
+  lines net. No migration was written and none was needed: **measured before removing** — no
+  `SOUL.md` anywhere under `.tachyon/agents/`, and no agent declaring `role:`. A profile that still
+  declares either loads with a warning like any other unknown key.
+
+  What an agent's brief keeps, in this order, now held by a test rather than by hope: persistent
+  instructions (with their formation receipt), Evolution, selected memory, the Bridge-guidance line,
+  the spawn contract, and the work record. What it loses: the identity section and the role template.
+
+  One thing that lived in the wrong file and survived: the line telling an agent that its CLI's own
+  sub-agents run work Tachyon cannot see. That is a fact about Tachyon, not a persona, and it moved
+  house rather than dying.
+
+  A defect died with the subsystem rather than being fixed: the Soul transaction could leave a
+  directory with no journal, which was then read as a synthetic degraded record matching every
+  principal and skipped by reconcile forever. It has nowhere left to happen.
+
+### Changed
+
+- **A verification record is a git ref, not a file** (`t-23c92e`, SDD 497 slice 1). The per-tree proof
+  moved from `<git-common-dir>/tachyon-verify/<tree>.json` to `refs/tachyon/verify/<tree>`, pointing
+  at a blob with the same JSON. Writer and reader flipped in one commit, and the file path was
+  deleted rather than kept as a fallback.
+
+  The reason is not tidiness. The old file was already stored in the common directory so that a gate
+  running inside an agent's worktree could be read from the primary checkout. A ref lives in that same
+  place and adds the one thing a file cannot have: **it can be pushed and fetched.** That is what will
+  let any CI publish the proof with nothing but `git` — no forge API, no token, no artifact download —
+  so that a project gets a working land door without adopting a Tachyon script. The rest of that work
+  is specified in `docs/specs/497-verify-evidence-by-ref/`.
+
+  Two things were proved before the change was accepted, because either could have sunk it: a record
+  published inside a linked worktree is readable from the primary, and a ref pointing at a blob
+  survives both `git gc --prune=now` and a push with its object id and type intact.
+
+  Consequence you may see once: records written by earlier builds are invisible, so the land panel's
+  `verified-tree` reads red until the next gate run publishes a ref.
+
+- **Board is the only name for the board, in the code too.** The tombstone viewType from before the
+  0.65 reversal is deleted rather than renamed; nothing on disk referenced it.
+
 ## 0.70.0 — Tachyon stops running your checks
 
 Running a command is something an agent and a CI can both already do. Holding the proof of what was
