@@ -455,66 +455,6 @@
     ]
   },
   {
-    "view": "execution-graph",
-    "fixture": "execution-graph",
-    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph",
-    "frame": {
-      "w": 880,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ]
-  },
-  {
-    "view": "execution-graph",
-    "fixture": "execution-graph-real",
-    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph-real",
-    "frame": {
-      "w": 880,
-      "h": 720
-    },
-    "tags": [
-      "captured-host-vm"
-    ]
-  },
-  {
-    "view": "execution-graph",
-    "fixture": "execution-graph-empty",
-    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph-empty",
-    "frame": {
-      "w": 880,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ]
-  },
-  {
-    "view": "execution-graph",
-    "fixture": "execution-graph-no-telemetry",
-    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph-no-telemetry",
-    "frame": {
-      "w": 880,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ]
-  },
-  {
-    "view": "execution-graph",
-    "fixture": "execution-graph-error",
-    "url": "/scripts/webview-preview/index.html?view=execution-graph&fixture=execution-graph-error",
-    "frame": {
-      "w": 880,
-      "h": 720
-    },
-    "tags": [
-      "synthetic-edge"
-    ]
-  },
-  {
     "view": "pin-preview",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=pin-preview&fixture=default",

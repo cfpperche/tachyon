@@ -46,7 +46,6 @@ export interface CockpitStrings {
   missionHint: string;
   validationsTitle: string;
   validationsHint: string;
-  navExecutionGraph: string;
   settingsTitle: string;
   settingsHint: string;
   workspaces: string;

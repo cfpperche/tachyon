@@ -3562,54 +3562,6 @@ describe("AgentManager — session resume (spec 209)", () => {
   });
 
   /**
-   * t-5e1113 (SDD 482 phase 1) — EQUIVALENCE PROOF for converging fork onto `createOwnedSession`.
-   *
-   * The source-shape test proves there is one door. This proves the door behaves identically through
-   * BOTH callers, on the property that made the duplication dangerous: the minted execution env is
-   * merged last, so an agent cannot forge its own execution identity. Fork used to re-derive that
-   * ordering from a comment ("Merged last for the same reason as spawnCore"), which is a copy of the
-   * reasoning, not of the code.
-   *
-   * The agent below declares a HOSTILE env: it sets the execution id and agent to values it chose.
-   * Both a normal spawn and a fork of it must overwrite them.
-   */
-  it("t-5e1113: spawn and fork both refuse an agent-forged execution identity", async () => {
-    const forged = { id: "FORGED-EXECUTION-ID", agent: "FORGED-AGENT" };
-    const { manager, newSessionArgs } = resumeHarness(
-      `agents:\n  claude:\n    cmd: claude\n    env:\n      TACHYON_EXECUTION_ID: ${forged.id}\n      TACHYON_EXECUTION_AGENT: ${forged.agent}\n`,
-      { resolveCurrentSession: async () => UUID, seedTranscript: () => true },
-    );
-
-    const envOf = (args: string[]): Record<string, string> => {
-      const env: Record<string, string> = {};
-      args.forEach((arg, index) => {
-        if (arg !== "-e") return;
-        const pair = args[index + 1] ?? "";
-        const at = pair.indexOf("=");
-        if (at > 0) env[pair.slice(0, at)] = pair.slice(at + 1);
-      });
-      return env;
-    };
-
-    await manager.spawn("claude");
-    const spawnEnv = envOf(newSessionArgs.at(-1)!);
-    expect(spawnEnv.TACHYON_EXECUTION_ID).toBeDefined();
-    expect(spawnEnv.TACHYON_EXECUTION_ID).not.toBe(forged.id);
-    expect(spawnEnv.TACHYON_EXECUTION_AGENT).toBe("claude");
-
-    const forkName = await manager.commitFork(await manager.planFork("claude"));
-    const forkEnv = envOf(newSessionArgs.at(-1)!);
-    // The same refusal, through the other door — and a DISTINCT identity, because a fork is its own
-    // execution that happens to share a transcript.
-    expect(forkEnv.TACHYON_EXECUTION_ID).toBeDefined();
-    expect(forkEnv.TACHYON_EXECUTION_ID).not.toBe(forged.id);
-    expect(forkEnv.TACHYON_EXECUTION_AGENT).toBe(forkName);
-    expect(forkEnv.TACHYON_EXECUTION_ID).not.toBe(spawnEnv.TACHYON_EXECUTION_ID);
-
-    await manager.kill(forkName);
-  });
-
-  /**
    * t-5e1113 (SDD 482 phase 2) — the declared policy is WRITTEN by the real paths, not just parseable.
    * `temporary` comes from the caller supplying a command, which is a declaration; nothing here reads the
    * name, the tmux session or `tachyon.yml` to decide.
@@ -8197,7 +8149,6 @@ describe("AgentManager — a requested stop is not a crash (t-9d76b1)", () => {
     const { sessions, dead, tmux } = fakeTmux();
     const config = configOf(yaml);
     const ledger = new SessionLedger(ws);
-    const executions: Array<{ state: string; detail: Record<string, string> }> = [];
     const manager = new AgentManager({
       tmux,
       wsHash: hash,
@@ -8205,7 +8156,6 @@ describe("AgentManager — a requested stop is not a crash (t-9d76b1)", () => {
       getConfig: () => config,
       ledger,
       launchPreflight: HERMETIC_PREFLIGHT,
-      recordExecution: (event) => executions.push({ state: event.state, detail: event.detail }),
     });
     const row = async (name: string) => (await manager.list()).find((entry) => entry.name === name)!;
     return {
@@ -8215,7 +8165,6 @@ describe("AgentManager — a requested stop is not a crash (t-9d76b1)", () => {
       dead,
       tmux,
       config,
-      executions,
       ws,
       hash,
       row,
@@ -8316,32 +8265,4 @@ describe("AgentManager — a requested stop is not a crash (t-9d76b1)", () => {
     expect(h.ledger.get("grok")?.lifecycle).toBeUndefined();
   });
 
-  it("the activity record calls a requested stop `killed`, not `failed`", async () => {
-    const h = stopHarness();
-    await h.manager.spawn("grok");
-    await h.manager.stopGracefully("grok");
-    h.dead.set(h.session("grok"), 130);
-    await h.manager.list();
-
-    const exit = h.executions.filter((event) => event.detail.seam === "AgentManager.readAgentStates");
-    expect(exit).toHaveLength(1);
-    expect(exit[0].state).toBe("killed");
-    expect(exit[0].detail).toMatchObject({ stopRequested: "true", exitCode: "130" });
-  });
-
-  it("the activity record still fails an unrequested non-zero exit, and completes a clean one", async () => {
-    const crash = stopHarness();
-    await crash.manager.spawn("grok");
-    await crash.manager.list(); // observe it ALIVE first — the alive→dead transition is the event
-    crash.dead.set(crash.session("grok"), 130);
-    await crash.manager.list();
-    expect(crash.executions.at(-1)).toMatchObject({ state: "failed", detail: { exitCode: "130" } });
-
-    const clean = stopHarness();
-    await clean.manager.spawn("grok");
-    await clean.manager.list();
-    clean.dead.set(clean.session("grok"), 0);
-    await clean.manager.list();
-    expect(clean.executions.at(-1)).toMatchObject({ state: "completed" });
-  });
 });

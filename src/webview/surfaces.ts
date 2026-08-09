@@ -228,7 +228,6 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonHandoff", view: "handoff", hostFile: "src/webview/HandoffPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonEngine", view: "engine", hostFile: "src/webview/EnginePanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonWorktrees", view: "worktrees", hostFile: "src/webview/WorktreesPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
-  { viewId: "tachyonExecutionGraph", view: "execution-graph", hostFile: "src/webview/ExecutionGraphPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonSettings", view: "settings", hostFile: "src/webview/SettingsPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonOverview", view: "overview", hostFile: "src/webview/OverviewPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // spec 350 T4 — Pipeline Studio (Fake 1), the studio-shell's Phase 1 proof surface. Dev-flag-hidden: this

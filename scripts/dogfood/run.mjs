@@ -47,7 +47,6 @@ const scenarios = [
   "claude-composer-suggestion",
   "codex-danger-optin",
   "dev-host",
-  "execution-graph",
   "grok-attention-midturn",
   "grok-model-preflight",
   "grok-runtime-config",

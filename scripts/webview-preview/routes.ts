@@ -22,7 +22,6 @@ import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/w
 import { engineModelMessage } from "../../src/webview/engine/messages";
 import { worktreesModelMessage } from "../../src/webview/worktrees/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
-import { executionGraphModelMessage } from "../../src/webview/execution-graph/messages";
 import { settingsModelMessage } from "../../src/webview/settings/messages";
 import { overviewModelMessage } from "../../src/webview/overview/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
@@ -35,7 +34,6 @@ import { inspectorFixtures, scopeFor as inspectorScopeFor, strings as inspectorS
 import { initMessage as inspectorInitMessage, modelMessage as inspectorModelMessage } from "../../src/webview/inspector/messages";
 import {
   cockpitFixtures,
-  executionGraphFixtures,
   runtimeConfigFixtureSnapshot,
   runtimeConfigPreviewStrings,
   strings as cockpitStrings,
@@ -141,15 +139,6 @@ export const ROUTES: Record<string, Route> = {
     fixtures: probesFixtures as Record<string, Fixture>,
     module: true,
     makeMessage: (vm) => probesMessage(vm as never),
-  },
-  "execution-graph": {
-    bundle: "/dist/webview/execution-graph.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/execution-graph.css"],
-    frame: { w: 880, h: 720 },
-    fixtures: executionGraphFixtures,
-    module: true,
-    globals: { __TACHYON_STRINGS__: cockpitStrings },
-    makeMessage: (vm) => executionGraphModelMessage(vm as never),
   },
   "pin-preview": {
     bundle: "/dist/webview/pin-preview.js",

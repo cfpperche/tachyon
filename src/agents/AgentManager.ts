@@ -72,8 +72,6 @@ import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } 
 import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { FormationLifecyclePort } from "./formation/lifecycleConsumer.js";
-import { sealExecutionEvent, type ExecutionCorrelation, type RawExecutionEvent, type SealedExecutionEvent } from "../executionGraph/eventSchema.js";
-import { mintExecution } from "../executionGraph/executionIdentity.js";
 import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
 import { inspectCapabilitySourceAtRoot } from "../config/agentCapabilitySource.js";
 import { LOCKFILE_REL_PATH, parseLockfile } from "../plugins/lockfile.js";
@@ -592,11 +590,6 @@ export interface AgentManagerOptions {
   formation?: FormationLifecyclePort;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
-  /**
-   * SDD 480 Phase 2 — sink for execution-graph events. Optional: a manager without it behaves exactly
-   * as before, which is what keeps this wiring reversible seam by seam.
-   */
-  recordExecution?: (event: SealedExecutionEvent) => void;
   /** spec 351 — mint a fresh per-agent Bridge token for `name` (TACHYON_AGENT_BRIDGE_TOKEN), returning the
    *  env var(s) to merge; `{}` when no registry is wired (e.g. auth disabled). Called exactly ONCE per
    *  spawn/restart/resume — minting is NOT idempotent (each call revokes the prior live token for this
@@ -1080,13 +1073,6 @@ export class AgentManager {
   private tmuxReadAppliedSeq = 0;
   private readonly launchPreflight: RuntimeLaunchPreflightPort;
   private readonly launchReadiness: LaunchReadinessPort;
-  /**
-   * SDD 480 §3.4 gap 3 — the execution minted at spawn, kept so the eventual `exit` correlates to the
-   * SAME execution rather than to a fresh id that joins to nothing. Cleared when the exit is recorded.
-   * Deliberately in-memory only: it is a convenience for correlating, never the source of truth — the
-   * ledger is, and an exit we cannot correlate is still recorded, just `unproven`.
-   */
-  private readonly liveExecutions = new Map<string, ExecutionCorrelation>();
   /** A session becomes assignable only after a positive readiness observation. */
   private readyAgents = new Set<string>();
   /** A launched AI runtime remains provisional until the common observation policy sees a ready affordance. */
@@ -1647,12 +1633,6 @@ export class AgentManager {
    *     keeps it until dismiss/restart), so without this a window reload would re-read a requested stop
    *     as a crash. `lifecycle` is the row's terminal state, and spawn (fresh record), restart and
    *     resume all drop it, so a stamp can never leak into the next instance.
-   *  2. SDD 480 §3.4 gap 3 — the execution `exit` event.
-   *
-   * Correlates to the execution minted at spawn when this process still remembers it. When it does not
-   * — the engine restarted while the agent kept running — the death is STILL recorded, against the
-   * agent, with a fresh id and `unproven`. That is not an orphan: the agent is known, so the event
-   * attaches to something real. Dropping it would let a graph that never saw the exit look complete.
    */
   private observeAgentDeaths(
     previous: ReadonlyMap<string, { dead: boolean; exitCode?: number }>,
@@ -1663,30 +1643,6 @@ export class AgentManager {
       if (!before || before.dead || !state.dead) continue;
       const requested = this.stopRequestedAt.has(agent);
       if (requested) this.stampRequestedStop(agent);
-      if (!this.opts.recordExecution) continue;
-      const live = this.liveExecutions.get(agent);
-      const correlation = live ?? mintExecution({ agentId: agent, carrier: "absent" }).correlation;
-      this.liveExecutions.delete(agent);
-      this.emitExecution({
-        kind: "exit",
-        node: "Process",
-        // t-9d76b1 — a stop Tachyon asked for is `killed`: deliberate termination, which is what the
-        // graph's own vocabulary already calls it. Calling it `failed` said the run broke, and it said
-        // so for grok and hermes only, because they answer SIGINT with 130 while codex/opencode/pi
-        // answer 0 — the record disagreed with itself across runtimes about one identical action.
-        // Otherwise unchanged: a clean exit is `completed`, anything else `failed`, and an unknown code
-        // is not assumed clean — "we did not see the code" and "the code was 0" are different facts.
-        state: requested ? "killed" : state.exitCode === 0 ? "completed" : "failed",
-        provenance: live ? "measured" : "unproven",
-        correlation,
-        at: new Date().toISOString(),
-        detail: {
-          seam: "AgentManager.readAgentStates",
-          agent,
-          ...(requested ? { stopRequested: "true" } : {}),
-          ...(state.exitCode !== undefined ? { exitCode: state.exitCode } : {}),
-        },
-      });
     }
   }
 
@@ -2542,17 +2498,6 @@ export class AgentManager {
     return { agent: only.agent, state: only.state, cwd: only.cwd };
   }
 
-  /**
-   * SDD 480 Phase 2 — seal and hand one execution event to the sink, never throwing.
-   *
-   * A diagnostic that can fail the operation it observes is worse than no diagnostic: an agent must
-   * not fail to spawn because the graph could not describe the spawn.
-   */
-  private emitExecution(raw: RawExecutionEvent): void {
-    if (!this.opts.recordExecution) return;
-    try { this.opts.recordExecution(sealExecutionEvent(raw)); } catch { /* observation only */ }
-  }
-
   /** Core spawn machinery shared by ordinary spawn and canonical Delivery execution. */
 
   /**
@@ -2562,17 +2507,9 @@ export class AgentManager {
    * ("Merged last for the same reason as spawnCore") — copying the reasoning rather than the code,
    * which is how the two drift. What is shared is exactly the part that must never differ:
    *
-   *  - the execution env is merged LAST, after agent-declared and bridge env. Everywhere else the
-   *    agent's own env wins; here it must not, because a forgeable execution id would let a pane claim
-   *    an attribution it was not given. That ordering is now impossible to get wrong in one caller and
-   *    right in the other;
    *  - the memory scope wraps outermost;
    *  - Pi launches under `withPiAdmission`, every other runtime directly.
    *
-   * The execution is minted by the CALLER and passed in, deliberately: both callers need the
-   * provenance in their failure path, and their recoveries are genuinely different — an ordinary
-   * launch must never kill an ambiguous same-named pane, while a fork preserves its Git-locked
-   * checkout as recovery state. Sharing the creation without flattening those two is the point.
    */
   private async createOwnedSession(input: {
     agent: string;
@@ -2580,9 +2517,7 @@ export class AgentManager {
     /** Already wrapped by `withSessionOwnership` — ownership is the caller's to decide. */
     ownedCmd: string;
     cwd: string;
-    /** Build + bridge env. The minted execution env is merged after it, here, not by the caller. */
     env: Record<string, string>;
-    minted: { env: Record<string, string> };
     runtime?: string;
   }): Promise<void> {
     const create = () => this.opts.tmux.newSession({
@@ -2594,7 +2529,7 @@ export class AgentManager {
       // session", was false: `startSessionCommandUnlocked` was a second one. Both now go through
       // `withPostCutAttestation`, which merges the proof LAST so a caller-supplied env cannot forge or
       // clear it.
-      env: withPostCutAttestation({ ...input.env, ...input.minted.env }),
+      env: withPostCutAttestation(input.env),
     });
     if (input.runtime === "pi") await this.withPiAdmission(input.agent, create);
     else await create();
@@ -3012,34 +2947,14 @@ export class AgentManager {
         );
       }
     }
-    // SDD 480 §3.1 — the first seam that can genuinely CARRY the identity. Minted before the pane
-    // exists and merged into the child's env below, so attribution survives the thing PPID cannot:
-    // t-41f496 measured 73 processes reparented to `systemd --user` after their launcher died. A pane
-    // that outlives its launcher still holds the id it was born with.
-    const minted = mintExecution({ agentId: name, sessionId: session, carrier: "carried" });
     try {
-      // spec 236 Bridge + 243 ownership hook, t-0d0152 memory scope, and the execution-env ordering
-      // all live in createOwnedSession now — shared with commitFork so they cannot drift apart.
+      // spec 236 Bridge + 243 ownership hook and t-0d0152 memory scope live in createOwnedSession.
       await this.createOwnedSession({
         agent: name, session, ownedCmd: ownedSpawnCmd, cwd,
         env: { ...spawnBuild.env, ...spawnBridge.env },
-        minted, runtime: adapter?.runtime,
-      });
-      // Remembered so the eventual exit joins to THIS execution instead of minting a stranger.
-      this.liveExecutions.set(name, minted.correlation);
-      this.emitExecution({
-        kind: "spawn", node: "Process", state: "running", provenance: minted.provenance,
-        correlation: minted.correlation, at: new Date().toISOString(),
-        detail: { seam: "AgentManager.spawnCore", agent: name, session, cwd },
+        runtime: adapter?.runtime,
       });
     } catch (error) {
-      // A launch that never became a pane is still a fact worth recording. Dropping it would make a
-      // partial graph look complete — the same reason an unattributable execution is kept, not discarded.
-      this.emitExecution({
-        kind: "fail", node: "Process", state: "failed", provenance: minted.provenance,
-        correlation: minted.correlation, at: new Date().toISOString(),
-        detail: { seam: "AgentManager.spawnCore", agent: name, session, error: String(error) },
-      });
       // A same-named pane observed after newSession fails is ambiguous: it may belong to a
       // concurrent creator, so never kill it without an ownership receipt.
       const compensation = newLaunchCompensation();
@@ -5434,10 +5349,6 @@ export class AgentManager {
         throw new ForkUnavailableError(source, "Pi Bridge tools could not be materialized for the fork");
       }
       sessionAttempted = true;
-      // SDD 480 §3.1 — a fork is a normal Tachyon-spawned process and carries its own identity. It is
-      // minted for the FORK, not inherited from the source: the two are separate executions that happen
-      // to share a transcript, and giving them one id would erase exactly the distinction the graph is for.
-      const forkMinted = mintExecution({ agentId: forkName, sessionId: session, carrier: "carried" });
       await this.createOwnedSession({
         agent: forkName,
         session,
@@ -5450,13 +5361,7 @@ export class AgentManager {
         }),
         cwd,
         env: { ...forkBuild.env, ...forkBridge.env },
-        minted: forkMinted,
         runtime: src.runtime,
-      });
-      this.emitExecution({
-        kind: "spawn", node: "Process", state: "running", provenance: forkMinted.provenance,
-        correlation: forkMinted.correlation, at: new Date().toISOString(),
-        detail: { seam: "AgentManager.commitFork", agent: forkName, forkedFrom: source, session, cwd },
       });
       spawnedSession = session;
       // The catch below owns session teardown. Readiness rejection deliberately leaves the Git-locked

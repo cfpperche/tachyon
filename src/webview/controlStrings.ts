@@ -40,7 +40,6 @@ export function cockpitStrings(): CockpitStrings {
     missionHint: t("Work queue — tasks and lanes. Agents live in the sidebar Fleet."),
     validationsTitle: t("Validations"),
     validationsHint: t("Validation queue — close dogfoods and checks (not on the Board)."),
-    navExecutionGraph: t("Execution"),
     settingsTitle: t("Settings"),
     settingsHint: t("Personal machine preferences and shared project policy — two files, two authorities."),
     workspaces: t("Workspaces"),

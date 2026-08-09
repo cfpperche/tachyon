@@ -1,11 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { mintExecution } from "../../executionGraph/executionIdentity.js";
-import { type BridgeDeps, AGENT_NAME, BRIDGE_CALL, CMD_WAIT_PREFIX, fail, ok } from "./shared.js";
-import type { BridgeExecutionHooks } from "./instrumentation.js";
+import { type BridgeDeps, AGENT_NAME, CMD_WAIT_PREFIX, fail, ok } from "./shared.js";
 
-export function registerCommandTools(mcp: McpServer, deps: BridgeDeps, hooks: BridgeExecutionHooks): void {
-  const { emitExecution, executionCallerId } = hooks;
+export function registerCommandTools(mcp: McpServer, deps: BridgeDeps): void {
 
   mcp.registerTool(
     "run_command",
@@ -23,8 +20,6 @@ export function registerCommandTools(mcp: McpServer, deps: BridgeDeps, hooks: Br
       },
     },
     async ({ name, timeoutSec, rerun }) => {
-      // Uses the shared `emitExecution` defined once for every Bridge seam.
-      let minted: ReturnType<typeof mintExecution> | undefined;
       try {
         if (!deps.commands) return fail(new Error("commands are not available on this Bridge"));
         const before = await deps.commands.status(name);
@@ -32,26 +27,6 @@ export function registerCommandTools(mcp: McpServer, deps: BridgeDeps, hooks: Br
         if (before.state === "running") {
           // already in flight — just wait on it
         } else if (before.state === "idle" || rerun) {
-          // SDD 480 — the ToolCall to execution link. Minted BEFORE the run, so the record exists even
-          // if the command dies instantly. `carrier: "absent"` is the honest declaration here: the
-          // command runner starts its own session and this seam hands it no environment, so the
-          // PROCESS cannot be proven to be this execution. The tool call is still recorded, with
-          // provenance saying exactly that, instead of being dropped or guessed at.
-          // §3.4 gap 2 — carry the ambient ToolCall id and edge back to the operation that caused this.
-          // Without the edge the two executions sit in the graph as strangers, which is the gap: the
-          // Bridge knew its caller but emitted nothing an observer could later join on.
-          const call = BRIDGE_CALL.getStore();
-          minted = mintExecution({
-            agentId: executionCallerId(),
-            carrier: "absent",
-            ...(call ? { toolCallId: call.toolCallId } : {}),
-          });
-          emitExecution({
-            kind: "spawn", node: "TmuxSession", state: "running", provenance: minted.provenance,
-            correlation: minted.correlation, at: new Date().toISOString(),
-            ...(call ? { edge: { kind: "invoked" as const, toExecutionId: call.executionId } } : {}),
-            detail: { tool: "run_command", command: name },
-          });
           await deps.commands.run(name);
         } else {
           // finished result available and no rerun requested — report it
@@ -64,14 +39,6 @@ export function registerCommandTools(mcp: McpServer, deps: BridgeDeps, hooks: Br
           return ok(JSON.stringify({ name, running: true, note: "still running — call again to keep waiting" }));
         }
         const tail = await deps.commands.tail(name);
-        if (minted) {
-          emitExecution({
-            kind: "exit", node: "TmuxSession",
-            state: result.exitCode === 0 ? "completed" : "failed",
-            provenance: minted.provenance, correlation: minted.correlation, at: new Date().toISOString(),
-            detail: { tool: "run_command", command: name, exitCode: result.exitCode, durationMs: result.waitedMs },
-          });
-        }
         return ok(
           JSON.stringify({
             name,

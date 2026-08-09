@@ -46,7 +46,7 @@ describe("SDD 485 E1 — every former Control door opens an app directly", () =>
     for (const opener of [
       "openBoard", "tmuxPanels.open", "openPluginsTab", "runtimeOpsPanels.open",
       "openHumanInboxTab", "openEngineTab", "openWorktreesTab",
-      "openRuntimeConfigTab", "openExecutionGraphTab", "openSettingsTab", "openOverviewTab",
+      "openRuntimeConfigTab", "openSettingsTab", "openOverviewTab",
     ]) expect(block, `${opener} is not reachable from tachyon.openControl`).toContain(opener);
     expect(block).not.toContain("openCockpit(");
     // t-5f2b5b — `openFleetTab` left this list because the app it opened is deleted, and the assertion

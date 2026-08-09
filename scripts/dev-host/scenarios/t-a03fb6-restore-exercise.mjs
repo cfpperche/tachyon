@@ -168,7 +168,7 @@ function analyze({ preDom, postDom, preDump, postDump }) {
       windowOk
       && Object.values(docIds).every((n) => n <= 1)
       && !Object.entries(postKeys).some(([mgr, list]) =>
-        ["overview", "engine", "fleet", "humanInbox", "board", "worktrees", "executionGraph", "runtimeConfig", "plugins", "settings", "handoff"].includes(mgr)
+        ["overview", "engine", "fleet", "humanInbox", "board", "worktrees", "runtimeConfig", "plugins", "settings", "handoff"].includes(mgr)
         && (list ?? []).length > 1)
         ? "YES (observed — dashboards ≤1, windows ≤1, document ids ≤1)"
         : "NO (cardinality violation — see managerCounts)",
