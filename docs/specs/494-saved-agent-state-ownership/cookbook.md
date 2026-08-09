@@ -21,7 +21,7 @@ Part 4 shipped one tool, `reconcile_roster`, and one change to a string a human 
   answers it. `reconcile_roster` tells you which records disagree, not how to make the agent work.
 - You want to remove something. The tool is read-only and always will be. It names a door; you walk
   through the door yourself.
-- You want worktree residue or task outcomes. Those are `reconcile_worktree_hygiene` and
+- You want worktree residue or task outcomes. Those are `reconcile_worktrees` and
   `reconcile_task`.
 
 ## The four facts and the five states

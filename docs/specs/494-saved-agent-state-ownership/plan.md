@@ -117,7 +117,7 @@ The state rides two surfaces that already have readers. It gets no surface of it
 | `.tachyon/roster.json` | the config loader, which reads the roster on every load | `agentProfileConfigLoader.ts`, via `Workspace.parseTrustedConfigText` (`Workspace.ts:5215`) |
 | Roster refusal and last-known-good | the config failure surface already rendered on the sidebar | `ConfigFailure` / `degradedRosterExtras` / `configInvalid`, `sidebarFleetService.ts:177` |
 | Disagreement state string | the sidebar row's existing `refused` field, which `list_agents` also returns | `sidebarFleetService.ts:250`, `runtime-api/sidebarProjection.ts:124` |
-| Roster reconciliation on demand | an agent diagnosing a fleet problem through the Bridge | new tool beside `reconcile_worktree_hygiene` (`src/bridge/tools/worktrees.ts:244`) |
+| Roster reconciliation on demand | an agent diagnosing a fleet problem through the Bridge | new tool beside `reconcile_worktrees` (`src/bridge/tools/worktrees.ts:244`) |
 | Migration report | the same config failure surface as the roster refusal | as above |
 | Forget transaction journal | a human or agent doing forensics after a failure | `.tachyon/canonical-agent-transactions/forget/` |
 

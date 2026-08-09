@@ -3861,7 +3861,7 @@ export class Workspace {
         if (report.removed.length === 0) return;
         // Only the removals are announced. Refusals at startup are the NORMAL state — every worktree
         // with work still in it is a refusal — so surfacing them here would train people to ignore
-        // the notification. `reconcile_worktree_hygiene` reports them in full when someone asks.
+        // the notification. `reconcile_worktrees` reports them in full when someone asks.
         this.host.notify(
           this.t("worktree hygiene: removed {0} landed change worktree(s)", report.removed.length),
           "info",
@@ -4047,7 +4047,7 @@ export class Workspace {
   /**
    * SDD 494 Part 4 — the on-demand roster reconciliation, read-only and computed on every call.
    *
-   * `reconcile_worktree_hygiene` and `reconcile_task` answer "what is residue?" and "what happened?".
+   * `reconcile_worktrees` and `reconcile_task` answer "what is residue?" and "what happened?".
    * Nothing answered "these records disagree about this agent, and here is the door that removes it",
    * which is the question `claude23` forced a human to answer by reading five sources.
    */
@@ -4970,7 +4970,7 @@ export class Workspace {
 
   /**
    * t-7bc276 — name the private runtime homes nobody owns any more. REPORT ONLY, deliberately:
-   * `worktree_process_hygiene` reports an orphan process and never kills one, and orphan BYTES had no
+   * `worktree_processes` reports an orphan process and never kills one, and orphan BYTES had no
    * equivalent at all until here. Removal belongs to the end-of-life door somebody actually opened
    * (`forgetAgent`), not to a sweep that runs on its own at start — the homes this finds are the ones
    * that predate that door or whose agent vanished without passing through it, and deleting them

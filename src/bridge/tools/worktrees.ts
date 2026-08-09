@@ -61,7 +61,7 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
-    "worktree_hygiene",
+    "worktree_audit",
     {
       description:
         "spec 444 — list Tachyon-managed worktree registry entries WITH a fail-closed hygiene " +
@@ -86,7 +86,7 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
-    "worktree_process_hygiene",
+    "worktree_processes",
     {
       description:
         "List processes whose cwd points into a deleted Tachyon worktree for this workspace. " +
@@ -241,7 +241,7 @@ export function registerWorktreeTools(mcp: McpServer, deps: BridgeDeps): void {
   );
 
   mcp.registerTool(
-    "reconcile_worktree_hygiene",
+    "reconcile_worktrees",
     {
       description:
         "t-e74631 — sweep CHANGE worktrees and remove the ones that are provably safe, without " +

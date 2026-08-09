@@ -971,7 +971,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     },
   );
 
-  // ── SDD 494 Part 4 — the roster reconciliation, beside reconcile_worktree_hygiene ────────────
+  // ── SDD 494 Part 4 — the roster reconciliation, beside reconcile_worktrees ────────────
   mcp.registerTool(
     "reconcile_roster",
     {

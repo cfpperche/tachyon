@@ -34,7 +34,7 @@
  *
  * THIS IS NOT A SECOND WORKTREE AUTHORITY. It classifies CACHE PAYLOADS, never worktrees: it never
  * decides whether a checkout may be removed, and it holds no opinion about dirty/contained/orphan —
- * `worktree_hygiene` owns that and D2 of the investigation is explicit that a second classifier would
+ * `worktree_audit` owns that and D2 of the investigation is explicit that a second classifier would
  * diverge between report and removal. The only checkout-level fact read here is "is a harness running
  * in it", which is a liveness probe, not an authority.
  *

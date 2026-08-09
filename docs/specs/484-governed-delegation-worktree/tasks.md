@@ -15,7 +15,7 @@ is how this spec's first draft earned three blocker findings.
       the ceremony the first non-goal forbids; skipping ones that do apply is `t-4736b4` again.
 - [ ] Find where a promotion writes the declared profile, and whether `worktree: true` can be carried
       into it. If it cannot, the honest outcome is announcing the drop, not silently orphaning.
-- [ ] Confirm `worktree_hygiene` reports a checkout preserved by a failed launch. If it does not, that
+- [ ] Confirm `worktree_audit` reports a checkout preserved by a failed launch. If it does not, that
       gap — not deletion — is what closes criterion "failed create".
 
 ## Implementation
