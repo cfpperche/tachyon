@@ -91,18 +91,51 @@ process.on("exit", () => admission.claim.release());
 
 export const VITEST_MAX_WORKERS = admission.workers;
 
-export default defineConfig({
-  resolve: {
-    alias: {
-      vscode: path.resolve(__dirname, "test/mocks/vscode.ts"),
-    },
+const PROJECT_RESOLVE = {
+  alias: {
+    vscode: path.resolve(__dirname, "test/mocks/vscode.ts"),
   },
+};
+const PROJECT_TEST_BASE = {
+  environment: "node" as const,
+  testTimeout: 30_000,
+  hookTimeout: 30_000,
+  env: { TACHYON_GLOBAL_SETTINGS_HOME: path.join(os.tmpdir(), "tachyon-vitest-no-global-settings") },
+};
+
+export default defineConfig({
+  resolve: PROJECT_RESOLVE,
   test: {
     include: ["test/unit/**/*.test.ts", "test/integration/**/*.test.ts"],
     environment: "node",
     testTimeout: 30_000,
     hookTimeout: 30_000,
     maxWorkers: VITEST_MAX_WORKERS,
+    // t-eaf963 — the real Codex prompt projection is scheduler-sensitive work, not ordinary unit
+    // work. Projects in the same group run together; group 1 starts only after group 0 has drained.
+    // Keep the 10s process bound and the installed CLI coverage, but never make either compete with
+    // the 16-worker pool whose load caused `spawnSync codex ETIMEDOUT`.
+    projects: [
+      {
+        resolve: PROJECT_RESOLVE,
+        test: {
+          ...PROJECT_TEST_BASE,
+          name: "parallel",
+          include: ["test/unit/**/*.test.ts", "test/integration/**/*.test.ts"],
+          exclude: ["test/unit/harnessCodexDogfood.test.ts"],
+          sequence: { groupOrder: 0 },
+        },
+      },
+      {
+        resolve: PROJECT_RESOLVE,
+        test: {
+          ...PROJECT_TEST_BASE,
+          name: "codex-dogfood",
+          include: ["test/unit/harnessCodexDogfood.test.ts"],
+          sequence: { groupOrder: 1 },
+        },
+      },
+    ],
     // t-aaad95 — never let the suite read the DEVELOPER's real ~/.tachyon/settings.json. A machine
     // where somebody has set a card template would otherwise disagree with CI, and the failure gives
     // no hint that a file outside the repo caused it. Tests that want a document write one into their
