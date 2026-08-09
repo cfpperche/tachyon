@@ -149,14 +149,16 @@ describe("buildBoardModel", () => {
     const mine = task({ id: "t-000001", status: "triaged", assignee: "codex" });
     const claimable = task({ id: "t-000002", status: "triaged" });
     const elsewhere = task({ id: "t-000003", status: "active", assignee: "claude" });
+    const released = task({ id: "t-000004", status: "active" });
     const chips: BoardChip[] = [{ agent: "codex", source: "declared", next: { task: mine } }];
-    const model = buildBoardModel({ snapshot: snapshotFor([mine, claimable, elsewhere], chips), selectedChip: "codex" });
+    const model = buildBoardModel({ snapshot: snapshotFor([mine, claimable, elsewhere, released], chips), selectedChip: "codex" });
     expect(model.spotlight).toEqual({ agent: "codex", taskId: "t-000001" });
     const byId = (id: string) => model.columns.flatMap((c) => c.cards).find((c) => c.id === id)!;
     expect(byId("t-000001").isSpotlight).toBe(true);
     expect(byId("t-000001").isDimmed).toBe(false);
     expect(byId("t-000002").isDimmed).toBe(false); // unassigned + triaged = claimable
     expect(byId("t-000003").isDimmed).toBe(true); // assigned elsewhere
+    expect(byId("t-000004").isDimmed).toBe(false); // active + released ownership = claimable
   });
 
   it("spotlight: an empty next_task result surfaces the structured reason instead of a task id", () => {

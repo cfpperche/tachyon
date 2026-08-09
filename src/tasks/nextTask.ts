@@ -28,9 +28,9 @@ export function nextTask(input: NextTaskInput): NextTaskResult {
     if (task.status === "inbox" || task.status === "landed" || task.status === "done" || task.status === "dropped") continue;
 
     const assignedToCaller = task.assignee === input.agent;
-    const unassignedTriaged = !task.assignee && task.status === "triaged";
+    const unassignedOpen = !task.assignee && (task.status === "triaged" || task.status === "active");
     const assignedElsewhere = !!task.assignee && !assignedToCaller;
-    if (!assignedToCaller && !unassignedTriaged) {
+    if (!assignedToCaller && !unassignedOpen) {
       if (assignedElsewhere) sawAssignedElsewhere = true;
       continue;
     }

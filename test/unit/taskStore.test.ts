@@ -161,9 +161,65 @@ describe("TaskStore", () => {
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await expect(store.update(task.id, { status: "done" })).rejects.toThrow(/invalid status transition/);
     await store.update(task.id, { status: "active" });
-    await expect(store.update(task.id, { assignee: null })).rejects.toThrow(/active tasks require assignee/);
+    await expect(store.update(task.id, { assignee: null })).resolves.toMatchObject({ status: "active" });
     await store.update(task.id, { status: "done" });
     await expect(store.update(task.id, { title: "late edit" })).rejects.toThrow(/immutable/);
+  });
+
+  it("process loss releases ownership without claiming the active work was not delivered (t-49d7ec)", async () => {
+    const task = await store.create({ title: "delivered outside the board", author: "human" });
+    await store.update(task.id, {
+      status: "triaged",
+      assignee: "worker",
+    });
+    await store.update(task.id, { status: "active" });
+    await store.update(task.id, {
+      awaitingHuman: {
+        reason: "confirm the delivered result",
+        since: "2026-08-09T00:00:00.000Z",
+        kind: "validation",
+      },
+    });
+    const taskPath = store.pathFor(task.id);
+    const active = JSON.parse(fs.readFileSync(taskPath, "utf8"));
+    fs.writeFileSync(taskPath, `${JSON.stringify({
+      ...active,
+      evolutionCompletion: { agent: "worker", revision: "a".repeat(64) },
+    }, null, 2)}\n`, "utf8");
+
+    const [released] = await store.returnUnavailableAgentClaims("worker", {
+      actor: "tachyon",
+      evidence: "agent 'worker' exited (0)",
+      now: "2026-08-09T00:00:01.000Z",
+    });
+
+    expect(released).toMatchObject({
+      status: "active",
+      awaitingHuman: { reason: "confirm the delivered result" },
+      evolutionCompletion: { agent: "worker", revision: "a".repeat(64) },
+    });
+    expect(released?.assignee).toBeUndefined();
+    expect(store.journal.read(task.id).at(-1)?.text).toContain("ownership released; status remains active");
+  });
+
+  it("a disappeared agent still releases an active claim for another agent (t-49d7ec)", async () => {
+    const task = await store.create({ title: "resume after crash", author: "human" });
+    await store.update(task.id, { status: "triaged", assignee: "crashed" });
+    await store.update(task.id, { status: "active" });
+
+    const [released] = await store.returnUnavailableAgentClaims("crashed", {
+      actor: "tachyon",
+      evidence: "agent 'crashed' disappeared",
+    });
+    expect(released).toMatchObject({ status: "active" });
+    expect(released?.assignee).toBeUndefined();
+    const reclaimed = await store.update(task.id, {
+      status: "active",
+      assignee: "replacement",
+      expect: { assignee: null },
+    });
+
+    expect(reclaimed).toMatchObject({ status: "active", assignee: "replacement" });
   });
 
   it("observes committed updates without letting observer failures change the Task result", async () => {

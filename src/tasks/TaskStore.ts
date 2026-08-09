@@ -345,10 +345,11 @@ export class TaskStore {
   /**
    * Return every active claim held by an agent that is no longer executing.
    *
-   * This is a lifecycle reconciliation, not completion: process death proves only that nobody is
-   * working the claim now. The task goes back to triaged, its assignee is cleared, and the reason is
-   * journalled before the task write. Keeping this in the store gives crash observation, deliberate
-   * stop and startup recovery one serialized door instead of three hand-built field patches.
+   * This is a lifecycle reconciliation, not completion: process death proves only that this agent is
+   * no longer working the claim. The task stays active, its assignee is cleared, and the reason is
+   * journalled before the task write. Active-without-assignee means "claimed work, nobody executing";
+   * it is claimable again without asserting that the work was or was not delivered. Keeping this in
+   * the store gives crash observation, deliberate stop and startup recovery one serialized door.
    */
   async returnUnavailableAgentClaims(agent: string, input: ReturnUnavailableAgentClaimsInput): Promise<Task[]> {
     return this.withMutation(async () => {
@@ -360,13 +361,11 @@ export class TaskStore {
       const returned: Task[] = [];
 
       for (const task of current) {
-        const next: Task = { ...task, status: "triaged", updatedAt: now };
+        const next: Task = { ...task, updatedAt: now };
         delete next.assignee;
-        delete next.awaitingHuman;
-        delete next.evolutionCompletion;
         this.journal.append(task.id, {
           author: actor,
-          text: `claim returned active -> triaged; assignee '${assignee}' cleared: ${evidence}`,
+          text: `ownership released; status remains active; assignee '${assignee}' cleared: ${evidence}`,
         });
         this.writeTask(next);
         this.emitMutation({ before: task, after: next, actor });
@@ -930,7 +929,6 @@ function assertTransition(current: Task, next: Task, input: TaskUpdateInput): vo
   const changedFields = Object.keys(input).filter((key) => !TASK_UPDATE_METADATA_KEYS.has(key as keyof TaskUpdateInput));
   if (changedFields.length && !mutable.has(current.status)) throw new Error(`task fields are immutable while status is '${current.status}'`);
   if ("assignee" in input && next.status !== "triaged" && next.status !== "active") throw new Error("assignee is mutable only in triaged/active tasks");
-  if (next.status === "active" && !next.assignee) throw new Error("active tasks require assignee");
   if (current.status === next.status) return;
   if (!allowedTransitions(current.status).includes(next.status)) throw new Error(`invalid status transition ${current.status} -> ${next.status}`);
 }

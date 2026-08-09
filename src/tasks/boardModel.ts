@@ -301,13 +301,13 @@ export function agentFilterOptions(model: Pick<BoardModel, "chips" | "chipOverfl
 }
 
 /** A card dims when a chip is selected and the task is neither owned by, nor claimable by, that agent — the
- *  same coarse eligibility next_task uses for its candidate pool (assignedToCaller || unassignedTriaged),
+ *  same coarse eligibility next_task uses for its candidate pool (assignedToCaller || unassigned open),
  *  simplified for a visual affordance (drop legality itself always stays store-owned). */
 function isDimmed(task: Task, selectedChip: string | undefined): boolean {
   if (!selectedChip) return false;
   if (HISTORICAL_ASSIGNEE_STATUSES.has(task.status)) return true;
   if (task.assignee === selectedChip) return false;
-  if (!task.assignee && task.status === "triaged") return false;
+  if (!task.assignee && (task.status === "triaged" || task.status === "active")) return false;
   return true;
 }
 
