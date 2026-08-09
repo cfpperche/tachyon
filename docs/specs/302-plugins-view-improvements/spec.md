@@ -4,12 +4,13 @@ _Created 2026-06-30._
 
 **Status:** shipped
 **Closure:** 2026-06-30 — Plugins View now has sourced-only per-card Check update actions, an Installed toolbar with filter/sort/count, a no-results filtered state, and host-side single-plugin update checking that merges into existing status checks. Validated by unit tests, typecheck, build, headless preview smoke, and agent-browser screenshot evidence at `docs/specs/302-plugins-view-improvements/evidence/plugins-default.png`.
-**Verify:** `npm test -- --run test/unit/pluginsListControls.test.ts test/unit/pluginViewModel.test.ts test/unit/webviewPreviewPluginsFixture.test.ts && npm run -s typecheck && npm run -s build`
-**Dogfood:** `bash docs/specs/302-plugins-view-improvements/smoke.sh`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm test -- --run test/unit/pluginsListControls.test.ts test/unit/pluginViewModel.test.ts test/unit/webviewPreviewPluginsFixture.test.ts && npm run -s typecheck && npm run -s build`
+**Dogfood:** `bash docs/specs/302-plugins-view-improvements/smoke.sh`
 
 ## Intent
 

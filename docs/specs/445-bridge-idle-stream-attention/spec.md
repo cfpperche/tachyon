@@ -4,11 +4,12 @@ _Created 2026-07-24._
 
 **Status:** shipped
 **Closure:** t-8c6dd4 classifies Bridge requests and keeps non-tool MCP traffic metric-only; focused and full verification passed.
-**Verify:** `npx vitest run test/unit/bridge.test.ts test/unit/bridgeSlowRequestPolicy.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npx vitest run test/unit/bridge.test.ts test/unit/bridgeSlowRequestPolicy.test.ts`
 
 ## Intent
 

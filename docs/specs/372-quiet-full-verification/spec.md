@@ -4,14 +4,15 @@ _Created 2026-07-11._
 
 **Status:** shipped
 **Closure:** shipped in `043c79e` with coordinator-audit corrections in `89b3489`; final quiet dogfood passed
-**Verify:** `npx vitest run test/unit/verifyFullQuiet.test.ts`
-**Verify:** `npm run typecheck`
-**Dogfood:** `npm run verify:full:quiet`
 301 files and 3,558 tests (3 skipped) with bounded output, typecheck/diff-check green, and no temporary-directory growth.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npx vitest run test/unit/verifyFullQuiet.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm run verify:full:quiet`
 
 ## Intent
 

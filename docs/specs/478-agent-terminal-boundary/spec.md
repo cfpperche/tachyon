@@ -9,12 +9,13 @@ _Created 2026-07-27._
      placeholders, and missing dogfood proof or opt-out). -->
 
 **Closure:** Shipped 2026-07-27. The architecture deliverable (this spec, `plan.md`, and
-**Verify:** `npm run verify:full:quiet`
 `docs/architecture/agent-vs-terminal.md`) landed with the human's ratification, and the ordered
 backlog M1–M9 it exists to direct is now fully executed and green: M1 `t-939a18`, M2 `t-914f4e`,
 M3 `t-a054f1`, M4 `t-18f6a5`, M5 `t-6ebdc8` (`ba32fcc9`), M6 `t-a7ae2d`, M7 `t-ddf054` (`4aac0f37`,
 absorbing `t-315ce9`), M8 `t-a31844` (`b386dc9f`), M9 `t-8f3f7d`. Each landed on a tree its own
 `verify:full:quiet` had recorded green.
+
+**Verify:** `npm run verify:full:quiet`
 
 The boundary is now held by construction rather than by review: an agent-only field lives on the
 Agent arm, so a conditional cannot be what grants a capability (M2/M3); a kindless persisted record

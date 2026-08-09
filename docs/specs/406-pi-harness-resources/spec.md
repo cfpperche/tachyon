@@ -5,6 +5,7 @@ _Created 2026-07-18._
 **Status:** shipped
 
 **Closure:** Integrated on `main` as `256901cc`; focused 672 tests, typecheck, build, engine boundary, Product Invariants and real Pi RPC dogfood passed. Full-suite baseline failures unrelated to SDD 406 are recorded in `notes.md`.
+
 **Verify:** `npx vitest run test/unit/config.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts test/unit/piSession.test.ts test/unit/resume.test.ts test/unit/runtimeProfile.test.ts test/unit/piRuntimeOnboarding.test.ts test/unit/piNormalizer.test.ts --maxWorkers=2 && npm run build && npm run check:engine-boundary && npm run test:invariants`
 **Dogfood:** `npx tsx scripts/dogfood/pi-harness-resources.mjs`
 

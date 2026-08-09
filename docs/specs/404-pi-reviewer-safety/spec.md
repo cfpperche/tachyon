@@ -5,6 +5,7 @@ _Created 2026-07-18._
 **Status:** shipped
 
 **Closure:** Canonical read-only Pi Delivery reviewer posture shipped in `f9e4b5d0`; dogfood closure landed in `bf5077c0` after real tool-catalog and human reviewer/control validation.
+
 **Verify:** `npx vitest run test/unit/agentManager.test.ts test/unit/runtimeProfile.test.ts test/unit/piRuntimeOnboarding.test.ts test/unit/piSession.test.ts --maxWorkers=2 && npm run build && npm run check:engine-boundary && npm run test:invariants`
 **Dogfood:** `node scripts/dogfood/pi-reviewer-safety.mjs`
 

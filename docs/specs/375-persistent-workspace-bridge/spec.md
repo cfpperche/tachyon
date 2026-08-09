@@ -4,12 +4,13 @@ _Created 2026-07-13._
 
 **Status:** shipped
 **Closure:** Shipped in `8625ab46` plus installed dogfood of VSIX `0.55.97`: the persistent Bridge proxy runs under user systemd on Linux/WSL, survives Extension Host crash/reload with the same PID/instance/port, reattaches a new backend, and authenticated MCP calls resume on the stable endpoint. Follow-up `t-c182d2` adds actionable, platform-specific launch errors, bounded Doctor diagnostics and direct Doctor/Retry actions.
-**Verify:** `npm run verify:full:quiet`
-**Dogfood:** `node scripts/dogfood/persistent-bridge.mjs`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `node scripts/dogfood/persistent-bridge.mjs`
 
 ## Intent
 

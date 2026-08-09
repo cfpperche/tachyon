@@ -4,12 +4,13 @@ _Created 2026-07-02._
 
 **Status:** shipped
 **Closure:** Shipped 2026-07-02 in the SDD skill/plugin. Added prose-based Visual QA discipline to `SKILL.md`, optional `Visual impact` / `Visual QA` prompts to templates, warning-only `visual-qa-missing` detection in `sdd-close.sh`, and focused regression script `test-visual-close.sh`. Verification and dogfood passed and are logged in `notes.md`.
-**Verify:** `bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/test-visual-close.sh && bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/sdd-close.sh docs/specs/326-sdd-visual-qa-light-contract --json`
-**Dogfood:** `bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/sdd-close.sh docs/specs/326-sdd-visual-qa-light-contract --json`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/test-visual-close.sh && bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/sdd-close.sh docs/specs/326-sdd-visual-qa-light-contract --json`
+**Dogfood:** `bash /home/goat/tachyon-plugins/sdd/skills/sdd/scripts/sdd-close.sh docs/specs/326-sdd-visual-qa-light-contract --json`
 
 ## Intent
 

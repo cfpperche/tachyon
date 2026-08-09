@@ -4,9 +4,6 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped in the `tachyon/change/codex-model-proof` worktree off `2ec2dd66`. The Codex
-**Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- probe-codex-model-proof`
-**Dogfood:** `npm run dogfood -- probe-provenance-parity`
 probe dropped `--ephemeral`, runs under a private per-run `CODEX_HOME` (auth by symlink, plugins /
 remote plugins / apps / skill search disabled), correlates the `thread_id` from `thread.started` to
 the one rollout that repeats it in its own `session_meta`, and reports every
@@ -23,6 +20,10 @@ absent rollout), and `npm run dogfood -- probe-provenance-parity` (9/9).
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- probe-codex-model-proof`
+**Dogfood:** `npm run dogfood -- probe-provenance-parity`
 
 ## Intent
 

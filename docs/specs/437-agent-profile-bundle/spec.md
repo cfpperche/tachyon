@@ -4,13 +4,14 @@ _Created 2026-07-22._
 
 **Status:** shipped
 **Closure:** Shipped by task `t-999e4f`: deterministic V1 export/import/clone, lifecycle-staged authored documents, Workspace routing, focused tests, dogfood and full verification.
-**Verify:** `npm run verify:full:quiet`
-**Verify:** `npm run typecheck`
-**Dogfood:** `npx vitest run test/unit/agentProfileBundle.test.ts test/unit/workspaceHeadless.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run verify:full:quiet`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/agentProfileBundle.test.ts test/unit/workspaceHeadless.test.ts`
 
 ## Intent
 

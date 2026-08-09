@@ -8,7 +8,6 @@ _Created 2026-06-30._
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes / placeholders). -->
 
 **Closure:** Shipped locally 2026-06-30 in `tachyon-plugins/sdd` v1.3.0. `new.sh` now coordinates same-clone sibling
-**Verify:** `bash docs/specs/296-sdd-worktree-spec-allocation/smoke.sh`
 worktrees through a portable `mkdir` lock + local ledger under Git's common dir, scans sibling worktrees before choosing
 the next `NNN`, and keeps the non-Git/local atomic `mkdir` fallback. Added `scripts/check-ids.sh` to detect duplicate
 `docs/specs/NNN-*` prefixes for merge/multi-clone cases. Documented the guarantee and limitation in `SKILL.md` and the
@@ -18,6 +17,8 @@ specs reference it. Verified by `bash docs/specs/296-sdd-worktree-spec-allocatio
 `npm test`, `npm run -s typecheck`, and a headless install dogfood through the real plugin engine
 (`loadPlugin → previewInstall → applyInstall`) materializing the updated `sdd` skill into `.claude/skills/sdd` and
 `.agents/skills/sdd`, then running the materialized scripts.
+
+**Verify:** `bash docs/specs/296-sdd-worktree-spec-allocation/smoke.sh`
 
 ## Intent
 

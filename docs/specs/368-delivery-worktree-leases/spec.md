@@ -5,12 +5,13 @@ _Created 2026-07-10._
 **Status:** shipped
 
 **Closure:** Shipped canonical mechanism-only Delivery as the sole product lifecycle: one immutable contract, one
-**Verify:** `npm run typecheck`
-**Verify:** `npm run verify:full:quiet`
-**Dogfood:** `node scripts/dogfood/delivery-lease.mjs`
 Git projection/worktree, exclusive sequential segments, verification/review, governed recovery, and fail-closed
 hygiene. The stronger process-fenced production boundary was not shipped or implied; it was extracted to umbrella
 `t-f25434` and follow-ups `t-a26f3c`, `t-816d7f`, `t-f55bf7`, and `t-9cf3ae`.
+
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `node scripts/dogfood/delivery-lease.mjs`
 
 ## Intent
 

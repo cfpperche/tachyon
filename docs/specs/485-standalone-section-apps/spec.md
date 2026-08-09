@@ -5,11 +5,12 @@ _Created 2026-08-02._
 **Status:** shipped-partial
 
 **Closure:** 2026-08-04 — Control is gone. Every section it rendered is a standalone app that opens
-**Verify:** `npm run verify:full:quiet`
 as its own editor tab, `Cockpit.ts` / `cockpit/main.tsx` / `cockpitSingleton.ts` no longer exist, and
 `test/unit/controlRendererRatchet.test.ts` became a resurrection guard so the host cannot return
 through another door. Phases A, B, C and E complete; D delivered twenty migrations (D1–D20). Gate on
 delivery: 682 files / 7639 unit tests, 116 browser tests.
+
+**Verify:** `npm run verify:full:quiet`
 
 `shipped-partial` rather than `shipped`, and the remaining gap is named rather than rounded off:
 

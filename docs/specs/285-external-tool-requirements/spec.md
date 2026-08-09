@@ -6,7 +6,6 @@ _Created 2026-06-28._
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 **Closure:** shipped 2026-06-28 — external-tool requirements + consent-gated assisted install land end-to-end. A plugin
-**Verify:** `npx vitest run test/unit && npm run typecheck && npm run build`
 declares `externalTools` (a system binary it needs but Tachyon does NOT provision); the engine DETECTS each
 spoof-resistantly (clean-PATH realpath + `isTrustedExecPath`, the detect probe runs the RESOLVED trusted binary, never
 a manifest path), surfaces present/missing at install, records the consented requirement in the lockfile, materializes
@@ -21,6 +20,8 @@ validateInstallArgv basename-only → bare-exact + run-time normalization to tru
 clone-rehydrate the shim; busy-guard + in-flight serialization on the privileged action), 1 MEDIUM (shell-quoted
 display). ~30 unit tests incl. regressions. Verified: full suite 1801 green, typecheck + build clean. With spec 284,
 a transcription plugin (whisper-cli external + ffmpeg external + a `ggml` model data-artifact) is now buildable.
+
+**Verify:** `npx vitest run test/unit && npm run typecheck && npm run build`
 
 ## Intent
 

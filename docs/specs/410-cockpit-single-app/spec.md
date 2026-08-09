@@ -36,7 +36,6 @@ inventory built from the manifest ever listed them, and 485 discovered them only
 that into a test rather than a paragraph.
 
 **Closure:** 2026-07-24 — Phases B–E complete (`tasks.md`): foundation guard extends `WEBVIEW_SURFACES`
-**Verify:** `npm run typecheck && npx vitest run test/unit/webviewConvention.test.ts test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.ts`
 (`hostKind` field) rather than a parallel manifest; every Phase B/C/D surface (Approvals, Runtime
 Ops, Validations, Plugins, tmux inspector, Board, task detail/handoff/probes as subroutes, 7
 studios) migrated to one host path with the old panel retired or dropped from the manifest; sidebar
@@ -52,6 +51,8 @@ Standing exceptions (not debt): sidebar (by design, the other app), pin-preview 
 "full-page editor" scope), 2 dev-only spec-350 fakes, plugin surfaces (security isolation) — see
 `surfaces.ts`. Full suite green throughout (469 files / 5378 tests as of the Phase E audit).
 <!-- Updated 2026-07-19: fable ACCEPT-WITH-CHANGES — P0s folded (surfaces.ts guard, multi-instance, bundle budget). -->
+
+**Verify:** `npm run typecheck && npx vitest run test/unit/webviewConvention.test.ts test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.ts`
 
 ## Intent
 

@@ -4,8 +4,6 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped in the t-98427e worktree: per-agent `authorize: [bypassPermissions]`
-**Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- claude-bypass-optin`
 on the Claude permissions policy, schema + per-runtime legality, projector, Agent Studio control with
 localized risk copy, and fresh/restart/resume/fork projection. Evidence: `npm run verify:full:quiet`
 (517 files, 5789 tests), `npm run dogfood -- claude-bypass-optin` (5/5), and the Visual QA screenshots
@@ -14,6 +12,9 @@ under `evidence/`. Codex confirmed to have no equivalent blocker; its own gap fi
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- claude-bypass-optin`
 
 ## Intent
 

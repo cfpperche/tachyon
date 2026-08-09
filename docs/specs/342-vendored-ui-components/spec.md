@@ -5,15 +5,16 @@ _Created 2026-07-03._
 **Status:** shipped
 
 **Closure:** T1-T8 shipped (2026-07-03): Tailwind v4 pipeline + token bridge + the T3 compat gate (recorded
-**Verify:** `npm test -- --run test/unit/vscodeThemeBridge.test.ts test/unit/cssOrderSnapshot.test.ts`
-**Verify:** `npm run typecheck`
-**Dogfood:** `npm run test:browser`
 per-component pass/fail: DropdownMenu/Select/Popover PASS, Tooltip/Dialog FAIL and excluded) + Kit wrappers
 (KitSelect/KitFieldRow/KitLabeledInput/KitDropdown/KitPopover) + Pilot A (Plugins panel) + Pilot B (Task
 Studio fields row) + bundle accounting/README/VENDORED.md docs. Full suite, both typechecks, and
 `npm run test:browser` (31/31) green. Human VS Code dogfood (real theme switching, agent-screen visual QA)
 remains outstanding — optional/informational per this project's SDD convention, tracked in `tasks.md`'s
 Human Dogfood + Visual QA sections, not a closure blocker.
+
+**Verify:** `npm test -- --run test/unit/vscodeThemeBridge.test.ts test/unit/cssOrderSnapshot.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm run test:browser`
 
 ## Intent
 

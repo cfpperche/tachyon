@@ -5,11 +5,12 @@ _Created 2026-07-04._
 **Status:** shipped
 
 **Closure:** Shipped declared `subagents:` ownership parsing/validation, derived child-side `declaredOwner`
+metadata, roster/list_agents/sidebar display, YAML round-trip, and owner≠actor regression coverage. Human
+dogfood remains for the maintainer per this spec's handoff.
+
 **Verify:** `npm test -- --run test/unit/config.test.ts test/unit/agentManager.test.ts`
 **Verify:** `npm run typecheck`
 **Dogfood:** `npm test -- --run test/unit/config.test.ts -t "subagents"`
-metadata, roster/list_agents/sidebar display, YAML round-trip, and owner≠actor regression coverage. Human
-dogfood remains for the maintainer per this spec's handoff.
 
 ## Intent
 

@@ -319,13 +319,14 @@ behaviour to preserve, and the acceptance criterion below replaces the one the s
 ## Closure
 
 **Closure:** phases 0-5 shipped and green on `e36b9e69f32e` (633 files / 7237 passed / 4 skipped).
-**Verify:** `npm run typecheck`
-**Verify:** `npm run verify:full:quiet`
 Unified Agent Instance (`identity`/`lifetime` declared, readers on a policy resolver, symmetric
 durable lineage, one door for session creation) plus the governed creation door: propose → human
 review → approve, committed in ONE canonical transaction across both subjects, wired end to end and
 shut by default because no profile holds `grants.proposeSavedAgent`. Deliberately NOT done, with
 reasons: the legacy `declared` fallback, `declared` on the wire (ratified 7), and the promotion UI.
+
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 
 Delivered, phase by phase, with the finding that changed each one:
 

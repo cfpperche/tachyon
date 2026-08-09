@@ -4,12 +4,13 @@ _Created 2026-07-01._
 
 **Status:** shipped
 **Closure:** Shipped Claude probe hardening: structured Claude probes now receive native `--json-schema`, Claude adversarial-review probes get a 10 minute default subprocess timeout when no explicit timeout is supplied, and dogfood proved a real Claude schema-backed review returned valid JSON without `parse_error`.
-**Verify:** `npm test -- test/unit/probeAdapterClaude.test.ts test/unit/probeBridge.test.ts test/unit/probeArchetypes.test.ts`
-**Dogfood:** `node scripts/dogfood-claude-probe-review.mjs`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
      placeholders, and missing dogfood proof or opt-out). -->
+
+**Verify:** `npm test -- test/unit/probeAdapterClaude.test.ts test/unit/probeBridge.test.ts test/unit/probeArchetypes.test.ts`
+**Dogfood:** `node scripts/dogfood-claude-probe-review.mjs`
 
 ## Intent
 

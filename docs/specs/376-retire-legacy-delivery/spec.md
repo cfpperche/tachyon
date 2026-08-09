@@ -5,10 +5,11 @@ _Created 2026-07-13._
 **Status:** shipped
 
 **Closure:** Shipped the hard cut to canonical mechanism-only Delivery, projection-only GitDelivery, explicit
+legacy-metadata retirement, and the installed one-worktree lifecycle proof; spec 368 remains open and unchanged.
+
 **Verify:** `npm run typecheck`
 **Verify:** `npm test`
 **Dogfood:** `node scripts/dogfood/delivery-lease.mjs --canonical-only`
-legacy-metadata retirement, and the installed one-worktree lifecycle proof; spec 368 remains open and unchanged.
 
 ## Intent
 

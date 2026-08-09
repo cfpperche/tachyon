@@ -4,15 +4,16 @@ _Created 2026-07-17._
 
 **Status:** shipped
 **Closure:** Shipped in `3aec3223` + `c0df667d`: production is stable-only from exact clean `main`, worktree builds are isolated dev-only, same-version stable byte drift refuses, and Dev Host upgrade/rollback plus cleanup passed dogfood; final `npm test` passed 4,742 tests with 3 skipped.
+<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
+     When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
+     `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
+     placeholders, and missing dogfood proof or opt-out). -->
+
 **Verify:** `npm exec vitest run test/unit/packageCleanGate.test.ts test/unit/engineServiceProtocol.test.ts test/unit/engineBundleStore.test.ts test/unit/engineSupervisor.test.ts test/unit/devHostBoundary.test.ts test/unit/devHostPointer.test.ts test/unit/devHostLauncher.test.ts test/unit/controlInspector.test.ts`
 **Verify:** `npm run typecheck`
 **Verify:** `npm run check:engine-boundary`
 **Verify:** `npm test`
 **Dogfood:** `npm run dogfood -- dev-host -- headless`
-<!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
-     When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
-     `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
-     placeholders, and missing dogfood proof or opt-out). -->
 
 ## Intent
 
