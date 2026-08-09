@@ -1,4 +1,4 @@
-import { asAgent, suggestKindForCommand, instructionsDeliverable, parseEvery, parseAt, resolveBinary, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, defaultAttentionEnabled, suggestKindForCommand, instructionsDeliverable, parseEvery, parseAt, resolveBinary, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
 import { isAttestedRuntime } from "../runtime/attestedRuntimes.js";
 
 /**
@@ -251,8 +251,9 @@ export function toEntry(state: FormState): Record<string, unknown> {
   if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
   if (state.autostart) entry.autostart = true;
   if (state.restartOnCrash) entry.restart = "on-crash";
-  const attentionDefault = state.kind === "agent";
-  if (state.attention !== attentionDefault) entry.attention = state.attention;
+  // t-26ba8f — the same statement of the default `upsertAgent` reads to decide what an OMITTED
+  // `attention:` key means, so the writer can merge a preserved silenceSec/patterns back onto it.
+  if (state.attention !== defaultAttentionEnabled(state.kind)) entry.attention = state.attention;
   // spec 210 — worktree isolation (agent or terminal kind)
   if (state.worktree) entry.worktree = true;
   if (state.branch.trim().length > 0) entry.branch = state.branch.trim();

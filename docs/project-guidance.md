@@ -63,6 +63,12 @@ say what happens for each. Actors here are the Interface (a human in the UI), an
 Bridge), and Tachyon itself. Triggers matter as much as actors: create, restart, resume, fork and
 crash-recovery are the same actor arriving through different doors.
 
+Ask the same question of a process selector: what else does it reach? On a shared host, never stop a
+process by name or command-line pattern (`pkill`, `killall`, `pgrep | kill`); keep the PID or child
+handle returned by your own spawn and stop only that process. On 2026-08-08, `pkill -f` against the
+shared `verify-full.mjs` name may have cost another agent one gate execution; the measured worst case
+was one lost run, not a fleet outage (`t-895ca6`).
+
 This is not ceremony. On 2026-07-30 five defects landed with one shape between them — a mechanism
 built for one actor, reached later by another that skipped the logic:
 
