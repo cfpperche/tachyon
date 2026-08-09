@@ -30,6 +30,17 @@ const GROK_MODELS_OUTPUT = [
   "",
 ].join("\n");
 
+/** Verbatim `grok models` output measured live on logged-out grok 1.0.0 (2026-08-09). */
+const GROK_MODELS_LOGGED_OUT_OUTPUT = [
+  "You are not authenticated.",
+  "",
+  "Default model: grok-4.5",
+  "",
+  "Available models:",
+  "  * grok-4.5 (default)",
+  "",
+].join("\n");
+
 function probeReturning(result: Partial<GrokProbeResult>): GrokCatalogProbe {
   return async () => ({ code: 0, text: "", ...result });
 }
@@ -89,13 +100,20 @@ describe("t-85c586 — the adapter's verdicts", () => {
     expect(result.state === "unsupported" && result.suggestions).toContain("grok-4.5-fast");
   });
 
-  it("no pin needs no catalog probe at all", async () => {
+  it("no pin still proves authentication before accepting Grok's default", async () => {
     let probed = 0;
     const adapter = new GrokLaunchPreflight(async () => { probed++; return { code: 0, text: GROK_MODELS_OUTPUT }; });
     await expect(adapter.check(command("grok"), {})).resolves.toEqual({
       state: "supported", runtime: "grok", source: "default-model",
     });
-    expect(probed).toBe(0);
+    expect(probed).toBe(1);
+  });
+
+  it("t-5dcf47: no pin is not supported when the CLI is logged out", async () => {
+    const adapter = new GrokLaunchPreflight(probeReturning({ text: GROK_MODELS_LOGGED_OUT_OUTPUT }));
+    await expect(adapter.check(command("grok"), {})).resolves.toMatchObject({
+      state: "unverifiable", code: "runtime_preflight_unverifiable", runtime: "grok",
+    });
   });
 
   it("another runtime's command is a declared mismatch, not a verdict about grok", async () => {
@@ -107,12 +125,26 @@ describe("t-85c586 — the adapter's verdicts", () => {
 });
 
 describe("t-85c586 — nothing is invented when the catalog cannot be read", () => {
+  it("t-5dcf47: a valid catalog from a logged-out CLI is UNVERIFIABLE, never supported", async () => {
+    const adapter = new GrokLaunchPreflight(probeReturning({ text: GROK_MODELS_LOGGED_OUT_OUTPUT }));
+    const result = await adapter.check(command("grok --model grok-4.5"), {});
+    expect(result).toMatchObject({ state: "unverifiable", code: "runtime_preflight_unverifiable", runtime: "grok" });
+  });
+
+  it("t-5dcf47: an unrecognized banner fails safe even when the catalog lists the pin", async () => {
+    const adapter = new GrokLaunchPreflight(probeReturning({
+      text: GROK_MODELS_OUTPUT.replace("You are logged in with grok.com.", "Authentication ready."),
+    }));
+    const result = await adapter.check(command("grok --model grok-4.5"), {});
+    expect(result).toMatchObject({ state: "unverifiable", code: "runtime_preflight_unverifiable", runtime: "grok" });
+  });
+
   it("an unreadable catalog is unverifiable — never 'the model is missing'", async () => {
     const adapter = new GrokLaunchPreflight(probeReturning({ text: "You are not signed in. Run 'grok login'." }));
     const result = await adapter.check(command("grok --model grok-4.5"), {});
     // The distinction that matters: `unsupported` would refuse a launch that may be perfectly valid.
     expect(result).toMatchObject({ state: "unverifiable", code: "runtime_preflight_unverifiable", runtime: "grok" });
-    expect(result.state === "unverifiable" && result.reason).toContain("signed in");
+    expect(result.state === "unverifiable" && result.reason).toContain("authentication banner");
   });
 
   it("a timeout, an oversized listing and a nonzero exit each fail rather than guess", async () => {

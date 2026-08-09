@@ -12,7 +12,8 @@ import {
  * t-85c586 — Grok's authoritative model catalog.
  *
  * Unlike Claude, Grok ships a bounded catalog command, and the CLI itself treats it as the source of
- * truth. Measured on grok 0.2.112 (2026-07-26), `grok models` prints:
+ * truth. Re-measured on grok 1.0.0 (2026-08-09), `grok models` prints a catalog in both auth states;
+ * only its banner distinguishes them. The authenticated form captured on 2026-08-07 is:
  *
  *     You are logged in with grok.com.
  *
@@ -33,9 +34,9 @@ import {
  * usage-reporting namespace. `grok-4.5-build` is what `modelUsage` reports as the effective model
  * (SDD 474), yet it is not a selectable id — pinning it fails. Do not "reconcile" the two.
  *
- * Nothing here invents a catalog. Anything that is not a clean, parseable listing — a failed probe,
- * a logged-out CLI, an unrecognized layout — resolves to `unverifiable`/`failed`, never to a guess
- * in either direction.
+ * Nothing here invents auth or a catalog. A failed probe resolves to `failed`; a logged-out banner,
+ * an unrecognized banner, or an unrecognized catalog resolves to `unverifiable`, never to a guess.
+ * In particular, a future banner change cannot silently turn a credential-free CLI into `supported`.
  */
 
 /** `grok models` output is a short listing; well past any real catalog, and far below a memory risk. */
@@ -49,9 +50,20 @@ export interface GrokModelCatalog {
   defaultModel?: string;
 }
 
+type GrokAuthBanner = "authenticated" | "unauthenticated" | "unrecognized";
+
+/** Grok 1.0.0 exits 0 and prints a catalog in both states, so the exact banner line is authoritative. */
+function parseGrokAuthBanner(text: string): GrokAuthBanner {
+  const lines = text.split(/\r?\n/).map((line) => line.trim());
+  const authenticated = lines.includes("You are logged in with grok.com.");
+  const unauthenticated = lines.includes("You are not authenticated.");
+  if (authenticated === unauthenticated) return "unrecognized";
+  return authenticated ? "authenticated" : "unauthenticated";
+}
+
 /**
- * Parse `grok models` output. Returns null when the text is not a recognizable catalog, which is the
- * honest answer for a logged-out CLI, an error message, or a layout this was not measured against.
+ * Parse the catalog portion of `grok models` output. Auth is deliberately evaluated separately:
+ * grok 1.0.0 prints this same catalog while logged out.
  *
  * Deliberately anchored on the `Available models:` header rather than "any bulleted line": the same
  * output carries a `Default model:` line and a login banner, and a looser rule would happily read a
@@ -162,9 +174,6 @@ export class GrokLaunchPreflight implements RuntimeLaunchPreflightPort {
     if (path.basename(command.binary) !== "grok") {
       return { state: "unverifiable", code: "runtime_preflight_unverifiable", reason: "runtime adapter mismatch" };
     }
-    // No pin means nothing to verify: Grok picks its own default and reports it in the same command.
-    if (!command.model) return { state: "supported", runtime: "grok", source: "default-model" };
-
     const result = await this.probe(command.probeBinary, command.probeArgv, env, { cwd });
     if (result.failure === "timeout") {
       return { state: "failed", code: "runtime_preflight_failed", runtime: "grok", reason: "model catalog probe timed out" };
@@ -175,10 +184,22 @@ export class GrokLaunchPreflight implements RuntimeLaunchPreflightPort {
     if (result.code !== 0) {
       return { state: "failed", code: "runtime_preflight_failed", runtime: "grok", reason: "model catalog probe failed" };
     }
+    const auth = parseGrokAuthBanner(result.text);
+    if (auth !== "authenticated") {
+      return {
+        state: "unverifiable",
+        code: "runtime_preflight_unverifiable",
+        runtime: "grok",
+        reason: auth === "unauthenticated"
+          ? "grok models reported that the CLI is not authenticated"
+          : "grok models reported an unrecognized authentication banner",
+      };
+    }
+    // Once auth is proven, no pin needs a catalog verdict: Grok picks its own default.
+    if (!command.model) return { state: "supported", runtime: "grok", source: "default-model" };
     const catalog = parseGrokModelCatalog(result.text);
     if (!catalog) {
-      // A logged-out CLI prints a sign-in notice instead of a listing. Refusing to interpret that is
-      // the point: an unreadable catalog is not evidence that a model is missing OR present.
+      // An unreadable catalog is not evidence that a model is missing OR present.
       return {
         state: "unverifiable",
         code: "runtime_preflight_unverifiable",
