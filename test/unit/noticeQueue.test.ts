@@ -14,13 +14,28 @@ describe("NoticeQueue", () => {
     expect(q.dequeue("b")?.line).toBe("other");
   });
 
-  it("drops oldest notices on overflow", () => {
-    const q = new NoticeQueue({ maxPerTarget: 2 });
-    expect(q.enqueue("a", "one")).toEqual({ queued: 1, dropped: 0 });
-    expect(q.enqueue("a", "two")).toEqual({ queued: 2, dropped: 0 });
-    expect(q.enqueue("a", "three")).toEqual({ queued: 2, dropped: 1 });
-    expect(q.dequeue("a")?.line).toBe("two");
-    expect(q.dequeue("a")?.line).toBe("three");
+  it("drops the oldest notice when item 21 exceeds the per-target bound", () => {
+    const q = new NoticeQueue();
+    for (let item = 1; item <= 20; item += 1) {
+      expect(q.enqueue("a", `item ${item}`).dropped).toBe(0);
+    }
+    expect(q.enqueue("a", "item 21")).toEqual({ queued: 20, dropped: 1 });
+    expect(q.dequeue("a")?.line).toBe("item 2");
+    for (let item = 3; item <= 21; item += 1) expect(q.dequeue("a")?.line).toBe(`item ${item}`);
+  });
+
+  it("keeps agent-authored reports beyond the TTL while host pokes expire", () => {
+    let now = 0;
+    const expired: string[] = [];
+    const q = new NoticeQueue({ ttlMs: 10, now: () => now, onExpired: (items) => expired.push(...items.map((i) => i.line)) });
+    q.enqueue("parent", "finished report", { origin: "agent-authored", sourceChild: "worker", sourceIncarnation: 1 });
+    q.enqueue("parent", "worker is waiting", { origin: "host-poke", sourceChild: "worker", sourceIncarnation: 1 });
+
+    now = 11;
+
+    expect(q.count("parent")).toBe(1);
+    expect(q.dequeue("parent")?.line).toBe("finished report");
+    expect(expired).toEqual(["worker is waiting"]);
   });
 
   it("expires stale notices and clears target queues", () => {
@@ -40,7 +55,7 @@ describe("NoticeQueue", () => {
     let now = 0;
     const expired: string[] = [];
     const q = new NoticeQueue({ ttlMs: 10, now: () => now, onExpired: (items) => expired.push(...items.map((i) => i.line)) });
-    q.enqueue("a", "doomed", { origin: "agent-authored", sourceChild: "child", sourceIncarnation: 1 });
+    q.enqueue("a", "doomed", { origin: "host-poke", sourceChild: "child", sourceIncarnation: 1 });
     q.enqueue("b", "also-doomed");
     now = 11;
     expect(q.peek("a")).toBeUndefined();

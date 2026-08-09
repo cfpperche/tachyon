@@ -149,6 +149,7 @@ skipTestsWithoutOptionalRuntimeAuth({
     "a HOST poke about a killed child is still purged — the ghost fix keeps its original scope",
     "a host poke about a child that is still ALIVE is delivered (no over-purge)",
     "baseline: busy at enqueue, idle later, child alive → delivered",
+    "an authored report delayed past ten minutes is delivered with honest live-sender provenance",
     "expiry names the sender and the line, the way overflow already names its count",
     "a notice queued because recovery held the mutex is drained in the same idle pass",
     "a submit whose completion could not be observed keeps the notice queued for the next idle",
@@ -185,7 +186,7 @@ describe("t-fb1453 — an agent-authored doorbell outlives its author", () => {
     // fresh news) is answered by provenance, not by destruction: the line says how old it is and that
     // its author is gone. Delivering it unlabelled would trade one confusion for another.
     expect(delivered).toContain("delayed");
-    expect(delivered).toContain("'child' was dismissed before you read this");
+    expect(delivered).toContain("reported by 'child'; 'child' was dismissed before delivery");
     expect(priv(ws).noticeQueue.count("coord")).toBe(0);
     ws.dispose();
   });
@@ -238,6 +239,25 @@ describe("t-fb1453 — an agent-authored doorbell outlives its author", () => {
     expect((sent.get(session) ?? []).join("")).toContain("t-21101f");
     ws.dispose();
   });
+
+  it("an authored report delayed past ten minutes is delivered with honest live-sender provenance", async () => {
+    const { ws, sent, session } = await withCoordAndChild();
+
+    forceStateOf(ws, "coord", "working");
+    await priv(ws).deliverNotice("coord", DOORBELL, doorbellMetadataFor(ws, "child"));
+    ageQueuePastTtl(ws, "coord");
+
+    forceStateOf(ws, "coord", "idle");
+    await priv(ws).recoverOnIdle("coord", false);
+    await flush();
+
+    const delivered = (sent.get(session) ?? []).join("");
+    expect(delivered).toContain("t-21101f");
+    expect(delivered).toContain("delayed ~11m; reported by 'child'");
+    expect(delivered).not.toContain("dismissed");
+    expect(priv(ws).noticeQueue.count("coord")).toBe(0);
+    ws.dispose();
+  });
 });
 
 describe("t-fb1453 — a notice the TTL eats is never eaten in silence", () => {
@@ -248,7 +268,7 @@ describe("t-fb1453 — a notice the TTL eats is never eaten in silence", () => {
     const { ws, host, sent, session } = await withCoordAndChild();
 
     forceStateOf(ws, "coord", "working");
-    await priv(ws).deliverNotice("coord", DOORBELL, doorbellMetadataFor(ws, "child"));
+    await priv(ws).deliverNotice("coord", "[tachyon] child 'child' is waiting for input", priv(ws).sourceNoticeMetadata("child", "host-poke"));
     expect(priv(ws).noticeQueue.count("coord")).toBe(1);
 
     ageQueuePastTtl(ws, "coord");
@@ -261,7 +281,7 @@ describe("t-fb1453 — a notice the TTL eats is never eaten in silence", () => {
     const warned = host.notices.filter((n) => n.level === "warn").map((n) => n.message);
     expect(warned.join("|")).toContain("expired in the delivery queue");
     expect(warned.join("|")).toContain("child"); // WHOSE bell died
-    expect(warned.join("|")).toContain("t-21101f"); // and WHAT it said
+    expect(warned.join("|")).toContain("waiting for input"); // and WHAT it said
     ws.dispose();
   });
 });

@@ -13,6 +13,8 @@
  */
 export type NoticeOrigin = "host-poke" | "agent-authored";
 
+export const DEFAULT_NOTICE_TTL_MS = 10 * 60_000;
+
 /**
  * A notice bound to one child's identity. `origin` is REQUIRED, and deliberately not defaultable: a
  * caller that binds a notice to a child must state whether the notice's truth expires with that child,
@@ -74,7 +76,7 @@ export class NoticeQueue {
 
   constructor(options: NoticeQueueOptions = {}) {
     this.maxPerTarget = Math.max(1, Math.floor(options.maxPerTarget ?? 20));
-    this.ttlMs = Math.max(1, Math.floor(options.ttlMs ?? 10 * 60_000));
+    this.ttlMs = Math.max(1, Math.floor(options.ttlMs ?? DEFAULT_NOTICE_TTL_MS));
     this.now = options.now ?? Date.now;
     this.onExpired = options.onExpired;
   }
@@ -151,7 +153,10 @@ export class NoticeQueue {
       if (!queue) continue;
       const fresh: NoticeQueueItem[] = [];
       for (const item of queue) {
-        if (now - item.createdAt <= this.ttlMs) fresh.push(item);
+        // t-93bec9 — an authored doorbell reports history, so elapsed time cannot make it false.
+        // It remains bounded by maxPerTarget; host pokes and unbound relays retain the TTL because
+        // they describe live state or are ordinary transient notifications.
+        if (item.origin === "agent-authored" || now - item.createdAt <= this.ttlMs) fresh.push(item);
         else expired.push(item);
       }
       if (fresh.length > 0) this.queues.set(key, fresh);
