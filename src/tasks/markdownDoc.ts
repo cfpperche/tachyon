@@ -1,7 +1,7 @@
 import MarkdownIt from "markdown-it";
 import type { TiptapJSON } from "../richDoc/types.js";
 
-type Token = MarkdownIt.Token;
+type Token = ReturnType<MarkdownIt["parse"]>[number];
 
 /**
  * spec 339 (T4) — pure, DOM-free markdown → Tiptap-JSON import via markdown-it's token stream (plan.md's
