@@ -1,8 +1,8 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { SectionsModel, WorktreeRow } from "../../sections/model";
-import { Badge, Button, EmptyState, ListRow, PageChrome } from "../shared/ui";
-import type { WorktreesAction, WorktreesStrings as Strings } from "./messages";
+import { Badge, Button, EmptyState, ListRow, PageChrome, QuickPicker, type QuickPickerItem } from "../shared/ui";
+import type { WorktreeReviewFiles, WorktreesAction, WorktreesStrings as Strings } from "./messages";
 
 /**
  * spec 444 — hygiene classification groups, in action-priority order.
@@ -115,9 +115,12 @@ function LandBlock({
             <span class="ck-land-mark" aria-hidden="true">{check.ok ? "✓" : "✕"}</span>
             <span class="ck-land-check-body">
               <b>{s[LAND_CHECK_LABEL[check.id] ?? "landTitle"]}</b> — {check.detail}
+              {/* t-ea5425 — the exit is the only ACTIONABLE sentence in the block, so it is labelled the
+                  way the check above it is (a bold term, then the sentence) instead of trailing off as
+                  the quietest line on the card. */}
               {check.fix ? (
                 <span class="ck-land-fix">
-                  {s.landFixLabel}: {check.fix}
+                  <b>{s.landFixLabel}:</b> {check.fix}
                 </span>
               ) : null}
             </span>
@@ -154,6 +157,27 @@ function LandBlock({
       </div>
     </section>
   );
+}
+
+/**
+ * t-ea5425 — the changed-file picker, in the webview that asked for it.
+ *
+ * The list is the HOST's (only it can read git) and the choice is posted straight back to it, which is
+ * the pattern the Activity share already uses. Nothing here draws a diff: the chosen path goes to the
+ * one review flow, which opens VS Code's own diff editor — the right product for reading code, unlike
+ * the native quick pick that used to float this list at the top of the window, away from the card the
+ * human clicked.
+ *
+ * The marks are the same information the native list carried as codicons, in characters that need no
+ * translation; a rename keeps naming both of its paths.
+ */
+const REVIEW_FILE_MARK: Record<string, string> = { A: "+", M: "~", D: "−", R: "→", C: "⧉" };
+
+function reviewPickerItems(review: WorktreeReviewFiles): QuickPickerItem[] {
+  return review.files.map((file) => ({
+    id: file.path,
+    label: `${REVIEW_FILE_MARK[file.status] ?? "·"} ${file.from && file.from !== file.path ? `${file.from} → ${file.path}` : file.path}`,
+  }));
 }
 
 function WtGroupHead({ group, title, count, action }: { group: WtGroup; title: string; count: number; action?: ComponentChildren }) {
@@ -295,17 +319,16 @@ export function WorktreesHygiene({
             {orphaned ? <span class="ck-wt-reason-muted">{s.wtAgentGone}</span> : null}
           </>
         }
-        detail={
-          group === "record-only" ? undefined : (
-            <>
-              {row.path ? <span class="ck-mono">{row.path}</span> : null}
-              {/* t-7cb971 — present only when the engine found work the trunk does not contain, so it
-                  appears on the rows that actually have something to land, in whichever hygiene group
-                  they sit. Absent is never "ready": no block at all is the fail-closed default. */}
-              {row.land ? <LandBlock s={s} land={row.land} row={row} onCopyText={onCopyText} onPost={onPost} /> : null}
-            </>
-          )
-        }
+        detail={group === "record-only" || !row.path ? undefined : <span class="ck-mono">{row.path}</span>}
+        /* t-7cb971 — present only when the engine found work the trunk does not contain, so it appears
+           on the rows that actually have something to land, in whichever hygiene group they sit. Absent
+           is never "ready": no block at all is the fail-closed default.
+           t-ea5425 — in the row FOOTER, not in `detail`. Detail is the row's text column, which shares
+           its width with the action buttons; the land block is the whole row's business and reads at the
+           card's width there. Measured at 880: 0.58 of the card before, 1.00 after. */
+        footer={group === "record-only" || !row.land ? undefined : (
+          <LandBlock s={s} land={row.land} row={row} onCopyText={onCopyText} onPost={onPost} />
+        )}
         actions={
           /* t-d29398 — the locked arm comes BEFORE the Agent-Studio hand-off, and that ordering is
              the fix. The measured incident was an AGENT's own checkout: sending its owner to
@@ -509,6 +532,9 @@ export const defaultStrings: Strings = {
   landCommits: "commit(s)",
   landReview: "Review these changes",
   landPropose: "Open a pull request",
+  landReviewPickTitle: "Review '{0}' — {1} changed file(s)",
+  landReviewPickPlaceholder: "Open a file's diff ({0} ↔ {1})",
+  landReviewPickEmpty: "No changed file matches",
   landCompare: "Review shows {0}..{1} — the commits this command would land, not the working tree.",
   landCompareBlocked: "Review opens a committed-history comparison, not the working tree.",
   landCompareNoTrunk: "No local trunk to compare against — review shows this branch against the ref it was forked from.",
@@ -546,6 +572,38 @@ export const defaultStrings: Strings = {
   wtSelected: "selected",
   wtShowAll: "Show all",
 };
-export function App({ model, strings: s, post }: { model?: SectionsModel; strings: Strings; post: (action: WorktreesAction) => void }) {
-  return <main class="ds-page"><PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />{model ? <WorktreesHygiene s={s} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={post} /> : null}</main>;
+/**
+ * t-ea5425 — `reviewFiles` is a host PUSH, and it is the picker's open signal rather than a seed for
+ * local state: the picker is open exactly while the host's candidate set is present, and closing it is
+ * clearing that set (`onCloseReviewFiles`). One source of truth, no second copy that can drift out of
+ * step with the list the host measured — and no state for a re-render to resurrect after a poll.
+ */
+export function App({ model, strings: s, post, reviewFiles, onCloseReviewFiles }: {
+  model?: SectionsModel;
+  strings: Strings;
+  post: (action: WorktreesAction) => void;
+  reviewFiles?: WorktreeReviewFiles | null;
+  onCloseReviewFiles?: () => void;
+}) {
+  return (
+    <main class="ds-page">
+      <PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />
+      {model ? <WorktreesHygiene s={s} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={post} /> : null}
+      {reviewFiles ? (
+        <QuickPicker
+          open
+          data-testid="worktree-review-picker"
+          title={s.landReviewPickTitle.replace("{0}", reviewFiles.label).replace("{1}", String(reviewFiles.files.length))}
+          placeholder={s.landReviewPickPlaceholder.replace("{0}", reviewFiles.base).replace("{1}", reviewFiles.current)}
+          emptyText={s.landReviewPickEmpty}
+          items={reviewPickerItems(reviewFiles)}
+          onClose={() => onCloseReviewFiles?.()}
+          onSelect={(item) => {
+            onCloseReviewFiles?.();
+            post({ type: "worktreeOpenReviewFile", id: reviewFiles.id, path: item.id });
+          }}
+        />
+      ) : null}
+    </main>
+  );
 }

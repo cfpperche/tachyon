@@ -162,6 +162,67 @@ describe("SDD 501 — review and propose reach the land block", () => {
     expect(html).not.toContain(fixtureStrings.landPropose);
   });
 
+  /**
+   * t-ea5425 — the file is chosen HERE, in the product picker, not in VS Code's chrome.
+   *
+   * The host owns the candidate list (only it can read git) and the choice goes straight back to it —
+   * the shape `activity/messages.ts:74` already declares for this product ("chosen in-webview
+   * QuickPicker (not vscode.showQuickPick)"). The picker is driven by the host's push and nothing else:
+   * a webview that kept its own copy of the list could show a file the host never measured.
+   */
+  const REVIEW = {
+    id: "mw-change-x",
+    label: "tachyon/change/x",
+    base: "main",
+    current: HEAD.slice(0, 12),
+    files: [
+      { path: "src/one.ts", status: "M" },
+      { path: "src/two.ts", status: "A", from: "src/old.ts" },
+    ],
+  };
+
+  const renderPicker = (over: Record<string, unknown> = {}) => {
+    const posted: WorktreesAction[] = [];
+    const closed: number[] = [];
+    const out = renderStaticWithElements(Shell({
+      strings: fixtureStrings,
+      model: buildSectionsModel([bundle([row()])], { section: "worktrees", wsHash: "h" }),
+      post: (action: WorktreesAction) => posted.push(action),
+      reviewFiles: REVIEW,
+      onCloseReviewFiles: () => closed.push(1),
+      ...over,
+    }));
+    return { ...out, posted, closed };
+  };
+
+  it("draws the product picker over the card, listing every changed file the host sent", () => {
+    const { html, elements } = renderPicker();
+    expect(html).toContain('data-testid="worktree-review-picker"');
+    // The picker's own chrome names what is being compared, in the sentences the native list used.
+    expect(html).toContain("Review 'tachyon/change/x' — 2 changed file(s)");
+    expect(html).toContain(`main ↔ ${HEAD.slice(0, 12)}`);
+    const options = elements.filter((el) => el.props["data-testid"] === "worktree-review-picker-item");
+    expect(options).toHaveLength(2);
+    expect(options.map((el) => el.props["data-id"])).toEqual(["src/one.ts", "src/two.ts"]);
+    // A rename still names both of its paths, exactly as the native list did.
+    expect(options[1].html).toContain("src/old.ts → src/two.ts");
+  });
+
+  it("posts the chosen file to the host and closes — it opens no diff of its own", () => {
+    const { elements, posted, closed, html } = renderPicker();
+    const option = elements.find((el) => el.props["data-id"] === "src/two.ts");
+    expect(option, "no option for src/two.ts").toBeDefined();
+    (option!.props.onClick as () => void)();
+    expect(posted).toEqual([{ type: "worktreeOpenReviewFile", id: "mw-change-x", path: "src/two.ts" }]);
+    expect(closed).toEqual([1]);
+    expect(html).not.toMatch(/diff-hunk|ck-diff|<ins\b|<del\b/);
+  });
+
+  it("shows no picker until the host sends candidates", () => {
+    const { html } = renderPicker({ reviewFiles: null });
+    expect(html).not.toContain('data-testid="worktree-review-picker"');
+  });
+
   it("offers neither on a row the engine sent no land suggestion for", () => {
     const { html } = render([row({
       land: undefined,

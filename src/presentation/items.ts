@@ -23,4 +23,14 @@ export interface PipelineNodeItem { ws?: WorkspacePresentationTarget; runId?: st
  * forwarding a target a webview message could have shaped. Same duck-typing rule as the rest of this
  * file — a handler reads these fields and nothing else.
  */
-export interface WorktreeRowItem { ws?: WorkspacePresentationTarget; workspaceHash?: string; worktreeId: string }
+export interface WorktreeRowItem { ws?: WorkspacePresentationTarget; workspaceHash?: string; worktreeId: string; select?: WorktreeReviewSelection }
+
+/**
+ * t-ea5425 — which chrome picks the changed file, said by the CALLER.
+ *
+ * `"list"` asks for the candidates and opens nothing (a caller with its own picker — the Worktrees
+ * webview draws the product QuickPicker); `{ file }` says that picker already chose. Omitting it keeps
+ * VS Code's quick pick, which is still the right product for a tree item with no surface of its own.
+ * Only the SELECTION varies: every door opens the diff through the one flow in `extension.ts`.
+ */
+export type WorktreeReviewSelection = "list" | { file: string };

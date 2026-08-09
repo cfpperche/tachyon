@@ -3,7 +3,8 @@ import { buildSectionsModel, collectNeedsFor, type WorkspaceBundle } from "../se
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { POLL, READY, worktreesErrorMessage, worktreesModelMessage } from "./worktrees/messages.js";
+import { POLL, READY, worktreesErrorMessage, worktreesModelMessage, worktreeReviewFilesMessage, type WorktreeReviewFile } from "./worktrees/messages.js";
+import type { WorktreeReviewSelection } from "../presentation/items.js";
 
 export const WORKTREES_VIEW_TYPE = "tachyonWorktrees";
 type WorktreesRefreshKind = "worktrees";
@@ -88,7 +89,17 @@ export class WorktreesPanelManager {
     } else if (message.type === "worktreeReleaseLock" && typeof message.id === "string") {
       await this.runOne(session, "releaseLock", message.id, false);
     } else if (message.type === "worktreeReviewDiff" && typeof message.id === "string") {
-      await this.dispatch(session, "tachyon.reviewWorktreeItem", message.id);
+      // t-ea5425 — ask the review command for its candidates and hand them to the webview's own picker.
+      // The command still refuses (and says so) for a row with no committed history or no changes; a
+      // refusal answers `undefined`, and an undefined answer opens no picker rather than an empty one.
+      const candidates = await this.dispatch(session, "tachyon.reviewWorktreeItem", message.id, "list");
+      const review = reviewCandidatesOf(candidates);
+      if (review) session.post(worktreeReviewFilesMessage({ id: message.id, ...review }));
+    } else if (message.type === "worktreeOpenReviewFile" && typeof message.id === "string" && typeof message.path === "string") {
+      // The choice goes back through the SAME command, which opens the one diff. The path is re-resolved
+      // there against a fresh changed-file list, so a file that vanished since the picker was drawn is
+      // named as gone instead of opening a diff of nothing.
+      await this.dispatch(session, "tachyon.reviewWorktreeItem", message.id, { file: message.path });
     } else if (message.type === "worktreeCreatePr" && typeof message.id === "string") {
       await this.dispatch(session, "tachyon.createWorktreePrItem", message.id);
     } else if (message.type === "worktreeBatchCleanup" && Array.isArray(message.items)) {
@@ -119,10 +130,11 @@ export class WorktreesPanelManager {
     session: SectionPanelSession<WorktreesRefreshKind>,
     command: "tachyon.reviewWorktreeItem" | "tachyon.createWorktreePrItem",
     worktreeId: string,
-  ): Promise<void> {
+    select?: WorktreeReviewSelection,
+  ): Promise<unknown> {
     const project = session.target.project;
     if (!project) throw new Error("Worktrees dashboard has no project");
-    await vscode.commands.executeCommand(command, { workspaceHash: project, worktreeId });
+    return await vscode.commands.executeCommand(command, { workspaceHash: project, worktreeId, ...(select ? { select } : {}) });
   }
 
   private async runOne(
@@ -141,6 +153,28 @@ export class WorktreesPanelManager {
     if (refusal) void vscode.window.showWarningMessage(refusal);
     await this.send(session);
   }
+}
+
+/**
+ * t-ea5425 — the command's answer, narrowed to what the picker shows.
+ *
+ * `executeCommand` is an untyped boundary, so the shape is CHECKED rather than asserted, and only the
+ * three fields the list renders cross into the webview: a changed-file record carries more than a
+ * picker needs, and what is not sent cannot be leaked by a future field. An answer that is not a
+ * candidate set (the command refused and already said why) yields `undefined` — no picker at all.
+ */
+function reviewCandidatesOf(value: unknown): { label: string; base: string; current: string; files: WorktreeReviewFile[] } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const c = value as { label?: unknown; base?: unknown; current?: unknown; files?: unknown };
+  if (typeof c.label !== "string" || typeof c.base !== "string" || typeof c.current !== "string") return undefined;
+  if (!Array.isArray(c.files) || c.files.length === 0) return undefined;
+  const files: WorktreeReviewFile[] = [];
+  for (const raw of c.files) {
+    const f = raw as { path?: unknown; status?: unknown; from?: unknown };
+    if (typeof f.path !== "string" || typeof f.status !== "string") return undefined;
+    files.push({ path: f.path, status: f.status, ...(typeof f.from === "string" ? { from: f.from } : {}) });
+  }
+  return { label: c.label, base: c.base, current: c.current, files };
 }
 
 export function worktreesRefreshKind(message: unknown): WorktreesRefreshKind | undefined {
@@ -177,6 +211,10 @@ function worktreesStrings(): Record<string, string> {
     landCommits: t("commit(s)"),
     landReview: t("Review these changes"),
     landPropose: t("Open a pull request"),
+    // t-ea5425 — the same two sentences the native quick pick showed, now on the product picker.
+    landReviewPickTitle: t("Review '{0}' — {1} changed file(s)"),
+    landReviewPickPlaceholder: t("Open a file's diff ({0} ↔ {1})"),
+    landReviewPickEmpty: t("No changed file matches"),
     landCompare: t("Review shows {0}..{1} — the commits this command would land, not the working tree."),
     landCompareBlocked: t("Review opens a committed-history comparison, not the working tree."),
     landCompareNoTrunk: t("No local trunk to compare against — review shows this branch against the ref it was forked from."),

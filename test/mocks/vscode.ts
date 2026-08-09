@@ -77,6 +77,17 @@ export function __resetVscodeMock(): void {
   __clipboardText = "";
   __warningMessageResult = undefined;
   __quickPickResult = undefined;
+  __commandResults.clear();
+}
+
+/**
+ * t-ea5425 — what a registered command ANSWERS. `executeCommand` resolved `undefined` unconditionally,
+ * which is fine for fire-and-forget dispatch and useless for a caller that reads the result — the
+ * Worktrees panel asks the review command for its changed-file candidates before drawing its own picker.
+ */
+const __commandResults = new Map<string, unknown>();
+export function __setCommandResult(command: string, result: unknown): void {
+  __commandResults.set(command, result);
 }
 
 let __openDialogResult: Uri[] | undefined;
@@ -314,7 +325,7 @@ export const commands = {
   registerCommand: () => ({ dispose: () => {} }),
   executeCommand: (command: string, ...args: unknown[]) => {
     __executedCommands.push({ command, args });
-    return Promise.resolve(undefined);
+    return Promise.resolve(__commandResults.get(command));
   },
 };
 

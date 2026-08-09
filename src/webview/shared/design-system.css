@@ -479,6 +479,25 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
   flex: 0 0 auto;
   align-items: center;
 }
+/* t-ea5425 — the full-width band under a row. Only rows that pass a `footer` wrap, so no existing row's
+   main/actions line changes: `flex-wrap` is opted into by the modifier the component adds, never by the
+   base rule. The band takes the WHOLE row because its content is about the row, not about its text
+   column — a land block squeezed beside the action buttons had 0.58 of the card to wrap prose in. */
+.ds-list-row-has-footer {
+  flex-wrap: wrap;
+}
+/* Wrapping is for the FOOTER only — the row's own line must not reflow because of it. With the base
+   `flex: 1 1 auto`, the main column's hypothetical size is its content width, so the moment the row is
+   allowed to wrap the actions drop below it: measured, the land row's three buttons left the right edge
+   and took a line of their own. A zero basis reproduces the `nowrap` line exactly (main takes the free
+   space, actions keep their intrinsic width) while leaving the footer free to wrap. */
+.ds-list-row-has-footer > .ds-list-row-main {
+  flex-basis: 0;
+}
+.ds-list-row-footer {
+  flex: 1 1 100%;
+  min-width: 0;
+}
 
 /* t-ededdd — action-bearing rows share one narrow-width contract. Page headers and list rows both
    keep their actions beside the main content while there is room; below this breakpoint the action

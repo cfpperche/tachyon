@@ -77,6 +77,7 @@ import type {
   PipelineDefItem,
   PipelineNodeItem,
   WorktreeRowItem,
+  WorktreeReviewSelection,
 } from "./presentation/items.js";
 import { isTemporaryItem } from "./presentation/contextValue.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
@@ -636,24 +637,60 @@ interface ReviewSides {
 /** spec 213 / 230 — quick-pick the changed files of a worktree (base ↔ current), each opening VS Code's
  *  native diff. THE one implementation: the agent worktree review, the pipeline run "View changes" and
  *  (SDD 501) the land door all resolve an identity and arrive here.
- *  `singleDiffReviewImplementation.test.ts` is the guard that keeps that true. */
-async function reviewWorktreeDiff(sides: ReviewSides, changes: ChangedFile[], label: string): Promise<void> {
+ *  `singleDiffReviewImplementation.test.ts` is the guard that keeps that true.
+ *
+ *  t-ea5425 — `select` is how a caller says WHICH CHROME picks the file, and it is the only thing that
+ *  varies between the doors:
+ *    · omitted → VS Code's quick pick. The sidebar agent row and the pipeline's "View changes" are tree
+ *      items with no surface of their own to draw in, so the native list is the right product for them;
+ *    · `"list"` → pick nothing, open nothing, and hand the candidates back. The Worktrees dashboard is a
+ *      webview and draws the product QuickPicker (`shared/ui/QuickPicker.tsx`) in the card the human
+ *      clicked, instead of a native list floating at the top of the window;
+ *    · `{ file }` → that webview already chose; open this one.
+ *  The SELECTION moved; the diff pair and the one command that opens it did not, which is precisely
+ *  what the guard above is about. (Written without backticks around that command name on purpose: the
+ *  guard counts quoted mentions of it, and a comment that names it in quotes reads to the detector as a
+ *  second opener.) */
+/** t-ea5425 — the candidate set a caller with its own picker gets back from `"list"`. */
+export interface ReviewCandidates {
+  label: string;
+  base: string;
+  /** The current side's name — a commit when the comparison is committed history, else "worktree". */
+  current: string;
+  files: ChangedFile[];
+}
+
+async function reviewWorktreeDiff(
+  sides: ReviewSides,
+  changes: ChangedFile[],
+  label: string,
+  select?: WorktreeReviewSelection,
+): Promise<ReviewCandidates | undefined> {
   if (changes.length === 0) {
     notify(vscode.l10n.t("Nothing to review — '{0}' has no changes yet.", label), "info");
     return;
   }
   // The current side names itself: a diff read out of a commit must not be titled "worktree".
   const currentLabel = sides.headRef ?? "worktree";
+  if (select === "list") return { label, base: sides.baseRef, current: currentLabel, files: changes };
   const glyph: Record<string, string> = { A: "$(diff-added)", M: "$(diff-modified)", D: "$(diff-removed)", R: "$(diff-renamed)", C: "$(diff-renamed)" };
-  const pick = await vscode.window.showQuickPick(
-    changes.map((c) => ({ label: `${glyph[c.status] ?? ""} ${c.from && c.from !== c.path ? `${c.from} → ${c.path}` : c.path}`, file: c })),
-    {
-      title: vscode.l10n.t("Review '{0}' — {1} changed file(s)", label, changes.length),
-      placeHolder: vscode.l10n.t("Open a file's diff ({0} ↔ {1})", sides.baseRef, currentLabel),
-    },
-  );
-  if (!pick) return;
-  const f = pick.file;
+  const chosen = select
+    ? changes.find((c) => c.path === select.file)
+    : (await vscode.window.showQuickPick(
+      changes.map((c) => ({ label: `${glyph[c.status] ?? ""} ${c.from && c.from !== c.path ? `${c.from} → ${c.path}` : c.path}`, file: c })),
+      {
+        title: vscode.l10n.t("Review '{0}' — {1} changed file(s)", label, changes.length),
+        placeHolder: vscode.l10n.t("Open a file's diff ({0} ↔ {1})", sides.baseRef, currentLabel),
+      },
+    ))?.file;
+  if (!chosen) {
+    // A cancelled quick pick is silence; a file that is no longer in the list is a REFUSAL. The webview
+    // drew its candidates at click time and the human chooses later — a commit landing in between must
+    // say so rather than open nothing and look broken.
+    if (select) notify(vscode.l10n.t("'{0}' is no longer among the changed files of '{1}'.", select.file, label), "warn");
+    return;
+  }
+  const f = chosen;
   const { baseEmpty, currentEmpty } = emptySides(f.status);
   const emptyUri = vscode.Uri.from({ scheme: WT_DIFF_SCHEME, path: "/empty", query: "empty=1" });
   const atRef = (file: string, ref: string): vscode.Uri => vscode.Uri.from({
@@ -668,6 +705,8 @@ async function reviewWorktreeDiff(sides: ReviewSides, changes: ChangedFile[], la
       ? atRef(f.path, sides.headRef)
       : vscode.Uri.file(path.join(sides.cwd, f.path));
   await vscode.commands.executeCommand("vscode.diff", base, current, diffTitle(f, sides.baseRef, currentLabel));
+  // Opening a diff answers nothing: only `"list"` has candidates to hand back.
+  return undefined;
 }
 
 const DRAFT_INPUT_SEED =
@@ -3584,27 +3623,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // spec 213 / C2 — review the agent's work: a quick-pick of changed files (base ↔ current).
       // SDD 501 — the SAME command, reached from the land block by the managed-registry row id. Which
       // identity arrived decides only what is resolved; the flow both reach is the one below.
+      // t-ea5425 — and `select` decides only which chrome picks the file. It is read on the worktree-row
+      // arm alone: that door's caller is the Worktrees WEBVIEW, which has a picker of its own to draw in.
+      // A tree item has no such surface, so the agent arm keeps the native list and passes nothing.
       const ws = wsOf(item);
-      if (!ws) return;
+      if (!ws) return undefined;
       if ("worktreeId" in item) {
         const review = await worktreeReview(ws, { worktreeId: item.worktreeId });
         if (!review.record || !review.comparison) {
           notify(vscode.l10n.t("Nothing to review — this checkout has no committed history to compare."), "warn");
-          return;
+          return undefined;
         }
-        await reviewWorktreeDiff(
+        return await reviewWorktreeDiff(
           { cwd: review.record.path, baseRef: review.comparison.base, headRef: review.comparison.head },
           review.changedFiles,
           review.record.branch,
+          item.select,
         );
-        return;
       }
       const review = await worktreeReview(ws, { agent: item.agentName });
       if (!review.record) {
         notify(vscode.l10n.t("'{0}' has no worktree", item.agentName), "warn");
-        return;
+        return undefined;
       }
       await reviewWorktreeDiff({ cwd: review.record.path, baseRef: review.record.baseRef }, review.changedFiles, item.agentName);
+      return undefined;
     }),
     vscode.commands.registerCommand("tachyon.reviewPipelineItem", async (item: PipelineNodeItem | PipelineDefItem) => {
       // spec 230 — "View changes": review the RUN's worktree diff (what a pipeline produced), so the

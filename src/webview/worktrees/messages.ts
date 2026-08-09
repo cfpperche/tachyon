@@ -5,6 +5,37 @@ export { READY, readyMessage, type ReadyMessage };
 export const POLL = "pollWorktrees" as const;
 export const WORKTREES_MODEL = "worktreesModel" as const;
 export const WORKTREES_ERROR = "worktreesError" as const;
+/**
+ * t-ea5425 — the host listed the changed files; the WEBVIEW picks one.
+ *
+ * Same shape the Activity share uses (`activity/messages.ts:74`): the host owns the candidate set
+ * because only it can read git, the webview owns the chrome because the product's picker is ours, and
+ * the host executes the choice. Nothing about the diff moves — VS Code's own diff editor stays the one
+ * opener, reached from the one flow in the extension host.
+ */
+export const WORKTREE_REVIEW_FILES = "worktreeReviewFiles" as const;
+
+/** One changed file, as the picker shows it. `status` is git's letter (A/M/D/R/C). */
+export interface WorktreeReviewFile {
+  path: string;
+  status: string;
+  /** Rename/copy origin, when the file arrived from somewhere else. */
+  from?: string;
+}
+
+export interface WorktreeReviewFiles {
+  /** The row the review belongs to — sent back with the choice. */
+  id: string;
+  /** What is being reviewed, in the human's words (the branch). */
+  label: string;
+  /** The two sides, already named by the host: no side is inferred in the webview. */
+  base: string;
+  current: string;
+  files: WorktreeReviewFile[];
+}
+
+export const worktreeReviewFilesMessage = (review: WorktreeReviewFiles) =>
+  ({ type: WORKTREE_REVIEW_FILES, review } as const);
 
 export interface WorktreesStrings {
   worktreesTitle: string;
@@ -41,6 +72,14 @@ export interface WorktreesStrings {
    */
   landReview: string;
   landPropose: string;
+  /**
+   * t-ea5425 — the in-webview file picker's own chrome. The candidate list is the host's; these three
+   * lines are the surface's, and they are deliberately the SAME sentences the native quick pick used —
+   * what changed is where the list is drawn, not what it says.
+   */
+  landReviewPickTitle: string;
+  landReviewPickPlaceholder: string;
+  landReviewPickEmpty: string;
   landCompare: string;
   landCompareBlocked: string;
   landCompareNoTrunk: string;
@@ -95,6 +134,8 @@ export type WorktreesAction =
   | { type: "worktreeReleaseLock"; id: string; wsHash?: string }
   /** SDD 501 — the host dispatches these to `tachyon.reviewWorktreeItem` / `tachyon.createWorktreePrItem`. */
   | { type: "worktreeReviewDiff"; id: string; wsHash?: string }
+  /** t-ea5425 — the file the in-webview picker chose; the host opens its diff. */
+  | { type: "worktreeOpenReviewFile"; id: string; path: string }
   | { type: "worktreeCreatePr"; id: string; wsHash?: string }
   | { type: "worktreeBatchCleanup"; items: Array<{ id: string; op: "remove" | "forget"; wsHash?: string }> };
 
