@@ -25,7 +25,7 @@ import {
 import { parseCodexHooksBlock } from "../plugins/adapters/codex.js";
 import { parseClaudeHooksBlock } from "../plugins/adapters/claude.js";
 import type { WithheldCapability } from "./withheldCapability.js";
-import { MATERIALIZED_WORKSPACE_REFERENCE_KINDS } from "./agentWorkspaceCommands.js";
+import { MATERIALIZED_PROFILE_REFERENCE_KINDS } from "./agentProfileMaterialization.js";
 
 export type AgentProfileDiagnosticCode =
   | "profile/missing"
@@ -77,7 +77,7 @@ export interface ResolvedProfileReference extends AgentProfileReferenceV1 {
   capturedCapability?: CapturedCapabilitySource;
   /**
    * t-afc86e — the resolved BYTES, carried only for the kinds the projection materializes into the
-   * runtime entry (`MATERIALIZED_WORKSPACE_REFERENCE_KINDS`).
+   * runtime entry (`MATERIALIZED_PROFILE_REFERENCE_KINDS`).
    *
    * The file was already opened and digest-checked here; before this the text was read, verified and
    * dropped. Excluded from the effective digest in `finalize` — `resolvedSha256` already binds these
@@ -477,7 +477,7 @@ function resolveReferences(
         references.push({
           ...reference,
           resolvedSha256: file.sha256,
-          ...(MATERIALIZED_WORKSPACE_REFERENCE_KINDS.has(reference.kind) ? { resolvedText: file.text } : {}),
+          ...(MATERIALIZED_PROFILE_REFERENCE_KINDS.has(reference.kind) ? { resolvedText: file.text } : {}),
         });
         provenance.push({
           field: `references.${reference.id}`,

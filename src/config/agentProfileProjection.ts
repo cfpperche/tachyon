@@ -24,7 +24,9 @@ import {
 } from "./agentProfileReader.js";
 import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
 import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "../runtime/attestedRuntimes.js";
-import { MATERIALIZED_WORKSPACE_REFERENCE_KINDS, parseWorkspaceCommandLines } from "./agentWorkspaceCommands.js";
+import { parseWorkspaceCommandLines } from "./agentWorkspaceCommands.js";
+import { MATERIALIZED_PROFILE_REFERENCE_KINDS } from "./agentProfileMaterialization.js";
+import { PERSISTENT_INSTRUCTIONS_FILE_NAME } from "./agentInstructionsDocument.js";
 import { inspectRuntimeWorkspaceInput, readRuntimeProjectionClaims } from "../plugins/projectedInputs.js";
 import {
   projectAgentNativeConfig,
@@ -642,6 +644,45 @@ function materializeWorkspaceCommands(
 }
 
 /**
+ * t-d48775 — turn an agent's `prompt.instructions` binding into the persistent-instructions text the
+ * runtime entry carries, or return the reasons it cannot.
+ *
+ * This is the materialization the projection used to refuse outright, and the refusal is what left
+ * the Agent Studio field disabled with nowhere to write. The bytes come from `resolvedText`, which
+ * the resolver captured while it had the profile directory open and digest-checked — nothing is
+ * re-read here and nothing can be swapped between the check and the use.
+ *
+ * The reference SHAPE is checked as strictly as `persistentInstructions.ts` checks it when the
+ * formation lane resolves the same document: profile-scoped, owned by this agent, pinned, and at the
+ * canonical path. A binding that satisfies the schema but not this shape is a refusal rather than a
+ * silent omission — an agent whose durable instructions quietly failed to load is a different agent,
+ * not a smaller one.
+ *
+ * The 64 KB / 20k-character ceiling is NOT re-checked here. `agentProfileReader` bounds what it will
+ * read, the writer refuses past the limit at the door, and a second ceiling in a third place is a
+ * number that drifts.
+ */
+function materializePersistentInstructions(
+  resolved: ResolvedAgentProfile,
+): { text?: string } | string[] {
+  const id = resolved.definition.prompt?.instructions;
+  if (!id) return {};
+  const reference = resolved.references.find((candidate) => candidate.id === id);
+  if (!reference || reference.kind !== "instructions" || reference.scope !== "profile"
+    || reference.owner !== resolved.agentId || reference.mode !== "pinned" || !reference.sha256
+    || reference.path !== PERSISTENT_INSTRUCTIONS_FILE_NAME) {
+    return [`profile/projection: prompt.instructions '${id}' is not the canonical pinned profile document`];
+  }
+  if (reference.resolvedText === undefined) {
+    return [`profile/projection: prompt.instructions reference '${id}' resolved to no content`];
+  }
+  if (reference.resolvedText.trim().length === 0) {
+    return [`profile/projection: prompt.instructions reference '${id}' resolved to an empty document`];
+  }
+  return { text: reference.resolvedText };
+}
+
+/**
  * `t-d185e1` — the selector's profile-local path, shared with the writer so the two cannot drift.
  * The reader below refuses any reference pointing anywhere else.
  */
@@ -753,17 +794,22 @@ function projectDefinition(
     errors.push("profile/projection: secret injection belongs to a later slice");
   }
   errors.push(...validateAgentNativeConfigPolicy(definition.runtime.adapter, definition.nativeConfig));
-  if (definition.prompt?.instructions || definition.prompt?.memory) {
+  if (definition.prompt?.memory) {
     // t-50bbd4 — this used to defer to t-a2827d, which CLOSED on 2026-07-22, so the message pointed
-    // at nobody. The structural fact is what a reader needs: these fields do not project into
-    // `prompt.*` at all. They are formation LANES, published under transaction and authority
+    // at nobody. The structural fact is what a reader needs: memory does not project into `prompt.*`
+    // at all. It is a formation LANE, published under transaction and authority
     // (`humanLaneTransactions.ts`), and reached at spawn through the lifecycle port rather than
     // through this projection. Naming the mechanism outlasts naming a task.
     errors.push(
-      "profile/projection: instructions and memory are formation lanes, not projected prompt fields — "
-        + "publish them through the profile's lane authority instead",
+      "profile/projection: memory is a formation lane, not a projected prompt field — "
+        + "publish it through the profile's lane authority instead",
     );
   }
+  // t-d48775 — `prompt.instructions` used to be refused by the line above, and that refusal is what
+  // made the field inert. It is materialized below instead, from the same pinned document the lane
+  // resolves; `agentProfileMaterialization.ts` carries the full reasoning and what is still refused.
+  const persistentInstructions = materializePersistentInstructions(resolved);
+  if (Array.isArray(persistentInstructions)) errors.push(...persistentInstructions);
   if (definition.prompt?.evolution && !evolutionSelector) {
     errors.push("profile/projection: Evolution selector is unavailable");
   }
@@ -772,7 +818,7 @@ function projectDefinition(
   // reference the projection does not understand is a fact about the agent it would be dropping.
   const nonCapabilityReferences = resolved.references.filter((reference) =>
     !CAPABILITY_REFERENCE_KINDS.has(reference.kind)
-    && !MATERIALIZED_WORKSPACE_REFERENCE_KINDS.has(reference.kind)
+    && !MATERIALIZED_PROFILE_REFERENCE_KINDS.has(reference.kind)
     && reference.id !== definition.prompt?.evolution
   );
   if (nonCapabilityReferences.length > 0) errors.push("profile/projection: referenced setup/prompt materialization is not available yet");
@@ -815,6 +861,12 @@ function projectDefinition(
   // says so to the compiler.
   if (!Array.isArray(workspaceCommands)) {
     if (workspaceCommands.setup.length > 0) projected.worktreeSetup = [...workspaceCommands.setup];
+  }
+  // t-d48775 — the persistent instructions the projection used to refuse. Narrowed the same way
+  // `workspaceCommands` is: `errors.length > 0` returned above, so reaching here means the
+  // materialization succeeded.
+  if (!Array.isArray(persistentInstructions) && persistentInstructions.text) {
+    projected.instructions = persistentInstructions.text;
   }
   if (definition.isolation) projected.isolate = definition.isolation;
   if (definition.ownership?.subagents) projected.subagents = [...definition.ownership.subagents];

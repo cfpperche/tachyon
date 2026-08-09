@@ -69,6 +69,9 @@ import type { AgentOwnershipViewV1 } from "../../config/agentProfileStudio";
 import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates";
 // Node-free by construction — same reason domain.ts may import it into this browser bundle.
 import { ATTESTED_RUNTIMES } from "../../runtime/attestedRuntimes";
+// Node-free for the same reason: these are the limits the host writer enforces at the door, shared
+// so the form cannot accept text the transaction would refuse.
+import { persistentInstructionsRefusal } from "../../config/agentInstructionsDocument";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,
@@ -534,6 +537,12 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   // Agent Studio. A NEW agent has no profile and therefore no foreign reference, so the fields are
   // editable from the first keystroke.
   const foreignWorkspaceCommands = canonicalSnapshot?.bindings.foreignWorkspaceCommands === true;
+  // t-d48775 — same rule for the instructions binding: only a profile whose `prompt.instructions`
+  // names an id this Studio does not author is read-only here.
+  const foreignPersistentInstructions = canonicalSnapshot?.bindings.foreignPersistentInstructions === true;
+  // Answered while they are still typing, and with the same limits the host enforces at the door —
+  // a form that accepts what the transaction refuses is a Save button that fails.
+  const persistentInstructionsProblem = persistentInstructionsRefusal(fields.instructions);
   const savedAgent = entity.name;
   const mutationDisabled = !savedAgent || frozen;
   const refreshEvolution = () => {
@@ -1128,10 +1137,31 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               </section>
             )}
 
+            {/*
+              * t-d48775 — this field was `disabled={canonical}` with an inviting placeholder and a hint
+              * reading "not editable in this form yet". `canonical` is true for every agent this studio
+              * can load (see the header), so it was disabled for everyone, and the binding the hint
+              * pointed at had no writer anywhere in the product. Both halves are gone: the text is
+              * authored here and published as a pinned document in the same transaction as the rest of
+              * the form, and the hint now says where it goes.
+              */}
             <section class="ash-static-section" aria-labelledby="ash-persistent-instructions-title">
               <div class="ash-label" id="ash-persistent-instructions-title">Persistent instructions</div>
-              <Textarea disabled={canonical} rows={4} value={fields.instructions} placeholder="you are a code reviewer; read the diff and flag correctness issues…" onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
-              <div class="hint">{canonical ? "Persistent instructions use their dedicated profile binding and are not editable in this form yet." : entity.persistentInstructionsHelp}</div>
+              {/*
+                * The placeholder is dropped on the read-only branch, and that is the SECOND half of
+                * this defect rather than a detail. A placeholder is an invitation to type; measured
+                * on the Visual QA capture, a disabled box carrying one is indistinguishable at a
+                * glance from the editable field below it, and the sentence that disqualifies it sits
+                * one line lower — where the eye only goes after trying. Empty is honest: nothing
+                * invites, and the hint carries the whole message.
+                */}
+              <Textarea disabled={foreignPersistentInstructions} rows={4} value={fields.instructions} placeholder={foreignPersistentInstructions ? "" : "you are a code reviewer; read the diff and flag correctness issues…"} onInput={(e) => set("instructions", (e.currentTarget as HTMLTextAreaElement).value)} />
+              <div class="hint">{foreignPersistentInstructions
+                ? "This agent's instructions are published by another owner, not by this profile — they are shown read-only so a save cannot overwrite them."
+                : canonical
+                  ? "Delivered at the start of every session for this agent. Saved in the profile as instructions.md and re-read on restart; clear the box to remove them."
+                  : entity.persistentInstructionsHelp}</div>
+              {persistentInstructionsProblem && <div class="hint ash-native-config-risk">{persistentInstructionsProblem}</div>}
             </section>
 
             <EvolutionSection
