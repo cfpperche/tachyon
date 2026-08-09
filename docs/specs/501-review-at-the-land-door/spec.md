@@ -2,7 +2,12 @@
 
 _Created 2026-08-09._
 
-**Status:** implemented
+**Status:** shipped
+
+**Closure:** The land block offers `Review these changes` and `Open a pull request`, both dispatching
+to the commands spec 213/230 and 223 already provided — no second diff or PR flow exists, held by
+`singleDiffReviewImplementation.test.ts`. Review compares committed history (`trunkRef..head`), and the
+sentence naming it tells the truth in the blocked state too. Merged in `929fc5e8`.
 
 <!-- The maintainer owns the intent; this is a transcription awaiting ratification.
      Read § "What already exists" first. This spec builds almost nothing — the finding that
@@ -109,14 +114,3 @@ not change what land does.
 2. **Answered: below Land, not beside it.** Decided by looking, at 880 and 360, against the anchor.
    Land's copy action is the only emphasised control; the two doors are secondary buttons on their own
    row behind a rule. See `notes.md` § Visual QA.
-
----
-
-1. **What the review compares.** `reviewWorktreeDiff` diffs `rec.baseRef` against the **working tree**
-   (`extension.ts:645` uses `vscode.Uri.file(...)` for the current side). Land is about committed
-   history — `trunkRef..head`. While `worktree-clean` is green these coincide; when it is red they do
-   not, and review would then show something land refuses. Decide whether the land-door review compares
-   committed state, and say so on screen either way.
-2. **Where Propose sits relative to Land.** Side by side invites the wrong click on a repo that never
-   uses PRs; hidden behind a menu is what got us here. Deciding this is Visual QA's job, not the
-   plan's.
