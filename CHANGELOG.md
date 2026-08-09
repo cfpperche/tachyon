@@ -6,6 +6,39 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.69.0 — One name for the board, and a proof that has to still be worth something
+
+Two changes that look unrelated and are the same idea: a thing should not be called two names, and
+a green should not outlive what made it green. The screen you use has said **Board** since 0.65;
+the code behind it still said Mission Control in 95 files. And the land panel was lighting up
+`verified` on evidence that the verification gate itself would have thrown away.
+
+### Changed
+
+- **Mission Control is gone; it is the Board, everywhere** (`t-209516`). The label never changed —
+  the command has read "Tachyon: Board" for releases — but the code carried a second vocabulary for
+  the same screen, and two names for one thing is a tax on everyone who reads it later. 95 files, 17
+  of them moved. The one thing you may notice: the command id is now `tachyon.board` instead of
+  `tachyon.missionControl`, so a keybinding pointing at the old id needs updating. Nothing else about
+  the screen, its state, or its behaviour changed — the release exists to make that claim testable.
+  Old records keep the old name on purpose: shipped specs and past release notes describe what was
+  true when they were written, and rewriting them would be falsifying a log.
+
+### Fixed
+
+- **The land panel stops accepting proof the gate itself refuses** (`t-40e655`). Three parts of
+  Tachyon consult the same verification record and, until now, three of them meant different things
+  by "verified". The strictest is the gate deciding whether it may skip work: it demands a record
+  that names the environment that produced it, is not from the future, and is not older than a week.
+  The loosest was the one arming the `git merge` command a human copies out of the Worktrees panel —
+  it checked only that a file existed with the right name. A record the gate would have discarded
+  could still turn that check green. It cannot now: stale, future-dated and unattributable records
+  are refused at the reader, so every consumer inherits one definition. The environment comparison
+  deliberately did **not** move: it is a question only the side that knows the producing environment
+  can answer honestly, and the extension host is not that side. The same hardening reaches agent
+  completion, which no longer treats an old or unattributable green as evidence that an agent
+  delivered.
+
 ## 0.68.0 — The fleet leaves the config file, and the form stops lying
 
 `tachyon.yml` is closer to being only configuration: your agents are the directories under
