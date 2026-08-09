@@ -99,10 +99,10 @@ describe("buildBoardModel", () => {
 
   it("t-4a60a5: closed cards render assignees as historical delivery, not active claims", () => {
     const tasks = [
-      task({ id: "t-000001", status: "landed", assignee: "runner-a" }),
-      task({ id: "t-000002", status: "done", assignee: "runner-b" }),
-      task({ id: "t-000003", status: "dropped", assignee: "runner-c" }),
-      task({ id: "t-000004", status: "active", assignee: "runner-a" }),
+      task({ id: "t-000001", status: "landed", lastDeliverer: "runner-a" }),
+      task({ id: "t-000002", status: "done", lastDeliverer: "runner-b" }),
+      task({ id: "t-000003", status: "dropped", lastDeliverer: "runner-c" }),
+      task({ id: "t-000004", status: "active", assignee: "runner-a", currentAssignee: "runner-a" }),
       task({ id: "t-000005", status: "triaged" }),
     ];
     const model = buildBoardModel({ snapshot: snapshotFor(tasks), selectedChip: "runner-a" });

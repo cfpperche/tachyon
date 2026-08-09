@@ -209,7 +209,7 @@ describe("EvolutionCoordinator (SDD 421 Slice 2)", () => {
     } as const;
     await coordinator.onTaskMutation({
       before: { ...base, status: "active", updatedAt: "2026-07-21T10:01:00.000Z" },
-      after: { ...base, status: "done", updatedAt: "2026-07-21T10:02:00.000Z" },
+      after: { ...base, status: "done", lastDeliverer: "reviewer", updatedAt: "2026-07-21T10:02:00.000Z" },
     });
     expect((await evolution.listReviews("reviewer"))[0]).toMatchObject({ status: "pending", delivery: { status: "queued" } });
 

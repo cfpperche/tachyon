@@ -39,7 +39,12 @@ export interface Task {
   rank?: string;
   kind?: string;
   author: string;
+  /** Read-time compatibility alias of currentAssignee. Never persisted. */
   assignee?: string;
+  /** Agent on the one open attempt, computed from the attempt ledger. Never persisted. */
+  currentAssignee?: string;
+  /** Agent on the most recent delivered attempt, computed from the attempt ledger. Never persisted. */
+  lastDeliverer?: string;
   artifact_refs?: ArtifactRef[];
   deps?: string[];
   awaitingHuman?: TaskAwaitingHuman;
@@ -48,6 +53,21 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
 }
+
+export type TaskAttemptEndType = "released" | "delivered" | "dropped";
+interface TaskAttemptEventBase {
+  attemptId: string;
+  agent: string;
+  ts: string;
+  evidence: string;
+  /** Observed events are the default. Backfill explicitly identifies inference from a legacy field. */
+  origin?: "observed" | "backfill";
+  /** Backfill provenance only; this timestamp is not represented as the event observation time. */
+  inferredFromUpdatedAt?: string;
+}
+export type TaskAttemptEvent =
+  | (TaskAttemptEventBase & { type: "claimed" })
+  | (TaskAttemptEventBase & { type: TaskAttemptEndType });
 
 export interface JournalEntry {
   id: string;

@@ -220,6 +220,44 @@ describe("TaskStore", () => {
     });
 
     expect(reclaimed).toMatchObject({ status: "active", assignee: "replacement" });
+    expect(store.attempts.read(task.id).map((event) => event.type)).toEqual(["claimed", "released", "claimed"]);
+    expect(store.attempts.open(task.id)?.agent).toBe("replacement");
+  });
+
+  it("derives currentAssignee and lastDeliverer only from attempts and never persists either alias", async () => {
+    const task = await store.create({ title: "one source", author: "human" });
+    await store.update(task.id, { status: "triaged", assignee: "reviewer" });
+    await store.update(task.id, { status: "active" });
+    const done = await store.update(task.id, { status: "done" });
+    expect(done).toMatchObject({ lastDeliverer: "reviewer" });
+    expect(done.currentAssignee).toBeUndefined();
+    expect(done.assignee).toBeUndefined();
+    const disk = JSON.parse(fs.readFileSync(store.pathFor(task.id), "utf8"));
+    expect(disk).not.toHaveProperty("assignee");
+    expect(disk).not.toHaveProperty("currentAssignee");
+    expect(disk).not.toHaveProperty("lastDeliverer");
+  });
+
+  it("counts ended attempts without delivery across a later successful attempt", async () => {
+    const task = await store.create({ title: "count attempts", author: "human" });
+    await store.update(task.id, { status: "triaged", assignee: "first" });
+    await store.update(task.id, { status: "active" });
+    await store.returnUnavailableAgentClaims("first", { evidence: "first exited" });
+    expect(store.attemptsEndedWithoutDelivery(task.id)).toBe(1);
+    await store.update(task.id, { assignee: "second", expect: { assignee: null } });
+    await store.update(task.id, { status: "done" });
+    expect(store.attemptsEndedWithoutDelivery(task.id)).toBe(1);
+  });
+
+  it("a task-write crash after claim append leaves at most one open attempt", async () => {
+    const task = await store.create({ title: "crash window", author: "human" });
+    const rename = vi.spyOn(fs, "renameSync").mockImplementationOnce(() => { throw new Error("simulated task write failure"); });
+    await expect(store.update(task.id, { status: "triaged", assignee: "worker" })).rejects.toThrow(/simulated task write failure/);
+    rename.mockRestore();
+    expect(store.attempts.read(task.id).filter((event) => event.type === "claimed")).toHaveLength(1);
+    expect(store.attempts.open(task.id)?.agent).toBe("worker");
+    await store.update(task.id, { status: "triaged", assignee: "worker" });
+    expect(store.attempts.read(task.id).filter((event) => event.type === "claimed")).toHaveLength(1);
   });
 
   it("observes committed updates without letting observer failures change the Task result", async () => {
@@ -253,8 +291,8 @@ describe("TaskStore", () => {
   it("persists an evolution completion obligation before an asynchronous observer can be lost", async () => {
     const revision = "a".repeat(64);
     const tasks = new TaskStore(root, {
-      evolutionCompletionFor: (event) => event.after.assignee
-        ? { agent: event.after.assignee, revision }
+      evolutionCompletionFor: (event) => event.after.lastDeliverer
+        ? { agent: event.after.lastDeliverer, revision }
         : undefined,
       onMutation: async () => { throw new Error("process ended before observer work"); },
     });
