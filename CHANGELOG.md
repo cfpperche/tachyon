@@ -6,6 +6,67 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.75.0 — you can finally look at the code before you land it
+
+The land block has always shown five green checks and a command to copy. It never showed a way to see
+what the command would land. Measured on the coordinating agent's own behaviour on 2026-08-09: every
+merge that day was reviewed by running `git diff` in a terminal — seven merges, seven trips outside
+the product, with the land block open on screen the whole time.
+
+### Added
+
+- **Review and Propose, at the land door** (`t-3eaf77`, SDD 501). Every land block now ends with two
+  actions: **Review these changes** opens the changed files in VS Code's own diff editor, and **Open a
+  pull request** runs the existing `gh pr create` flow.
+
+  **Neither is new code.** Both features had been built — diff review in spec 213/230, PR creation in
+  spec 223 — and both were reachable only from the sidebar agent row, one room away from where the
+  decision is made. This spec moved the reach, not the machinery. A guard test holds that there is
+  exactly one `vscode.diff` caller, one consumer of the changed-file primitives, and one caller of the
+  parser; it carries a self-check that runs its own detectors against synthetic sources with planted
+  violations, because a static guard blind to what it forbids passes forever.
+
+  **Tachyon renders no diff.** VS Code already ships the best diff viewer we could put there.
+
+  Review compares **committed history** — `trunkRef..head`, exactly the commits the land command would
+  introduce, not the working tree. That was measured rather than assumed, and the measurement inverted
+  the plan's guess: the committed comparison is *cheaper* (10.9 ms vs 16.4 ms over a 130-file range),
+  because it never stats the working tree and drops the `git ls-files` subprocess. The sidebar and
+  pipeline callers keep the working-tree comparison, because there the question is different — what
+  has this agent touched so far, including work not yet committed.
+
+  On a **blocked** delivery both actions still appear, deliberately: a red check is when you most want
+  to read the code. The line naming the comparison changes with the state — it stops claiming "the
+  commits this command would land" where no command is offered.
+
+### Fixed
+
+- **The tooling stopped teaching a command that does not exist** (`t-5a9544`).
+  `npm run dogfood -- dev-host -- <cmd>` answered `unknown command '--'`. `t-6e2e44` had consolidated
+  the dogfood surface on 2026-07-30, and the separator that used to belong to npm became a literal
+  argument. **Broken for ten days across ~100 references** — 20 in the dev-host runbook, 15 in the
+  CLI's own help, 10 in `point`'s output, and one in `docs/project-guidance.md`, which goes into every
+  agent's brief. The tool printed the wrong form and everything copied it.
+
+  Fixed with **one line** in `scripts/dogfood/run.mjs` — drop a leading `--` — so all ~100 existing
+  references work again untouched. Rewriting a hundred call sites to accommodate a parser would have
+  been the wrong repair. A test asserts both spellings resolve identically.
+
+### Internal
+
+- **The packaged manifest stopped carrying the development environment** (`t-e995dd`). Every installed
+  VSIX shipped all 27 npm scripts — `dogfood`, `release`, `runtime:remeasure`, and a
+  `vscode:prepublish` that means nothing in an already-published package. `vsce` now reads a
+  product-only manifest while the repository's own file is restored byte-for-byte. Recovery runs on
+  **entry**, not in a `finally`: a `finally` does not run on SIGKILL, and a crash mid-package would
+  otherwise leave a tracked file mutated.
+
+- **Runbooks** — `docs/runbooks/plugins.md` is new (create, update and publish a plugin; publishing is
+  cutting the tag, not pushing `main`). `docs/runbooks/dev-host.md` gained the fixture rules: what a
+  fixture can seed, and that **managed worktrees cannot be seeded** — a registry entry whose path does
+  not exist is reconciled to `abandoned` on load, so checking one in marks its own entries abandoned.
+  That gap is why a Dev Host armed for this release's own feature opened an empty screen.
+
 ## 0.74.0 — a surface nobody opened is gone, and the ones that stayed stop lying about themselves
 
 The theme is the same as 0.73.0, one layer down: names, comments and signatures that describe
