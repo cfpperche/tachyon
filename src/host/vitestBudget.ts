@@ -3,6 +3,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { withProcessLockSync } from "../locks/processLock.js";
 import type { HostMemorySnapshot } from "./hostResources.js";
+import hostResourceCostInputs from "../../shared/host-resource-cost-inputs.cjs";
 
 /**
  * t-3ad4af — one HOST-WIDE budget for vitest, instead of N processes each dividing the same RAM.
@@ -42,13 +43,16 @@ import type { HostMemorySnapshot } from "./hostResources.js";
  * Per-process attribution is the difference between a right number and a confident wrong one.
  */
 
-/** Measured 215MB marginal / 289MB peak for a single pool worker; rounded up for headroom. */
-const DEFAULT_WORKER_MB = 320;
+const { DEFAULT_WORKER_MB, DEFAULT_RESERVE_MB, HARD_CAP_WORKERS, envInt } = hostResourceCostInputs;
+export { envInt };
 /** Measured ~1935MB fixed per invocation (vitest parent + the subprocesses its tests spawn). */
 const DEFAULT_INVOCATION_MB = 2048;
-/** Kept for the control plane — counted ONCE against the host, never once per process. */
-const DEFAULT_RESERVE_MB = 3072;
-const HARD_CAP_WORKERS = 16;
+/**
+ * Deliberately lower than the free-RAM sizer's 128MB divisor floor. This ledger combines the
+ * measured marginal worker cost with a separate fixed invocation charge, so the two floors guard
+ * different cost models. An operator-provided marginal cost remains authoritative down to 64MB.
+ */
+const VITEST_LEDGER_MIN_WORKER_MB = 64;
 /** Milliseconds. The critical section is a read-modify-write of a small JSON file. */
 const LOCK_TIMEOUT_MS = 10_000;
 
@@ -106,13 +110,6 @@ export function admitOrFallback(
 
 export function vitestBudgetPath(): string {
   return process.env.TACHYON_VITEST_BUDGET_PATH || path.join(tmpdir(), "tachyon-vitest-budget.json");
-}
-
-function envInt(name: string): number | undefined {
-  const raw = process.env[name];
-  if (raw === undefined || raw === "") return undefined;
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.trunc(n) : undefined;
 }
 
 function defaultIsAlive(pid: number): boolean {
@@ -315,7 +312,7 @@ export function sizeFromShare(input: {
   hardCap?: number;
   maxUsefulWorkers?: number;
 }): number {
-  const workerMb = Math.max(64, input.workerMb ?? envInt("TACHYON_VERIFY_WORKER_MB") ?? DEFAULT_WORKER_MB);
+  const workerMb = Math.max(VITEST_LEDGER_MIN_WORKER_MB, input.workerMb ?? envInt("TACHYON_VERIFY_WORKER_MB") ?? DEFAULT_WORKER_MB);
   const invocationMb = Math.max(0, input.invocationMb ?? envInt("TACHYON_VITEST_INVOCATION_MB") ?? DEFAULT_INVOCATION_MB);
   const cpu = Math.max(1, input.cpuCount || 1);
   const hardCap = input.hardCap ?? HARD_CAP_WORKERS;
@@ -452,7 +449,7 @@ function evaluateVitestShare(input: {
   const live = reap(readLedger(file), isAlive).filter((claim) =>
     input.excludePid === undefined || claim.pid !== input.excludePid);
 
-  const workerMb = Math.max(64, input.workerMb ?? envInt("TACHYON_VERIFY_WORKER_MB") ?? DEFAULT_WORKER_MB);
+  const workerMb = Math.max(VITEST_LEDGER_MIN_WORKER_MB, input.workerMb ?? envInt("TACHYON_VERIFY_WORKER_MB") ?? DEFAULT_WORKER_MB);
   const invocationMb = Math.max(0, input.invocationMb ?? envInt("TACHYON_VITEST_INVOCATION_MB") ?? DEFAULT_INVOCATION_MB);
 
   const billed = live.map((claim) => ({ claim, ...billedMb(claim, measure) }));

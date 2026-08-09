@@ -21,9 +21,14 @@
  */
 const { readFileSync } = require("node:fs");
 const { cpus } = require("node:os");
+const {
+  DEFAULT_RESERVE_MB,
+  DEFAULT_WORKER_MB,
+  HARD_CAP_WORKERS,
+  envInt,
+} = require("./host-resource-cost-inputs.cjs");
 
 const DEFAULT_MIN_AVAILABLE_MB = 2048;
-const DEFAULT_RESERVE_MB = 3072;
 /**
  * t-3ad4af — 768 was an estimate and it was wrong by ~2.7x. Sampling PSS per process across the full
  * `test/unit` suite, a single pool worker never exceeded 289MB and the marginal cost of adding one
@@ -31,15 +36,6 @@ const DEFAULT_RESERVE_MB = 3072;
  * the source. The rest of a run's cost is not per-worker at all — see `src/host/vitestBudget.ts`,
  * which owns the fixed per-invocation term this module never modelled.
  */
-const DEFAULT_WORKER_MB = 320;
-const HARD_CAP_WORKERS = 16;
-
-function envInt(name) {
-  const raw = process.env[name];
-  if (raw === undefined || raw === "") return undefined;
-  const n = Number(raw);
-  return Number.isFinite(n) ? Math.trunc(n) : undefined;
-}
 
 /** Parse Linux /proc/meminfo kB fields into MiB. */
 function parseMeminfo(text) {
@@ -159,6 +155,7 @@ module.exports = {
   DEFAULT_RESERVE_MB,
   DEFAULT_WORKER_MB,
   HARD_CAP_WORKERS,
+  envInt,
   parseMeminfo,
   readHostMemory,
   recommendVitestMaxWorkers,
