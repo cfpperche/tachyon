@@ -1122,7 +1122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
   // t-610705 (SDD 410 Phase C.2) — the standalone Activity panel was retired: it's a Control
   // subroute now (fleet/agent/<name>/activity; src/webview/activity/App.tsx stays, lazy-imported by
-  // cockpit/App.tsx; the watcher moved to src/cockpit/activityFeed.ts).
+  // cockpit/App.tsx; the watcher moved to src/webview/activity/activityFeed.ts).
   // t-610705 (SDD 410 Phase C.3) — the standalone Project Handoff panel was retired: it's a Control
   // section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx).
   // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and

@@ -16,10 +16,10 @@
  */
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
-import type { WorkspaceActivityTarget } from "../shell/ActivityTarget.js";
-import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../activity/activityView.js";
-import { ActivityLog, type LoggedEvent } from "../activity/logStore.js";
-import type { NormalizedEvent } from "../activity/types.js";
+import type { WorkspaceActivityTarget } from "../../shell/ActivityTarget.js";
+import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../../activity/activityView.js";
+import { ActivityLog, type LoggedEvent } from "../../activity/logStore.js";
+import type { NormalizedEvent } from "../../activity/types.js";
 
 const MAX_ITEMS = 600;
 const MAX_TAIL_RECORDS = 4000;
