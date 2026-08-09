@@ -15,7 +15,7 @@ import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
 import { envelope } from "../webview/shared/studio/protocol.js";
 import { attachmentStoredMessage } from "../webview/pin-studio/messages.js";
 import { notify } from "../workspace/NotificationService.js";
-import type { StudioDomainContext } from "./studioRegistry.js";
+import type { StudioDomainContext } from "../webview/shared/studio/studioRegistry.js";
 
 /** the webview -> host domain message shapes (mirrors pin-studio/types.ts's PinStudioWebviewMessage's
  *  domain members) — kept local since the dispatch's `message` param is only typed as `{ type: string }`. */

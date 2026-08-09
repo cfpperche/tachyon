@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeStudioAdapterFactory, type CockpitStudios } from "../../src/cockpit/studioRegistry.js";
+import { makeStudioAdapterFactory, type CockpitStudios } from "../../src/webview/shared/studio/studioRegistry.js";
 import type { WorkspaceStudioTarget } from "../../src/shell/WorkspacePresentation.js";
 
 /**

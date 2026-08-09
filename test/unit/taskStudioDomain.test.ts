@@ -5,7 +5,7 @@ import path from "node:path";
 import { Uri } from "vscode";
 import { __resetVscodeMock, __setOpenDialogResult } from "../mocks/vscode.js";
 import { handleTaskStudioDomainMessage } from "../../src/cockpit/taskStudioDomain.js";
-import type { StudioDomainContext } from "../../src/cockpit/studioRegistry.js";
+import type { StudioDomainContext } from "../../src/webview/shared/studio/studioRegistry.js";
 import type { WorkspaceTaskStudioTarget, TaskStudioAttachmentResult } from "../../src/shell/TaskStudioTarget.js";
 
 /**

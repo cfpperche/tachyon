@@ -31,7 +31,7 @@
 import type { CockpitSectionId } from "./model.js";
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "../humanInbox/model.js";
 import { resolveCockpitSection, isCockpitSectionId } from "./resolveSection.js";
-import { isStudioId, type StudioId } from "../cockpit/studioIds.js";
+import { isStudioId, type StudioId } from "../webview/shared/studio/studioIds.js";
 
 /** A top-level Control tab. Sections have no parent — they ARE the top of the hierarchy. */
 export interface CockpitSectionRoute {

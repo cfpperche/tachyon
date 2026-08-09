@@ -14,7 +14,7 @@ import {
 } from "../../src/sections/route.js";
 import { COCKPIT_SECTION_ORDER } from "../../src/sections/model.js";
 import { resolveCockpitSection } from "../../src/sections/resolveSection.js";
-import { STUDIO_IDS } from "../../src/cockpit/studioIds.js";
+import { STUDIO_IDS } from "../../src/webview/shared/studio/studioIds.js";
 
 describe("routes.section / routeKey / formatRoute", () => {
   it("builds a section route and derives its key + display string", () => {

@@ -40,7 +40,7 @@ import {
   agentProfileBundleErrorMessage,
   agentProfileBundleExportMessage,
 } from "../webview/agent-studio-shell/messages.js";
-import type { StudioDomainContext } from "./studioRegistry.js";
+import type { StudioDomainContext } from "../webview/shared/studio/studioRegistry.js";
 
 export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, message: { type: string }): void {
   const m = validateAgentStudioInboundMessage(message);

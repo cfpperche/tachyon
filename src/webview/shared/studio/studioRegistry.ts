@@ -12,22 +12,22 @@
  */
 import * as vscode from "vscode";
 import type { StudioId } from "./studioIds.js";
-import type { StudioHostAdapter } from "../webview/shared/studio/adapter.js";
-import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
-import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
-import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
-import { CommandStudioAdapter } from "../webview/CommandStudioAdapter.js";
-import { TerminalStudioAdapter } from "../webview/TerminalStudioAdapter.js";
-import { RunbookStudioAdapter } from "../webview/RunbookStudioAdapter.js";
-import { ScheduleStudioAdapter } from "../webview/ScheduleStudioAdapter.js";
-import { AgentStudioAdapter } from "../webview/AgentStudioAdapter.js";
-import { TaskStudioAdapter } from "../webview/TaskStudioAdapter.js";
-import { PinStudioAdapter } from "../webview/PinStudioAdapter.js";
-import { createAgentEvolutionLabels, createAgentProfileLabels } from "../webview/agent-studio-shell/domain.js";
-import { handleAgentStudioDomainMessage } from "./agentStudioDomain.js";
-import { handleTaskStudioDomainMessage } from "./taskStudioDomain.js";
-import { handlePinStudioDomainMessage } from "./pinStudioDomain.js";
-import { envelope } from "../webview/shared/studio/protocol.js";
+import type { StudioHostAdapter } from "./adapter.js";
+import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../../../shell/WorkspacePresentation.js";
+import type { WorkspaceTaskStudioTarget } from "../../../shell/TaskStudioTarget.js";
+import type { WorkspacePinStudioTarget } from "../../../shell/PinStudioTarget.js";
+import { CommandStudioAdapter } from "../../CommandStudioAdapter.js";
+import { TerminalStudioAdapter } from "../../TerminalStudioAdapter.js";
+import { RunbookStudioAdapter } from "../../RunbookStudioAdapter.js";
+import { ScheduleStudioAdapter } from "../../ScheduleStudioAdapter.js";
+import { AgentStudioAdapter } from "../../AgentStudioAdapter.js";
+import { TaskStudioAdapter } from "../../TaskStudioAdapter.js";
+import { PinStudioAdapter } from "../../PinStudioAdapter.js";
+import { createAgentEvolutionLabels, createAgentProfileLabels } from "../../agent-studio-shell/domain.js";
+import { handleAgentStudioDomainMessage } from "../../../cockpit/agentStudioDomain.js";
+import { handleTaskStudioDomainMessage } from "../../../cockpit/taskStudioDomain.js";
+import { handlePinStudioDomainMessage } from "../../../cockpit/pinStudioDomain.js";
+import { envelope } from "../../shared/studio/protocol.js";
 
 type Adapter = StudioHostAdapter<unknown, unknown, unknown, unknown>;
 
