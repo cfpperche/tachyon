@@ -100,20 +100,13 @@ describe("t-85c586 — the adapter's verdicts", () => {
     expect(result.state === "unsupported" && result.suggestions).toContain("grok-4.5-fast");
   });
 
-  it("no pin still proves authentication before accepting Grok's default", async () => {
+  it("no pin needs no model-catalog probe at all", async () => {
     let probed = 0;
     const adapter = new GrokLaunchPreflight(async () => { probed++; return { code: 0, text: GROK_MODELS_OUTPUT }; });
     await expect(adapter.check(command("grok"), {})).resolves.toEqual({
       state: "supported", runtime: "grok", source: "default-model",
     });
-    expect(probed).toBe(1);
-  });
-
-  it("t-5dcf47: no pin is not supported when the CLI is logged out", async () => {
-    const adapter = new GrokLaunchPreflight(probeReturning({ text: GROK_MODELS_LOGGED_OUT_OUTPUT }));
-    await expect(adapter.check(command("grok"), {})).resolves.toMatchObject({
-      state: "unverifiable", code: "runtime_preflight_unverifiable", runtime: "grok",
-    });
+    expect(probed).toBe(0);
   });
 
   it("another runtime's command is a declared mismatch, not a verdict about grok", async () => {

@@ -174,6 +174,10 @@ export class GrokLaunchPreflight implements RuntimeLaunchPreflightPort {
     if (path.basename(command.binary) !== "grok") {
       return { state: "unverifiable", code: "runtime_preflight_unverifiable", reason: "runtime adapter mismatch" };
     }
+    // This adapter verifies explicit model pins. Unpinned auth readiness is a separate runtime
+    // preflight seam; do not make default-model launches depend on the catalog command here.
+    if (!command.model) return { state: "supported", runtime: "grok", source: "default-model" };
+
     const result = await this.probe(command.probeBinary, command.probeArgv, env, { cwd });
     if (result.failure === "timeout") {
       return { state: "failed", code: "runtime_preflight_failed", runtime: "grok", reason: "model catalog probe timed out" };
@@ -195,8 +199,6 @@ export class GrokLaunchPreflight implements RuntimeLaunchPreflightPort {
           : "grok models reported an unrecognized authentication banner",
       };
     }
-    // Once auth is proven, no pin needs a catalog verdict: Grok picks its own default.
-    if (!command.model) return { state: "supported", runtime: "grok", source: "default-model" };
     const catalog = parseGrokModelCatalog(result.text);
     if (!catalog) {
       // An unreadable catalog is not evidence that a model is missing OR present.
