@@ -1,110 +1,126 @@
 # 498 — governed-land-door
 
-_Created 2026-08-09._
+_Created 2026-08-09. Rewritten the same day, after an adversarial review demolished the first draft._
 
 **Status:** draft
 
-<!-- Drafted from the maintainer's decision on 2026-08-09, closing the open half of t-7cb971.
-     Intent is his; this file is a transcription awaiting ratification. -->
+<!-- The maintainer owns the intent; this is a transcription awaiting ratification.
+     The first draft and the review that killed it are in git history and in notes.md.
+     Read notes.md before re-litigating anything here — most of the obvious objections
+     were already raised, measured, and answered there. -->
 
 ## Intent
 
-`src/worktree/land.ts` already probes five preconditions, and when all five are green it composes the
-exact `git merge --ff-only <sha>` for the primary checkout. Then it puts that string on the clipboard
-and stops.
+`src/worktree/land.ts` probes five preconditions and, when all five are green, composes the exact
+command for the primary checkout. Then it puts that string on the clipboard and stops. The human
+opens a terminal and pastes.
 
-That half-measure is incoherent, and the maintainer named it on 2026-08-09: the product has already
-taken on the judgment — it computed the conditions and concluded the merge is safe — so refusing the
-act is ceremony rather than caution. `t-7cb971` asked whether "record-only" meant *the agent* must not
-mutate the trunk or *the product* must not. The answer is the first.
+**This spec replaces the paste with a button.** That is the whole change.
 
-The line that does not move: **nothing mutates without a human saying so.** The agent still cannot
-land. What changes is who types after the human decides.
+### The reason, stated honestly, because the first draft got this wrong
 
-**Why copy-and-paste is not merely slower, but wrong in a way the panel cannot fix.** The suggestion
-pins a **sha**, which protects against landing a different tree than the one that was proved. It does
-not protect against a different **directory**: a human pastes into whatever shell is focused, and
-nothing in the string says which checkout it belongs to. The product knows the primary path; the
-clipboard does not carry it.
+The first draft argued that pasting was *unsafe*: that the pinned sha protected the tree but nothing
+protected the directory. **That was factually false** — `landCommand` already emits
+`git -C <primaryPath> merge --ff-only <sha>`, so the clipboard carries the directory and the command
+works from any cwd. It also leaned on "eight hand-run merges, three broke the trunk" from `land.ts`'s
+header. That number is real, but it measures the world *before* the suggest-and-copy panel existed —
+it justifies the panel, not this. **No trunk breakage has been measured since.**
 
-**The measured cost this exists to remove**, from `land.ts`'s own header: eight hand-run merges on this
-host, three of which broke the trunk — and every one of the three failed a condition already
-computable in that file.
+So the reason is not correctness. It is this, from the maintainer, on being told the review found no
+defect to fix:
 
-**The strongest argument against**, recorded because it is legitimate rather than to be dismissed:
-"the product never mutates the trunk" is a rule with no exceptions, and a rule with no exceptions
-cannot erode. This spec opens the first one, and future work will cite it as precedent. It is accepted
-because the honest invariant was never "the product never writes" — it was "nothing happens without a
-human". That one survives intact.
+> "eu vou ter que ficar digitando comando git?"
+
+**"I don't want to type git" is a sufficient product reason.** It does not need a measured defect
+behind it. What this spec must not do is dress ergonomics up as safety — the first draft did, and an
+adversarial review took it apart in an hour.
+
+### What the review changed, and why the scope is now small
+
+Every mechanism the first draft proposed was refused, each because something that already exists does
+the job (`notes.md` has the measurements):
+
+| first draft | what replaced it |
+|---|---|
+| a durable undo ledger written before the merge | nothing — `git merge` already writes `ORIG_HEAD` and the branch reflog |
+| a mutex for two simultaneous clicks | nothing — ref update is already compare-and-swap; measured: one wins, the other gets an expected-old refusal, checkout clean |
+| refuse when an agent or terminal occupies the primary | nothing — git already refuses concurrent git operations through its own locks |
+| "re-probing at click closes the race" | it does **not** close it; it narrows it. Said out loud instead of promised away. |
+| a guard proving "exactly one call site" | the rule that matters is that no agent-facing door exists |
+
+What remains is a button, an engine operation, and honest wording.
+
+### The window, named rather than closed
+
+Between the engine re-measuring and git running, another actor can change the primary checkout.
+Measured on git 2.53.0: the probe saw `main` and a green fast-forward; a `switch other` landed in the
+window; the same `git merge --ff-only <sha>` advanced `other` and left `main` untouched. Git moves
+whatever `HEAD` points at when the command starts — it does not know the intention "move main".
+
+**This window exists today and is larger**: it runs from the moment the human copies to the moment
+they paste. The button shortens it from minutes to milliseconds. It does not remove it, and this spec
+does not claim to.
 
 ## Acceptance criteria
 
 - [ ] **Scenario: the human lands**
-  - **Given** a delivery whose five preconditions are all green
-  - **When** the human invokes the land action
-  - **Then** the product runs `git merge --ff-only <sha>` in the primary checkout, reports the new
-    trunk head, and the agent was never able to trigger it
+  - **Given** a delivery whose five preconditions are green
+  - **When** the human presses Land in the worktree row
+  - **Then** the engine re-measures the five, runs the command shown on screen, and reports the trunk
+    head before and after
 
-- [ ] **Scenario: the panel was stale**
-  - **Given** a rendered land action whose preconditions were green when drawn
-  - **When** something changes before the click — the primary moves, the primary goes dirty, the
-    trunk advances past the sha
-  - **Then** the act **re-probes at the moment of acting** and refuses, naming the condition that
-    changed. The rendered state is a suggestion; only the state at the instant of the act authorizes.
+- [ ] **Scenario: something changed while the panel sat there**
+  - **Given** a rendered Land action
+  - **When** a precondition has turned red since it was drawn
+  - **Then** the trunk is not touched and the block re-renders naming the condition that changed
 
-- [ ] **Scenario: undo is handed over, not reconstructed**
+- [ ] **Scenario: the row heals itself**
+  - **Given** a land that succeeded
+  - **When** the worktree list refreshes
+  - **Then** that delivery is now contained in the trunk, so the land block is gone and the row sits
+    with the removable ones — no separate step tells the UI what happened
+
+- [ ] **Scenario: undo, from what git already recorded**
   - **Given** a land the product performed
   - **When** the human wants it back
-  - **Then** the product shows the previous trunk head and the exact command that restores it, from a
-    record it made **before** moving the trunk
+  - **Then** the product shows the previous trunk head and `git -C <primary> reset --hard <predecessor>`,
+    read from the reflog, and the offer disappears once the trunk has moved on or the reflog no longer
+    holds it
 
-- [ ] **Scenario: git refuses**
-  - **Given** an act that passes every precondition
-  - **When** git itself fails the merge
-  - **Then** the trunk is unchanged, the failure is reported verbatim rather than summarised, and no
-    partial state is claimed
+- [ ] **Scenario: two clicks**
+  - **Given** two green deliveries landed at the same moment
+  - **When** both acts run
+  - **Then** one succeeds and the other reports git's own refusal verbatim; nothing is queued,
+    serialised or retried by Tachyon
 
 - [ ] **Scenario: an agent tries**
   - **Given** any agent with Bridge access
-  - **When** it attempts to reach the land act by any tool
-  - **Then** it cannot. The act has no agent-facing door.
+  - **When** it looks for a way to land
+  - **Then** there is none — the operation is reachable only from the Interface
 
-- [ ] Exactly **one** call site in `src/` may pass `merge` or `--ff-only` to git, it is named, and
-      `test/unit/landCommandNeverExecuted.test.ts` enforces that count — narrowed from "none", never
-      loosened to "some".
-- [ ] No auto-land path exists: green preconditions never cause an act on their own.
-- [ ] The act follows the Forget grammar the original task asked for — the agent prepares, the human
-      executes.
+- [ ] The command stays visible on screen before and after, and Copy still works.
+- [ ] Tachyon writes no state of its own for undo, occupancy, or serialisation.
+- [ ] The product never lands on its own: green is information, not permission.
 
 ## Non-goals
 
-- **Auto-land.** Green is not permission; it is information.
-- **Any integration other than fast-forward.** No merge commit, no squash, no rebase. `--ff-only` is
-  what makes the landed tree byte-identical to the proved tree, which is the property the whole
-  evidence model rests on.
-- **Merging through a forge.** Every measured ADE clicks Merge against a remote API; this acts on the
-  maintainer's local primary checkout, which is precisely why `primary-on-trunk` and `primary-clean`
-  exist and why no forge can stand in for them.
-- **Changing what counts as proof.** That is SDD 497; this spec consumes whatever `verified-tree`
-  says and adds no opinion of its own.
-- **Landing on behalf of an agent, or from a schedule, or from a hook.**
+- **Pushing.** The trunk moved locally; sending it anywhere stays a human step.
+- **Removing the worktree or the branch.** That is Forget, and it stays separate.
+- **Any integration but fast-forward.** `--ff-only` is what makes the landed tree byte-identical to
+  the proved tree, which is what the whole evidence model rests on.
+- **Closing the probe-to-act window.** Named above. A Tachyon mutex would not be respected by an
+  external terminal anyway, and would be a subsystem for a risk never measured in production.
+- **Changing what counts as proof.** That is SDD 497.
+- **Auto-land, scheduled land, hook-triggered land, agent-triggered land.**
 
 ## Open questions
 
-1. **Where does the act run?** The merge must happen with the primary checkout as cwd. Is it a host
-   action, or does it belong to the engine? The engine does not necessarily live in the primary, and
-   the answer decides who owns the failure path. _Owner or plan._
+None blocking. The four the first draft carried were answered by the review and folded above: the act
+runs in the engine through an Interface-only typed operation (never `HostActionBroker`, which is the
+Bridge's door and would be exactly the agent-facing path this forbids); undo comes from the reflog;
+occupancy is ignored; concurrency is git's compare-and-swap.
 
-2. **Does the undo affordance survive a reload?** If the previous head is only in memory, the undo is
-   a promise that evaporates on restart — the exact defect class this project keeps finding. A
-   durable record has a place to live and a lifetime to decide. _Leaning: durable, because the
-   alternative is a state the product created and can no longer help you leave._
-
-3. **The primary is somebody's working directory.** `primary-clean` covers uncommitted work, but an
-   agent or terminal may be running there. Does the act refuse, warn, or ignore? _Note the asymmetry
-   with worktree removal, which refuses a busy checkout; landing does not destroy anything, so the
-   same answer may not apply._
-
-4. **Two clicks at once.** Two deliveries, both green, landed in the same second. The second's
-   `fast-forward` precondition is stale the instant the first succeeds — criterion 2 already refuses
-   it, but that should be stated as the intended behaviour rather than discovered as a race.
+One thing to decide while building, not before: **what the button says when a precondition is red.**
+Today the block renders a blocked message and no command. It should stay refusing rather than offering
+a disabled button — a control that exists and cannot be pressed is the pattern this project has been
+removing all week.
