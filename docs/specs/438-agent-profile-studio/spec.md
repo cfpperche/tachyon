@@ -4,6 +4,9 @@ _Created 2026-07-22._
 
 **Status:** shipped
 **Closure:** Shipped across the four child Tasks, completed by commit `1f1204d4`; Visual QA and isolated Dev Host lifecycle proof are recorded in `notes.md`.
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/agentStudioAdapter.test.ts test/unit/agentStudioDomain.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

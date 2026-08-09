@@ -5,6 +5,11 @@ _Created 2026-07-22._
 **Status:** shipped
 
 **Closure:** Task `t-17a2c2` delivered the standalone V1 schema, descriptor-rooted reader,
+**Verify:** `npm test -- test/unit/agentProfileResolver.test.ts`
+**Verify:** `npm run test:invariants`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm test -- test/unit/agentProfileResolver.test.ts`
 authority/attestation-bound resolver and focused adversarial coverage. Runtime wiring and YAML
 migration remain in `t-4f82e0`; no runtime projection or plugin behavior changed in this slice.
 

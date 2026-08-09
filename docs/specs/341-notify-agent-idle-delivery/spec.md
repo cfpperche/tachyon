@@ -4,6 +4,7 @@ _Created 2026-07-03._
 
 **Status:** shipped
 **Closure:** Implemented 2026-07-03 — `notify_agent` now routes through semantic notice delivery, busy recipients queue until idle, Workspace flushes one notice through the recovery mutex, child death-pokes use the same path, and `TmuxService.sendSubmittedLine` performs delayed submit with capture-based retry. Verified with the spec headless check and `npm run typecheck`.
+**Verify:** `npm test -- test/unit/notifyAgent.test.ts test/unit/noticeQueue.test.ts test/unit/tmux.test.ts test/unit/bridge.test.ts test/unit/workspaceHeadless.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

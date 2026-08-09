@@ -5,6 +5,8 @@ _Created 2026-07-10 from the maintainer discussion about token economics and Cod
 **Status:** shipped
 
 **Closure:** Shipped the first RuntimeOps observability vertical with Tachyon-owned Codex/Claude quota acquisition,
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- runtime-observability`
 normalized host projection, explicit source lifecycle, deterministic degraded-state coverage and maintainer-approved
 Extension Development Host dogfood. Cost/history enrichment and Grok support remain follow-up slices.
 

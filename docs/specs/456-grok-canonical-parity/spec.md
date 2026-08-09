@@ -4,6 +4,8 @@ _Created 2026-07-25._
 
 **Status:** shipped-partial
 **Closure:** Canonical Grok now binds `HOME` and `GROK_HOME` to one private home, preventing ambient Claude settings discovery across fresh/restart/resume. An authored Grok permission-policy projection and live composer/attention evidence remain outside this slice.
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

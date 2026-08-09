@@ -5,6 +5,8 @@ _Created 2026-07-10 after the failed `rtObsVendorSpike` launch._
 **Status:** shipped
 
 **Closure:** Implementation, headless dogfood, full verification, and maintainer-owned Dev Host/F5 dogfood are green
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npm run dogfood -- runtime-launch-preflight`
 on implementation commit `4509f294`; final review approved the main-reanchored branch and merge commit `44deb715`
 landed the runtime launch preflight closure.
 

@@ -58,4 +58,7 @@ None. The supported tuples and trust boundary were ratified by SDD 441/442; this
 missing authoring path.
 
 **Closure:** Agent Studio now authors the filtered Codex scalar policy explicitly, defaults new Codex
+**Verify:** `npx vitest run test/unit/agentStudioAdapter.test.ts test/unit/codexNativeConfigProjection.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood -- dev-host -- headless`
 profiles to global sources, and strips that policy when creating another runtime.

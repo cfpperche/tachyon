@@ -5,6 +5,7 @@ _Created 2026-06-10._
 **Status:** shipped
 
 **Closure:** 2026-06-10 — shipped same-day (dogfood gap of spec 200); unit 160/160, xvfb integration 21 passing incl. the Studio-pipeline runbook CRUD scenario; no Bridge change (0.4.1 patch); residual: none
+**Verify:** `bash -c 'cd packages/tachyon && npx vitest run --reporter=dot 2>&1 | tail -3'`
 
 **UI impact:** render
 <!-- Runbook tab + context menus exercised through the _upsertAgent/deleteRunbookItem seams in the xvfb host; visual walkthrough in the dogfood. -->

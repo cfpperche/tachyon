@@ -4,6 +4,8 @@ _Created 2026-07-25._
 
 **Status:** shipped
 **Closure:** Shipped under `t-debbfe`: closed Claude scalar projection, external auth/trust,
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 Bridge-only strict MCP, ambient tooling exclusion, lifecycle tests and parity evidence.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);

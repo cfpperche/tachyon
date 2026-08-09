@@ -4,6 +4,9 @@ _Created 2026-06-30._
 
 **Status:** shipped
 **Closure:** Shipped local implementation on 2026-06-30. Automatic persistence nudges now use a single runtime-neutral Workspace policy: declared agents in `tachyon.yml` remain eligible; all ad-hoc rows, including fork/worktree ad-hoc rows, are default-off. Continuity restore/checkpoint and project-handoff automatic reminders are gated by that policy. The UI reinject-continuity command passes explicit UI origin so human manual reinjection still works for ad-hoc sessions, while generic/programmatic `transition:"manual"` calls no longer bypass suppression. Verification: `/sdd verify` passed (`npm test -- --run test/unit/continuityWiring.test.ts test/unit/projectHandoff.test.ts`, `npm run typecheck`); `/sdd dogfood` passed (`npm test -- --run test/unit/continuityWiring.test.ts test/unit/projectHandoff.test.ts`). Commit pending.
+**Verify:** `npm test -- --run test/unit/continuityWiring.test.ts test/unit/projectHandoff.test.ts`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npm test -- --run test/unit/continuityWiring.test.ts test/unit/projectHandoff.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

@@ -7,6 +7,10 @@ _Revised 2026-07-09 (fold: Claude probe review `.tachyon/reviews/364-bridge-clie
 **Status:** shipped-partial
 
 **Closure:** Phase 1 shipped 2026-07-09 — `BridgeClientRebindCoordinator` + durable `bridgeClient` ledger stamps + Workspace/AgentManager wiring + settings defaults; pre-stamp wiring inference (`isTachyonBridgeWiredRecord`); live dogfood on 0.55.82 (reload → rebind audit resume_ok for claude/codex/reviewer/grok; native list_agents healthy; initiator notice delivered). Commits: e45bb99, 1080d1a (host-action *), 57792a7 (infer wiring). Phase 2 peer rebind tool deferred (authz boundary only in spec). Residual: wire `onAuthenticatedSelfCall` when graceMs>0 is dogfooded.
+**Verify:** `npx vitest run test/unit/bridgeClientRebind.test.ts`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full`
+**Dogfood:** `npx vitest run test/unit/bridgeClientRebind.test.ts`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred. -->
 
 ## Intent

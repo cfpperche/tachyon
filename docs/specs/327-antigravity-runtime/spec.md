@@ -4,6 +4,8 @@ _Created 2026-07-02._
 
 **Status:** shipped
 **Closure:** Shipped locally 2026-07-02 — `agy`/Antigravity runtime adapter, cache resolver, Agent Studio catalog, docs/schema strings, and focused tests/typecheck/build.
+**Verify:** `npm test -- --run test/unit/resume.test.ts test/unit/config.test.ts test/unit/agentStudio.test.ts`
+**Dogfood:** `npm test -- --run test/unit/resume.test.ts -t antigravity`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

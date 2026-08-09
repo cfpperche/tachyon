@@ -8,6 +8,8 @@ _Created 2026-07-16._
 **Worktree:** `/home/goat/tachyon-worktrees/dev-host-dogfood-ergonomics`
 
 **Closure:** 2026-07-16 — Dev Host dogfood ergonomics (P0–P3): mirror `.tachyon` copy locked by test, `point-status` doctor, `--fixture` / `fixture-new`, worktree tool resolve + stale pointer, fixture drift warn, runbook preferred F5 path. Commits `08443142` / `c87ac17a` on branch; landed via merge to main.
+**Verify:** `npx vitest run test/unit/devHostPointer.test.ts test/unit/pluginGitHookRegistry.test.ts`
+**Dogfood:** `npm run dogfood -- dev-host -- fixture-new --slug ergonomics-smoke --intent focus && npm run dogfood -- dev-host -- point --worktree "$PWD" --fixture ergonomics-smoke --spec 393 && npm run dogfood -- dev-host -- point-status && npm run dogfood -- dev-host -- point-clear`
 
 ## Intent
 

@@ -6,6 +6,7 @@ _Created 2026-06-26._
 <!-- Bare enum only: draft | in-progress | shipped | superseded | abandoned | deferred. -->
 
 **Closure:** A launcher-enforced `tools.<name>.launchPolicy { env?, args?, denyArgs?, mode:"force" }` flows
+**Verify:** `env -u TMUX npx vitest run test/unit/pluginManifest.test.ts test/unit/pluginLockfile.test.ts test/unit/pluginToolPlan.test.ts test/unit/pluginToolLauncher.test.ts test/unit/pluginConsentViewModel.test.ts`
 manifest → consent (fingerprint-bound) → lockfile → launcher. The launcher (`toolLauncher.ts`) force-sets an
 explicit env (policy wins over a hostile parent env), refuses a conflicting agent arg (`denyArgs` ∪ the forced
 flag-names → `POLICY_CONFLICT`, fail closed), and prepends forced args. Built bottom-up across manifest.ts /

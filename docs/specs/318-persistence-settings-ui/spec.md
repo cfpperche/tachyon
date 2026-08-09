@@ -4,6 +4,8 @@ _Created 2026-07-01._
 
 **Status:** shipped
 **Closure:** Shipped in this workspace as spec 318 implementation; final commit/VSIX recorded after validation. Evidence: `npm test -- test/unit/yamlEditor.test.ts` and `npm run typecheck`. Human dogfood route: sidebar Agents/Terminals > Persistence hooks settings.
+**Verify:** `npm test -- test/unit/yamlEditor.test.ts`
+**Verify:** `npm run typecheck`
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,

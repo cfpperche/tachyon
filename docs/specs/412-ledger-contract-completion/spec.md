@@ -4,6 +4,9 @@ _Created 2026-07-19._
 
 **Status:** shipped
 **Closure:** Shipped in `5703133d`; persisted contracts now use a closed completion discriminator,
+**Verify:** `npx vitest run test/unit/spawnContract.test.ts test/unit/resume.test.ts test/unit/agentManager.test.ts --maxWorkers=1`
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
 malformed records retain a content-free sentinel, and restart refuses them before session mutation.
 
 ## Intent

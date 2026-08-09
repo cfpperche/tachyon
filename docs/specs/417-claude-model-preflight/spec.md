@@ -5,6 +5,9 @@ _Created 2026-07-19. Task: t-838af6._
 **Status:** shipped
 
 **Closure:** Shipped 2026-07-19 in `a9f37305`. Claude explicit-model delegation now yields an honest provisional preflight result and is validated by the existing bounded runtime-startup boundary; invalid models still reject and compensate, pending processes remain unassignable, and missing-adapter runtimes remain fail-closed. Dogfood, focused verification, typecheck, and the 5,108-test full suite passed headlessly.
+**Verify:** `npx vitest run test/unit/runtimeLaunchPreflight.test.ts test/unit/agentManager.test.ts test/unit/bridge.test.ts --maxWorkers=1`
+**Verify:** `npm run typecheck`
+**Dogfood:** `npx vitest run test/unit/agentManager.test.ts -t "delegated Claude explicit model|provisional Claude model rejection" --maxWorkers=1`
 
 ## Intent
 

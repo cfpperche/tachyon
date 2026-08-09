@@ -4,6 +4,9 @@ _Created 2026-07-26._
 
 **Status:** shipped
 **Closure:** Shipped the measured Claude global/workspace scalar policy, typed
+**Verify:** `npm run typecheck`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `npx vitest run test/unit/agentProfileConfigLoader.test.ts test/unit/harness.test.ts test/unit/agentManager.test.ts`
 model/effort argv projection, closed permission validation and equivalent
 fresh/restart/resume/fork materialization; focused dogfood and both repository
 gates passed on 2026-07-26.

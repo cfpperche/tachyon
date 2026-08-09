@@ -5,6 +5,10 @@ _Created 2026-07-21._
 **Status:** shipped
 
 **Closure:** Shipped on `main` by 2026-07-22. Implementation, independent publication review,
+**Verify:** `npm run typecheck`
+**Verify:** `npm run test:invariants`
+**Verify:** `npm run verify:full:quiet`
+**Dogfood:** `TACHYON_AGENT_EVOLUTION_LIVE_RUNTIME=codex npm exec -- vite-node scripts/dogfood-agent-evolution.mts`
 recovery hardening, full verification, Agent Studio Visual QA and live Codex runtime dogfood are
 complete. The final publication hardening commit `3a195cf7` is fully contained in `main`; the managed
 worktree and local branch were removed after landing.

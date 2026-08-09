@@ -5,6 +5,7 @@ _Created 2026-06-11._
 **Status:** shipped
 
 **Closure:** 2026-06-11 — claude (mint) + codex (capture) verified LIVE end-to-end:
+**Verify:** `npm run typecheck && npm test`
 `--session-id` mint → transcript at the adapter's exact path → `--resume` recalled
 the prior codeword (BANANA-7714); `codex exec` persisted → the real
 `resolveCodexId()` resolved the id from disk by cwd → `codex exec resume` recalled

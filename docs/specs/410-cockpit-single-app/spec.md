@@ -36,6 +36,7 @@ inventory built from the manifest ever listed them, and 485 discovered them only
 that into a test rather than a paragraph.
 
 **Closure:** 2026-07-24 — Phases B–E complete (`tasks.md`): foundation guard extends `WEBVIEW_SURFACES`
+**Verify:** `npm run typecheck && npx vitest run test/unit/webviewConvention.test.ts test/unit/webviewComponentKit.test.ts test/unit/uiPatterns.test.ts`
 (`hostKind` field) rather than a parallel manifest; every Phase B/C/D surface (Approvals, Runtime
 Ops, Validations, Plugins, tmux inspector, Board, task detail/handoff/probes as subroutes, 7
 studios) migrated to one host path with the old panel retired or dropped from the manifest; sidebar
