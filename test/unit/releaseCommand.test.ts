@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../helpers/tempDir.js";
 
 const repoRoot = path.resolve(__dirname, "../..");
 
@@ -35,6 +36,64 @@ describe("release command", () => {
       ["vsce", ["package", "--out", "tachyon.vsix"]],
       ["npm", ["run", "smoke:vsix"]],
     ]);
+  });
+
+  it("t-e995dd: gives vsce a product manifest and restores the development manifest", async () => {
+    const { runRelease } = await import("../../scripts/release.mjs");
+    const root = makeTempDir("tachyon-release-manifest-");
+    const manifestPath = path.join(root, "package.json");
+    const source = '{\n  "name": "tachyon",\n  "scripts": { "dogfood": "node scripts/dogfood/run.mjs" }\n}\n';
+    fs.writeFileSync(manifestPath, source);
+
+    runRelease({
+      root,
+      run(command) {
+        if (command === "vsce") {
+          expect(JSON.parse(fs.readFileSync(manifestPath, "utf8"))).not.toHaveProperty("scripts");
+        }
+      },
+    });
+
+    expect(fs.readFileSync(manifestPath, "utf8")).toBe(source);
+  });
+
+  it("t-e995dd: restores the development manifest when vsce fails", async () => {
+    const { runRelease } = await import("../../scripts/release.mjs");
+    const root = makeTempDir("tachyon-release-manifest-");
+    const manifestPath = path.join(root, "package.json");
+    const source = '{"name":"tachyon","scripts":{"release":"node scripts/release.mjs"}}\n';
+    fs.writeFileSync(manifestPath, source);
+
+    expect(() => runRelease({
+      root,
+      run(command) {
+        if (command === "vsce") throw new Error("pack failed");
+      },
+    })).toThrow("pack failed");
+
+    expect(fs.readFileSync(manifestPath, "utf8")).toBe(source);
+  });
+
+  it("t-e995dd: recovers a manifest left sanitized by a killed packaging run", async () => {
+    const { runRelease } = await import("../../scripts/release.mjs");
+    const root = makeTempDir("tachyon-release-manifest-");
+    const manifestPath = path.join(root, "package.json");
+    const backupPath = path.join(root, ".tachyon-package-manifest.source");
+    const source = '{\n  "name": "tachyon",\n  "scripts": { "release": "node scripts/release.mjs" }\n}\n';
+    fs.writeFileSync(manifestPath, '{\n  "name": "tachyon"\n}\n');
+    fs.writeFileSync(backupPath, source);
+
+    runRelease({
+      root,
+      run(command) {
+        if (command === "npm") {
+          expect(fs.readFileSync(manifestPath, "utf8")).toBe(source);
+        }
+      },
+    });
+
+    expect(fs.readFileSync(manifestPath, "utf8")).toBe(source);
+    expect(fs.existsSync(backupPath)).toBe(false);
   });
 
   it("cannot reach vsce or smoke after a failed precondition", async () => {
