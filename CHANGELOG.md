@@ -6,6 +6,100 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.74.0 — a surface nobody opened is gone, and the ones that stayed stop lying about themselves
+
+The theme is the same as 0.73.0, one layer down: names, comments and signatures that describe
+machinery which no longer exists. Five of them were found and fixed in a single day, so they are
+listed as a class rather than as isolated fixes.
+
+### Removed
+
+- **The Execution graph, entirely** (`t-af240d`). 62 files, 5443 lines: five modules, three surfaces,
+  fourteen test files, the Control tile and every registration. **Measured before removing** — the
+  ledger in this workspace held 814 entries, 36 `measured` and 778 `unproven`. The 778 were honest by
+  construction (a Bridge call has no child process to carry an id); the defect was proportion. The 36
+  proven spawns that justified the surface were buried under telemetry it could never promote, and the
+  filters offered Turn/State/Type/Agent — no filter on attribution, the one axis that separates them.
+  It had no Bridge tool: Interface-only, and never opened.
+
+  The one real risk was measured, not assumed: `TACHYON_EXECUTION_ID` and `TACHYON_EXECUTION_AGENT`
+  were injected into every spawned agent's environment. Nothing read them.
+
+- **The unreachable restart GC** (`t-3e7153`). `toolTransaction.ts` claimed in its header that
+  in-process rollback was "backed by recover-on-restart". It was not — `gcAbandonedTransactions` had
+  four test callers and none in production. Wiring it was the obvious fix and measurement refused it:
+  the collector guarded only the directory UID, never `meta.pid` liveness, so a startup in one window
+  could delete an active transaction belonging to another. The function and the claim both go; the
+  in-process rollback stays.
+
+### Fixed
+
+- **Persistent instructions can be written, and they reach the agent** (`t-d48775`). Reported twice by
+  the maintainer. The textarea was `disabled` for every agent the studio can load, under a hint
+  promising a "dedicated profile binding". **Both halves were missing**: the only writer of
+  `prompt.instructions` in the whole product was the portable-bundle importer, and the projection
+  *refused* the key outright — so the one existing door produced a profile that fell off the roster.
+  The text now lives in `prompt.instructions` pinned to `instructions.md`, written through the same
+  lifecycle transaction as the rest of the form, and the round trip is held by a test: write, restart,
+  read back, and reach the agent's launch.
+
+- **The completion doorbell stops expiring** (`t-93bec9`). `notify_agent` delivers on the recipient's
+  working→idle edge with an empty composer, inside a 10-minute TTL. Those conditions are
+  anti-correlated for a coordinator: it goes idle exactly when the human is about to type, into its
+  pane. Two of three completion reports were lost in one afternoon. `agent-authored` notices — reports
+  of what already happened — no longer expire; `host-poke` notices, which assert live state, keep the
+  TTL. The distinction already existed in the type; only the TTL treated them alike.
+
+- **The browser gate sees what the suite actually reads** (`t-fbd2ce`). Root discovery followed only
+  the imports written in `test/browser/` files — one level. `src/tasks/` never entered, though the
+  board app imports `boardModel` from it, so a change to a card's visual affordance shipped with zero
+  browser tests. Now depth 2, chosen as the first depth that covers the real case: 11 roots at depth 1,
+  22 at depth 2, 26 at depth 3. Still conditional — a docs-only change still runs none.
+
+- **Cost inputs shared, with the divergence declared** (`t-f60468`). Four sizing constants and `envInt`
+  existed twice, read the same environment variables, and disagreed on the floor. The disagreement
+  turned out to be **intentional** — the free-RAM sizer protects a lone worker at 128MB while the
+  host-wide ledger pairs its marginal term with a separately measured fixed charge. The shared inputs
+  moved to `shared/`; the ledger's floor got a name, `VITEST_LEDGER_MIN_WORKER_MB`. No effective value
+  changed for any operator.
+
+### Changed
+
+- **Overview and Engine are one screen, System** (`t-7b92bd`, SDD 500). They were never two subjects:
+  `model.ts` read Overview's counters straight off the object Engine rendered row by row, in the same
+  function. The summary now derives from the rows on screen, so no state exists where the counter and
+  the card disagree — the one real instance of that being `workspaceCount`, which counts the window and
+  now says so.
+
+- **A task's ownership is a ledger, not a field** (`t-a5b9b9`, SDD 499). `assignee` meant two things
+  by status: who is executing, and — once landed/done — **who delivered**. The board rendered
+  `delivered by`, and self-evolution hung its whole chain off it. Attempts now append to
+  `.tachyon/tasks/<id>.attempts`; `currentAssignee` and `lastDeliverer` are derived at read time and
+  never persisted. 1051 historical assignees were backfilled, each line declaring itself a backfill
+  with a timestamp marked as inferred rather than observed.
+
+- **`reconcile_landed`, and three tools renamed** (`t-77c95c`). The board was the only domain with no
+  sweep verb: 190 finished tasks needed 190 calls to close. The new tool follows the existing
+  `reconcile_*` shape, defaults to `dry_run`, and journals the individual proven SHA per task — a sweep
+  with weak proof would institutionalise the one case where a task was closed with its deliverable
+  never merged. `worktree_hygiene`, `worktree_process_hygiene` and `reconcile_worktree_hygiene` became
+  `worktree_audit`, `worktree_processes` and `reconcile_worktrees`.
+
+### Internal
+
+- **`src/cockpit/` dissolved** (`t-5a0c1c`). A directory named after the Control surface, which has not
+  existed since SDD 485. Thirteen files went to their measured owners, one commit each; the shared
+  vocabulary went to `src/sections/` and lost the `Cockpit` prefix. Along the way it surfaced a
+  structural fact worth keeping: moving domain code into `src/webview/` changes which typecheck program
+  it belongs to, and that program resolves modules differently — an untouched file broke because it
+  changed programs, not content.
+
+- **Nine comments stopped describing the removed Execution graph** (`t-2ef65c`). The removal proved
+  zero *symbol* residue; comments have no symbols. Sentences claiming a minted turn id, an
+  `InternalOperation` sink, and an id carried into the child's environment all described machinery that
+  was gone. Rewritten where the reason survived, deleted where it did not. A dead parameter and a
+  return type that always returned `undefined` went with them. SDD 480 is marked `abandoned`.
+
 ## 0.73.0 — the product stops asserting facts it never observed
 
 Three fixes, one shape: code that wrote down a second fact after observing a first one. A dead process
