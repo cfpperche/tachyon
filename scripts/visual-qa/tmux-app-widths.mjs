@@ -19,7 +19,7 @@
  *  - a fixture with real VOLUME (the C5 lesson): a four-session fixture cannot show what a row grid, a
  *    five-column filter bar or a long `startCommand` do at the length a working machine produces.
  *
- * Prereq: `node esbuild.mjs` and `npm run preview:webview` in another shell.
+ * Prereq: `node esbuild.mjs` and `node scripts/webview-preview/serve.mjs` in another shell.
  * Run: `node scripts/visual-qa/tmux-app-widths.mjs [outDir]`
  */
 import puppeteer from "puppeteer-core";

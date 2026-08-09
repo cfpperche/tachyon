@@ -16,7 +16,7 @@ Isolated workspace for **Tachyon: Dev Host** F5 validation of the Agents status-
 From monorepo root after the feature branch is built in the worktree:
 
 ```bash
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --worktree /home/goat/tachyon-worktrees/t-eddf90-sidebar-agent-status-filter \
   --workspace /home/goat/tachyon-worktrees/t-eddf90-sidebar-agent-status-filter/test/fixtures/sidebar-agent-status-filter-dogfood \
   --spec t-eddf90 \
@@ -37,4 +37,4 @@ npm run dogfood -- dev-host -- point \
    - Dropdown counts stay anchored to the full fleet (not the filtered subset)
 5. Confirm sort A–Z still works under a filter (no status regroup).
 
-When done: `npm run dogfood -- dev-host -- point-clear`
+When done: `scripts/dev-host/cli.sh point-clear`

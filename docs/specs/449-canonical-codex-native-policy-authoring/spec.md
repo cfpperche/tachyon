@@ -62,4 +62,4 @@ profiles to global sources, and strips that policy when creating another runtime
 
 **Verify:** `npx vitest run test/unit/agentStudioAdapter.test.ts test/unit/codexNativeConfigProjection.test.ts`
 **Verify:** `npm run typecheck`
-**Dogfood:** `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- npm run dogfood -- dev-host -- headless`
+**Dogfood:** `node scripts/dev-host/lane.mjs run --owner "$TACHYON_AGENT_NAME" --target worktree -- scripts/dev-host/cli.sh headless`

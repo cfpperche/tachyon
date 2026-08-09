@@ -43,8 +43,8 @@ Engine was the first module; Mission board is the first **full product surface**
 ```bash
 cd /home/goat/tachyon
 node esbuild.mjs
-npm run preview:webview:catalog
-npm run preview:webview
+npx vite-node --script scripts/webview-preview/generate-routes.ts
+node scripts/webview-preview/serve.mjs
 ```
 
 | Fixture | URL |
@@ -57,7 +57,7 @@ npm run preview:webview
 
 ```bash
 cd /home/goat/tachyon
-npm run dogfood -- dev-host -- seed --fixture sample-workspace
+scripts/dev-host/cli.sh seed --fixture sample-workspace
 # Run and Debug → "Tachyon: Dev Host" → F5
 # Palette / sidebar header: Tachyon: Open Control
 ```

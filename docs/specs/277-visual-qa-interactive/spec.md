@@ -72,7 +72,7 @@ DIFFERENT surface** (judging Surface B against Surface A's intent, silently). Ru
 - **Inline target overrides the ENTIRE config route set** for that run (OQ3 = override): ad-hoc means "judge THIS
   now", not "append to the baseline suite".
 - **`setup` runs only for config-route / harness targets, never blindly for an arbitrary external URL** — a baseline
-  `npm run preview:webview` is meaningless (and wrong) for `https://example.com`.
+  `node scripts/webview-preview/serve.mjs` is meaningless (and wrong) for `https://example.com`.
 - viewports/setup mixing is safe (no semantic coupling) and falls back to config freely.
 
 ## The skill v2 contract

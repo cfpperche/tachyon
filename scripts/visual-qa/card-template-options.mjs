@@ -10,7 +10,7 @@
  * So this measures geometry. The focus text of the configured row must occupy MORE than one line and
  * at most the three the template allows, while the unconfigured contrast row stays on one.
  *
- * Prereq: `npm run build` and `npm run preview:webview` in another shell.
+ * Prereq: `npm run build` and `node scripts/webview-preview/serve.mjs` in another shell.
  * Run: `node scripts/visual-qa/card-template-options.mjs`
  */
 import puppeteer from "puppeteer-core";

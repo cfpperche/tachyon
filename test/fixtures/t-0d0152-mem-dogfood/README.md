@@ -29,7 +29,7 @@ git add test/fixtures/t-0d0152-mem-dogfood/tachyon.yml test/fixtures/t-0d0152-me
 
 ```bash
 # from monorepo:
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --worktree <worktree-or-repo> \
   --fixture t-0d0152-mem \
   --slug t-0d0152-mem

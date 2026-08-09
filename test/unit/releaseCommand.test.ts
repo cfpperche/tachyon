@@ -42,7 +42,7 @@ describe("release command", () => {
     const { runRelease } = await import("../../scripts/release.mjs");
     const root = makeTempDir("tachyon-release-manifest-");
     const manifestPath = path.join(root, "package.json");
-    const source = '{\n  "name": "tachyon",\n  "scripts": { "dogfood": "node scripts/dogfood/run.mjs" }\n}\n';
+    const source = '{\n  "name": "tachyon",\n  "scripts": { "watch": "node scripts/build-engine-channel.mjs dev --watch" }\n}\n';
     fs.writeFileSync(manifestPath, source);
 
     runRelease({

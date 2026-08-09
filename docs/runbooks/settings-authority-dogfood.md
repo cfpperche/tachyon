@@ -10,7 +10,7 @@ This is the last unmet `done when` on `t-aaad95`. Until it passes, the change do
 
 ## Before you start
 
-- Install the candidate VSIX, or run the Dev Host (`npm run dogfood -- dev-host -- point --fixture <slug>`,
+- Install the candidate VSIX, or run the Dev Host (`scripts/dev-host/cli.sh point --fixture <slug>`,
   then F5 **in that checkout**).
 - Note your global file's path: `~/.tachyon/settings.json`. If you set `TACHYON_GLOBAL_SETTINGS_HOME`,
   it is `$TACHYON_GLOBAL_SETTINGS_HOME/.tachyon/settings.json` instead.

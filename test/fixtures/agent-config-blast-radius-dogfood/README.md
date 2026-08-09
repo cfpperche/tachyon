@@ -28,8 +28,8 @@ never the monorepo's. Arming the wrong one launches a stale fixture with no erro
 
 ```sh
 cd <the checkout you have open>
-npm run dogfood -- dev-host -- point --worktree <worktree> --fixture agent-config-blast-radius
-npm run dogfood -- dev-host -- point-status   # "fixture source:" must name this fixture
+scripts/dev-host/cli.sh point --worktree <worktree> --fixture agent-config-blast-radius
+scripts/dev-host/cli.sh point-status   # "fixture source:" must name this fixture
 ```
 
 Then F5 → **Tachyon: Dev Host**.

@@ -11,7 +11,7 @@
  *
  * Value enums are measured — see docs/specs/472-codex-danger-value-optin/plan.md.
  *
- * Run: npm run dogfood -- codex-danger-optin
+ * Run: node scripts/dogfood/run.mjs codex-danger-optin
  */
 import crypto from "node:crypto";
 import fs from "node:fs";

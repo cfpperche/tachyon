@@ -8125,7 +8125,7 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
  *
  * The whole family of measurements this rests on: asked with `stopGracefully`, grok and hermes exit
  * 130 (128+SIGINT — the CORRECT exit of a process that honoured the Ctrl-C Tachyon sent) while codex,
- * opencode and pi exit 0 (`npm run dogfood -- stop-exit-codes`). So the exit code cannot carry the
+ * opencode and pi exit 0 (`node scripts/dogfood/run.mjs stop-exit-codes`). So the exit code cannot carry the
  * intent, and no special case for one code could: it would fix two runtimes and break on the next.
  *
  * WHO CAN REACH THIS, and why the tests sit at `stopGracefully` rather than at each caller: every door

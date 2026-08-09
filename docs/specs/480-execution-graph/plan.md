@@ -46,7 +46,7 @@ runtime-visible contract moves — in particular which runtimes supply a turn-id
 All five phases delivered. The gate for each was met; what follows is the evidence, and the honest
 distance between "the feature works" and "the feature is running here".
 
-**Dogfood against real operating-system objects** — `npm run dogfood -- execution-graph`, 15/15:
+**Dogfood against real operating-system objects** — `node scripts/dogfood/run.mjs execution-graph`, 15/15:
 
 | Claim | How it was proven, on real objects |
 |---|---|

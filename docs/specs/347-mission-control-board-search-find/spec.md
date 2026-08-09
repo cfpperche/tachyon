@@ -6,7 +6,7 @@ _Created 2026-07-03._
 **Closure:** Toolbar search (t-5ea4c7) and the native find widget (t-b5e6e5) both shipped and are green on typecheck/build/unit suite + an agent visual pass. Spec intentionally NOT closed via `/sdd close` — the maintainer's own dogfood pass is still outstanding (per the tasks' own instructions), so this stays `shipped` until that happens.
 
 **Verify:** `npx vitest run test/unit/boardModel.test.ts && npm run typecheck && npm run build`
-**Dogfood:** `npm run preview:webview` then open `http://localhost:PORT/scripts/webview-preview/index.html?view=mission-control&fixture=default`, type into the toolbar search box, and try Ctrl+F in the real installed extension's Mission Control panel.
+**Dogfood:** `node scripts/webview-preview/serve.mjs` then open `http://localhost:PORT/scripts/webview-preview/index.html?view=mission-control&fixture=default`, type into the toolbar search box, and try Ctrl+F in the real installed extension's Mission Control panel.
 
 ## Intent
 

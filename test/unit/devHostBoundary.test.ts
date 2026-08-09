@@ -53,7 +53,7 @@ describe("Dev Host engine boundary", () => {
     const root = workspace();
     expect(() => assertMarkedDevHostWorkspace(root))
       .toThrowError(expect.objectContaining({ code: "DEV_HOST_MARKER_MISSING" }));
-    expect(() => assertMarkedDevHostWorkspace(root)).toThrow(/dogfood -- dev-host -- point/);
+    expect(() => assertMarkedDevHostWorkspace(root)).toThrow(/scripts\/dev-host\/cli\.sh point/);
   });
 
   it("refuses malformed, open-ended, or symlinked markers", () => {

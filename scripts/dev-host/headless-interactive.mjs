@@ -1,7 +1,7 @@
 /**
  * Dev Host headless INTERACTIVE harness — agent-drivable EDH with full webview access.
  *
- * The existing `dogfood:dev-host -- headless` lane runs an extensionTestsPath runner INSIDE the
+ * The existing `scripts/dev-host/cli.sh headless` lane runs an extensionTestsPath runner INSIDE the
  * extension host: full vscode API, but NO access to webview DOM/console (webviews are separate
  * renderer targets the host-side runner cannot see). This harness closes that gap: it launches the
  * SAME pointed Dev Host (extension + fixture mirror armed by `point`) on Xvfb with
@@ -11,7 +11,7 @@
  * This is the "agent runs the dogfood loop end-to-end" primitive: reproduce a UI bug, watch the
  * webview console while doing it, and capture evidence — no human clicking, no GUI window.
  *
- * Usage (from monorepo root, pointer already armed via `dogfood:dev-host -- point`):
+ * Usage (from monorepo root, pointer already armed via `scripts/dev-host/cli.sh point`):
  *   node scripts/dev-host/headless-interactive.mjs --scenario scripts/dev-host/scenarios/<name>.mjs
  *   node scripts/dev-host/headless-interactive.mjs            # no scenario: boot, settle, dump targets, exit
  *
@@ -114,7 +114,7 @@ async function main() {
       ? path.join(slotRoot, "workspace")
       : path.join(ptr, "workspace"));
   if (!fs.existsSync(extensionDir)) {
-    throw new Error(`${SELF}: Dev Host pointer not armed (missing ${extensionDir}) — run: npm run dogfood -- dev-host -- point --worktree … --fixture …`);
+    throw new Error(`${SELF}: Dev Host pointer not armed (missing ${extensionDir}) — run: scripts/dev-host/cli.sh point --worktree … --fixture …`);
   }
   const extensionPath = fs.realpathSync(extensionDir);
   if (!fs.existsSync(path.join(extensionPath, "dist", "extension.js"))) {

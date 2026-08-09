@@ -8,7 +8,7 @@
  * The property: `supported` must mean the CLI accepts the model, and `unsupported` must mean the CLI
  * refuses it. A catalog that disagreed with the binary would be worse than no catalog at all.
  *
- * Run: npm run dogfood -- grok-model-preflight
+ * Run: node scripts/dogfood/run.mjs grok-model-preflight
  */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";

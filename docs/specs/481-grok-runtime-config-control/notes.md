@@ -138,7 +138,7 @@ against the previous commit before being fixed.
 
 ## Dogfood log
 
-`npm run dogfood -- grok-runtime-config` — 2026-07-28, grok 0.2.112 (9bbd559437): **15/15**.
+`node scripts/dogfood/run.mjs grok-runtime-config` — 2026-07-28, grok 0.2.112 (9bbd559437): **15/15**.
 Covers inventory-vs-runtime agreement, payload absence, the workspace scalar refusal, the native MCP
 toggle round-trip in both directions, comment/unknown-table/credential survival, stale-revision
 refusal with the concurrent edit preserved, and folder trust reported-but-never-granted (including

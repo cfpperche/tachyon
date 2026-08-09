@@ -88,7 +88,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 
 ## Dogfood
 
-**Dogfood:** `npm run dogfood -- --list`
+**Dogfood:** `node scripts/dogfood/run.mjs --list`
 <!-- Placeholder target. The implementing task must add a scenario that forgets an agent in
      each of the five disagreement states, using an existing harness. Replace this line with
      that scenario's name. Do not add a one-off package script. -->

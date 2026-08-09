@@ -76,7 +76,7 @@ _The smallest change that makes the owner's live case stop happening. Everything
 
 ## Slice 4 — durability against runtime churn
 
-- [ ] Add `npm run dogfood -- runtime-auth-probe` on the existing dogfood harness (no one-off package
+- [ ] Add `node scripts/dogfood/run.mjs runtime-auth-probe` on the existing dogfood harness (no one-off package
       script): run each declared probe against a throwaway empty config home and the real one, assert
       the classifier separates them, print the binary version measured.
 - [ ] Re-measure the Grok rows in `docs/runtimes/parity.md` against 1.0.0 — several still state
@@ -112,7 +112,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 **Dogfood-Opt-Out:** this delivery is an architecture proposal — `docs/specs/495-*` plus the
 `docs/runtimes/parity.md` auth rows. It changes no product behavior, so there is nothing end-to-end
 to exercise. The dogfood that *would* prove the proposal is Slice 4's
-`npm run dogfood -- runtime-auth-probe`, declared above and deliberately not built here (the task is
+`node scripts/dogfood/run.mjs runtime-auth-probe`, declared above and deliberately not built here (the task is
 investigate-and-propose only). The measurements this spec rests on were taken by driving the real
 CLIs and are recorded verbatim in `notes.md` §Measurement log.
 

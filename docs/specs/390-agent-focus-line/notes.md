@@ -30,7 +30,7 @@ POC tweak: removed the **working** badge from L2 — redundant once focus line s
 ## Dev Host dogfood (2026-07-16) — CLOSED
 
 ```bash
-npm run dogfood -- dev-host -- point \
+scripts/dev-host/cli.sh point \
   --worktree /home/goat/tachyon-worktrees/agent-focus-line-poc \
   --workspace …/test/fixtures/agent-focus-line-dogfood \
   --spec 390 --slug agent-focus-line --owner grok

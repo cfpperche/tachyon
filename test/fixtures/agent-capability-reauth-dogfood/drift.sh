@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 if [ ! -f .tachyon-dev-host.json ]; then
   echo "drift.sh: refusing — this is the tracked fixture source, not the dev-host mirror." >&2
   echo "  run it from: <checkout>/.tachyon/dev-host/workspace/drift.sh" >&2
-  echo "  (arm first: npm run dogfood -- dev-host -- point --worktree <wt> --fixture agent-capability-reauth)" >&2
+  echo "  (arm first: scripts/dev-host/cli.sh point --worktree <wt> --fixture agent-capability-reauth)" >&2
   exit 1
 fi
 

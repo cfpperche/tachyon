@@ -9,7 +9,7 @@ on implementation commit `4509f294`; final review approved the main-reanchored b
 landed the runtime launch preflight closure.
 
 **Verify:** `npm run verify:full:quiet`
-**Dogfood:** `npm run dogfood -- runtime-launch-preflight`
+**Dogfood:** `node scripts/dogfood/run.mjs runtime-launch-preflight`
 
 ## Intent
 
