@@ -17,12 +17,12 @@
  * Agent entry, and `AgentStudioPanel.ts` consumes that registry for the standalone Agent Studio.
  */
 import * as vscode from "vscode";
-import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
-import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
-import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "../config/agentProfileRefusal.js";
-import { redactSecrets } from "../bridge/redact.js";
-import { envelope } from "../webview/shared/studio/protocol.js";
-import { validateAgentStudioInboundMessage } from "../webview/agent-studio-shell/domain.js";
+import type { WorkspaceAgentStudioTarget } from "../../shell/WorkspacePresentation.js";
+import { EvolutionStoreError } from "../../evolution/EvolutionStore.js";
+import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "../../config/agentProfileRefusal.js";
+import { redactSecrets } from "../../bridge/redact.js";
+import { envelope } from "../shared/studio/protocol.js";
+import { validateAgentStudioInboundMessage } from "./domain.js";
 import {
   evolutionActionResultMessage,
   evolutionCandidateDetailMessage,
@@ -39,8 +39,8 @@ import {
   agentProfileBundleCreatedMessage,
   agentProfileBundleErrorMessage,
   agentProfileBundleExportMessage,
-} from "../webview/agent-studio-shell/messages.js";
-import type { StudioDomainContext } from "../webview/shared/studio/studioRegistry.js";
+} from "./messages.js";
+import type { StudioDomainContext } from "../shared/studio/studioRegistry.js";
 
 export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, message: { type: string }): void {
   const m = validateAgentStudioInboundMessage(message);
