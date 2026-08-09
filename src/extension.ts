@@ -38,7 +38,6 @@ import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
 import { PROBES_VIEW_TYPE, ProbeResultPanelManager, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
-import { RETIRED_BOARD_VIEW_TYPE, type RetiredBoardPanelState } from "./webview/RetiredBoardPanel.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
 import { controlWorkspaceScope } from "./webview/shared/ControlWorkspaceScope.js";
 import type { SectionPanelState } from "./webview/shared/SectionPanelManager.js";
@@ -2467,19 +2466,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     overviewPanels.open(ws.wsHash); return true;
   };
 
-  // SDD 485 C5 — the pre-410 standalone Board panel's viewType, revived a second time into a second home.
-  // It disposes itself and opens the Board APP for the workspace it persisted, so the screen the human had
-  // comes back where it lives now. Unlike C4's task-detail row, this viewType could NOT simply be reused by
-  // the new app: it is a live redirect with its own persisted shape (`{wsHash}`), and one viewType meaning
-  // two incompatible shapes has no way to tell them apart. No `isCockpitSingletonClaimed()` guard any more,
-  // and its absence is the point: that guard existed because the redirect would otherwise navigate a Control
-  // panel someone else had already restored. Opening an app touches no Control state, and re-opening for the
-  // same project reveals rather than duplicating — which makes this safe against VS Code's unspecified
-  // revive order all by itself.
-  registerTrustedPanelSerializer<RetiredBoardPanelState>(context, RETIRED_BOARD_VIEW_TYPE, (panel, state) => {
-    panel.dispose();
-    openBoard(state?.wsHash);
-  });
   // SDD 485 C5 — the Board app's own restore: the panel VS Code hands back is REUSED, keyed on the project
   // it persisted, so a reload puts the Board back in its tab instead of opening a second one.
   registerTrustedPanelSerializer<SectionPanelState>(context, BOARD_VIEW_TYPE, (panel, state) => boardPanels.deserialize(panel, state));
