@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { handlePinStudioDomainMessage } from "../../src/cockpit/pinStudioDomain.js";
+import { handlePinStudioDomainMessage } from "../../src/webview/pin-studio/pinStudioDomain.js";
 import type { StudioDomainContext } from "../../src/webview/shared/studio/studioRegistry.js";
 import type { WorkspacePinStudioTarget, PinStudioAttachmentResult } from "../../src/shell/PinStudioTarget.js";
 

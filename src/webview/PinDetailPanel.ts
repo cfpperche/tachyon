@@ -7,7 +7,7 @@ import { pinDocumentModeMessage } from "./pin-preview/messages.js";
 import { PinStudioAdapter } from "./PinStudioAdapter.js";
 import { decodeStudioMessage, envelope } from "./shared/studio/protocol.js";
 import { mapUnknownError } from "./shared/studio/errorTaxonomy.js";
-import { handlePinStudioDomainMessage } from "../cockpit/pinStudioDomain.js";
+import { handlePinStudioDomainMessage } from "./pin-studio/pinStudioDomain.js";
 import { PinDocumentEditPolicy, type PinDocumentDraft } from "./pin-preview/editPolicy.js";
 import type { PinPatch } from "./pin-studio/domain.js";
 import type { WorkspaceSidebarTarget } from "../shell/SidebarTarget.js";
