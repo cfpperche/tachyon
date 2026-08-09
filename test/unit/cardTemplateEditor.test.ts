@@ -9,7 +9,7 @@ import {
   toYaml,
   toggleComponent,
   validate,
-} from "../../src/cockpit/cardTemplateEditor.js";
+} from "../../src/webview/shared/control/cardTemplateEditor.js";
 import {
   CARD_COMPONENT_IDS,
   CARD_REGIONS,

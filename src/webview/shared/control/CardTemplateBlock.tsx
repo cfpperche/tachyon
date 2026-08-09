@@ -28,7 +28,7 @@ import {
   toggleComponent,
   validate,
   type CardEditorState,
-} from "../../../cockpit/cardTemplateEditor";
+} from "./cardTemplateEditor";
 import type { CockpitCardTemplateState } from "../../../sections/model";
 import type { CockpitStrings } from "./messages";
 
