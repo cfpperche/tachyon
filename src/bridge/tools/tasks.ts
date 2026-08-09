@@ -282,7 +282,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
     {
       description:
         "Audit every task in the landed lane against commits reachable from main, then reconcile only proved tasks to done. " +
-        "Proof is either the task id in a reachable commit message or a commit SHA in that task's journal which is an ancestor " +
+        "Proof is either the task id in a reachable commit subject or a commit SHA in that task's journal which is an ancestor " +
         "of main. Every applied task journals its own full SHA. Unproved or changed tasks are reported with a reason. Dry-run is the default.",
       inputSchema: {
         dry_run: z.boolean().optional().default(true),
