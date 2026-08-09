@@ -23,7 +23,6 @@ const AGENT_ONLY_KEYS: ReadonlyArray<[key: string, yaml: string]> = [
   ["worktree", "    worktree: true\n"],
   ["branch", "    branch: tachyon/dev\n"],
   ["worktreeSetup", "    worktreeSetup: npm ci\n"],
-  ["verify", "    verify: npm test\n"],
   ["harness", "    harness: {}\n"],
   ["isolate", "    isolate: transcript\n"],
   ["subagents", "    subagents: [child]\n"],
@@ -41,7 +40,7 @@ describe("door: terminals: in tachyon.yml", () => {
   it("no longer points at the retired inline shape", () => {
     // The old text said "declare it under agents: with kind: agent" — advice the product refuses,
     // which is the failure mode this door exists to stop.
-    const { warnings } = parseConfig("terminals:\n  dev:\n    cmd: npm run dev\n    soul: true\n    verify: npm test\n");
+    const { warnings } = parseConfig("terminals:\n  dev:\n    cmd: npm run dev\n    soul: true\n");
     expect(warnings.length).toBeGreaterThan(0);
     for (const warning of warnings) expect(warning).not.toContain("with kind: agent");
   });

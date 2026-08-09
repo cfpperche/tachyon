@@ -296,7 +296,7 @@
   "Overwrite": "Sobrescrever",
   "PR failed: {0}": "PR falhou: {0}",
   "PR opened for '{0}'.": "PR aberto para '{0}'.",
-  "PR title — the body carries the verify verdict": "Título do PR — o corpo carrega o veredito do verify",
+  "PR title": "Título do PR",
   "Pair Tachyon Companion and opt-in first-person browser tools for agents (user_browser_*).": "Pareie o Tachyon Companion e ative tools de browser em primeira pessoa para agentes (user_browser_*).",
   "Paired": "Pareado",
   "Paste + Enter — refused when the agent is busy": "Colar + Enter — recusado se o agente estiver ocupado",
