@@ -65,10 +65,10 @@ the per-workspace detail answers "where" without a second navigation.
     Inbox
 
 - [ ] **Scenario: the detail still works**
-  - **Given** two attached workspaces, one with an engine in error
+  - **Given** the selected workspace with its engine in error
   - **When** System is read
-  - **Then** each workspace still exposes its engine, bridge and workspace facts and its log panel,
-    and the failing one is distinguishable without opening anything
+  - **Then** it still exposes its engine, bridge and workspace facts and its log panel, and the
+    failure is legible without opening anything
 
 - [ ] **Scenario: a summary that cannot disagree with its rows**
   - **Given** any set of attached workspaces
@@ -106,10 +106,14 @@ the per-workspace detail answers "where" without a second navigation.
    `src/webview/surfaces.ts` (`:229`, `:233`). Reusing one id keeps a stale name in the manifest;
    minting a third orphans two. Decide and record which, and what happens to a user with the old tab
    open.
-3. **Density.** Engine's per-workspace card is already tall — three cards plus a log panel. With the
-   summary above it, one workspace may fill the viewport before the second row is visible. Whether
-   the detail collapses by default is a design decision, and a wrong answer here is the one thing
-   that would make System worse than the pair it replaces.
+3. ~~**Density.** … one workspace may fill the viewport before the second row is visible.~~
+   **Answered, and the premise was wrong.** `control.workspaces` is always 0 or 1 in production
+   (`model.ts:439-440` — `selected` falls back to `workspaces[0]` and `scoped` filters by it; the
+   "All workspaces" aggregate was removed by `t-72ff5a`). There is no second row. See plan.md § D4,
+   cancelled.
+
+   The density risk is real but different: a summary above **one** card, where an oversized summary
+   pushes the only real content down while adding nothing. That is what Visual QA attacks.
 
 ## Prior decisions this reverses, deliberately
 
