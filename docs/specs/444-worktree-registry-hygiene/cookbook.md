@@ -36,11 +36,11 @@ this is the happy path.
 | Tool | What it does | Cost |
 |---|---|---|
 | `list_worktrees` | Registry rows only (identity fields). | Cheap — use on hot paths. |
-| `worktree_hygiene` | Rows + the same classification the tab shows (`state`, `reasons`, `dirty`, `aheadOfBase`, `containedInBase`, `occupant`). | Git probes per row — opt-in. |
+| `worktree_audit` | Rows + the same classification the tab shows (`state`, `reasons`, `dirty`, `aheadOfBase`, `containedInBase`, `occupant`). | Git probes per row — opt-in. |
 | `remove_worktree` | Remove a checkout by id/path. Occupancy fail-closed; dirty needs `confirmDirty`; `deleteBranch` only for Tachyon-created branches. | — |
 | `unregister_worktree` | Forget a registry row (disk untouched). Ownership-gated. | — |
 
-Typical agent flow: `worktree_hygiene` → act only on `ready-to-remove` (via `remove_worktree`)
+Typical agent flow: `worktree_audit` → act only on `ready-to-remove` (via `remove_worktree`)
 or `record-only` (via `unregister_worktree`); treat everything else as hands-off.
 
 ## Fail-closed rules (what the system will refuse)

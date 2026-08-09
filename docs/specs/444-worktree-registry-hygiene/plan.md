@@ -25,7 +25,7 @@ mirroring the existing `worktrees.list`), and the destructive actions cross as t
 `worktree.delete-branch` commands are AGENT-name-scoped for Fleet's kill flow, not generic
 registry-id operations). This unifies the architecture: after this change every consumer of the
 registry — VS Code reveal (`worktrees.list`), Control's Worktrees tab (`worktrees.classified`),
-Bridge agents (`list_worktrees`/`worktree_hygiene`) — flows through the ONE validated
+Bridge agents (`list_worktrees`/`worktree_audit`) — flows through the ONE validated
 `ManagedWorktreeService` path (fail-closed loader + reconcile); no parallel parsers remain.
 
 Fallback hardened (maintainer-ratified 2026-07-24, "dado não-confiável não é melhor que dado
@@ -34,7 +34,7 @@ nenhum"): when the engine RPC is unavailable the Worktrees tab shows an honest e
 loses its last consumer and is DELETED outright (its sibling `readGitDeliveriesFromDisk` carries the
 same debt for the Deliveries tab — out of scope here, tracked as t-43c6fa).
 
-Add a `worktree_hygiene` read-only Bridge tool (naming precedent: `git_delivery_hygiene`) exposing
+Add a `worktree_audit` read-only Bridge tool (naming precedent: `git_delivery_hygiene`) exposing
 the same classifier for Bridge-side/CLI consumers. Add three new `CockpitAction` webview messages —
 `worktreeRemove`, `worktreeForgetRecord`, `worktreeBatchCleanup` — handled host-side by invoking the
 new RPC commands (which call the existing `ManagedWorktreeService.remove`/`.unregister`; no new
@@ -72,7 +72,7 @@ never returns `ready-to-remove` for an entry with commits not contained in its b
   `lastClassifiedAt`/cached-verdict fields: no acceptance criterion needs an audit trail of past
   classifications, and persisting a verdict re-opens the staleness question the compute-on-read
   decision above deliberately avoids.
-- **New `worktree_hygiene` Bridge tool, not a breaking change to `list_worktrees`** — chosen because
+- **New `worktree_audit` Bridge tool, not a breaking change to `list_worktrees`** — chosen because
   `list_worktrees`'s existing consumers (per t-016e8b/t-05a0b0-era grounding — spawn-path checks,
   registration flows) expect its current lean shape; adding classification fields there is additive
   and low-risk in principle, but a dedicated tool matches the established `git_delivery_list` vs
@@ -103,7 +103,7 @@ never returns `ready-to-remove` for an entry with commits not contained in its b
 - `src/worktree/ManagedWorktreeService.ts` — no schema change; may gain a thin `listClassified()`
   convenience wrapper the Bridge tool and Cockpit collector both call, to avoid duplicating the
   "list + classify each" loop.
-- `src/bridge/tools.ts` — new `worktree_hygiene` read-only tool registration.
+- `src/bridge/tools.ts` — new `worktree_audit` read-only tool registration.
 - `src/extension.ts` — `CockpitDeps.collect()`'s worktree line switches from
   `readManagedWorktreesFromDisk` to the classified path; new `CockpitAction` handlers for
   `worktreeRemove`/`worktreeForgetRecord`/`worktreeBatchCleanup`.
@@ -129,7 +129,7 @@ never returns `ready-to-remove` for an entry with commits not contained in its b
 - ~~**Occupancy check scope.**~~ **Resolved:** `AgentManager.worktreeOccupant(worktreePath: string)`
   is already keyed by path, not agent name/kind (`AgentManager.ts:1590`) — it applies unchanged to
   both `kind=agent` and `kind=change` entries. No gap here.
-- **`worktree_hygiene` tool cost on large registries.** Not expected to matter at today's scale, but if
+- **`worktree_audit` tool cost on large registries.** Not expected to matter at today's scale, but if
   a workspace accumulates hundreds of abandoned rows, a full re-classify-everything call could be slow;
   no pagination/limit is planned for v1 — flag as a follow-up if it becomes real.
 

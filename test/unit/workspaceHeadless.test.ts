@@ -3494,7 +3494,7 @@ it("t-e722ce: the forget plan names the blocking precondition and changes nothin
  * So: debris this attempt made goes, and anything git will not part with stays — and the original
  * question this case exists to answer is asked of BOTH outcomes, because it is the same question.
  * `classify.ts` classifies a registered `ManagedWorktreeEntry`, so a preserved checkout is visible to
- * `worktree_hygiene` iff `.tachyon/managed-worktrees.json` still names it, and a discarded one is
+ * `worktree_audit` iff `.tachyon/managed-worktrees.json` still names it, and a discarded one is
  * residue of a second kind if that row survives it.
  */
 it("t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the checkout it just made, registry row and all", async () => {
@@ -3759,7 +3759,7 @@ it("t-28bf8f: a kill refused by a live root process moves nothing, and the retry
     await ws.manager.spawn("filho", { cmd: "claude", kind: "agent", parent: "boss", worktree: true, reveal: false });
     const record = ws.ledger.get("filho")!.worktree!;
     // Occupancy is captured from the LIVE pane, with its root pid — the ordinary reading every worktree
-    // surface performs (`WorktreeManager.remove`, Control → Worktrees' classifier, `worktree_hygiene`),
+    // surface performs (`WorktreeManager.remove`, Control → Worktrees' classifier, `worktree_audit`),
     // and the state the field repro was in when its kill arrived.
     expect(await ws.manager.worktreeOccupant(record.path)).toMatchObject({ state: "live", agent: "filho" });
 

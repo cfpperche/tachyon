@@ -164,7 +164,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "reconcile_roster",
       "reconcile_runtime_credentials",
       "reconcile_task",
-      "reconcile_worktree_hygiene",
+      "reconcile_worktrees",
       "register_worktree",
       "remove_worktree",
       "renew_context",
@@ -186,8 +186,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "update_validation",
       "wait_for_agent",
       "wait_for_output",
-      "worktree_hygiene",
-      "worktree_process_hygiene",
+      "worktree_audit",
+      "worktree_processes",
       "write_input",
       "write_tachyon_config",
     ]);
@@ -197,7 +197,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(description("kill_agent")).toContain("the private runtime home under .tachyon/bridge-mcp");
     expect(description("dismiss_agent")).toContain("the private runtime home under .tachyon/bridge-mcp");
     expect(description("dismiss_agent")).toContain("Tachyon activity and pane transcripts are deleted");
-    expect(description("worktree_process_hygiene")).toContain("does not terminate reported processes automatically");
+    expect(description("worktree_processes")).toContain("does not terminate reported processes automatically");
   });
 
   // Legacy generated guard: it("exposes exactly the 60 tools (17 agent ...")
