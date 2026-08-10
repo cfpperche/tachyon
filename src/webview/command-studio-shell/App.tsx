@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { decodeStudioMessage, type StudioDispatch } from "../shared/studio/protocol";
 import { StudioFrame } from "../shared/studio/StudioFrame";
 import { StudioTombstone } from "../shared/studio/StudioTombstone";
+import { StudioLoadError } from "../shared/studio/StudioLoadError";
 import { readTombstoneMessage, type StudioTombstoneInfo } from "../shared/studio/tombstone";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import { useStudioFreeze } from "../shared/studio/useStudioFreeze";
@@ -177,12 +178,27 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Comm
     return <StudioTombstone info={tombstone} backLink={backLink} onClose={() => post(cancelMessage())} />;
   }
 
-  if (!ready || !entity) {
+  if (!ready) {
     return (
       <>
         {backLink ? <div class="ds-degrade-backlink">{backLink}</div> : null}
         <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading Command Studio...</div></div>
       </>
+    );
+  }
+
+  // t-f4e186 — the host ANSWERED, and the answer carried no document. "Ready with no entity" and
+  // "not ready yet" were the same branch above, which is why an `error` with no prior `load` left
+  // this surface saying "Loading…" with no second answer coming. Split, they are what they are:
+  // once the host has spoken, still-loading is not one of the things this screen may claim.
+  if (!entity) {
+    return (
+      <StudioLoadError
+        title={commandStudioTitleFor(mode, entityId, entity)}
+        error={hostError}
+        backLink={backLink}
+        onClose={() => post(cancelMessage())}
+      />
     );
   }
 
