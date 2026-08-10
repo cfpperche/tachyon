@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { loadManagedWorktreeStore, managedWorktreeStorePath } from "../worktree/managedWorktree.js";
 import { sliceJournal, TaskJournalStore } from "./TaskJournalStore.js";
 import { TaskAttemptStore } from "./TaskAttemptStore.js";
 import { compareTasksForListing } from "./listOrder.js";
@@ -36,11 +35,6 @@ import {
   type TaskView,
   type JournalMode,
 } from "./types.js";
-
-/** t-73b2e1 step 2 will delete this producer; kept private to the file-read path only. */
-type SddStatus = "draft" | "in-progress" | "shipped" | "shipped-partial" | "superseded" | "abandoned" | "deferred";
-type SddDerivedStage = { type: "sdd"; ref: string; status?: SddStatus; missing?: boolean };
-type SddTaskDerived = { sdd?: SddDerivedStage };
 
 /** t-ab7708 — a journal read is either whole (`includeJournal`) or windowed (`journalWindow`). */
 export interface TaskViewOptions {
@@ -87,11 +81,6 @@ export interface TaskStoreOptions {
   evolutionCompletionFor?: (event: TaskMutationEvent) => Task["evolutionCompletion"];
 }
 
-interface TaskDerivationBatch {
-  managedSddWorkspaceRoots?: string[];
-}
-
-const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const TASK_AUTHORING_LIMIT_FIELDS = new Set<string>(["title", "body", "kind", "artifact_refs", "artifact_refs.type", "artifact_refs.ref"]);
 
 // spec 335 — hoisted so the Board snapshot can compute per-task drag affordances from the SAME
@@ -287,8 +276,7 @@ export class TaskStore {
     const tasks = this.listRaw();
     const filtered = options.status ? tasks.filter((task) => task.status === options.status) : tasks;
     const offset = clampOffset(options.offset);
-    const derivationBatch: TaskDerivationBatch = {};
-    return filtered.slice(offset, offset + clampLimit(limit)).map((task) => this.viewFor(task, tasks, {}, derivationBatch));
+    return filtered.slice(offset, offset + clampLimit(limit)).map((task) => this.viewFor(task, tasks));
   }
 
   /** The store's true total, independent of any `listViews` limit/offset, so callers can page honestly. */
@@ -488,16 +476,10 @@ export class TaskStore {
 
   next(agent: string): NextTaskResult {
     const tasks = this.listRaw();
-    const derived: Record<string, TaskDerived> = {};
-    const derivationBatch: TaskDerivationBatch = {};
-    for (const task of tasks) {
-      const d = this.derive(task, derivationBatch);
-      if (d) derived[task.id] = d;
-    }
-    const result = nextTask({ tasks, agent, derived });
+    const result = nextTask({ tasks, agent });
     if ("task" in result) {
-      const view = this.viewFor(result.task, tasks, {}, derivationBatch);
-      return { task: result.task, ...(view.derived ? { derived: view.derived } : {}), ...(view.attention?.length ? { attention: view.attention } : {}) };
+      const view = this.viewFor(result.task, tasks);
+      return { task: result.task, ...(view.attention?.length ? { attention: view.attention } : {}) };
     }
     return result;
   }
@@ -600,8 +582,7 @@ export class TaskStore {
     }
   }
 
-  private viewFor(task: Task, allTasks: Task[], options: TaskViewOptions = {}, derivationBatch?: TaskDerivationBatch): TaskView {
-    const derived = this.derive(task, derivationBatch);
+  private viewFor(task: Task, allTasks: Task[], options: TaskViewOptions = {}): TaskView {
     const attention = attentionFor(task, allTasks);
     const wantsJournal = options.includeJournal || options.journalWindow !== undefined;
     // Read once: count and window come from the same materialization, so a concurrent append
@@ -614,42 +595,8 @@ export class TaskStore {
       ...(entries ? { journal: sliced ? sliced.entries : entries } : {}),
       ...(sliced ? { journalWindow: sliced.window } : {}),
       journalCount,
-      ...(derived ? { derived } : {}),
       ...(attention.length ? { attention } : {}),
     };
-  }
-
-  private derive(task: Task, derivationBatch?: TaskDerivationBatch): TaskDerived | undefined {
-    const sddRef = task.artifact_refs?.find((ref) => ref.type === "sdd" && artifactRefRole(ref) === "deliverable");
-    if (!sddRef) return undefined;
-    const specPath = this.resolveSddSpec(sddRef.ref, derivationBatch);
-    if (!specPath) return { sdd: { type: "sdd", ref: sddRef.ref, missing: true } } satisfies SddTaskDerived;
-    const status = readSddStatus(specPath);
-    return { sdd: { type: "sdd", ref: sddRef.ref, ...(status ? { status } : {}) } } satisfies SddTaskDerived;
-  }
-
-  private managedSddWorkspaceRoots(): string[] {
-    try {
-      const registry = loadManagedWorktreeStore(managedWorktreeStorePath(this.workspaceRoot));
-      return registry.entries.map((entry) => entry.path);
-    } catch {
-      // A missing or unreadable registry cannot prove that a spec exists outside this checkout.
-      return [];
-    }
-  }
-
-  private resolveSddSpec(ref: string, derivationBatch?: TaskDerivationBatch): string | null {
-    const clean = ref.trim().replace(/^docs\/specs\//, "").replace(/\/spec\.md$/, "").replace(/\/$/, "");
-    const primary = resolveSddSpecInWorkspace(this.workspaceRoot, clean);
-    if (primary) return primary;
-    const managedRoots = derivationBatch
-      ? (derivationBatch.managedSddWorkspaceRoots ??= this.managedSddWorkspaceRoots())
-      : this.managedSddWorkspaceRoots();
-    for (const workspaceRoot of managedRoots) {
-      const specPath = resolveSddSpecInWorkspace(workspaceRoot, clean);
-      if (specPath) return specPath;
-    }
-    return null;
   }
 
   private assertNoRankCollision(next: Task): void {
@@ -996,34 +943,6 @@ function attentionFor(task: Task, allTasks: Task[]): TaskAttention[] {
   return attention;
 }
 
-function resolveSddSpecInWorkspace(workspaceRoot: string, cleanRef: string): string | null {
-  const specsDir = path.join(workspaceRoot, "docs", "specs");
-  const exact = path.join(specsDir, cleanRef, "spec.md");
-  if (fs.existsSync(exact)) return exact;
-  if (/^[0-9]{3}$/.test(cleanRef)) {
-    try {
-      const match = fs.readdirSync(specsDir).find(
-        (name) => name.startsWith(`${cleanRef}-`) && fs.existsSync(path.join(specsDir, name, "spec.md")),
-      );
-      return match ? path.join(specsDir, match, "spec.md") : null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-function readSddStatus(specPath: string): SddStatus | undefined {
-  try {
-    const text = fs.readFileSync(specPath, "utf8");
-    const match = /^\*\*Status:\*\*\s*([a-z-]+)/m.exec(text);
-    const status = match?.[1];
-    return status && SDD_STATUSES.has(status as SddStatus) ? (status as SddStatus) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function boundedString(value: string, name: string, max: number): string {
   const out = value.trim();
   if (!out) throw new Error(`${name} must be non-empty`);
@@ -1069,10 +988,6 @@ function optionalArtifactRefs(refs: ArtifactRef[] | undefined): Pick<Task, "arti
     out.push({ type, ref: value, ...(role ? { role } : {}) });
   }
   return out.length ? { artifact_refs: out } : {};
-}
-
-function artifactRefRole(ref: ArtifactRef): ArtifactRefRole {
-  return ref.role ?? "deliverable";
 }
 
 function optionalArtifactRefRole(role: ArtifactRef["role"]): ArtifactRefRole | undefined {

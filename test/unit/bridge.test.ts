@@ -825,18 +825,22 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
   it("discover_validation_candidates surfaces existing dogfood debt without creating validations", async () => {
-    const specDir = nodePath.join(pinsRoot, "docs", "specs", "900-fixture");
-    fs.mkdirSync(specDir, { recursive: true });
-    fs.writeFileSync(nodePath.join(specDir, "tasks.md"), "- [ ] Human dogfood the settings flow\n", "utf8");
+    const taskDir = nodePath.join(pinsRoot, ".tachyon", "tasks");
+    fs.mkdirSync(taskDir, { recursive: true });
+    fs.writeFileSync(
+      nodePath.join(taskDir, "t-900abc.json"),
+      `${JSON.stringify({ id: "t-900abc", body: "Human dogfood the settings flow" }, null, 2)}\n`,
+      "utf8",
+    );
 
     const result = await client.callTool({ name: "discover_validation_candidates", arguments: { limit: 10 } });
     expect(result.isError).toBeFalsy();
     const candidates = JSON.parse((result.content as Array<{ text: string }>)[0].text);
     expect(candidates).toContainEqual(expect.objectContaining({
-      title: "Validate 900-fixture",
-      excerpt: "Human dogfood the settings flow",
+      title: "Validate t-900abc",
+      excerpt: '"body": "Human dogfood the settings flow"',
       executor: "human",
-      source_ref: { type: "sdd", ref: "docs/specs/900-fixture" },
+      source_ref: { type: "task", ref: "t-900abc" },
     }));
     expect(validations.list()).toHaveLength(1); // discovery is read-only; the one existing validation came from the prior test
   });

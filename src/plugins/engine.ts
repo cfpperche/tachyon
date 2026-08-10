@@ -950,7 +950,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
   const warnings: string[] = [];
   const errors: string[] = [];
   // declared runtimes with NO hooks block — they may still contribute a skill/MCP (a skills-only plugin like
-  // sdd). We defer the "nothing to wire" warning until after skill+MCP planning, then emit it only for runtimes
+  // skills-only plugins). We defer the "nothing to wire" warning until after skill+MCP planning, then emit it only for runtimes
   // that materialize NOTHING — otherwise the message wrongly fires on every skills-only / MCP-only plugin.
   const noHookRuntimes = new Set<Runtime>();
 
@@ -1027,7 +1027,7 @@ export function previewInstall(plugin: LoadedPlugin, workspaceRoot: string, targ
 
   // a declared runtime with no hooks block still contributes if it receives a skill or an MCP server; only warn
   // when the runtime materializes NOTHING for this plugin (a genuinely pointless declaration). Fixes the false
-  // "nothing to wire" alert on skills-only / MCP-only plugins (e.g. sdd).
+  // "nothing to wire" alert on skills-only / MCP-only plugins.
   for (const rt of noHookRuntimes) {
     if (!skillTargets.some((t) => t.runtime === rt) && !mcpTargets.some((t) => t.runtime === rt)) {
       warnings.push(`${rt}: plugin declares ${rt} but materializes nothing for it (no hooks, skills, or MCP)`);

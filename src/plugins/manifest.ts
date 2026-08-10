@@ -1058,7 +1058,7 @@ export function loadManifest(rawJson: string): ManifestParseResult {
   // name
   const name = parsed.name;
   const nameOk = typeof name === "string" && name.length <= MAX_STR && NAME_RE.test(name);
-  if (!nameOk) errors.push("name: required, lowercase kebab-case (e.g. 'sdd', 'some-base-plugin')");
+  if (!nameOk) errors.push("name: required, lowercase kebab-case (e.g. 'example-plugin', 'some-base-plugin')");
 
   // version
   const version = parsed.version;

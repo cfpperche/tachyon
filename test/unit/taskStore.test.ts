@@ -18,11 +18,6 @@ afterEach(() => {
 });
 
 describe("TaskStore", () => {
-  function writeSpec(slug: string, status: string): void {
-    fs.mkdirSync(path.join(root, "docs", "specs", slug), { recursive: true });
-    fs.writeFileSync(path.join(root, "docs", "specs", slug, "spec.md"), `**Status:** ${status}\n`, "utf8");
-  }
-
   it("creates inbox tasks as per-task files and omits derived fields from disk", async () => {
     const task = await store.create({ title: "  Investigate queue  ", author: "codex", artifact_refs: [{ type: "linear", ref: "ENG-42" }], now: "2026-07-02T00:00:00.000Z" });
     expect(task).toMatchObject({ title: "Investigate queue", author: "codex", status: "inbox" });
@@ -319,20 +314,19 @@ describe("TaskStore", () => {
     expect(again.status).toBe("triaged"); // and it can be re-triaged normally
   });
 
-  it("derives SDD status without using it as task lifecycle policy", async () => {
-    writeSpec("325-task-queue-entity", "shipped");
+  it("treats artifact references as opaque task data", async () => {
     const task = await store.create({ title: "sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "325-task-queue-entity" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
     const view = store.getView(task.id);
-    expect(view.derived).toMatchObject({ sdd: { status: "shipped" } });
+    expect(view.derived).toBeUndefined();
+    expect(view.task.artifact_refs).toEqual([{ type: "sdd", ref: "325-task-queue-entity" }]);
     expect(store.next("codex")).toMatchObject({ task: { id: task.id } });
     await store.update(task.id, { status: "done" });
     expect(store.get(task.id).status).toBe("done");
   });
 
   it("keeps landed lifecycle independent from an SDD status", async () => {
-    writeSpec("360-landed", "in-progress");
     const task = await store.create({ title: "landed flow", author: "human", artifact_refs: [{ type: "sdd", ref: "360-landed" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
@@ -349,7 +343,6 @@ describe("TaskStore", () => {
   });
 
   it("allows opaque artifact refs to be cleared while marking done", async () => {
-    writeSpec("326-sdd-plugin", "in-progress");
     const task = await store.create({ title: "sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "326-sdd-plugin" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
@@ -357,18 +350,7 @@ describe("TaskStore", () => {
     expect(store.get(task.id).artifact_refs).toBeUndefined();
   });
 
-  it("still derives default-role SDD refs without gating task completion", async () => {
-    writeSpec("328-default-deliverable", "in-progress");
-    const task = await store.create({ title: "default deliverable", author: "human", artifact_refs: [{ type: "sdd", ref: "328-default-deliverable" }] });
-    await store.update(task.id, { status: "triaged", assignee: "codex" });
-    await store.update(task.id, { status: "active" });
-
-    expect(store.getView(task.id).derived?.sdd).toMatchObject({ ref: "328-default-deliverable", status: "in-progress" });
-    await expect(store.update(task.id, { status: "done" })).resolves.toMatchObject({ status: "done" });
-  });
-
   it("treats role:relation SDD refs as non-gating related artifacts", async () => {
-    writeSpec("358-runtime-profile", "in-progress");
     const task = await store.create({
       title: "related runtime profile",
       author: "human",
@@ -378,7 +360,7 @@ describe("TaskStore", () => {
 
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
-    expect(store.getView(task.id).derived?.sdd).toBeUndefined();
+    expect(store.getView(task.id).derived).toBeUndefined();
     expect(store.next("codex")).toMatchObject({ task: { id: task.id } });
 
     const cleared = await store.update(task.id, { artifact_refs: null });
@@ -392,7 +374,6 @@ describe("TaskStore", () => {
   });
 
   it("allows clearing opaque SDD refs in active tasks", async () => {
-    writeSpec("327-review", "in-progress");
     const task = await store.create({ title: "clear sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "327-review" }] });
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
@@ -417,76 +398,6 @@ describe("TaskStore", () => {
     await store.update(task.id, { status: "done" });
     const refsAfter = JSON.stringify(JSON.parse(fs.readFileSync(taskPath, "utf8")).artifact_refs);
     expect(refsAfter).toBe(refsBefore);
-  });
-
-  it("derives a missing SDD ref without turning it into task attention", async () => {
-    const task = await store.create({ title: "missing sdd", author: "human", artifact_refs: [{ type: "sdd", ref: "999-nope" }] });
-    await store.update(task.id, { status: "triaged" });
-    const view = store.getView(task.id);
-    expect(view.task.status).toBe("triaged");
-    expect(view.derived?.sdd).toMatchObject({ ref: "999-nope", missing: true });
-    expect(view.attention).toBeUndefined();
-    expect(store.next("codex")).toMatchObject({ task: { id: task.id } });
-  });
-
-  it("does not report an agent-authored SDD in a registered isolation worktree as missing", async () => {
-    const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-worktree-"));
-    try {
-      fs.mkdirSync(path.join(isolatedRoot, "docs", "specs", "491-planner-time-axis-over-board"), { recursive: true });
-      fs.writeFileSync(
-        path.join(isolatedRoot, "docs", "specs", "491-planner-time-axis-over-board", "spec.md"),
-        "**Status:** in-progress\n",
-        "utf8",
-      );
-      fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
-      fs.writeFileSync(path.join(root, ".tachyon", "managed-worktrees.json"), JSON.stringify({
-        schemaVersion: 1,
-        entries: [{
-          id: "mw-agent-author",
-          kind: "agent",
-          path: isolatedRoot,
-          branch: "tachyon/author",
-          baseRef: "deadbeef",
-          tachyonCreatedBranch: true,
-          agent: "author",
-          createdAt: "2026-08-05T00:00:00.000Z",
-          status: "active",
-        }],
-      }), "utf8");
-
-      const task = await store.create({
-        title: "agent-authored spec",
-        author: "author",
-        artifact_refs: [{ type: "sdd", ref: "491-planner-time-axis-over-board" }],
-      });
-      await store.update(task.id, { status: "triaged" });
-
-      expect(store.getView(task.id)).toMatchObject({
-        derived: { sdd: { ref: "491-planner-time-axis-over-board", status: "in-progress" } },
-      });
-      expect(store.getView(task.id).attention).toBeUndefined();
-      expect(store.next("codex")).toMatchObject({
-        task: { id: task.id },
-        derived: { sdd: { ref: "491-planner-time-axis-over-board", status: "in-progress" } },
-      });
-    } finally {
-      fs.rmSync(isolatedRoot, { recursive: true, force: true });
-    }
-  });
-
-  it("loads the managed-worktree registry once while deriving a next-task batch", async () => {
-    fs.mkdirSync(path.join(root, ".tachyon"), { recursive: true });
-    const registryPath = path.join(root, ".tachyon", "managed-worktrees.json");
-    fs.writeFileSync(registryPath, JSON.stringify({ schemaVersion: 1, entries: [] }), "utf8");
-    for (const id of ["t-aaaaaa", "t-bbbbbb"]) {
-      await store.create({ id, title: id, author: "human", artifact_refs: [{ type: "sdd", ref: `${id.slice(2)}-missing` }] });
-      await store.update(id, { status: "triaged" });
-    }
-    store.listRaw();
-    const read = vi.spyOn(fs, "readFileSync");
-
-    expect(store.next("codex")).toMatchObject({ task: { id: "t-aaaaaa" } });
-    expect(read.mock.calls.filter(([file]) => path.resolve(String(file)) === registryPath)).toHaveLength(1);
   });
 
   it("validates artifact refs and priority/rank/kind bounds", async () => {
