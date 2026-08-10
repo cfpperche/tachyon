@@ -472,6 +472,90 @@
         "delivery": {
           "deprecated": true,
           "description": "Ignored compatibility key. Canonical Delivery with mechanism-only handoff is always active; remove this block from tachyon.yml."
+        },
+        "agentMemoryMax": {
+          "type": "string",
+          "description": "Opt-in systemd --user MemoryMax applied to each agent's spawn tree (Linux only). A systemd size like \"2G\", \"512M\", \"50%\", or \"off\" to disable. Absent = no limit."
+        },
+        "humanInbox": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Control -> Inbox staleness marking (t-e4f662). Display only: nothing here approves, denies or closes anything.",
+          "properties": {
+            "staleAfterHours": {
+              "description": "Hours something may wait before it is MARKED stale (default 24), or \"never\" to stop marking for a fleet that parks work on purpose. 0 is refused: it reads as \"stale on arrival\", which is the opposite of the off it resembles.",
+              "anyOf": [
+                { "type": "number", "exclusiveMinimum": 0 },
+                { "type": "string", "enum": ["never", "off", "none"] },
+                { "type": "boolean", "const": false },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "agentNotifications": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How long a parented agent may sit idle before Tachyon nudges its parent (t-585d5c). Applies on the next tick — no restart, no recreating agents.",
+          "properties": {
+            "idleAfterMinutes": {
+              "description": "Minutes of idleness before the parent is nudged (default 10, maximum 10080 = 7 days), or \"never\" to stop notifying. 0 is refused: it reads as \"nudge immediately\", not off.",
+              "anyOf": [
+                { "type": "number", "exclusiveMinimum": 0, "maximum": 10080 },
+                { "type": "string", "enum": ["never", "off", "none"] },
+                { "type": "boolean", "const": false },
+                { "type": "null" }
+              ]
+            }
+          }
+        },
+        "sidebar": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Workspace-owned sidebar presentation.",
+          "properties": {
+            "cardTemplate": {
+              "type": "object",
+              "description": "Agent-card layout (a 'version' plus any of the card regions). The contents are validated by the product's own card-template parser rather than by this schema, and a refused template falls back to the default card with the reason shown in Control."
+            }
+          }
+        },
+        "handoff": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The durable project handoff note.",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Workspace-relative path of the handoff document (default .tachyon/HANDOFF.md)."
+            },
+            "nudgeEvery": {
+              "type": "string",
+              "pattern": "^(off|[0-9]+ *[mh])$",
+              "description": "How often to nudge for a handoff update ('30m', '1h', ...), or 'off'."
+            }
+          }
+        },
+        "persistence": {
+          "deprecated": true,
+          "description": "OBSOLETE and refused by name (t-7bcba6). Silent hooks are always enabled for eligible declared Claude/Codex agents and there is no visible-legacy fallback; remove this block (including silentHooks) from tachyon.yml."
+        },
+        "bridgeClientRebind": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "What Bridge clients do when the host generation bumps after a reload (spec 364).",
+          "properties": {
+            "onHostGenerationBump": {
+              "type": "string",
+              "enum": ["auto", "notify", "off"],
+              "description": "'auto' rebinds the client itself, 'notify' tells the human, 'off' does neither."
+            },
+            "graceMs": { "type": "integer", "minimum": 0, "description": "Delay before a rebind starts." },
+            "stopTimeoutMs": { "type": "integer", "minimum": 0, "description": "How long to wait for the old client to stop." },
+            "maxConcurrentRebinds": { "type": "integer", "minimum": 1, "description": "Clients rebound at once." },
+            "circuitFailCount": { "type": "integer", "minimum": 1, "description": "Consecutive failures that open the circuit." }
+          }
         }
       }
     },
@@ -526,6 +610,47 @@
               "type": "string",
               "minLength": 1
             }
+          }
+        }
+      }
+    },
+    "schedules": {
+      "description": "Recurring work: each entry fires on an interval ('every') or at a wall-clock time ('at') — exactly one — and either runs a declared command/runbook ('run') or spawns a declared agent ('spawn') — again exactly one. The 'exactly one' rules are enforced by the product with a message naming the schedule, not by this schema.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "every": {
+            "type": "string",
+            "pattern": "^[0-9]+ *[mh]$",
+            "description": "Interval between runs: '30m', '1h', '2h'."
+          },
+          "at": {
+            "type": "string",
+            "pattern": "^[0-9]{1,2}:[0-9]{2}$",
+            "description": "Wall-clock time of day, 'HH:MM' (24h)."
+          },
+          "run": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of a command or runbook declared in this file."
+          },
+          "spawn": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of an agent declared in this workspace."
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Prompt handed to the spawned agent. Only valid alongside 'spawn'."
+          },
+          "catchUp": {
+            "type": "boolean",
+            "description": "Run once on startup when the window was missed while the editor was closed."
           }
         }
       }

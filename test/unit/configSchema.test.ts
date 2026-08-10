@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { KNOWN_SETTINGS_KEYS, KNOWN_TOP_LEVEL_KEYS } from "../../src/config/loadConfig.js";
 
 interface SchemaNode {
   type?: string;
@@ -111,6 +112,27 @@ describe("tachyon.schema.json — settings.projectGuidance", () => {
         maxLength: 256,
       },
     });
+  });
+});
+
+describe("tachyon.schema.json — the parser and the editor publish the same keys", () => {
+  /**
+   * t-fe772a — two closed lists in two files, and only one of them is exercised.
+   *
+   * `parseConfig` refuses an unrecognized key by name; this schema, bound to `tachyon.yml` by
+   * `contributes.yamlValidation`, closes both levels with `additionalProperties: false`. When the
+   * schema falls behind, VS Code marks a file the product accepts — the reader trusts the squiggle
+   * over the product and edits away a working setting.
+   *
+   * The recurrence is measured, not feared: on 2026-08-10 the tracked `tachyon.yml.example` itself
+   * carried two such keys (`humanInbox` from t-e4f662, `agentNotifications` from t-585d5c), and
+   * `agentMemoryMax`, `sidebar`, `handoff`, `persistence`, `bridgeClientRebind` and top-level
+   * `schedules` had drifted the same way. Every one of them was added to the parser by someone who
+   * did not know this file existed.
+   */
+  it("publishes exactly the top-level and settings keys parseConfig knows", () => {
+    expect(Object.keys(schema.properties ?? {}).sort()).toEqual([...KNOWN_TOP_LEVEL_KEYS].sort());
+    expect(Object.keys(schema.properties?.settings?.properties ?? {}).sort()).toEqual([...KNOWN_SETTINGS_KEYS].sort());
   });
 });
 

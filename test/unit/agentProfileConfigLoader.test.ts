@@ -195,29 +195,9 @@ describe("t-ae221c — a legacy agents: block loads with a warning and no migrat
 });
 
 describe("loadProfileAwareConfig", () => {
-  it("loads the tracked onboarding example through the production loader", () => {
-    // t-3ab4b6 — the TRACKED example is the subject; the fleet on the runner's disk is not. Reading
-    // the file from the repository root is fine (it is tracked), but the workspace the loader reads
-    // state from has to be a disposable empty one. Since t-ae221c the roster comes from
-    // `.tachyon/agents/`, so pointing `workspaceRoot` at the checkout made this assert about whoever
-    // ran it: green in every agent worktree (`.tachyon/` is gitignored, so there is no roster there)
-    // and red in the primary checkout, where three real agents got refused against the empty
-    // authority map below.
-    const yamlText = fs.readFileSync(path.join(process.cwd(), "tachyon.yml.example"), "utf8");
-    const workspaceRoot = temporaryRoot("tachyon-onboarding-example-workspace-");
-
-    const result = loadProfileAwareConfig({
-      yamlText,
-      workspaceRoot,
-      authorities: new Map(),
-      homeDir: temporaryRoot("tachyon-onboarding-example-home-"),
-    });
-
-    expect(result.errors, yamlText).toEqual([]);
-    expect(result.config).toBeDefined();
-    expect(result.config?.agents).toEqual({});
-    expect(result.config?.settings.auth).toBe(true);
-  });
+  // t-fe772a — "loads the tracked onboarding example through the production loader" (t-3ab4b6) moved
+  // to `onboardingTemplate.test.ts`, which asserts strictly more about the same file through the same
+  // door and adds the editor door the loader cannot see.
 
   it("refuses the removed canonical role field as an unknown schema key", () => {
     const root = temporaryRoot("tachyon-agent-profile-custom-role-");
