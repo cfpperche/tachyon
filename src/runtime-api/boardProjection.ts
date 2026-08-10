@@ -4,7 +4,6 @@ import {
   isTaskPriority,
   isTaskStatus,
   TASK_ID_RE,
-  type SddStatus,
   type Task,
   type TaskAttention,
   type TaskStatus,
@@ -18,9 +17,8 @@ const MAX_CHIPS = 512;
 const MAX_VALIDATIONS = 500;
 const MAX_CANDIDATES = 50;
 const MAX_ATTENTION_ROWS = 16;
-const SDD_STATUSES = new Set<SddStatus>(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]);
 const ATTENTION_CODES = new Set<TaskAttention["code"]>([
-  "dangling_dep", "missing_sdd_spec", "ready_to_close", "sdd_needs_retriage", "corrupt_task", "awaiting_human",
+  "dangling_dep", "corrupt_task", "awaiting_human",
 ]);
 
 export interface BoardChipV1 {
@@ -197,7 +195,7 @@ export function restoreBoardSnapshot(projection: BoardProjectionV1): BoardSnapsh
       return {
         agent: chip.agent,
         source: chip.source,
-        next: { task: view.task, ...(view.derived ? { derived: view.derived } : {}), ...(view.attention ? { attention: view.attention } : {}) },
+        next: { task: view.task, ...(view.attention ? { attention: view.attention } : {}) },
       };
     }),
     ...(validations ? { validations } : {}),
@@ -206,6 +204,8 @@ export function restoreBoardSnapshot(projection: BoardProjectionV1): BoardSnapsh
 }
 
 function projectTaskView(view: TaskView): TaskView {
+  // t-73b2e1 step 3 — Board never carries plugin-derived stage vocabulary. Spec pointers stay on
+  // the task via artifact_refs only in surfaces that project them (Task Detail).
   return parseTaskView({
     task: {
       id: view.task.id,
@@ -222,7 +222,6 @@ function projectTaskView(view: TaskView): TaskView {
       updatedAt: view.task.updatedAt,
     },
     ...(view.journalCount !== undefined ? { journalCount: view.journalCount } : {}),
-    ...(view.derived ? { derived: view.derived } : {}),
     ...(view.attention ? { attention: view.attention.slice(0, MAX_ATTENTION_ROWS) } : {}),
   });
 }
@@ -231,17 +230,14 @@ function parseTaskView(value: unknown): TaskView {
   const input = record(value, "Board task view");
   const expected = ["task"];
   if (input.journalCount !== undefined) expected.push("journalCount");
-  if (input.derived !== undefined) expected.push("derived");
   if (input.attention !== undefined) expected.push("attention");
   assertOnlyKeys(input, expected, "Board task view");
   const task = parseTask(input.task);
   const journalCount = input.journalCount === undefined ? undefined : safeInteger(input.journalCount, 0, 1_000_000, "task journalCount");
-  const derived = input.derived === undefined ? undefined : parseDerived(input.derived);
   const attention = input.attention === undefined ? undefined : parseAttention(input.attention);
   return {
     task,
     ...(journalCount !== undefined ? { journalCount } : {}),
-    ...(derived ? { derived } : {}),
     ...(attention ? { attention } : {}),
   };
 }
@@ -292,30 +288,6 @@ function parseAwaitingHuman(value: unknown): NonNullable<Task["awaitingHuman"]> 
     kind: input.kind,
     ...(subject ? { subject: { type: "task-prototype", prototypeId: subject.prototypeId as string } } : {}),
   };
-}
-
-function parseDerived(value: unknown): NonNullable<TaskView["derived"]> {
-  const input = record(value, "task derived");
-  if (input.sdd === undefined) {
-    assertOnlyKeys(input, [], "task derived");
-    return {};
-  }
-  assertOnlyKeys(input, ["sdd"], "task derived");
-  const sdd = record(input.sdd, "task SDD projection");
-  const expected = ["type", "ref"];
-  if (sdd.status !== undefined) expected.push("status");
-  if (sdd.missing !== undefined) expected.push("missing");
-  assertOnlyKeys(sdd, expected, "task SDD projection");
-  if (sdd.type !== "sdd" || (sdd.status !== undefined && !SDD_STATUSES.has(sdd.status as SddStatus))
-    || (sdd.missing !== undefined && typeof sdd.missing !== "boolean")) {
-    throw invalid("task SDD projection is invalid");
-  }
-  return { sdd: {
-    type: "sdd",
-    ref: persistedText(sdd.ref, "task SDD ref"),
-    ...(sdd.status !== undefined ? { status: sdd.status as SddStatus } : {}),
-    ...(sdd.missing !== undefined ? { missing: sdd.missing } : {}),
-  } };
 }
 
 function parseAttention(value: unknown): TaskAttention[] {

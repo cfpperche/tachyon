@@ -325,8 +325,7 @@ describe("TaskStore", () => {
     await store.update(task.id, { status: "triaged", assignee: "codex" });
     await store.update(task.id, { status: "active" });
     const view = store.getView(task.id);
-    expect(view.derived?.sdd?.status).toBe("shipped");
-    expect(view.attention ?? []).not.toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
+    expect(view.derived).toMatchObject({ sdd: { status: "shipped" } });
     expect(store.next("codex")).toMatchObject({ task: { id: task.id } });
     await store.update(task.id, { status: "done" });
     expect(store.get(task.id).status).toBe("done");
@@ -340,7 +339,6 @@ describe("TaskStore", () => {
 
     const landed = await store.update(task.id, { status: "landed" });
     expect(landed.status).toBe("landed");
-    expect(store.getView(task.id).attention ?? []).not.toContainEqual(expect.objectContaining({ code: "ready_to_close" }));
     await store.update(task.id, { status: "done" });
     expect(store.get(task.id).status).toBe("done");
   });

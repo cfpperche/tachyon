@@ -115,7 +115,6 @@ function minimalProjection(): BoardProjectionV1 {
         createdAt: "2026-07-14T12:00:00.000Z",
         updatedAt: "2026-07-14T12:00:00.000Z",
       },
-      derived: {},
     }],
     allowedDropStatuses: { "t-000001": ["triaged", "dropped"] },
     chips: [{ agent: "human", source: "human", next: { empty: true, reason: "all-blocked" } }],

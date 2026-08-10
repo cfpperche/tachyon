@@ -22,7 +22,7 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         "If a request has four independently shippable slices, create one umbrella Task and explicit follow-up Tasks; " +
         "this tool does not create follow-ups or infer dependencies automatically. Use append_task_note for chronological " +
         "execution context. Keep long material in a durable artifact and point to it with artifact_refs; " +
-        "type:'sdd' enables best-effort local spec enrichment only. Never truncate authoring input to fit a limit. " +
+        "type is an opaque short kind (e.g. path, issue, task). Never truncate authoring input to fit a limit. " +
         "Answers with a receipt {id,status,author,createdAt} — not the task; read it back with get_task if needed.",
       inputSchema: {
         title: createTaskString("title", TASK_AUTHORING_LIMITS.title).min(1),

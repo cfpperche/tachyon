@@ -46,7 +46,7 @@ const views: TaskView[] = [
       assignee: "claude",
       currentAssignee: "claude",
     }),
-    attention: [{ code: "ready_to_close", message: "Needs maintainer verification before close" }],
+    attention: [{ code: "awaiting_human", message: "Needs maintainer verification before close" }],
   },
   {
     task: task("t-9a41b2", "triaged", "Board v1.1: reorder in-column mantendo rank", {
@@ -56,7 +56,6 @@ const views: TaskView[] = [
       currentAssignee: "codex",
       artifact_refs: [{ type: "sdd", ref: "shipped-partial" }],
     }),
-    derived: { sdd: { type: "sdd", ref: "335", status: "shipped-partial" } },
   },
   {
     task: task("t-a11f0e", "active", "Spec: Task Studio form completo de criacao/edicao de tasks", {

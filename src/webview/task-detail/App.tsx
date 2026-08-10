@@ -9,7 +9,7 @@ import { PrototypePreview } from "../shared/PrototypePreview";
 import { refDisplay } from "./refDisplay";
 
 // spec 335 — the Task Detail panel: the full task (title/body/status/priority/kind/author/assignee/deps/
-// artifact_refs/derived SDD/attention), read-only in v1 except the same priority/assignee quick controls the
+// artifact_refs/attention), read-only in v1 except the same priority/assignee quick controls the
 // board's cards offer. NOT a dialog/modal — a normal editor tab. Reuses the Activity view's sanitized
 // MarkdownView for the body (same DOMPurify pipeline the assistant feed and Handoff use — dueto F9).
 
@@ -162,12 +162,6 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
             </Button>
           )}
         </div>
-        {vm.derived?.sdd && (
-          <div class="td-field readonly">
-            <span class="ds-section">SDD</span>
-            <Badge tone={vm.derived.sdd.missing ? "err" : "info"}>{vm.derived.sdd.ref}{vm.derived.sdd.status ? ` · ${vm.derived.sdd.status}` : ""}{vm.derived.sdd.missing ? " · missing" : ""}</Badge>
-          </div>
-        )}
       </div>
 
       {vm.attention && vm.attention.length > 0 && (

@@ -23,7 +23,6 @@ import {
   type ArtifactRef,
   type ArtifactRefRole,
   type NextTaskResult,
-  type SddStatus,
   type Task,
   type TaskAttention,
   type TaskAwaitingHuman,
@@ -37,6 +36,11 @@ import {
   type TaskView,
   type JournalMode,
 } from "./types.js";
+
+/** t-73b2e1 step 2 will delete this producer; kept private to the file-read path only. */
+type SddStatus = "draft" | "in-progress" | "shipped" | "shipped-partial" | "superseded" | "abandoned" | "deferred";
+type SddDerivedStage = { type: "sdd"; ref: string; status?: SddStatus; missing?: boolean };
+type SddTaskDerived = { sdd?: SddDerivedStage };
 
 /** t-ab7708 — a journal read is either whole (`includeJournal`) or windowed (`journalWindow`). */
 export interface TaskViewOptions {
@@ -619,9 +623,9 @@ export class TaskStore {
     const sddRef = task.artifact_refs?.find((ref) => ref.type === "sdd" && artifactRefRole(ref) === "deliverable");
     if (!sddRef) return undefined;
     const specPath = this.resolveSddSpec(sddRef.ref, derivationBatch);
-    if (!specPath) return { sdd: { type: "sdd", ref: sddRef.ref, missing: true } };
+    if (!specPath) return { sdd: { type: "sdd", ref: sddRef.ref, missing: true } } satisfies SddTaskDerived;
     const status = readSddStatus(specPath);
-    return { sdd: { type: "sdd", ref: sddRef.ref, ...(status ? { status } : {}) } };
+    return { sdd: { type: "sdd", ref: sddRef.ref, ...(status ? { status } : {}) } } satisfies SddTaskDerived;
   }
 
   private managedSddWorkspaceRoots(): string[] {
@@ -984,7 +988,7 @@ function attentionFor(task: Task, allTasks: Task[]): TaskAttention[] {
   const attention: TaskAttention[] = [];
   // t-1339a8 — authored-only signal (never heuristically derived): the coordinator's own `awaitingHuman`
   // field is the source of truth; this just projects it into the SAME attention rendering the board already
-  // has for dangling_dep/ready_to_close/etc, so highlighting comes for free.
+  // has for dangling_dep/awaiting_human/etc, so highlighting comes for free.
   if (task.awaitingHuman) attention.push({ code: "awaiting_human", message: task.awaitingHuman.reason });
   for (const dep of task.deps ?? []) {
     if (!byId.has(dep)) attention.push({ code: "dangling_dep", message: `dependency '${dep}' does not exist`, ref: dep });

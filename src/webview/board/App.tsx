@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { Badge, Button, Icon, Input, IconButton, PageChrome, Select, useToastOptional } from "../shared/ui";
+import { Button, Icon, Input, IconButton, PageChrome, Select, useToastOptional } from "../shared/ui";
 import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
@@ -537,8 +537,6 @@ function Card({ card, session, pending, onDragStart, onDragEnd, onCardDragOver, 
           {card.kind && (
           <span class="kind" style={{ color: `var(${card.kindColorVar})`, borderColor: `var(${card.kindColorVar})` }}>{card.kind}</span>
           )}
-          {card.sddStatus && <Badge tone="info">sdd · {card.sddStatus}</Badge>}
-          {card.sddMissing && <Badge tone="err">sdd missing</Badge>}
           {card.attention.map((a) => (
             <span key={a.code} class="attn" title={a.message}><Icon name="warning" /></span>
           ))}

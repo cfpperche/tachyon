@@ -90,7 +90,6 @@ export function buildTaskDetailVm(
       updatedAt: task.updatedAt,
     },
     journal: detail.journal,
-    ...(detail.derived ? { derived: detail.derived } : {}),
     ...(detail.attention?.length ? { attention: detail.attention } : {}),
     deps: detail.deps,
     prototypes: prototypeVm(ws, id, detail.prototypes),

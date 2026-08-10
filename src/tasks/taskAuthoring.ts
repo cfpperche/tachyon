@@ -48,7 +48,7 @@ export function taskAuthoringLimitMessage(
     case "artifact_refs":
       return `${prefix} Keep only Task-relevant pointers; collect additional links in a durable artifact and reference that artifact.`;
     case "artifact_refs.type":
-      return `${prefix} Use a short artifact kind such as sdd, issue, or file.`;
+      return `${prefix} Use a short opaque artifact kind such as path, issue, or task.`;
     case "artifact_refs.ref":
       return `${prefix} Store long material as a durable artifact and pass only its stable pointer.`;
   }
