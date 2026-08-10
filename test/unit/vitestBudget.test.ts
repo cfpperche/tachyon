@@ -38,6 +38,24 @@ const RESERVE_MB = 3_072;
 const INVOCATION_MB = 2_048;
 const WORKER_MB = 320;
 const POOL_MB = HOST.memTotalMb - RESERVE_MB;
+/**
+ * t-fb7025 — the cap is read, never restated. Its VALUE is pinned once, in
+ * `hostResources.test.ts`; here the question is only whether the ledger applies it, so a literal
+ * would turn every arithmetic assertion below into a second, silent pin of an operator constant.
+ */
+const CAP = hostResourceCostInputs.HARD_CAP_WORKERS as number;
+
+/**
+ * t-fb7025 — a host where the SIBLING DISCOUNT is observable, and that is the whole reason it
+ * exists.
+ *
+ * `HOST` has room for more than one cap-sized claim, so the second arrival there comes back at the
+ * cap: capped, not discounted. An assertion like "the next run gets less" would then be reporting a
+ * subtraction that never happened — it would pass on a machine where the ledger was doing nothing.
+ * This one affords exactly one cap-sized claim plus a remainder, so any number below the cap can
+ * only have come from the sibling.
+ */
+const TIGHT_HOST: HostMemorySnapshot = { ...HOST, memTotalMb: 11_000, memAvailableMb: 11_000 };
 
 const temporaries: string[] = [];
 const spawned: ReturnType<typeof spawn>[] = [];
@@ -100,6 +118,7 @@ describe("vitest host budget (t-3ad4af)", () => {
       cpuCount: 24,
       reserveMb: RESERVE_MB,
       workerMb: 768, // the estimate in force at the time
+      hardCap: 16, // likewise the cap in force at the time — t-fb7025 later lowered it to 8
     });
     expect(each).toBe(9);
 
@@ -172,8 +191,11 @@ describe("vitest host budget (t-3ad4af)", () => {
       measure: () => undefined,
     });
     expect(decision.ok).toBe(true);
-    // The fix must not be "lower the cap": one agent on a 24-CPU machine still gets the hard cap.
-    if (decision.ok) expect(decision.workers).toBe(16);
+    // t-3ad4af's fix was the LEDGER, not a smaller cap: one agent alone on a 24-CPU machine is not
+    // discounted for siblings that do not exist, so it still gets the whole cap — whatever the cap
+    // is. (t-fb7025 later lowered that cap for an unrelated reason, CPU load rather than RAM; this
+    // assertion is about the discount being absent, and never was about the number.)
+    if (decision.ok) expect(decision.workers).toBe(CAP);
   });
 
   it("does not bill a run whose process has died", async () => {
@@ -217,13 +239,14 @@ describe("vitest host budget (t-3ad4af)", () => {
       measure: () => undefined,
     });
     expect(second.ok).toBe(true);
-    if (second.ok) expect(second.workers).toBe(16); // the dead holder's RAM came back in full
+    if (second.ok) expect(second.workers).toBe(CAP); // the dead holder's RAM came back in full
     expect(readLedger(file).map((claim) => claim.pid)).not.toContain(deadPid);
   });
 
   it("releases a claim so the next sizer sees the RAM again", () => {
     const file = ledgerFile();
-    const shared = { memory: HOST, cpuCount: 24, ledgerPath: file, reserveMb: RESERVE_MB, invocationMb: INVOCATION_MB, workerMb: WORKER_MB, measure: () => undefined };
+    // TIGHT_HOST, so "the next sizer sees less" is the subtraction and not the cap. See its comment.
+    const shared = { memory: TIGHT_HOST, cpuCount: 24, ledgerPath: file, reserveMb: RESERVE_MB, invocationMb: INVOCATION_MB, workerMb: WORKER_MB, measure: () => undefined };
     const first = admitVitestRun({ ...shared, label: "first", pid: liveProcess() });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
@@ -279,7 +302,7 @@ describe("vitest host budget (t-3ad4af)", () => {
         invocationMb: INVOCATION_MB,
       });
       expect(second.workers).toBe(sizedFromOverrun);
-      expect(second.workers).toBeLessThan(16);
+      expect(second.workers).toBeLessThan(CAP);
     }
   });
 
@@ -291,10 +314,10 @@ describe("vitest host budget (t-3ad4af)", () => {
   });
 
   it("caps the claim at the work the run actually has", () => {
-    // A focused run over one file cannot use 16 workers, so reserving for 16 would refuse the next
-    // agent over RAM nobody was ever going to touch.
+    // A focused run over one file cannot use a full pool's worth of workers, so reserving for the
+    // cap would refuse the next agent over RAM nobody was ever going to touch.
     expect(sizeFromShare({ shareMb: POOL_MB, cpuCount: 24, workerMb: WORKER_MB, invocationMb: INVOCATION_MB, maxUsefulWorkers: 1 })).toBe(1);
-    expect(sizeFromShare({ shareMb: POOL_MB, cpuCount: 24, workerMb: WORKER_MB, invocationMb: INVOCATION_MB })).toBe(16);
+    expect(sizeFromShare({ shareMb: POOL_MB, cpuCount: 24, workerMb: WORKER_MB, invocationMb: INVOCATION_MB })).toBe(CAP);
   });
 
   describe("previewVitestShare (t-7f9809 — display without claim)", () => {
@@ -309,35 +332,28 @@ describe("vitest host budget (t-3ad4af)", () => {
 
     it("matches what the next admit would receive, and never writes the ledger", () => {
       const file = ledgerFile();
-      // One 16-worker claim leaves a reduced but still positive share for the next arrival.
-      const holder = admitVitestRun({
-        ...base,
-        label: "holder",
-        ledgerPath: file,
-        pid: liveProcess(),
-      });
+      // TIGHT_HOST for the same reason as above: on `HOST` the second number would be the cap
+      // rather than the discount, and this guard would pass without the ledger doing anything.
+      const shared = { ...base, memory: TIGHT_HOST, ledgerPath: file };
+      const holder = admitVitestRun({ ...shared, label: "holder", pid: liveProcess() });
       expect(holder.ok).toBe(true);
-      if (holder.ok) expect(holder.workers).toBe(16);
+      if (holder.ok) expect(holder.workers).toBe(CAP);
       const before = fs.readFileSync(file, "utf8");
 
-      const preview = previewVitestShare({ ...base, ledgerPath: file });
+      const preview = previewVitestShare(shared);
       // HARD: consult must not claim.
       expect(fs.readFileSync(file, "utf8")).toBe(before);
 
-      const next = admitVitestRun({
-        ...base,
-        label: "next",
-        ledgerPath: file,
-        pid: liveProcess(),
-      });
+      const next = admitVitestRun({ ...shared, label: "next", pid: liveProcess() });
 
       // THE GUARD: the number a display would show is the number a real run would get.
       expect(preview.ok).toBe(next.ok);
       expect(preview.workers).toBe(next.ok ? next.workers : 0);
       expect(preview.siblingCount).toBe(1);
       expect(preview.usedMb).toBeGreaterThan(0);
-      // Alone-sizing would still show 16; the sibling must have moved the needle.
-      expect(preview.workers).toBeLessThan(16);
+      // Alone-sizing would still show the cap; the sibling must have moved the needle.
+      expect(preview.workers).toBeGreaterThan(0);
+      expect(preview.workers).toBeLessThan(CAP);
     });
 
     it("reports workers=0 when the budget is spent (yes/no, not only magnitude)", () => {
@@ -371,7 +387,7 @@ describe("vitest host budget (t-3ad4af)", () => {
     it("alone on an empty ledger still yields the hard-cap machine share", () => {
       const file = ledgerFile();
       const preview = previewVitestShare({ ...base, ledgerPath: file });
-      expect(preview).toMatchObject({ ok: true, workers: 16, siblingCount: 0, usedMb: 0 });
+      expect(preview).toMatchObject({ ok: true, workers: CAP, siblingCount: 0, usedMb: 0 });
       // No ledger file is created by a pure consult against an empty path.
       expect(fs.existsSync(file)).toBe(false);
     });
@@ -527,7 +543,14 @@ describe("vitest host budget (t-3ad4af)", () => {
  * turns on — descendant vs sibling — is invisible in the arithmetic and lives entirely in /proc.
  */
 describe("nested vitest inherits its ancestor's claim (t-690f52)", () => {
-  /** The measured shape of the incident: a gate holding 16 workers, and a nested focused child. */
+  /**
+   * The measured shape of the incident: a gate holding 16 workers, and a nested focused child.
+   *
+   * Sixteen is no longer a size this host would hand out (t-fb7025 lowered the cap to the measured
+   * CPU knee), and the fixture keeps it anyway: it is a RECORDING of the ledger state that produced
+   * the bug, not a prediction of what a run gets today. Rewriting it to the current cap would
+   * quietly stop replaying the incident these cases exist for.
+   */
   const FOCUSED_INVOCATION_MB = 512;
   const GATE_CLAIM_MB = INVOCATION_MB + 16 * WORKER_MB; // 7168
   /**
@@ -655,7 +678,7 @@ describe("nested vitest inherits its ancestor's claim (t-690f52)", () => {
 
     // A nested run with no useful-worker cap would take the hard cap if nothing bounded it. What
     // bounds it is what the ancestor reserved and has not spent: 7168 - 5168 = 2000MB, which after
-    // the 512MB fixed term buys 4 workers, not 16.
+    // the 512MB fixed term buys 4 workers — fewer than the cap, and that is the point.
     gateHolder(file, gate, 5_168);
     const roomy = admitVitestRun({
       memory: host(),

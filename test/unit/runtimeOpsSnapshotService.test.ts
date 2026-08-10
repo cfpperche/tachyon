@@ -589,9 +589,16 @@ describe("RuntimeOpsSnapshotService — hostMemory.recommendedVitestWorkers (t-7
   }
 
   it("reports the sibling-discounted share, not the alone-process sizer, and does not claim", async () => {
+    /**
+     * t-fb7025 — tight on purpose. The sibling discount is only OBSERVABLE below the worker cap:
+     * on a machine with room for two cap-sized claims the second run comes back AT the cap, and
+     * the guard below ("display is under alone-sizing") would pass because of the cap rather than
+     * because of the sibling — a green reporting a subtraction that never happened. This host
+     * affords one cap-sized claim plus a remainder.
+     */
     const host: HostMemorySnapshot = {
-      memTotalMb: 15_990,
-      memAvailableMb: 15_990,
+      memTotalMb: 11_000,
+      memAvailableMb: 11_000,
       swapTotalMb: 0,
       swapFreeMb: 0,
       source: "proc-meminfo",
@@ -603,9 +610,11 @@ describe("RuntimeOpsSnapshotService — hostMemory.recommendedVitestWorkers (t-7
     const ledger = path.join(dir, "budget.json");
     pinEnv("TACHYON_VITEST_BUDGET_PATH", ledger);
 
-    // Alone-process sizer (the old snapshot source) still sees the full machine.
+    // Alone-process sizer (the old snapshot source) still sees the full machine: no sibling is
+    // subtracted from it. It only has to leave room BELOW itself for the discount to be visible —
+    // the cap's value is pinned once, in hostResources.test.ts, and deliberately not restated here.
     const alone = recommendVitestMaxWorkers({ memory: host, cpuCount: 24, reserveMb: 3072, workerMb: 320 });
-    expect(alone).toBeGreaterThan(8);
+    expect(alone).toBeGreaterThan(1);
 
     // One real claim holds most of the budget — a second run would get far less (or zero).
     const holder = admitVitestRun({

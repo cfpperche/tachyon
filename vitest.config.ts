@@ -31,8 +31,8 @@ if (!gate.ok) {
 /**
  * How many test files this invocation was explicitly pointed at, or 0 for "everything".
  *
- * Vitest never spawns more workers than it has files, so a focused run that reserved the 16-worker
- * cap would be reserving RAM it cannot use — and the ledger bills a run its full claim until it
+ * Vitest never spawns more workers than it has files, so a focused run that reserved the full
+ * worker cap would be reserving RAM it cannot use — and the ledger bills a run its full claim until it
  * outgrows it, so that fiction would refuse the next agent on a machine with plenty of room. The
  * primer tells every agent to run focused tests, so this is the common case, not the corner one.
  *
@@ -119,7 +119,9 @@ export default defineConfig({
     // t-eaf963 — the real Codex prompt projection is scheduler-sensitive work, not ordinary unit
     // work. Projects in the same group run together; group 1 starts only after group 0 has drained.
     // Keep the 10s process bound and the installed CLI coverage, but never make either compete with
-    // the 16-worker pool whose load caused `spawnSync codex ETIMEDOUT`.
+    // the parallel pool, whose load caused `spawnSync codex ETIMEDOUT` when it was 16 workers wide.
+    // t-fb7025 halved that width; the separation stays, because the failure was contention and a
+    // narrower pool makes it rarer rather than impossible.
     projects: [
       {
         resolve: PROJECT_RESOLVE,

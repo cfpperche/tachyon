@@ -484,7 +484,7 @@ function runChild(command, args, logFile, active, env) {
  * Vitest's OWN worker transport, not this repository's code.
  *
  * `[vitest-worker]: Timeout calling "onTaskUpdate"` is birpc giving up while a worker reports
- * progress to a parent that is busy servicing 16 of them. It is thrown by `onTimeoutError` in
+ * progress to a parent that is busy servicing a poolful of them. It is thrown by `onTimeoutError` in
  * vitest's `rpc` chunk, the timeout lives inside `createBirpc` and vitest exposes no option for it,
  * so there is nothing here to configure and nothing in `src/` that caused it.
  *

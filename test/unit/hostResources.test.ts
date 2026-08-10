@@ -7,6 +7,7 @@ import {
   type HostMemorySnapshot,
 } from "../../src/host/hostResources.js";
 import hostResourceSizing from "../../shared/host-resource-sizing.cjs";
+import hostResourceCostInputs from "../../shared/host-resource-cost-inputs.cjs";
 
 const SAMPLE = `
 MemTotal:       16384000 kB
@@ -67,7 +68,43 @@ describe("hostResources (t-019dac)", () => {
     const wHigh = recommendVitestMaxWorkers({ memory: high, cpuCount: 24 });
     expect(wLow).toBeGreaterThanOrEqual(1);
     expect(wHigh).toBeGreaterThan(wLow);
-    expect(wHigh).toBeLessThanOrEqual(16);
+    expect(wHigh).toBeLessThanOrEqual(hostResourceCostInputs.HARD_CAP_WORKERS);
+  });
+
+  /**
+   * t-fb7025 — the ONE place the cap's VALUE is pinned. Everywhere else asserts against the
+   * imported constant, which proves the plumbing applies it but could never notice the number
+   * changing; this literal is what makes a change to it a decision somebody has to defend.
+   *
+   * The number is a measurement, not a preference. Two runs of `verify:full` on the same tree,
+   * 2026-08-09, 24 logical CPUs / 16GB: 15 workers → 91s wall and load1 peak 16.67; 8 workers → 88s
+   * wall and load1 peak 8.63. The suite is 392s of CPU whose longest single file is 55s, so the
+   * makespan is max(392/W, 55) and flattens at ~7 workers — everything above the knee is load the
+   * human sharing this machine pays for and wall-clock nobody gets back.
+   * Full evidence: docs/research/t-fb7025-gate-cost.md.
+   */
+  it("pins the worker cap at the measured CPU knee, and the cap really binds (t-fb7025)", () => {
+    expect(hostResourceCostInputs.HARD_CAP_WORKERS).toBe(8);
+
+    // Not merely a constant: a machine with RAM and CPUs to spare must still stop at it, through
+    // the door every vitest invocation actually uses.
+    // Hermetic about its own inputs: `recommendVitestMaxWorkers` honours
+    // `TACHYON_VITEST_MAX_WORKERS`, so an operator running the suite with the documented override
+    // set would otherwise make this assert their number instead of the cap. Emptying it is what
+    // `envInt` reads as absent. (That coupling is a real defect on its own — t-325fe6 — and this
+    // line does not fix it; it only stops this test from inheriting it.)
+    pin({ TACHYON_VITEST_MAX_WORKERS: "", TACHYON_VERIFY_RESERVE_MB: "3072", TACHYON_VERIFY_WORKER_MB: "320" });
+    const roomy: HostMemorySnapshot = {
+      memTotalMb: 64_000,
+      memAvailableMb: 48_000,
+      swapTotalMb: 0,
+      swapFreeMb: 0,
+      source: "proc-meminfo",
+    };
+    expect(recommendVitestMaxWorkers({ memory: roomy, cpuCount: 24 })).toBe(8);
+    const gate = decideHeavyGate({ memory: roomy, cpuCount: 24 });
+    expect(gate.ok).toBe(true);
+    if (gate.ok) expect(gate.workers).toBe(8);
   });
 
   it("refuses heavy gate under memory pressure", () => {
