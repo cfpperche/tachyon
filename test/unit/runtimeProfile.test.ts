@@ -77,7 +77,10 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(modelLabelForRuntime("codex", "gpt-5.6-terra")).toBe("GPT-5.6 Terra");
     expect(modelLabelForRuntime("codex", "gpt-5.6-luna")).toBe("GPT-5.6 Luna");
     expect(profile?.isolation).toMatchObject({ mechanism: "private-home", source: "measured", verified: true });
-    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "declared" });
+    // t-7a297f measured it on 0.146.1, including the wrap rule that lets a submit be confirmed.
+    expect(profile?.composer).toMatchObject({ tailLines: 8, source: "measured", verified: true });
+    expect(profile?.composer?.continuationLine?.test("  continuação de uma linha larga")).toBe(true);
+    expect(profile?.composer?.continuationLine?.test("")).toBe(false);
     expect(profile?.composer?.promptLine?.test("❯ hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("❯ hello")).toBe(true);
     expect(profile?.composer?.occupiedLine.test("❯ ")).toBe(false);

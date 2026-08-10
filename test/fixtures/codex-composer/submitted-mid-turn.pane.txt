@@ -1,0 +1,50 @@
+╭─────────────────────────────────────────────────╮
+│ ✨ Update available! 0.146.1 -> 0.147.0         │
+│ Run npm install -g @openai/codex to update.     │
+│                                                 │
+│ See full release notes:                         │
+│ https://github.com/openai/codex/releases/latest │
+╰─────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.146.1)                               │
+│                                                          │
+│ model:     gpt-5.6-sol   /model to change                │
+│ directory: /tmp/claude-1000/…hild/…/scratchpad/probe/cwd │
+╰──────────────────────────────────────────────────────────╯
+
+  Tip: Use /personality to customize how Codex communicates.
+
+• You have 1 usage limit reset available. Run /usage to use one.
+
+
+› [tachyon] probe -> dc: medicao de entrega, nao execute nada e nao use ferramentas; responda apenas com a palavra ok. Este texto existe so para exceder a largura do pane e forcar o composer do codex a quebrar a linha
+  em varias linhas renderizadas, que e exatamente a condicao do incidente medido em t-7a297f. [details: t-7a297f]
+
+
+• Working (0s • esc to interrupt)
+
+
+› Implement {feature}
+
+  gpt-5.6-sol default · /tmp/claude-1000/-home-goat--cache-tachyon-worktrees-b349073a-deafchild/b948583e-26f2-40b9-8afa-a30563927543/scratchpad/probe/cwd
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

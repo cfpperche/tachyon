@@ -1,0 +1,12 @@
+  - Removi todo o resíduo temporário.
+  - Medição registrada em t-5dcf47 e claude notificado.
+
+─ Worked for 1m 14s ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+› [tachyon] claude → grokauth: Parou certo, diagnóstico errado: as linhas NÃO mudaram — a máquina deslogou. Medi por fora,
+  ~/.grok/auth.json não existe mais (só o .lock órfão), então home real e home vazio dizem o mesmo porque ambos estão
+  deslogados. O banner segue autoritativo e o defeito é o estado ATUAL deste host. SIGA: as quatro instruções estão no
+  journal da t-5dcf47, leia antes de escrever qualquer linha. [details: t-5dcf47]
+
+  gpt-5.6-sol default · ~/.cache/tachyon/worktrees/b349073a/grokauth

@@ -63,6 +63,25 @@ export interface ComposerRegionProfile extends RuntimeProfileSection {
   /** Runtime-specific line shape inside the editable region that means the human has a draft. */
   occupiedLine: RegExp;
   /**
+   * Runtime-specific shape of a CONTINUATION row — the rows a runtime draws itself when one logical
+   * draft is wider than the pane. They belong to the draft but carry no prompt glyph, so
+   * `occupiedLine` cannot match them and `composerText` cannot see past the first row without this.
+   *
+   * `t-7a297f` measured what that costs: a 433-char notice rendered as four rows, `composerText`
+   * recovered 120 of them, and `classifyComposerSubmission` concluded the composer no longer held
+   * the text — reporting a delivery that never happened, on the pane that still held it. The same
+   * blindness makes `holds-text` (retry the lost Enter), `submit-unconfirmed` (say so) and `diverged`
+   * (a human typed while we submitted — stop) unreachable for any draft that wraps.
+   *
+   * The rule is CONSECUTIVE-run scoped: rows are continuation only while they follow the prompt row
+   * without a gap, so the first non-matching row (a blank line, in every runtime measured so far)
+   * ends the draft and keeps the runtime's own status furniture out of it. Declare it ONLY from a
+   * measured rendering, and note the direction of danger: too greedy a rule swallows furniture into
+   * the draft, which yields `diverged`/`cleared` — never a spurious Enter on someone else's text.
+   * A runtime that declares none keeps exactly today's first-row-only reading.
+   */
+  continuationLine?: RegExp;
+  /**
    * Runtime-specific ANSI style that marks a prompt-glyph line as an ALREADY-SUBMITTED message the
    * runtime echoed back into its transcript. Such a line matches `promptLine`, but it is HISTORY
    * rather than the editable region, and history can never be a human draft.
@@ -387,12 +406,28 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
       occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      // t-7a297f — Codex wraps a too-wide draft ITSELF, into rows indented by exactly two spaces and
+      // carrying no glyph. Measured on 0.146.1 in a 220-column pane: the first row is 218 chars
+      // ("› " + 216 of text), so any text past `pane_width - 4` wraps. Byte fixtures:
+      // test/fixtures/codex-composer/.
+      continuationLine: /^ {2}\S/,
       ansiEmptyContentStyle: "all-dim",
-      source: "declared",
-      verified: false,
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-08-10",
       notes:
         "t-f30324: Codex's human input composer is a bottom-of-pane prompt line beginning with '❯'/'>'/'›'. " +
-        "t-aee74e: placeholder text after the prompt is entirely SGR-dim and does not count as a human draft.",
+        "t-aee74e: placeholder text after the prompt is entirely SGR-dim and does not count as a human draft. " +
+        "t-7a297f measured codex-cli 0.146.1 in a real tmux pane (220 cols), driven through the SAME gesture " +
+        "production uses (load-buffer + bracketed paste + C-m), plus the bytes of the pane that cost the " +
+        "`grokauth` agent on 2026-08-09. Pinned states: empty-after-turn (dim placeholder, unoccupied only " +
+        "through an escaped capture), short draft staged, WRAPPED draft staged, and the submitted mid-turn " +
+        "render. Two findings behind `continuationLine`: Codex draws its own wrap (so tmux `-J` does not " +
+        "rejoin it) and it echoes a submitted message back into the transcript with the same glyph — the echo " +
+        "loses because the live composer is bottom-most and `findComposerRegion` scans upward, which is also " +
+        "why no `ansiHistoryEchoStyle` is declared. NOT measured: a multi-row draft the HUMAN typed with " +
+        "shift+Enter (only a wrapped single logical line was produced), and the mid-turn render of a pane " +
+        "whose composer holds a draft.",
     },
     gracefulStop: {
       steps: [

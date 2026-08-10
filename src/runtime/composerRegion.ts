@@ -140,6 +140,10 @@ function visibleCharsWithStyle(text: string): Array<{ char: string; dim: boolean
   return chars;
 }
 
+function collapseSpace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 function linesEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((line, i) => line === b[i]);
@@ -161,13 +165,30 @@ export function composerText(content: string, composer: ComposerRegionProfile): 
   const lines = content.split("\n");
   const region = findComposerRegion(lines, composer);
   if (!region) return null;
-  return lines
-    .slice(region.start, region.end)
-    .map((line) => stripAnsi(line))
-    .filter((plain) => composer.occupiedLine.test(plain))
-    .map((plain) => plain.replace(COMPOSER_LINE_PREFIX, "").replace(COMPOSER_LINE_SUFFIX, "").trim())
-    .join(" ")
-    .trim();
+  const rows = lines.slice(region.start, region.end).map((line) => stripAnsi(line));
+  const strip = (plain: string) => plain.replace(COMPOSER_LINE_PREFIX, "").replace(COMPOSER_LINE_SUFFIX, "").trim();
+  // A runtime with no measured wrap rule keeps exactly the first-row-only reading it had.
+  if (!composer.continuationLine) {
+    return rows.filter((plain) => composer.occupiedLine.test(plain)).map(strip).join(" ").trim();
+  }
+  // t-7a297f — a draft too wide for the pane is drawn by the runtime as several rows, and only the
+  // first carries the glyph. Take the glyph row plus the UNBROKEN run of continuation rows after it;
+  // the first row that is neither (a blank line, in every runtime measured) ends the draft and leaves
+  // the status furniture below it out — furniture that is indented like a continuation row but is
+  // always separated by that blank.
+  const parts: string[] = [];
+  let inDraft = false;
+  for (const plain of rows) {
+    if (composer.occupiedLine.test(plain)) {
+      parts.push(strip(plain));
+      inDraft = true;
+      continue;
+    }
+    if (!inDraft) continue;
+    if (!composer.continuationLine.test(plain)) break;
+    parts.push(strip(plain));
+  }
+  return parts.join(" ").trim();
 }
 
 /**
@@ -201,12 +222,17 @@ export function classifyComposerSubmission(
 ): ComposerSubmissionState {
   const staged = composerText(content, composer);
   if (staged === null) return "unreadable";
-  const wanted = text.trim();
+  // t-7a297f — compare on collapsed whitespace. A wrapped draft is rejoined from rows the runtime
+  // broke at a space, so the reconstruction can differ from what we typed by exactly that spacing.
+  // The direction is safe: normalizing can only turn a `cleared` into `holds-text`/`diverged`, and
+  // both of those retry a bare Enter or stop — neither ever types text over anything.
+  const wanted = collapseSpace(text);
+  const held = collapseSpace(staged);
   if (!wanted) return "cleared";
-  if (staged === wanted) return "holds-text";
+  if (held === wanted) return "holds-text";
   // Our text is provably still in the editor with other content around it. Pressing Enter now would
   // submit that other content — which may be a human's draft — so the caller must stop, not retry.
-  if (staged.includes(wanted)) return "diverged";
+  if (held.includes(wanted)) return "diverged";
   // The region no longer contains what we typed. That is exactly the evidence of delivery; whatever
   // else is in there now arrived after our line left.
   return "cleared";
