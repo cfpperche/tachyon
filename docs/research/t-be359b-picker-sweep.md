@@ -114,8 +114,12 @@ So the gap is packaging, not design: **the QuickPicker's styles are not separabl
 `@font-face` that this surface must not load.** Fixing it means moving the `.ds-qp*` block and its
 token subset into a sheet an xterm surface can link without the font — a change to a shared asset
 every surface consumes, which needs before/after visual evidence on the neighbours and is not this
-sweep's smallest coherent change. Filed as follow-up; not hacked around here, and no second picker
-was written.
+sweep's smallest coherent change. Filed as **`t-de3dfc`**; not hacked around here, and no second
+picker was written.
+
+That task also carries a hazard to *measure* rather than assume before it closes: `QuickPicker`
+registers `keydown` on `document` in the capture phase, and the agent pane is a live xterm that
+forwards keys to a tmux session.
 
 ## Note recorded, not acted on
 
