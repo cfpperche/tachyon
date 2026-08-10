@@ -488,6 +488,40 @@ para não chegar lá de novo.
 
 ---
 
+## 8. Depois — os itens 1 e 2 implementados, medidos na mesma máquina
+
+O coordenador aprovou os itens 1 e 2 e segurou o 3. Ambos implementados em `88fb0dbf`
+(teto de 8) e `8c0f3aba` (sai o `typecheck` duplicado). Medida na árvore combinada,
+2026-08-09 23:48 -03, mesmo amostrador passivo:
+
+| | antes (15 workers) | depois (8 workers, sem duplicata) |
+|---|---:|---:|
+| parede | 91 s | **80 s** |
+| pico de load1 | 16,67 | **8,46** |
+| MemAvailable consumido | 4145 MB | **2570 MB** |
+| processos vitest no pico | 17 | 17 |
+
+**Ficou 11 segundos mais RÁPIDO**, não mais lento — a previsão era "3 s a mais, dentro do
+ruído", e o item 2 pagou a diferença com folga ao tirar 46,5 s de CPU de dentro da janela.
+
+E a duplicata sai visível na linha do tempo, que é a prova direta do item 2 — `tsc` contado
+a cada 6 s:
+
+```
+ANTES    estática: tsc 2 · tsc 2 · tsc 2   |  testes: tsc 2 · tsc 2 · tsc 2 · tsc 2 · tsc 2
+DEPOIS   estática: tsc 2 · tsc 2 · tsc 2   |  testes: tsc 0 · tsc 0 · tsc 0 · tsc 0 · tsc 0
+```
+
+Antes, `tsc` aparecia nas duas fases. Depois, só na etapa estática — que é onde o
+`verify:full` sempre pretendeu typechecar, uma vez.
+
+Perfil de load nas duas: a fase estática continua custando ~+0,7 sobre a linha de base; a
+fase de testes passou de +13,8 para +6,3. Nada de cobertura saiu: 716 arquivos, 8134 testes
+passando, árvore `b34e0a73` atestada.
+
+Esta seção custou uma execução adicional do gate (a quinta), porque a árvore mudou ao
+escrevê-la. Registrado em vez de escondido: é a mesma classe de custo que a §5 mede.
+
 ## Apêndice — reprodução
 
 ```bash
