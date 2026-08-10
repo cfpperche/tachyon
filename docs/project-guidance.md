@@ -214,11 +214,39 @@ how, not only that.
   pointer. Do not repeat history already in git or the task journal.
 - Hand off before context exhaustion. State unfinished work and the exact next action.
 
+## Machinery is the last resort, not the first
+
+This project builds mechanism instead of policy — but a mechanism is a cost, and the cost is paid by
+everyone who later has to read it. Three rules, each bought by a real mistake:
+
+- **A guard is earned by a measured recurrence, not by a fear.** The guards that pay for themselves
+  here were written after the defect had already happened: a hand-kept copy that had caused
+  `t-0b7aa7`, a static check that had already gone blind. A guard written because "an agent might
+  reimplement this" is a guess with a maintenance bill. When you cannot name the recurrence, the
+  answer is project discipline, not a test.
+- **Cheap is not free, and expensive is not slow.** Measured 2026-08-10: the eight structure-policing
+  tests in this repo cost 1.7s — 0.7% of the suite. They are assets; removing them for "speed" would
+  delete documentation that runs. The `vitestBudget` ledger is the opposite: nearly free to run, 669
+  lines of production code to understand. Argue run time and complexity separately; never merge them
+  into one case, as I did before the owner caught it.
+- **Prefer a configured number to a system that computes it.** A rationer that reads free RAM at
+  process start caused the same host-wide crash three times (`t-6a9bc4`, `t-3ad4af`, `t-91379d`),
+  each fix rationing one unit while a new unit escaped. On a single known machine a fixed worker
+  count plus one mutex is the whole answer. Reach for a computed policy only when the environment is
+  genuinely unknown to you.
+
+Before adding machinery, say out loud which defect it prevents and when that defect last happened.
+If the answer is "it hasn't", write it down where a human reads instead.
+
 ## Hygiene
 
 - Remove a change worktree/branch only when clean, unoccupied, and contained in `main`. Preserve
   dirty, occupied, or unique work and all persistent agent worktrees.
 - Closed Tasks must not be resurrected from stale briefs; only active board work is executable.
+- A test that spawns real processes must leave none behind. Measured 2026-08-09: a single gate left
+  35 tmux servers alive with their cwd inside the agent's worktree, and the host carried 1719 of them
+  from earlier runs — 91% of every process on the machine. They also block dismissing an agent,
+  because the product correctly refuses to remove a checkout something still lives in.
 
 ## Release
 
