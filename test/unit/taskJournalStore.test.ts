@@ -94,25 +94,103 @@ describe("TaskJournalStore", () => {
     await tasks.update(dropped.id, { status: "dropped" });
     tasks.journal.append(dropped.id, { author: "codex", text: "post hoc dropped note" });
     // t-f33480 — status moves leave an automatic journal trail; post-hoc notes still append.
-    // Membership not order: same-millisecond entries can sort by id.
+    // Order, not merely membership: this used to say "same-millisecond entries can sort by id",
+    // which was the t-c89c52 defect written down as if it were a property. Both of these DO land in
+    // the same millisecond, so asserting append order here is the cheapest guard against it.
     expect(tasks.journal.read(dropped.id).map((e) => e.text)).toEqual(
-      expect.arrayContaining(["status inbox -> dropped", "post hoc dropped note"]),
+      ["status inbox -> dropped", "post hoc dropped note"],
     );
-    expect(tasks.journal.read(dropped.id)).toHaveLength(2);
 
     const reopen = await tasks.create({ title: "reopen", author: "human" });
     await tasks.update(reopen.id, { status: "triaged" });
     tasks.journal.append(reopen.id, { author: "codex", text: "survives reopen" });
     await tasks.update(reopen.id, { status: "inbox" });
     expect(tasks.get(reopen.id).status).toBe("inbox");
-    expect(tasks.journal.read(reopen.id).map((e) => e.text)).toEqual(
-      expect.arrayContaining([
-        "status inbox -> triaged",
-        "survives reopen",
-        "status triaged -> inbox",
-      ]),
-    );
-    expect(tasks.journal.read(reopen.id)).toHaveLength(3);
+    expect(tasks.journal.read(reopen.id).map((e) => e.text)).toEqual([
+      "status inbox -> triaged",
+      "survives reopen",
+      "status triaged -> inbox",
+    ]);
+  });
+});
+
+/**
+ * t-c89c52 — the journal is append-only and its WRITE ORDER is the information. `read()` used to
+ * order by `ts` and break ties with `a.id.localeCompare(b.id)`, but the id is
+ * `j-${crypto.randomBytes(6)}` — so two entries written in the same millisecond came back in a
+ * RANDOM order. Measured before the fix, with two same-millisecond appends over 200 trials: append
+ * order survived 100 times. An exact coin flip.
+ *
+ * `ts` has millisecond resolution and a burst from ONE operation is precisely what lands inside a
+ * single millisecond, so this was not a rare race. It surfaced as `taskStore.test.ts` reading
+ * `.at(-1)` and getting the previous entry, and it reaches every consumer that asks "what happened
+ * last" — the notification policy, the detail projection, the UI.
+ *
+ * The fix keeps the on-disk format untouched (changing a persisted id or `ts` format is a bigger
+ * risk than the defect) and tie-breaks on the order the lines already have in the file. That order
+ * is the append order, and it was being thrown away by the sort.
+ *
+ * Each `it` below is one ACTOR × TRIGGER that can reach the same read.
+ */
+describe("journal read order (t-c89c52)", () => {
+  const SAME_MS = "2026-07-04T00:00:01.000Z";
+
+  it("a burst from one operation reads back in append order", () => {
+    const journal = new TaskJournalStore(root);
+    const id = "t-aaaaaa";
+    const written = Array.from({ length: 8 }, (_, i) => `burst ${i}`);
+    for (const text of written) journal.append(id, { author: "codex", text, now: SAME_MS });
+
+    // Before the fix this passed only when 8 random ids happened to sort into append order: 1 in 8!.
+    expect(journal.read(id).map((e) => e.text)).toEqual(written);
+  });
+
+  it("appends from separate writers in the same millisecond keep the order the file has", () => {
+    const id = "t-bbbbbb";
+    // Two store instances are the second writer door — the same one two PROCESSES take, since each
+    // append is an O_APPEND write and the file is the only shared state.
+    const a = new TaskJournalStore(root);
+    const b = new TaskJournalStore(root);
+    a.append(id, { author: "agent-a", text: "from A, first", now: SAME_MS });
+    b.append(id, { author: "agent-b", text: "from B, second", now: SAME_MS });
+    a.append(id, { author: "agent-a", text: "from A, third", now: SAME_MS });
+
+    expect(new TaskJournalStore(root).read(id).map((e) => e.text)).toEqual([
+      "from A, first",
+      "from B, second",
+      "from A, third",
+    ]);
+  });
+
+  it("a journal already on disk, written with random ids before the fix, reads in file order", () => {
+    const id = "t-cccccc";
+    const dir = path.join(root, ".tachyon", "tasks");
+    fs.mkdirSync(dir, { recursive: true });
+    // Ids deliberately DESCENDING lexically, which is what the old tie-break would have sorted on:
+    // if file order wins, these come back as written; if id order wins, they come back reversed.
+    const lines = [
+      { id: "j-ffffffffffff", ts: SAME_MS, author: "codex", text: "written first" },
+      { id: "j-aaaaaaaaaaaa", ts: SAME_MS, author: "codex", text: "written second" },
+    ];
+    fs.writeFileSync(path.join(dir, `${id}.journal`), lines.map((l) => `${JSON.stringify(l)}\n`).join(""), "utf8");
+
+    expect(new TaskJournalStore(root).read(id).map((e) => e.text)).toEqual(["written first", "written second"]);
+    // and the entries themselves are untouched — this fix reorders reads, it does not rewrite history.
+    expect(new TaskJournalStore(root).read(id).map((e) => e.id)).toEqual(["j-ffffffffffff", "j-aaaaaaaaaaaa"]);
+  });
+
+  it("still orders by ts when the timestamps differ, whatever order the lines are in", () => {
+    const id = "t-dddddd";
+    const dir = path.join(root, ".tachyon", "tasks");
+    fs.mkdirSync(dir, { recursive: true });
+    // File order is NOT the answer here: a backdated entry appended late still belongs earlier.
+    const lines = [
+      { id: "j-000000000001", ts: "2026-07-04T00:00:09.000Z", author: "codex", text: "later" },
+      { id: "j-000000000002", ts: "2026-07-04T00:00:02.000Z", author: "codex", text: "earlier" },
+    ];
+    fs.writeFileSync(path.join(dir, `${id}.journal`), lines.map((l) => `${JSON.stringify(l)}\n`).join(""), "utf8");
+
+    expect(new TaskJournalStore(root).read(id).map((e) => e.text)).toEqual(["earlier", "later"]);
   });
 });
 
