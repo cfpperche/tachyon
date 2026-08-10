@@ -301,7 +301,7 @@ export function vitestPoolMb(input: { memory: HostMemorySnapshot; materializedMb
  *
  * `maxUsefulWorkers` is what keeps the claim honest, and the honest claim is what lets `billedMb`
  * use the claim as a floor. Vitest never spawns more workers than it has test files, so a run over
- * explicitly named files reserves what it can actually use rather than the 16-worker cap. Without
+ * explicitly named files reserves what it can actually use rather than the full worker cap. Without
  * it, every focused run would reserve a full suite's worth of RAM it will never touch.
  */
 export function sizeFromShare(input: {

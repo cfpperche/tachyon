@@ -5,6 +5,7 @@ import path from "node:path";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
 import { acquireVerifyFullLock, awaitVerifyFullLock, resolveHeavyGate } from "../../scripts/verify-full.mjs";
+import hostResourceCostInputs from "../../shared/host-resource-cost-inputs.cjs";
 
 /**
  * t-0b7aa7 — these used to read `VITEST_MAX_WORKERS`, a bare number resolved at import time from
@@ -79,7 +80,9 @@ describe("verify-full control-plane protection (t-6a9bc4 slice-1)", () => {
     const gate = resolveHeavyGate();
     expect(gate.ok).toBe(true);
     expect(gate.workers).toBeGreaterThanOrEqual(1);
-    expect(gate.workers).toBeLessThanOrEqual(16);
+    // Read, not restated: the cap's VALUE is pinned once in hostResources.test.ts (t-fb7025). A
+    // literal here would silently stop bounding anything the day the cap moved.
+    expect(gate.workers).toBeLessThanOrEqual(hostResourceCostInputs.HARD_CAP_WORKERS);
     expect(gate.workers).toBeLessThanOrEqual(os.cpus().length || 1);
     expect(gate.reason).toMatch(/auto-sized/);
   });
