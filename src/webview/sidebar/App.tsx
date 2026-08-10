@@ -27,6 +27,8 @@ import {
   type AgentStatusFilter,
 } from "./agentStatusFilter";
 import { ContinuePicker, defaultContinuePickerStrings } from "../shared/agents/ContinuePicker";
+import { QuickPicker, type QuickPickerItem } from "../shared/ui";
+import { studioFolderItems } from "./studioFolders";
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
 
@@ -83,7 +85,7 @@ const NOOP_CTX: SidebarCtx = { action: () => {}, section: () => {}, global: () =
 /** Exported so the Fleet tab reuses the same row dispatch context (t-41117e). */
 export const DispatchCtx = createContext<SidebarCtx>(NOOP_CTX);
 
-/** Contextual "new …" studio per tab (opens the existing Studio command; it picks the folder itself). */
+/** Contextual "new …" studio per tab (opens the existing Studio command; see `useStudioTarget`). */
 const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
   Agents: { op: "studio:agents", label: "New agent" },
   Terminals: { op: "studio:terminals", label: "New terminal" },
@@ -91,6 +93,16 @@ const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
   Runbooks: { op: "studio:runbooks", label: "New runbook" },
   Schedules: { op: "studio:schedules", label: "New schedule" },
 };
+
+/**
+ * t-be359b — the picker title for a pending studio op. DERIVED from `STUDIO_OF` rather than written
+ * out a second time: a hand-kept copy of a table is exactly what `t-0b7aa7` cost, and adding a tab
+ * above must not be able to leave a studio with no title here.
+ */
+const STUDIO_LABEL_OF: Partial<Record<GlobalOp, string>> = Object.fromEntries(
+  Object.values(STUDIO_OF).map((s) => [s!.op, s!.label]),
+);
+
 
 const STATUS_LABEL: Record<AgentStatus, string> = { running: "Running", needs: "Needs input", throttled: "Throttled", done: "Done", idle: "Idle", stopping: "Stopping", "stop-failed": "Stop failed", stopped: "Stopped", crashed: "Crashed" };
 
@@ -1224,6 +1236,22 @@ export function App({
   const [agentFilter, setAgentFilter] = useState<AgentStatusFilter>("all");
   /** t-41117e — Continue task picker (webview-local; host only receives the chosen destination). */
   const [continuePick, setContinuePick] = useState<string | null>(null);
+  // t-be359b — pending "new …" studio waiting on a folder choice. Set only when more than one root is
+  // configured; with a single root there is nothing to ask and the op is posted straight through.
+  const [studioPick, setStudioPick] = useState<GlobalOp | null>(null);
+  // The annotation is the guard: it is what keeps `studioFolders.ts` (which cannot import the JSX
+  // module's type) structurally compatible with the picker it feeds.
+  const studioFolders = useMemo<QuickPickerItem[]>(() => studioFolderItems(fleets), [fleets]);
+  /**
+   * t-be359b — "new …" now asks WHERE in our own chrome instead of the VS Code quick pick.
+   *
+   * The host command still resolves the folder when no hash arrives, so the Command Palette door —
+   * which has no surface of ours on screen — keeps the native list. Only this door changed.
+   */
+  const openStudio = (op: GlobalOp): void => {
+    if (studioFolders.length > 1) setStudioPick(op);
+    else dispatch?.global(op);
+  };
   /**
    * t-72ff5a — the project in focus, chosen here and echoed by the host.
    *
@@ -1571,7 +1599,7 @@ export function App({
                 </button>
               )}
               <button type="button" class="act" title={`Sort ${section} — ${SORT_LABEL[active]} (click to flip)`} aria-label={`Sort ${section} (${SORT_LABEL[active]}); click to flip`} onClick={flipSort}><SortIcon dir={active} /></button>
-              {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} />}
+              {STUDIO_OF[tab] && <Act icon="add" title={STUDIO_OF[tab]!.label} on={() => openStudio(STUDIO_OF[tab]!.op)} />}
             </span>
           </>;
         })()}
@@ -1589,7 +1617,7 @@ export function App({
             </Button>
           </span>
         )}
-        {tab !== "Agents" && tab !== "Terminals" && tab !== "Attentions" && STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => dispatch?.global(STUDIO_OF[tab]!.op)} /></span>}
+        {tab !== "Agents" && tab !== "Terminals" && tab !== "Attentions" && STUDIO_OF[tab] && <span class="sec-new"><Act icon="add" title={STUDIO_OF[tab]!.label} on={() => openStudio(STUDIO_OF[tab]!.op)} /></span>}
         {tab === "Pins" && (
           <span class="sec-actions pin-filter">
             {pinTags.length > 0 && (
@@ -1637,6 +1665,24 @@ export function App({
             const from = continuePick;
             setContinuePick(null);
             dispatch?.continueTask?.(from, toName, selectedHash);
+          }}
+        />
+      ) : null}
+      {studioPick ? (
+        <QuickPicker
+          open
+          data-testid="studio-folder-picker"
+          title={`${STUDIO_LABEL_OF[studioPick] ?? "New item"} in…`}
+          subtitle="Choose the Tachyon folder to create it in."
+          placeholder="Select a folder"
+          emptyText="No Tachyon folder is configured."
+          items={studioFolders}
+          onClose={() => setStudioPick(null)}
+          onSelect={(item) => {
+            const op = studioPick;
+            setStudioPick(null);
+            // The host resolves this hash; it never re-asks when one arrives.
+            dispatch?.global(op, item.id);
           }}
         />
       ) : null}
