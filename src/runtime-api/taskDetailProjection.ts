@@ -40,17 +40,8 @@ const journalEntry = z.object({
   text: persistedText(),
 }).strict();
 
-const derived = z.object({
-  sdd: z.object({
-    type: z.literal("sdd"),
-    ref: persistedText(),
-    status: z.enum(["draft", "in-progress", "shipped", "shipped-partial", "superseded", "abandoned", "deferred"]).optional(),
-    missing: z.boolean().optional(),
-  }).strict().optional(),
-}).strict();
-
 const attention = z.object({
-  code: z.enum(["dangling_dep", "missing_sdd_spec", "ready_to_close", "sdd_needs_retriage", "corrupt_task", "awaiting_human"]),
+  code: z.enum(["dangling_dep", "corrupt_task", "awaiting_human"]),
   // `awaiting_human` carries a persisted `reason`, and the rest interpolate persisted refs.
   message: persistedText(),
   ref: persistedText().optional(),
@@ -112,7 +103,6 @@ const projection = z.object({
   schemaVersion: z.literal(1),
   task,
   journal: z.array(journalEntry).max(4_096),
-  derived: derived.optional(),
   attention: z.array(attention).max(16).optional(),
   deps: z.array(dependency).max(500),
   imageAttachments: z.array(imageAttachment).max(500),
@@ -181,7 +171,6 @@ export function projectTaskDetail(store: TaskStore, workspaceRoot: string, id: s
       updatedAt: view.task.updatedAt,
     },
     journal: view.journal ?? [],
-    ...(view.derived ? { derived: view.derived } : {}),
     ...(view.attention?.length ? { attention: view.attention.slice(0, 16) } : {}),
     deps: (view.task.deps ?? []).map((depId) => {
       try {

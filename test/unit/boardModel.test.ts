@@ -52,7 +52,7 @@ describe("buildBoardModel", () => {
     expect(triaged.cards.map((c) => c.id)).toEqual(["t-000001", "t-000002", "t-000003"]);
   });
 
-  it("card anatomy: priority accent, kind/assignee color tokens, SDD chip, attention badges", () => {
+  it("card anatomy: priority accent, kind/assignee color tokens, attention badges", () => {
     const t = task({
       id: "t-000001",
       status: "active",
@@ -63,8 +63,7 @@ describe("buildBoardModel", () => {
     });
     const views: TaskView[] = [{
       task: t,
-      derived: { sdd: { type: "sdd", ref: "325-task-queue-entity", status: "in-progress" } },
-      attention: [{ code: "ready_to_close", message: "close it" }],
+      attention: [{ code: "awaiting_human", message: "need a decision" }],
     }];
     const snapshot: BoardSnapshot = { views, allowedDropStatuses: { [t.id]: ["done", "triaged", "dropped"] }, chips: [] };
     const model = buildBoardModel({ snapshot });
@@ -74,8 +73,10 @@ describe("buildBoardModel", () => {
     expect(card.kindColorVar).toBe(colorTokenFor("bug"));
     expect(card.assignee).toBe("codex");
     expect(card.assigneeColorVar).toBe(colorTokenFor("codex"));
-    expect(card.sddStatus).toBe("in-progress");
-    expect(card.attention).toEqual([{ code: "ready_to_close", message: "close it" }]);
+    expect(card).not.toHaveProperty("sddStatus");
+    expect(card).not.toHaveProperty("sddRef");
+    expect(card).not.toHaveProperty("sddMissing");
+    expect(card.attention).toEqual([{ code: "awaiting_human", message: "need a decision" }]);
   });
 
   // t-8aeaac — the card always carries its creator, agent or human, with a stable color token.

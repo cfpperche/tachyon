@@ -101,24 +101,8 @@ export interface JournalWindow {
   note?: string;
 }
 
-export type SddStatus = "draft" | "in-progress" | "shipped" | "shipped-partial" | "superseded" | "abandoned" | "deferred";
-
-export interface SddDerivedStage {
-  type: "sdd";
-  ref: string;
-  status?: SddStatus;
-  missing?: boolean;
-}
-
-export interface TaskDerived {
-  sdd?: SddDerivedStage;
-}
-
 export type TaskAttentionCode =
   | "dangling_dep"
-  | "missing_sdd_spec"
-  | "ready_to_close"
-  | "sdd_needs_retriage"
   | "corrupt_task"
   | "awaiting_human";
 
@@ -128,11 +112,19 @@ export interface TaskAttention {
   ref?: string;
 }
 
+/**
+ * Opaque transient stage bag (not persisted). TaskStore may still attach file-derived
+ * entries until t-73b2e1 step 2 removes resolveSddSpec/readSddStatus. Board and Task Detail
+ * projections omit this entirely (step 3).
+ */
+export type TaskDerived = Record<string, unknown>;
+
 export interface TaskView {
   task: Task;
   journal?: JournalEntry[];
   journalCount?: number;
   journalWindow?: JournalWindow;
+  /** Present only on store/list paths; Board and Task Detail projections omit this. */
   derived?: TaskDerived;
   attention?: TaskAttention[];
 }

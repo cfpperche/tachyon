@@ -1,6 +1,6 @@
 import type { BoardChip, BoardSnapshot } from "./boardSnapshot.js";
 import { compareTasksByPriorityRank } from "./nextTask.js";
-import type { SddStatus, Task, TaskAttention, TaskAwaitingHumanKind, TaskEmptyReason, TaskPriority, TaskStatus } from "./types.js";
+import type { Task, TaskAttention, TaskAwaitingHumanKind, TaskEmptyReason, TaskPriority, TaskStatus } from "./types.js";
 import type { ValidationExecutor, ValidationOutcome, ValidationStatus } from "../validations/types.js";
 import type { ValidationSummary } from "../validations/ValidationStore.js";
 
@@ -64,9 +64,6 @@ export interface BoardCardVM {
   assigneeColorVar?: string;
   assigneeHistorical: boolean;
   canEditAssignee: boolean;
-  sddRef?: string;
-  sddStatus?: SddStatus;
-  sddMissing?: boolean;
   attachmentCount?: number;
   journalCount?: number;
   attention: TaskAttention[];
@@ -197,7 +194,6 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
 
   const toCard = (task: Task): BoardCardVM => {
     const view = snapshot.views.find((v) => v.task.id === task.id);
-    const sdd = view?.derived?.sdd;
     return {
       id: task.id,
       title: task.title,
@@ -210,7 +206,6 @@ export function buildBoardModel(input: BoardModelInput): BoardModel {
       assigneeLabel: assigneeLabel(task),
       assigneeHistorical: HISTORICAL_ASSIGNEE_STATUSES.has(task.status) && !!task.lastDeliverer,
       canEditAssignee: ASSIGNEE_EDITABLE_STATUSES.has(task.status),
-      ...(sdd ? { sddRef: sdd.ref, ...(sdd.status ? { sddStatus: sdd.status } : {}), ...(sdd.missing ? { sddMissing: true } : {}) } : {}),
       ...(snapshot.attachmentCounts?.[task.id] ? { attachmentCount: snapshot.attachmentCounts[task.id] } : {}),
       ...(view?.journalCount ? { journalCount: view.journalCount } : {}),
       attention: view?.attention ?? [],
