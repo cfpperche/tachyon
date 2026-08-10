@@ -339,7 +339,8 @@ mudança real que landa sem gate nenhum. **15 minutos por dia não compram esse 
 
 ## 6. O experimento que mudou a resposta
 
-Rodei o `verify:full` **duas vezes**, e só duas, como o briefing autorizou. Ambas na árvore
+Rodei o `verify:full` **duas vezes para medir**, como o briefing autorizou (a 6.1 registra as
+execuções de atestação que vieram depois, e por que elas viraram evidência). Ambas na árvore
 `4c141272` (a ponta da `main` — exatamente a árvore que o coordenador pegou saturando a máquina às
 22:44), com um amostrador passivo lendo `/proc` a cada 2 s (nunca sinaliza nem seleciona processo).
 
@@ -376,7 +377,41 @@ fase de testes pico **16,67**. **100 % do pico vem do pool do vitest.**
 > executou (é como a asserção foi coletada), então os 88 s e o pico de 8,63 são medidas válidas. Mas
 > isso revela um defeito lateral real: **a manopla documentada `TACHYON_VITEST_MAX_WORKERS` não pode
 > ser usada com o `verify:full`, porque um teste da própria suíte a confunde com uma medição do
-> host.** Registrado como task à parte.
+> host.** Registrado como task à parte (`t-325fe6`), com fail-before/pass-after verificado:
+> `TACHYON_VITEST_MAX_WORKERS=8 npx vitest run test/unit/runtimeOpsSnapshotService.test.ts` falha em
+> 1,35 s; sem a variável, 23 passam em 1,32 s.
+
+### 6.1 O gate ficou VERMELHO na entrega deste relatório — e isso não é digressão
+
+Este documento é um único `.md` novo em `docs/research/`, mais a reintegração da `main`. A árvore
+combinada foi gateada às **23:24:04 -03** e o `verify:full` **falhou**, em 82 s:
+
+```
+2 de 8135 testes falharam
+  test/integration/plugin-ui.e2e.test.ts
+  test/unit/taskStore.test.ts
+```
+
+Os dois passam isolados, imediatamente depois, sem nenhuma alteração:
+
+```
+npx vitest run test/unit/taskStore.test.ts            → 45 passed  (305 ms) · repetido: 45 passed
+npx vitest run test/integration/plugin-ui.e2e.test.ts →  4 passed (13,2 s)
+```
+
+Os dois são sensíveis a tempo. O `plugin-ui.e2e` posta uma mensagem em `setTimeout(6_100)` e a colhe
+depois de `sleep(6_250)` — **150 ms de margem**, num Chrome real, disputando com 15 workers. O
+`taskStore` afirma sobre a última entrada de um journal escrito por uma operação assíncrona.
+
+**Isto é a `t-efb7cc` acontecendo ao vivo, na entrega de um relatório que não toca uma linha de
+código de produto.** Não é um argumento retórico sobre o risco de não agir; é o risco, medido, no
+mesmo dia, contra a mesma máquina. Um gate que fica vermelho por contenção ensina o operador que o
+vermelho não significa nada — e o journal de 2026-08-06 já registra o passo seguinte: o coordenador
+substituiu o gate por seleção manual e essa seleção falhou em 2 de 4 merges.
+
+Isso levou o total de execuções desta sessão a quatro: duas de medição (as da tabela acima), a
+atestação vermelha desta seção, e uma re-execução para atestar a árvore entregue. As duas últimas não
+são medição e não alimentam nenhum número deste relatório.
 
 ---
 
@@ -428,8 +463,10 @@ Nenhum dos itens toca o lock (`t-6a9bc4`), o reuso por árvore, o gate de push o
 ### Risco de NÃO implementar
 
 O gate continua tomando 16 workers em 24 CPUs, ~40 % das horas de pico, com o dono na mesma máquina.
-O risco não é lentidão — é o que a lentidão provoca. `t-efb7cc` já registra o `verify:full`
-produzindo **vermelho falso** sob carga da frota, e o journal de 2026-08-06 registra o que acontece
+O risco não é lentidão — é o que a lentidão provoca. A seção 6.1 registra esse risco se realizando
+**durante a entrega deste relatório**: o gate ficou vermelho em dois testes sensíveis a tempo que
+passam isolados, numa árvore cuja única mudança é um arquivo `.md`. `t-efb7cc` já registra o
+`verify:full` produzindo **vermelho falso** sob carga da frota, e o journal de 2026-08-06 registra o que acontece
 em seguida: o coordenador substitui o gate por uma seleção manual, e **essa seleção falhou em 2 de 4
 merges**, com as duas causas invisíveis tanto para as camadas estáticas quanto para os testes que ele
 escolheu à mão. A dor de usabilidade não faz o gate ser pulado por decisão; faz ele ser **contornado
@@ -467,9 +504,13 @@ git log --first-parent main --since='2026-08-09 00:00 -0300' --format='%H %T %P'
 npx vitest related --run $(git diff --name-only <merge>^ <merge>) -t '__nope__' \
   --reporter=json --outputFile=/tmp/sel.json --silent
 
-# 5. o experimento de workers (as DUAS únicas execuções de verify:full desta medição)
+# 5. o experimento de workers (as DUAS únicas execuções de verify:full desta MEDIÇÃO)
 TACHYON_VERIFY_FORCE=1 npm run verify:full:quiet                                   # 23:11:33 -03
 TACHYON_VERIFY_FORCE=1 TACHYON_VITEST_MAX_WORKERS=8 npm run verify:full:quiet      # 23:15:13 -03
+
+# 6. o defeito lateral (t-325fe6): falha com a manopla, passa sem ela
+TACHYON_VITEST_MAX_WORKERS=8 npx vitest run test/unit/runtimeOpsSnapshotService.test.ts
+npx vitest run test/unit/runtimeOpsSnapshotService.test.ts
 ```
 
 Nenhum processo foi encerrado por nome ou padrão de linha de comando durante esta medição. O
