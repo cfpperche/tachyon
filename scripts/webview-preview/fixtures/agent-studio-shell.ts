@@ -13,7 +13,13 @@ import { ATTESTED_RUNTIMES } from "../../../src/runtime/attestedRuntimes";
 
 interface AgentStudioShellFixtureVM {
   entity: AgentStudioEntity;
-  loadError?: { code: string; message: string };
+  /**
+   * t-f4e186 — the shape the HOST actually posts when a load fails, `source` included.
+   * `SingleModeStudioPanelManager.postError` maps every failure through
+   * `mapUnknownError("transport", …)`, so a real load error is `transport/unknown` from `transport` —
+   * never `persistence/not-found`, which t-b643ac converted into a `tombstone` envelope.
+   */
+  loadError?: { code: string; message: string; source?: "validation" | "persistence" | "transport" };
   /**
    * t-e722ce — a forget plan delivered after `load`, so the plan panel is addressable for a visual
    * pass without driving a click. The panel opens on the plan's arrival (its state follows the
@@ -30,7 +36,13 @@ function envelope<T extends { type: string }>(message: T) {
 
 export function agentStudioShellMakeMessage(vm: AgentStudioShellFixtureVM): unknown {
   if (vm.loadError) {
-    return envelope({ type: "error", code: vm.loadError.code, message: vm.loadError.message, blocking: true });
+    return envelope({
+      type: "error",
+      code: vm.loadError.code,
+      message: vm.loadError.message,
+      ...(vm.loadError.source ? { source: vm.loadError.source } : {}),
+      blocking: true,
+    });
   }
   const load = envelope({ type: "load", entity: vm.entity, concurrency: { kind: "none" } });
   if (!vm.forgetPlan) return load;
@@ -390,10 +402,28 @@ export const agentStudioShellFixtures: Record<string, Fixture<AgentStudioShellFi
   // t-e722ce — the plan a human approves, in both of its shapes.
   "forget-plan": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: executableForgetPlan } },
   "forget-plan-blocked": { provenance: "synthetic-edge", vm: { entity: canonicalEntity, forgetPlan: blockedForgetPlan } },
-  // The `entity` here is inert: `agentStudioShellMakeMessage` returns the error envelope ALONE and
-  // never sends `load`, so this route measures the client's no-entity error path and nothing else
-  // (t-547771 measured it rendering the eternal "Loading Agent Studio..." — filed separately).
-  "load-error": { provenance: "synthetic-edge", vm: { entity: newEntity, loadError: { code: "persistence/not-found", message: "This agent no longer exists." } } },
+  /**
+   * The `entity` here is inert: `agentStudioShellMakeMessage` returns the error envelope ALONE and
+   * never sends `load`, so this route measures the client's no-entity error path and nothing else.
+   *
+   * t-f4e186 — repointed onto the error production still sends. Agent Studio is the one single-mode
+   * adapter with a `status: "error"` arm (`AgentStudioAdapter.load` wraps a throwing
+   * `inspectAgentProfileStudio`); the host posts it through `mapUnknownError("transport", …)`, which
+   * is where `transport/unknown` and the adapter's own sentence come from. The previous
+   * `persistence/not-found` was a message the host STOPPED sending in t-b643ac — a removed entity is
+   * a `tombstone` now — so this route was measuring a wire shape that no longer exists.
+   */
+  "load-error": {
+    provenance: "synthetic-edge",
+    vm: {
+      entity: newEntity,
+      loadError: {
+        code: "transport/unknown",
+        source: "transport",
+        message: "agent profile reviewer: canonical profile is unreadable (unexpected end of JSON input)",
+      },
+    },
+  },
 };
 
 export type { AgentStudioShellFixtureVM };
