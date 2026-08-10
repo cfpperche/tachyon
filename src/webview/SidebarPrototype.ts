@@ -356,13 +356,16 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       });
     }
     if (m?.type === "global") {
-      // The "new …" studios pick the target folder themselves (pickFolderForCreate) → no ws/hash needed.
+      // t-be359b — the "new …" studios still resolve the folder themselves when no hash arrives
+      // (pickFolderForCreate, the Command Palette door). What changed is that THIS door can answer
+      // first: with more than one root configured the sidebar draws the product QuickPicker over its
+      // own fleet list and sends the chosen hash, so the native list never opens for it.
       const STUDIO: Record<string, string> = {
         "studio:agents": "tachyon.newAgentStudio", "studio:terminals": "tachyon.terminalStudio",
         "studio:commands": "tachyon.commandStudio", "studio:runbooks": "tachyon.runbookStudio",
         "studio:schedules": "tachyon.scheduleStudio",
       };
-      if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op]);
+      if (m.op && STUDIO[m.op]) return void vscode.commands.executeCommand(STUDIO[m.op], m.hash);
       if (m.op === "copyBridge") return void vscode.commands.executeCommand("tachyon.copyBridgeUrl", m.hash);
       if (m.op === "init") return void vscode.commands.executeCommand("tachyon.init");
       // t-6e2952 — the Control tab's tiles send the section they want. Never trust the webview's string:
