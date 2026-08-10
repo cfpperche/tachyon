@@ -638,6 +638,28 @@ export type IdleNotifyAfter = number | "never";
  */
 export const MAX_IDLE_NOTIFY_MINUTES = 7 * 24 * 60;
 
+/**
+ * t-fe772a — the keys this parser KNOWS, exported because a second door publishes the same list.
+ *
+ * `package.json` binds `dist/tachyon.schema.json` to `tachyon.yml` through `contributes.yamlValidation`,
+ * and that schema closes both levels with `additionalProperties: false`. So every key added here has
+ * to be added there too, or the editor marks a file the product accepts — measured 2026-08-10 on the
+ * tracked onboarding template itself, where `humanInbox` (t-e4f662) and `agentNotifications`
+ * (t-585d5c) both loaded clean and both drew "must NOT have additional properties" on first open.
+ *
+ * Two literals in two files could not be kept in step by discipline, so the parser reads THIS list
+ * and `configSchema.test.ts` compares it to the schema's published properties.
+ */
+export const KNOWN_TOP_LEVEL_KEYS = ["agents", "terminals", "layouts", "commands", "runbooks", "schedules", "settings"] as const;
+
+/** The `settings:` keys this parser knows, retired-but-still-named ones included. See KNOWN_TOP_LEVEL_KEYS. */
+export const KNOWN_SETTINGS_KEYS = [
+  "maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree",
+  "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection",
+  "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind",
+  "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications",
+] as const;
+
 /** Parses an `every:` interval ("30m"/"1h"/"90m"/"2h") to ms; null if malformed. */
 export function parseEvery(value: string): number | null {
   const m = /^(\d+)\s*(m|h)$/.exec(value.trim());
@@ -1290,8 +1312,8 @@ export function parseConfig(yamlText: string): ParseResult {
 
 
   for (const key of Object.keys(raw)) {
-    if (!["agents", "terminals", "layouts", "commands", "runbooks", "schedules", "settings"].includes(key)) {
-      discarded.push(`unknown top-level key '${key}' (expected agents, terminals, layouts, commands, runbooks, schedules, settings)`);
+    if (!(KNOWN_TOP_LEVEL_KEYS as readonly string[]).includes(key)) {
+      discarded.push(`unknown top-level key '${key}' (expected ${KNOWN_TOP_LEVEL_KEYS.join(", ")})`);
     }
   }
 
@@ -2075,7 +2097,7 @@ export function parseConfig(yamlText: string): ParseResult {
         }
       }
       for (const key of Object.keys(raw.settings)) {
-        if (!["maxAgents", "agentMemoryMax", "bridgePort", "auth", "legacyBridgeAuth", "layout", "tmux", "worktree", "projectGuidance", "companion", "ideBrowser", "bridgeGuidance", "agentHookProjection", "agentPermissionProjection", "clipboard", "handoff", "persistence", "bridgeClientRebind", "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications"].includes(key)) discarded.push(`settings: unknown key '${key}'`);
+        if (!(KNOWN_SETTINGS_KEYS as readonly string[]).includes(key)) discarded.push(`settings: unknown key '${key}'`);
       }
     }
   }
