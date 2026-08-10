@@ -82,9 +82,15 @@ describe("hostResources (t-019dac)", () => {
    * makespan is max(392/W, 55) and flattens at ~7 workers — everything above the knee is load the
    * human sharing this machine pays for and wall-clock nobody gets back.
    * Full evidence: docs/research/t-fb7025-gate-cost.md.
+   *
+   * t-392418 — the pinned value is now 6, the conservative side of that same knee. t-91379d
+   * re-measured serially on 2026-08-10: 716 files sum to 247s and `engineSupervisor.test.ts` alone
+   * is 50s, so at 6 workers the other 715 finish in ~41s — under the 50s floor one file imposes.
+   * Both measurements describe the same curve; they differ only in where each stopped descending.
+   * The owner chose 6 to calibrate by running the day's work, so expect this literal to move again.
    */
-  it("pins the worker cap at the measured CPU knee, and the cap really binds (t-fb7025)", () => {
-    expect(hostResourceCostInputs.HARD_CAP_WORKERS).toBe(8);
+  it("pins the worker cap at the measured CPU knee, and the cap really binds (t-fb7025, t-392418)", () => {
+    expect(hostResourceCostInputs.HARD_CAP_WORKERS).toBe(6);
 
     // Not merely a constant: a machine with RAM and CPUs to spare must still stop at it, through
     // the door every vitest invocation actually uses.
@@ -101,10 +107,10 @@ describe("hostResources (t-019dac)", () => {
       swapFreeMb: 0,
       source: "proc-meminfo",
     };
-    expect(recommendVitestMaxWorkers({ memory: roomy, cpuCount: 24 })).toBe(8);
+    expect(recommendVitestMaxWorkers({ memory: roomy, cpuCount: 24 })).toBe(6);
     const gate = decideHeavyGate({ memory: roomy, cpuCount: 24 });
     expect(gate.ok).toBe(true);
-    if (gate.ok) expect(gate.workers).toBe(8);
+    if (gate.ok) expect(gate.workers).toBe(6);
   });
 
   it("refuses heavy gate under memory pressure", () => {
