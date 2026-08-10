@@ -483,7 +483,13 @@ function configuredWorkspaces(): WorkspaceShellHandle[] {
   return workspaces().filter((ws) => hasConfig(ws.workspaceRoot));
 }
 
-/** Folder disambiguation: 0 configured → undefined+warn, 1 → it, N → QuickPick (configured only). */
+/** Folder disambiguation: 0 configured → undefined+warn, 1 → it, N → QuickPick (configured only).
+ *
+ *  t-be359b — the QuickPick below STAYS NATIVE, and the call shape is the reason. Every one of this
+ *  function's callers is written `hash ? byHash(hash) : await pickWorkspace()`: a webview or a tree
+ *  item PASSES the hash and never reaches here. This picker is the fallback that exists precisely
+ *  because the caller had no surface to say which workspace it meant — the Command Palette door. A
+ *  picker of ours would have nowhere to draw, which is worse than the native one. */
 async function pickWorkspace(): Promise<WorkspaceShellHandle | undefined> {
   const all = configuredWorkspaces();
   if (all.length === 0) {
@@ -517,7 +523,20 @@ function wsOf<T extends { ws?: WorkspacePresentationTarget; workspaceHash?: stri
 
 
 /** spec 381 — shell selection/confirmation; the persistent engine revalidates and delivers.
- *  Returns true only when inject completed (false on cancel / empty catalog / refused). */
+ *  Returns true only when inject completed (false on cancel / empty catalog / refused).
+ *
+ *  t-be359b — the three QuickPicks below STAY NATIVE, and they do NOT all stay for the same reason.
+ *  Three doors reach this function: the agent pane webview (`openTemplateInject`), the Command
+ *  Palette, and the sidebar's agent row.
+ *    · the TEMPLATE and DELIVERY picks are reachable from the agent pane, which IS a surface of
+ *      ours — so they are the one place in this sweep where the honest answer is "there is somewhere
+ *      to draw, and we still cannot draw there yet". `QuickPicker.tsx` renders `ds-qp-*`, whose rules
+ *      and colour tokens live only in `design-system.css`, and `AgentPanePanel.ts` withholds that
+ *      sheet on purpose (its Tachyon Mono @font-face breaks xterm cell metrics). The gap is
+ *      packaging, not design: those styles are not separable from that font today. Splitting them is
+ *      a change to a shared asset every surface consumes and needs its own before/after evidence.
+ *    · the AGENT pick is not reachable from that door at all: the agent pane always passes
+ *      `preselectedAgent`, so it only runs for the Command Palette — no surface, native is right. */
 async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAgent?: string): Promise<boolean> {
   const catalog = jsonObject(await extensionQuery(ws, { action: "prompt.catalog" }), "prompt.catalog");
   const relDir = typeof catalog.relDir === "string" ? catalog.relDir : ".tachyon/prompts";
@@ -953,6 +972,10 @@ function hasConfig(folderPath: string): boolean {
   return CONFIG_FILENAMES.some((name) => fs.existsSync(path.join(folderPath, name)));
 }
 
+/** t-be359b — STAYS NATIVE. All three callers (openAgentPane, restartAgent, openAgentTerminal) are
+ *  bare palette commands whose first act is `await pickWorkspace()`, so reaching this line already
+ *  proves the Command Palette door: no webview of ours is on screen to host a product picker. The
+ *  sidebar and tree doors act on the agent they were clicked on and never ask. */
 async function pickAgent(ws: WorkspaceShellHandle, placeholder: string, runningOnly: boolean): Promise<string | undefined> {
   const agents = ws.client.presentation.agents;
   if (agents.truncated) throw new Error("agent list is truncated");
@@ -992,6 +1015,8 @@ async function connectRuntime(ws: WorkspaceShellHandle): Promise<void> {
     notify(vscode.l10n.t("cannot build registration: {0}", err instanceof Error ? err.message : String(err)), "error");
     return;
   }
+  // t-be359b — STAYS NATIVE. One caller (tachyon.connectRuntime), a bare palette command that opens
+  // with `await pickWorkspace()`; there is no surface of ours on screen to draw a product picker in.
   const picked = await vscode.window.showQuickPick(
     offers.map((o) => ({ label: o.title, detail: o.notes, offer: o })),
     { placeHolder: vscode.l10n.t("Which agent runtime should connect to the Bridge?") },
@@ -2638,10 +2663,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // unconfigured ones never appear. The ONE divergence is the zero-configured tail:
   // there it falls back to every open folder and boots the chosen one on demand, so
   // first-run creation is itself the opt-in (the bootstrap path Init also covers).
+  //
+  // t-be359b — reaching this function AT ALL now means the caller had nothing to say. The sidebar
+  // door answers first: with more than one root it draws the product QuickPicker over its own fleet
+  // list and passes the chosen hash, so the native list below is the Command Palette's fallback.
   const pickFolderForCreate = async (): Promise<WorkspaceShellHandle | undefined> => {
     const configured = configuredWorkspaces();
     if (configured.length === 1) return configured[0];
     if (configured.length > 1) {
+      // Palette fallback only — the sidebar never gets here (it sends a hash).
       const picked = await vscode.window.showQuickPick(
         configured.map((ws) => ({ label: ws.folderName, description: ws.bridgeUrl, ws })),
         { placeHolder: vscode.l10n.t("Which folder?") },
@@ -2656,6 +2686,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     let folder = open[0];
     if (open.length > 1) {
+      // t-be359b — STAYS NATIVE, and this one is not the same question as the branch above. These
+      // candidates are UNCONFIGURED folders: no tachyon.yml, therefore no fleet, therefore no row in
+      // any webview model of ours to pick from. This branch runs only when ZERO folders are
+      // configured, which is exactly when the sidebar is showing its "Initialize Tachyon" welcome
+      // instead of a fleet — so there is no candidate set and no surface. Native is the honest answer.
       const picked = await vscode.window.showQuickPick(
         open.map((f) => ({ label: f.name, description: f.uri.fsPath, f })),
         { placeHolder: vscode.l10n.t("Which folder?") },
@@ -3145,6 +3180,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       let folder = open[0];
       if (open.length > 1) {
+        // t-be359b — STAYS NATIVE. Init runs BEFORE any folder is a Tachyon workspace: the candidates
+        // are raw `workspaceFolders`, which no webview model of ours carries (the sidebar projects
+        // CONFIGURED roots only, and while none exists it is showing the Initialize welcome, not a
+        // fleet). No candidate set in the webview means nothing for a product picker to list.
         const picked = await vscode.window.showQuickPick(
           open.map((f) => ({ label: f.name, description: f.uri.fsPath, f })),
           { placeHolder: vscode.l10n.t("Initialize Tachyon in which folder?") },
@@ -3442,6 +3481,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notify(vscode.l10n.t("no pipelines found — add one under .tachyon/pipelines/<name>.yml"), "warn");
         return;
       }
+      // t-be359b — STAYS NATIVE. Palette-only command (the sidebar and tree run the pipeline they
+      // were clicked on, via tachyon.runPipelineItem), and it opens with `await pickWorkspace()`.
       const name = names.length === 1 ? names[0] : await vscode.window.showQuickPick(names, { placeHolder: vscode.l10n.t("Run which pipeline?") });
       if (!name) return;
       await startPipelineWithInput(ws, name);
@@ -3525,18 +3566,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (!ws) return;
       studioPanels.agent.openNew(ws.wsHash);
     }),
-    vscode.commands.registerCommand("tachyon.newAgentStudio", async () => {
-      const ws = await pickFolderForCreate();
+    // t-be359b — `hash` is how a caller that ALREADY asked says which folder it got. The sidebar draws
+    // the product QuickPicker over its own fleet list and sends the answer; the Command Palette sends
+    // nothing and falls through to pickFolderForCreate's native list, which is the right product for a
+    // door with no surface of ours on screen. Same shape as `byHash(hash) ?? pickWorkspace()` elsewhere.
+    vscode.commands.registerCommand("tachyon.newAgentStudio", async (hash?: string) => {
+      const ws = byHash(hash) ?? (await pickFolderForCreate());
       if (!ws) return;
       studioPanels.agent.openNew(ws.wsHash);
     }),
-    vscode.commands.registerCommand("tachyon.terminalStudio", async () => {
-      const ws = await pickFolderForCreate();
+    vscode.commands.registerCommand("tachyon.terminalStudio", async (hash?: string) => {
+      const ws = byHash(hash) ?? (await pickFolderForCreate());
       if (!ws) return;
       studioPanels.terminal.openNew(ws.wsHash);
     }),
-    vscode.commands.registerCommand("tachyon.runbookStudio", async () => {
-      const ws = await pickFolderForCreate();
+    vscode.commands.registerCommand("tachyon.runbookStudio", async (hash?: string) => {
+      const ws = byHash(hash) ?? (await pickFolderForCreate());
       if (!ws) return;
       studioPanels.runbook.openNew(ws.wsHash);
     }),
@@ -3976,13 +4021,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       studioPanels.command.openExisting(ws.wsHash, item.commandName);
     }),
-    vscode.commands.registerCommand("tachyon.commandStudio", async () => {
-      const ws = await pickFolderForCreate();
+    // t-be359b — see tachyon.newAgentStudio above for what `hash` means here.
+    vscode.commands.registerCommand("tachyon.commandStudio", async (hash?: string) => {
+      const ws = byHash(hash) ?? (await pickFolderForCreate());
       if (!ws) return;
       studioPanels.command.openNew(ws.wsHash);
     }),
-    vscode.commands.registerCommand("tachyon.scheduleStudio", async () => {
-      const ws = await pickFolderForCreate();
+    vscode.commands.registerCommand("tachyon.scheduleStudio", async (hash?: string) => {
+      const ws = byHash(hash) ?? (await pickFolderForCreate());
       if (!ws) return;
       studioPanels.schedule.openNew(ws.wsHash);
     }),
