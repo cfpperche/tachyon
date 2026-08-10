@@ -6,6 +6,111 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.76.0 — saving a form stops deleting what the form cannot show
+
+Three defects in this release share one shape: the product answered a question it had never
+measured. A Studio save answered "what is this agent's attention config?" with a boolean it had
+inferred from a checkbox. The Grok launch preflight answered "is this CLI authenticated?" by reading
+a model catalog that is printed either way. The gate answered "is this agent's work green?" by
+testing whether the host it ran on happened to be logged in.
+
+### Fixed
+
+- **Saving in a Studio no longer deletes `attention.silenceSec`, `attention.patterns` or `env`**
+  (`t-26ba8f`). Every Studio models attention as one boolean, and the writer replaced the whole YAML
+  node. Measured round trip, from a save that edited nothing:
+
+      in:   attention: {enabled: true, silenceSec: 30, patterns: ["waiting for approval"]}
+      out:  attention: true
+
+  Both fields were live — `silenceSec` is the AttentionMonitor's idle threshold and `patterns`
+  becomes its `extra_prompt_patterns` rule — so this was destruction of working configuration, not
+  removal of a dead field. `env` was found by the same measurement and fixed with it: same
+  `doc.setIn` replacement, same silent loss.
+
+  The carried-forward list is **closed**, deliberately. "Preserve everything the form did not send"
+  would be wrong twice: the form deletes *by omission* for the fields it owns (unchecking autostart
+  removes the key), and carrying a key the loader refuses for that section would produce a file the
+  next save cannot persist.
+
+  The guard does not look for a literal. It asserts that a save which edited nothing is the
+  **identity** on the loaded definition, over every entry key the shipped schema declares, with the
+  real parser deciding which of them a terminal may carry — and a second assertion requires every
+  declared key to have a probe value, so coverage cannot shrink by omission when a key is added.
+
+- **The Grok preflight stops approving a CLI with no credential** (`t-5dcf47`). It resolved
+  `supported` whenever the model catalog parsed, on the premise that a logged-out CLI prints a
+  sign-in notice instead of a listing. True on 0.2.112; false on 1.0.0. Measured on one host with a
+  live credential and an empty home, same session:
+
+      $ diff <(grok models) <(GROK_HOME=<empty> grok models)
+      1c1
+      < You are logged in with grok.com.
+      ---
+      > You are not authenticated.
+
+  One line. The catalog block is byte-identical and both exit 0 — so the catalog did not *stop*
+  being an auth signal, it never was one. Authentication is now read from the banner line, and the
+  catalog is consulted only after the known logged-in banner appears. A logged-out banner, an
+  **unrecognized** banner and an unreadable catalog all resolve to `unverifiable`. A future wording
+  change can cost a verdict; it cannot turn a credential-free CLI into `supported`.
+
+- **The land card uses the width of the card, and the review picker is the product's own**
+  (`t-ea5425`). The land block rendered in the list row's text column, sharing the line with the
+  action buttons: measured at 880, it received 480 of the card's 824 internal pixels, and the one
+  actionable line on screen — `Fix: run the declared verify gate IN this worktree…` — broke into
+  three pieces inside that river. It now spans 798 of 824, with the fix on two lines and its label
+  emphasized.
+
+  **Review these changes** selects the file in Tachyon's own filterable picker instead of VS Code's
+  QuickPick. The diff itself still opens in VS Code's diff editor — that is the right product for
+  the job, and the single-implementation guard still holds: one function builds the pair and calls
+  the editor, and it now takes an argument naming *which chrome picks the file*. The sidebar agent
+  row and the pipeline's "View changes" stay on the native QuickPick, because they are tree items
+  with no surface of their own to draw on.
+
+  The PR form is **not** converted. `gh pr create` needs an editable title, a body preview and a
+  confirmation, and the picker is a filterable list; the cost is measured and the slice is open
+  (`t-f3ded3`).
+
+### Internal
+
+- **The gate stops answering "is this machine logged in?" on the agent's behalf** (`t-a12966`). An
+  agent that delivered 321 lines of markdown got four red tests about agent crash memory, because a
+  fixture needed a real credential to materialize a harness. 8273 tests were swept in two labs — one
+  strict, one faithful to an agent worktree — and reported separately rather than summed. Result on
+  the faithful lab: 4 failures and 98 skips became 0 and 41, with **no skip left silent**.
+  `verify-full` now prints the declared reason for any skip and names the files whose skips declared
+  nothing. That line found phantom coverage the same day it appeared: three SDD 485 budget guards
+  gated on `dist/webview/cockpit.js`, a file deleted hours earlier, skipping on every gate in a fully
+  built tree.
+
+- **A non-UTF-8 locale breaks pane reading, and the test that proves it was left red** (`t-86f3e6`).
+  Under `LANG` empty, `C` or `POSIX`, tmux substitutes `_` for TAB in `-F` output and `TmuxService`
+  splits on tab in two places — every pane reads back `dead:false, pid:0`, so a dead pane is never
+  detected and `restart: on-crash` never fires. A declared skip would have hidden a product defect
+  behind the fix for a test problem.
+
+- **The Agent Studio `new` preview route shows the screen production actually renders** (`t-547771`).
+  Its fixture was built on the legacy form, so the Evolution toggle rendered clickable where
+  production keeps it read-only, and the command placeholder offered `agy`, an unattested runtime the
+  canonical path refuses. Two earlier tasks had worked around it rather than fix it; both detours are
+  now removed.
+
+- **The core stops enforcing the SDD plugin's policy** (`t-73b2e1`, step 1 of 3). Closing a Task no
+  longer depends on what a markdown file under `docs/specs/` says, and the SDD-derived branches are
+  out of the work queue. Reading and vocabulary remain, deliberately — they are steps 2 and 3, and
+  removing policy and format in one commit would mix two different risks. `artifact_refs` is
+  untouched: the 271 Tasks that name a spec are byte-identical on disk.
+
+- **Process selectors** — `docs/project-guidance.md` now says to stop only the PID your own spawn
+  returned, never a command-line pattern. This was proposed as a source guard and measured out of it:
+  `scripts/` and `src/` contain zero `pkill`/`killall`, so the guard would have watched an empty set
+  (`t-895ca6`).
+
+- **Documentation weight** — 204 shipped specs distilled, 42,889 lines out of the working tree
+  (`t-a46d8a`), and the dogfood harness shortcuts left the repository manifest (`t-f0ea03`).
+
 ## 0.75.0 — you can finally look at the code before you land it
 
 The land block has always shown five green checks and a command to copy. It never showed a way to see
