@@ -30,6 +30,13 @@ class VsCodeNotificationProvider implements UiNotificationPort {
       }
     }
 
+    // t-be359b — STAYS NATIVE, deliberately; this is not an oversight of the picker sweep.
+    // This is not "a picker" but how spec 415 renders a NOTIFICATION WITH ACTIONS without going
+    // through Notification Center, and every showNotification(...) with actions in the extension
+    // lands here — commands, background flows, workspace events, with no window focus guaranteed
+    // and no surface of ours necessarily on screen. A product picker needs somewhere to draw;
+    // this caller cannot promise one. Replacing it is a change to spec 415's notification
+    // authority, not a picker swap.
     if (labels.length > 0) {
       return vscode.window.showQuickPick(labels, {
         title: message,
