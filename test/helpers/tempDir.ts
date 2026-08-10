@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll } from "vitest";
+import { assertReapableRoot, reapTmuxServersUnder } from "./tmuxReap.js";
 
 /**
  * `t-25a908` — a temp directory that removes itself when the test file finishes.
@@ -21,12 +22,32 @@ import { afterAll } from "vitest";
  * directory in a test body, in `beforeEach`, and at module scope, and a per-test hook would delete a
  * module-scoped fixture out from under the tests that still need it. Holding a handful of small
  * directories until the file ends costs nothing.
+ *
+ * `t-8f48da` — REMOVING THE DIRECTORY IS NOT CLEANUP when something is listening inside it. A tmux
+ * server whose socket file is unlinked keeps running, so the hook below was quietly leaving one
+ * process behind per fixture: 1946 of them on this host by 2026-08-09, 1719 pinning worktrees that
+ * had already been deleted, which is what makes an agent's dismiss refuse with "still has a live root
+ * process for its worktree". Every leaked server traced back through `makeSocketTemp` to this one
+ * hook, so the reap belongs here, before the removal, for the same reason the removal does: this is
+ * the code that knows when the directory stops being needed. See `helpers/tmuxReap.ts` for how a
+ * server is proven to be ours before anything is stopped.
  */
 const pending = new Set<string>();
 
 // Registered at import time, so it belongs to the test file that imported this helper. Vitest isolates
 // the module registry per test file, so each file gets its own hook and its own `pending` set.
 afterAll(() => {
+  // Per directory, so one tracked path we may not sweep cannot strand the reap for all the others —
+  // then ONE /proc pass over what is left, while their sockets still exist.
+  const sweepable: string[] = [];
+  for (const dir of pending) {
+    try {
+      sweepable.push(assertReapableRoot(dir));
+    } catch (err) {
+      process.stderr.write(`[tempDir] ${err instanceof Error ? err.message : String(err)}\n`);
+    }
+  }
+  if (sweepable.length > 0) reapTmuxServersUnder(sweepable);
   for (const dir of pending) {
     try {
       fs.rmSync(dir, { recursive: true, force: true });
