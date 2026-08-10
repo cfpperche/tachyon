@@ -1,0 +1,50 @@
+[2m╭─────────────────────────────────────────────────╮
+│ [0;1m[38;5;6m✨ Update available![0m [1m0.146.1 -> 0.147.0[0;2m         │
+│ [0mRun [38;5;6mnpm install -g @openai/codex[39m to update.[2m     │
+│                                                 │
+│ [0mSee full release notes:[2m                         │
+│ [0;4m[38;5;6m]8;;https://github.com/openai/codex/releases/latest\https://github.com/openai/codex/releases/latest[0;2m]8;;\ │
+╰─────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────╮
+│ >_ [0;1mOpenAI Codex[0;2m (v0.146.1)                               │
+│                                                          │
+│ model:     [0mgpt-5.6-sol[2m   [0m[38;5;6m/model[2m[39m to change                │
+│ directory: [0m/tmp/claude-1000/…hild/…/scratchpad/probe/cwd[2m │
+╰──────────────────────────────────────────────────────────╯
+
+[0m  [1mTip:[0m Use /personality to customize how Codex communicates.
+
+[2m• [0mYou have 1 usage limit reset available. Run /usage to use one.
+
+
+[1;2m› [0m[tachyon] probe -> dc: medicao de entrega, nao execute nada e nao use ferramentas; responda apenas com a palavra ok. Este texto existe so para exceder a largura do pane e forcar o composer do codex a quebrar a linha
+  em varias linhas renderizadas, que e exatamente a condicao do incidente medido em t-7a297f. [details: t-7a297f]
+
+
+[2m• [0mok
+
+
+[1m›[0m [tachyon] probe -> dc: linha curta de teste, nao submetida
+
+  [38;2;246;226;183mgpt-5.6-sol default[2m[39m · [0m[38;2;171;223;167m/tmp/claude-1000/-home-goat--cache-tachyon-worktrees-b349073a-deafchild/b948583e-26f2-40b9-8afa-a30563927543/scratchpad/probe/cwd
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

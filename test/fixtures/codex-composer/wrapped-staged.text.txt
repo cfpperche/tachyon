@@ -1,0 +1,1 @@
+[tachyon] probe -> dc: medicao de entrega, nao execute nada e nao use ferramentas; responda apenas com a palavra ok. Este texto existe so para exceder a largura do pane e forcar o composer do codex a quebrar a linha em varias linhas renderizadas, que e exatamente a condicao do incidente medido em t-7a297f. [details: t-7a297f]

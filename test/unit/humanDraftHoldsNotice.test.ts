@@ -444,8 +444,9 @@ describe("t-a53dd9 — the human-draft signal, per runtime", () => {
   const EXPECTED: Record<string, { source: string; verified: boolean } | null> = {
     // measured on a live pane, incl. the dim-suggestion and history-echo discriminators
     claude: { source: "measured", verified: true },
-    // the prompt shape is still a documented guess; only the dim-suggestion rule is measured (t-aee74e)
-    codex: { source: "declared", verified: false },
+    // byte fixtures on 0.146.1 across empty-after-turn / short draft / WRAPPED draft / submitted
+    // mid-turn (t-7a297f), on top of the dim-suggestion rule (t-aee74e); human multi-row draft unmeasured
+    codex: { source: "measured", verified: true },
     // byte fixtures across empty / typed / post-turn / draft-after-turn (t-aafa10); mid-turn unmeasured
     grok: { source: "measured", verified: true },
     // framed editor between the final two rules (SDD 403)
