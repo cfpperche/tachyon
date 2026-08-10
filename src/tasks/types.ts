@@ -112,11 +112,7 @@ export interface TaskAttention {
   ref?: string;
 }
 
-/**
- * Opaque transient stage bag (not persisted). TaskStore may still attach file-derived
- * entries until t-73b2e1 step 2 removes resolveSddSpec/readSddStatus. Board and Task Detail
- * projections omit this entirely (step 3).
- */
+/** Opaque transient stage bag (not persisted). */
 export type TaskDerived = Record<string, unknown>;
 
 export interface TaskView {

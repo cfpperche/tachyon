@@ -180,8 +180,8 @@ export function registerValidationTools(mcp: McpServer, deps: BridgeDeps): void 
     "discover_validation_candidates",
     {
       description:
-        "Discover likely validation debt from existing local specs, tasks, and pins without creating records. " +
-        "This is a review/import aid for existing dogfoods; it is best-effort and SDD-independent.",
+        "Discover likely validation debt from existing local tasks and pins without creating records. " +
+        "This is a review/import aid for existing dogfoods; it is best-effort and plugin-independent.",
       inputSchema: {
         limit: z.number().int().min(1).max(500).default(100),
       },

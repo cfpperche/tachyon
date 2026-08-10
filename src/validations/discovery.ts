@@ -30,28 +30,11 @@ export function discoverValidationCandidates(workspaceRoot: string, limit = 100)
     out.push({ title, type, executor: "human", source_ref, excerpt });
   };
 
-  scanSpecs(workspaceRoot, add);
   scanJsonDir(path.join(workspaceRoot, ".tachyon", "tasks"), "task", add);
   scanPins(workspaceRoot, add);
   const candidates = out.slice(0, limit);
   discoveryCache.set(cacheKey, { expiresAt: now + CACHE_TTL_MS, candidates });
   return candidates;
-}
-
-function scanSpecs(root: string, add: (title: string, sourceRef: ArtifactRef, excerpt: string, type?: string) => void): void {
-  const specs = path.join(root, "docs", "specs");
-  if (!fs.existsSync(specs)) return;
-  for (const dir of fs.readdirSync(specs).sort()) {
-    const tasks = path.join(specs, dir, "tasks.md");
-    if (!fs.existsSync(tasks)) continue;
-    const text = safeRead(tasks);
-    if (!text) continue;
-    for (const line of text.split("\n")) {
-      if (!VALIDATION_PATTERNS.some((p) => p.test(line))) continue;
-      const clean = line.replace(/^[-*]\s*(\[[ x]\]\s*)?/i, "").trim();
-      add(`Validate ${dir}`, { type: "sdd", ref: `docs/specs/${dir}` }, clean || line.trim(), /visual qa/i.test(line) ? "visual QA" : "dogfood");
-    }
-  }
 }
 
 function scanJsonDir(dir: string, type: string, add: (title: string, sourceRef: ArtifactRef, excerpt: string, kind?: string) => void): void {

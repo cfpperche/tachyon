@@ -89,10 +89,6 @@ describe("buildBoardSnapshot", () => {
   });
 
   it("parity: each chip's next result matches TaskStore.next(agent) for the same fixture", async () => {
-    const specDir = path.join(root, "docs", "specs", "900-fixture");
-    fs.mkdirSync(specDir, { recursive: true });
-    fs.writeFileSync(path.join(specDir, "spec.md"), "**Status:** in-progress\n");
-
     const a = await store.create({ title: "p0 unassigned", author: "human", priority: 0 });
     await store.update(a.id, { status: "triaged" });
     const b = await store.create({ title: "p1 assigned to codex", author: "human", priority: 1, artifact_refs: [{ type: "sdd", ref: "900-fixture" }] });
@@ -117,9 +113,7 @@ describe("buildBoardSnapshot", () => {
     await validationStore.create({ title: "Manual smoke", author: "human", executor: "human" });
     const agentValidation = await validationStore.create({ title: "Review generated asset", author: "claude", executor: "agent", priority: 1 });
     await validationStore.update(agentValidation.id, { actor: EDITOR_HUMAN_ACTOR, status: "triaged" });
-    const specDir = path.join(root, "docs", "specs", "901-validation");
-    fs.mkdirSync(specDir, { recursive: true });
-    fs.writeFileSync(path.join(specDir, "tasks.md"), "- [ ] Human dogfood install flow\n", "utf8");
+    await store.create({ title: "Install flow", author: "human", body: "Human dogfood install flow" });
 
     const snap = buildBoardSnapshot({ store, declaredAgents: [], validationStore, workspaceRoot: root });
 
