@@ -169,13 +169,33 @@ construção** — e essa é a resposta, não uma desculpa.
   (que o produto avisa ao humano) e parte encalhe silencioso. O ponto é que **o produto não sabe dizer
   qual foi qual**.
 
-**O caso das 23 minutos de hoje é o mesmo gate por outro lado, e tem número.** `claude → tmuxreap` às
-02:21:56Z, entregue por volta de 02:44 — depois de o agente já ter concluído sozinho. O TTL da fila é
-**10 minutos** (`DEFAULT_NOTICE_TTL_MS`), então essa notice deveria ter **expirado 13 minutos antes de
-chegar**. Não expirou porque `clearExpired` mora dentro de `flushQueuedNotice`, que só roda em
-`recoverOnIdle`, que só é chamado na aresta `working → idle`. **Quem nunca vai a idle não recebe e
-também não expira** — a saída declarada da `t-fb1453` (expirar e avisar o humano pelo nome) depende
-exatamente da aresta que ela existe para cobrir.
+**O caso das 23 minutos de hoje — e uma correção minha.** `claude → tmuxreap` às 02:21:56Z, entregue por
+volta de 02:44, depois de o agente já ter concluído sozinho. **A primeira versão desta seção dizia que a
+notice "deveria ter expirado 13 minutos antes de chegar" porque `clearExpired` mora dentro de
+`flushQueuedNotice`. Isso está errado, nas duas metades**, e eu errei do jeito que este repositório
+nomeia: li duas funções e generalizei sem enumerar os chamadores.
+
+O que a leitura completa mostra:
+
+- `Workspace.tick()` — o heartbeat de 3 s — **já chama `noticeQueue.clearExpired()` incondicionalmente**,
+  com um comentário da `t-a53dd9` que descreve exatamente o defeito que eu atribuí ao produto: *"a notice
+  segurada atrás de um rascunho que o humano nunca submete não produz evento nenhum"*. Aquela porta já foi
+  fechada.
+- E, mesmo que não tivesse sido, essa notice **não expiraria**: `clearExpired` isenta do TTL tudo que é
+  `origin: "agent-authored"`, por decisão explícita da `t-93bec9` — um doorbell relata história, e o tempo
+  não torna história falsa. O TTL de 10 minutos vale só para `host-poke` e relays sem dono.
+
+Ou seja: a entrega de 23 minutos **não é uma expiração inalcançável, é o trade que a `t-93bec9` escolheu** —
+entregar tarde e rotulada (`[delayed ~23m; reported by 'claude']`) em vez de perder um relatório de
+conclusão. O que a medição de hoje acrescenta é que esse trade tem um lado que ninguém tinha medido: uma
+mensagem que só serve enquanto o destinatário ainda não decidiu.
+
+O que sobra de verdadeiramente sem fim é uma condição estreita, e vale registrar como está: um doorbell
+`agent-authored` parado atrás de um composer que **nunca** limpa não é entregue (o dreno roda na transição
+para idle e na aresta em que o rascunho some — nenhuma das duas vem) e não expira (isento por desenho). O
+único aviso que existe nesse estado chega quando a fila estoura os 20 itens e o humano é avisado do
+descarte. No incidente do `grokauth` o rascunho que nunca limpava era o resíduo do próprio produto — que é
+justamente o que o item 1 remove.
 
 **A porta de leitura durável existe e ninguém usa.** `read_notices` (spec 493) foi chamada **3 vezes** em
 todos os transcripts que sobrevivem (2 por `claude`, 1 por `claude-fork-1`). É um *pull*, e um agente
@@ -199,10 +219,12 @@ surdo não sabe que precisa puxar.
 
 O que os une não é a causa, é a consequência: **os dois transformam "não sei" em uma afirmação positiva.**
 E eles se encontram num terceiro lugar, que nenhuma das duas tasks nomeia: **a fila**. O `working` sem base
-manda a notice para a fila (`deliverNotice` enfileira em `working`), e a fila só drena numa aresta que pode
-não vir — foi assim que a notice de hoje chegou 23 minutos depois de deixar de importar. Vale registrar
-que `prompt.inject` com submit é uma **terceira porta**, mais fraca que as outras duas: usa o estado
-*cacheado* e chama `sendSubmittedLine` **sem** passar o perfil de composer, então cai na heurística antiga.
+manda a notice para a fila (`deliverNotice` enfileira em `working`), e a partir daí a entrega depende de
+uma aresta — a transição para idle, ou o rascunho sumindo. A fila em si está mais sã do que eu disse na
+primeira versão (§4): o TTL já é varrido no heartbeat, e a chegada tardia de hoje é um trade escolhido,
+não um esquecimento. Vale registrar que `prompt.inject` com submit é uma **terceira porta**, mais fraca
+que as outras duas: usa o estado *cacheado* e chama `sendSubmittedLine` **sem** passar o perfil de
+composer, então cai na heurística antiga — e depois do item 1 ela fica sendo o único caminho que ainda cai.
 
 Ator × gatilho do mesmo efeito, para quem for consertar: Interface (humano injetando prompt), Agente
 (`write_input`/`notify_agent` pela Bridge), Tachyon (renovação de contexto, flush da fila, backstop) —
@@ -243,13 +265,27 @@ Por que esta e não a outra:
 **Ordem sugerida, do mais barato e mais urgente para o mais arriscado:**
 
 1. **O instrumento** (acima). É o que custou um agente e é a mudança mais contida.
-2. **A fila.** Drenar e expirar fora da aresta `working → idle`, para que "queued" tenha um fim que não
-   dependa de um evento que pode não acontecer. É o caso das 23 minutos, e é independente do item 1.
+2. ~~**A fila.**~~ **Retirado por medição, não por escopo.** A primeira versão pedia "drenar e expirar
+   fora da aresta `working → idle`". A varredura de expiração **já roda no heartbeat de 3 s**
+   (`Workspace.tick`, `t-a53dd9`), e o doorbell de hoje não teria expirado de qualquer modo porque
+   `agent-authored` é isento de TTL por decisão da `t-93bec9`. Não há conserto a fazer aqui sem reverter
+   uma política — ver §4. O que sobrou é estreito e foi para o board como task própria.
 3. **`t-4c82fa`.** Fazer a recusa consultar `hasStartedTurn` em vez de só `state`. É a mais arriscada das
    três — mexe em semântica de attention para a frota inteira, com três portas para o mesmo seed — e é a
    menos urgente, porque a janela é de ~10 s e o custo é atraso, não perda.
 
 ---
+
+## Estado depois da decisão do coordenador
+
+O item 1 foi **aprovado e está implementado neste mesmo branch**: `continuationLine` declarada por runtime
+(medida só para codex), `composerText` rejuntando as linhas quebradas, comparação por espaço colapsado, e
+`test/unit/codexComposerWrapMeasured.test.ts` sobre `test/fixtures/codex-composer/` — provado vermelho
+antes de verde nas três asserções que importam (`cleared → holds-text`, a leitura truncada, e o `diverged`
+que cruza a quebra), com a resposta do guard `isComposerOccupied` pinada nos cinco panes para provar que
+não mudou. O perfil do codex subiu de `declared/false` para medido, aqui e em `docs/runtimes/parity.md`.
+
+O item 2 foi **retirado por medição** (§4). O item 3 (`t-4c82fa`) foi segurado e voltou para o board.
 
 ## O que NÃO foi medido
 
