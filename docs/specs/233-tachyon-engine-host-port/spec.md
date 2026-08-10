@@ -2,7 +2,7 @@
 
 _Created 2026-06-18._
 
-**Status:** ENGINE DECOUPLED (awaiting codex review + EDH dogfood). `src/workspace/Workspace.ts` imports
+**Status:** in-progress — ENGINE DECOUPLED (awaiting codex review + EDH dogfood). `src/workspace/Workspace.ts` imports
 **zero `vscode`**; the whole engine is vscode-free and a CI guard (`npm run check:engine-boundary`) fails
 if anything outside the shell allowlist imports `vscode`. Built in 5 behavior-preserving passes (i18n,
 notify, notices, capability-ports, the import-free flip), 720 unit tests green throughout. NOTE on the

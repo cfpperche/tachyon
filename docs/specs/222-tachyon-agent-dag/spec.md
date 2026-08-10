@@ -2,7 +2,7 @@
 
 _Created 2026-06-15._
 
-**Status:** PARKED (2026-06-15; reasoning corrected 2026-06-16) — adversarial design debate (codex,
+**Status:** deferred — PARKED (2026-06-15; reasoning corrected 2026-06-16) — adversarial design debate (codex,
 gpt-5.5 xhigh) recommended PARK; no implementation. The PARK rests on Q1 (idle≠done) + Q4 (worktree
 tension) + no demand — NOT on the withdrawn Q6 (which wrongly counted Agent0's `/squad` + `/routine` as
 Tachyon features; see Q6 below). Reopen trigger = a real, repeated pipeline need that Tachyon's own

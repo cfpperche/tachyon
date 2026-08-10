@@ -2,7 +2,7 @@
 
 _Created 2026-06-17._
 
-**Status:** IMPLEMENTED 2026-06-17 — 573 unit tests + typecheck + build green. NOT yet shipped.
+**Status:** in-progress — IMPLEMENTED 2026-06-17 — 573 unit tests + typecheck + build green. NOT yet shipped.
 Makes an isolated-harness agent **first-class to create** — via Agent Studio, not only by hand-editing
 `tachyon.yml`. Surfaced in dogfood ("how do I create a harness agent?"): the Studio form already
 supports `role`/`worktree`/`verify`, but not `harness`, so harness agents were yaml-only.
