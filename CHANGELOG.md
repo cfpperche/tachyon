@@ -6,6 +6,63 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.77.0 — Tachyon runs without the SDD plugin installed
+
+The maintainer's rule, and the acceptance criterion it produced: *"sdd é plugin e não deve estar no
+core do tachyon … o core não deve ser acoplado a nenhum plugin … tachyon funciona sem sdd instalado."*
+
+The core had grown to know one plugin from the inside: it read the plugin's files, parsed its format,
+carried its status vocabulary into three separate schemas, and **refused to close a task** because a
+markdown file said something other than `shipped`. A project that never heard of SDD carried all of it.
+
+### Changed
+
+- **The core no longer executes the plugin's policy** (`t-73b2e1`, step 1). `assertSddStatusUpdateAllowed`
+  refused `status: done` unless a spec file said `shipped`; derived attentions and `RETRIAGE_SDD` /
+  `ACTIONABLE_SDD` removed tasks from the work queue by the same reading. All gone.
+
+  That guard also **failed open**, found by accident: a status outside the enum parsed as `undefined`
+  and the gate opened — so the check meant to prevent premature closure was disarmed by exactly the
+  error it should have caught. It was removed rather than fixed; improving a guard before deleting it
+  is work on dead code.
+
+- **The core no longer speaks the plugin's vocabulary** (step 3). `SddStatus`, `SddDerivedStage`,
+  `TaskDerived.sdd`, the `missing_sdd_spec` / `sdd_needs_retriage` attention codes, the card fields,
+  and the dedicated sections in Board and Task Detail. The seven-status enum had been **written three
+  times** — `types.ts`, `boardProjection`, `taskDetailProjection` — a plugin's vocabulary copied into
+  three product files.
+
+- **The core no longer reads the plugin's files** (step 2). `resolveSddSpec`, `readSddStatus`, the
+  derivation cache, and `managedSddWorkspaceRoots` — which walked the managed-worktree registry to find
+  a spec in *another checkout*. Also `scanSpecs`, which scanned `docs/specs/*/tasks.md` for checkbox
+  lines and turned them into validation candidates.
+
+  **That last one removed a feature that was used**: 2 of the 8 validations ever created in this
+  workspace came from it. It is a convenience, not a mechanism — `create_validation` was always the
+  door, and `scanSpecs` only saved typing — but it is a real loss and is recorded as one. The other two
+  discovery sources (`.tachyon/tasks` and pins) are unchanged, held by a test.
+
+### What did not change
+
+**The link a task keeps to its spec.** 271 tasks carry `artifact_refs: [{type: "sdd", …}]` and are
+byte-identical on disk; `type` was always an opaque, extensible string. The reference still renders —
+through the **generic** artifact surface that already shows `path`, `issue` and `task`, rather than a
+section only one plugin had. What died is the core *interpreting* the value.
+
+The rule is now two tests rather than a sentence:
+
+```
+closes and selects a task with an SDD ref when the plugin and docs/specs are absent
+discovers the same task and pin candidates whether docs/specs exists or not
+```
+
+**No guard was added against future coupling**, by explicit decision: *"isso é disciplina de projeto,
+se não vamos ter mais guard que funcionalidades no sistema."* The guards this codebase does carry were
+each earned by a measured recurrence; this coupling happened once.
+
+Of 15 installed plugins, SDD was the only one the core knew behaviourally. `agent-browser` appears in
+an external-tool provenance union and **stays** — it reads no file, knows no format, executes no policy.
+
 ## 0.76.0 — saving a form stops deleting what the form cannot show
 
 Three defects in this release share one shape: the product answered a question it had never
