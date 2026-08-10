@@ -111,6 +111,11 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     maxWorkers: VITEST_MAX_WORKERS,
+    // t-8f48da — the suite may not leave a tmux server running in a private socket directory. It has
+    // to sit here rather than in a test file: a leak is only visible once the LAST worker is done, and
+    // nothing orders a test file after the rest. `setup` also stamps the run id that lets the check
+    // attribute a server to this run on a host running several agents' suites at once.
+    globalSetup: ["test/globalSetup/tmuxLeakGuard.ts"],
     // t-eaf963 — the real Codex prompt projection is scheduler-sensitive work, not ordinary unit
     // work. Projects in the same group run together; group 1 starts only after group 0 has drained.
     // Keep the 10s process bound and the installed CLI coverage, but never make either compete with
