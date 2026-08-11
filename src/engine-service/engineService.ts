@@ -486,6 +486,15 @@ async function executeWorkspaceQuery(
   providerObservations: ProviderObservationService,
   sidebarResources: ResourceSampler,
 ): Promise<WorkspaceQueryResultV1> {
+  if (query.method === "agent.working") {
+    const running = await workspace.manager.runningAgents();
+    return {
+      schemaVersion: 1,
+      method: "agent.working",
+      status: "ok",
+      agents: running.filter((agent) => workspace.attentionOf(agent)?.state === "working").sort(),
+    };
+  }
   if (query.method === "activity.context") {
     return workspaceActivityContextSuccessV1({
       schemaVersion: 1,

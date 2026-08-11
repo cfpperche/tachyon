@@ -2342,6 +2342,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           if (!isJsonValue(value)) throw new Error(`editor command '${request.command}' returned a non-JSON result`);
           return value;
         },
+        // Development/Test includes F5, CI and headless harnesses. With no guaranteed human to answer,
+        // activation must keep moving; only an installed production shell owns this modal decision.
+        confirmEngineUpgrade: context.extensionMode === vscode.ExtensionMode.Production
+          ? async (snapshot) => {
+            const upgradeLabel = vscode.l10n.t("Upgrade anyway");
+            const message = snapshot.state === "unknown"
+              ? vscode.l10n.t("Tachyon could not verify whether agents are working. Upgrading the engine may interrupt an in-flight turn.")
+              : vscode.l10n.t("Upgrading the Tachyon engine will interrupt in-flight work for: {0}", snapshot.agents.join(", "));
+            const answer = await showNotification(message, "warn", [upgradeLabel], { modal: true });
+            return answer === upgradeLabel;
+          }
+          : undefined,
       });
     },
   });
