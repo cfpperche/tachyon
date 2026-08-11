@@ -45,6 +45,23 @@ export const authorizableCapabilitiesMessage = (
   agent: string,
   capabilities: import("../../config/agentCapabilityCandidates.js").AuthorizableCapabilities,
 ) => envelope({ type: "authorizableCapabilities" as const, agent, capabilities });
+export const refreshAgentProfileMessage = (agent: string) =>
+  envelope({ type: "refreshAgentProfile" as const, agent });
+export const setAgentProfileEnabledMessage = (agent: string, expectedRevision: string, enabled: boolean) =>
+  envelope({ type: "setAgentProfileEnabled" as const, agent, expectedRevision, enabled });
+export const renameAgentProfileMessage = (agent: string, expectedRevision: string, newName: string) =>
+  envelope({ type: "renameAgentProfile" as const, agent, expectedRevision, newName });
+/** t-e722ce — webview → host: compute the read-only forget plan for this profile revision. */
+export const planAgentProfileForgetMessage = (agent: string, expectedRevision: string) =>
+  envelope({ type: "planAgentProfileForget" as const, agent, expectedRevision });
+export const forgetAgentProfileMessage = (agent: string, expectedRevision: string, confirmation: string) =>
+  envelope({ type: "forgetAgentProfile" as const, agent, expectedRevision, confirmation });
+/** t-4c113c — webview → host: replace the owner's whole declared-subagents list under its CAS revision. */
+export const setAgentProfileSubagentsMessage = (agent: string, expectedRevision: string, subagents: string[]) =>
+  envelope({ type: "setAgentProfileSubagents" as const, agent, expectedRevision, subagents });
+/** t-3bde32 — webview → host: grant or revoke this agent's Saved Agent PROPOSAL authority. */
+export const setAgentProfileProposeGrantMessage = (agent: string, expectedRevision: string, granted: boolean) =>
+  envelope({ type: "setAgentProfileProposeGrant" as const, agent, expectedRevision, granted });
 export const exportSavedAgentProfileBundleMessage = (agent: string, expectedRevision: string) => envelope({ type: "exportSavedAgentProfileBundle" as const, agent, expectedRevision });
 export const cloneSavedAgentProfileBundleMessage = (agent: string, expectedRevision: string, destinationAgentName: string) => envelope({ type: "cloneSavedAgentProfileBundle" as const, agent, expectedRevision, destinationAgentName });
 export const importSavedAgentProfileBundleMessage = (agent: string, destinationAgentName: string, contentBase64: string) => envelope({ type: "importSavedAgentProfileBundle" as const, agent, destinationAgentName, contentBase64 });
