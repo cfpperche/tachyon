@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { KNOWN_SETTINGS_KEYS, KNOWN_TOP_LEVEL_KEYS } from "../../src/config/loadConfig.js";
+import { KNOWN_AGENT_ENTRY_KEYS, KNOWN_SETTINGS_KEYS, KNOWN_TOP_LEVEL_KEYS } from "../../src/config/loadConfig.js";
 
 interface SchemaNode {
   type?: string;
@@ -117,6 +117,13 @@ describe("tachyon.schema.json — the parser and the editor publish the same key
   it("publishes exactly the top-level and settings keys parseConfig knows", () => {
     expect(Object.keys(schema.properties ?? {}).sort()).toEqual([...KNOWN_TOP_LEVEL_KEYS].sort());
     expect(Object.keys(schema.properties?.settings?.properties ?? {}).sort()).toEqual([...KNOWN_SETTINGS_KEYS].sort());
+  });
+
+  it("publishes exactly the managed-entry keys parseConfig knows", () => {
+    const entry = schema.properties?.agents?.additionalProperties;
+    expect(typeof entry).toBe("object");
+    expect(Object.keys(typeof entry === "object" ? entry.properties ?? {} : {}).sort())
+      .toEqual([...KNOWN_AGENT_ENTRY_KEYS].sort());
   });
 });
 

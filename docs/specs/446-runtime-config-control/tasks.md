@@ -22,7 +22,7 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [x] A running affected agent remains live but is visibly pending until its next successful launch.
 - [ ] Existing canonical private-home and auth boundaries remain unchanged.
 
-**Verify:** `npx vitest run test/unit/runtimeConfig*.test.ts test/unit/cockpit.test.ts test/unit/cockpitRoute.test.ts`
+**Verify:** `npx vitest run test/unit/runtimeConfig*.test.ts test/unit/sectionsModel.test.ts test/unit/sectionsRoute.test.ts`
 <!-- A mechanical command an agent can run to validate this spec's implementation
      without a human (tests / build / lint). Kept green = the spec stays delivered.
      To make `/sdd verify` re-run it, also declare it on a **Verify:** line, e.g.:

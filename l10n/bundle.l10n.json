@@ -255,5 +255,7 @@
   "unprojectable — the profile and the runtime configuration disagree. {0}": "unprojectable — the profile and the runtime configuration disagree. {0}",
   "unlisted-profile — a profile is on disk and the roster does not list it. {0}": "unlisted-profile — a profile is on disk and the roster does not list it. {0}",
   "stranded-authority — a host authority is left and the agent is gone. {0}": "stranded-authority — a host authority is left and the agent is gone. {0}",
-  "{0} — full detail in Output → {1}": "{0} — full detail in Output → {1}"
+  "{0} — full detail in Output → {1}": "{0} — full detail in Output → {1}",
+  "Stop was sent to '{0}', but the process is still running. Use Kill to force it.": "Stop was sent to '{0}', but the process is still running. Use Kill to force it.",
+  "Stop was sent to '{0}', but Tachyon could not confirm whether the process exited.": "Stop was sent to '{0}', but Tachyon could not confirm whether the process exited."
 }

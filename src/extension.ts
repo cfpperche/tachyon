@@ -116,6 +116,7 @@ import { SessionViewportRegistry } from "./presentation/sessionViewport.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
 import { collectLegacyEngineStateMigration } from "./engine-service/stateMigration.js";
 import { ENGINE_UI_CAPABILITY } from "./engine-service/uiRequestBroker.js";
+import type { WorkspaceCommandResultV1 } from "./engine-service/protocol.js";
 import { assertMarkedDevHostWorkspace, engineShellReleasePolicy } from "./engine-service/devHostBoundary.js";
 import { WorkspaceClientRegistry } from "./shell/WorkspaceClientRegistry.js";
 import { WorkspaceShellHandle } from "./shell/WorkspaceShellHandle.js";
@@ -368,7 +369,7 @@ async function invokeAgentLifecycle(
   method: "agent.start" | "agent.stop" | "agent.kill" | "agent.restart" | "agent.resume",
   agent: string,
   restartOpts?: { stop?: "graceful" | "force"; session?: "resume" | "new" },
-): Promise<void> {
+): Promise<WorkspaceCommandResultV1> {
   const input = method === "agent.restart"
     ? {
       agent,
@@ -383,6 +384,7 @@ async function invokeAgentLifecycle(
   });
   if (result.status === "error") throw new Error(result.message);
   if (result.method !== method) throw new Error("persistent engine returned a mismatched agent result");
+  return result;
 }
 
 /**
@@ -3305,7 +3307,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const ws = wsOf(item);
       if (!ws) return;
       try {
-        await invokeAgentLifecycle(ws, "agent.stop", item.agentName);
+        const result = await invokeAgentLifecycle(ws, "agent.stop", item.agentName);
+        if (result.method !== "agent.stop" || result.status !== "ok") return;
+        if (result.outcome === "alive") {
+          notify(vscode.l10n.t("Stop was sent to '{0}', but the process is still running. Use Kill to force it.", item.agentName), "warn");
+        } else if (result.outcome === "unknown") {
+          notify(vscode.l10n.t("Stop was sent to '{0}', but Tachyon could not confirm whether the process exited.", item.agentName), "warn");
+        }
       } catch (err) {
         console.log(`[tachyon] stopAgentItem failed agent=${item.agentName}: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
         notify(`${err instanceof Error ? err.message : String(err)}`, "error");

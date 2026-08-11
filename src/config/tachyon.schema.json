@@ -15,16 +15,8 @@
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "oneOf": [
-          { "required": ["profile"] },
-          { "required": ["cmd"] }
-        ],
+        "required": ["cmd"],
         "properties": {
-          "profile": {
-            "description": "Compact pointer to this agent's conventional canonical profile. The loader also requires the path's agent segment to exactly match the map key.",
-            "type": "string",
-            "pattern": "^\\.tachyon/agents/[a-zA-Z][a-zA-Z0-9_-]*/agent\\.yml$"
-          },
           "cmd": {
             "description": "Shell command that runs the agent.",
             "type": "string",
@@ -219,6 +211,20 @@
                 ]
               }
             }
+          },
+          "isolate": {
+            "description": "Deprecated read compatibility for legacy private transcript homes. Existing isolate: transcript entries still load with a migration warning; new Claude configs should use harness: {}, while Codex is private-home by default.",
+            "deprecated": true,
+            "enum": ["transcript"]
+          },
+          "subagents": {
+            "description": "Agents this agent declares as direct children for durable roster ownership. References must name agent entries; terminals, cycles, duplicate owners, nesting, and dangling names are rejected or dropped with warnings by the loader.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
+            },
+            "minItems": 1
           }
         }
       }
@@ -230,10 +236,7 @@
         "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$"
       },
       "additionalProperties": {
-        "allOf": [
-          { "$ref": "#/properties/agents/additionalProperties" },
-          { "not": { "required": ["profile"] } }
-        ]
+        "$ref": "#/properties/agents/additionalProperties"
       }
     },
     "layouts": {

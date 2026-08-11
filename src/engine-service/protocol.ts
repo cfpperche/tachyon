@@ -369,8 +369,14 @@ export type WorkspaceCommandV1 = {
 export type WorkspaceCommandResultV1 =
   | {
       schemaVersion: 1;
-      method: WorkspaceSimpleCommandMethodV1;
+      method: Exclude<WorkspaceSimpleCommandMethodV1, "agent.stop">;
       status: "ok";
+    }
+  | {
+      schemaVersion: 1;
+      method: "agent.stop";
+      status: "ok";
+      outcome: "stopped" | "alive" | "unknown";
     }
   | {
       schemaVersion: 1;
@@ -847,6 +853,10 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
       && isExtensionCommandActionV1(value.action)
       && isJsonValue(value.value);
   }
+  if (value.status === "ok" && value.method === "agent.stop") {
+    return hasOnlyKeys(value, ["schemaVersion", "method", "status", "outcome"])
+      && (value.outcome === "stopped" || value.outcome === "alive" || value.outcome === "unknown");
+  }
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status"])
       && value.method !== "studio.submit"
@@ -855,7 +865,8 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
       && value.method !== "handoff.ensure"
       && value.method !== "handoff.distill"
       && value.method !== "sidebar.mutate"
-      && value.method !== "extension.invoke";
+      && value.method !== "extension.invoke"
+      && value.method !== "agent.stop";
   }
   return value.status === "error"
     && hasOnlyKeys(value, ["schemaVersion", "method", "status", "code", "message"])
@@ -1168,7 +1179,8 @@ export function workspaceCommandSuccessV1(
 ): WorkspaceCommandResultV1 {
   if (command.method === "task.studio.apply" || command.method === "pin.studio.apply"
     || command.method === "handoff.ensure" || command.method === "handoff.distill"
-    || command.method === "sidebar.mutate" || command.method === "extension.invoke") {
+    || command.method === "sidebar.mutate" || command.method === "extension.invoke"
+    || command.method === "agent.stop") {
     throw new Error("command requires an exact outcome");
   }
   if (command.method !== "studio.submit") {
@@ -1182,6 +1194,14 @@ export function workspaceCommandSuccessV1(
     errors: normalized.slice(0, 50).map((error) => error.slice(0, 1_000)),
     truncated: normalized.length > 50 || normalized.some((error) => error.length > 1_000),
   };
+}
+
+export function workspaceAgentStopSuccessV1(
+  command: WorkspaceCommandV1,
+  outcome: "stopped" | "alive" | "unknown",
+): WorkspaceCommandResultV1 {
+  if (command.method !== "agent.stop") throw new Error("command is not agent.stop");
+  return { schemaVersion: 1, method: "agent.stop", status: "ok", outcome };
 }
 
 export function workspaceExtensionCommandSuccessV1(
