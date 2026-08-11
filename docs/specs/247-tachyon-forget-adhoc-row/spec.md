@@ -1,6 +1,13 @@
 # Spec 247 — `removeEphemeralFootprint`: one helper for an ephemeral agent's durable footprint
 
-**Status:** IMPLEMENTED + dogfooded 2026-06-22 (branch `spec-247-remove-ephemeral-footprint`, commit `2c30b8c`; 975 unit tests + tsc main/webview green; live ad-hoc-kill dogfood vs rebuilt 0.34.1 → zero orphan). Pending maintainer call on merge/PR + release version. codex dueto 2026-06-22 (SHIP-WITH-CHANGES → folded: renamed helper, idempotency + double-call proven, `ledger.remove` audit table, declared-delete 4th-site finding surfaced). **D-SCOPE = A ratified by maintainer 2026-06-22** (declared-Delete orphan fixed here as the one flagged behavior change). · **Date:** 2026-06-22 · **Follows:** spec 239 (agent activity log), 211 (ad-hoc ledger lifecycle), pin p-4dadd3 (orphan-log cleanup) · **Surface:** `src/agents/AgentManager.ts` (`kill`, `dismissAdhoc`, new helper), `src/workspace/Workspace.ts` (`dismissNode`), optionally `src/extension.ts` (declared-Delete, see D-SCOPE) · **Review:** codex design debate DONE · **UI impact:** none (internal lifecycle; the only optional behavior change is fixing a latent orphan, D-SCOPE)
+**Status:** shipped
+**Closure:** The helper is live in the current tree: `AgentManager.ts` calls `removeEphemeralFootprint` from the ephemeral kill paths, `Workspace.ts` routes undeclared removal through it, and `stoppedTemporaryResidue.ts` names that same lifecycle door; the obsolete branch commit was rebased before landing.
+**Status detail:** IMPLEMENTED + dogfooded 2026-06-22 (branch `spec-247-remove-ephemeral-footprint`, commit `2c30b8c`; 975 unit tests + tsc main/webview green; live ad-hoc-kill dogfood vs rebuilt 0.34.1 → zero orphan). Pending maintainer call on merge/PR + release version. codex dueto 2026-06-22 (SHIP-WITH-CHANGES → folded: renamed helper, idempotency + double-call proven, `ledger.remove` audit table, declared-delete 4th-site finding surfaced). **D-SCOPE = A ratified by maintainer 2026-06-22** (declared-Delete orphan fixed here as the one flagged behavior change).
+**Date:** 2026-06-22
+**Follows:** spec 239 (agent activity log), 211 (ad-hoc ledger lifecycle), pin p-4dadd3 (orphan-log cleanup)
+**Surface:** `src/agents/AgentManager.ts` (`kill`, `dismissAdhoc`, new helper), `src/workspace/Workspace.ts` (`dismissNode`), optionally `src/extension.ts` (declared-Delete, see D-SCOPE)
+**Review:** codex design debate DONE
+**UI impact:** none (internal lifecycle; the only optional behavior change is fixing a latent orphan, D-SCOPE)
 
 > **Origin:** identified as a *real smell* in the spec-239/p-4dadd3 follow-up handoff. The 0.34.1 bug (`935cb36`) — `kill` removed an ad-hoc agent's ledger row but left its durable activity log orphaned — was a **drift bug**: the "drop the row ⇒ drop the log" invariant was open-coded at three sites and one missed the second half. This refactor closes the *class*, not just the instance.
 
