@@ -582,7 +582,7 @@ export const defaultStrings: Strings = {
   copyPath: "Copy path",
   noneListed: "Nothing listed for this workspace yet.",
   landTitle: "Land this delivery",
-  landIntro: "Tachyon never moves the trunk. When every precondition below is proved, this is the exact command — you run it.",
+  landIntro: "When every precondition below is proved, Tachyon fast-forwards the trunk onto this delivery, in the primary checkout, when you press Land. It never lands on its own.",
   landCommandLabel: "Land command",
   landCopyCommand: "Copy command",
   landBlocked: "Not ready to land — {0} precondition(s) not proved. No command is offered: one that would fail wastes your time, and one that would succeed here would land something nobody verified.",

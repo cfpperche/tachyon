@@ -545,7 +545,20 @@ export async function executeExtensionCommand(
       // preconditions through the same probe the panel drew from, refuses with the failing check's own
       // words, and only then fast-forwards the trunk in the primary checkout.
       const result = await workspace.managedWorktrees.land(command.id);
-      return json(result as unknown as JsonValue);
+      // The extension/webview contract keeps the successful observation under `landed`, while the
+      // worktree service uses the discriminated LandResult directly. Adapt at this boundary so a
+      // real success cannot be misread as a refusal merely because its fields were left top-level.
+      return json((result.ok
+        ? {
+          ok: true,
+          landed: {
+            trunkRef: result.trunkRef,
+            primaryPath: result.primaryPath,
+            before: result.before,
+            after: result.after,
+          },
+        }
+        : result) as unknown as JsonValue);
     }
     case "worktree.release-lock": {
       // t-d29398 — and this one deliberately does NOT hand agent entries back to Agent Studio the way

@@ -1,6 +1,7 @@
 /**
- * t-7cb971 — SUGGEST AND COPY: the exact land command for a delivery that is ready, plus the state of
- * every precondition behind it. This module never lands anything. It composes a string a human runs.
+ * t-7cb971 — the exact land command for a delivery that is ready, plus the state of every
+ * precondition behind it. This module is read-only: it measures and composes; `landAct.ts` performs
+ * the command only after the Interface asks and the engine reuses this probe.
  *
  * WHY IT EXISTS. Tachyon models the AUTHORITY to integrate but not the ACT: an agent isolated in a
  * worktree delivers to the edge of its own branch and stops, and a human then types a git command by
@@ -8,12 +9,9 @@
  * this host: eight hand-run merges, three of which broke the trunk. Every one of those three failed on
  * a condition already computable here.
  *
- * WHAT IT DELIBERATELY DOES NOT DO. It never runs git in a mutating mode, and the string it produces
- * is only ever routed to the clipboard. `landCommandNeverExecuted.test.ts` holds that line for the
- * whole of `src/`: no git invocation anywhere in the product may pass `merge` or `--ff-only`.
- * The record-only posture is unchanged — this slice is the half of t-7cb971 that is correct under
- * BOTH answers to its open product question, because if the product may never mutate the trunk, the
- * task itself says the right move is "give the human the exact command, ready".
+ * WHAT IT DELIBERATELY DOES NOT DO. It never runs git in a mutating mode. The same suggestion feeds
+ * both the visible block and the click-time decision; `landDoorHasNoAgentDoor.test.ts` guards the
+ * authority boundary and records `landAct.ts` as the sole mutating address.
  *
  * THE COMMAND NAMES A COMMIT, NEVER A BRANCH. Every check below is evidence about one tree. A command
  * that said `merge --ff-only <branch>` would be evidence about the tree that existed when the panel

@@ -18,6 +18,7 @@ import { makeTempDir } from "../helpers/tempDir.js";
 import { ManagedWorktreeService } from "../../src/worktree/ManagedWorktreeService.js";
 import { WorktreeManager } from "../../src/worktree/WorktreeManager.js";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
 
 function git(args: string[], cwd: string): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
@@ -114,6 +115,20 @@ describe("SDD 498 — the land door", () => {
     // The real repository agrees, and it is a FAST-FORWARD: no merge commit was created.
     expect(git(["rev-parse", "main"], repo).trim()).toBe(head);
     expect(git(["rev-list", "--count", "--merges", `${trunkBefore}..main`], repo).trim()).toBe("0");
+  });
+
+  it("adapts a successful engine result to the nested shape the Interface renders", async () => {
+    const svc = service();
+    const created = await delivery(svc, "transport");
+    attest(created.path);
+    const response = await executeExtensionCommand(
+      { workspace: { managedWorktrees: svc }, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0],
+      { action: "worktree.land", id: created.id },
+    ) as { ok?: unknown; landed?: Record<string, unknown> };
+
+    expect(response.ok).toBe(true);
+    expect(response.landed).toMatchObject({ trunkRef: "main", primaryPath: repo });
+    expect(response.landed?.after).toBe(git(["rev-parse", "main"], repo).trim());
   });
 
   it("the row heals itself: once landed, the delivery is contained in the trunk and the block is gone", async () => {

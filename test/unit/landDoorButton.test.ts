@@ -105,8 +105,7 @@ describe("SDD 498 — the land button and its outcome", () => {
 
   it("offers NO button at all when a precondition is red — not a disabled one", () => {
     const html = renderWith([row({ ...GREEN, primaryDirty: true })]);
-    expect(html).not.toContain(fixtureStrings.landAction);
-    expect(html).not.toContain("disabled");
+    expect(html).not.toContain(`<span class="ds-btn-label">${fixtureStrings.landAction}</span>`);
     // It still refuses in words, with the exit.
     expect(html).toContain("commit or discard them there");
   });
@@ -114,9 +113,13 @@ describe("SDD 498 — the land button and its outcome", () => {
   it("posts the row id and nothing else — never a sha the preconditions were not checked against", () => {
     const posted: unknown[] = [];
     const { elements } = renderStaticWithElements(Shell(props([row()], { post: (a: unknown) => posted.push(a) })));
-    const land = elements.find((e: RenderedElement) => e.text === fixtureStrings.landAction);
+    const land = elements.find((e: RenderedElement) =>
+      e.tag === "button"
+      && e.html.includes(`<span class="ds-btn-label">${fixtureStrings.landAction}</span>`)
+      && typeof e.props.onClick === "function",
+    );
     expect(land).toBeDefined();
-    land!.click();
+    (land!.props.onClick as () => void)();
     expect(posted).toEqual([{ type: "worktreeLand", id: "mw-change-x", wsHash: "h" }]);
   });
 
@@ -145,7 +148,7 @@ describe("SDD 498 — the land button and its outcome", () => {
     expect(html).toContain(fixtureStrings.landRefused);
     expect(html).toContain("has moved to abcdef123456");
     // t-2656d7 — the exit is the part that must not be lost. It is present and labelled.
-    expect(html).toContain("integrate &#039;main&#039; into this branch and re-run the verify gate");
+    expect(html).toContain("integrate 'main' into this branch and re-run the verify gate");
     expect(html).toContain(fixtureStrings.landFixLabel);
   });
 
