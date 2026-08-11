@@ -140,12 +140,26 @@ export function admitOrFallback(
     const { workerMb, invocationMb } = resolveCostsMb(input);
     const workers = 1;
     const costMb = invocationMb + workers * workerMb;
+    const pid = input.pid ?? process.pid;
     warn(
       `[vitest] host budget ledger unavailable (${(error as Error).message}). `
       + `This run cannot be recorded, so concurrent runs are NOT accounted for and cannot see it. `
       + `Degrading to ${workers} worker (~${costMb}MB) rather than per-process sizing: an invocation `
       + `nobody can see must not also be a wide one. Ledger: ${input.ledgerPath ?? vitestBudgetPath()}`,
     );
+    // t-bd9c61 — the live ledger cannot see this run, but the post-mortem trail still must: an
+    // unaccounted invocation is exactly the kind of concurrent spend a crash investigator needs to
+    // reconstruct, and `siblings: []` plus `unaccounted: true` is the honest form of that fact.
+    appendVitestBudgetTrail(input.trailPath ?? vitestBudgetTrailPath(), {
+      event: "admit",
+      at: new Date((input.now ?? Date.now)()).toISOString(),
+      label: input.label,
+      pid,
+      workers,
+      costMb,
+      siblings: [],
+      unaccounted: true,
+    });
     return {
       ok: true,
       workers,
@@ -159,6 +173,75 @@ export function admitOrFallback(
 
 export function vitestBudgetPath(): string {
   return process.env.TACHYON_VITEST_BUDGET_PATH || path.join(tmpdir(), "tachyon-vitest-budget.json");
+}
+
+/**
+ * t-bd9c61 — durable post-mortem trail of vitest admissions and refusals.
+ *
+ * The live ledger in `tmpdir()` is reaped by PID liveness and wiped with `/tmp` on reboot, so it
+ * cannot answer "how many invocations were running, of whom, and how large" after a memory crash.
+ * This trail is the minimum that can: one append-only JSON line per decision, written next to the
+ * workspace (`.tachyon/`), never consulted by the sizer.
+ *
+ * WHAT THIS IS NOT (stated so it cannot be sold as more): it does not prevent the crash, does not
+ * reduce memory use, does not change the ledger's arithmetic, and does not replace host memory
+ * headroom (the owner's `.wslconfig` is outside the product). It only makes the question answerable
+ * after the fact.
+ *
+ * Volume measured 2026-08-11 before choosing a bound: peak day 63 verify greens; even a high guess
+ * of ~300 events/day at ~200 B is ~65 KB/day (~23 MB/year). Small enough that no rotation is
+ * justified. If volume later earns a bound, reuse the existing EngineEventJournal pattern (count
+ * cap, compact to 75%) — do not invent a third limiter.
+ */
+export function vitestBudgetTrailPath(cwd = process.cwd()): string {
+  return process.env.TACHYON_VITEST_BUDGET_TRAIL || path.join(cwd, ".tachyon", "vitest-budget-events.jsonl");
+}
+
+/** One concurrent holder as recorded for post-mortem reconstruction. Every field answers who/size. */
+export type VitestBudgetTrailSibling = {
+  label: string;
+  pid: number;
+  workers: number;
+  costMb: number;
+};
+
+/**
+ * One decision. Fields are the closed set that answers "quantas, de quem, quanto" — nothing else.
+ * `unaccounted` appears only when the live ledger could not see siblings (fallback path).
+ */
+export type VitestBudgetTrailEvent = {
+  event: "admit" | "refuse";
+  at: string;
+  label: string;
+  pid: number;
+  /** Present on admit: workers this run took (or would take, on unaccounted fallback). */
+  workers?: number;
+  /** Present on admit: MB this run claimed (or would claim, on unaccounted fallback). */
+  costMb?: number;
+  siblings: VitestBudgetTrailSibling[];
+  unaccounted?: true;
+};
+
+function trailSiblings(live: VitestClaim[]): VitestBudgetTrailSibling[] {
+  return live.map((claim) => ({
+    label: claim.label,
+    pid: claim.pid,
+    workers: claim.workers,
+    costMb: claim.costMb,
+  }));
+}
+
+/**
+ * Best-effort append. A trail write MUST NOT refuse a test run: the live ledger is the guard, and
+ * this file is only evidence. Full disk, missing `.tachyon`, EACCES — all swallowed here.
+ */
+function appendVitestBudgetTrail(file: string, event: VitestBudgetTrailEvent): void {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    fs.appendFileSync(file, `${JSON.stringify(event)}\n`, { encoding: "utf8", mode: 0o600 });
+  } catch {
+    /* deliberately empty — see doc above */
+  }
 }
 
 function defaultIsAlive(pid: number): boolean {
@@ -589,6 +672,12 @@ export function admitVitestRun(input: {
   cpuCount: number;
   label: string;
   ledgerPath?: string;
+  /**
+   * t-bd9c61 — where the durable decision trail is appended. Defaults to
+   * `.tachyon/vitest-budget-events.jsonl` under `process.cwd()` (the checkout that loaded vitest).
+   * Injected by tests; production rarely overrides (`TACHYON_VITEST_BUDGET_TRAIL`).
+   */
+  trailPath?: string;
   isAlive?: (pid: number) => boolean;
   /** Injected by tests. Production reads the sibling's real process tree from /proc. */
   measure?: (pid: number) => number | undefined;
@@ -606,6 +695,7 @@ export function admitVitestRun(input: {
   forcedWorkers?: number;
 }): VitestAdmission {
   const file = input.ledgerPath ?? vitestBudgetPath();
+  const trailFile = input.trailPath ?? vitestBudgetTrailPath();
   const now = input.now ?? Date.now;
   const pid = input.pid ?? process.pid;
 
@@ -641,6 +731,8 @@ export function admitVitestRun(input: {
       ...(input.maxUsefulWorkers !== undefined ? { maxUsefulWorkers: input.maxUsefulWorkers } : {}),
       ...(input.forcedWorkers !== undefined ? { forcedWorkers: input.forcedWorkers } : {}),
     });
+    // Nested inherits an already-paid claim: it is not a new host-wide invocation, so it leaves no
+    // trail line of its own (t-bd9c61 — only decisions that spend or refuse the host budget).
     if (inherited) return inherited;
 
     let workers = share.workers;
@@ -651,6 +743,13 @@ export function admitVitestRun(input: {
       const holders = billed
         .map((entry) => `${entry.claim.label}#${entry.claim.pid}(${entry.claim.workers}w, using ${entry.materializedMb}MB, billed ${entry.chargeMb}MB)`)
         .join(", ");
+      appendVitestBudgetTrail(trailFile, {
+        event: "refuse",
+        at: new Date(now()).toISOString(),
+        label: input.label,
+        pid,
+        siblings: trailSiblings(live),
+      });
       return {
         ok: false,
         code: "HOST_BUDGET_EXHAUSTED",
@@ -666,6 +765,15 @@ export function admitVitestRun(input: {
 
     const costMb = invocationMb + workers * workerMb;
     writeLedger(file, [...live, { pid, workers, costMb, startedAtMs: now(), label: input.label }]);
+    appendVitestBudgetTrail(trailFile, {
+      event: "admit",
+      at: new Date(now()).toISOString(),
+      label: input.label,
+      pid,
+      workers,
+      costMb,
+      siblings: trailSiblings(live),
+    });
 
     let released = false;
     const claim: HeldVitestClaim = {
