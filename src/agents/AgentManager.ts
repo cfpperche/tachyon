@@ -72,8 +72,6 @@ import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } 
 import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { FormationLifecyclePort } from "./formation/lifecycleConsumer.js";
 import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
-import { inspectCapabilitySourceAtRoot } from "../config/agentCapabilitySource.js";
-import { LOCKFILE_REL_PATH, parseLockfile } from "../plugins/lockfile.js";
 
 /** A remembered pid is only a hint about WHICH process to measure. Pids are reusable, so existence
  *  alone cannot prove that the process still occupies this checkout. `/proc/<pid>/cwd` re-establishes
@@ -1091,16 +1089,56 @@ export class AgentManager {
     if (saved) return saved;
     const row = this.temporaryRow(name);
     if (!row) return undefined;
-    return this.withDelegatedToolkit(name, temporaryDefinitionFrom(row.def, row.worktree), row.def.parent ?? row.def.delegator, nextLineage);
+    // t-53e485 — `forkOf` last, and only as a GRANT edge. `temporaryDefinitionFrom` is total for
+    // everything a Temporary can author, but a capability projection is not authored data and has no
+    // field on the row, so a fork re-derived from here used to resolve grantless: measured
+    // 2026-08-11, `claude-fork-1` ran with three skills while its delegated child inherited none of
+    // them. Re-resolving through the source rebuilds the grant from the live profile that issued it.
+    return this.withDelegatedToolkit(name, temporaryDefinitionFrom(row.def, row.worktree), row.def.parent ?? row.def.delegator ?? row.def.forkOf, nextLineage);
   }
 
-  /** Delegation is the explicit grant: copy only the parent's enumerated skill snapshot, never credentials. */
+  /**
+   * Delegation is the explicit grant: copy only the parent's enumerated skill snapshot, never
+   * credentials — and when that grant cannot be established, copy NOTHING.
+   *
+   * Two sources may reach a delegated child, and there is no third: the delegator's grant, and the
+   * child's own authored profile. `skills` below is built from those two and nothing else.
+   *
+   * t-53e485 — the filter that produces `delegated` is a NET, not a repair. It changes nothing
+   * today: `delegableToolkit` returns the parent's grant, so every skill passes. It exists because
+   * the door that leaked was INSIDE that function — the toolkit itself returned a set the parent
+   * never held, so a subset check against the toolkit would have agreed with the leak. This checks
+   * against the parent's own resolved profile instead, which is the authority the invariant is
+   * written in: a delegated skill is one the DELEGATOR holds, at the digest the delegator holds it.
+   * A skill that fails it is dropped by name and reported, never thrown — one ungranted tool costs
+   * the child that tool, not its existence.
+   *
+   * The empty case returns the definition untouched, and that is the closed outcome rather than an
+   * absent one: with no projection, `Workspace.materializeHarness` sends a delegated child down the
+   * private-home path, which writes a skills tree only from an explicit `harness.skills` a Temporary
+   * agent cannot have. The environment is never the fallback.
+   */
   private withDelegatedToolkit(name: string, definition: AgentDef, parent: string | undefined, lineage = new Set<string>()): AgentDef {
     const child = asAgent(definition);
     if (!child || !parent) return definition;
     const parentAgent = asAgent(this.definitionOf(parent, lineage));
-    const inherited = parentAgent ? this.delegableToolkit(parent, parentAgent) : undefined;
-    if (!inherited || inherited.skills.length === 0) return definition;
+    const granted = parentAgent?.profileCapabilities;
+    const inherited = parentAgent ? this.delegableToolkit(parentAgent) : undefined;
+    /** t-b0cfd4 — delegated skills held back, so the child's sources cannot claim them. */
+    const withheldFromDelegator = new Set<string>();
+    const delegated = (inherited?.skills ?? []).filter((skill) => {
+      const held = granted?.skills.find((candidate) => candidate.name === skill.name);
+      if (held && held.source.sha256 === skill.source.sha256) return true;
+      withheldFromDelegator.add(skill.name);
+      this.notifyDelegatedToolkitCondition(
+        `ungranted:${parent}:${name}:${skill.name}:${skill.source.sha256}`,
+        `delegated toolkit withheld '${skill.name}' from '${name}': '${parent}' does not hold it. A delegated `
+        + "skill must be one the delegator's own profile grants, at the digest it grants it — installing "
+        + "something in the workspace does not give it away.",
+      );
+      return false;
+    });
+    if (delegated.length === 0) return definition;
     const runtime = adapterFor(child.cmd)?.runtime;
     if (runtime !== "claude" && runtime !== "codex" && runtime !== "grok") {
       throw new Error(`runtime '${runtime ?? child.cmd}' has no measured delegated skill projection`);
@@ -1109,12 +1147,10 @@ export class AgentManager {
     if (own && own.adapter !== runtime) {
       throw new Error(`runtime '${runtime}' cannot consume profile capabilities for '${own.adapter}'`);
     }
-    const skills = structuredClone(inherited.skills);
+    const skills = structuredClone(delegated);
     const skillOrigins: NonNullable<ResolvedAgentCapabilityProjection["skillOrigins"]> = Object.fromEntries(
       skills.map((skill) => [skill.name, [{ kind: "delegator" as const, agent: parent }]]),
     );
-    /** t-b0cfd4 — delegated skills held back below, so the child's sources cannot claim them. */
-    const withheldFromDelegator = new Set<string>();
     for (const selected of own?.skills ?? []) {
       const inheritedIndex = skills.findIndex((skill) => skill.name === selected.name);
       if (inheritedIndex >= 0 && skills[inheritedIndex]!.source.sha256 !== selected.source.sha256) {
@@ -1148,8 +1184,8 @@ export class AgentManager {
         // A withheld delegated copy must leave the SOURCES too. Leaving it would have the child's
         // manifest name a digest that nothing in its toolkit carries — provenance describing bytes
         // that were deliberately not delivered.
-        ...inherited.sources.filter((source) => source.kind === "skill" && !withheldFromDelegator.has(path.posix.basename(source.path))),
-        ...(own?.sources ?? []).filter((source) => source.kind === "skill" && !inherited.sources.some((candidate) => candidate.referenceId === source.referenceId && candidate.sha256 === source.sha256)),
+        ...(inherited?.sources ?? []).filter((source) => source.kind === "skill" && !withheldFromDelegator.has(path.posix.basename(source.path))),
+        ...(own?.sources ?? []).filter((source) => source.kind === "skill" && !(inherited?.sources ?? []).some((candidate) => candidate.referenceId === source.referenceId && candidate.sha256 === source.sha256)),
       ]),
       skills,
       skillOrigins,
@@ -1166,113 +1202,38 @@ export class AgentManager {
   }
 
   /**
-   * The delegator's toolkit has two explicit grant doors: profile selection and installed plugins.
-   * The plugin lockfile is the authority boundary: never scan a runtime home for ambient skills, and
-   * only capture a skill-dir target that the installer recorded for this parent's measured runtime.
-   * Capturing the recorded target (rather than asking whether the child runtime directory exists)
-   * also keeps delegation independent from plugin runtime detection/materialization ordering.
+   * The delegator's toolkit is ITS OWN RESOLVED GRANT — the enumerated skill snapshot the human
+   * selected in its profile — and nothing else. There is exactly one grant door, and this is it.
+   *
+   * t-53e485 — there used to be a second door here: every `skill-dir` target of every plugin in
+   * `.tachyon/plugins.lock.json` matching the parent's runtime was unioned onto the declared
+   * snapshot, on the reasoning that an installed plugin is an explicit grant too. Measured
+   * 2026-08-11, that reasoning was wrong in fact, not only in principle:
+   *
+   *     claude's profile grants ......... 3   agent-browser, sdd, visual-qa
+   *     claude's private home holds ..... 3   the same three
+   *     every delegated child held ...... 11  eleven of eleven agent homes, no exception
+   *
+   * The eleven are the WORKSPACE's installed plugin set, and no parent in the workspace ever held
+   * them: `.claude/skills` and `.agents/skills` are gitignored, so they do not exist in any agent's
+   * worktree, and each parent's private home carries exactly its profile grant (grok: 3, codex: 3,
+   * claude-cowntdown: 5). The lockfile describes what the WORKSPACE installed, never what THIS
+   * agent was given — so this door handed children capability the delegator does not have, `image`
+   * (paid fal.ai generation) and `agent-browser` (drives a real browser) among it. It also invented
+   * a grant outright where the parent declared none: `anchorrace` carried eleven skills delegated
+   * from a parent whose resolved profile granted zero.
+   *
+   * That is the shape `t-62f599` closed at the worktree door and `t-5498a6` forbade in writing —
+   * "any design that goes back to delivering what the profile did not grant is wrong by
+   * construction, even when it is convenient". Convenience is exactly what it was.
+   *
+   * Closing it also deletes the conflicts it created rather than solving them: a plugin whose bytes
+   * moved past the parent's pin, and a grant too large to capture, are no longer questions
+   * delegation has to answer, because the plugin is no longer a delegation source. What the parent
+   * holds, it holds at its pinned digest already.
    */
-  private delegableToolkit(agentName: string, agent: AgentEntry): ResolvedAgentCapabilityProjection | undefined {
-    const declared = agent.profileCapabilities;
-    const runtime = adapterFor(agent.cmd)?.runtime;
-    if (!runtime) return declared;
-    if (runtime !== "claude" && runtime !== "codex" && runtime !== "grok" && runtime !== "pi") return declared;
-    let raw: string;
-    try {
-      raw = fs.readFileSync(path.join(this.opts.workspaceRoot, LOCKFILE_REL_PATH), "utf8");
-    } catch {
-      return declared;
-    }
-    const parsed = parseLockfile(raw);
-    if (!parsed.lockfile) return declared;
-
-    const skills = structuredClone(declared?.skills ?? []);
-    const sources = structuredClone((declared?.sources ?? []).filter((source) => source.kind === "skill"));
-    // t-b0cfd4 — what the parent's own config already withheld, by name. The config layer is where a
-    // stale pin is visible at all (it holds the profile and the expected digest); by the time the
-    // lockfile is read here the capture succeeds and looks perfectly healthy. Without this the two
-    // layers would contradict each other in the worst direction: the parent runs without the skill
-    // because the human has not re-approved it, and the child gets it anyway.
-    const withheldByProfile = new Set((agent.profileWithheldCapabilities ?? []).map((entry) => entry.name));
-    for (const plugin of Object.values(parsed.lockfile.plugins).sort((left, right) => left.name.localeCompare(right.name))) {
-      for (const target of plugin.targets
-        .filter((candidate) => candidate.kind === "skill-dir" && candidate.runtime === runtime)
-        .sort((left, right) => left.file.localeCompare(right.file))) {
-        const skillName = path.posix.basename(target.file);
-        if (withheldByProfile.has(skillName)) {
-          const withheld = (agent.profileWithheldCapabilities ?? []).find((entry) => entry.name === skillName);
-          this.notifyDelegatedToolkitCondition(
-            `profile-withheld:${agentName}:${skillName}:${withheld?.expectedSha256 ?? ""}:${withheld?.consumedSha256 ?? ""}`,
-            `delegated toolkit withheld '${skillName}': '${agentName}' does not hold it either — its content changed `
-            + "since it was authorized. Use Reauthorize in Agent Studio → Runtime tooling to accept the new content.",
-          );
-          continue;
-        }
-        // t-b505b3 follow-up — one uncapturable grant must not cost the caller the whole spawn.
-        // `inspectCapabilitySourceAtRoot` throws per SOURCE (too-large, unsafe-path, io, …), and
-        // before the delegated toolkit existed nothing here was captured, so those throws had no
-        // reachable caller. Now they do: `product-foundation` is a legitimate 8.1 MiB plugin skill
-        // against a 1 MiB capture cap, and letting it propagate refused EVERY delegation in the
-        // workspace, for every runtime. Withhold the one grant BY NAME — the same shape
-        // `planProjectedPluginHooks` uses — instead of failing the delegation closed: the child
-        // losing one tool it may not need is recoverable, being unable to exist is not.
-        let captured: ReturnType<typeof inspectCapabilitySourceAtRoot>;
-        try {
-          captured = inspectCapabilitySourceAtRoot(this.opts.workspaceRoot, target.file);
-        } catch (error) {
-          const detail = error instanceof Error ? error.message : String(error);
-          this.notifyDelegatedToolkitCondition(
-            `capture-failed:${agentName}:${plugin.name}:${skillName}:${detail}`,
-            `delegated toolkit withheld skill '${skillName}' from plugin '${plugin.name}': `
-            + `${detail} — the child spawns without it`,
-          );
-          continue;
-        }
-        const existing = skills.find((skill) => skill.name === skillName);
-        if (existing && existing.source.sha256 !== captured.sha256) {
-          // t-b0cfd4 — WITHHOLD, whatever the provenance. 4601017b had this branch refresh the
-          // parent's snapshot when the fresh bytes came from this same plugin, on the reasoning that
-          // one skill at two points in time is not a conflict. That reasoning is right and the
-          // conclusion was wrong: refreshing hands the CHILD bytes no human approved, which is the
-          // one thing the parent's pin exists to prevent — and it made the two layers disagree, the
-          // config withholding the changed skill while delegation quietly delivered it.
-          //
-          // The parent's own copy still crosses: those bytes ARE approved. Only the plugin's newer
-          // ones are held back, by name, and the spawn continues — a child missing one tool is
-          // recoverable, and re-pinning stays a human gesture in Agent Studio.
-          this.notifyDelegatedToolkitCondition(
-            `plugin-conflict:${agentName}:${plugin.name}:${skillName}:${existing.source.sha256}:${captured.sha256}`,
-            `delegated toolkit withheld plugin '${plugin.name}'s '${skillName}': its content differs from the copy `
-            + `'${agentName}' authorized, and the child receives only approved bytes. `
-            + "Use Reauthorize in Agent Studio → Runtime tooling to accept the new content.",
-          );
-          continue;
-        }
-        if (!existing) skills.push({ name: skillName, source: captured });
-        const referenceId = `plugin:${plugin.name}:${skillName}`;
-        if (!sources.some((source) => source.referenceId === referenceId && source.sha256 === captured.sha256)) {
-          sources.push({
-            referenceId,
-            kind: "skill",
-            scope: "project",
-            owner: `plugin:${plugin.name}`,
-            path: target.file,
-            sha256: captured.sha256,
-          });
-        }
-      }
-    }
-    if (skills.length === 0) return declared;
-    return {
-      schemaVersion: 1,
-      adapter: declared?.adapter ?? runtime,
-      sha256: declared?.sha256 ?? "",
-      sources,
-      skills,
-      mcp: structuredClone(declared?.mcp ?? {}),
-      hooks: structuredClone(declared?.hooks ?? {}),
-      pi: structuredClone(declared?.pi ?? { extensions: [], prompts: [], themes: [], packages: [] }),
-    };
+  private delegableToolkit(agent: AgentEntry): ResolvedAgentCapabilityProjection | undefined {
+    return agent.profileCapabilities;
   }
 
   /** SDD 478 — the Agent arm of a declared entry, or undefined for a terminal. Every agent-only
@@ -5232,6 +5193,9 @@ export class AgentManager {
         ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
         ...(src.env ? { env: src.env } : {}),
         fork: true,
+        // t-53e485 — the source, so the fork's grant survives being re-derived from this row. NOT
+        // `parent`: a fork is a sibling, and this edge answers "whose grant is this?" only.
+        forkOf: source,
       },
       resume: this.withConfigHome(forkName, forkDefinition, { runtime: src.runtime, sessionId: forkSessionId }),
       ...(worktree ? { worktree } : {}),

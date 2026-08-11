@@ -3509,7 +3509,9 @@ describe("AgentManager — session resume (spec 209)", () => {
       .replace(/ --settings '[^']+'$/, "");
     expect(legacyCommand).toBe("claude -n <FORK_SESSION> --resume abcdef01-2345-6789-abcd-ef0123456789 --fork-session");
     expect(ledger.get("claude-fork-1")).toMatchObject({
-      def: { cmd: "claude", kind: "agent", fork: true }, // base cmd → a later resume uses the normal named path, never re-forks
+      // base cmd → a later resume uses the normal named path, never re-forks.
+      // t-53e485 — `forkOf` records the source, so the fork's GRANT is re-derivable from this row.
+      def: { cmd: "claude", kind: "agent", fork: true, forkOf: "claude" },
       resume: { runtime: "claude", sessionId: forkSession }, // the fork's OWN name (captured → uuid later)
       // temporary AND restartable — the fork is the case the two axes exist for.
       instance: { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false },
@@ -5476,7 +5478,12 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(fs.readFileSync(path.join(harnessHome(h.ws, "child"), "config.toml"), "utf8")).not.toContain("never-inherit");
     });
 
-    it("t-b505b3: a delegated child receives lockfile-granted plugin skills, but invents none without a grant", async () => {
+    it("t-53e485: an installed plugin is not a delegation grant — the lockfile crosses nothing", async () => {
+      // The inversion of t-b505b3's second door, and the defect that bought it. Measured 2026-08-11:
+      // `claude`'s profile granted 3 skills, its private home held those 3, and eleven of eleven
+      // delegated children held 11 — the workspace's installed plugin set. The lockfile says what the
+      // WORKSPACE installed; it never says what THIS parent was given, and here it granted the child
+      // a skill from a parent whose resolved profile grants nothing at all.
       const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n  bare:\n    cmd: codex\n", { fileExists: () => true });
       const skillDir = path.join(h.ws, ".claude", "skills", "visual-qa");
       fs.mkdirSync(skillDir, { recursive: true });
@@ -5500,18 +5507,162 @@ describe("AgentManager — session resume (spec 209)", () => {
       await h.manager.spawn("plugin-child", { cmd: "grok", delegator: "claude", reveal: false });
       await h.manager.spawn("bare-child", { cmd: "codex", parent: "bare", reveal: false });
 
-      const inherited = projections.get("plugin-child")!;
-      expect(inherited.skills.map((skill) => skill.name)).toEqual(["visual-qa"]);
-      expect(Buffer.from(inherited.skills[0]?.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
-        .toBe("# Plugin-granted visual QA\n");
-      expect(inherited.skillOrigins).toEqual({ "visual-qa": [{ kind: "delegator", agent: "claude" }] });
+      // Neither child receives anything: neither delegator holds a grant, and the workspace's
+      // installed plugin is not one. The skill is still installed and still on disk — it simply is
+      // not this parent's to give.
+      expect(projections.get("plugin-child")).toBeUndefined();
       expect(projections.get("bare-child")).toBeUndefined();
+      expect(fs.existsSync(path.join(skillDir, "SKILL.md"))).toBe(true);
     });
 
-    it("t-b505b3: an uncapturable grant is withheld by name and the child still spawns", async () => {
-      // Measured in the field on 0.56.152: `product-foundation` is a legitimate 8.1 MiB plugin skill
-      // against a 1 MiB capture cap, and the throw refused EVERY delegation in the workspace — grok
-      // and codex alike. Losing one tool is recoverable; being unable to spawn at all is not.
+    it("t-53e485: a toolkit door that offers what the delegator does not hold is refused at the exit", async () => {
+      // The NET, and it is deliberately tested through a compromised door rather than through the
+      // real one. The leak was INSIDE the toolkit function — it returned a set the parent never
+      // held — so checking the projection against that same function would have agreed with the
+      // leak. This drives the door directly to prove the exit refuses it, whatever it computes:
+      // the authority is the delegator's own resolved profile.
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      const skill = (name: string, sha: string) => ({
+        name,
+        source: {
+          source: name, sourcePath: `/captured/${name}`, type: "tree" as const, sha256: sha,
+          entries: [
+            { path: ".", type: "directory" as const, mode: 0o755 },
+            { path: "SKILL.md", type: "file" as const, mode: 0o644, bytes: Buffer.from(`# ${name}\n`) },
+          ],
+        },
+      });
+      const granted: ResolvedAgentCapabilityProjection = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [skill("sdd", "a".repeat(64))],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = granted;
+      // A door that hands back the grant PLUS one the parent was never given, and the same skill at
+      // bytes the parent never approved — the two shapes the closed door used to produce.
+      (h.manager as unknown as { delegableToolkit: () => ResolvedAgentCapabilityProjection }).delegableToolkit = () => ({
+        ...granted,
+        sources: [...granted.sources, { referenceId: "image", kind: "skill", scope: "project", owner: "plugin:image", path: ".claude/skills/image", sha256: "c".repeat(64) }],
+        skills: [skill("sdd", "a".repeat(64)), skill("image", "c".repeat(64))],
+      });
+      const warnings: string[] = [];
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.notify = (message: string) => { warnings.push(message); };
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("child", { cmd: "claude", parent: "claude", reveal: false });
+
+      const inherited = projections.get("child")!;
+      // Exactly the grant — nem mais, nem menos.
+      expect(inherited.skills.map((entry) => entry.name)).toEqual(["sdd"]);
+      // The refused grant leaves the provenance too, so the manifest cannot name bytes the child
+      // was deliberately not given.
+      expect(inherited.sources.map((source) => source.referenceId)).toEqual(["sdd"]);
+      // Dropped BY NAME and out loud: one ungranted tool costs the child that tool, not its spawn.
+      expect(warnings.some((line) => line.includes("image") && line.includes("does not hold it"))).toBe(true);
+    });
+
+    it("t-53e485: a fork's delegated child inherits the source's grant — exactly it, and only it", async () => {
+      // The half of the invariant that was failing SHORT rather than long. `commitFork` copies the
+      // source's grant into the live fork definition, but a Temporary's definition is rebuilt from
+      // its ledger row and no row field carries a capability projection — so a fork resolved
+      // grantless the moment anything re-derived it. Measured 2026-08-11: `claude-fork-1` ran with
+      // three skills in its private home while its delegated child `anchorrace` inherited none of
+      // them (the eleven it did hold came from the workspace, through the door now closed).
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      const granted: ResolvedAgentCapabilityProjection = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [{ name: "sdd", source: { source: "sdd", sourcePath: "/captured/sdd", type: "tree", sha256: "a".repeat(64), entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# the source's sdd\n") },
+        ] } }],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = granted;
+      // The fork's row as `commitFork` writes it: a sibling with no lineage, carrying only the edge.
+      h.ledger.record("claude-fork-1", {
+        def: { cmd: "claude", kind: "agent", fork: true, forkOf: "claude" },
+        resume: { runtime: "claude", sessionId: "fork-session" },
+        cwd: h.ws,
+        instance: { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false },
+      });
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      // The fork itself, re-derived from the row rather than from the live fork definition.
+      const fork = asAgent(h.manager.defOf("claude-fork-1"))!;
+      expect(fork.profileCapabilities?.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      // ...and it is still a sibling: the grant edge is not lineage.
+      expect(h.manager.parentOf("claude-fork-1")).toBeUndefined();
+
+      await h.manager.spawn("grandchild", { cmd: "claude", parent: "claude-fork-1", reveal: false });
+
+      const inherited = projections.get("grandchild")!;
+      expect(inherited.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      expect(Buffer.from(inherited.skills[0]?.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
+        .toBe("# the source's sdd\n");
+      // Delegated from the fork it actually came through, not from the profile two hops up.
+      expect(inherited.skillOrigins).toEqual({ sdd: [{ kind: "delegator", agent: "claude-fork-1" }] });
+    });
+
+    it("t-53e485: codex delegates the same grant; an unmeasured runtime refuses it rather than inventing one", async () => {
+      // Confirmed rather than assumed, because the two runtimes answer differently and the task
+      // asked which. Codex is a measured projection: same grant, same set, delivered into the
+      // child's own `.agents/skills`. Pi has no measured delegated projection, so a grant it cannot
+      // deliver REFUSES the spawn — and a delegation with nothing to deliver still spawns, because
+      // there refusing and failing closed give the child the same (empty) toolkit and one of them
+      // also costs it its existence.
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n  bare:\n    cmd: claude\n", { fileExists: () => true });
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [{ name: "sdd", source: { source: "sdd", sourcePath: "/captured/sdd", type: "tree", sha256: "a".repeat(64), entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# the delegator's sdd\n") },
+        ] } }],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
+      expect(projections.get("codex-child")!.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      expect(projections.get("codex-child")!.adapter).toBe("codex");
+
+      await expect(h.manager.spawn("pi-child", { cmd: "pi", parent: "claude", reveal: false }))
+        .rejects.toThrow("runtime 'pi' has no measured delegated skill projection");
+
+      // Nothing to deliver — the same Pi child resolves quietly, with no projection at all. Asked
+      // through `defOf` because that is the door the sidebar uses (canFork → defOf → definitionOf):
+      // a refusal there would break the fleet view, not just a spawn.
+      h.ledger.record("pi-orphan", {
+        def: { cmd: "pi", kind: "agent", parent: "bare" },
+        cwd: h.ws,
+        instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
+      });
+      expect(asAgent(h.manager.defOf("pi-orphan"))?.profileCapabilities).toBeUndefined();
+    });
+
+    it("t-53e485: an uncapturable plugin skill cannot refuse a delegation it is no longer part of", async () => {
+      // t-b505b3 measured this in the field on 0.56.152: `product-foundation` is a legitimate 8.1 MiB
+      // plugin skill against a 1 MiB capture cap, and capturing it at spawn threw, refusing EVERY
+      // delegation in the workspace. That was answered by withholding the one grant by name. With the
+      // plugin door closed, delegation never reads the lockfile at all, so the whole class is gone —
+      // this keeps the original regression measured rather than trusting that it cannot return.
       const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
       const small = path.join(h.ws, ".claude", "skills", "visual-qa");
       fs.mkdirSync(small, { recursive: true });
@@ -5533,6 +5684,16 @@ describe("AgentManager — session resume (spec 209)", () => {
           },
         },
       }));
+      // What the parent was actually GIVEN — one skill, at its pinned digest.
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [{ name: "sdd", source: { source: "sdd", sourcePath: "/captured/sdd", type: "tree", sha256: "a".repeat(64), entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# the delegator's sdd\n") },
+        ] } }],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
       const warnings: string[] = [];
       const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
       const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
@@ -5544,21 +5705,24 @@ describe("AgentManager — session resume (spec 209)", () => {
 
       await h.manager.spawn("child", { cmd: "grok", delegator: "claude", reveal: false });
 
-      // The spawn happened at all — that is the regression this guards.
+      // The spawn happened at all — that is the regression t-b505b3 bought and this keeps.
       const inherited = projections.get("child")!;
-      // The capturable grant still crosses; only the oversized one is dropped.
-      expect(inherited.skills.map((skill) => skill.name)).toEqual(["visual-qa"]);
-      // Withheld BY NAME, never silently: the caller can see which tool the child lacks and why.
-      expect(warnings.some((line) => line.includes("product-foundation") && line.includes("withheld"))).toBe(true);
+      // Exactly the grant. The 2 MiB plugin skill and the small one beside it are both irrelevant:
+      // neither was given to this parent, so neither is a question delegation has to answer.
+      expect(inherited.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      // ...and with nothing to capture there is nothing to withhold, so the human is told nothing.
+      expect(warnings).toEqual([]);
     });
 
-    it("t-b0cfd4: a plugin update withholds the changed skill instead of handing the child unapproved bytes", async () => {
+    it("t-53e485: a plugin update cannot reach the child — the parent's pinned copy is what crosses", async () => {
       // Measured in the field on 0.56.154: installing tachyon-plugins v2.3.1 bumped agent-browser
       // 3.0.0 → 3.1.0, the parent's resolved sha no longer matched the fresh lockfile capture, and
       // the throw refused EVERY spawn. 4601017b answered that by REFRESHING the parent's snapshot
-      // when provenance matched. Not refusing was right; refreshing was not — it delivers the child
-      // bytes no human approved, and it made the two layers disagree, the config withholding the
-      // changed skill while delegation quietly shipped it. Both now withhold by name and continue.
+      // when provenance matched, and t-b0cfd4 answered THAT by withholding by name instead. Both
+      // were doing the same repair work on a door that should not have been open: with the lockfile
+      // out of the delegation path, an installed plugin at any version is simply not what the child
+      // receives. The property t-b0cfd4 bought — unapproved bytes never cross — now holds by
+      // construction, and this proves it still holds while the newer bytes sit right there on disk.
       const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
       const dir = path.join(h.ws, ".claude", "skills", "agent-browser");
       fs.mkdirSync(dir, { recursive: true });
@@ -5602,16 +5766,15 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(Buffer.from(skill.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
         .not.toContain("UPDATED");
       expect(skill.source.sha256).toBe("a".repeat(64));
-      // Withheld BY NAME and out loud, naming the gesture that accepts the new content.
-      expect(warnings.some((line) => line.includes("agent-browser") && line.includes("withheld") && line.includes("Reauthorize")))
-        .toBe(true);
+      // Nothing was withheld because nothing was ever offered: the human hears about the stale pin
+      // from the config layer that can see it, not from a delegation that no longer reads plugins.
+      expect(warnings).toEqual([]);
     });
 
     it("t-b0cfd4: a skill the parent's own config withheld does not reach the child either", async () => {
-      // The alignment this task exists for. The config layer is the only one that can see a pin go
-      // stale — by the time the lockfile is read at spawn the capture succeeds and looks healthy —
-      // so without the parent carrying its withholdings the child would receive exactly the bytes
-      // the parent is running without.
+      // The alignment t-b0cfd4 exists for, restated for the single-door model. The config layer is
+      // the only one that can see a pin go stale, and what it withholds it leaves OUT of the
+      // parent's resolved grant — so the child cannot receive it, whatever is installed beside it.
       const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
       for (const name of ["agent-browser", "sdd"]) {
         const dir = path.join(h.ws, ".claude", "skills", name);
@@ -5634,6 +5797,15 @@ describe("AgentManager — session resume (spec 209)", () => {
       }));
       // What the config projection produced for the parent: sdd delivered, agent-browser withheld.
       const parent = asAgent(h.manager.defOf("claude"))!;
+      parent.profileCapabilities = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [{ name: "sdd", source: { source: "sdd", sourcePath: "/captured/sdd", type: "tree", sha256: "a".repeat(64), entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# sdd — the approved bytes\n") },
+        ] } }],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
       parent.profileWithheldCapabilities = [{
         referenceId: "agent-browser",
         name: "agent-browser",
@@ -5656,16 +5828,12 @@ describe("AgentManager — session resume (spec 209)", () => {
 
       await h.manager.spawn("child", { cmd: "grok", delegator: "claude", reveal: false });
 
-      // Production reaches this projection from
-      // canFork → defOf → definitionOf → withDelegatedToolkit → delegableToolkit on every
-      // sidebar fleet build. A stable authorization condition is still one human warning, however
-      // often the presentation asks whether the same child can fork.
-      for (let evaluation = 0; evaluation < 30; evaluation++) h.manager.defOf("child");
-
       const inherited = projections.get("child")!;
-      // The child spawned, with everything except the one capability nobody re-approved.
+      // The child spawned, with everything except the one capability nobody re-approved — and
+      // agent-browser is installed, on disk and in the lockfile the whole time.
       expect(inherited.skills.map((skill) => skill.name)).toEqual(["sdd"]);
-      expect(warnings.filter((line) => line.includes("agent-browser") && line.includes("Reauthorize"))).toHaveLength(1);
+      expect(warnings).toEqual([]);
+      expect(fs.existsSync(path.join(h.ws, ".claude", "skills", "agent-browser", "SKILL.md"))).toBe(true);
     });
 
     it("t-b0cfd4: two profiles pinning one name at different content withhold the delegated copy instead of aborting the spawn", async () => {
@@ -5709,12 +5877,19 @@ describe("AgentManager — session resume (spec 209)", () => {
 
       await h.manager.spawn("child", { parent: "claude", reveal: false });
 
+      // t-b51923 — production reaches this projection from
+      // canFork → defOf → definitionOf → withDelegatedToolkit → delegableToolkit on every sidebar
+      // fleet build. A stable withholding is still ONE human warning, however often the presentation
+      // asks whether the same child can fork. (This guard moved here from the config-withheld test
+      // when t-53e485 closed the plugin door: this is now the surviving notifying condition.)
+      for (let evaluation = 0; evaluation < 30; evaluation++) h.manager.defOf("child");
+
       // The spawn happened at all — that is what the throw cost.
       const inherited = projections.get("child")!;
       const skill = inherited.skills.find((candidate) => candidate.name === "sdd")!;
       expect(Buffer.from(skill.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
         .toBe("# the child's own sdd\n");
-      expect(warnings.some((line) => line.includes("sdd") && line.includes("withheld"))).toBe(true);
+      expect(warnings.filter((line) => line.includes("sdd") && line.includes("withheld"))).toHaveLength(1);
       // The withheld copy leaves the manifest's provenance too: a source naming bytes the child was
       // deliberately not given would describe a toolkit it does not have.
       expect(inherited.sources.map((source) => source.sha256)).toEqual(["b".repeat(64)]);
