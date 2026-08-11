@@ -8,6 +8,7 @@ import { asAgent, parseConfig, type AgentEntry } from "../../src/config/loadConf
 import {
   agentProfileRuntimeSelectorsSha256,
   resolveAgentProfile,
+  type AgentCapabilityGrant,
   type NativeRuntimeAttestation,
   type NormalizedAgentDefinition,
   type ResolveAgentProfileInput,
@@ -77,6 +78,29 @@ function legacySource(definition: AgentEntry, source?: string): NonNullable<Reso
   };
 }
 
+/**
+ * t-a7063c — the authority a codex profile needs so its SELECTED skills are also GRANTED.
+ *
+ * Before t-a7063c the skill line in `resolveCapabilities` carried an `adapter === "claude"` condition,
+ * so every non-claude test below delivered a selected skill with no grant at all and never noticed.
+ * The grant is now what makes those tests exercise what they are named after (collision, missing
+ * SKILL.md) instead of stopping one line earlier on `profile/capability-authority`.
+ */
+function skillGrants(
+  root: string,
+  grants: ReadonlyArray<{ referenceId: string; sourceSha256: string }>,
+  agent = "codex",
+  adapter: AgentCapabilityGrant["adapter"] = "codex",
+) {
+  const profilePath = path.join(root, ".tachyon", "agents", agent, "agent.yml");
+  return {
+    revision: "test-profile-r1",
+    canonical: { state: "present" as const, sha256: digest(fs.readFileSync(profilePath)) },
+    runtimeInspector: INSPECTOR,
+    capabilityGrants: grants.map((grant) => ({ ...grant, adapter, kind: "skill" as const })),
+  };
+}
+
 function resolve(root: string, input: Partial<Omit<ResolveAgentProfileInput, "workspaceRoot" | "agentName">> = {}): ResolveAgentProfileResult {
   const profilePath = path.join(root, ".tachyon", "agents", "codex", "agent.yml");
   const authority = input.authority ?? (fs.existsSync(profilePath)
@@ -136,7 +160,9 @@ describe("resolveAgentProfile", () => {
       references: [{ id: "research-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/research", mode: "pinned", sha256: skillSha }],
     }));
 
-    const value = expectSuccess(resolve(root));
+    const value = expectSuccess(resolve(root, {
+      authority: skillGrants(root, [{ referenceId: "research-skill", sourceSha256: skillSha }]),
+    }));
     expect(value.capabilityProjection).toMatchObject({
       adapter: "codex",
       sources: [{ referenceId: "research-skill", scope: "profile", sha256: skillSha }],
@@ -250,7 +276,12 @@ describe("resolveAgentProfile", () => {
         { id: "second-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/two/research", mode: "pinned", sha256: treeDigest(second) },
       ],
     }));
-    const result = expectSuccess(resolve(root));
+    const result = expectSuccess(resolve(root, {
+      authority: skillGrants(root, [
+        { referenceId: "first-skill", sourceSha256: treeDigest(first) },
+        { referenceId: "second-skill", sourceSha256: treeDigest(second) },
+      ]),
+    }));
     expect(result.capabilityProjection).toBeUndefined();
     expect(result.definition.capabilities?.skills ?? []).toEqual([]);
     expect(result.withheldCapabilities).toEqual(expect.arrayContaining([
@@ -283,7 +314,12 @@ describe("resolveAgentProfile", () => {
       })),
     }));
 
-    const result = expectSuccess(resolve(root));
+    const result = expectSuccess(resolve(root, {
+      authority: skillGrants(root, directories.map(({ directory }, index) => ({
+        referenceId: ["first-skill", "second-skill", "third-skill"][index]!,
+        sourceSha256: treeDigest(directory),
+      }))),
+    }));
     expect(result.capabilityProjection).toBeUndefined();
     expect(result.definition.capabilities?.skills ?? []).toEqual([]);
     const withheld = result.withheldCapabilities ?? [];
@@ -291,6 +327,80 @@ describe("resolveAgentProfile", () => {
       .toEqual(["first-skill", "second-skill", "third-skill"]);
     for (const entry of withheld) expect(entry.code).toBe("profile/capability-collision");
   });
+
+  it.each(["claude", "codex", "grok", "pi"] as const)(
+    "t-a7063c: requires an exact host-custodied skill grant for the %s adapter",
+    (adapter) => {
+      // ACTOR × TRIGGER as a case list, not one test on the door that already passed. The actor is
+      // the ADAPTER: `resolveCapabilities` had `adapter === "claude" && !requireGrant(...)` on the
+      // skill line and nothing on the mcp/hook/pi lines beside it, so a selected skill reached
+      // codex, grok and pi with no grant custodied by the host at all — while the projection text
+      // the human attests said the opposite ("require exact host grants",
+      // `agentProfileProjection.ts:110` / `:126`). One test on claude would have stayed green
+      // through every one of those three.
+      //
+      // Measured before the fix in the maintainer's workspace: the only door that writes a skill
+      // `profile.references` (`Workspace.skillAuthorizationPorts.commit`) writes the grant in the
+      // SAME transaction, and the three real canonical profiles are two claude agents with grants
+      // and one grok agent with no selection at all — so nothing that delivers today loses delivery.
+      // It is the depth-of-defense line and the attestation that were wrong, not a live exploit.
+      const root = workspace();
+      const inspector = { adapter, id: `${adapter}-inspector`, version: "1", sha256: "a".repeat(64) };
+      const runtime = { adapter, executable: adapter };
+      const skill = path.join(root, ".tachyon", "agents", adapter, "capabilities", "research");
+      fs.mkdirSync(skill, { recursive: true });
+      fs.writeFileSync(path.join(skill, "SKILL.md"), "---\nname: research\ndescription: research\n---\nUse evidence.\n");
+      const skillSha = treeDigest(skill);
+      const file = writeProfile(root, {
+        schemaVersion: 1,
+        agentId: AGENT_ID,
+        runtime,
+        capabilities: { skills: ["research-skill"] },
+        references: [{ id: "research-skill", kind: "skill", scope: "profile", owner: AGENT_ID, path: "capabilities/research", mode: "pinned", sha256: skillSha }],
+      }, adapter);
+      const resolveWith = (capabilityGrants?: unknown[]) => resolveAgentProfile({
+        workspaceRoot: root,
+        agentName: adapter,
+        authority: {
+          revision: "test-profile-r1",
+          canonical: { state: "present", sha256: digest(fs.readFileSync(file)) },
+          runtimeInspector: inspector,
+          ...(capabilityGrants ? { capabilityGrants } : {}),
+        } as never,
+        nativeRuntime: {
+          adapter,
+          exhaustive: true,
+          authorityRevision: "test-profile-r1",
+          selectorsSha256: agentProfileRuntimeSelectorsSha256(runtime),
+          inspector: { id: inspector.id, version: inspector.version, sha256: inspector.sha256 },
+          observations: [],
+        },
+      });
+
+      // No grant — the selection alone must not deliver, on ANY adapter.
+      const ungranted = expectSuccess(resolveWith());
+      expect(ungranted.capabilityProjection).toBeUndefined();
+      expect(ungranted.withheldCapabilities).toEqual([
+        expect.objectContaining({ referenceId: "research-skill", code: "profile/capability-authority" }),
+      ]);
+
+      // A grant that is not EXACT is not a grant: wrong adapter, wrong kind and wrong source digest
+      // each keep the skill out, so the check cannot be satisfied by merely having a row.
+      for (const wrong of [
+        { referenceId: "research-skill", sourceSha256: skillSha, adapter: adapter === "claude" ? "codex" : "claude", kind: "skill" },
+        { referenceId: "research-skill", sourceSha256: skillSha, adapter, kind: "pi-package" },
+        { referenceId: "research-skill", sourceSha256: "b".repeat(64), adapter, kind: "skill" },
+      ]) {
+        const denied = expectSuccess(resolveWith([wrong]));
+        expect(denied.capabilityProjection, JSON.stringify(wrong)).toBeUndefined();
+      }
+
+      // The exact grant, and only it, delivers.
+      const granted = expectSuccess(resolveWith([{ referenceId: "research-skill", sourceSha256: skillSha, adapter, kind: "skill" }]));
+      expect(granted.capabilityProjection).toMatchObject({ adapter, skills: [{ name: "research" }] });
+      expect(granted.withheldCapabilities).toBeUndefined();
+    },
+  );
 
   it("does not open an unselected capability reference", () => {
     const root = workspace();
@@ -772,7 +882,12 @@ describe("t-dfc4de — resolveCapabilities withholds one capability, not the age
       ],
     }));
 
-    const value = expectSuccess(resolve(root));
+    const value = expectSuccess(resolve(root, {
+      authority: skillGrants(root, [
+        { referenceId: "good-skill", sourceSha256: goodSha },
+        { referenceId: "broken-skill", sourceSha256: brokenSha },
+      ]),
+    }));
     expect(value.capabilityProjection?.skills.map((skill) => skill.name)).toEqual(["good"]);
     expect(value.definition.capabilities?.skills).toEqual(["good-skill"]);
     expect(value.references.map((reference) => reference.id)).toEqual(["good-skill"]);

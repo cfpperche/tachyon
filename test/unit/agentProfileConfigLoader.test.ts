@@ -1288,7 +1288,12 @@ describe("loadProfileAwareConfig", () => {
       capabilities: { skills: ["shared-research"] },
       references: [{ id: "shared-research", kind: "skill", scope: "project", owner: "workspace", path: "shared/skills/research", mode: "pinned", sha256: skillDigest }],
     });
-    const result = load(root, authority(bytes));
+    // t-a7063c — the grant is no longer optional for a codex profile: the skill line in
+    // `resolveCapabilities` used to require it only for claude, so this loader test delivered a
+    // project-owned skill with nothing custodied behind it and still read as green.
+    const result = load(root, authority(bytes, {
+      capabilityGrants: [{ referenceId: "shared-research", sourceSha256: skillDigest, adapter: "codex", kind: "skill" }],
+    }));
 
     expect(result.errors).toEqual([]);
     expect(asAgent(result.config?.agents.codex)?.profileCapabilities).toMatchObject({
