@@ -73,6 +73,7 @@ import {
   isSha256,
   workspaceActivityContextSuccessV1,
   workspaceCommandSuccessV1,
+  workspaceAgentStopSuccessV1,
   workspaceHandoffDistillSuccessV1,
   workspaceHandoffEnsureSuccessV1,
   workspaceHandoffViewSuccessV1,
@@ -721,7 +722,7 @@ async function executeWorkspaceCommand(
       break;
     case "agent.stop":
       await workspace.manager.stopGracefully(agent);
-      break;
+      return workspaceAgentStopSuccessV1(command, await workspace.manager.confirmGracefulStop(agent));
     case "agent.kill":
       await workspace.manager.kill(agent);
       break;

@@ -293,7 +293,7 @@ function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEn
     materializePiSessionDir: (name) => `/private/pi/${name}/sessions`,
     launchPreflight: HERMETIC_PREFLIGHT,
   });
-  return { manager, sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
+  return { manager, tmux, sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
 
 describe("AgentManager", () => {
@@ -1116,6 +1116,20 @@ describe("AgentManager", () => {
     ]);
     expect(sessions.has(`tachyon-${HASH}-a`)).toBe(true);
     expect(killed).toEqual([]);
+  });
+
+  it("t-22944a: confirms stopped, still-alive, and unknown as distinct outcomes", async () => {
+    const { manager, tmux, dead } = makeManager("agents:\n  a:\n    cmd: x\n");
+    const session = `tachyon-${HASH}-a`;
+    await manager.spawn("a");
+
+    expect(await manager.confirmGracefulStop("a", 0)).toBe("alive");
+    dead.set(session, 0);
+    expect(await manager.confirmGracefulStop("a", 0)).toBe("stopped");
+
+    dead.delete(session);
+    vi.spyOn(tmux, "sessionStates").mockRejectedValueOnce(new Error("tmux inventory unavailable"));
+    expect(await manager.confirmGracefulStop("a", 0)).toBe("unknown");
   });
 
   it("SDD 403: stopGracefully executes Pi's measured abort, clear and conditional EOF sequence", async () => {

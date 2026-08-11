@@ -739,5 +739,7 @@
   "Review opens a committed-history comparison, not the working tree.": "A revisão abre uma comparação do histórico de commits, não da árvore de trabalho.",
   "No local trunk to compare against — review shows this branch against the ref it was forked from.": "Não há trunk local para comparar — a revisão mostra esta branch contra o ref de onde ela saiu.",
   "No changed file matches": "Nenhum arquivo alterado corresponde",
-  "'{0}' is no longer among the changed files of '{1}'.": "'{0}' não está mais entre os arquivos alterados de '{1}'."
+  "'{0}' is no longer among the changed files of '{1}'.": "'{0}' não está mais entre os arquivos alterados de '{1}'.",
+  "Stop was sent to '{0}', but the process is still running. Use Kill to force it.": "O Stop foi enviado para '{0}', mas o processo continua rodando. Use Kill para forçar o encerramento.",
+  "Stop was sent to '{0}', but Tachyon could not confirm whether the process exited.": "O Stop foi enviado para '{0}', mas o Tachyon não conseguiu confirmar se o processo encerrou."
 }

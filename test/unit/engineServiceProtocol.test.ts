@@ -15,6 +15,7 @@ import {
   isWorkspaceQueryV1,
   negotiateEngineShellProtocol,
   workspaceCommandSuccessV1,
+  workspaceAgentStopSuccessV1,
   workspaceExtensionCommandSuccessV1,
   workspaceExtensionQuerySuccessV1,
   workspaceActivityContextSuccessV1,
@@ -302,6 +303,18 @@ describe("persistent engine protocol", () => {
       { ...query, input: { agent: "reviewer" } },
       result,
     )).toBe(false);
+  });
+
+  it("t-22944a: requires an exact three-way outcome for agent.stop", () => {
+    const command = { schemaVersion: 1, method: "agent.stop", input: { agent: "grok" } } as const;
+    for (const outcome of ["stopped", "alive", "unknown"] as const) {
+      const result = workspaceAgentStopSuccessV1(command, outcome);
+      expect(result).toEqual({ schemaVersion: 1, method: "agent.stop", status: "ok", outcome });
+      expect(isWorkspaceCommandResultV1(result)).toBe(true);
+    }
+    expect(isWorkspaceCommandResultV1({ schemaVersion: 1, method: "agent.stop", status: "ok" })).toBe(false);
+    expect(isWorkspaceCommandResultV1({ schemaVersion: 1, method: "agent.stop", status: "ok", outcome: "maybe" })).toBe(false);
+    expect(() => workspaceCommandSuccessV1(command)).toThrow(/exact outcome/);
   });
 
   it("validates the exact bounded Studio submit wire shape and result", () => {
