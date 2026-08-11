@@ -51,6 +51,31 @@ fully disabled and rebuilt from explicit skill paths, yet it has no native write
    isolation-required launch that is expected to deliver must refuse early (or be explicitly marked
    research/read-only), because confining writes without an authorized exit strands completed work.
 
+## Update 2026-08-11 — both pieces measured, and one of them fell
+
+**Piece 1's Claude condition is no longer an inference. It is measured enforcement.** The table above
+reasoned from flags and docs that `bypassPermissions` skips permission checks; `t-5313dc` then proved
+it directly on **Claude 2.1.228** in a disposable fixture. Same command twice, differing only in
+`--permission-mode`, each prompt requiring exactly one `Write` call to an absolute sibling path with
+Bash prohibited:
+
+| run | `--permission-mode` | result |
+|---|---|---|
+| control | `dontAsk` | permission denied; `outside-control/probe.txt` **absent** |
+| bypass | `bypassPermissions` | reported success; `outside-bypass/probe.txt` **written**, exact bytes |
+
+So `bypassPermissions` annuls the `additionalDirectories` boundary for the **non-Bash `Write` tool** —
+no shell involved. The consequence is a refusal, not a fix: pointing the declared writable directory
+at the agent worktree would **not** confine an authorized bypass agent, and shipping that projection
+while calling it isolation would be exactly the false promise this research exists to end. The
+measuring agent was instructed to stop rather than write code on a mechanism that does not hold, and
+did. `~` on parity dimension 22 stands, now on enforcement evidence rather than on flag reading.
+
+**Piece 2's precondition is satisfied.** The governed land door shipped the same day — SDD 498,
+merged in `999d9d2d`, the `Added` of 0.80.0. The sentence above that reads "until that door exists"
+is now historical: an isolation-required launch that expects to deliver has an authorized exit, and
+the early refusal it describes is no longer the only honest option.
+
 ## Actor × trigger coverage required by the policy
 
 The capability decision must run for Interface and Agent launches across create, restart, resume,
