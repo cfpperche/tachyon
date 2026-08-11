@@ -13,6 +13,7 @@ import {
   SERVER_SCOPE_TRANSIENT_FAILS_BEFORE_COOLDOWN,
 } from "../../src/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
+import { isPaneForkChild } from "../helpers/tmuxReap.js";
 
 // t-3da510 — the engine daemon runs in a transient systemd unit with KillMode=control-group.
 // Whoever first talks to the tachyon socket forks the tmux SERVER, and a process forked inside
@@ -200,6 +201,21 @@ describe("tmux server scope isolation (t-3da510)", () => {
     expect(serverScopeArgv(["-L", "t", "start-server"]).argv).toContain("start-server");
   });
 
+  it("drops only the pane fork child while keeping ambiguous real-server candidates fail-closed", () => {
+    const stdin = new Map([
+      [101, "/dev/null"],
+      [102, "/dev/pts/8"],
+      [103, null],
+    ]);
+    const readStdin = (pid: number) => stdin.get(pid) ?? null;
+
+    expect(filterPaneForkChildren([101, 102], readStdin)).toEqual([101]);
+    // Two real-server-shaped pids are the scoped-launch fallback this oracle exists to expose.
+    const fallback = filterPaneForkChildren([101, 103], readStdin);
+    expect(fallback).toEqual([101, 103]);
+    expect(() => singleServerPid(fallback, "fallback remained ambiguous")).toThrow(/expected 2 to be 1/);
+  });
+
   // The live boundary proof: fork a real server on a private socket through the real executor and
   // assert its cgroup is NOT the caller's — i.e. a Reload killing the caller's cgroup cannot take
   // the server down. Skips (loudly) where user systemd cannot host scopes (bare CI containers).
@@ -264,9 +280,31 @@ function resolveStableTmuxServerPid(sock: string): number {
       return false;
     }
   });
-  const candidates = tmuxish.length > 0 ? tmuxish : stable;
-  expect(candidates.length, `ambiguous/missing server pids for ${sock}: first=${a} second=${b}`).toBe(1);
+  const candidates = filterPaneForkChildren(tmuxish.length > 0 ? tmuxish : stable, (pid) => {
+    try { return fs.readlinkSync(`/proc/${pid}/fd/0`); } catch { return null; }
+  });
+  return singleServerPid(candidates, `ambiguous/missing server pids for ${sock}: first=${a} second=${b}`);
+}
+
+function singleServerPid(candidates: readonly number[], diagnostic: string): number {
+  expect(candidates.length, diagnostic).toBe(1);
   return candidates[0]!;
+}
+
+/**
+ * `t-c1b382` — tmux's pane fork child temporarily holds the same socket as its server and is a copy
+ * of it down to comm, argv and environment. The measured discriminator is fd 0: the daemonized
+ * server has `/dev/null`, while the child has already called `login_tty` and has `/dev/pts/*`.
+ *
+ * An unreadable fd stays a candidate. "Could not measure" must not become permission to pass: two
+ * real-server-shaped candidates are how this containment oracle catches a scoped launch that fell
+ * back, and filtering either without positive pane-child evidence would blind that boundary proof.
+ */
+function filterPaneForkChildren(
+  candidates: readonly number[],
+  stdinOf: (pid: number) => string | null,
+): number[] {
+  return candidates.filter((pid) => !isPaneForkChild(stdinOf(pid)));
 }
 
 /** Resolve the tmux server PID(s) that hold `sock` open (Linux). Prefer fuser; fall back to /proc scan. */
