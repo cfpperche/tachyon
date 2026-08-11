@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -156,13 +156,13 @@ function recoverOnIdleOf(ws: Workspace) {
 
 const STALE_POKE_LINE = "[tachyon] child 'cwdProbe' is waiting for input: Continue? [y/n]";
 
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "a queued parent notice about a killed child is purged and never flushed to the parent pane",
-    "a queued parent notice about a still-alive child is flushed normally (no-over-purge guard)",
-    "an ordinary relayed notice whose body merely contains poke-shaped text is delivered, not purged (regex anchor)",
-  ],
-});
+/**
+ * `t-ed0f43` — these three used to be declared-and-skipped whenever the HOST had no opencode
+ * credential, which made the suite cover more on a logged-in checkout than in an agent's worktree.
+ * The credential here is substrate the harness materializer reads, so it is injected instead;
+ * `HERMETIC_PREFLIGHT` above closes the other door, the one that executed the runtime.
+ */
+useDisposableRuntimeAuth(["opencode"]);
 
 describe("container-generated delegation behavior", () => {
   it("a queued parent notice about a killed child is purged and never flushed to the parent pane", async () => {

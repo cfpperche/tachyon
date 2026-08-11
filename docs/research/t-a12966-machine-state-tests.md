@@ -2,6 +2,18 @@
 
 Varredura medida em 2026-08-09 no worktree de agente `machinestate`.
 
+> **Nota de 2026-08-11 — o veredito do opencode caducou; a medição de 09/08 não.** Onde este
+> documento diz que para o opencode "arquivo de credencial não substitui o binário" (linhas da tabela
+> §1 e as linhas de `workspaceHeadless`, `humanDraftHoldsNotice`, `notifyDoorbellDelivery` e o grupo
+> `agentManager`/`cx*`/`oc*`/`workspaceSurfaceLifecycle` em §4), aquilo descrevia UMA porta — o launch
+> preflight, que executava `opencode providers list`. Era verdade dela e nunca foi verdade da segunda:
+> `HarnessManager.materializeHome` só queria o arquivo. A t-35c998 tirou o preflight do caminho com a
+> seam hermética, a t-b10d93 estendeu `useDisposableRuntimeAuth` ao opencode, e a t-64ea85 + t-ed0f43
+> fecharam os arquivos restantes. Hoje esses tests INJETAM a credencial e rodam sem o binário
+> instalado — medido com `opencode` fora do PATH e `XDG_DATA_HOME` vazio. As linhas abaixo ficam como
+> foram escritas: são o registro do que a máquina dizia em 09/08, não uma afirmação corrente sobre o
+> código.
+
 ## 1. Contagem, não estimativa
 
 | Suíte | Arquivos | Tests |

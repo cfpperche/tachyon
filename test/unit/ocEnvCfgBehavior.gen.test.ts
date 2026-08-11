@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
@@ -28,11 +28,13 @@ import { expectedAgentOpencodeEntry } from "../../src/registration/adapters.js";
  */
 const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "opencode spawns receive bridge mcp config via environment",
-  ],
-});
+/**
+ * `t-ed0f43` — this case used to be declared-and-skipped whenever the HOST had no opencode
+ * credential, which made the suite cover more on a logged-in checkout than in an agent's worktree.
+ * The credential here is substrate the harness materializer reads, so it is injected instead;
+ * `HERMETIC_PREFLIGHT` above closes the other door, the one that executed the runtime.
+ */
+useDisposableRuntimeAuth(["opencode"]);
 
 describe("container-generated delegation behavior", () => {
   const dirs: string[] = [];
