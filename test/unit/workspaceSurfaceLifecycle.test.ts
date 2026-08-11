@@ -1,4 +1,5 @@
 import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -93,6 +94,13 @@ function fakeTmux() {
   return { sessions, tmux: new TmuxService(exec) };
 }
 
+/**
+ * `t-64ea85` — measured: without this seam the `cmd: opencode` cases below executed the installed
+ * `opencode` binary twice (pwd=/tmp/ws-surface-*). The stub answers as a credentialed home does;
+ * every other adapter stays the real, non-executing one.
+ */
+const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
+
 const dirs: string[] = [];
 function mkdir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "ws-surface-"));
@@ -113,7 +121,7 @@ async function makeWorkspace() {
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  worker:\n    cmd: sh\n", "utf8");
   const host = new FakeHost(mkdir());
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   return { ws, ...fake };
 }
 

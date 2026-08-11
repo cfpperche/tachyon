@@ -1,4 +1,5 @@
 import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -20,6 +21,13 @@ import { expectedAgentOpencodeEntry } from "../../src/registration/adapters.js";
  *  This behavior test mirrors `src/agents/AgentManager.ts` spec-236 path: the materializer is
  *  `materializeBridgeMcpOpencode(name, cwd)` and is folded into spawnBuild.env as OPENCODE_CONFIG.
  */
+/**
+ * `t-64ea85` — measured: without this seam the `cmd: opencode` spawn below executed the installed
+ * `opencode` binary once (pwd=/tmp/ocenvcfg-*). The stub answers as a credentialed home does; every
+ * other adapter stays the real, non-executing one.
+ */
+const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
+
 skipTestsWithoutOptionalRuntimeAuth({
   opencode: [
     "opencode spawns receive bridge mcp config via environment",
@@ -84,6 +92,7 @@ describe("container-generated delegation behavior", () => {
       getConfig: () => config,
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: BRIDGE_URL, TACHYON_BRIDGE_TOKEN: "tok" }),
       mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
+      launchPreflight: HERMETIC_PREFLIGHT,
       materializeBridgeMcpOpencode: (name, cwd) => {
         // Real materialization: write the Bridge-only file into the workspace's
         // .tachyon/bridge-mcp/ dir so we can read it back and assert the on-disk content.
