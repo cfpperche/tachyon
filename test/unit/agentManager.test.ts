@@ -5615,6 +5615,48 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(inherited.skillOrigins).toEqual({ sdd: [{ kind: "delegator", agent: "claude-fork-1" }] });
     });
 
+    it("t-53e485: codex delegates the same grant; an unmeasured runtime refuses it rather than inventing one", async () => {
+      // Confirmed rather than assumed, because the two runtimes answer differently and the task
+      // asked which. Codex is a measured projection: same grant, same set, delivered into the
+      // child's own `.agents/skills`. Pi has no measured delegated projection, so a grant it cannot
+      // deliver REFUSES the spawn — and a delegation with nothing to deliver still spawns, because
+      // there refusing and failing closed give the child the same (empty) toolkit and one of them
+      // also costs it its existence.
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n  bare:\n    cmd: claude\n", { fileExists: () => true });
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [{ name: "sdd", source: { source: "sdd", sourcePath: "/captured/sdd", type: "tree", sha256: "a".repeat(64), entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# the delegator's sdd\n") },
+        ] } }],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("codex-child", { cmd: "codex", parent: "claude", reveal: false });
+      expect(projections.get("codex-child")!.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      expect(projections.get("codex-child")!.adapter).toBe("codex");
+
+      await expect(h.manager.spawn("pi-child", { cmd: "pi", parent: "claude", reveal: false }))
+        .rejects.toThrow("runtime 'pi' has no measured delegated skill projection");
+
+      // Nothing to deliver — the same Pi child resolves quietly, with no projection at all. Asked
+      // through `defOf` because that is the door the sidebar uses (canFork → defOf → definitionOf):
+      // a refusal there would break the fleet view, not just a spawn.
+      h.ledger.record("pi-orphan", {
+        def: { cmd: "pi", kind: "agent", parent: "bare" },
+        cwd: h.ws,
+        instance: { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false },
+      });
+      expect(asAgent(h.manager.defOf("pi-orphan"))?.profileCapabilities).toBeUndefined();
+    });
+
     it("t-53e485: an uncapturable plugin skill cannot refuse a delegation it is no longer part of", async () => {
       // t-b505b3 measured this in the field on 0.56.152: `product-foundation` is a legitimate 8.1 MiB
       // plugin skill against a 1 MiB capture cap, and capturing it at spawn threw, refusing EVERY
