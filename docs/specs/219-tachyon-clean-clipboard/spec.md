@@ -4,6 +4,7 @@ _Created 2026-06-15._
 
 **Status:** shipped
 **Closure:** Landed in commit `8d7e0812`; all seven tasks are checked, with five-round SHIP review and recorded WSL dogfood.
+**Status detail:** ready to ship — implemented, codex dueto SHIP (5 rounds, 2026-06-15), 474 tests + typecheck green, live-proven on WSL. Pending: commit + `vsce publish minor`.
 
 **UI impact:** none
 <!-- No UI surface; it changes terminal copy behavior. Verified by drag-selecting scrollback in a

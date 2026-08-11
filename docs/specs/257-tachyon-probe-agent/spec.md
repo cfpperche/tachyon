@@ -2,6 +2,10 @@
 
 **Status:** shipped
 **Closure:** Released as 0.40.0; commit `6af22817` records both reviews folded and live validation of claude→codex and claude→claude probes.
+**Status detail:** SHIPPED (incl. observability UI) — released 0.40.0, twice codex-reviewed (core 50 + UI 11, both folded), and **live-validated** after install (claude→codex + claude→claude duets returned valid structured results; persistence/versions/caller/gitignore/cost verified). Outstanding: an automated binary-gated smoke + a live failure-class matrix + post-v1 follow-ups — see `tasks.md` § Closure. All decisions (D1–D10, with D1 deviated) + OQ1–OQ6 were maintainer-ratified before build.
+**Follows:** [spec 250](../250-tachyon-plugin-system/) (the per-runtime adapter pattern this reuses) and the Bridge A2A surface (`spawn_agent` / `wait_for_agent` / `read_output`) which this complements, not replaces. Relates to verify-gate ([spec 214](../214-tachyon-verify-gate/)) and pipelines (`src/pipeline/`), both future consumers of a clean captured result.
+**Surface:** a shared internal run model (`AgentRun`), a thin `probe_agent` Bridge tool + a result reader, a per-runtime "headless capture" adapter capability, and a ledger-backed observability row.
+**UI impact:** flow (a transient probe row rendered FROM the run ledger; a way to inspect a finished probe's captured result).
 
 > **Origin.** Tachyon has exactly **one** way to run an agent: a real CLI driving its interactive TUI inside a tmux pane, observed by *scraping the pane*. That lane is the product's identity — you watch your agents, intervene, reanchor. But a large class of agent-to-agent work is **not** a persistent visible teammate: it is a bounded question — "review this diff", "is this claim true", "give a second-model opinion" — whose value is a **clean, captured answer handed back to the caller**, not a pane to babysit. Today the only way to get that answer is `spawn_agent` → `wait_for_agent(idle)` → `read_output`, which returns a **scrape of terminal chrome**, asynchronously, with no structured result, no exit semantics, and no provenance. This spec adds the missing second lane.
 

@@ -4,6 +4,7 @@ _Created 2026-06-13._
 
 **Status:** shipped
 **Closure:** Shipped as v0.13.0; commit `96df2f3a` records all ten tasks done and the SHIP review.
+**Status detail:** shipped (v0.13.0)
 
 **UI impact:** interaction
 <!-- Studio toggle, a branch badge on worktree agents in the tree, and a

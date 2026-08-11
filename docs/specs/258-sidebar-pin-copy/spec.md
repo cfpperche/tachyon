@@ -2,6 +2,10 @@
 
 **Status:** shipped
 **Closure:** Landed in commit `685fdc96`; every implementation task is checked and `tasks.md` records closure.
+**Status detail:** SHIPPED.
+**Follows:** spec 237 sidebar webview and spec 255 rich pins.
+**Surface:** Pins section in the Tachyon sidebar.
+**UI impact:** ui (one inline pin-row action).
 
 ## Intent
 

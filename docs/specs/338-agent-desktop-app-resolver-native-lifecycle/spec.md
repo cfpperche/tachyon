@@ -4,6 +4,7 @@ _Created 2026-07-03._
 
 **Status:** shipped
 **Closure:** Commit `903d31fd` explicitly records shipping the agent-desktop app resolver; all implementation and verification tasks are checked.
+**Status detail:** implemented
 
 ## Intent
 

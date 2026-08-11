@@ -4,6 +4,7 @@ _Created 2026-06-16._
 
 **Status:** shipped
 **Closure:** Shipped as v0.20.0 in commit `1812fb03`; all six tasks are checked, including the six-round SHIP review.
+**Status detail:** SHIPPED v0.20.0 (2026-06-16). codex dueto 6 rounds (3+2+2 MAJOR, 2 MINOR, 1 MAJOR → SHIP),
 494 tests + typecheck green. **Closure:** one-click human-triggered "Create PR" on a worktree agent,
 verify verdict in the body, base ONLY from the persisted create-time branch (never guessed).
 

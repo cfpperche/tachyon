@@ -2,6 +2,10 @@
 
 **Status:** shipped
 **Closure:** Landed in commit `d9f7fe3b`; the original status records completed implementation and green local verification.
+**Status detail:** shipped in isolated worktree (implementation complete; local verification green; review/merge pending).
+**Surface:** replace the quick input-box pin authoring flow with a Pin Studio webview: Notion-like Tiptap editor, paste/drop/import screenshots, attachment storage, sidebar summaries, and MCP read access.
+**UI impact:** ui.
+**Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit && bash scripts/check-engine-boundary.sh && node esbuild.mjs && env -u TMUX npx vitest run`
 
 > **Origin.** Pin `p-86fe67` asks for pins to support screenshots and suggests replacing the retired notes/pins input surface with a Studio webview where the user has a rich editor, drawing/canvas, and richer capture affordances. Spec 253 deliberately retired the free-form `notes` whiteboard, so this must improve **pins** without reintroducing notes as a third coordination surface. The maintainer decision for this draft: **Tiptap / Notion-like editor ships in v1; Excalidraw is explicitly v2**.
 

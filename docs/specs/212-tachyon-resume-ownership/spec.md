@@ -4,6 +4,7 @@ _Created 2026-06-14._
 
 **Status:** shipped
 **Closure:** Shipped as v0.13.2; commit `9be4cf7f` records tasks 1–6 done and the three-round SHIP review.
+**Status detail:** shipped (v0.13.2)
 
 **UI impact:** none
 <!-- No new UI. Refreshes the ledger's resume session id at stop/kill so the

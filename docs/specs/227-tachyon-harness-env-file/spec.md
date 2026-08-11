@@ -3,6 +3,7 @@
 _Created 2026-06-16._
 
 **Status:** in-progress
+**Status detail:** in-progress — IMPLEMENTED 2026-06-16 — 559 unit tests + typecheck + build green. NOT yet shipped
 (awaiting `vsce publish patch` → 0.22.1). Follow-pass to spec 226 (isolated harness). Surfaced in
 dogfood: the v1 secret source (the ambient `process.env`) is clunky and fragile.
 

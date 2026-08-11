@@ -3,6 +3,7 @@
 _Created 2026-06-15._
 
 **Status:** in-progress
+**Status detail:** in-progress — implementing (defense-in-depth follow-up to the spec-217 contamination fix).
 
 **UI impact:** none
 

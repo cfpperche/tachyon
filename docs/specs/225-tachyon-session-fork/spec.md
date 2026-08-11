@@ -4,6 +4,7 @@ _Created 2026-06-16._
 
 **Status:** shipped
 **Closure:** Shipped as v0.21.0 in commit `0ee33983`; all implementation and review tasks are checked and dogfood is recorded in `notes.md`.
+**Status detail:** SHIPPED v0.21.0 (2026-06-16) — see notes.md. (dogfood pin `p-520b27`.)
 
 **UI impact:** ui (a "Fork session" action + a new sibling agent in the tree).
 

@@ -3,6 +3,7 @@
 _Created 2026-06-16._
 
 **Status:** in-progress
+**Status detail:** IMPLEMENTED + REVIEWED 2026-06-16 (claude-only mcp-only MVP) — all hardening H1-H9 + the
 codex implementation review (2 BLOCKER + 3 MAJOR + 1 MINOR) folded in; 554 unit tests + typecheck +
 build green. NOT yet shipped (awaiting the maintainer's `vsce publish` → 0.22.0 + site banner). Research
 done, decisions locked (below), both codex passes (design debate + impl review) folded in — see notes.md.

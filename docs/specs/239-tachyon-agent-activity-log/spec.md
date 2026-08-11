@@ -1,6 +1,10 @@
 # Spec 239 — Tachyon agent activity log (durable, normalized history)
 
 **Status:** draft
+**Status detail:** draft
+**Date:** 2026-06-20
+**Follows:** spec 238 (Activity view)
+**Runtime scope:** claude v1, runtime-agnostic by design
 
 ## Problem
 

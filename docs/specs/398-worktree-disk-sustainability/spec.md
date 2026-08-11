@@ -3,6 +3,7 @@
 _Created 2026-07-18._
 
 **Status:** draft
+**Status detail:** draft (plan only — no product code in this revision)
 
 **Task:** `t-2a2af8`  
 **Related:** `t-e7a032` (inventory cleanup), specs **210** (agent worktrees), **368** (delivery leases), **376** (legacy delivery retire), **392** (managed worktree registry)

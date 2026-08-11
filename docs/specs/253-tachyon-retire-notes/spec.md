@@ -2,6 +2,10 @@
 
 **Status:** shipped
 **Closure:** Commit `cc759931` records notes retired with pins and handoff intact after design debate and implementation review.
+**Status detail:** SHIPPED 2026-06-24 (notes removed; pins + handoff intact; codex-debated + codex-reviewed).
+**Surface:** remove the free-form shared `notes` whiteboard (`.tachyon/notes.md` + `get_notes`/`set_notes` + the sidebar notes-row) — the dominated middle wheel between **pins** (structured checklist) and the **project handoff** (curated narrative state, spec 245). Pins stay fully intact.
+**UI impact:** ui (the sidebar loses the notes-row; no other panel changes).
+**Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit && bash scripts/check-engine-boundary.sh && node esbuild.mjs && env -u TMUX npx vitest run`
 
 > **Origin.** Spec **192** shipped two coordination surfaces together: **pins** (a structured shared checklist — discrete items with id/author/done-state) and **notes** (a single free-form `.tachyon/notes.md` "whiteboard", set wholesale via `set_notes`). Spec **245** later shipped the **project handoff** (`.tachyon/HANDOFF.md` — curated state in sections, fed by an append-only pending-note lane that the owner distills, with staleness + CAS). The handoff covers notes' *stated* coordination purpose — *"work division, do-not-touch zones, decisions"* — with a model built for concurrency. Notes was never retired, leaving a **three-way overlap** (pin / note / handoff) and confirmed dead in practice (maintainer dogfood: pins saw heavy use; `notes.md` did not).
 
