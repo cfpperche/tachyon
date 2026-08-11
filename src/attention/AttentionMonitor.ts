@@ -36,6 +36,9 @@ const WORKING_CPU_UTILIZATION_THRESHOLD = 0.15;
 
 export interface AgentAttention {
   state: AttentionState;
+  /** Positive evidence that this incarnation has actually started a turn. False/undefined keeps a
+   * synthetic initial `working` snapshot from being mistaken for busy. */
+  hasStartedTurn?: boolean;
   /** epoch ms when the current state began */
   since: number;
   /** epoch ms when the current pane content first appeared */
@@ -240,6 +243,7 @@ export class AttentionMonitor {
   private toAttention(agent: string, snap: Snapshot): AgentAttention {
     return {
       state: snap.state,
+      hasStartedTurn: snap.hasStartedTurn,
       since: snap.stateSince,
       contentSince: snap.contentSince,
       outputStableSince: snap.contentSince,

@@ -2580,8 +2580,8 @@ describe("Workspace — needs-input parent poke (t-8605be)", () => {
     await ws.manager.spawn("child3", { cmd: "opencode", parent: "b" });
     const parentSession = ws.manager.session("b");
     const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
-    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
-      agent === "b" ? { state: "working" } : originalStateOf(agent);
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string; hasStartedTurn?: boolean } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "working", hasStartedTurn: true } : originalStateOf(agent);
     pokeOf(ws)("child3", "pick one");
     await flush();
     expect(sent.has(parentSession)).toBe(false); // queued, not typed into a busy pane
@@ -2644,8 +2644,8 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     await ws.manager.spawn("b");
     const session = ws.manager.session("b");
     const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
-    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
-      agent === "b" ? { state: "working" } : originalStateOf(agent);
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string; hasStartedTurn?: boolean } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "working", hasStartedTurn: true } : originalStateOf(agent);
 
     const deliverNotice = (ws as unknown as { deliverNotice(agent: string, line: string): Promise<{ status: string }> }).deliverNotice.bind(ws);
     const recoverOnIdle = (ws as unknown as { recoverOnIdle(agent: string, wantAnchor: boolean): Promise<void> }).recoverOnIdle.bind(ws);
@@ -2653,7 +2653,7 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     expect(queued.status).toBe("queued");
     expect(sent.has(session)).toBe(false);
 
-    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string; hasStartedTurn?: boolean } | undefined }).stateOf = (agent: string) =>
       agent === "b" ? { state: "idle" } : originalStateOf(agent);
     await recoverOnIdle("b", false);
     expect(sent.get(session)).toBe("[tachyon] a → b: queued");
@@ -2744,8 +2744,8 @@ describe("Workspace — notify_agent idle delivery (spec 341)", () => {
     await ws.manager.spawn("b");
     const targetSession = ws.manager.session("b");
     const originalStateOf = ws.monitor.stateOf.bind(ws.monitor);
-    (ws.monitor as unknown as { stateOf(agent: string): { state: string } | undefined }).stateOf = (agent: string) =>
-      agent === "b" ? { state: "working" } : originalStateOf(agent);
+    (ws.monitor as unknown as { stateOf(agent: string): { state: string; hasStartedTurn?: boolean } | undefined }).stateOf = (agent: string) =>
+      agent === "b" ? { state: "working", hasStartedTurn: true } : originalStateOf(agent);
     const internals = ws as unknown as {
       deliverNotice(agent: string, line: string, metadata: NoticeQueueMetadata): Promise<{ status: string }>;
       sourceNoticeMetadata(agent: string, origin: "host-poke" | "agent-authored"): NoticeQueueMetadata;

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AgentManager } from "../../agents/AgentManager.js";
 import { readPaneTranscript } from "../../agents/paneTranscript.js";
 import { composerProfileFor } from "../../runtime/composerRegion.js";
+import { isEvidencedWorking } from "../../prompts/injectFlow.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "../notifyAgent.js";
 import { appendDoorbellEvent, readDoorbellEventsFor, READ_NOTICES_MAX } from "../doorbell.js";
 import { redactSecrets } from "../redact.js";
@@ -151,7 +152,8 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         // AskUserQuestion was itself refused, with notify_agent ALSO refusing needs-input per 341 —
         // the child became unreachable by any agent). working/throttled still refuse outright.
         const state = deps.attentionOf?.(name);
-        if (state === "working" || state === "throttled") {
+        const evidencedWorking = isEvidencedWorking(state, deps.hasStartedTurn?.(name));
+        if (evidencedWorking || state === "throttled") {
           return fail(new Error(`recipient '${name}' is busy (${state}) — refused-busy: use notify_agent or wait for idle`));
         }
         // t-a53dd9 — write_input is the OTHER door onto the same pane, and it was reading the same

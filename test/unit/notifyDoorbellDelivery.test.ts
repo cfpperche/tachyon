@@ -122,7 +122,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 function forceStateOf(ws: Workspace, agent: string, state: string, extra: Record<string, unknown> = {}) {
   const original = ws.monitor.stateOf.bind(ws.monitor);
   (ws.monitor as unknown as { stateOf(a: string): unknown }).stateOf = (a: string) =>
-    a === agent ? { state, ...extra } : original(a);
+    a === agent ? { state, hasStartedTurn: state === "working", ...extra } : original(a);
 }
 
 const priv = (ws: Workspace) => ws as unknown as {
@@ -160,6 +160,15 @@ async function withCoordAndChild() {
 useDisposableRuntimeAuth(["opencode"]);
 
 describe("t-fb1453 — an agent-authored doorbell outlives its author", () => {
+  it("Tachyon × freshly spawned synthetic working delivers instead of queueing (t-4c82fa)", async () => {
+    const { ws, sent, session } = await withCoordAndChild();
+    forceStateOf(ws, "coord", "working", { hasStartedTurn: false });
+    const result = await priv(ws).deliverNotice("coord", DOORBELL, doorbellMetadataFor(ws, "child"));
+    expect(result.status).toBe("notified");
+    expect((sent.get(session) ?? []).join("")).toContain("t-21101f");
+    ws.dispose();
+  });
+
   it("THE MEASURED BUG: a doorbell from a child the coordinator has since KILLED is still delivered", async () => {
     // This is the incident, reduced. The coordinator was busy when the child rang, so the notice was
     // queued; the coordinator then killed the child; the queued report was the child's own completion,
