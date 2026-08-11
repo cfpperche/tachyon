@@ -121,7 +121,6 @@ describe("t-26ba8f — a Studio save keeps the fields the form does not author",
  * keys with the real parser deciding which of them a terminal may carry.
  */
 const TERMINAL_PROBE_VALUES: Record<string, unknown> = {
-  profile: "reviewer",
   cmd: "npm run dev",
   cwd: "apps/web",
   env: { API_BASE: "http://localhost:3000" },
@@ -135,6 +134,8 @@ const TERMINAL_PROBE_VALUES: Record<string, unknown> = {
   branch: "feature/x",
   worktreeSetup: "npm ci",
   harness: { mcp: {} },
+  isolate: "transcript",
+  subagents: ["child"],
 };
 
 /** Declared entry keys, read from the shipped schema rather than from a list in this file. */
