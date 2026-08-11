@@ -46,6 +46,21 @@ export interface SessionDef {
    */
   fork?: boolean;
   /**
+   * t-53e485 — the agent this fork was forked FROM, and the reason it is a separate field from
+   * `parent`: a fork is a SIBLING, not a child, so recording it as lineage would nest it under its
+   * source in the sidebar and in every descendant query.
+   *
+   * It exists because the fork's GRANT has to be re-derivable. `commitFork` copies the source's
+   * `profileCapabilities` into the live fork definition, but `temporaryDefinitionFrom` rebuilds a
+   * Temporary's definition from this row, and the row has no field for a capability projection — so
+   * the moment anything re-derived the definition, the fork resolved as grantless. Measured
+   * 2026-08-11: `claude-fork-1` runs with 3 skills in its private home while `definitionOf` reported
+   * it holding none, and its delegated child `anchorrace` inherited zero. Recording the EDGE rather
+   * than the payload keeps the row small and re-resolves the grant from the source's live profile,
+   * which is the authority — a frozen copy in the ledger would be a second place for it to go stale.
+   */
+  forkOf?: string;
+  /**
    * spec 230 — set when this Temporary instance is a NODE of a pipeline run owned by a PipelineManager. The
    * generic activation resume/offer path skips rows carrying this (the run reconciles its own nodes);
    * a TYPED field (not an untyped tag) so it survives `parseDef` across a reload (codex S4 M4).
@@ -469,6 +484,7 @@ function parseDef(d: unknown): SessionDef | undefined {
     ...(typeof o.delegator === "string" ? { delegator: o.delegator } : {}),
     ...(isStringMap(o.env) ? { env: o.env as Record<string, string> } : {}),
     ...(o.fork === true ? { fork: true } : {}), // spec 225 — persistent forked sibling
+    ...(typeof o.forkOf === "string" ? { forkOf: o.forkOf } : {}), // t-53e485 — the source whose grant this fork holds
     ...(isPipelineRef(o.pipeline) ? { pipeline: o.pipeline as { runId: string; nodeId: string } } : {}), // spec 230
     ...(contract ? { contract } : {}), // spec 246 + t-c8949c
     ...((o.contract !== undefined && !contract) || o.contractInvalid === "invalid-shape"

@@ -1089,7 +1089,12 @@ export class AgentManager {
     if (saved) return saved;
     const row = this.temporaryRow(name);
     if (!row) return undefined;
-    return this.withDelegatedToolkit(name, temporaryDefinitionFrom(row.def, row.worktree), row.def.parent ?? row.def.delegator, nextLineage);
+    // t-53e485 — `forkOf` last, and only as a GRANT edge. `temporaryDefinitionFrom` is total for
+    // everything a Temporary can author, but a capability projection is not authored data and has no
+    // field on the row, so a fork re-derived from here used to resolve grantless: measured
+    // 2026-08-11, `claude-fork-1` ran with three skills while its delegated child inherited none of
+    // them. Re-resolving through the source rebuilds the grant from the live profile that issued it.
+    return this.withDelegatedToolkit(name, temporaryDefinitionFrom(row.def, row.worktree), row.def.parent ?? row.def.delegator ?? row.def.forkOf, nextLineage);
   }
 
   /**
@@ -5188,6 +5193,9 @@ export class AgentManager {
         ...(sourceRecord?.def?.taskBrief ? { taskBrief: sourceRecord.def.taskBrief } : {}),
         ...(src.env ? { env: src.env } : {}),
         fork: true,
+        // t-53e485 — the source, so the fork's grant survives being re-derived from this row. NOT
+        // `parent`: a fork is a sibling, and this edge answers "whose grant is this?" only.
+        forkOf: source,
       },
       resume: this.withConfigHome(forkName, forkDefinition, { runtime: src.runtime, sessionId: forkSessionId }),
       ...(worktree ? { worktree } : {}),

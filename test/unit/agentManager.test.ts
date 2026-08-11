@@ -3509,7 +3509,9 @@ describe("AgentManager — session resume (spec 209)", () => {
       .replace(/ --settings '[^']+'$/, "");
     expect(legacyCommand).toBe("claude -n <FORK_SESSION> --resume abcdef01-2345-6789-abcd-ef0123456789 --fork-session");
     expect(ledger.get("claude-fork-1")).toMatchObject({
-      def: { cmd: "claude", kind: "agent", fork: true }, // base cmd → a later resume uses the normal named path, never re-forks
+      // base cmd → a later resume uses the normal named path, never re-forks.
+      // t-53e485 — `forkOf` records the source, so the fork's GRANT is re-derivable from this row.
+      def: { cmd: "claude", kind: "agent", fork: true, forkOf: "claude" },
       resume: { runtime: "claude", sessionId: forkSession }, // the fork's OWN name (captured → uuid later)
       // temporary AND restartable — the fork is the case the two axes exist for.
       instance: { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false },
@@ -5563,6 +5565,54 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(inherited.sources.map((source) => source.referenceId)).toEqual(["sdd"]);
       // Dropped BY NAME and out loud: one ungranted tool costs the child that tool, not its spawn.
       expect(warnings.some((line) => line.includes("image") && line.includes("does not hold it"))).toBe(true);
+    });
+
+    it("t-53e485: a fork's delegated child inherits the source's grant — exactly it, and only it", async () => {
+      // The half of the invariant that was failing SHORT rather than long. `commitFork` copies the
+      // source's grant into the live fork definition, but a Temporary's definition is rebuilt from
+      // its ledger row and no row field carries a capability projection — so a fork resolved
+      // grantless the moment anything re-derived it. Measured 2026-08-11: `claude-fork-1` ran with
+      // three skills in its private home while its delegated child `anchorrace` inherited none of
+      // them (the eleven it did hold came from the workspace, through the door now closed).
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      const granted: ResolvedAgentCapabilityProjection = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [{ name: "sdd", source: { source: "sdd", sourcePath: "/captured/sdd", type: "tree", sha256: "a".repeat(64), entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# the source's sdd\n") },
+        ] } }],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = granted;
+      // The fork's row as `commitFork` writes it: a sibling with no lineage, carrying only the edge.
+      h.ledger.record("claude-fork-1", {
+        def: { cmd: "claude", kind: "agent", fork: true, forkOf: "claude" },
+        resume: { runtime: "claude", sessionId: "fork-session" },
+        cwd: h.ws,
+        instance: { lifetime: "temporary" as const, resumePolicy: "restartable" as const, lifecycleHooks: false },
+      });
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      // The fork itself, re-derived from the row rather than from the live fork definition.
+      const fork = asAgent(h.manager.defOf("claude-fork-1"))!;
+      expect(fork.profileCapabilities?.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      // ...and it is still a sibling: the grant edge is not lineage.
+      expect(h.manager.parentOf("claude-fork-1")).toBeUndefined();
+
+      await h.manager.spawn("grandchild", { cmd: "claude", parent: "claude-fork-1", reveal: false });
+
+      const inherited = projections.get("grandchild")!;
+      expect(inherited.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      expect(Buffer.from(inherited.skills[0]?.source.entries.find((entry) => entry.path === "SKILL.md")?.bytes ?? []).toString())
+        .toBe("# the source's sdd\n");
+      // Delegated from the fork it actually came through, not from the profile two hops up.
+      expect(inherited.skillOrigins).toEqual({ sdd: [{ kind: "delegator", agent: "claude-fork-1" }] });
     });
 
     it("t-53e485: an uncapturable plugin skill cannot refuse a delegation it is no longer part of", async () => {
