@@ -3,7 +3,16 @@ import { buildSectionsModel, collectNeedsFor, type WorkspaceBundle } from "../se
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { POLL, READY, worktreesErrorMessage, worktreesModelMessage, worktreeLandResultMessage, worktreeReviewFilesMessage, type WorktreeLandResult, type WorktreeReviewFile } from "./worktrees/messages.js";
+import {
+  POLL,
+  READY,
+  worktreesErrorMessage,
+  worktreesModelMessage,
+  worktreeLandResultMessage,
+  worktreeReviewFilesMessage,
+  type WorktreeLandResult,
+  type WorktreeReviewFile,
+} from "./worktrees/messages.js";
 import type { WorktreeReviewSelection } from "../presentation/items.js";
 
 export const WORKTREES_VIEW_TYPE = "tachyonWorktrees";
