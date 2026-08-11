@@ -161,7 +161,7 @@ import {
 } from "./GatedCompletionMonitor.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
-import { hasDoorbellRung } from "../bridge/doorbell.js";
+import { appendDoorbellOverflowEvent, hasDoorbellRung } from "../bridge/doorbell.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "../attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
@@ -4272,6 +4272,15 @@ export class Workspace {
   ): NoticeDeliveryResult {
     const result = this.noticeQueue.enqueue(agent, line, metadata);
     if (result.dropped > 0) {
+      // t-2153ae — this records the loss; it does not bound the wait or change the authored-doorbell
+      // TTL exemption. The existing toast remains the immediate human warning.
+      appendDoorbellOverflowEvent(this.workspaceRoot, {
+        event: "overflow-drop",
+        to: agent,
+        at: new Date().toISOString(),
+        dropped: result.dropped,
+        queued: result.queued,
+      });
       this.host.notify(this.t("dropped {0} old notice(s) for '{1}' while queueing a newer one", result.dropped, agent), "warn");
     }
     // t-a53dd9 — WHY it waits travels back to the sender. "Queued for idle delivery" reads as "the
