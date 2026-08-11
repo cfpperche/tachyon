@@ -195,7 +195,6 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
       profileCapabilities: _profileCapabilities,
       profileWithheldCapabilities: _profileWithheldCapabilities,
       profileNativeConfig: _profileNativeConfig,
-      profileEvolution: _profileEvolution,
       profileLifecycle: _profileLifecycle,
       ...publicDefinition
     } = definition;
@@ -221,7 +220,6 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
     if (definition.profileCapabilities) entry.profileCapabilities = definition.profileCapabilities;
     if (definition.profileWithheldCapabilities) entry.profileWithheldCapabilities = definition.profileWithheldCapabilities;
     if (definition.profileNativeConfig) entry.profileNativeConfig = definition.profileNativeConfig;
-    if (definition.profileEvolution) entry.profileEvolution = definition.profileEvolution;
     if (definition.profileLifecycle) entry.profileLifecycle = definition.profileLifecycle;
   }
   const agentSources: Record<string, AgentConfigSource> = {};

@@ -18,7 +18,6 @@ import {
 } from "../../src/config/YamlConfigEditor.js";
 import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
-import schema from "../../src/config/tachyon.schema.json";
 
 /**
  * t-c1ef82 — the EXACT call promotion makes (`extensionOperationService.promoteAgent`).
@@ -164,32 +163,6 @@ settings:
     expect(asAgent(childCfg.agents.claude)?.subagents).toEqual(["reviewer"]);
     expect(asAgent(childCfg.agents.reviewer)?.subagents).toBeUndefined();
     expect(editedChild).not.toContain("declaredOwner");
-  });
-
-  it("round-trips Agent Evolution and strips it from terminal entries", () => {
-    const agentText = upsertAgent(undefined, "ada", { cmd: "codex", selfEvolution: { enabled: true } }).text;
-    expect(asAgent(expectValid(agentText).agents.ada)?.selfEvolution).toEqual({ enabled: true });
-    expect(agentText).toContain("selfEvolution:");
-
-    const terminalText = upsertAgent(
-      undefined,
-      "shell",
-      { cmd: "bash", kind: "terminal", selfEvolution: { enabled: true } },
-      undefined,
-      "terminals",
-    ).text;
-    expect(asAgent(expectValid(terminalText).agents.shell)?.selfEvolution).toBeUndefined();
-    expect(terminalText).not.toContain("selfEvolution:");
-  });
-
-  it("declares Agent Evolution as a closed JSON-schema opt-in", () => {
-    const evolution = schema.properties.agents.additionalProperties.properties.selfEvolution;
-    expect(evolution).toMatchObject({
-      type: "object",
-      additionalProperties: false,
-      required: ["enabled"],
-      properties: { enabled: { type: "boolean" } },
-    });
   });
 
   it("cloneAgent copies the full definition under a new name", () => {

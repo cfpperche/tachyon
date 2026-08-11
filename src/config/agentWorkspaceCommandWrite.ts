@@ -75,7 +75,7 @@ export function workspaceCommandWriteFor(
  * merge would leave a pinned reference nothing points at, and the next load would refuse the profile
  * for a dangling `requireKind` rather than for anything the human did.
  *
- * Every other reference — instructions, the Evolution selector, every capability — passes
+ * Every other reference — instructions, every capability — passes
  * through untouched. This writer owns two ids and nothing else.
  */
 export function mergedWorkspaceCommandReferences(

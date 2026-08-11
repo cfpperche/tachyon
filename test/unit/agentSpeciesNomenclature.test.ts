@@ -97,7 +97,6 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
       "canonicalAgentsYaml",
       "CanonicalAgentSpec",
       "CanonicalAgentFixture",
-      "enableCanonicalSelfEvolution",
       "canonicalAgentFixture",
       // NOT `canonicalSha256`: that is the live authority-record field for the sha of the
       // authoritative document, the same homonym class as `canonicalRoot`/`canonicalize`. Banning it

@@ -31,7 +31,6 @@ function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {
         values: { PUBLIC: "private-enough-not-to-project" },
         secrets: { TOKEN: { provider: "vault", id: "secret-handle", purpose: "auth" } },
       },
-      prompt: { evolution: "evolution" },
       lifecycle: {
         enabled: false, autostart: true, restart: "on-crash",
         attention: { enabled: false, silenceSec: 12 }, watch: ["src/**"],
@@ -39,13 +38,11 @@ function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {
       workspace: { cwd: "apps/reviewer", worktree: { enabled: true, branch: "feature/reviewer" } },
       isolation: "transcript",
       references: [
-        { id: "evolution", kind: "evolution", scope: "product", owner: "tachyon", path: "evolution.md", mode: "pinned", sha256: "c".repeat(64), version: "1" },
       ],
     },
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: "d".repeat(64) },
       authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 2 },
-      learned: { scope: "profile", writable: false, present: true },
       projection: { scope: "runtime", writable: false, active: false },
     },
   };
@@ -63,7 +60,6 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       cwd: "apps/tester",
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
-      selfEvolution: false,
       instructions: "",
       isolation: "",
       nativeConfig: {
@@ -90,11 +86,6 @@ describe("canonical Agent Studio projection", () => {
       // workspace-command reference, so the snapshot carries no artifact bytes. The populated case
       // is the round trip in `agentWorkspaceCommands.test.ts`, which is what proves the read-back.
       worktree: { enabled: true, branch: "feature/reviewer", setup: [] },
-      // t-f96b2f — this fixture pins `prompt.evolution`, so the toggle projects ON. It is the same
-      // fact `bindings.prompt.evolution` asserts below, deliberately: the form saves the editable
-      // view back, so a snapshot whose toggle disagreed with its own binding would write the
-      // opposite of what it displayed.
-      selfEvolution: true,
       // t-d48775 — empty for the same reason `setup` is: this fixture's profile carries no
       // instructions document, so the snapshot has no bytes to hand back. The populated case is the
       // round trip in `workspaceHeadless.test.ts`, which is what proves the read-back.
@@ -106,7 +97,6 @@ describe("canonical Agent Studio projection", () => {
     expect(projected.bindings).toMatchObject({
       environmentValueNames: ["PUBLIC"],
       secretNames: ["TOKEN"],
-      prompt: { evolution: true },
     });
     expect(projected.readiness).toEqual({ state: "limited", limitations: ["fork-unavailable"] });
     const serialized = JSON.stringify(projected);
@@ -275,7 +265,6 @@ describe("canonical Agent Studio projection", () => {
     expect(patchProfileFromStudioMutation(mutation(current.revision), current)).toEqual({
       displayName: "Review Agent",
       runtime: { adapter: "codex", executable: "codex", model: "gpt-next" },
-      prompt: { evolution: "evolution" },
       // t-bd14d8 — the stored profile in `lifecycleSnapshot()` carries `watch: ["src/**"]`, and this
       // patch has no `watch` key at all: the edit STRIPS it from disk rather than carrying it forward
       // through the lifecycle spread. That is what makes the first Agent Studio save the repair for a

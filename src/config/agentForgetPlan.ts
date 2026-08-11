@@ -42,16 +42,15 @@ import { AGENT_PROFILE_REFUSAL_CODE_RE, type AgentProfileRefusalCode } from "./a
 /**
  * The cascade's steps, in execution order.
  *
- * `stop-session` and `remove-worktree` are `config.agent.delete`'s prologue; the five after them are
- * `commitAgentProfileForget`'s journal phases (`evolution-retired` → `authority-retired` →
- * `locator-removed` → `home-quarantined` → `runtime-converged`). The names are the human's, the
+ * `stop-session` and `remove-worktree` are `config.agent.delete`'s prologue; the four after them are
+ * `commitAgentProfileForget`'s journal phases (`authority-retired` → `locator-removed` →
+ * `home-quarantined` → `runtime-converged`). The names are the human's, the
  * order is the machine's, and they must not be reordered for readability — a plan that lists the
  * steps in a prettier order than they run is a plan that mispredicts which one blocks first.
  */
 export const AGENT_FORGET_PLAN_STEP_IDS = [
   "stop-session",
   "remove-worktree",
-  "retire-evolution",
   "retire-authority",
   "remove-locator",
   "quarantine-profile",
@@ -217,9 +216,6 @@ export interface AgentForgetPlanFactsV1 {
   checkoutPresent: boolean | null;
   /** The derived index. Compared against the authority, never substituted for it. */
   registryWorktreeBranch: string | null;
-  evolutionProfilePresent: boolean;
-  /** The profile tree's own `evolution/profile.json`; a mismatch is a named refusal. */
-  evolutionProfileTreeEntryPresent: boolean;
   authorityPresent: boolean;
   locatorPresent: boolean;
   profileHomePresent: boolean;
@@ -277,22 +273,6 @@ function removeWorktreeStep(facts: AgentForgetPlanFactsV1): AgentForgetPlanStepV
     ? `; branch ${owned.branch} was created by Tachyon and is deleted if git can safe-delete it`
     : `; branch ${owned.branch} pre-existed and is kept`;
   return step("remove-worktree", "will-run", `deletes the checkout at ${owned.path}${branchNote}`);
-}
-
-function retireEvolutionStep(facts: AgentForgetPlanFactsV1): AgentForgetPlanStepV1 {
-  if (facts.evolutionProfilePresent !== facts.evolutionProfileTreeEntryPresent) {
-    return step(
-      "retire-evolution",
-      "blocked",
-      "Agent Evolution storage and the canonical profile tree disagree about whether a stored profile exists",
-      {
-        code: "agent-profile/forget-evolution-incomplete",
-        resolution: "Reconcile the Evolution profile with the profile tree; retrying the forget cannot fix this.",
-      },
-    );
-  }
-  if (!facts.evolutionProfilePresent) return step("retire-evolution", "satisfied", "this agent has no Agent Evolution profile");
-  return step("retire-evolution", "will-run", "retires the stored Agent Evolution profile");
 }
 
 function retireAuthorityStep(facts: AgentForgetPlanFactsV1): AgentForgetPlanStepV1 {
@@ -361,7 +341,6 @@ export function projectAgentForgetPlan(facts: AgentForgetPlanFactsV1): AgentForg
   const steps: AgentForgetPlanStepV1[] = [
     stopSessionStep(facts),
     removeWorktreeStep(facts),
-    retireEvolutionStep(facts),
     retireAuthorityStep(facts),
     removeLocatorStep(facts),
     quarantineProfileStep(facts),

@@ -17,7 +17,6 @@ import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic
 
 const AGENT_ONLY_KEYS: ReadonlyArray<[key: string, yaml: string]> = [
   ["instructions", "    instructions: be helpful\n"],
-  ["selfEvolution", "    selfEvolution: { enabled: true }\n"],
   ["worktree", "    worktree: true\n"],
   ["branch", "    branch: tachyon/dev\n"],
   ["worktreeSetup", "    worktreeSetup: npm ci\n"],

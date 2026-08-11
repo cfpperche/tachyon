@@ -44,7 +44,7 @@ export interface SavedAgentPresenceFacts {
    *
    * `profileOnDisk` implies this fact — an `agent.yml` cannot exist without its parent. The reverse
    * does not hold, and the gap is exactly the residue: an interrupted create, a `forgetAgent` that
-   * took `evolution/`, or a profile write under a name with no roster row.
+   * took the agent's subtrees, or a profile write under a name with no roster row.
    */
   profileHomeOnDisk: boolean;
 }
@@ -172,7 +172,7 @@ export function savedAgentRemovalDoor(state: SavedAgentState): SavedAgentRemoval
           "no roster row, no agent.yml and no authority, but .tachyon/agents/<name>/ is still on disk. There "
           + "is no member to remove, and Tachyon never deletes a profile directory automatically. Run "
           + "`rmdir .tachyon/agents/<name>/`: it succeeds when the directory is empty residue from an "
-          + "interrupted create or forget, and refuses when it still holds Evolution, memory, or unknown bytes — "
+          + "interrupted create or forget, and refuses when it still holds memory or unknown bytes — "
           + "read those before deleting them, or restore the roster row to adopt what is there",
       };
     case "absent":

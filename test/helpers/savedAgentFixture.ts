@@ -1,9 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { parse, stringify } from "yaml";
+import { stringify } from "yaml";
 import {
-  parseAgentProfileAuthorityRegistry,
   serializeAgentProfileAuthorityRegistry,
   type AgentProfileAuthorityRecord,
 } from "../../src/config/agentProfileAuthority.js";
@@ -64,7 +63,7 @@ export interface SavedAgentSpec {
   cwd?: string;
   autostart?: boolean;
   attention?: { enabled?: boolean; silenceSec?: number; patterns?: string[] };
-  /** extra top-level profile sections (evolution selectors, ownership, …). */
+  /** extra top-level profile sections (ownership, …). */
   extra?: Record<string, unknown>;
 }
 
@@ -143,59 +142,4 @@ export function savedAgentSecrets(root: string, agents: readonly SavedAgentFixtu
 /** `agents:` block for a set of Saved agents (pointers only). */
 export function savedAgentsYaml(agents: readonly SavedAgentFixture[]): string {
   return agents.length === 0 ? "agents: {}\n" : `agents:\n${agents.map((agent) => agent.pointerYaml).join("")}`;
-}
-
-/**
- * Turn on `selfEvolution` for an already-declared Saved agent.
- *
- * The projection only grants `selfEvolution: { enabled: true }` when the profile pins an
- * `evolution-selector.json` naming the SAME profileId the Evolution store already holds
- * (`AgentManager.evolutionForFreshSession` refuses a spawn when the two disagree). So the store's
- * profile has to exist first — its id is minted by the store, never by the caller — which is why
- * this runs against a live workspace's `evolutionStore` output rather than at declaration time.
- *
- * Nothing in `src/` writes this selector today (the formation lane pins `evolution/profile.json`
- * under a different contract), so this is the only way a test can reach the enabled projection.
- * Rewrites the profile and re-signs its authority; the caller must reload the workspace afterwards,
- * because the authority registry is read once at construction.
- */
-export function enableSavedAgentSelfEvolution(
-  root: string,
-  name: string,
-  profileId: string,
-  secrets: Map<string, string>,
-): void {
-  const profileDir = path.join(root, ".tachyon", "agents", name);
-  const selector = `${JSON.stringify({ profileId, schemaVersion: 1 })}\n`;
-  fs.writeFileSync(path.join(profileDir, "evolution-selector.json"), selector, "utf8");
-  const profilePath = path.join(profileDir, "agent.yml");
-  const source = parse(fs.readFileSync(profilePath, "utf8")) as Record<string, unknown>;
-  const agentId = source.agentId as string;
-  const profile = stringify({
-    ...source,
-    prompt: { ...(source.prompt as Record<string, unknown> | undefined), evolution: "evolution" },
-    references: [
-      ...((source.references as unknown[] | undefined) ?? []),
-      {
-        id: "evolution",
-        kind: "evolution",
-        scope: "profile",
-        owner: agentId,
-        path: "evolution-selector.json",
-        mode: "pinned",
-        sha256: createHash("sha256").update(selector).digest("hex"),
-      },
-    ],
-  });
-  fs.writeFileSync(profilePath, profile, "utf8");
-  const key = agentProfileAuthoritiesSecretKey(workspaceHash(root));
-  const registry = parseAgentProfileAuthorityRegistry(secrets.get(key));
-  const authority = registry.get(name);
-  if (!authority) throw new Error(`no authority for '${name}' — declare it with writeSavedAgent first`);
-  registry.set(name, {
-    ...authority,
-    revision: `${name}-r2`,
-    canonicalSha256: createHash("sha256").update(profile).digest("hex"),
-  });
-  secrets.set(key, serializeAgentProfileAuthorityRegistry(registry));
 }

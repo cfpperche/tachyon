@@ -49,15 +49,12 @@ const ARTIFACT_BACKUPS = "artifact-backups";
 const DIGEST_RE = /^[a-f0-9]{64}$/;
 const CREATE_ARTIFACT_NAMES = new Set([PERSISTENT_INSTRUCTIONS_FILE_NAME, WORKSPACE_SETUP_PATH]);
 /**
- * `t-d185e1` — profile-local documents an EDIT may publish.
+ * Profile-local documents an EDIT may publish.
  *
- * Deliberately its own set, and deliberately tiny. Enabling Evolution on an already-declared canonical
- * agent needs a companion file (`evolution-selector.json`) written in the SAME transaction as the
- * patch that pins it: the projection only grants `selfEvolution` when the pinned sha256 matches the
- * bytes on disk, so publishing them separately would leave a window where the profile references a
- * digest nothing satisfies — and the authority is re-signed over the profile, not over the artifact.
- *
- * Keeping create's set separate prevents edits from republishing create-only documents.
+ * Deliberately its own set: an edit republishes only what the form authors, and keeping create's set
+ * separate prevents edits from republishing create-only documents. A document and the patch that
+ * pins it ride the SAME transaction, because the projection only accepts a reference whose pinned
+ * sha256 matches the bytes on disk.
  */
 /*
  * t-afc86e adds the two workspace-command documents to BOTH sets. They are authored by the same
@@ -72,7 +69,6 @@ const CREATE_ARTIFACT_NAMES = new Set([PERSISTENT_INSTRUCTIONS_FILE_NAME, WORKSP
  * be able to republish it. Nothing else owns these bytes under another contract.
  */
 const EDIT_ARTIFACT_NAMES = new Set([
-  "evolution-selector.json",
   WORKSPACE_SETUP_PATH,
   PERSISTENT_INSTRUCTIONS_FILE_NAME,
 ]);
@@ -192,7 +188,6 @@ export interface AgentProfileLifecycleSnapshot {
   provenance: {
     canonical: { scope: "profile"; writable: true; sha256: string };
     authority: { scope: "host"; writable: false; revision: string; grants: number; /** Content-free IDs of grants eligible for Studio selection. */ capabilityReferenceIds?: string[] };
-    learned: { scope: "profile"; writable: false; present: boolean };
     projection: { scope: "runtime"; writable: false; active: boolean };
   };
 }
@@ -210,8 +205,7 @@ export interface CommitAgentProfileLifecycleInput {
   createProfileLocalReferences?: Array<Omit<AgentProfileReferenceV1, "scope" | "owner">>;
   /**
    * Bounded profile-local authored files published in this transaction. `create` carries the V1
-   * bundle's documents; `edit` carries only the Evolution selector (`t-d185e1`). Never on
-   * `set-enabled`, which changes a flag and no bytes.
+   * bundle's documents. Never on `set-enabled`, which changes a flag and no bytes.
    */
   artifacts?: Array<{ path: string; text: string; sha256: string }>;
   /**
@@ -674,7 +668,6 @@ export async function inspectAgentProfileLifecycle(input: {
         grants: authority.capabilityGrants?.length ?? 0,
         capabilityReferenceIds: (authority.capabilityGrants ?? []).map((grant) => grant.referenceId).sort(),
       },
-      learned: { scope: "profile", writable: false, present: canonical.profile.prompt?.evolution !== undefined },
       projection: { scope: "runtime", writable: false, active: canonical.profile.lifecycle?.enabled !== false },
     },
   };

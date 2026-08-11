@@ -18,7 +18,6 @@ import { agentProfileSchemaV1, type AgentProfileV1 } from "./agentProfileSchema.
 import { authoritySnapshotFor, type AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import {
   closeCanonicalAgentProfile,
-  readAgentProfileReference,
   readCanonicalAgentProfile,
   type CanonicalAgentProfileSource,
 } from "./agentProfileReader.js";
@@ -682,45 +681,6 @@ function materializePersistentInstructions(
   return { text: reference.resolvedText };
 }
 
-/**
- * `t-d185e1` — the selector's profile-local path, shared with the writer so the two cannot drift.
- * The reader below refuses any reference pointing anywhere else.
- */
-export const EVOLUTION_SELECTOR_PATH = "evolution-selector.json";
-
-
-function readEvolutionSelector(
-  workspaceRoot: string,
-  agentName: string,
-  profile: AgentProfileV1,
-): { profileId: string; selectorSha256: string } | string[] | undefined {
-  const id = profile.prompt?.evolution;
-  if (!id) return undefined;
-  const reference = profile.references?.find((candidate) => candidate.id === id);
-  if (!reference || reference.kind !== "evolution" || reference.scope !== "profile"
-    || reference.owner !== profile.agentId || reference.path !== EVOLUTION_SELECTOR_PATH
-    || reference.mode !== "pinned" || !reference.sha256) {
-    return ["profile/evolution-selector: canonical Evolution selector reference is invalid"];
-  }
-  const source = readCanonicalAgentProfile(workspaceRoot, agentName);
-  if (!source) return ["profile/evolution-selector: canonical profile disappeared"];
-  try {
-    const selected = readAgentProfileReference(source, reference.path, reference.sha256);
-    const parsed = JSON.parse(selected.text) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
-      || (parsed as Record<string, unknown>).schemaVersion !== 1
-      || typeof (parsed as Record<string, unknown>).profileId !== "string"
-      || !/^[A-Za-z0-9][A-Za-z0-9._:+-]{0,255}$/.test((parsed as { profileId: string }).profileId)
-      || Object.keys(parsed as Record<string, unknown>).sort().join(",") !== "profileId,schemaVersion") {
-      return ["profile/evolution-selector: selector bytes are invalid"];
-    }
-    return { profileId: (parsed as { profileId: string }).profileId, selectorSha256: selected.sha256 };
-  } catch (error) {
-    return [`profile/evolution-selector: ${error instanceof Error ? error.message : String(error)}`];
-  } finally {
-    closeCanonicalAgentProfile(source);
-  }
-}
 
 /**
  * t-b0cfd4 — capture what this agent selected from the workspace, and withhold what cannot be
@@ -780,7 +740,6 @@ function captureProjectCapabilities(
 
 function projectDefinition(
   resolved: ResolvedAgentProfile,
-  evolutionSelector?: { profileId: string; selectorSha256: string },
   nativeConfigProjection?: ResolvedAgentNativeConfigProjection,
   withheldCapabilities?: readonly WithheldCapability[],
 ): AgentEntry | string[] {
@@ -810,16 +769,12 @@ function projectDefinition(
   // resolves; `agentProfileMaterialization.ts` carries the full reasoning and what is still refused.
   const persistentInstructions = materializePersistentInstructions(resolved);
   if (Array.isArray(persistentInstructions)) errors.push(...persistentInstructions);
-  if (definition.prompt?.evolution && !evolutionSelector) {
-    errors.push("profile/projection: Evolution selector is unavailable");
-  }
   // t-afc86e — worktree-setup references are now materialized below rather than
   // refused here. Everything else non-capability still is: this list stays a refusal because a
   // reference the projection does not understand is a fact about the agent it would be dropping.
   const nonCapabilityReferences = resolved.references.filter((reference) =>
     !CAPABILITY_REFERENCE_KINDS.has(reference.kind)
     && !MATERIALIZED_PROFILE_REFERENCE_KINDS.has(reference.kind)
-    && reference.id !== definition.prompt?.evolution
   );
   if (nonCapabilityReferences.length > 0) errors.push("profile/projection: referenced setup/prompt materialization is not available yet");
   const workspaceCommands = materializeWorkspaceCommands(resolved);
@@ -850,10 +805,6 @@ function projectDefinition(
   };
   if (definition.workspace?.cwd) projected.cwd = definition.workspace.cwd;
   if (definition.environment?.values) projected.env = { ...definition.environment.values };
-  if (evolutionSelector) {
-    projected.selfEvolution = { enabled: true };
-    projected.profileEvolution = evolutionSelector;
-  }
   if (definition.workspace?.worktree?.enabled !== undefined) projected.worktree = definition.workspace.worktree.enabled;
   if (definition.workspace?.worktree?.branch) projected.branch = definition.workspace.worktree.branch;
   // t-afc86e — the setup field this projection used to refuse. `errors.length > 0` returned above, so
@@ -971,8 +922,6 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
     warnings.push(...scalar.warnings);
     nativeConfigProjection = scalar.projection;
   }
-  const evolutionSelector = readEvolutionSelector(input.workspaceRoot, input.agentName, parsed.profile);
-  if (Array.isArray(evolutionSelector)) return { ok: false, errors: evolutionSelector };
   const resolved = resolveAgentProfile({
     workspaceRoot: input.workspaceRoot,
     agentName: input.agentName,
@@ -989,7 +938,7 @@ export function projectCanonicalAgentProfile(input: ProjectAgentProfileInput): P
   // repair"), so they must not arrive as two different shapes on two different surfaces.
   const withheldCapabilities = [...captured.withheld, ...(resolved.value.withheldCapabilities ?? [])];
   warnings.push(...withheldCapabilities.map((entry) => withheldCapabilityNotice(input.agentName, entry)));
-  const definition = projectDefinition(resolved.value, evolutionSelector, nativeConfigProjection, withheldCapabilities);
+  const definition = projectDefinition(resolved.value, nativeConfigProjection, withheldCapabilities);
   if (Array.isArray(definition)) return { ok: false, errors: definition };
   return { ok: true, definition, resolved: { ...resolved.value, ...(withheldCapabilities.length ? { withheldCapabilities } : {}) }, warnings };
 }

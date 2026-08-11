@@ -6,7 +6,7 @@ import path from "node:path";
  *
  * Two helpers used to remove the last thing inside a profile home and leave the home itself behind:
  * `removeAgentProfileIfExact` unlinked `agent.yml` (rolling back a canonical create) and
- * `forgetAgent` removed `evolution/`. Both reported success. The residue was permanent — the
+ * `forgetAgent` removed the agent's subtrees. Both reported success. The residue was permanent — the
  * lifecycle journal is discarded precisely because the rollback converged on everything the journal
  * NAMES, and the directory is not one of those things; `forgetAgent` writes no journal at all.
  * Measured in `docs/specs/494-saved-agent-state-ownership/evidence/orphan-hunt-2026-08-07.md`
@@ -21,7 +21,7 @@ import path from "node:path";
  *
  * `rmdir` is that removal, and its refusal is the guard itself rather than a check written in front
  * of one. "Read the directory, and if it is empty `rm -rf` it" is the same policy with a race in the
- * middle: between the read and the delete, an Evolution or memory write can put bytes inside,
+ * middle: between the read and the delete, a memory write can put bytes inside,
  * and the recursive delete would take them. The kernel's `ENOTEMPTY` cannot be raced.
  *
  * ## Why failing is never fatal here

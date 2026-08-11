@@ -955,27 +955,3 @@ describe("removed agent identity config", () => {
   });
 });
 
-describe("agent evolution config (spec 421)", () => {
-  it("accepts the closed true/false opt-in and preserves absence", () => {
-    const result = parseConfig("agents:\n  enabled:\n    cmd: codex\n    selfEvolution: {enabled: true}\n  disabled:\n    cmd: claude\n    selfEvolution: {enabled: false}\n  legacy:\n    cmd: hermes\n");
-    expect(result.errors).toEqual([]);
-    expect(asAgent(result.config?.agents.enabled)?.selfEvolution).toEqual({ enabled: true });
-    expect(asAgent(result.config?.agents.disabled)?.selfEvolution).toEqual({ enabled: false });
-    expect(asAgent(result.config?.agents.legacy)?.selfEvolution).toBeUndefined();
-  });
-
-  it("rejects malformed, open, and terminal declarations", () => {
-    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: true\n").warnings)
-      .toContain("agents.a.selfEvolution: must be a mapping with enabled: boolean");
-    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: {}\n").warnings)
-      .toContain("agents.a.selfEvolution.enabled: must be a boolean");
-    expect(parseConfig("agents:\n  a:\n    cmd: codex\n    selfEvolution: {enabled: true, mode: auto}\n").warnings)
-      .toContain("agents.a.selfEvolution: unknown key 'mode'");
-    expect(parseConfig("terminals:\n  shell:\n    cmd: bash\n    selfEvolution: {enabled: true}\n").warnings
-      .some((error) => error.includes("'selfEvolution' applies only to agents"))).toBe(true);
-    expect(parseConfig("agents:\n  shell:\n    cmd: bash\n    kind: terminal\n    selfEvolution: {enabled: true}\n").warnings
-      .some((error) => error.includes("'selfEvolution' applies only to agents"))).toBe(true);
-    const collision = parseConfig("agents:\n  Reviewer:\n    cmd: codex\n    selfEvolution: {enabled: true}\n  reviewer:\n    cmd: claude\n    selfEvolution: {enabled: true}\n");
-    expect(collision.warnings.some((error) => error.includes("evolution-enabled agent") && error.includes("ASCII case folding"))).toBe(true);
-  });
-});

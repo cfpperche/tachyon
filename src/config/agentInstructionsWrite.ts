@@ -75,7 +75,7 @@ export function persistentInstructionsWriteFor(
  * The `references[]` an EDIT should write, given the list the other Studio writers produced.
  *
  * Chains over a base list rather than rebuilding from the stored profile, for the same reason the
- * workspace-command and Evolution merges chain: each rebuild from `current.references` would drop
+ * workspace-command merges chain: each rebuild from `current.references` would drop
  * what the previous writer just added.
  *
  * Owns one id and nothing else. A foreign instructions binding passes through untouched, because
