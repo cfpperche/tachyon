@@ -119,7 +119,14 @@ describe("optional runtime auth classification (t-70fda0)", () => {
   it("every listed skip title exists as it(\"…\") in the same file — renames cannot leave a silent hole", () => {
     // Only call sites: a mention inside this guard's own source is not a classification map.
     const files = unitTestFiles().filter((row) => skipMaps(row.source).length > 0);
-    expect(files.length).toBeGreaterThan(0);
+    // t-ed0f43 — this used to assert `files.length > 0`, because when the check was written every
+    // classified file declared a skip list and a `skipMaps()` that silently stopped parsing would
+    // have emptied this loop and passed. That anchor died of its own success: injection replaced the
+    // last declare-and-skip call site in the repo, so demanding one would force a file back to the
+    // worse classification just to keep this green. What replaces it is not nothing — the synthetic
+    // case at the bottom of this describe runs `skipMaps()` over a source that DOES declare one and
+    // asserts the rename is caught, so a broken scanner is still red without depending on any real
+    // file. The loop below stays: it covers the next call site the moment one appears.
     for (const row of files) {
       const titles = itTitles(row.source);
       const maps = skipMaps(row.source);

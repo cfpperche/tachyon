@@ -84,6 +84,12 @@ export function useDisposableRuntimeAuth(runtimes: readonly OptionalRuntime[]): 
  * t-eccb00 — these tests reach a real runtime credential only as optional harness substrate.
  * Skip before the test body runs when that substrate is absent; ctx.skip(note) makes Vitest own the
  * pending result and its reason. Unknown test titles are never skipped.
+ *
+ * t-ed0f43 — as of 2026-08-11 this has ZERO call sites: the last four moved to
+ * `useDisposableRuntimeAuth` once both doors were hermetic. It is kept, not deleted, because the two
+ * answers are not interchangeable — this one is still the right answer wherever the MACHINE is what
+ * the test measures (the runtime binary actually executing, as in the codex dogfood case), and there
+ * injecting a file would fake the very thing under test.
  */
 export function skipTestsWithoutOptionalRuntimeAuth(tests: Partial<Record<OptionalRuntime, readonly string[]>>): void {
   beforeEach(async (context) => {

@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -38,13 +38,14 @@ function makeExec(newSessionEnvs: Record<string, string>[]) {
   };
 }
 
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "a delegated opencode agent's generated config carries the Tachyon permission block and project config cannot override it",
-    "an ungated, shared-cwd delegated opencode agent (parent set, no worktree) does NOT get the Tachyon permission block",
-    "a gated opencode agent still gets the Tachyon permission block after ledger rehydration and resume",
-  ],
-});
+/**
+ * `t-ed0f43` — these three used to be declared-and-skipped whenever the HOST had no opencode
+ * credential, which made the suite cover more on a logged-in checkout than in an agent's worktree.
+ * Measured: injection alone was not enough HERE, because the launch preflight still executed
+ * `opencode providers list` and failed closed (`credential store probe failed`). Both doors have to
+ * be closed, and `HERMETIC_PREFLIGHT` above closes the first one.
+ */
+useDisposableRuntimeAuth(["opencode"]);
 
 describe("container-generated delegation behavior", () => {
   it("a delegated opencode agent's generated config carries the Tachyon permission block and project config cannot override it", async () => {

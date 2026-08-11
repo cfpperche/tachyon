@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
@@ -125,11 +125,14 @@ async function makeWorkspace() {
   return { ws, ...fake };
 }
 
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "a Bridge-spawned child never opens a surface, and restarting it does not either (F3)",
-  ],
-});
+/**
+ * `t-ed0f43` — the F3 case used to be declared-and-skipped whenever the HOST had no opencode
+ * credential, which made the suite cover more on a logged-in checkout than in an agent's worktree.
+ * Measured: injection alone was not enough HERE, because the launch preflight still executed
+ * `opencode providers list` and failed closed (`credential store probe failed`). Both doors have to
+ * be closed, and `HERMETIC_PREFLIGHT` above closes the first one.
+ */
+useDisposableRuntimeAuth(["opencode"]);
 
 describe("t-b88106 — a relaunch preserves the agent's surface (real Workspace wiring)", () => {
   it("an explicit start opens the agent's editor terminal", async () => {
