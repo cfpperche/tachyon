@@ -36,20 +36,30 @@ describe("isolatedArgs", () => {
   });
 });
 
-describe("utf8LocaleEnv (mojibake fix — force a UTF-8 locale only when none is declared)", () => {
-  it("is a no-op when the env already declares UTF-8 (LANG, LC_CTYPE, or LC_ALL)", () => {
+describe("utf8LocaleEnv (force UTF-8 ctype only when effective locale is not UTF-8)", () => {
+  it("is a no-op when the effective ctype is already UTF-8 (LC_ALL > LC_CTYPE > LANG)", () => {
     expect(utf8LocaleEnv({ LANG: "en_US.UTF-8" })).toEqual({});
     expect(utf8LocaleEnv({ LC_CTYPE: "pt_BR.utf8" })).toEqual({});
     expect(utf8LocaleEnv({ LC_ALL: "C.UTF-8", LANG: "C" })).toEqual({}); // LC_ALL UTF-8 wins
   });
 
-  it("forces C.UTF-8 on Linux when the env declares no UTF-8 locale", () => {
-    expect(utf8LocaleEnv({}, "linux")).toEqual({ LANG: "C.UTF-8", LC_CTYPE: "C.UTF-8" });
-    expect(utf8LocaleEnv({ LANG: "C" }, "linux")).toEqual({ LANG: "C.UTF-8", LC_CTYPE: "C.UTF-8" }); // non-UTF-8 LANG overridden
+  it("forces C.UTF-8 on Linux when the effective ctype is not UTF-8 — including LC_ALL", () => {
+    const forced = { LANG: "C.UTF-8", LC_CTYPE: "C.UTF-8", LC_ALL: "C.UTF-8" };
+    expect(utf8LocaleEnv({}, "linux")).toEqual(forced);
+    expect(utf8LocaleEnv({ LANG: "C" }, "linux")).toEqual(forced);
+    // t-86f3e6: LC_ALL=C must be overwritten; LANG/LC_CTYPE alone leave LC_ALL winning after merge
+    expect(utf8LocaleEnv({ LANG: "C", LC_ALL: "C" }, "linux")).toEqual(forced);
+    expect(utf8LocaleEnv({ LC_ALL: "C" }, "linux")).toEqual(forced);
+    // LANG looks UTF-8 but LC_ALL=C is the effective ctype — still force
+    expect(utf8LocaleEnv({ LANG: "en_US.UTF-8", LC_ALL: "C" }, "linux")).toEqual(forced);
   });
 
   it("uses en_US.UTF-8 on macOS (no C.UTF-8 there)", () => {
-    expect(utf8LocaleEnv({}, "darwin")).toEqual({ LANG: "en_US.UTF-8", LC_CTYPE: "en_US.UTF-8" });
+    expect(utf8LocaleEnv({}, "darwin")).toEqual({
+      LANG: "en_US.UTF-8",
+      LC_CTYPE: "en_US.UTF-8",
+      LC_ALL: "en_US.UTF-8",
+    });
   });
 });
 
