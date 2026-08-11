@@ -1,4 +1,5 @@
 import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -8,6 +9,13 @@ import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
+
+/**
+ * t-35c998 — hermetic launch preflight: production's opencode adapter runs `opencode providers list`
+ * to answer "is this authenticated?", which made every `cmd: opencode` spawn below execute an
+ * installed CLI. The stub answers as a credentialed home does; other adapters stay real.
+ */
+const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 
 class FakeHost implements EngineHost {
   readonly notices: { message: string; level: NotifyLevel }[] = [];
@@ -108,7 +116,7 @@ async function makeWorkspace() {
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  parent:\n    cmd: sh\n", "utf8");
   const host = new FakeHost(mkdir());
   const { tmux, sent } = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   return { ws, sent };
 }
 

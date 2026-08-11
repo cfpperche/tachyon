@@ -1,4 +1,5 @@
 import { skipTestsWithoutOptionalRuntimeAuth, useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -14,6 +15,15 @@ import { ActivityLog, agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "../../src/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
+
+/**
+ * t-35c998 — the launch preflight, made hermetic. Production's opencode adapter answers "is this
+ * authenticated?" by running `opencode providers list`, which is correct there and wrong here: it
+ * made every `cmd: opencode` spawn in this file execute an installed CLI, the machine-dependence
+ * SDD 387 forbids. The stub answers as a credentialed home does, so those spawns behave exactly as
+ * they did before; every other adapter stays the real, non-executing one.
+ */
+const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 import { Terminals } from "../../src/presentation/Terminals.js";
 import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPresentation.js";
 import { harnessHome, harnessRoot } from "../../src/harness/HarnessManager.js";
@@ -329,7 +339,7 @@ async function refusedSavedAgentWorkspace() {
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   expect(asAgent(ws.config?.agents.claude)?.profileLifecycle).toBeDefined();
   expect(ws.config?.agents.claude23).toBeUndefined();
@@ -391,7 +401,7 @@ async function savedAgentStateWorkspace(
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   return { root, ws };
 }
@@ -414,7 +424,7 @@ async function makeWorkspace(
     fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures) + (opts.extraYaml ?? ""), "utf8");
     const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, fixtures));
     const fake = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux: fake.tmux, startBridge: false });
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     return { ws, host, ...fake };
   }
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
@@ -429,7 +439,7 @@ async function makeWorkspace(
   const { tmux, sessions, sessionEnv, dead, sent, panes, calls } = fakeTmux();
   // SDD 368 T14/R4 — createForTest alone yields a ready empty snapshot; callers that need
   // start()-side autostart/rehydrate must call start() explicitly (pre-R3 helper semantics).
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false });
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   return { ws, host, tmux, sessions, sessionEnv, dead, sent, panes, calls };
 }
 
@@ -530,7 +540,7 @@ it("t-af6803 isolates one invalid profile without invalidating or stopping the h
   fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures), "utf8");
   const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, fixtures));
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   try {
     await ws.manager.spawn("healthy");
     const healthySession = ws.manager.session("healthy");
@@ -584,7 +594,7 @@ it("loads a canonical agent profile only after host-custodied authority is avail
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     expect(ws.configFailure).toBeUndefined();
@@ -638,7 +648,7 @@ it("t-bd14d8: an agent's legacy lifecycle.watch registers no watcher and is warn
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     expect(ws.configFailure).toBeUndefined();
@@ -677,7 +687,7 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     const created = await ws.commitAgentProfileLifecycle({
@@ -733,7 +743,7 @@ it("t-afc86e: an agent's setup commands survive a save that does not touch them"
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   const editable = (over: Partial<AgentProfileStudioMutationV1["editable"]> = {}): AgentProfileStudioMutationV1["editable"] => ({
     displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
@@ -813,7 +823,7 @@ it("t-d48775: persistent instructions written in Agent Studio survive a reload a
   const homeDir = mkdir();
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
-  const substrate = { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir };
+  const substrate = { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir };
   const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, substrate);
   const AUTHORED = "you are a code reviewer; read the diff and flag correctness issues";
   const profileDir = path.join(root, ".tachyon", "agents", "reviewer");
@@ -924,7 +934,7 @@ it("t-d48775: the Saved Agent creation door refuses instructions it cannot publi
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     await expect(ws.commitSavedAgentCreation({
@@ -949,7 +959,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     const created = await ws.commitAgentProfileStudio({
@@ -1002,7 +1012,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
   const ws = await Workspace.createForTest(
     root,
     { host: new SharedSecretHost(mkdir(), new Map()), onViewsChanged: () => {} },
-    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     const created = await ws.commitAgentProfileStudio({
@@ -1084,7 +1094,7 @@ it("exports, imports and clones portable profiles through the Workspace boundary
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     const source = await ws.commitAgentProfileLifecycle({
@@ -1117,7 +1127,7 @@ it("renames a running canonical profile and keeps the same live session through 
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     const created = await ws.commitAgentProfileLifecycle({
@@ -1154,7 +1164,7 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     const created = await ws.commitAgentProfileLifecycle({
@@ -1654,7 +1664,7 @@ it("refuses the bare canonical forget while a tmux binding exists, and plans the
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     await ws.commitAgentProfileLifecycle({
@@ -1749,7 +1759,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
           return { type: "command", command: "node '/private/capture-wrapper.cjs'", padding: 1 };
         },
       },
-    }, { tmux: fake.tmux, startBridge: false });
+    }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     try {
       await ws.manager.spawn("claude", { cmd: "claude" });
 
@@ -1791,7 +1801,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
           return { type: "command", command: "node '/private/capture-wrapper.cjs'" };
         },
       },
-    }, { tmux: fake.tmux, startBridge: false });
+    }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     try {
       await ws.manager.spawn("claude", { cmd: "claude --setting-sources project" });
 
@@ -1860,7 +1870,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     });
 
     const { tmux } = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     await flush();
     expect(await store.readPending()).toMatchObject({ action_id: "act-reload-recover" });
 
@@ -1882,7 +1892,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       { name: "claude", spec: { runtime: "claude" } },
     ]);
     const { tmux } = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     await ws.manager.spawn("codex");
     await ws.manager.spawn("claude");
     (ws.monitor as unknown as { stateOf(agent: string): { state: string; composerOccupied?: boolean } | undefined }).stateOf = (agent: string) =>
@@ -2279,7 +2289,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
     const host = new FakeHost(mkdir());
     const { tmux, sessions } = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     const session = ws.manager.session("a");
     sessions.add(session);
     host.setState(`tachyon.terminals.open.v1.${workspaceHash(root)}`, [
@@ -2474,7 +2484,7 @@ describe("Workspace — upgrade notice scoped to genuine stragglers (t-e5910c)",
     host.setState(workspaceVersionStateKey(workspaceHash(root)), OLD_VERSION);
     const { tmux, sessions } = fakeTmux();
     sessions.add(sessionName(workspaceHash(root), "survivor"));
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     return { ws, host };
   }
 
@@ -2928,7 +2938,7 @@ it("t-e722ce: Agent Studio → Forget removes the worktree the sidebar's Remove 
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     // Give the agent a real checkout, claimed in BOTH records — exactly the state the dogfood found
@@ -3024,7 +3034,7 @@ it("t-621613: Control → Worktrees removes an agent entry whose agent is gone, 
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   const control = { workspace: ws, onViewsChanged: () => {} } as unknown as Parameters<typeof executeExtensionCommand>[0];
   const registerHome = (agent: string): { path: string; branch: string } => {
@@ -3083,7 +3093,7 @@ it("t-e722ce: the forget plan names the blocking precondition and changes nothin
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     await ws.manager.spawn("reviewer");
@@ -3145,7 +3155,7 @@ it("t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     await ws.commitAgentProfileLifecycle({
@@ -3210,7 +3220,7 @@ it("t-d29398: a failed launch preserves — and keeps registered — a checkout 
   const ws = await Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: homeDir },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
   );
   try {
     await ws.commitAgentProfileLifecycle({
@@ -3279,7 +3289,7 @@ function delegatingWorkspace(
   return Workspace.createForTest(
     root,
     { host, onViewsChanged: () => {} },
-    { tmux: fake.tmux, startBridge: false, agentProfileHomeDir: mkdir() },
+    { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: mkdir() },
   ).then((ws) => ({ root, ws, fake }));
 }
 
