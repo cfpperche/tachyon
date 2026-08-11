@@ -5,6 +5,8 @@ import {
   HarnessManager,
   bridgeGrokHome,
   bridgeHermesHome,
+  bridgeMcpPath,
+  bridgeOpencodeMcpPath,
   bridgeMcpRoot,
   bridgeRuntimeHome,
   listBridgeRuntimeHomes,
@@ -126,6 +128,21 @@ describe("t-7bc276 private bridge-mcp runtime home retirement", () => {
     expect(outcomes.every((outcome) => outcome.removed)).toBe(true);
     expect(fs.existsSync(bridgeGrokHome(workspace, "solo"))).toBe(false);
     expect(fs.existsSync(bridgeHermesHome(workspace, "solo"))).toBe(false);
+  });
+
+  it("removes the file-shaped Bridge configs used by non-harness runtimes at the same end-of-life door", () => {
+    const workspace = makeTempDir("tachyon-runtime-retire-files-");
+    const manager = new HarnessManager(workspace);
+    const claudeConfig = bridgeMcpPath(workspace, "solo");
+    const opencodeConfig = bridgeOpencodeMcpPath(workspace, "solo");
+    fs.mkdirSync(path.dirname(claudeConfig), { recursive: true });
+    fs.writeFileSync(claudeConfig, "{}\n");
+    fs.writeFileSync(opencodeConfig, "{}\n");
+
+    manager.retireBridgeRuntimeHomes("solo", { procRoot: noProc(workspace) });
+
+    expect(fs.existsSync(claudeConfig)).toBe(false);
+    expect(fs.existsSync(opencodeConfig)).toBe(false);
   });
 
   it("names a home a live process still sits in and leaves it standing", () => {

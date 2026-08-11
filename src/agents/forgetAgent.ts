@@ -11,7 +11,7 @@ export const FORGET_AGENT_FOOTPRINTS = [
   "activity log and writer state",
   "session-owner ledger rows",
   "private runtime-home credentials",
-  "private bridge-mcp runtime home",
+  "private bridge-mcp runtime artifacts",
   "legacy/idempotent Pi session subtree",
   "per-spawn settings file",
   "generated spawn brief",
@@ -24,10 +24,10 @@ export interface ForgetAgentDeps {
   ledger?: SessionLedger;
   removeHarnessHome?: (name: string) => void;
   /**
-   * t-7bc276 — the private `bridge-mcp/<name>.<runtime>/` home a non-harness grok/hermes agent runs
-   * out of. Distinct from `removeHarnessHome` (which retires credentials only) because this is the
-   * whole directory, and it must run AFTER that one: a home withheld for being occupied still has to
-   * have lost its credential.
+   * Private `bridge-mcp/<name>.json` / `.opencode.json` configs plus the
+   * `bridge-mcp/<name>.<runtime>/` home a non-harness grok/hermes agent runs out of. Distinct from
+   * `removeHarnessHome` (which retires credentials only), and it must run AFTER that one: a home
+   * withheld for being occupied still has to have lost its credential.
    */
   removeBridgeRuntimeHome?: (name: string) => void;
   removePiSessionDir?: (name: string) => void;
