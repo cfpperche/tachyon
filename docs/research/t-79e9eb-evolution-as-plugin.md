@@ -16,8 +16,12 @@ Cinco fatos medidos mudam o desenho, e três deles contrariam o que a task assum
 
 1. **A injeção por agente já existe e está rodando neste workspace** — não como plugin por agente, mas
    como *grant de skill por agente*. `claude` tem 3 skills no seu home privado, `claude-cowntdown` tem
-   5, `grok` e `codex` têm 0. Cada uma é uma referência `kind: skill`, `mode: pinned`, com `sha256` e
+   5, `codex` tem 0. Cada uma é uma referência `kind: skill`, `mode: pinned`, com `sha256` e
    `version`, selada na autoridade do perfil. §4.
+   **Mas o canal concede e não revoga:** o `grok`, cujo perfil hoje não concede nada, carrega **3
+   skills granted em 07/08** que sobreviveram à remoção da seleção em 09/08 e a uma regeneração do
+   home em 10/08 — e são alcançáveis pela descoberta nativa do runtime. Não é resíduo de outro
+   mecanismo: o manifesto no home diz `origins: profile/grok`. §4.1, `t-987347`.
 2. **Skill tem paridade 6/6** nos nossos runtimes, e é o único portador que tem. Claude, Codex, Grok,
    OpenCode, Pi e Hermes carregam `SKILL.md` + `scripts/references/assets` nativamente. §1, §5.
 3. **Um runtime já entrega a máquina inteira, com gate de aprovação humana.** Hermes tem
@@ -339,13 +343,18 @@ rodando. Conferido no ponto de uso, não por busca textual:
 **Medido em `/home/goat/tachyon`, 2026-08-11 — 15 plugins instalados, 12 skills materializadas no
 workspace (`.claude/skills/`):**
 
-| Agente | `capabilities.skills` no perfil | Conteúdo real de `.tachyon/harness/<agente>/skills/` |
-|---|---|---|
-| `claude` (salvo, perfil) | `agent-browser`, `sdd`, `visual-qa` | exatamente essas 3 |
-| `claude-cowntdown` (salvo, perfil) | `agent-browser`, `hyperframes`, `image`, `sdd`, `visual-qa` | exatamente essas 5 |
-| `grok` (salvo, perfil) | nenhuma | diretório ausente |
-| `codex` | — | vazio |
-| `nativeevo` (temporário, sem perfil) | — | **11** (o conjunto do workspace) |
+| Agente | `capabilities.skills` no perfil | Home privado | Conteúdo real de `<home>/skills/` |
+|---|---|---|---|
+| `claude` (salvo, perfil) | `agent-browser`, `sdd`, `visual-qa` | `.tachyon/harness/claude` | exatamente essas 3 |
+| `claude-cowntdown` (salvo, perfil) | `agent-browser`, `hyperframes`, `image`, `sdd`, `visual-qa` | `.tachyon/harness/claude-cowntdown` | exatamente essas 5 |
+| `grok` (salvo, perfil) | **nenhuma** | `.tachyon/bridge-mcp/grok.grok` | **3 obsoletas** — ver §4.1 |
+| `codex` | — | `.tachyon/harness/codex` | vazio |
+| `nativeevo` (temporário, sem perfil) | — | `.tachyon/harness/nativeevo` | **11** (o conjunto do workspace) |
+
+> Correção da primeira versão deste documento (2026-08-11, apontada por `claude` na revisão): eu havia
+> medido `.tachyon/harness/grok/skills` — ausente — e concluído "0". O home privado do Grok **não é
+> esse**: é `.tachyon/bridge-mcp/grok.grok` (`bridgeGrokHome`, t-843576), e lá existem três skills.
+> Medi a linha errada da tabela. A §4.1 diz o que elas são.
 
 Cada entrada em `agent.yml` é uma referência **fixada por conteúdo e por versão**:
 
@@ -376,7 +385,51 @@ A máquina que sustenta isso já está toda no core, e cada peça tem dono:
   grant exato custodiado pelo host, e o harness escreve a árvore no **home privado do agente**, não no
   worktree.
 
-**O único gap medido:** um agente **temporário/delegado, sem perfil**, recebe o conjunto do workspace
+### 4.1 O canal concede por agente, mas **não revoga** — medido no Grok
+
+As três skills do Grok não são resíduo de outro mecanismo nem uma segunda porta de entrega: são o
+**mesmo** caminho do grant, sem revogação. O manifesto no próprio home privado dá a proveniência:
+
+```
+.tachyon/bridge-mcp/grok.grok/.tachyon-profile-capabilities/manifest.json   (2026-08-07 18:23)
+  sources: agent-browser, sdd, visual-qa — scope: project, owner: plugin:<nome>, sha256 por skill
+  outputs.skills[].origins: [{ kind: "profile", agent: "grok" }]
+```
+
+`origins: profile/grok` significa: entregues **pelo perfil do próprio grok**, não por delegação, não
+por herança de workspace. A linha do tempo fecha o caso:
+
+| Quando | O quê |
+|---|---|
+| 2026-08-07 18:23 | as 3 árvores de skill são materializadas em `$GROK_HOME/skills/` pelo grant |
+| 2026-08-09 21:54 | `.tachyon/agents/grok/agent.yml` é reescrito **sem `capabilities:` e sem `references:`** — a seleção sai |
+| 2026-08-10 01:08 | `config.toml` do home privado é **regenerado** — houve materialização já sem seleção |
+| 2026-08-10 01:57 | `auth.json` / `active_sessions.json` — **sessão viva** depois disso |
+| hoje | as 3 árvores continuam com mtime de 07/08. Sobreviveram à regeneração. |
+
+E são alcançáveis pelo runtime: o `[skills] ignore` gerado cobre só as raízes de **projeto**
+(`.agents/skills` e `.grok/skills` dos dois workspaces) e **não** cobre `$GROK_HOME/skills`, que é
+raiz de descoberta documentada do Grok (`~/.grok/skills/`, docs.x.ai). Uma delas é `agent-browser`,
+que dirige browser real.
+
+**Mecanismo, conferido no ponto de uso.** Claude purga incondicionalmente `skills` e
+`.tachyon-profile-capabilities` (`HarnessManager.ts:2702`) **antes** de decidir, e só então
+re-materializa `if (capabilities)`. Grok (`:1585-1591`) chama `materializeBridgeMcpGrok` — que em suas
+75 linhas (L3343-3418) **não purga nada**, só comenta que as granted "are written to this home's own
+`skills/` by `materializeProfileCapabilities`" — e depois `replaceCapturedSkillTree`, que está correto
+mas **só roda quando existe projeção**. Seleção zero ⇒ nenhuma projeção ⇒ nada purga.
+
+Isso **contradiz `docs/runtimes/parity.md:507`** (t-84c678, 2026-08-05): *"zero selection removes stale
+private skills"*. Medido falso exatamente no caso que a frase nomeia. Registrado em **`t-987347`**;
+Codex (`:2232-2234`) e Pi têm a mesma guarda `if (profileCapabilities)` e **não foram medidos aqui**.
+
+**O que isso muda no estudo, e o que não muda.** Não derruba a §4: o grant por agente existe, entrega
+e é fixado por conteúdo — o próprio manifesto do Grok é a prova de que rodou. O que ele mostra é que
+o **CANAL do padrão (§9) concede mas não revoga**, e essa assimetria é pior para a Evolution do que
+para uma skill de plugin: aqui o que sobrevive à revogação seria conteúdo **gerado por agente**.
+Portanto `t-987347` entra como pré-requisito do Movimento 2, ao lado de `t-a7063c`.
+
+**O outro gap medido:** um agente **temporário/delegado, sem perfil**, recebe o conjunto do workspace
 (eu recebi 11 de 12). A granularidade por agente vale hoje para agentes com perfil — salvos/canônicos.
 Se a Evolution virar skill entregue por plugin, ela será oferecida a agentes temporários que herdam.
 Isso é uma escolha a fazer (§8), não um bloqueio.
@@ -398,7 +451,7 @@ Skill é o **único** portador com paridade nos seis. Consolidando a doc dos run
 |---|---|---|---|---|
 | Claude | `.claude/skills`, `~/.claude/skills` | `CLAUDE_CONFIG_DIR` privado | **✓ com `requireGrant`** | parity §3.2 Claude; code.claude.com/docs/en/skills |
 | Codex | `.agents/skills`, `$HOME/.agents/skills`, `/etc/codex/skills` | `CODEX_HOME` privado | ✓ **sem `requireGrant`** (§6) | parity §3.2 Codex; learn.chatgpt.com/docs/build-skills |
-| Grok | `.grok/skills`, `~/.grok/skills`, `[skills] paths` | `GROK_HOME` + `HOME` privados; `[skills].ignore` para as raízes de projeto **e** para `.agents/skills` | ✓ **sem `requireGrant`** (§6) | parity §3.2 Grok (`t-84c678`, 0.2.118, 2026-08-05); docs.x.ai |
+| Grok | `.grok/skills`, `~/.grok/skills`, `[skills] paths` | `GROK_HOME` + `HOME` privados; `[skills].ignore` para as raízes de projeto **e** para `.agents/skills` — **nunca para `$GROK_HOME/skills`** | ✓ **sem `requireGrant`** (§6) e **sem revogação** (§4.1) | parity §3.2 Grok (`t-84c678`, 0.2.118, 2026-08-05); docs.x.ai |
 | OpenCode | `.opencode/skills`, `~/.config/opencode/skills` (+ compat `.claude/skills`) | XDG por agente em `.tachyon/harness/<agent>/` (`t-e2ebe3`) | **ausente declarado** — `SKILLS_REL` cobre só claude/codex/grok | docs/runtimes/opencode.md; README opencode-agent-skills |
 | Pi | `.pi/skills`, `.agents/skills`, `~/.pi/agent/skills`, `~/.agents/skills` | `PI_CODING_AGENT_DIR` privado; descoberta automática **desligada** por design (SDD 406) | **✓ por outro caminho** — snapshots privados exatos + `--skill` explícito | parity §3.2 Pi; pi-mono docs/skills.md |
 | Hermes | `~/.hermes/skills/` + taps + `external_dirs` | `HERMES_HOME` privado | **ausente declarado** | docs/runtimes/hermes.md; hermes-agent docs |
@@ -527,6 +580,13 @@ pelo mesmo caminho que hoje entrega `agent-browser` e `sdd` (§4). O prompt deix
 O que **não** muda: `LEARNINGS.md` continua camada de prompt, porque é fato durável e não procedimento
 — a mesma separação que o Hermes faz entre `MEMORY.md` e skills, com as mesmas palavras (§1.6).
 
+**Dois pré-requisitos, ambos medidos, ambos anteriores a este movimento e não criados por ele:**
+`t-a7063c` (o grant de skill só é exigido no adapter `claude`, §6.2) e `t-987347` (o canal concede e
+não revoga fora do Claude, §4.1). Enquanto valerem, entregar conteúdo **gerado por agente** por este
+canal significa entregá-lo sem verificação de selo em codex/grok e sem garantia de que uma revogação
+o retire. Para uma skill de plugin isso já é defeito; para a Evolution é a diferença entre a
+capacidade e o seu oposto.
+
 ### MOVIMENTO 3 — o comportamento sai do core (o "vira plugin" propriamente dito)
 
 O que ainda é core e **não precisa ser**: o texto que instrui o agente a refletir e a forma da
@@ -626,7 +686,7 @@ de padrão.
 | 1 | **PORTADOR** | Em que formato a capacidade é feita, para o runtime carregá-la sem que a gente invente nada? | Skill (`SKILL.md` + `scripts/references/assets`). Paridade 6/6 (§5). É o único portador que tem. |
 | 2 | **CUSTÓDIA** | De onde vieram estes bytes, em que versão, e quem os trouxe para este workspace? | Lockfile de plugin (`.tachyon/plugins.lock.json`, alvo `skill-dir`, `version`, `sha256`). Nunca o ambiente, nunca o cwd, nunca `$HOME`. |
 | 3 | **CONCESSÃO** | **Este** agente pode usar **este conteúdo exato**? | `authority.capabilityGrants` (fixado por sha256, selado) + `capabilities.skills` (seleção). Já roda (§4). |
-| 4 | **CANAL** | Por onde a capacidade chega a UM agente, sem tocar o workspace nem o worktree? | O home privado por runtime, materializado a cada spawn: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`, XDG do OpenCode, `HERMES_HOME`. É o canal por agente que os runtimes não têm — nenhum deles tem escopo de plugin por sessão (§1.2) — e que o Tachyon **já tem**. |
+| 4 | **CANAL** | Por onde a capacidade chega a UM agente **e por onde ela sai**, sem tocar o workspace nem o worktree? | O home privado por runtime, materializado a cada spawn: `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GROK_HOME`, `PI_CODING_AGENT_DIR`, XDG do OpenCode, `HERMES_HOME`. É o canal por agente que os runtimes não têm — nenhum deles tem escopo de plugin por sessão (§1.2) — e que o Tachyon **já tem**. **Metade dele, hoje:** concede em todos, revoga só no Claude (§4.1). |
 | 5 | **RECUSA NOMINAL** | O que acontece no runtime onde o canal não existe? | Recusa **por nome, com motivo** — nunca silenciosamente vazia. A regra já está escrita em `agentHookProjection.ts` ("every other runtime — refused by name with a reason"). |
 
 **A observação que faz o padrão funcionar, e que é o achado central deste estudo:** nenhum dos seis
@@ -642,6 +702,10 @@ casos de teste, com os mesmos nomes. Para qualquer capacidade que siga este padr
 - *Interface × authorize/revoke* — escreve referência **e** grant na mesma transação.
 - *Agent × create / restart / resume / fork* — um canal por runtime, recomputado do lockfile + grant a
   cada spawn; nunca herdado de sessão anterior.
+- *Interface × revoke, e o perfil fica com seleção VAZIA* — o caso que a §4.1 mede como quebrado em
+  Grok. Vazio é uma seleção, não uma ausência de seleção: a materialização tem de **purgar
+  incondicionalmente antes de decidir**, como o Claude faz, senão "conceder" é permanente. Este
+  gatilho é o que faltava na lista, e ele só apareceu porque alguém foi olhar o disco.
 - *Agent × delegation* — decisão explícita: herda ou não. Hoje herda o toolkit do delegador, e um
   temporário sem perfil recebe o conjunto do workspace (§4). Este é o gatilho que a Evolution obriga a
   responder.
@@ -663,6 +727,13 @@ provavelmente o maior ganho do eixo do dono depois deste.
   registradas no `parity.md`, com data. Antes do Movimento 2 tocar codex/grok/pi, a materialização real
   no home privado precisa de uma medição viva por runtime — a mesma disciplina que a `t-84c678` usou
   com `grok inspect --json`.
+  **Este risco já se realizou na revisão deste documento**: a §4.1 é exatamente ele, e foi encontrada
+  porque alguém foi olhar o disco do runtime que eu tinha medido no diretório errado. O que a leitura
+  de código não pega é o que **sobrou** de uma materialização anterior — e "sobrou" é o estado que
+  importa aqui.
+- **Codex e Pi não foram medidos em disco.** Ambos têm a mesma guarda `if (profileCapabilities)` que
+  produziu o defeito do Grok (`HarnessManager.ts:2232-2234` e `materializePiProfileHome`). Não afirmo
+  que têm o defeito; afirmo que a medição que o encontraria não foi feita.
 - **A doc oficial de skills do OpenCode não foi extraída** (§1.5). O suporte nativo está caracterizado
   pelo README de um plugin de terceiros e pelo showcase do agentskills.io.
 - **Não medi custo de contexto.** Trocar catálogo-no-prompt por descoberta nativa muda quantos tokens o
@@ -702,4 +773,4 @@ provavelmente o maior ganho do eixo do dono depois deste.
 `docs/runtimes/pi.md`, `docs/runtimes/hermes.md`, `docs/research/runtime-native-memory-parity-t-d4c42e.md`,
 `docs/research/t-73b2e1-core-plugin-coupling-map.md`, `docs/project-guidance.md`.
 **Tasks:** t-56ced4, t-75ce10, t-54cdb1..t-54cdb4, t-5498a6, t-2f37e7, t-84c678, t-62f599, t-36182f,
-t-09edf2, t-a7063c (aberta por este estudo).
+t-09edf2, t-843576, t-a7063c e t-987347 (as duas últimas abertas por este estudo).
