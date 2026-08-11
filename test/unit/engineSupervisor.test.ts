@@ -111,11 +111,11 @@ describe("persistent engine supervisor", () => {
       startTimeoutMs: 10_000,
       pollMs: 20,
     } as const;
-    await ensureDaemonEngine(baseOptions);
+    const original = await ensureDaemonEngine(baseOptions);
     const newer = stageTestBundle(fixture.root, "guard-v2", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.79.0", "stable");
     const prompts: unknown[] = [];
 
-    await expect(ensureDaemonEngine({
+    const kept = await ensureDaemonEngine({
       ...baseOptions,
       bundle: newer,
       workingSnapshot: async () => ({ state: "known", agents: ["builder"] }),
@@ -123,10 +123,17 @@ describe("persistent engine supervisor", () => {
         prompts.push(snapshot);
         return false;
       },
-    })).rejects.toMatchObject({ code: "ENGINE_UPGRADE_DECLINED" });
+    });
 
     expect(prompts).toEqual([{ state: "known", agents: ["builder"] }]);
     expect(stops).toBe(0);
+    expect(kept).toMatchObject({ identity: original.identity, disposition: "reused-compatible" });
+    const newShell = new EngineControlClient({
+      socketPath: fixture.socket,
+      hello: hello(original.identity, "shell-after-decline"),
+    });
+    expect((await newShell.attach()).engine).toEqual(original.identity);
+    await newShell.detach();
   });
 
   it("surfaces an unknown working snapshot instead of silently treating it as empty", async () => {
@@ -167,6 +174,52 @@ describe("persistent engine supervisor", () => {
     });
 
     expect(prompts).toEqual([{ state: "unknown" }]);
+  });
+
+  it("keeps incompatible old-engine turns but explains that the new shell cannot attach", async () => {
+    const fixture = workspaceFixture();
+    let active: ChildProcessWithoutNullStreams | undefined;
+    let stops = 0;
+    const launcher: EngineDaemonLauncher = async (input) => {
+      active = spawnWorker(input.encodedOptions);
+      return "started";
+    };
+    const stopper: EngineDaemonStopper = async () => {
+      stops += 1;
+      const child = active;
+      active = undefined;
+      if (child) await stopChild(child);
+    };
+    const baseOptions = {
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher,
+      stopper,
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    } as const;
+    await ensureDaemonEngine(baseOptions);
+    const incompatible = stageTestBundle(
+      fixture.root,
+      "incompatible-guard-v2",
+      { min: ENGINE_SHELL_PROTOCOL + 1, max: ENGINE_SHELL_PROTOCOL + 1 },
+      "0.79.0",
+      "stable",
+    );
+
+    await expect(ensureDaemonEngine({
+      ...baseOptions,
+      bundle: incompatible,
+      workingSnapshot: async () => ({ state: "known", agents: ["builder"] }),
+      confirmUpgrade: async () => false,
+    })).rejects.toMatchObject({
+      code: "ENGINE_UPGRADE_DECLINED",
+      message: expect.stringMatching(/kept the current engine.*cannot connect/i),
+    });
+    expect(stops).toBe(0);
   });
 
   it("derives one canonical private identity and an allowlisted systemd launch", () => {

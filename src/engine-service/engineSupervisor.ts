@@ -562,9 +562,16 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
       if (snapshot.state === "unknown" || snapshot.agents.length > 0) {
         const accepted = await input.confirmUpgrade(snapshot).catch(() => false);
         if (!accepted) {
+          if (protocolRangesOverlap(current.protocol, input.desiredManifest.protocol)) {
+            return {
+              identity: current,
+              controlSocketPath: input.controlSocketPath,
+              disposition: "reused-compatible",
+            };
+          }
           throw new EngineSupervisorError(
             "ENGINE_UPGRADE_DECLINED",
-            "Tachyon kept the current engine because the upgrade was not explicitly approved.",
+            "Tachyon kept the current engine and its running turns, but this extension version cannot connect to it. Upgrade the engine or reinstall the previous extension version to open Tachyon.",
           );
         }
       }
