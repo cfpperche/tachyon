@@ -1092,13 +1092,48 @@ export class AgentManager {
     return this.withDelegatedToolkit(name, temporaryDefinitionFrom(row.def, row.worktree), row.def.parent ?? row.def.delegator, nextLineage);
   }
 
-  /** Delegation is the explicit grant: copy only the parent's enumerated skill snapshot, never credentials. */
+  /**
+   * Delegation is the explicit grant: copy only the parent's enumerated skill snapshot, never
+   * credentials — and when that grant cannot be established, copy NOTHING.
+   *
+   * Two sources may reach a delegated child, and there is no third: the delegator's grant, and the
+   * child's own authored profile. `skills` below is built from those two and nothing else.
+   *
+   * t-53e485 — the filter that produces `delegated` is a NET, not a repair. It changes nothing
+   * today: `delegableToolkit` returns the parent's grant, so every skill passes. It exists because
+   * the door that leaked was INSIDE that function — the toolkit itself returned a set the parent
+   * never held, so a subset check against the toolkit would have agreed with the leak. This checks
+   * against the parent's own resolved profile instead, which is the authority the invariant is
+   * written in: a delegated skill is one the DELEGATOR holds, at the digest the delegator holds it.
+   * A skill that fails it is dropped by name and reported, never thrown — one ungranted tool costs
+   * the child that tool, not its existence.
+   *
+   * The empty case returns the definition untouched, and that is the closed outcome rather than an
+   * absent one: with no projection, `Workspace.materializeHarness` sends a delegated child down the
+   * private-home path, which writes a skills tree only from an explicit `harness.skills` a Temporary
+   * agent cannot have. The environment is never the fallback.
+   */
   private withDelegatedToolkit(name: string, definition: AgentDef, parent: string | undefined, lineage = new Set<string>()): AgentDef {
     const child = asAgent(definition);
     if (!child || !parent) return definition;
     const parentAgent = asAgent(this.definitionOf(parent, lineage));
+    const granted = parentAgent?.profileCapabilities;
     const inherited = parentAgent ? this.delegableToolkit(parentAgent) : undefined;
-    if (!inherited || inherited.skills.length === 0) return definition;
+    /** t-b0cfd4 — delegated skills held back, so the child's sources cannot claim them. */
+    const withheldFromDelegator = new Set<string>();
+    const delegated = (inherited?.skills ?? []).filter((skill) => {
+      const held = granted?.skills.find((candidate) => candidate.name === skill.name);
+      if (held && held.source.sha256 === skill.source.sha256) return true;
+      withheldFromDelegator.add(skill.name);
+      this.notifyDelegatedToolkitCondition(
+        `ungranted:${parent}:${name}:${skill.name}:${skill.source.sha256}`,
+        `delegated toolkit withheld '${skill.name}' from '${name}': '${parent}' does not hold it. A delegated `
+        + "skill must be one the delegator's own profile grants, at the digest it grants it — installing "
+        + "something in the workspace does not give it away.",
+      );
+      return false;
+    });
+    if (delegated.length === 0) return definition;
     const runtime = adapterFor(child.cmd)?.runtime;
     if (runtime !== "claude" && runtime !== "codex" && runtime !== "grok") {
       throw new Error(`runtime '${runtime ?? child.cmd}' has no measured delegated skill projection`);
@@ -1107,12 +1142,10 @@ export class AgentManager {
     if (own && own.adapter !== runtime) {
       throw new Error(`runtime '${runtime}' cannot consume profile capabilities for '${own.adapter}'`);
     }
-    const skills = structuredClone(inherited.skills);
+    const skills = structuredClone(delegated);
     const skillOrigins: NonNullable<ResolvedAgentCapabilityProjection["skillOrigins"]> = Object.fromEntries(
       skills.map((skill) => [skill.name, [{ kind: "delegator" as const, agent: parent }]]),
     );
-    /** t-b0cfd4 — delegated skills held back below, so the child's sources cannot claim them. */
-    const withheldFromDelegator = new Set<string>();
     for (const selected of own?.skills ?? []) {
       const inheritedIndex = skills.findIndex((skill) => skill.name === selected.name);
       if (inheritedIndex >= 0 && skills[inheritedIndex]!.source.sha256 !== selected.source.sha256) {
@@ -1146,8 +1179,8 @@ export class AgentManager {
         // A withheld delegated copy must leave the SOURCES too. Leaving it would have the child's
         // manifest name a digest that nothing in its toolkit carries — provenance describing bytes
         // that were deliberately not delivered.
-        ...inherited.sources.filter((source) => source.kind === "skill" && !withheldFromDelegator.has(path.posix.basename(source.path))),
-        ...(own?.sources ?? []).filter((source) => source.kind === "skill" && !inherited.sources.some((candidate) => candidate.referenceId === source.referenceId && candidate.sha256 === source.sha256)),
+        ...(inherited?.sources ?? []).filter((source) => source.kind === "skill" && !withheldFromDelegator.has(path.posix.basename(source.path))),
+        ...(own?.sources ?? []).filter((source) => source.kind === "skill" && !(inherited?.sources ?? []).some((candidate) => candidate.referenceId === source.referenceId && candidate.sha256 === source.sha256)),
       ]),
       skills,
       skillOrigins,

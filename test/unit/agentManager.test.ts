@@ -5513,6 +5513,58 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(fs.existsSync(path.join(skillDir, "SKILL.md"))).toBe(true);
     });
 
+    it("t-53e485: a toolkit door that offers what the delegator does not hold is refused at the exit", async () => {
+      // The NET, and it is deliberately tested through a compromised door rather than through the
+      // real one. The leak was INSIDE the toolkit function — it returned a set the parent never
+      // held — so checking the projection against that same function would have agreed with the
+      // leak. This drives the door directly to prove the exit refuses it, whatever it computes:
+      // the authority is the delegator's own resolved profile.
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", { fileExists: () => true });
+      const skill = (name: string, sha: string) => ({
+        name,
+        source: {
+          source: name, sourcePath: `/captured/${name}`, type: "tree" as const, sha256: sha,
+          entries: [
+            { path: ".", type: "directory" as const, mode: 0o755 },
+            { path: "SKILL.md", type: "file" as const, mode: 0o644, bytes: Buffer.from(`# ${name}\n`) },
+          ],
+        },
+      });
+      const granted: ResolvedAgentCapabilityProjection = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [skill("sdd", "a".repeat(64))],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = granted;
+      // A door that hands back the grant PLUS one the parent was never given, and the same skill at
+      // bytes the parent never approved — the two shapes the closed door used to produce.
+      (h.manager as unknown as { delegableToolkit: () => ResolvedAgentCapabilityProjection }).delegableToolkit = () => ({
+        ...granted,
+        sources: [...granted.sources, { referenceId: "image", kind: "skill", scope: "project", owner: "plugin:image", path: ".claude/skills/image", sha256: "c".repeat(64) }],
+        skills: [skill("sdd", "a".repeat(64)), skill("image", "c".repeat(64))],
+      });
+      const warnings: string[] = [];
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      const opts = (h.manager as unknown as { opts: AgentManagerOptions }).opts;
+      opts.notify = (message: string) => { warnings.push(message); };
+      opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("child", { cmd: "claude", parent: "claude", reveal: false });
+
+      const inherited = projections.get("child")!;
+      // Exactly the grant — nem mais, nem menos.
+      expect(inherited.skills.map((entry) => entry.name)).toEqual(["sdd"]);
+      // The refused grant leaves the provenance too, so the manifest cannot name bytes the child
+      // was deliberately not given.
+      expect(inherited.sources.map((source) => source.referenceId)).toEqual(["sdd"]);
+      // Dropped BY NAME and out loud: one ungranted tool costs the child that tool, not its spawn.
+      expect(warnings.some((line) => line.includes("image") && line.includes("does not hold it"))).toBe(true);
+    });
+
     it("t-53e485: an uncapturable plugin skill cannot refuse a delegation it is no longer part of", async () => {
       // t-b505b3 measured this in the field on 0.56.152: `product-foundation` is a legitimate 8.1 MiB
       // plugin skill against a 1 MiB capture cap, and capturing it at spawn threw, refusing EVERY
