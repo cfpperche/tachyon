@@ -5353,17 +5353,21 @@ describe("AgentManager — session resume (spec 209)", () => {
         realCodexHome,
       );
       const materialized: string[] = [];
+      // t-94d49a — a Codex profile that carries skills must launch OUTSIDE the workspace root, whose
+      // `.agents/skills` belongs to the plugin installer; this stands in for the agent's worktree.
+      const launchCwd = path.join(h.ws, "worktree");
+      fs.mkdirSync(launchCwd, { recursive: true });
       asAgent(h.manager.defOf("codex"))!.profileLifecycle = {
         enabled: true, agentId: "11111111-1111-4111-8111-111111111111", canonicalSha256: "d".repeat(64), authorityRevision: "r1",
       };
       asAgent(h.manager.defOf("codex"))!.profileNativeConfig = nativeConfig;
       asAgent(h.manager.defOf("codex"))!.profileCapabilities = capabilities;
       // The actual launch boundary is what matters: each lifecycle path invokes the same real private-home writer.
-      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def, cwd }) => {
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def }) => {
         const result = harness.materializeCanonicalCodexProfileHome(name, adapterFor("codex")!, {
           nativeConfig: def.profileNativeConfig,
           capabilities: def.profileCapabilities,
-        }, cwd, { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } });
+        }, launchCwd, { url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } });
         materialized.push(fs.readFileSync(path.join(result.home, "config.toml"), "utf8"));
         return result;
       };
@@ -5371,7 +5375,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       await h.manager.spawn("codex");
       const privateHome = harnessHome(h.ws, "codex");
       fs.writeFileSync(path.join(privateHome, "config.toml"), 'model = "tampered"\n');
-      fs.writeFileSync(path.join(h.ws, ".agents", "skills", "research", "SKILL.md"), "tampered\n");
+      fs.writeFileSync(path.join(launchCwd, ".agents", "skills", "research", "SKILL.md"), "tampered\n");
       await h.manager.restart("codex", { stop: "force", session: "new" });
       fs.rmSync(path.join(privateHome, "config.toml"));
       await h.manager.resume("codex", {
@@ -5394,7 +5398,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(config).toContain("hooks.SessionStart =");
       expect(config).not.toContain("ambient-secret-model");
       expect(config).not.toContain("launch-only-secret");
-      expect(fs.readFileSync(path.join(h.ws, ".agents", "skills", "research", "SKILL.md"), "utf8")).toBe("# Captured skill\n");
+      expect(fs.readFileSync(path.join(launchCwd, ".agents", "skills", "research", "SKILL.md"), "utf8")).toBe("# Captured skill\n");
       expect(fs.realpathSync(path.join(privateHome, "auth.json"))).toBe(fs.realpathSync(path.join(realCodexHome, "auth.json")));
       expect(fs.readFileSync(workspaceSource, "utf8")).toContain("must-not-copy");
       expect(h.startArgs.map((args) => envFromTmuxArgs(args).CODEX_HOME)).toEqual([privateHome, privateHome, privateHome]);
@@ -5418,12 +5422,16 @@ describe("AgentManager — session resume (spec 209)", () => {
       fs.mkdirSync(realCodexHome);
       fs.writeFileSync(path.join(realCodexHome, "auth.json"), "{}");
       const harness = new HarnessManager(h.ws, path.join(h.ws, "real-claude"), {}, path.join(h.ws, "real-claude", ".claude.json"), realCodexHome);
-      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def, cwd }) =>
-        harness.materializeProfileCapabilities(name, asAgent(def)!.profileCapabilities!, adapterFor("codex")!, cwd);
+      // t-94d49a — the child's own worktree: a Codex skill projection may not land in the workspace
+      // root, where `.agents/skills` is the plugin installer's.
+      const childCwd = path.join(h.ws, "child-worktree");
+      fs.mkdirSync(childCwd, { recursive: true });
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def }) =>
+        harness.materializeProfileCapabilities(name, asAgent(def)!.profileCapabilities!, adapterFor("codex")!, childCwd);
 
       await h.manager.spawn("child", { cmd: "codex", parent: "claude", reveal: false });
 
-      expect(fs.readFileSync(path.join(h.ws, ".agents", "skills", "visual-qa", "SKILL.md"), "utf8")).toContain("Safe browser contract");
+      expect(fs.readFileSync(path.join(childCwd, ".agents", "skills", "visual-qa", "SKILL.md"), "utf8")).toContain("Safe browser contract");
       const manifest = JSON.parse(fs.readFileSync(path.join(harnessHome(h.ws, "child"), ".tachyon-profile-capabilities", "manifest.json"), "utf8"));
       expect(manifest.outputs.skills).toEqual([{ name: "visual-qa", sha256: "b".repeat(64), origins: [{ kind: "delegator", agent: "claude" }] }]);
       expect(fs.readFileSync(path.join(harnessHome(h.ws, "child"), "config.toml"), "utf8")).not.toContain("never-inherit");
