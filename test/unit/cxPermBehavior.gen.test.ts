@@ -1,4 +1,5 @@
 import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -9,6 +10,13 @@ import { parseConfig } from "../../src/config/loadConfig.js";
 import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { delegatedOpencodePermission, expectedAgentOpencodeEntry } from "../../src/registration/adapters.js";
 import { SessionLedger } from "../../src/resume/SessionLedger.js";
+
+/**
+ * `t-64ea85` — measured: without this seam each of the three `cmd: opencode` spawns below executed
+ * the installed `opencode` binary (pwd=/tmp/tachyon-cxperm-*). The stub answers as a credentialed
+ * home does; every other adapter stays the real, non-executing one.
+ */
+const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 
 /** Shared tmux exec stub: captures every `new-session` -e env pair, no server running otherwise. */
 function makeExec(newSessionEnvs: Record<string, string>[]) {
@@ -72,6 +80,7 @@ describe("container-generated delegation behavior", () => {
         getConfig: () => config,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
+        launchPreflight: HERMETIC_PREFLIGHT,
         resolveSpawnCwd: async () => ({
           cwd: worktreePath,
           worktree: { path: worktreePath, branch: "tachyon/child", tachyonCreatedBranch: true, baseRef: "base", createdAt: "now" },
@@ -127,6 +136,7 @@ describe("container-generated delegation behavior", () => {
         getConfig: () => config,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
+        launchPreflight: HERMETIC_PREFLIGHT,
         // No resolveSpawnCwd → no worktree; the child inherits the parent's (shared) cwd, same as a
         // plain `spawn_agent(cmd:"opencode", parent:"boss")` with no `worktree:true`.
         materializeBridgeMcpOpencode: (name, cwd) => {
@@ -186,6 +196,7 @@ describe("container-generated delegation behavior", () => {
         ledger,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
+        launchPreflight: HERMETIC_PREFLIGHT,
         materializeBridgeMcpOpencode: (name, cwd) => {
           const projectOpencodeJson = fs.existsSync(path.join(cwd, "opencode.json")) ? fs.readFileSync(path.join(cwd, "opencode.json"), "utf8") : undefined;
           return harness.materializeBridgeMcpOpencode(name, expectedAgentOpencodeEntry(bridgeUrl, true), projectOpencodeJson);
