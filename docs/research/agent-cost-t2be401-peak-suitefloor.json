@@ -1,0 +1,154 @@
+{
+  "ts": "2026-08-11T14:27:24-0300",
+  "suitefloor_tree_rss_kib": 959772,
+  "suitefloor_tree_pss_kib": 710931,
+  "suitefloor_cli_rss_kib": 507336,
+  "suitefloor_workload_rss_kib": 452436,
+  "procs": [
+    {
+      "pid": 264824,
+      "rss": 507336,
+      "pss": 391211,
+      "comm": "claude",
+      "cmd": "claude -n tachyon-tachyon-suitefloor \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"suitefloor\", spawned by \"claude-fork-1\".\nProtocol (apply when relevant):\n  - Waking another agent carries ONE sanitiz"
+    },
+    {
+      "pid": 469776,
+      "rss": 186836,
+      "pss": 145413,
+      "comm": "node (vitest 1)",
+      "cmd": "node (vitest 1)                                                                                                                                           "
+    },
+    {
+      "pid": 469731,
+      "rss": 145800,
+      "pss": 105005,
+      "comm": "node (vitest)",
+      "cmd": "node (vitest)                                                                                                            "
+    },
+    {
+      "pid": 469719,
+      "rss": 90248,
+      "pss": 49435,
+      "comm": "npm exec vitest",
+      "cmd": "npm exec vitest run test/unit/agentManager.test.ts                                            "
+    },
+    {
+      "pid": 469758,
+      "rss": 17960,
+      "pss": 17956,
+      "comm": "esbuild",
+      "cmd": "/home/goat/tachyon/node_modules/vite/node_modules/@esbuild/linux-x64/bin/esbuild --service=0.27.7 --ping "
+    },
+    {
+      "pid": 462556,
+      "rss": 3804,
+      "pss": 619,
+      "comm": "bash",
+      "cmd": "/bin/bash -c source /home/goat/tachyon/.tachyon/harness/suitefloor/shell-snapshots/snapshot-bash-1786468060119-0zk46e.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unali"
+    },
+    {
+      "pid": 471141,
+      "rss": 3724,
+      "pss": 692,
+      "comm": "bash",
+      "cmd": "/bin/bash -O extglob -c snap=$(command cat <&3); builtin shopt -s extglob 2>/dev/null; builtin shopt -s expand_aliases 2>/dev/null; builtin eval -- \"$snap\"; builtin export GROK_AGENT=1; builtin export"
+    },
+    {
+      "pid": 469718,
+      "rss": 2160,
+      "pss": 468,
+      "comm": "bash",
+      "cmd": "/bin/bash -c source /home/goat/tachyon/.tachyon/harness/suitefloor/shell-snapshots/snapshot-bash-1786468060119-0zk46e.sh 2>/dev/null || true && shopt -u extglob 2>/dev/null || true && { \\builtin unali"
+    },
+    {
+      "pid": 469730,
+      "rss": 1904,
+      "pss": 132,
+      "comm": "sh",
+      "cmd": "sh -c \"vitest\" run test/unit/agentManager.test.ts "
+    }
+  ],
+  "meminfo": {
+    "MemTotal": 16373808,
+    "MemFree": 1884824,
+    "MemAvailable": 8093516,
+    "SwapTotal": 33554432,
+    "SwapFree": 33486508,
+    "AnonPages": 6767832
+  },
+  "fleet_cli": [
+    {
+      "agent": "agentcost",
+      "att": "working",
+      "rt": "grok",
+      "rss": 151596,
+      "pss": 80526,
+      "pid": 446562
+    },
+    {
+      "agent": "budgetclose",
+      "att": "working",
+      "rt": "claude",
+      "rss": 494876,
+      "pss": 378343,
+      "pid": 267616
+    },
+    {
+      "agent": "claude",
+      "att": "idle",
+      "rt": "claude",
+      "rss": 567280,
+      "pss": 451644,
+      "pid": 155129
+    },
+    {
+      "agent": "claude-fork-1",
+      "att": "working",
+      "rt": "claude",
+      "rss": 546872,
+      "pss": 431090,
+      "pid": 155728
+    },
+    {
+      "agent": "claude-fork-2",
+      "att": "idle",
+      "rt": "claude",
+      "rss": 382768,
+      "pss": 272455,
+      "pid": 156828
+    },
+    {
+      "agent": "deadrow",
+      "att": "working",
+      "rt": "claude",
+      "rss": 524320,
+      "pss": 408030,
+      "pid": 245004
+    },
+    {
+      "agent": "specstatus",
+      "att": "working",
+      "rt": "codex",
+      "rss": 224140,
+      "pss": 161870,
+      "pid": 440708
+    },
+    {
+      "agent": "stoppath",
+      "att": "working",
+      "rt": "codex",
+      "rss": 226364,
+      "pss": 164094,
+      "pid": 432682
+    },
+    {
+      "agent": "suitefloor",
+      "att": "working",
+      "rt": "claude",
+      "rss": 507336,
+      "pss": 391211,
+      "pid": 264824
+    }
+  ]
+}

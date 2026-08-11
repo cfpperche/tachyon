@@ -926,6 +926,60 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(manifestFile)).toBe(false);
   });
 
+  it("t-94d49a: codex profile with the worktree OFF refuses the launch instead of replacing the workspace plugin roster", () => {
+    const codexHome = path.join(path.dirname(realHome), "realcodex-noworktree");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    // the plugin installer's roster in the WORKSPACE ROOT (`src/plugins/engine.ts` codex skillsRel)
+    const rosterSkill = path.join(ws, ".agents", "skills", "workspace-plugin", "SKILL.md");
+    fs.mkdirSync(path.dirname(rosterSkill), { recursive: true });
+    const rosterBytes = "workspace plugin bytes\n";
+    fs.writeFileSync(rosterSkill, rosterBytes);
+    const skillBytes = Buffer.from("---\nname: research\ndescription: research\n---\nCanonical skill.\n");
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "research", kind: "skill", scope: "project", owner: "workspace", path: "shared/research", sha256: "c".repeat(64) }],
+      skills: [{ name: "research", source: { source: "shared/research", sourcePath: path.join(ws, "shared/research"), type: "tree", sha256: "c".repeat(64), entries: [
+        { path: ".", type: "directory", mode: 0o755 },
+        { path: "SKILL.md", type: "file", mode: 0o644, bytes: skillBytes },
+      ] } }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const nativeConfig = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
+
+    // worktree OFF: the launch cwd IS the workspace root, both as an explicit cwd and as the default
+    for (const cwd of [ws, path.join(ws, "sub", ".."), undefined]) {
+      expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, cwd))
+        .toThrow(HarnessUnavailableError);
+      expect(() => mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, cwd))
+        .toThrow(/plugin installs/);
+    }
+    // the roster the projection does not own is untouched, and nothing claims a selection was applied
+    expect(fs.readdirSync(path.join(ws, ".agents", "skills"))).toEqual(["workspace-plugin"]);
+    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+    expect(fs.existsSync(path.join(harnessHome(ws, "coder"), ".tachyon-profile-capabilities", "manifest.json"))).toBe(false);
+    expect(fs.existsSync(harnessCodexConfigPath(ws, "coder"))).toBe(false);
+
+    // the refusal is exactly the collision: a worktree cwd still materializes its own tree
+    const launchCwd = path.join(ws, "managed-worktree");
+    fs.mkdirSync(launchCwd);
+    const res = mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd);
+    expect(fs.readFileSync(path.join(launchCwd, ".agents", "skills", "research", "SKILL.md"), "utf8")).toContain("Canonical skill");
+    expect(fs.existsSync(path.join(res.home, ".tachyon-profile-capabilities", "manifest.json"))).toBe(true);
+    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+
+    // a codex profile with NO capabilities never reaches the skill projection, so it still launches
+    const plain = mgr.materializeCanonicalCodexHome("coder", codex, nativeConfig, ws);
+    expect(fs.readFileSync(path.join(plain.home, "config.toml"), "utf8")).toContain('model = "gpt-5.6"');
+    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+  });
+
   it("spec 298: codex inherit:workspace preserves workspace config.toml and overlays declared servers", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex");
     fs.mkdirSync(codexHome, { recursive: true });
