@@ -9,7 +9,7 @@
  *
  * So this is a guard about WHERE the probe may live, not about whether it works (spec 223's own tests
  * cover that). The runtime half — a refresh dispatches no command, and a click dispatches exactly one
- * `tachyon.createWorktreePrItem` — is in `cockpitWorktreeActions.test.ts`, where the panel harness is.
+ * `tachyon.createWorktreePrItem` — is in `worktreeActions.test.ts`, where the panel harness is.
  *
  * PROVED RED BEFORE GREEN: adding `import { probePrReadiness } from "../worktree/pr.js"` to
  * `src/cockpit/model.ts` fails the render-path claim naming that file, and a `gh("gh", ["--version"])`

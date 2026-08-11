@@ -78,7 +78,7 @@ Same shape, much smaller: add the id to `CockpitSectionId` (`src/cockpit/model.t
 | Regenerate the preview catalog after adding/renaming a route or fixture | `npx vite-node --script scripts/webview-preview/generate-routes.ts` | writes `scripts/webview-preview/routes.json`; `webviewPreviewCatalog.test.ts` fails if it's stale |
 | Verify the CSS co-load contract | `npx vitest run test/unit/cockpitCssParity.test.ts` | client/host key parity + per-studio cascade-order assertions |
 | Verify the manifest + convention guard | `npx vitest run test/unit/webviewConvention.test.ts` | the primary "no un-manifested panel" guard |
-| Router exhaustiveness (adding a StudioId) | `npx vitest run test/unit/cockpitRoute.test.ts` | drives every StudioId through decode/routeKey/parent/nav/refresh |
+| Router exhaustiveness (adding a StudioId) | `npx vitest run test/unit/sectionsRoute.test.ts` | drives every StudioId through decode/routeKey/parent/nav/refresh |
 
 ## Fail-closed / safety
 
