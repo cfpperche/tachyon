@@ -23,6 +23,7 @@ const READY: LandFacts = {
   commits: 2,
   verified: { tree: TREE, at: "2026-08-07T16:41:09.220Z" },
   trunkIsAncestorOfHead: true,
+  trunkHead: null,
   primaryBranch: "main",
   primaryDirty: false,
 };
@@ -147,7 +148,10 @@ describe("probeLandSuggestion", () => {
     const notAncestor = await probeLandSuggestion({
       git: git({ ancestor: { code: 1 } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2, readFile: currentRecord,
     });
-    expect(notAncestor.checks.find((c) => c.id === "fast-forward")!.detail).toContain("has moved past");
+    // SDD 498 D6 — when the trunk head is readable the refusal names WHERE it moved to, because that is
+    // the operator's next question; it falls back to "has moved past" only when it is not.
+    expect(notAncestor.checks.find((c) => c.id === "fast-forward")!.detail).toMatch(/has moved to [0-9a-f]{12}|has moved past/);
+    expect(notAncestor.checks.find((c) => c.id === "fast-forward")!.detail).toContain("no longer contained in");
     const broken = await probeLandSuggestion({
       git: git({ ancestor: { code: 128 } }), worktreePath: "/wt", trunkRef: "main", dirty: false, commits: 2, readFile: currentRecord,
     });

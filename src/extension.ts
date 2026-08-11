@@ -15,6 +15,7 @@ import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
+import type { WorktreeLandResult } from "./webview/worktrees/messages.js";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
@@ -1776,6 +1777,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     return result.removed === true ? undefined : String(result.error ?? "removal refused");
   };
+  // SDD 498 (t-7cb971) — the governed land door. Same immutable-project rule as its neighbours, and
+  // the same shape: the engine re-measures everything and this side transports the answer.
+  //
+  // Unlike them it returns the whole OUTCOME rather than a refusal string, because a land has three
+  // things a toast cannot carry: whether it happened, where the trunk moved from and to (the undo
+  // target), and — when it did not happen — the exit to take. Narrowed field by field here so an
+  // engine that answers something unexpected renders as a refusal instead of leaking a shape.
+  const landManagedWorktree = async (id: string, wsHash: string): Promise<WorktreeLandResult> => {
+    const ws = byHash(wsHash);
+    if (!ws) throw new Error(`workspace ${wsHash} is not attached`);
+    const result = jsonObject(await extensionInvoke(ws, { action: "worktree.land", id }), "worktree.land");
+    const landed = jsonObject(result.landed ?? {}, "worktree.land.landed");
+    const ok = result.ok === true
+      && typeof landed.trunkRef === "string"
+      && typeof landed.primaryPath === "string"
+      && typeof landed.before === "string"
+      && typeof landed.after === "string";
+    return {
+      id,
+      ok,
+      ...(ok
+        ? {
+          landed: {
+            trunkRef: String(landed.trunkRef),
+            primaryPath: String(landed.primaryPath),
+            before: String(landed.before),
+            after: String(landed.after),
+          },
+        }
+        : {}),
+      ...(typeof result.reason === "string" ? { reason: result.reason } : {}),
+      ...(typeof result.fix === "string" ? { fix: result.fix } : {}),
+    };
+  };
   // t-d29398 — the human door for a checkout an interrupted launch left quarantined. Same immutable
   // project rule as its two neighbours; the engine re-proves authority and occupancy per call.
   const releaseManagedWorktreeLock = async (id: string, wsHash: string): Promise<string | undefined> => {
@@ -2496,6 +2531,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     remove: removeManagedWorktree,
     forget: forgetManagedWorktreeRecord,
     releaseLock: releaseManagedWorktreeLock,
+    land: landManagedWorktree,
   }, undefined, controlWorkspaceScope);
   context.subscriptions.push({ dispose: () => worktreesPanels.dispose() });
   const openWorktreesTab = (hash?: string): boolean => {

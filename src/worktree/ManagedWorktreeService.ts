@@ -19,6 +19,7 @@ import {
 import { classifyManagedWorktree, localTrunkRef, resolveTrunkRefs, type WorktreeClassification } from "./classify.js";
 import type { ChangedFile } from "./review.js";
 import { probeLandSuggestion, probePrimaryCheckout, type LandSuggestion, type PrimaryCheckoutState } from "./land.js";
+import { landAct, type LandResult } from "./landAct.js";
 import {
   resolveHygieneAuthority,
   type HygieneAuthorityDecision,
@@ -295,6 +296,83 @@ export class ManagedWorktreeService {
       base,
       head: headRef,
       changedFiles: await this.opts.manager.changedFiles(entry.path, base, headRef),
+    };
+  }
+
+  /**
+   * SDD 498 (t-7cb971) — LAND. Re-measure the five preconditions and, only if they are all green
+   * NOW, fast-forward the trunk onto this delivery's head in the primary checkout.
+   *
+   * The re-measure is `probeLandSuggestion` — the same function `listClassified` calls to DRAW the
+   * block. That identity is the point of the whole door: the thing that decides at the click is the
+   * thing the human was shown, so a rendered green can never authorize an act the fresh facts refuse.
+   * A second copy of any of the five conditions here would reintroduce exactly the divergence this
+   * replaces (plan.md D3).
+   *
+   * All-or-nothing comes free with it: `landSuggestion` withholds `command` unless every check passed,
+   * so "did the fresh probe hand me a command" IS the precondition, and the refusal is the first red
+   * check's own words — the same sentence the block renders, never a second vocabulary (plan.md D4).
+   *
+   * Human-initiated only. The Worktrees tab is an Interface surface and no Bridge tool dispatches
+   * extension operations; `landDoorHasNoAgentDoor.test.ts` holds that line.
+   */
+  async land(id: string): Promise<LandResult & { checks?: LandSuggestion["checks"] }> {
+    const entry = findManagedEntry(this.reconcileStore(), id);
+    if (!entry) {
+      return {
+        ok: false,
+        code: "not-ready",
+        reason: `managed worktree not found: ${id}`,
+        fix: "refresh the Worktrees tab — this row is no longer in the registry, so there is nothing to land from it",
+      };
+    }
+    if (!fs.existsSync(entry.path)) {
+      return {
+        ok: false,
+        code: "not-ready",
+        reason: `the checkout for '${entry.branch}' is no longer on disk at ${entry.path}`,
+        fix: "refresh the Worktrees tab; a checkout that is gone cannot be verified, and nothing may land from it",
+      };
+    }
+
+    const trunkRefs = await resolveTrunkRefs(this.git, this.opts.workspaceRoot);
+    const localTrunk = localTrunkRef(trunkRefs);
+    const classification = await classifyManagedWorktree(entry, {
+      git: this.git,
+      status: (cwd, baseRef) => this.opts.manager.status(cwd, baseRef),
+      occupancy: this.opts.occupancy,
+      lockState: (worktreePath) => this.opts.manager.lockState(worktreePath),
+      trunkRefs,
+    });
+    const suggestion = await probeLandSuggestion({
+      git: this.git,
+      worktreePath: entry.path,
+      trunkRef: localTrunk,
+      dirty: classification.dirty,
+      commits: classification.aheadOfBase,
+    });
+
+    if (!suggestion.command || !suggestion.primaryPath) {
+      const blocked = suggestion.checks.find((c) => !c.ok);
+      return {
+        ok: false,
+        code: "not-ready",
+        // The checks travel with the refusal so the block re-renders from the FRESH measurement rather
+        // than the stale one it was drawn from — the human sees why it changed under their click.
+        checks: suggestion.checks,
+        reason: blocked?.detail ?? "a precondition is not proved",
+        fix: blocked?.fix ?? "refresh the Worktrees tab and read the preconditions again",
+      };
+    }
+
+    return {
+      ...(await landAct({
+        git: this.git,
+        primaryPath: suggestion.primaryPath,
+        trunkRef: suggestion.trunkRef,
+        head: suggestion.head,
+      })),
+      checks: suggestion.checks,
     };
   }
 

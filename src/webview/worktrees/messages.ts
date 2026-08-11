@@ -37,6 +37,36 @@ export interface WorktreeReviewFiles {
 export const worktreeReviewFilesMessage = (review: WorktreeReviewFiles) =>
   ({ type: WORKTREE_REVIEW_FILES, review } as const);
 
+/**
+ * SDD 498 — the outcome of a land, delivered INTO the block.
+ *
+ * Deliberately not a toast and not a status-bar line. This repository has paid for that shape twice:
+ * `t-2656d7`, where the right instruction existed and died truncated in a one-line status bar, and
+ * `t-7d6013`, where a discard decision lived only in a toast that vanished. A refusal here carries the
+ * exit the human has to take, which is precisely the text that must not disappear on a timer.
+ */
+export const WORKTREE_LAND_RESULT = "worktreeLandResult" as const;
+
+export interface WorktreeLandResult {
+  /** The row the act was asked for. */
+  id: string;
+  ok: boolean;
+  /** Present on success: what actually moved, read back from git after the act. */
+  landed?: {
+    trunkRef: string;
+    primaryPath: string;
+    /** Trunk head before — the undo target, and also what git's own reflog holds. */
+    before: string;
+    after: string;
+  };
+  /** Engine-authored, carried raw for the same reason a check's `detail`/`fix` are (see below). */
+  reason?: string;
+  fix?: string;
+}
+
+export const worktreeLandResultMessage = (result: WorktreeLandResult) =>
+  ({ type: WORKTREE_LAND_RESULT, result } as const);
+
 export interface WorktreesStrings {
   worktreesTitle: string;
   worktreesHint: string;
@@ -64,6 +94,17 @@ export interface WorktreesStrings {
   landCheckPrimaryClean: string;
   landFixLabel: string;
   landCommits: string;
+  /**
+   * SDD 498 — the act, and what it reports afterwards. `landAction` is offered ONLY when every check
+   * is green: a red precondition renders no button at all rather than a disabled one, which is the
+   * pattern this project has been removing. `landUndo` is shown next to a success because the moment a
+   * human wants the previous trunk head is the moment right after seeing it move.
+   */
+  landAction: string;
+  landActing: string;
+  landOk: string;
+  landRefused: string;
+  landUndo: string;
   /**
    * SDD 501 — the two doors that were one room away from this decision. Both dispatch to commands that
    * already existed (spec 213/230 review, spec 223 PR); what is new here is only that they are offered
@@ -137,6 +178,12 @@ export type WorktreesAction =
   /** t-ea5425 — the file the in-webview picker chose; the host opens its diff. */
   | { type: "worktreeOpenReviewFile"; id: string; path: string }
   | { type: "worktreeCreatePr"; id: string; wsHash?: string }
+  /**
+   * SDD 498 — the land door. It carries the ROW ID and nothing else: no sha, no path. Everything the
+   * act needs is re-measured in the engine from that id, so this message cannot name a commit the
+   * preconditions were never checked against.
+   */
+  | { type: "worktreeLand"; id: string; wsHash?: string }
   | { type: "worktreeBatchCleanup"; items: Array<{ id: string; op: "remove" | "forget"; wsHash?: string }> };
 
 export const pollWorktreesAction = (): WorktreesAction => ({ type: POLL });

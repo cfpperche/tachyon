@@ -70,6 +70,9 @@ function harness(over: Partial<WorktreesDeps> = {}): {
     remove: async (id, deleteBranch, wsHash) => { removed.push({ id, deleteBranch, wsHash }); return undefined; },
     forget: async (id, wsHash) => { forgotten.push({ id, wsHash }); return undefined; },
     releaseLock: async (id, wsHash) => { released.push({ id, wsHash }); return undefined; },
+    // SDD 498 — this harness is about the removal/forget/release routing; a land that is never asked
+    // for still needs a port, and one that refuses is the fail-closed default for a stub.
+    land: async (id) => ({ id, ok: false, reason: "not exercised by this harness", fix: "n/a" }),
     ...over,
   };
   return { manager: new WorktreesPanelManager(Uri.file("/ext"), deps), removed, forgotten, released };
