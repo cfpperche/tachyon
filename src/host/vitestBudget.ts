@@ -56,6 +56,24 @@ const VITEST_LEDGER_MIN_WORKER_MB = 64;
 /** Milliseconds. The critical section is a read-modify-write of a small JSON file. */
 const LOCK_TIMEOUT_MS = 10_000;
 
+/**
+ * One resolution of the two cost inputs, shared by the sizing path and the unaccounted-fallback
+ * path. Separate copies are how the number a fallback REPORTS drifts from the number a real run
+ * would have claimed, and the fallback's number is the only thing a reader has to go on.
+ */
+function resolveCostsMb(input: { workerMb?: number; invocationMb?: number }): {
+  workerMb: number;
+  invocationMb: number;
+} {
+  return {
+    workerMb: Math.max(
+      VITEST_LEDGER_MIN_WORKER_MB,
+      input.workerMb ?? envInt("TACHYON_VERIFY_WORKER_MB") ?? DEFAULT_WORKER_MB,
+    ),
+    invocationMb: Math.max(0, input.invocationMb ?? envInt("TACHYON_VITEST_INVOCATION_MB") ?? DEFAULT_INVOCATION_MB),
+  };
+}
+
 export type VitestClaim = {
   pid: number;
   workers: number;
@@ -79,31 +97,62 @@ export type VitestAdmission =
 /**
  * Take a share, and separate "the budget said no" from "the budget mechanism broke".
  *
- * A refusal is a DECISION and must stand — that is the whole guard. But an unreadable ledger, an
- * EACCES on a lock file left by another user, a full tmpdir: those are the mechanism failing, and
- * refusing on them would make every test in the repo unrunnable with no way out. This repo has paid
- * for that shape before — governed refusal without governed recovery (t-0cbcbd) — so an infrastructure
- * failure falls back to the OLD per-process sizing, loudly. That is no worse than the day before this
- * file existed, and it says which one happened instead of quietly picking a number.
+ * A refusal is a DECISION and must stand — that is the whole guard. But an EACCES on a ledger or
+ * lock file left by another user, a full tmpdir, a ledger path that is not a file: those are the
+ * mechanism failing, and refusing on them would make every test in the repo unrunnable with no way
+ * out. This repo has paid for that shape before — governed refusal without governed recovery
+ * (t-0cbcbd) — so an infrastructure failure still ADMITS, loudly.
+ *
+ * t-ad8fd2 — what it must not do is admit at the OLD per-process width. Reaching this catch means
+ * the ledger could not be read, written, or locked, so this invocation is invisible: nobody can see
+ * it and it can see nobody. Per-process sizing is precisely the "size as if the machine were empty"
+ * assumption whose three-way repeat exhausted the host and cost the owner a reboot (t-3ad4af), and
+ * two unaccounted invocations at that width are that incident exactly.
+ *
+ * So the degraded run gets ONE worker. Three options were on the table and the reasoning is worth
+ * keeping:
+ *
+ *  - REFUSE. Rejected: the gate is what proves delivery, and an unwritable tmpdir would take the
+ *    whole repo's test suite down with no recovery. "Unknown" is not "known spent".
+ *  - PROCEED AT A GUESSED COST. Rejected: nothing reads this claim's `costMb`, because there is no
+ *    ledger to read it from. A number nobody can act on is decoration.
+ *  - DEGRADE, STILL ACCOUNTED WHERE ACCOUNTING WORKS. Taken. It is what the memory-pressure path
+ *    already does one layer up, for the reason stated there: a run at one worker still costs its
+ *    fixed term, but it stops the MARGINAL cost from being multiplied by every invisible sibling.
+ *
+ * A CORRUPT ledger — one whose bytes we read and could not use — does not reach here. That case is
+ * handled inside `admitVitestRun`, which degrades the same way but DOES record its claim, repairing
+ * the file so the next arrival sees this run instead of an empty host. This catch is the residue:
+ * the ledger could not be read or could not be written, and no accounting is available at all.
+ * Deliberately, nothing is written on this path — see `readLedger`; bytes we failed to read may be
+ * somebody's live claim, and overwriting them is how a REAL holder becomes the unaccounted one.
+ *
+ * `costMb` reports what this run will actually cost rather than the old `0`. It is unaccounted
+ * either way; reporting zero additionally told the reader the run was free.
  */
 export function admitOrFallback(
   input: Parameters<typeof admitVitestRun>[0],
-  fallbackWorkers: number,
   warn: (message: string) => void,
 ): VitestAdmission {
   try {
     return admitVitestRun(input);
   } catch (error) {
+    const { workerMb, invocationMb } = resolveCostsMb(input);
+    const workers = 1;
+    const costMb = invocationMb + workers * workerMb;
     warn(
       `[vitest] host budget ledger unavailable (${(error as Error).message}). `
-      + `Falling back to per-process sizing at ${fallbackWorkers} workers — concurrent runs are NOT `
-      + `accounted for until this is fixed. Ledger: ${input.ledgerPath ?? vitestBudgetPath()}`,
+      + `This run cannot be recorded, so concurrent runs are NOT accounted for and cannot see it. `
+      + `Degrading to ${workers} worker (~${costMb}MB) rather than per-process sizing: an invocation `
+      + `nobody can see must not also be a wide one. Ledger: ${input.ledgerPath ?? vitestBudgetPath()}`,
     );
     return {
       ok: true,
-      workers: fallbackWorkers,
-      claim: { workers: fallbackWorkers, costMb: 0, release: () => {} },
-      reason: "host budget ledger unavailable — per-process fallback",
+      workers,
+      claim: { workers, costMb, release: () => {} },
+      reason:
+        `host budget ledger unavailable — unaccounted fallback at ${workers} worker (~${costMb}MB, `
+        + `not recorded, nothing to release)`,
     };
   }
 }
@@ -122,28 +171,74 @@ function defaultIsAlive(pid: number): boolean {
   }
 }
 
-function readLedger(file: string): VitestClaim[] {
+/**
+ * The ledger as this process can actually see it — and whether it saw ALL of it.
+ *
+ * t-ad8fd2. ABSENT and ILLEGIBLE are different facts, and collapsing them into the same empty array
+ * is the defect. "Absent" is the first run on a machine and truthfully means nobody else is running.
+ * "Illegible" means claims may exist that this process cannot read, and reading that as "nobody is
+ * running" is exactly how an invocation sizes itself as if the host were empty.
+ *
+ * Measured, on a non-root user, which of these actually happens:
+ *
+ * | ledger state                        | before                                    | now             |
+ * |-------------------------------------|-------------------------------------------|-----------------|
+ * | absent (ENOENT)                     | `[]` — correct, normal first run          | unchanged       |
+ * | unparseable / non-array / bad shape | `[]`, sized as if empty, claim overwritten| degrade + repair|
+ * | present but unreadable (EACCES…)    | `[]`, sized as if empty, NO WARNING       | throws          |
+ *
+ * The third row was the worst and the quietest: a real 16-worker holder sat in a file this process
+ * could not read, and the arriving run both ignored it and then OVERWROTE its claim — turning the
+ * holder into the unaccounted invocation. That one is not survivable in place, so it throws and
+ * lands in `admitOrFallback`, which degrades WITHOUT writing: bytes we could not read may hold live
+ * claims, and rewriting the file is precisely how their memory stops being counted.
+ *
+ * Content we DID read and found unusable is the opposite case — there is no live claim in there to
+ * destroy — so it degrades and writes, and the write repairs the file for whoever arrives next.
+ *
+ * Claims that ARE readable are still returned alongside the flag — billing the siblings we can see
+ * is strictly better than billing none, and the flag is what stops us pretending we saw them all.
+ */
+type LedgerView = {
+  claims: VitestClaim[];
+  /** Why this read is incomplete. Absent means the ledger was fully legible. */
+  illegible?: string;
+};
+
+function readLedger(file: string): LedgerView {
   let raw: string;
   try {
     raw = fs.readFileSync(file, "utf8");
-  } catch {
-    return []; // no ledger yet — nobody is running
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    // ENOENT is the ONLY benign read failure: no ledger yet, so nobody is running. It must never
+    // degrade or refuse — a first run on a fresh machine is the normal case, not an incident.
+    if (code === "ENOENT") return { claims: [] };
+    throw error;
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    // A truncated or hand-edited ledger must not wedge every test run in the repo. Losing the
-    // claims errs toward admitting, which is the same exposure as before this file existed.
-    return [];
+    // A truncated or hand-edited ledger must not wedge every test run in the repo, so this still
+    // does not refuse — but it no longer reports an empty host. The claims are genuinely lost;
+    // what changes is that the run which finds them lost sizes to the floor instead of to the cap,
+    // and the claim it writes repairs the file for whoever arrives next.
+    return { claims: [], illegible: "unparseable JSON" };
   }
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((entry): entry is VitestClaim =>
+  if (!Array.isArray(parsed)) return { claims: [], illegible: "not an array" };
+  const claims = parsed.filter((entry): entry is VitestClaim =>
     !!entry
     && typeof entry === "object"
     && Number.isInteger((entry as VitestClaim).pid)
     && Number.isFinite((entry as VitestClaim).costMb)
     && Number.isFinite((entry as VitestClaim).workers));
+  // A partially malformed ledger is partially invisible. Bill what we can read, and say we could
+  // not read the rest — silently dropping an entry is the same fail-open one row down.
+  if (claims.length !== parsed.length) {
+    return { claims, illegible: `${parsed.length - claims.length} of ${parsed.length} entries malformed` };
+  }
+  return { claims };
 }
 
 function writeLedger(file: string, claims: VitestClaim[]): void {
@@ -442,22 +537,23 @@ function evaluateVitestShare(input: {
   workers: number;
   workerMb: number;
   invocationMb: number;
+  illegible?: string;
 } {
   const file = input.ledgerPath ?? vitestBudgetPath();
   const isAlive = input.isAlive ?? defaultIsAlive;
   const measure = input.measure ?? ((target: number) => measureTreePssMb(target));
-  const live = reap(readLedger(file), isAlive).filter((claim) =>
+  const view = readLedger(file);
+  const live = reap(view.claims, isAlive).filter((claim) =>
     input.excludePid === undefined || claim.pid !== input.excludePid);
 
-  const workerMb = Math.max(VITEST_LEDGER_MIN_WORKER_MB, input.workerMb ?? envInt("TACHYON_VERIFY_WORKER_MB") ?? DEFAULT_WORKER_MB);
-  const invocationMb = Math.max(0, input.invocationMb ?? envInt("TACHYON_VITEST_INVOCATION_MB") ?? DEFAULT_INVOCATION_MB);
+  const { workerMb, invocationMb } = resolveCostsMb(input);
 
   const billed = live.map((claim) => ({ claim, ...billedMb(claim, measure) }));
   const usedMb = billed.reduce((sum, entry) => sum + entry.chargeMb, 0);
   const materializedMb = billed.reduce((sum, entry) => sum + entry.materializedMb, 0);
   const poolMb = vitestPoolMb({ memory: input.memory, materializedMb, reserveMb: input.reserveMb });
   const shareMb = poolMb - usedMb;
-  const workers = sizeFromShare({
+  const sized = sizeFromShare({
     shareMb,
     cpuCount: input.cpuCount,
     workerMb,
@@ -466,7 +562,18 @@ function evaluateVitestShare(input: {
     maxUsefulWorkers: input.maxUsefulWorkers,
   });
 
-  return { file, live, billed, usedMb, poolMb, shareMb, workers, workerMb, invocationMb };
+  // t-ad8fd2 — a share computed from a ledger we could not fully read is a share computed against
+  // an unknown number of siblings, so it must not be spent at full width. One worker, which is what
+  // the memory-pressure path already degrades to (`vitest.config.ts`), and for the same stated
+  // reason: the run still happens, still takes a claim, and costs the marginal workers it cannot
+  // prove are free. `Math.min` and not a flat 1 because a share of ZERO is a refusal, and an
+  // unreadable ledger must not turn a refusal into an admission.
+  const workers = view.illegible === undefined ? sized : Math.min(1, sized);
+
+  return {
+    file, live, billed, usedMb, poolMb, shareMb, workers, workerMb, invocationMb,
+    ...(view.illegible !== undefined ? { illegible: view.illegible } : {}),
+  };
 }
 
 /**
@@ -517,7 +624,7 @@ export function admitVitestRun(input: {
       hardCap: input.hardCap,
       maxUsefulWorkers: input.maxUsefulWorkers,
     });
-    const { live, billed, usedMb, poolMb, shareMb, workerMb, invocationMb } = share;
+    const { live, billed, usedMb, poolMb, shareMb, workerMb, invocationMb, illegible } = share;
 
     // Before any of the host-wide arithmetic is spent on this run: is it a DESCENDANT of a run that
     // has already paid for it? Ordered first because the answer makes the share irrelevant — an
@@ -569,7 +676,13 @@ export function admitVitestRun(input: {
         released = true;
         try {
           withProcessLockSync(`${file}.lock`, () => {
-            writeLedger(file, readLedger(file).filter((entry) => entry.pid !== pid));
+            // An UNREADABLE ledger throws out of here into the catch below. A partly malformed one
+            // does not, and must not be rewritten either: writing back only the entries we
+            // understood would delete the rest on the way out. Leaving it alone costs nothing —
+            // this process is exiting, so pid liveness reaps our own claim at the next read.
+            const view = readLedger(file);
+            if (view.illegible !== undefined) return;
+            writeLedger(file, view.claims.filter((entry) => entry.pid !== pid));
           }, { timeoutMs: LOCK_TIMEOUT_MS, label: "tachyon vitest budget ledger" });
         } catch {
           // Best-effort: a claim we fail to drop is reaped by liveness the moment this process exits.
@@ -583,7 +696,13 @@ export function admitVitestRun(input: {
       claim,
       reason:
         `host vitest budget: pool ${poolMb}MB, ${live.length} sibling run(s) hold ${usedMb}MB, `
-        + `share ${shareMb}MB → workers=${workers} (claiming ${costMb}MB)`,
+        + `share ${shareMb}MB → workers=${workers} (claiming ${costMb}MB)`
+        + (illegible === undefined
+          ? ""
+          : `. WARNING: the ledger was only partly legible (${illegible}), so an unknown number of `
+          + `sibling runs are invisible to this one — degraded to one worker rather than sizing as if `
+          + `the host were empty. This claim IS recorded, so the next arrival sees this run. `
+          + `Ledger: ${file}`),
     };
   }, { timeoutMs: LOCK_TIMEOUT_MS, label: "tachyon vitest budget ledger" });
 }
@@ -638,7 +757,14 @@ export function previewVitestShare(input: {
       hardCap: input.hardCap,
       maxUsefulWorkers: input.maxUsefulWorkers,
     });
-    const { live, usedMb, poolMb, shareMb, workers, workerMb, invocationMb } = share;
+    const { live, usedMb, poolMb, shareMb, workers, workerMb, invocationMb, illegible } = share;
+    // Same degrade as the admit path, and the display must not disagree with it: a snapshot showing
+    // the cap while a real run would receive one worker is the drift `evaluateVitestShare` exists to
+    // prevent. The caller already treats a thrown preview as "we cannot say" (snapshotService).
+    const caveat = illegible === undefined
+      ? ""
+      : `. WARNING: ledger only partly legible (${illegible}) — an unknown number of runs are `
+      + `invisible, so this is degraded to one worker rather than sized against an empty host`;
 
     if (workers === 0) {
       return {
@@ -650,7 +776,7 @@ export function previewVitestShare(input: {
         poolMb,
         reason:
           `host vitest budget spent: pool ${poolMb}MB, ${live.length} sibling run(s) hold ${usedMb}MB, `
-          + `leaving ${shareMb}MB — less than the ${invocationMb}MB + ${workerMb}MB one run needs`,
+          + `leaving ${shareMb}MB — less than the ${invocationMb}MB + ${workerMb}MB one run needs${caveat}`,
       };
     }
 
@@ -663,7 +789,7 @@ export function previewVitestShare(input: {
       poolMb,
       reason:
         `host vitest budget preview: pool ${poolMb}MB, ${live.length} sibling run(s) hold ${usedMb}MB, `
-        + `share ${shareMb}MB → workers=${workers} (not claimed)`,
+        + `share ${shareMb}MB → workers=${workers} (not claimed)${caveat}`,
     };
   }, { timeoutMs: LOCK_TIMEOUT_MS, label: "tachyon vitest budget ledger" });
 }

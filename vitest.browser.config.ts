@@ -32,7 +32,7 @@ const admission = admitOrFallback({
   invocationMb: Number(process.env.TACHYON_VITEST_BROWSER_INVOCATION_MB) || 3072,
   workerMb: 384,
   maxUsefulWorkers: 8,
-}, 1, (message) => process.stderr.write(`${message}\n`));
+}, (message) => process.stderr.write(`${message}\n`));
 if (!admission.ok) throw new Error(`[vitest:browser] ${admission.reason}`);
 process.stderr.write(`[vitest:browser] ${admission.reason}\n`);
 process.on("exit", () => admission.claim.release());
