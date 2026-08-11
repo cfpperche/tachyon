@@ -281,7 +281,6 @@ export interface WorkspaceStudioFormV1 {
   autostart: boolean;
   restartOnCrash: boolean;
   attention: boolean;
-  selfEvolution: boolean;
   worktree: boolean;
   branch: string;
   worktreeSetup: string;
@@ -1291,7 +1290,7 @@ const STUDIO_FORM_STRING_KEYS = [
   "schedEvery", "schedAt", "schedTarget",
 ] as const;
 const STUDIO_FORM_BOOLEAN_KEYS = [
-  "autostart", "restartOnCrash", "attention", "selfEvolution", "worktree", "isolate", "catchUp",
+  "autostart", "restartOnCrash", "attention", "worktree", "isolate", "catchUp",
 ] as const;
 const STUDIO_FORM_KEYS = [
   ...STUDIO_FORM_STRING_KEYS,
