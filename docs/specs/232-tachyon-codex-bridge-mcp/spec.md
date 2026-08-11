@@ -2,7 +2,7 @@
 
 _Created 2026-06-18._
 
-**Status:** draft — DESIGN. Born from the spec-231 EDH dogfood: an input-driven pipeline ran perfectly (input +
+**Status:** draft
 handoff + persona all validated) but the **`review` node hung** — its declared agent is `reviewer:
 cmd: codex`, and the codex session had **no `complete_node` MCP tool**, so it could not signal completion
 and the node would sit until its 15m timeout. Root cause (confirmed): the example repo's `.codex/

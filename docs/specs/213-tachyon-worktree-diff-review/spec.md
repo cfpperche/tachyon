@@ -2,7 +2,8 @@
 
 _Created 2026-06-14._
 
-**Status:** shipped (v0.13.3)
+**Status:** shipped
+**Closure:** Shipped as v0.13.3; commit `0b589cc9` records tasks 1–6 done and the two-round SHIP review.
 
 **UI impact:** interaction
 <!-- A "Review changes" action on a worktree agent → a quick-pick of changed files,

@@ -1,6 +1,6 @@
 # Spec 240 — `isolate: transcript` (per-agent transcript namespace, same cwd)
 
-**Status:** draft · **Date:** 2026-06-21 · **Follows:** spec 239 (activity log), spec 226/228 (harness) · **Runtime:** claude v1
+**Status:** draft
 
 ## Problem
 

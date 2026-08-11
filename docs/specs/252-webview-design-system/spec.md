@@ -1,6 +1,7 @@
 # Spec 252 — webview design system (one consistent look across all panels)
 
-**Status:** SHIPPED 2026-06-24 (all 6 webviews migrated; codex-reviewed; verified dark+light). · **Surface:** a shared `src/webview/shared/design-system.css` (copied to `dist/webview/`, linked by every host `html()`), then a migration of all 6 webviews onto it. · **UI impact:** ui (every Tachyon webview re-skins to one system; no behavior change). · **Verify:** each migrated panel is screenshotted under BOTH a dark and a light VS Code theme to prove it follows the user's theme.
+**Status:** shipped
+**Closure:** Commit `14d4ca5d` records all six webviews migrated, codex-reviewed, and verified in dark and light themes.
 
 > **Origin.** Tachyon has 6 webviews — the sidebar, the Activity panel, the Project Handoff panel, the Plugins view, the Agent Studio form, and the tmux Server Inspector — each grown with its own `<style>` block (41–221 lines). They redefine the same tokens independently and pick font sizes ad-hoc, so the same conceptual element (a panel title) ranges from 16px to 30px across panels and the spacing/badges/buttons drift. The maintainer wants **one design system** — consistent typography, spacing, and components — that **follows the user's VS Code theme** (light / dark / high-contrast), not a hardcoded look.
 

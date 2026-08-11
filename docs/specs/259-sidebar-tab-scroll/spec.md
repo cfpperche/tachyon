@@ -1,6 +1,7 @@
 # Spec 259 — Sidebar tab scroll
 
-**Status:** shipped. · **Closure:** 2026-06-24 — implemented on `main`; validation: `npm test`, `npm run typecheck`, `npm run build`, sidebar dark/light render harness, DOM scroll-container probe; residual: none. · **Follows:** spec 237 sidebar webview, spec 252 webview design system. · **Surface:** Tachyon sidebar webview layout. · **UI impact:** ui.
+**Status:** shipped
+**Closure:** Implemented on main in commit `22acfdd9`; validation recorded `npm test`, typecheck, build, dark/light render harness, and DOM scroll-container probe, with no residual.
 
 ## Intent
 

@@ -2,7 +2,8 @@
 
 _Created 2026-06-14._
 
-**Status:** ready to ship — implemented, codex dueto SHIP (3 rounds, 2026-06-15), 466 tests + typecheck green. Pending: commit + `vsce publish minor`.
+**Status:** shipped
+**Closure:** Landed in commit `d1ec3242`; all ten tasks are checked and the recorded three-round review concluded SHIP.
 
 **UI impact:** flow
 <!-- Studio gains a role picker; a re-anchored agent shows a transient badge/log line.

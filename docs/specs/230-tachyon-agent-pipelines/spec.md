@@ -2,7 +2,8 @@
 
 _Created 2026-06-17._
 
-**Status:** SHIPPED v0.24.0 (2026-06-18) — pipeline v1 built, codex-reviewed across rounds, dogfooded in
+**Status:** shipped
+**Closure:** Shipped as v0.24.0; the checked task closure records the built, reviewed, and dogfooded pipeline v1.
 the EDH, documented, and published. Pin `p-3fb275` CLOSED on this v1; Phase 2 (sensors / visual Studio /
 Tier B / per-node staleness / parallel / explicit pause) → follow-pin `p-cbcc94`. See tasks.md `Closure`.
 The original design + review record is preserved below. (Was: DESIGN — codex review 2026-06-17,

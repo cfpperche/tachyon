@@ -2,7 +2,8 @@
 
 _Created 2026-07-22._
 
-**Status:** implemented
+**Status:** shipped
+**Closure:** Landed in commit `ebc21e7c` for task `t-f447c4`; all acceptance and verification tasks are checked.
 
 **Task:** `t-f447c4` · **Parent:** `t-e50d4f` / SDD 429
 

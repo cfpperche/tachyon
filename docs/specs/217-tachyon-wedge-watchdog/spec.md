@@ -2,7 +2,7 @@
 
 _Created 2026-06-14._
 
-**Status:** in-progress — design locked 2026-06-14 (D-A, D-B below); implementing.
+**Status:** in-progress
 
 **UI impact:** flow
 <!-- A background-detected wedge surfaces a recovery toast (or auto-recovers). Verified by
