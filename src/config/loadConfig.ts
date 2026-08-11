@@ -651,6 +651,19 @@ export const KNOWN_SETTINGS_KEYS = [
   "gitDelivery", "delivery", "taskNotifications", "sidebar", "humanInbox", "agentNotifications",
 ] as const;
 
+/**
+ * t-d47b0a — the closed vocabulary accepted on an `agents:` / `terminals:` entry.
+ *
+ * The shipped schema is the human-facing input contract: VS Code binds it to `tachyon.yml`, while
+ * this parser supplies the forgiving implementation (invalid input warns and is discarded). Keep
+ * the vocabulary exact in both places; `configSchema.test.ts` measures both directions.
+ * `isolate` remains present only for deprecated read compatibility.
+ */
+export const KNOWN_AGENT_ENTRY_KEYS = [
+  "cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions",
+  "worktree", "branch", "worktreeSetup", "harness", "isolate", "subagents",
+] as const;
+
 /** Parses an `every:` interval ("30m"/"1h"/"90m"/"2h") to ms; null if malformed. */
 export function parseEvery(value: string): number | null {
   const m = /^(\d+)\s*(m|h)$/.exec(value.trim());
@@ -700,11 +713,6 @@ const NAME_RE = AGENT_NAME_PATTERN;
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
-
-/** Every recognized entry key. `isolate` remains recognized only as a deprecated read-compat key. `kind`/
- *  `instructions` are recognized everywhere (so they're never "unknown"); under `terminals:` they're rejected
- *  explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup", "harness", "isolate", "subagents"];
 
 /** Recognized harness keys (spec 226/228 plus spec 406 Pi resources). */
 const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills", "extensions", "prompts", "themes", "packages"];
@@ -1176,7 +1184,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   // kind/instructions are recognized keys (rejected above for terminals:) so they don't also trip
   // the generic "unknown key" error — only genuinely-unrecognized keys do.
   for (const key of Object.keys(def)) {
-    if (!AGENT_KEYS.includes(key)) discarded.push(`${section}.${name}: unknown key '${key}'`);
+    if (!(KNOWN_AGENT_ENTRY_KEYS as readonly string[]).includes(key)) discarded.push(`${section}.${name}: unknown key '${key}'`);
   }
   return agent;
 }
