@@ -142,6 +142,38 @@ function ConfigErrorBanner({ err }: { err: NonNullable<FleetVM["configError"]> }
 }
 
 /**
+ * t-7d6013 — declarations the parser DROPPED out of a file that loaded fine.
+ *
+ * Warn-toned and `role="status"`, like the card-template banner and for the same reason: nothing is
+ * invalid, the fleet is live, and every dropped line simply runs the product default instead —
+ * including the expensive one, a `sandboxMode` typo landing on `danger-full-access`. Before this the
+ * only notice was a toast, so the record died with it.
+ *
+ * DISMISSIBLE by design: a durable notice that cannot be taken off the screen is worse than the toast
+ * it replaces. The dismissal is keyed by `signature` — the exact set of dropped lines — so reading it
+ * once silences it for that file, and any change to what was dropped brings it back.
+ */
+function ConfigDiscardBanner({ discards }: { discards: NonNullable<FleetVM["configDiscards"]> }) {
+  const d = useContext(DispatchCtx);
+  const count = discards.entries.length;
+  return (
+    <div class="config-error-banner discard-banner" role="status">
+      <div class="config-error-title">
+        <Icon name="warning" />
+        <strong>{count === 1 ? `1 line ignored in ${discards.file}` : `${count} lines ignored in ${discards.file}`}</strong>
+      </div>
+      <div class="config-error-summary" title={discards.entries.join("\n")}>{discards.summary}</div>
+      <div class="config-discard-note">Each ignored line runs the product default instead.</div>
+      <div class="config-error-actions">
+        <Button variant="primary" onClick={() => d.global("openConfig")}>Open {discards.file}</Button>
+        {/* The signature travels back so a dismissal can only ever land on the set that was read. */}
+        <Button variant="default" onClick={() => d.section("config:dismissDiscards", discards.signature)}>Dismiss</Button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * SDD 479 — a written card template that could not be honored. The fleet is FINE (the config loaded);
  * only the layout fell back to the default, so this is `role="status"`, warn-toned, and never claims
  * the file is invalid. Without it the fallback is indistinguishable from the feature not working.
@@ -682,6 +714,9 @@ export function AgentsRoster({
   const banner = (
     <>
       {fleet.configError ? <ConfigErrorBanner err={fleet.configError} /> : null}
+      {/* t-7d6013 — same place, same reason as the card-template refusal below: the consequence of a
+          dropped line is the fleet drawn underneath it, running defaults nobody asked for. */}
+      {fleet.configDiscards ? <ConfigDiscardBanner discards={fleet.configDiscards} /> : null}
       {fleet.cardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.cardTemplateRefusal} /> : null}
       {fleet.personalCardTemplateRefusal ? <CardTemplateRefusalBanner refusal={fleet.personalCardTemplateRefusal} personal /> : null}
     </>

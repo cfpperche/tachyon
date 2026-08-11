@@ -5,6 +5,7 @@ import type { CommandRunner } from "../commands/CommandRunner.js";
 import type { RunbookRunner } from "../commands/RunbookRunner.js";
 import type { ConfigFailure } from "../config/configFailure.js";
 import { degradedRosterExtras, toConfigErrorVM } from "../config/configFailure.js";
+import { toConfigDiscardsVM, type ConfigDiscards } from "../config/configDiscards.js";
 import type { ConfigLkgSnapshot } from "../config/configLkg.js";
 import { asAgent, type TachyonConfig } from "../config/loadConfig.js";
 import { ExternalToolRegistry } from "../externalTools/registry.js";
@@ -41,6 +42,13 @@ export interface SidebarFleetSource {
   worktrees: Pick<WorktreeManager, "currentBranch">;
   config: TachyonConfig | undefined;
   configFailure: ConfigFailure | undefined;
+  /**
+   * t-7d6013 — what the last successful load DISCARDED, already filtered by the human's dismissal
+   * (the source owns that, because dismissing is a decision about the workspace, not about one open
+   * sidebar). Independent of `configFailure` on purpose: the file loaded, the fleet is live, and the
+   * roster must not degrade — this only says some of what was written is not running.
+   */
+  configDiscards?: ConfigDiscards | undefined;
   commandRunner: Pick<CommandRunner, "list">;
   runbookRunner: Pick<RunbookRunner, "list">;
   handoffStore: Pick<ProjectHandoffStore, "snapshot">;
@@ -389,6 +397,10 @@ export async function buildSidebarFleet(
       pendingCount: handoffSnapshot.pendingCount,
     },
     ...(configFailure ? { configError: toConfigErrorVM(configFailure) } : {}),
+    // t-7d6013 — beside `configError`, never instead of it: a file can load with discards (banner,
+    // live fleet) or fail to load (error banner, degraded roster), and after a fatal reload the
+    // record of the still-running config's discards is still true, so both can be present at once.
+    ...(source.configDiscards ? { configDiscards: toConfigDiscardsVM(source.configDiscards) } : {}),
     // t-aa2780 — only stated when somebody actually read the ring; see the option's doc for why
     // "unread" must not collapse into `false`.
     ...(engineLogHasError === undefined ? {} : { engineLogHasError }),

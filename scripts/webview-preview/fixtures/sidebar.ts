@@ -328,4 +328,33 @@ export const sidebarFixtures: Record<string, Fixture<FleetVM | FleetVM[]>> = {
     provenance: "synthetic-edge",
     vm: { ...base, agents: OPTION_ROWS } as FleetVM,
   },
+
+  /**
+   * t-7d6013 — the durable record of what `tachyon.yml` DISCARDED, on an otherwise healthy fleet.
+   *
+   * The control is `default` (the same SAMPLE with no banner), so the only difference between the two
+   * captures is the surface itself. Every row here is a VERBATIM parser message — produced by running
+   * `parseConfig` over a file carrying those five mistakes, not written to look plausible — and the
+   * first one is the expensive case the owner's rule leaves standing: the key name is misspelled, so
+   * the whole entry is dropped and a delegated codex agent falls back to `danger-full-access`.
+   */
+  "config-discards": {
+    provenance: "synthetic-edge",
+    vm: {
+      ...SAMPLE,
+      configDiscards: {
+        file: "tachyon.yml",
+        path: "/home/dev/project/tachyon.yml",
+        entries: [
+          "settings.agentPermissionProjection.reviewer: unknown key 'sandbox_mode'",
+          "settings.agentPermissionProjection.reviewer: a codex entry must set at least one of approvalPolicy, sandboxMode, bridgeToolApproval",
+          "settings.worktree.shareDependencies: must be a boolean",
+          "settings.companion: unknown key 'allowedHost'",
+          "settings.maxAgents: must be an integer >= 1",
+        ],
+        summary: "settings.agentPermissionProjection.reviewer: unknown key 'sandbox_mode' (+4 more)",
+        signature: "0123456789abcdef",
+      },
+    } as FleetVM,
+  },
 };
