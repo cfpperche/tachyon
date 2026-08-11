@@ -38,6 +38,33 @@ export const worktreeReviewFilesMessage = (review: WorktreeReviewFiles) =>
   ({ type: WORKTREE_REVIEW_FILES, review } as const);
 
 /**
+ * t-f3ded3 — the host composed the PR draft; the WEBVIEW collects the title and confirms.
+ *
+ * Same ownership cut as the review picker: host owns readiness probe + compose (and later create),
+ * webview owns the chrome. Present ⇒ ConfirmForm is open; clearing it is cancel. Panel close mid-flow
+ * drops the draft with no create — the form's state lives only in the webview.
+ */
+export const WORKTREE_PR_DRAFT = "worktreePrDraft" as const;
+
+export interface WorktreePrDraftView {
+  /** The row the draft belongs to — sent back with the confirm. */
+  id: string;
+  /** What is being proposed, in the human's words (agent name or branch). */
+  subject: string;
+  branch: string;
+  /** Seeded by composePrTitle; human may edit. */
+  title: string;
+  /** composePrBody preview — multi-line, not edited here. */
+  body: string;
+  /** Persisted base, or null when gh will pick its default. */
+  base: string | null;
+  dirty: boolean;
+}
+
+export const worktreePrDraftMessage = (draft: WorktreePrDraftView) =>
+  ({ type: WORKTREE_PR_DRAFT, draft } as const);
+
+/**
  * SDD 498 — the outcome of a land, delivered INTO the block.
  *
  * Deliberately not a toast and not a status-bar line. This repository has paid for that shape twice:
@@ -121,6 +148,19 @@ export interface WorktreesStrings {
   landReviewPickTitle: string;
   landReviewPickPlaceholder: string;
   landReviewPickEmpty: string;
+  /**
+   * t-f3ded3 — the in-webview PR form's own chrome. Title/body/base/dirty are the host's; these
+   * lines are the surface's. Same English sentences the native InputBox + modal used where they
+   * match, so what changed is where the form is drawn, not what it says.
+   */
+  landPrFormTitle: string;
+  landPrFormSubtitle: string;
+  landPrTitleLabel: string;
+  landPrBodyLabel: string;
+  landPrConfirm: string;
+  landPrBase: string;
+  landPrBaseDefault: string;
+  landPrDirty: string;
   landCompare: string;
   landCompareBlocked: string;
   landCompareNoTrunk: string;
@@ -177,7 +217,10 @@ export type WorktreesAction =
   | { type: "worktreeReviewDiff"; id: string; wsHash?: string }
   /** t-ea5425 — the file the in-webview picker chose; the host opens its diff. */
   | { type: "worktreeOpenReviewFile"; id: string; path: string }
+  /** t-f3ded3 — ask the host for a PR draft (probe at click); webview draws ConfirmForm. */
   | { type: "worktreeCreatePr"; id: string; wsHash?: string }
+  /** t-f3ded3 — the edited title the form confirmed; host creates without re-probing. */
+  | { type: "worktreeConfirmPr"; id: string; title: string; wsHash?: string }
   /**
    * SDD 498 — the land door. It carries the ROW ID and nothing else: no sha, no path. Everything the
    * act needs is re-measured in the engine from that id, so this message cannot name a commit the

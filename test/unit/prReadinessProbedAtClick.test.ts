@@ -100,4 +100,32 @@ describe("SDD 501 — `gh` is spawned at click, never at render", () => {
     expect(occurrences('import { probePrReadiness } from "../worktree/pr.js";', "probePrReadiness")).toBe(1);
     expect(RENDER_PATH.every((file) => fs.existsSync(path.join(SRC, file)))).toBe(true);
   });
+
+  /**
+   * t-f3ded3 — the new webview port must not move the probe.
+   *
+   * Two arms share the click handler: `"draft"` (compose + return) and `{ title }` (create). The probe
+   * may run only once in the draft/native half. The confirm arm is structured so its body ends before
+   * the single `probePrReadiness` call — if someone inserts a second probe for confirm, the count
+   * jumps; if they move the only probe into confirm, the draft arm loses readiness and the product
+   * fails open. Either way this catches it.
+   */
+  it("probes once in the click handler, and the confirm arm creates without probing", () => {
+    const source = read(CLICK_HOME);
+    const start = source.indexOf('vscode.commands.registerCommand("tachyon.createWorktreePrItem"');
+    expect(start, "the PR command registration moved").toBeGreaterThanOrEqual(0);
+    const after = source.indexOf("vscode.commands.registerCommand(", start + 40);
+    const handler = source.slice(start, after === -1 ? source.length : after);
+    expect(occurrences(handler, "probePrReadiness")).toBe(1);
+    // Confirm arm marker: title select is handled, then createWorktreePr, before any probe.
+    const titleArm = handler.indexOf('"title" in');
+    const probeAt = handler.indexOf("probePrReadiness");
+    const createInConfirm = handler.indexOf("createWorktreePr", titleArm);
+    expect(titleArm, "confirm arm (title in select) missing").toBeGreaterThanOrEqual(0);
+    expect(createInConfirm, "confirm arm must create").toBeGreaterThan(titleArm);
+    expect(createInConfirm).toBeLessThan(probeAt);
+    // Render path still names no draft message that would imply pre-probing at paint.
+    expect(read("webview/worktrees/App.tsx")).not.toMatch(/\bprobePrReadiness\b/);
+    expect(read("webview/WorktreesPanel.ts")).not.toMatch(/\bprobePrReadiness\b/);
+  });
 });

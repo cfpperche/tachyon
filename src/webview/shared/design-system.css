@@ -745,6 +745,163 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
   margin-right: 3px;
 }
 
+/* ── ConfirmForm (t-f3ded3) — editable field + multi-line preview + confirm ──
+   Same scrim family as QuickPicker (frosted glass over the surface). Body stacks
+   field → scrollable preview → meta so 360px never puts preview beside the input. */
+.ds-cf {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: var(--ds-z-dialog, 40);
+  background: color-mix(
+    in srgb,
+    var(--vscode-editor-background, var(--ds-scrim, #1e1e1e)) 42%,
+    transparent
+  );
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8% 12px 12px;
+  box-sizing: border-box;
+}
+.ds-cf.open {
+  display: flex;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ds-cf {
+    background: color-mix(
+      in srgb,
+      var(--vscode-editor-background, #1e1e1e) 62%,
+      transparent
+    );
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ds-cf {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--ds-scrim, color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%));
+  }
+}
+.ds-cf-panel {
+  width: min(520px, 100%);
+  max-height: min(85vh, 640px);
+  display: flex;
+  flex-direction: column;
+  background: color-mix(
+    in srgb,
+    var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background))) 88%,
+    transparent
+  );
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
+  color: var(--vscode-quickInput-foreground, var(--ds-fg));
+  border: 1px solid color-mix(in srgb, var(--ds-focus, var(--ds-border)) 55%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--vscode-widget-shadow, #000) 12%, transparent),
+    0 16px 40px color-mix(in srgb, var(--vscode-widget-shadow, #000) 35%, transparent);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ds-cf-panel {
+    background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ds-cf-panel {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+    border: 1px solid var(--ds-focus, var(--ds-border));
+    border-radius: 6px;
+  }
+}
+.ds-cf-head {
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid var(--ds-border);
+  flex: none;
+}
+.ds-cf-title {
+  font-size: 13px;
+  font-weight: var(--tachyon-weight-semibold, 600);
+  color: var(--ds-fg);
+}
+.ds-cf-subtitle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--ds-muted);
+  line-height: 1.35;
+}
+.ds-cf-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ds-cf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ds-cf-label {
+  font-size: 11px;
+  font-weight: var(--tachyon-weight-medium, 500);
+  color: var(--ds-muted);
+}
+.ds-cf-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  min-width: 0;
+}
+.ds-cf-preview {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: min(28vh, 200px);
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--tachyon-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ds-fg);
+  background: color-mix(in srgb, var(--ds-input-bg, var(--vscode-input-background)) 80%, transparent);
+  border: 1px solid var(--ds-border);
+  border-radius: 5px;
+}
+.ds-cf-meta {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ds-cf-meta-line {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ds-muted);
+}
+.ds-cf-meta-line.warn {
+  color: var(--vscode-editorWarning-foreground, var(--ds-warn, #cca700));
+}
+.ds-cf-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--ds-border);
+  flex: none;
+}
+
 /* ── Product Toast (t-963b66) — one stack for Control; not Attention ── */
 .ds-toast-host {
   position: fixed;

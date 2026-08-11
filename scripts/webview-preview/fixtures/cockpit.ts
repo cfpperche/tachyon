@@ -283,6 +283,14 @@ export const strings: CockpitStrings & WorktreesStrings = {
   landReviewPickTitle: "Review '{0}' — {1} changed file(s)",
   landReviewPickPlaceholder: "Open a file's diff ({0} ↔ {1})",
   landReviewPickEmpty: "No changed file matches",
+  landPrFormTitle: "Create PR for '{0}'",
+  landPrFormSubtitle: "Open a GitHub PR for branch '{0}'?",
+  landPrTitleLabel: "PR title",
+  landPrBodyLabel: "Body",
+  landPrConfirm: "Create PR",
+  landPrBase: "Base branch: {0}",
+  landPrBaseDefault: "Base: gh's default — confirm on the PR page",
+  landPrDirty: "⚠ Uncommitted changes won't be in the PR — commit them first.",
   landCompare: "Review shows {0}..{1} — the commits this command would land, not the working tree.",
   landCompareBlocked: "Review opens a committed-history comparison, not the working tree.",
   landCompareNoTrunk: "No local trunk to compare against — review shows this branch against the ref it was forked from.",
@@ -913,6 +921,44 @@ const brokenEngineBundle: WorkspaceBundle = {
     ...bundles[0]!.control,
     identity: null,
     identityError: "engine handshake failed: no response on 127.0.0.1:7421 after 5s",
+  },
+};
+
+/**
+ * t-f3ded3 — same classified model as `worktrees`, plus a host-pushed PR draft so ConfirmForm is open.
+ * Visual QA of the land-door PR form uses this at 880 and 360 (multi-line preview + field stack).
+ * Typed separately because the VM is a wrap, not a bare SectionsModel.
+ */
+export const worktreesPrDraftFixture: Fixture<{
+  model: SectionsModel;
+  prDraft: {
+    id: string;
+    subject: string;
+    branch: string;
+    title: string;
+    body: string;
+    base: string | null;
+    dirty: boolean;
+  };
+}> = {
+  provenance: "synthetic-edge",
+  vm: {
+    model: buildSectionsModel(bundles, { section: "worktrees", nowIso: now }),
+    prDraft: {
+      id: "mw-change-busy",
+      subject: "tachyon/change/fleet-ui",
+      branch: "tachyon/change/fleet-ui",
+      title: "Fleet ui",
+      body:
+        "Branch `tachyon/change/fleet-ui` → `main`.\n\n"
+        + "This body is long enough to exercise the scrollable preview at 360px:\n"
+        + "- readiness was probed at click\n"
+        + "- title is editable\n"
+        + "- meta lines sit under the preview\n"
+        + "\n🤖 Opened from a Tachyon worktree.",
+      base: "main",
+      dirty: true,
+    },
   },
 };
 

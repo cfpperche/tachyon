@@ -44,6 +44,7 @@ never be import-confused:**
 | `DenseRow` | `dot?`, `name`, `sub?`, `meta?`, `actions?` | Sidebar-density rows |
 | `EmptyState` | `kind: empty\|loading\|error`, `message`, `action?` | Empty/loading/error bodies — never a bare "No items" `<div>` |
 | `QuickPicker` | `open`, `title`, `items`, `onSelect`, `onClose` | In-webview filterable pick list (product replacement for `vscode.window.showQuickPick` when the surface already owns candidates) |
+| `ConfirmForm` | `open`, `title`, `fieldLabel`/`fieldValue`, `preview`, `meta?`, `onConfirm`/`onCancel` | In-webview form dialog: editable field + multi-line preview + meta + Confirm/Cancel (product replacement for `showInputBox` + modal when free text + preview are required — not a second picker) |
 | `ToastProvider` / `useToast` | `show({ message, tone?, context?, durationMs? })` | Product toast stack for Control (shell + Board + Plugins). **Not** Attention. Mount Provider once on Control root. |
 
 ### Kit (`../shared/ui/kit`) — the authoring API for NEW UI

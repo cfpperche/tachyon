@@ -232,4 +232,76 @@ describe("SDD 501 — review and propose reach the land block", () => {
     expect(html).not.toContain(fixtureStrings.landReview);
     expect(html).not.toContain(fixtureStrings.landPropose);
   });
+
+  /**
+   * t-f3ded3 — the PR title is collected HERE, in the product ConfirmForm, not in VS Code's chrome.
+   *
+   * The host owns the draft (probe + compose); the webview owns the field, the multi-line body
+   * preview, the meta lines, and Confirm/Cancel. Panel close mid-flow is cancel: clearing the draft
+   * posts nothing, so no create runs.
+   */
+  const PR_DRAFT = {
+    id: "mw-change-x",
+    subject: "tachyon/change/x",
+    branch: "tachyon/change/x",
+    title: "Change x",
+    body: "Branch `tachyon/change/x` → `main`.\n\n🤖 Opened from a Tachyon worktree.",
+    base: "main" as string | null,
+    dirty: true,
+  };
+
+  const renderPrForm = (over: Record<string, unknown> = {}) => {
+    const posted: WorktreesAction[] = [];
+    const closed: number[] = [];
+    const out = renderStaticWithElements(Shell({
+      strings: fixtureStrings,
+      model: buildSectionsModel([bundle([row()])], { section: "worktrees", wsHash: "h" }),
+      post: (action: WorktreesAction) => posted.push(action),
+      prDraft: PR_DRAFT,
+      onClosePrDraft: () => closed.push(1),
+      ...over,
+    }));
+    return { ...out, posted, closed };
+  };
+
+  it("draws ConfirmForm over the card with title, body preview, and meta", () => {
+    const { html } = renderPrForm();
+    expect(html).toContain('data-testid="worktree-pr-form"');
+    expect(html).toContain("Create PR for 'tachyon/change/x'");
+    expect(html).toContain("Open a GitHub PR for branch 'tachyon/change/x'?");
+    expect(html).toContain("Change x");
+    expect(html).toContain("Branch `tachyon/change/x` → `main`");
+    expect(html).toContain("Base branch: main");
+    expect(html).toContain("Uncommitted changes won't be in the PR");
+    expect(html).toContain(fixtureStrings.landPrConfirm);
+  });
+
+  it("posts the confirmed title to the host and closes — it creates no PR of its own", () => {
+    const { elements, posted, closed } = renderPrForm();
+    const confirm = elements.find((el) => el.props["data-testid"] === "worktree-pr-form-confirm");
+    expect(confirm, "no confirm button").toBeDefined();
+    (confirm!.props.onClick as () => void)();
+    expect(posted).toEqual([{ type: "worktreeConfirmPr", id: "mw-change-x", title: "Change x" }]);
+    expect(closed).toEqual([1]);
+  });
+
+  it("cancel closes without posting a confirm", () => {
+    const { elements, posted, closed } = renderPrForm();
+    const cancel = elements.find((el) => el.props["data-testid"] === "worktree-pr-form-cancel");
+    expect(cancel, "no cancel button").toBeDefined();
+    (cancel!.props.onClick as () => void)();
+    expect(posted).toEqual([]);
+    expect(closed).toEqual([1]);
+  });
+
+  it("shows no form until the host sends a draft", () => {
+    const { html } = renderPrForm({ prDraft: null });
+    expect(html).not.toContain('data-testid="worktree-pr-form"');
+  });
+
+  it("names gh's default when the worktree has no persisted base", () => {
+    const { html } = renderPrForm({ prDraft: { ...PR_DRAFT, base: null, dirty: false } });
+    expect(html).toContain(fixtureStrings.landPrBaseDefault);
+    expect(html).not.toContain("Uncommitted changes won't be in the PR");
+  });
 });
