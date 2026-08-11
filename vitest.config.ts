@@ -77,7 +77,10 @@ const admission = admitOrFallback({
   // sibling arriving next sees this run rather than sizing as if the machine were empty.
   ...(gate.ok ? {} : { forcedWorkers: 1 }),
   ...(Number.isFinite(forcedRaw) && forcedRaw >= 1 ? { forcedWorkers: Math.trunc(forcedRaw) } : {}),
-}, gate.ok ? gate.workers : 1, (message) => process.stderr.write(`${message}\n`));
+  // t-ad8fd2 — no per-process fallback width is passed any more. A run the ledger cannot record is
+  // a run no sibling can see, and handing it `gate.workers` (alone-sizing, up to the cap) is the
+  // "as if the machine were empty" assumption that emptied the host. It degrades to one worker.
+}, (message) => process.stderr.write(`${message}\n`));
 
 if (!admission.ok) {
   // Refuse, do not degrade. An N+1th run costs ~2GB before its first worker, so sizing down does not

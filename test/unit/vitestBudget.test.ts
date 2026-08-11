@@ -484,13 +484,19 @@ describe("vitest host budget (t-3ad4af)", () => {
         // run, on every machine that runs the suite.
         ledgerPath: brokenLedgerPath(),
         pid: liveProcess(),
+        invocationMb: INVOCATION_MB,
+        workerMb: WORKER_MB,
         measure: () => undefined,
       },
-      7,
       (message) => warnings.push(message),
     );
     expect(broken.ok).toBe(true);
-    if (broken.ok) expect(broken.workers).toBe(7); // the per-process fallback, not a guess
+    // t-ad8fd2 — ONE worker, not the old per-process width. This run cannot be recorded, so no
+    // sibling can see it; admitting it at alone-sizing is the "as if the machine were empty"
+    // assumption that emptied the host in the first place.
+    if (broken.ok) expect(broken.workers).toBe(1);
+    // And it reports what it will actually cost. The old `costMb: 0` said the run was free.
+    if (broken.ok) expect(broken.claim.costMb).toBe(INVOCATION_MB + WORKER_MB);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toMatch(/ledger unavailable/i);
     expect(warnings[0]).toMatch(/NOT\s+accounted for/i); // says what protection was lost
@@ -513,11 +519,149 @@ describe("vitest host budget (t-3ad4af)", () => {
         workerMb: WORKER_MB,
         measure: () => undefined,
       },
-      7,
       (message) => warnings.push(message),
     );
     expect(refused.ok).toBe(false);
     expect(warnings).toHaveLength(1); // no second warning: nothing broke, the answer was simply no
+  });
+
+  /**
+   * t-ad8fd2 — the first run on a machine has no ledger, and that is NORMAL.
+   *
+   * Pinned separately from everything else here because it is the constraint every fix to the error
+   * path has to survive: absent and illegible are different facts, and a fix that collapses them the
+   * other way — degrading or refusing because there is no file yet — breaks the very first vitest
+   * invocation on a fresh checkout, which is the one nobody would think to test.
+   */
+  it("admits the FIRST run at full width: an absent ledger means nobody is running, not a broken one", () => {
+    const warnings: string[] = [];
+    const file = path.join(tempDir("tachyon-vitest-budget-first-"), "never-written.json");
+    expect(fs.existsSync(file)).toBe(false);
+
+    const first = admitOrFallback(
+      {
+        memory: HOST,
+        cpuCount: 24,
+        label: "first-run",
+        ledgerPath: file,
+        pid: liveProcess(),
+        reserveMb: RESERVE_MB,
+        invocationMb: INVOCATION_MB,
+        workerMb: WORKER_MB,
+        measure: () => undefined,
+        ancestorsOf: () => undefined,
+      },
+      (message) => warnings.push(message),
+    );
+
+    expect(warnings).toEqual([]); // nothing broke, so nothing is warned about
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    // Full width, not the degraded floor: an empty host really is empty.
+    expect(first.workers).toBeGreaterThan(1);
+    expect(first.claim.costMb).toBe(INVOCATION_MB + first.workers * WORKER_MB);
+    // And it is RECORDED, which is what makes the second run on this machine see the first.
+    expect(readLedger(file).map((claim) => claim.label)).toEqual(["first-run"]);
+  });
+
+  /**
+   * t-ad8fd2 — the defect: an illegible ledger made an invocation UNACCOUNTED, and two unaccounted
+   * invocations each size as if the machine were empty.
+   *
+   * Two invocations against a ledger neither can read. They cannot see each other THROUGH the file —
+   * nothing can fix that, the bytes are unreadable — so the property that has to hold is the other
+   * one: neither may spend the host as if it were alone, and neither may erase the run it cannot
+   * see. Before the fix both took the caller's per-process width with `costMb: 0`, and the first one
+   * overwrote the ledger, destroying a live holder's claim.
+   */
+  it("bounds TWO concurrent invocations that cannot read the ledger, and keeps the claim they cannot see", () => {
+    const file = path.join(tempDir("tachyon-vitest-budget-opaque-"), "budget.json");
+    // A real, live, expensive holder — the run these two are blind to.
+    const hog: VitestClaim = {
+      pid: liveProcess(), workers: 16, costMb: 5_000, startedAtMs: Date.now(), label: "hog",
+    };
+    fs.writeFileSync(file, JSON.stringify([hog]));
+    fs.chmodSync(file, 0o200); // present and writable, but this process cannot READ it
+
+    const base = {
+      memory: HOST,
+      cpuCount: 24,
+      ledgerPath: file,
+      reserveMb: RESERVE_MB,
+      invocationMb: INVOCATION_MB,
+      workerMb: WORKER_MB,
+      measure: () => undefined,
+      ancestorsOf: () => undefined,
+    };
+    const warnA: string[] = [];
+    const warnB: string[] = [];
+    const a = admitOrFallback({ ...base, label: "A", pid: liveProcess() }, (m) => warnA.push(m));
+    // B arrives while A is still running — the concurrency the whole ledger exists for.
+    const b = admitOrFallback({ ...base, label: "B", pid: liveProcess() }, (m) => warnB.push(m));
+
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+
+    // NEITHER sizes as if the host were empty. This is the assertion that goes red without the fix:
+    // both used to come back at the caller's per-process width.
+    expect(a.workers).toBe(1);
+    expect(b.workers).toBe(1);
+    // Neither reports itself as free, either.
+    expect(a.claim.costMb).toBe(INVOCATION_MB + WORKER_MB);
+    expect(b.claim.costMb).toBe(INVOCATION_MB + WORKER_MB);
+    // Both said so out loud, rather than quietly picking a number.
+    expect(warnA).toHaveLength(1);
+    expect(warnB).toHaveLength(1);
+
+    // And the holder they could not see is STILL on the ledger. Before the fix, A read the file as
+    // empty and then overwrote it — turning a live 16-worker run into the unaccounted invocation,
+    // which is the same defect one level down.
+    fs.chmodSync(file, 0o600);
+    expect(readLedger(file)).toEqual([hog]);
+  });
+
+  /**
+   * t-ad8fd2 — the repairable half: bytes we DID read and could not use.
+   *
+   * There is no live claim inside a corrupt file to protect, so this case does not stop at bounding.
+   * The run degrades AND records, and the record is what the next arrival reads — so here two
+   * concurrent invocations really do end up seeing each other, through a file the first one fixed.
+   */
+  it("degrades on a CORRUPT ledger but still records, so the next concurrent run bills it", () => {
+    const file = path.join(tempDir("tachyon-vitest-budget-corrupt-"), "budget.json");
+    fs.writeFileSync(file, '[{"pid":1,"workers":4,'); // truncated mid-write
+
+    const base = {
+      memory: HOST,
+      cpuCount: 24,
+      ledgerPath: file,
+      reserveMb: RESERVE_MB,
+      invocationMb: INVOCATION_MB,
+      workerMb: WORKER_MB,
+      measure: () => undefined,
+      ancestorsOf: () => undefined,
+    };
+    const warnings: string[] = [];
+    const a = admitOrFallback({ ...base, label: "A", pid: liveProcess() }, (m) => warnings.push(m));
+
+    expect(a.ok).toBe(true);
+    if (!a.ok) return;
+    expect(warnings).toEqual([]); // it did not fall back — the ledger still works, its contents did not
+    expect(a.workers).toBe(1); // red without the fix: the full width against an assumed-empty host
+    expect(a.reason).toMatch(/partly legible/i);
+
+    // The claim landed, and the file is legible again for whoever comes next.
+    const recorded = readLedger(file);
+    expect(recorded.map((claim) => claim.label)).toEqual(["A"]);
+    expect(recorded[0]!.costMb).toBe(INVOCATION_MB + WORKER_MB);
+
+    // B arrives while A holds it, and BILLS A rather than sizing against an empty host.
+    const b = admitOrFallback({ ...base, label: "B", pid: liveProcess() }, (m) => warnings.push(m));
+    expect(b.ok).toBe(true);
+    if (!b.ok) return;
+    expect(b.reason).toMatch(new RegExp(`1 sibling run\\(s\\) hold ${INVOCATION_MB + WORKER_MB}MB`));
+    expect(readLedger(file).map((claim) => claim.label)).toEqual(["A", "B"]);
   });
 
   it("measures a real process tree, parent plus children", () => {
