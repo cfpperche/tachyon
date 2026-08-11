@@ -22,7 +22,7 @@ export function openAgentFixtureStudio(extensionUri: vscode.Uri, vm: AgentFixtur
   panel.webview.html = renderWebviewShell({
     cspSource: panel.webview.cspSource,
     title: "Agent fixture",
-    styles: [uri("codicon.css"), uri("design-system.css"), uri("studio-frame.css"), uri("agent-studio-fixture.css")],
+    styles: [uri("codicon.css"), uri("design-system.css"), uri("quick-picker.css"), uri("studio-frame.css"), uri("agent-studio-fixture.css")],
     bundle: uri("agent-studio-fixture.js"),
     mode: "live",
     // spec 485 A2 — a conforming surface names itself and nothing else: no `extend`, no exception entry.

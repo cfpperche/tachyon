@@ -487,7 +487,8 @@ if (existsSync("media/companion-mobile/index.html")) {
 buildTailwind();
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
-copyFileSync("src/webview/shared/design-system.css", "dist/webview/design-system.css"); // spec 252 — shared webview design system
+copyFileSync("src/webview/shared/design-system.css", "dist/webview/design-system.css");
+copyFileSync("src/webview/shared/quick-picker.css", "dist/webview/quick-picker.css"); // spec 252 — shared webview design system
 copyFileSync("src/webview/shared/page-frame.css", "dist/webview/page-frame.css"); // t-32c872 — the shared PAGE FRAME (html/body height, no page scroll) a standalone app links
 copyFileSync("src/webview/shared/engine-workspace.css", "dist/webview/engine-workspace.css"); // SDD 485 D5 — opt-in Engine workspace/log contract
 copyFileSync("src/webview/shared/control-typography.css", "dist/webview/control-typography.css"); // SDD 485 D6 — Control + Worktrees typography utility

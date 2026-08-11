@@ -16,6 +16,9 @@ describe("isAgentPaneToHost", () => {
     expect(isAgentPaneToHost({ type: "agent-pane/stage", text: "hi" })).toBe(true);
     expect(isAgentPaneToHost({ type: "agent-pane/submit", text: "hi\n" })).toBe(true);
     expect(isAgentPaneToHost({ type: "agent-pane/inject-template" })).toBe(true);
+    expect(isAgentPaneToHost({ type: "agent-pane/picker-result", requestId: "picker-1", selectedId: "review" })).toBe(true);
+    expect(isAgentPaneToHost({ type: "agent-pane/picker-result", requestId: "picker-1" })).toBe(true);
+    expect(isAgentPaneToHost({ type: "agent-pane/picker-result", selectedId: "review" })).toBe(false);
   });
 
   it("accepts Slice 2 pin-selection", () => {
