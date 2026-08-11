@@ -28,7 +28,8 @@ describe("preview route table", () => {
     const r = ROUTES.sidebar;
     expect(r.bundle).toBe("/dist/webview/sidebar.js");
     // CSS order is the contract the real panel links: codicon → design-system → panel-specific.
-    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css", "/dist/webview/sidebar.css"]);
+    expect(r.cssLinks).toEqual(["/dist/webview/codicon.css", "/dist/webview/design-system.css",
+      "/dist/webview/quick-picker.css", "/dist/webview/sidebar.css"]);
     expect(r.frame).toEqual({ w: 340, h: 760 });
   });
 
@@ -45,6 +46,7 @@ describe("preview route table", () => {
     expect(r.cssLinks).toEqual([
       "/dist/webview/codicon.css",
       "/dist/webview/design-system.css",
+      "/dist/webview/quick-picker.css",
       "/dist/webview/highlight.css",
       "/dist/webview/katex.min.css",
       "/dist/webview/mermaid-block.css",
@@ -77,6 +79,7 @@ describe("preview route table", () => {
     expect(r.cssLinks).toEqual([
       "/dist/webview/codicon.css",
       "/dist/webview/design-system.css",
+      "/dist/webview/quick-picker.css",
       "/dist/webview/vscode-theme.css",
       "/dist/webview/task-studio.tailwind.css",
       "/dist/webview/rich-doc.css",
@@ -104,6 +107,7 @@ describe("preview route table", () => {
     expect(r.cssLinks).toEqual([
       "/dist/webview/codicon.css",
       "/dist/webview/design-system.css",
+      "/dist/webview/quick-picker.css",
       "/dist/webview/inspector.css",
     ]);
     expect(r.module).toBe(true);
@@ -136,6 +140,7 @@ describe("preview route table", () => {
     expect(r.cssLinks).toEqual([
       "/dist/webview/codicon.css",
       "/dist/webview/design-system.css",
+      "/dist/webview/quick-picker.css",
       "/dist/webview/plugins.tailwind.css",
       "/dist/webview/plugins.css",
     ]);
@@ -159,6 +164,7 @@ describe("preview route table", () => {
     expect(r.cssLinks).toEqual([
       "/dist/webview/codicon.css",
       "/dist/webview/design-system.css",
+      "/dist/webview/quick-picker.css",
       "/dist/webview/runtime-ops.css",
     ]);
     expect(r.module).toBe(true);

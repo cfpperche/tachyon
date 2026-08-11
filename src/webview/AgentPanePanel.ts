@@ -17,6 +17,7 @@ import {
   isAgentPaneToHost,
   pinTitleFromSelection,
   type AgentPanePanelState,
+  type AgentPanePickerItem,
   type AgentPaneToHost,
 } from "./agent-pane/protocol.js";
 
@@ -38,7 +39,10 @@ export interface AgentPaneOpenArgs {
    * Open 381 prompt-template picker for this agent.
    * Return true when a template was staged/submitted (not cancelled).
    */
-  openTemplateInject: (agent: string) => Promise<boolean>;
+  openTemplateInject: (
+    agent: string,
+    choose: (request: { title: string; placeholder?: string; items: AgentPanePickerItem[] }) => Promise<string | undefined>,
+  ) => Promise<boolean>;
   /** Create a project pin from selected terminal text. */
   createPinFromSelection: (text: string, agent: string) => Promise<{ id: string }>;
   /** Is the tmux session still running? Answers "did I lose the view or the work?" (t-feaaea). */
@@ -158,8 +162,8 @@ export class AgentPanePanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title,
-      // No design-system.css: Tachyon Mono @font-face breaks xterm cell metrics.
-      styles: [uri("xterm.css"), uri("agent-pane.css")],
+      // Font-free picker layer only: design-system.css's Tachyon Mono @font-face breaks xterm metrics.
+      styles: [uri("xterm.css"), uri("quick-picker.css"), uri("agent-pane.css")],
       bundle: uri("agent-pane.js"),
       mode: "live",
       surface: AGENT_PANE_VIEW_TYPE,
@@ -409,6 +413,17 @@ export class AgentPanePanelManager {
       }
     };
 
+    let pickerSequence = 0;
+    let pendingPicker: { requestId: string; resolve: (selectedId: string | undefined) => void } | undefined;
+    const chooseInPane = (request: { title: string; placeholder?: string; items: AgentPanePickerItem[] }) => {
+      pendingPicker?.resolve(undefined);
+      const requestId = `picker-${++pickerSequence}`;
+      return new Promise<string | undefined>((resolve) => {
+        pendingPicker = { requestId, resolve };
+        post({ type: "agent-pane/picker", requestId, ...request });
+      });
+    };
+
     panel.webview.onDidReceiveMessage((raw: unknown) => {
       if (!isAgentPaneToHost(raw)) return;
       const msg: AgentPaneToHost = raw;
@@ -463,8 +478,15 @@ export class AgentPanePanelManager {
         void handleDelivery("submit", msg.text);
         return;
       }
+      if (msg.type === "agent-pane/picker-result") {
+        if (pendingPicker?.requestId !== msg.requestId) return;
+        const { resolve } = pendingPicker;
+        pendingPicker = undefined;
+        resolve(msg.selectedId);
+        return;
+      }
       if (msg.type === "agent-pane/inject-template") {
-        void args.openTemplateInject(args.agent).then((ok) => {
+        void args.openTemplateInject(args.agent, chooseInPane).then((ok) => {
           if (ok) post({ type: "agent-pane/mark", kind: "template" });
         }).catch((err) => {
           const message = err instanceof Error ? err.message : String(err);
@@ -496,6 +518,8 @@ export class AgentPanePanelManager {
     });
 
     panel.onDidDispose(() => {
+      pendingPicker?.resolve(undefined);
+      pendingPicker = undefined;
       stopForeignWatch();
       live.attach?.dispose();
       this.viewports?.release(args.session, "pane");

@@ -87,7 +87,7 @@ export class SystemPanelManager {
       // `engine-workspace.css` holds the workspace/log contract this screen inherited from Engine and
       // is LINKED rather than copied (Control's Worktrees app links it too); `system.css` is the
       // summary strip above it, which is all Overview's sheet turned out to be.
-      styleFiles: ["codicon.css", "design-system.css", "engine-workspace.css", "system.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "engine-workspace.css", "system.css"],
       title: () => vscode.l10n.t("System"),
       // One strings table, not two. Engine used to hand-build its own inline copy of fields
       // `cockpitStrings()` already declared; that was a second declaration of one fact and it is gone

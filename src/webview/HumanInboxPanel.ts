@@ -298,7 +298,7 @@ export class HumanInboxPanelManager {
       // rule was always in this surface's own sheet, and `cockpit.css` never styled `.hi-root` at all — its
       // embed neutralization is `.ck-embed-host > main`, which does not reach a `div`-rooted surface. That is
       // the third answer this grep has given in three migrations, and `embedPagePad.test.ts` holds it.
-      styleFiles: ["codicon.css", "design-system.css", "human-inbox.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "human-inbox.css"],
       title: () => vscode.l10n.t("Human Inbox"),
       // No `iconName`: t-6c59f6 landed while this was in flight and made the editor-tab icon DERIVED from
       // the launcher tile that opens the app (`WEBVIEW_APPS`' `section` → `controlSectionIcon`). Declaring

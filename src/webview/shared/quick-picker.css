@@ -1,0 +1,81 @@
+/*
+ * t-de3dfc — font-free QuickPicker layer.
+ * Loaded after design-system.css by ordinary product surfaces, and directly by the Agent Pane,
+ * whose xterm cell metrics prohibit design-system.css's Tachyon Mono font declarations.
+ */
+:root {
+  --ds-fg: var(--vscode-foreground);
+  --ds-muted: var(--vscode-descriptionForeground);
+  --ds-border: var(--vscode-widget-border, var(--vscode-editorWidget-border, color-mix(in srgb, var(--vscode-foreground) 22%, transparent)));
+  --ds-focus: var(--vscode-focusBorder);
+  --ds-ok: var(--vscode-charts-green, var(--vscode-testing-iconPassed, var(--vscode-terminal-ansiGreen)));
+  --ds-warn: var(--vscode-charts-yellow, var(--vscode-list-warningForeground, var(--vscode-terminal-ansiYellow)));
+  --ds-err: var(--vscode-errorForeground, var(--vscode-list-errorForeground, var(--vscode-terminal-ansiRed)));
+  --ds-hover: var(--vscode-toolbar-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+  --ds-disabled-opacity: 0.5;
+  --ds-z-dialog: 40;
+  --ds-scrim: color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%);
+  --tachyon-weight-medium: 500;
+  --tachyon-weight-semibold: 600;
+}
+
+/* ── QuickPicker (product in-webview pick list; replaces vscode showQuickPick) ── */
+.ds-qp {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: var(--ds-z-dialog, 40);
+  background: color-mix(in srgb, var(--vscode-editor-background, var(--ds-scrim, #1e1e1e)) 42%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8% 12px 12px;
+  box-sizing: border-box;
+}
+.ds-qp.open { display: flex; }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ds-qp { background: color-mix(in srgb, var(--vscode-editor-background, #1e1e1e) 62%, transparent); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ds-qp { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--ds-scrim, color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%)); }
+}
+.ds-qp-panel {
+  width: min(480px, 100%);
+  max-height: min(70vh, 520px);
+  display: flex;
+  flex-direction: column;
+  background: color-mix(in srgb, var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background))) 88%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  backdrop-filter: blur(18px) saturate(1.25);
+  color: var(--vscode-quickInput-foreground, var(--ds-fg));
+  border: 1px solid color-mix(in srgb, var(--ds-focus, var(--ds-border)) 55%, transparent);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--vscode-widget-shadow, #000) 12%, transparent), 0 16px 40px color-mix(in srgb, var(--vscode-widget-shadow, #000) 35%, transparent);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ds-qp-panel { background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background))); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .ds-qp-panel { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--vscode-quickInput-background, var(--vscode-editorWidget-background, var(--vscode-editor-background))); border: 1px solid var(--ds-focus, var(--ds-border)); border-radius: 6px; }
+}
+.ds-qp-head { padding: 10px 12px 6px; border-bottom: 1px solid var(--ds-border); }
+.ds-qp-title { font-size: 13px; font-weight: var(--tachyon-weight-semibold, 600); color: var(--ds-fg); }
+.ds-qp-subtitle { margin-top: 2px; font-size: 11px; color: var(--ds-muted); line-height: 1.35; }
+.ds-qp-input { width: 100%; box-sizing: border-box; padding: 10px 12px; background: transparent; border: none; border-bottom: 1px solid var(--ds-border); color: var(--ds-fg); outline: none; font-size: 13px; font-family: inherit; }
+.ds-qp-input::placeholder { color: var(--vscode-input-placeholderForeground, var(--ds-muted)); }
+.ds-qp-input:focus { box-shadow: inset 0 -1px 0 var(--ds-focus); }
+.ds-qp-results { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 0; }
+.ds-qp-empty { padding: 14px 12px; font-size: 12px; color: var(--ds-muted); opacity: 0.85; }
+.ds-qp-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; cursor: pointer; border: none; background: transparent; text-align: left; color: inherit; font: inherit; }
+.ds-qp-item.sel { background: var(--vscode-list-activeSelectionBackground, var(--ds-hover)); color: var(--vscode-list-activeSelectionForeground, var(--ds-fg)); }
+.ds-qp-item.sel .ds-qp-desc, .ds-qp-item.sel .ds-qp-detail { color: inherit; opacity: 0.8; }
+.ds-qp-item.disabled { opacity: var(--ds-disabled-opacity, 0.5); cursor: not-allowed; }
+.ds-qp-item.disabled.sel { background: var(--vscode-list-inactiveSelectionBackground, var(--ds-hover)); }
+.ds-qp-item-main { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.ds-qp-label { flex: 0 1 auto; font-size: 13px; font-weight: var(--tachyon-weight-medium, 500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-qp-desc { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--ds-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.ds-qp-detail { font-size: 11px; color: var(--ds-muted); line-height: 1.3; }
+.ds-qp-foot { display: flex; gap: 14px; padding: 6px 12px; border-top: 1px solid var(--ds-border); color: var(--ds-muted); font-size: 10px; }
+.ds-qp-foot kbd { font-family: inherit; border: 1px solid var(--ds-border); border-radius: 3px; padding: 0 4px; margin-right: 3px; }

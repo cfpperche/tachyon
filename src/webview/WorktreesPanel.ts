@@ -67,7 +67,7 @@ export class WorktreesPanelManager {
       app,
       styleFiles: [
         "codicon.css",
-        "design-system.css",
+        "design-system.css", "quick-picker.css",
         "control-typography.css",
         "engine-workspace.css",
         "worktrees.css",

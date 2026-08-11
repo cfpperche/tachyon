@@ -120,7 +120,7 @@ export class BoardPanelManager {
       // came from cockpit.css. Standalone, the Board must link the shared frame itself. It is a shared
       // sheet, so this is conformance, not page chrome of its own — and the contract now checks the
       // CONSUMPTION, not just the declaration.
-      styleFiles: ["codicon.css", "design-system.css", "page-frame.css", "vscode-theme.css", "board.tailwind.css", "board.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "page-frame.css", "vscode-theme.css", "board.tailwind.css", "board.css"],
       title: () => "Board",
       refreshKindFor: boardRefreshKind,
       bind: (session) => {

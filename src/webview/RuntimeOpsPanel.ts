@@ -183,7 +183,7 @@ export class RuntimeOpsPanelManager {
       // (`.ck-embed-host > .runtime-ops`), which is dead once the surface leaves Control — so the residue
       // here was a rule to DELETE rather than one to move, in both sheets. `embedPagePad.test.ts` holds
       // both halves.
-      styleFiles: ["codicon.css", "design-system.css", "runtime-ops.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "runtime-ops.css"],
       title: () => vscode.l10n.t("Runtime Ops"),
       refreshKindFor: runtimeOpsRefreshKind,
       bind: (session) => {
