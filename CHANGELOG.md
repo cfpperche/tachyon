@@ -6,6 +6,58 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.82.0 — the last two places where VS Code's chrome stood in for ours
+
+The maintainer's rule is that Tachyon builds its own pickers. Two sites resisted for measured reasons,
+and both are gone here — one because the styles finally separate from a font the terminal cannot load,
+the other because what was missing was a component, not a second picker.
+
+### Added
+
+- **A PR form that belongs to the product** (`t-f3ded3`). "Open a pull request" in the land block asked
+  for the title through VS Code's input box and confirmed through a native modal with the body crammed
+  into a detail line. It is now a `ConfirmForm` in the design system: editable title, scrollable body
+  preview, the base branch and dirty-tree lines as real meta, and Confirm/Cancel.
+
+  The authority split did not move: the host still owns readiness probing and PR creation, and the
+  surface only collects. The probe still happens **at the click** — the draft is composed then, and
+  confirming does not probe again — which is the property that makes the button safe on a polled
+  dashboard. Closing the panel mid-flow cancels and creates nothing. At 360px the layout stacks; a
+  field beside a multi-line preview is exactly the shape that collapses there.
+
+- **The product's picker now draws inside the Agent Pane** (`t-de3dfc`). That surface deliberately
+  refuses the design system, because the Tachyon Mono `@font-face` breaks xterm's cell metrics — and
+  the picker's rules lived only in that sheet. They now live in a font-free layer linked beside it, so
+  nothing is duplicated and the font exclusion holds.
+
+  **The risk was measured before anything moved**: the picker listens for keys in the capture phase on
+  `document`, and the Agent Pane is a live terminal that forwards keys to tmux. A focused probe
+  confirms filter text, arrows, Enter and Escape never reach the pane's input.
+
+### Fixed
+
+- **Removing an agent retires its file-shaped bridge config** (`t-652153`). End-of-life retired only
+  the directory-shaped runtime homes, so a `bridge-mcp/<name>.json` survived every removal. Measured
+  along the way, and reported rather than swept: seven such files were orphaned, four harness homes for
+  absent agents hold 330,215,424 allocated bytes — retained by design — and the size receipt the tool
+  promises is a host notification that counts neither.
+
+- **A refusal stops sending a terminal to doors that do not serve it** (`t-849277`). `dismiss_agent`
+  called a declared terminal a "Saved Agent" and offered removal-proposal and Agent Studio, neither of
+  which applies to it. The cause was vocabulary: `saved` is a *lifetime*, shared by profile-backed
+  agents and declared terminals, and the refusal keyed on it. Terminals now get their real door — the
+  sidebar's Remove, or the `config.agent.delete` operation that action invokes.
+
+### Internal
+
+- **A memory crash is diagnosable after the fact** (`t-bd9c61`). The vitest budget ledger lives in
+  `/tmp` and holds only live claims, so a reboot erased any answer to "how many suites were running,
+  whose, and how large". Moving it alone would not have helped — the next admission reaps dead PIDs and
+  rewrites the file empty — and refusals never wrote it at all. One append-only line per admission and
+  refusal now survives, with the siblings alive at that instant. Volume was measured before choosing a
+  bound: at a peak of 63 gate runs a day, this is roughly 23 MB a year, so there is no rotation. It
+  does not prevent the crash or reduce memory use; it only makes the question answerable.
+
 ## 0.81.0 — three doors write into a pane, and all three now read it at the moment they write
 
 Tachyon delivers text into a running agent's terminal through three doors: the Interface (you typing a
