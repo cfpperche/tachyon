@@ -6,7 +6,52 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.80.0 — the product stops claiming what it has not verified
+
+Six defects here share one shape, and it is the shape this codebase produces most: a surface
+asserting a state nobody checked. A Stop reported success 600 ms after sending keys. A dead row
+offered the toolbar of a live agent. A fresh agent was called busy and refused *the human's* own
+prompt. A discarded config line lived only in a toast that vanished. And every delegated subagent
+carried eleven skills its delegator was never granted.
+
+### Added
+
+- **Landing a worktree is a product operation** (`t-7cb971`, SDD 498). The crossing from a worktree to
+  the trunk now happens inside Tachyon, in the shape the Forget flow already uses — and the agent
+  still cannot perform it.
+
 ### Fixed
+
+- **A delegated subagent receives exactly its delegator's grant** (`t-53e485`). Measured across eleven
+  agent homes: the parent profile granted three skills, the parent's home held three, and **every
+  delegated child held eleven** — the workspace's installed plugin set. The delegable toolkit started
+  from the parent's snapshot and then unioned every `skill-dir` in the plugin lockfile, treating an
+  install as a second grant door.
+
+  It is not one, and the measurement says so rather than the principle: `.claude/skills` and
+  `.agents/skills` are gitignored, so no worktree holds them, and every parent's private home carried
+  exactly its own grant — nobody held the eleven. The door even invented a grant, handing one child
+  eleven skills delegated from a parent whose profile grants zero. Two of the eight extras are not
+  decorative: one is paid image generation, the other drives a real browser. Codex leaked identically,
+  with only the delivery target differing, which is why its home looked empty.
+
+- **Stop reports what happened** (`t-22944a`). It sent `C-c`, waited 300 ms, repeated, and resolved
+  **successfully** without checking whether the process died; the truth appeared only when a later
+  refresh reclassified the row fifteen seconds on. Measured on Grok 1.0.0 mid-turn, successful exits
+  land at 992–1032 ms, so confirmation waits two seconds — not the fifteen that would block a click.
+  Stop now answers `stopped`, `alive` or `unknown` where it answered one success for three outcomes.
+  Forced Kill stays an explicit human gesture; nothing escalates on its own.
+
+- **A fresh agent is no longer called busy without evidence** (`t-4c82fa`). The initial `working` label
+  is synthetic — measured, the window is 9 to 12 seconds — and three action gates trusted it, including
+  the one that refuses **your** prompt. The seed stays honestly unknown; the gates now require positive
+  evidence that a turn started.
+
+- **A discarded config line leaves a durable record** (`t-7d6013`). Every unreadable key warns instead
+  of refusing the file — the maintainer's decision — and that put the whole weight on a toast that
+  vanished. A dismissible banner now names what the last successful load threw away. It never touches
+  config validity, so a typo cannot mark the fleet invalid, and dismissal is keyed to the signature of
+  the discarded set: reading once silences that file, and any change brings the record back.
 
 - **A stopped agent no longer offers the repertoire of a running one** (`t-c515c0`). The row for an
   agent the human stopped read `stopped (exit 130)` and carried, beside it, the same bar as a live
@@ -31,6 +76,33 @@ Marketplace release notes.
   prompt, so the process is mid-turn — exits 130 in 3 of 5 runs and does not die at all in the other 2.
   The number describes what the process was doing, not whether the stop was asked for, so nothing keys
   on it; the intent is still read from the recorded request.
+
+- **The vitest budget stopped failing open** (`t-ad8fd2`) — an unreadable ledger became an unaccounted
+  invocation, and two of those could not see each other. A revoked skill stopped surviving in a reused
+  private home for the fourth runtime (`t-fc1df8`). A canonical codex agent with no worktree stopped
+  deleting the workspace's eleven plugin installs (`t-94d49a`). A pin id is no longer drawn outside its
+  lock, so a collision draws again (`t-8cdd0d`).
+
+### Internal
+
+- **Agent isolation, measured per runtime** (`t-5313dc`) — including that Pi cannot be isolated at all.
+  Three permanent documents asserted an isolation the parity matrix had no dimension to describe.
+
+- **The suite stopped depending on the machine it runs on.** Zero opencode binary executions in
+  `test/unit`, counted rather than presumed (`t-35c998`, `t-64ea85`, `t-ed0f43`); 27 tests no longer
+  need host state to exist (`t-b10d93`); one test stopped inheriting `XDG_DATA_HOME` from the host and
+  its assertion got *stronger* (`t-86467a`); and `engineSupervisor` fell from 41.4 s to 10.4 s
+  (`t-d1f356`) — the single file that set the floor for the entire gate.
+
+- **Two ghosts that were not there.** The gate failed 6% of runs over a leak that never existed
+  (`t-ffc5bf`), and the tmux scope oracle kept catching what there is to catch (`t-c1b382`). The
+  vsix-smoke was deleting its tree with the tmux server still alive, where the guard could not see it
+  (`t-10fda8`).
+
+- **37 specs left limbo** (`t-5507f1`): the right status was already there, buried in prose on the
+  status line. Eleven test files stopped pointing at a directory deleted two days earlier (`t-1fa246`),
+  and the shipped schema now publishes exactly the keys the parser accepts, in both directions
+  (`t-d47b0a`).
 
 ## 0.79.0 — an engine upgrade asks before killing a turn in flight
 
