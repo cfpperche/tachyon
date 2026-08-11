@@ -429,6 +429,9 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
       case "pin:toggle": return this.mutateSidebar(ws, { action: "pin.toggle", id, done: !!done });
       case "notice:markRead": return this.mutateSidebar(ws, { action: "notice.markRead", id });
       case "notice:markAllRead": return this.mutateSidebar(ws, { action: "notice.markAllRead", id: "all" });
+      // t-7d6013 — `id` is the discard-set signature the banner was rendered from; the engine matches
+      // it against the live record, so the shell never has to know what was discarded.
+      case "config:dismissDiscards": return this.mutateSidebar(ws, { action: "config.dismissDiscards", id });
       case "notice:invoke": {
         if (!extra?.actionId) return;
         return this.mutateSidebar(ws, { action: "notice.invoke", id, actionId: extra.actionId });

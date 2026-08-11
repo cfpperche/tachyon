@@ -38,6 +38,14 @@ export async function applySidebarMutation(
     const changed = (await source.invokeNoticeInboxAction?.(input.id, input.actionId)) ?? false;
     return { action: input.action, id: input.id, changed };
   }
+  if (input.action === "config.dismissDiscards") {
+    // t-7d6013 — the human read the discard banner and took it off the screen. `changed: false` when
+    // the signature no longer matches (a reload landed between render and click), which leaves the
+    // current set on screen rather than hiding one nobody has read.
+    const changed = source.dismissConfigDiscards?.(input.id) ?? false;
+    if (changed) onChanged("agents");
+    return { action: input.action, id: input.id, changed };
+  }
   if (input.action === "agent.markSeen") {
     source.markAgentPaneSeen?.(input.id);
     onChanged("agents");

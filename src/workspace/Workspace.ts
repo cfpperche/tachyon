@@ -105,6 +105,7 @@ import {
   isLkgOnlySpawn,
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
+import { makeConfigDiscards, type ConfigDiscards } from "../config/configDiscards.js";
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type ManagedEntryInfo, type RestartSessionMode } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
@@ -607,6 +608,17 @@ export class Workspace {
    * Undefined when the config is valid (or no config file exists yet).
    */
   configFailure: ConfigFailure | undefined;
+  /**
+   * t-7d6013 — what the LAST SUCCESSFUL load dropped out of tachyon.yml, and the signature of the set
+   * the human has already read. Private because the two only make sense together: readers ask
+   * `configDiscards`, which is the record minus a dismissal that still applies.
+   *
+   * This is a record and never a gate — it does not touch `configValid`, `profileSpawnBlocked`, or
+   * any load/spawn decision. The whole point of the owner's rule is that an invalid line warns and
+   * the file keeps loading; a surface that changed that would be answering a question nobody asked.
+   */
+  private configDiscardsRecord: ConfigDiscards | undefined;
+  private dismissedConfigDiscardsSignature: string | undefined;
 
   private readonly engine: WorkspaceEngine;
   private watches: WatchController;
@@ -4770,6 +4782,9 @@ export class Workspace {
     if (!file) {
       this.config = undefined;
       this.configFailure = undefined;
+      // t-7d6013 — no file, nothing discarded: a record naming a file that is gone would outlive the
+      // thing it describes.
+      this.setConfigDiscards(undefined);
       this.profileSpawnBlocked.clear();
       if (prevCompanionTabTools) {
         // Settings gone → drop companion tools from live MCP sessions.
@@ -4799,7 +4814,7 @@ export class Workspace {
       this.blockProfileSpawnsFromLiveConfig();
       return false;
     }
-    const { config, errors, warnings, profileErrors } = this.parseTrustedConfigText(text);
+    const { config, errors, warnings, discarded, profileErrors } = this.parseTrustedConfigText(text);
     // t-af6803 — a broken profile is ONE agent's problem. The loader keeps its actionable reason in
     // agentSources as `refused`; putting the same error into the FILE-wide configFailure slot marks
     // every healthy/running row `config invalid` and makes unrelated profiles unspawnable.
@@ -4819,6 +4834,16 @@ export class Workspace {
       return false;
     }
     for (const warning of warnings) this.host.notify(this.t("{0}: {1}", path.basename(file), warning), "warn");
+    // t-7d6013 — the toast above still fires (it is the "right now" signal), and everything it names
+    // that was actually DROPPED also lands in a slot that outlives it. Set on the successful-load path
+    // only: the fatal path above keeps the previously loaded config running, so it keeps that config's
+    // discards too rather than clearing a record that still describes what is live.
+    this.setConfigDiscards(makeConfigDiscards({
+      path: file,
+      file: path.basename(file),
+      discarded,
+      at: new Date().toISOString(),
+    }));
     this.config = config;
     // The refused row itself is the durable failure surface (name + reason + disabled spawn). The
     // global banner is reserved for failures that actually invalidate tachyon.yml as a whole.
@@ -4870,6 +4895,40 @@ export class Workspace {
     // agents without restarting one. Best-effort: a no-op when no server runs, never blocks apply.
     void this.tmux.applyLiveOptions().catch(() => {});
     return true;
+  }
+
+  /**
+   * t-7d6013 — the discards a reader should SEE: the record, unless the human has already dismissed
+   * this exact set. Dismissal is content-keyed, so nothing has to be re-shown on every reload of an
+   * unchanged file, and nothing stays hidden once what was dropped changes.
+   */
+  get configDiscards(): ConfigDiscards | undefined {
+    const record = this.configDiscardsRecord;
+    if (!record) return undefined;
+    return this.dismissedConfigDiscardsSignature === record.signature ? undefined : record;
+  }
+
+  /**
+   * The human read it and took it off the screen. Keyed by the signature the UI was showing, so a
+   * click that races a reload dismisses nothing rather than hiding a set nobody has read (false when
+   * that happens, which is also what the sidebar reports as "no change").
+   */
+  dismissConfigDiscards(signature: string): boolean {
+    const record = this.configDiscardsRecord;
+    if (!record || record.signature !== signature) return false;
+    if (this.dismissedConfigDiscardsSignature === signature) return false;
+    this.dismissedConfigDiscardsSignature = signature;
+    return true;
+  }
+
+  /**
+   * A dismissal covers one exact set of discarded lines. Any other set — including no discards at
+   * all, which is what a FIXED file produces — retires it, so re-introducing the same typo later
+   * shows the record again instead of inheriting a decision made about a different file.
+   */
+  private setConfigDiscards(next: ConfigDiscards | undefined): void {
+    this.configDiscardsRecord = next;
+    if (this.dismissedConfigDiscardsSignature !== next?.signature) this.dismissedConfigDiscardsSignature = undefined;
   }
 
   parseTrustedConfigText(yamlText: string) {

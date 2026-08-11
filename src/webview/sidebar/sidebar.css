@@ -442,11 +442,15 @@
 
   /* SDD 479 — a refused card template. Same shape as the config banner, WARN tone: the config is
      valid and the fleet is live; only the layout fell back to the default. */
-  .card-template-banner {
+  /* t-7d6013 — a discarded declaration shares that tone for the same reason: the file loaded and the
+     fleet is live; only some of what was written is not running. */
+  .card-template-banner, .discard-banner {
     border-color: color-mix(in srgb, var(--ds-warn, #cca700) 55%, transparent);
     background: color-mix(in srgb, var(--ds-warn, #cca700) 12%, var(--vscode-sideBar-background, transparent));
   }
-  .card-template-banner .config-error-title { color: var(--ds-warn, #cca700); }
+  .card-template-banner .config-error-title, .discard-banner .config-error-title { color: var(--ds-warn, #cca700); }
+  /* The consequence line: quieter than the discarded text itself, which is the part a human acts on. */
+  .config-discard-note { font-size: 10px; line-height: 1.35; color: var(--ds-muted); }
   /* SDD 479 phase 5 — a banner action must never run past its own border at the sidebar's narrowest;
      the label ellipsizes instead, with the full text still in the title attribute. */
   .config-error-actions .ds-btn { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
