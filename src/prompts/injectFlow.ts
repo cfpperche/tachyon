@@ -30,6 +30,11 @@ export type AttentionState = string | undefined;
 
 export type SubmitRefuseReason = "working" | "throttled" | "composer-occupied";
 
+/** A cached `working` label is busy only when the monitor has positive evidence of a real turn. */
+export function isEvidencedWorking(state: AttentionState, hasStartedTurn: boolean | undefined): boolean {
+  return state === "working" && hasStartedTurn === true;
+}
+
 /**
  * Whether submit (paste+Enter) is allowed. Matches write_input spirit:
  * refuse working/throttled and non-empty composer drafts.
@@ -38,8 +43,9 @@ export type SubmitRefuseReason = "working" | "throttled" | "composer-occupied";
 export function submitRefuseReason(
   state: AttentionState,
   composerOccupied: boolean | undefined,
+  hasStartedTurn: boolean | undefined,
 ): SubmitRefuseReason | undefined {
-  if (state === "working") return "working";
+  if (isEvidencedWorking(state, hasStartedTurn)) return "working";
   if (state === "throttled") return "throttled";
   if (composerOccupied) return "composer-occupied";
   return undefined;

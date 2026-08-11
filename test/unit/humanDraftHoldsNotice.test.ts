@@ -154,7 +154,7 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 function forceStateOf(ws: Workspace, agent: string, state: string, extra: Record<string, unknown> = {}) {
   const original = ws.monitor.stateOf.bind(ws.monitor);
   (ws.monitor as unknown as { stateOf(a: string): unknown }).stateOf = (a: string) =>
-    a === agent ? { state, ...extra } : original(a);
+    a === agent ? { state, hasStartedTurn: state === "working", ...extra } : original(a);
 }
 
 const priv = (ws: Workspace) => ws as unknown as {
