@@ -6,6 +6,50 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.79.0 — an engine upgrade asks before killing a turn in flight
+
+### Fixed
+
+- **Upgrading the engine no longer discards work in progress without asking** (`t-173b8b`). A plain
+  reload was already safe; the engine *upgrade* was not, and it is the path a human takes right after
+  installing a new build. The window between installing and reloading is exactly when an agent is most
+  likely to be mid-turn.
+
+### Removed
+
+- **Self-evolution is gone from the product** (`t-8ea8e0`) — 9,318 lines and 22 files. Not moved,
+  deleted. The capability was never turned on for any agent here and nothing of it existed on disk; a
+  replacement will be designed from scratch as an installable plugin, following the model a runtime
+  already ships natively (a `pending/` directory plus approval as a gesture).
+
+  The removal is broad and deliberate: the whole `src/evolution/` tree, the evolution leg of the
+  formation authority vector, the `submit_evolution_review` Bridge tool (inventory 79 → 78), what the
+  engine protocol carried, the toggle and section across **five** studio shells with their 38
+  localized strings and 37 CSS rules, the `selfEvolution` config key in parser, writer and schema, and
+  ~230 lines of authority-head in the workspace along with its secret.
+
+  **The proof closes by identity, not by absence of a word.** Each case asserts the exact set a surface
+  accepts — config keys, reference kinds, the Bridge tool inventory, prompt layers, formation lanes,
+  forget-plan steps — so reintroducing the machine means adding a member to a declared set, and a set
+  comparison fails under any name. Demonstrated by injecting a reference kind called `growth`, which a
+  search for "evolution" would never catch.
+
+  Three things surfaced during the removal and were reported rather than worked around: the parity
+  matrix contained no mention of evolution at all, so there was nothing to correct there; 59 completed
+  tasks carry an inert `evolutionCompletion` marker on disk, dropped on read and gone on the next
+  write, needing no migration; and `gcLedger`'s "the ledger line survives for a retry" guarantee is no
+  longer reachable, because it only held while an evolution step could fail before the line was spent
+  — the test now asserts what remains true.
+
+  Visual QA after the fact (`t-475b9b`): the seam where the section used to be measures 12px, the same
+  as the column's median gap, with zero empty boxes and zero overflow across four routes at two widths.
+
+### Internal
+
+- **The skill grant is checked for every runtime, and a revoked skill leaves disk** — see 0.78.0; this
+  release carries the live proof: starting `grok` with an empty selection removed three skill trees
+  that had survived every regeneration since 07/08.
+
 ## 0.78.0 — granting a skill worked; taking it back did not
 
 Removing a capability from an agent's profile left the files on its disk. Measured on the
