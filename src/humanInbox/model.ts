@@ -23,9 +23,9 @@
  *     because a bundle producer hardcoded an empty list. A security counter that reads zero is worse
  *     than no counter.
  *
- * Pragmatically scoped to approvals + validations, which is what was ratified; proposals, evolution
- * candidates, prototype reviews and pipeline gates are named in the report as later row kinds and can
- * join by adding an arm here, with no change to their models.
+ * Pragmatically scoped to approvals + validations, which is what was ratified; proposals, prototype
+ * reviews and pipeline gates are named in the report as later row kinds and can join by adding an
+ * arm here, with no change to their models.
  */
 import type { ApprovalViewItem } from "../webview/approval/viewModel.js";
 import type { ValidationViewItem } from "../webview/validations/viewModel.js";

@@ -78,7 +78,6 @@ export interface TaskMutationEvent {
 
 export interface TaskStoreOptions {
   onMutation?: (event: TaskMutationEvent) => void | Promise<void>;
-  evolutionCompletionFor?: (event: TaskMutationEvent) => Task["evolutionCompletion"];
 }
 
 const TASK_AUTHORING_LIMIT_FIELDS = new Set<string>(["title", "body", "kind", "artifact_refs", "artifact_refs.type", "artifact_refs.ref"]);
@@ -304,7 +303,6 @@ export class TaskStore {
       // t-1339a8 — any status transition means the task advanced, so it is no longer waiting on the human;
       // clear the authored flag regardless of whether this same patch also tried to set/replace it.
       if (next.status !== current.status) delete next.awaitingHuman;
-      if (next.status !== current.status) delete next.evolutionCompletion;
       if (JSON.stringify({ ...current, updatedAt: next.updatedAt }) === JSON.stringify(next)) {
         throw new Error("update_task requires at least one changed field");
       }
@@ -348,10 +346,6 @@ export class TaskStore {
         });
       }
       next = this.withAttemptDerivations(next);
-      if (current.status !== "done" && next.status === "done") {
-        const marker = this.options.evolutionCompletionFor?.({ before: current, after: next });
-        if (marker) next.evolutionCompletion = marker;
-      }
       this.writeTask(next);
       this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
       return next;
@@ -399,7 +393,7 @@ export class TaskStore {
    * t-f638bd — record an outcome that already happened outside the store, with its evidence.
    *
    * The sibling of `update`, not a back door into it. It shares the write path, the CAS check, the
-   * mutation event and the evolution marker, and differs in exactly the two ways the operation
+   * mutation event, and differs in exactly the two ways the operation
    * differs: it consults `TASK_RECONCILE_TRANSITIONS` instead of the driving table, and it does not
    * require an assignee, because nobody is being asked to pick this up — it is already finished.
    * It touches no other field, so there is nothing here that `update` could not already refuse.
@@ -428,19 +422,14 @@ export class TaskStore {
         );
       }
       let next: Task = { ...current, status: input.status, updatedAt: input.now ?? new Date().toISOString() };
-      // Same two derived clears `update` performs on any status move: an advancing task is no longer
-      // waiting on the human, and the completion marker is recomputed rather than carried.
+      // Same derived clear `update` performs on any status move: an advancing task is no longer
+      // waiting on the human.
       delete next.awaitingHuman;
-      delete next.evolutionCompletion;
       // Journal first: if the existing journal cap refuses, no attempt or task state moves.
       this.journal.append(id, { author: input.actor ?? "human", text: `reconciled ${current.status} -> ${input.status}: ${evidence}` });
       const open = this.attempts.open(id);
       if (open) this.attempts.end(id, { type: "delivered", attemptId: open.attemptId, agent: open.agent, evidence, now: input.now });
       next = this.withAttemptDerivations(next);
-      if (input.status === "done") {
-        const marker = this.options.evolutionCompletionFor?.({ before: current, after: next });
-        if (marker) next.evolutionCompletion = marker;
-      }
       this.writeTask(next);
       this.emitMutation({ before: current, after: next, ...(input.actor ? { actor: input.actor } : {}) });
       return next;
@@ -578,7 +567,7 @@ export class TaskStore {
     try {
       void Promise.resolve(this.options.onMutation?.(event)).catch(() => undefined);
     } catch {
-      // The Task is already committed; evolution/notification observers are best-effort side effects.
+      // The Task is already committed; notification observers are best-effort side effects.
     }
   }
 
@@ -735,8 +724,8 @@ function unservableTaskMessage(id: string, file: string, defect: string): string
  * How long a body may be is a question for the door the body came in through; `create` and `update`
  * still ask it, unchanged. Reading is never more restrictive than writing.
  *
- * A field the reader cannot type at all is DROPPED (the shape `optionalEvolutionCompletion` already
- * used), never escalated into suppressing the row: losing one malformed sub-object is recoverable,
+ * A field the reader cannot type at all is DROPPED, never escalated into suppressing the row:
+ * losing one malformed sub-object is recoverable,
  * losing the task is what this task exists about.
  */
 function normalizeTask(input: unknown, expectedId: string): { task: Task } | { defect: string } {
@@ -772,7 +761,6 @@ function normalizeTask(input: unknown, expectedId: string): { task: Task } | { d
       ...persistedDeps(row.deps),
       // t-1339a8 — backward-compatible: task JSON written before this field existed just has no key here.
       ...(row.awaitingHuman !== undefined ? persistedAwaitingHuman(row.awaitingHuman) : {}),
-      ...(row.evolutionCompletion !== undefined ? optionalEvolutionCompletion(row.evolutionCompletion) : {}),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     },
@@ -851,14 +839,6 @@ function persistedAwaitingHuman(value: unknown): Pick<Task, "awaitingHuman"> | {
       ? { type: "task-prototype", prototypeId: candidate.prototypeId }
       : undefined;
   return { awaitingHuman: { reason, since: row.since, kind: row.kind, ...(subject ? { subject } : {}) } };
-}
-
-function optionalEvolutionCompletion(value: unknown): Pick<Task, "evolutionCompletion"> {
-  if (!value || typeof value !== "object") return {};
-  const marker = value as { agent?: unknown; revision?: unknown };
-  if (typeof marker.agent !== "string" || marker.agent.length === 0 || marker.agent.length > 64
-    || typeof marker.revision !== "string" || !/^[0-9a-f]{64}$/.test(marker.revision)) return {};
-  return { evolutionCompletion: { agent: marker.agent, revision: marker.revision } };
 }
 
 function applyUpdate(current: Task, input: TaskUpdateInput): Task {

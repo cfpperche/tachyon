@@ -48,8 +48,6 @@ export interface Task {
   artifact_refs?: ArtifactRef[];
   deps?: string[];
   awaitingHuman?: TaskAwaitingHuman;
-  /** Host-derived durable obligation for one opt-in transition to done. Not caller-authored. */
-  evolutionCompletion?: { agent: string; revision: string };
   createdAt: string;
   updatedAt: string;
 }

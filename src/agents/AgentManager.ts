@@ -69,7 +69,6 @@ import { AgentProfileRefusal, type AgentProfileRefusalCode } from "../config/age
 import { composeAgentPrompt } from "./promptLayers.js";
 import type { SessionLaunchKind, SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
-import { resolveEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { FormationLifecyclePort } from "./formation/lifecycleConsumer.js";
 import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
@@ -688,8 +687,6 @@ export interface AgentManagerOptions {
    * all. It is only ever used to state a fact the store already holds, never to infer completion.
    */
   taskStatusById?: (id: string) => string | undefined;
-  /** Workspace-owned resolver so production startup uses host-custodied Evolution authority. */
-  resolveEvolutionSnapshot?: (principal: string) => Promise<EvolutionStartupSnapshot>;
   /**
    * spec 364 — current Bridge generation for durable bridgeClient stamps on spawn/resume.
    * Workspace provides this from BridgeClientRebindCoordinator; default 0 when unwired.
@@ -937,30 +934,6 @@ export function applyNativeLaneSuppressionCommand(cmd: string): { cmd: string; a
 }
 
 export class AgentManager {
-
-  private async evolutionForFreshSession(
-    name: string,
-    def: AgentDef,
-    principal = name,
-  ): Promise<EvolutionStartupSnapshot | undefined> {
-    const prior = this.opts.ledger?.get(name);
-    if (managesOwnSession(def.cmd)) return prior?.evolution;
-    if (!instructionsDeliverable(def.cmd)) return undefined;
-    const agent = asAgent(def);
-    if (agent?.selfEvolution?.enabled === true) {
-      const snapshot = await (this.opts.resolveEvolutionSnapshot?.(principal)
-        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, principal));
-      if (agent.profileEvolution && snapshot.profileId !== agent.profileEvolution.profileId) {
-        throw new Error(`Agent Evolution active profile does not match canonical selector for '${name}'`);
-      }
-      return snapshot;
-    }
-    if (prior?.def?.fork && prior.evolution) {
-      return this.opts.resolveEvolutionSnapshot?.(prior.evolution.agent)
-        ?? resolveEvolutionStartupSnapshot(this.opts.workspaceRoot, prior.evolution.agent);
-    }
-    return undefined;
-  }
 
   static readonly STOPPING_FALLBACK_MS = 15_000;
   static readonly POSTMORTEM_MAX_LINES = 1000;
@@ -1649,7 +1622,7 @@ export class AgentManager {
    * t-9d76b1 — persist "Tachyon asked for this exit" on the row, once, at the death.
    *
    * Best-effort by construction: an agent with no ledger row (a declared terminal with no adapter,
-   * worktree, parent or evolution snapshot never gets one) has nowhere to keep this, so its intent
+   * worktree or parent never gets one) has nowhere to keep this, so its intent
    * lives only as long as this process does. Silent rather than warned — a durability side-channel must
    * never turn a stop the human asked for into an error report.
    */
@@ -1939,7 +1912,6 @@ export class AgentManager {
     primerCtx?: { delegator?: string; freshWorktree?: boolean },
     taskBrief?: string,
     taskContract?: SpawnContract,
-    evolution?: EvolutionStartupSnapshot,
     projectGuidance?: RenderedProjectGuidanceBundle,
     sessionWorkRecord?: SessionWorkRecord,
   ): string | undefined {
@@ -1957,7 +1929,6 @@ export class AgentManager {
     const guidance = !!parent && (this.opts.getConfig()?.settings.bridgeGuidance ?? true);
     const composed = composeAgentPrompt({
       instructions: asAgent(def)?.instructions,
-      evolution,
       bridgeGuidance: guidance,
       taskBrief,
       taskContractCompletion,
@@ -2593,8 +2564,6 @@ export class AgentManager {
     // preparation so its probe sees the exact prospective environment and owns explicit compensation.
     const suppression = this.applyFormationNativeSuppression(name, def);
     def = suppression.def;
-    const resolvedEvolution = await this.evolutionForFreshSession(name, def);
-
     const session = this.session(name);
     let replaceDeadSession = false;
     if (await this.opts.tmux.hasSession(session)) {
@@ -2756,7 +2725,6 @@ export class AgentManager {
       effectivePrimerCtx,
       taskBrief,
       opts?.contract,
-      resolvedEvolution,
       projectGuidance,
       spawnWorkRecord,
     );
@@ -3028,7 +2996,7 @@ export class AgentManager {
       ...(opts?.contractSkipReason ? { contractSkipReason: opts.contractSkipReason } : {}), // spec 246 D6 — auditable bypass
     };
     const resumeBlock = adapter && !selfManaged ? this.withConfigHome(name, def, { runtime: adapter.runtime, sessionId: resumeId }) : undefined; // spec 240
-    const shouldPersistLaunch = !!this.opts.ledger && !!(temporary || adapter || worktree || parent || resolvedEvolution);
+    const shouldPersistLaunch = !!this.opts.ledger && !!(temporary || adapter || worktree || parent);
     // A gated launch is restart-denied from its very first durable row. The marker is removed only
     // after the host has authenticated and persisted the delegation authority. This two-phase row
     // stays fail-closed even if canonical persistence and every subsequent cleanup write all fail.
@@ -3047,7 +3015,6 @@ export class AgentManager {
       instance: temporary
         ? { lifetime: "temporary" as const, resumePolicy: "collected" as const, lifecycleHooks: false }
         : { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
-      ...(resolvedEvolution ? { evolution: resolvedEvolution } : {}),
     };
     try {
       if (shouldPersistLaunch) {
@@ -4437,7 +4404,6 @@ export class AgentManager {
     const projectGuidance = this.projectGuidanceFor(def);
     const suppression = this.applyFormationNativeSuppression(name, def);
     def = suppression.def;
-    const resolvedEvolution = await this.evolutionForFreshSession(name, def);
     const session = this.session(name);
     let worktree: WorktreeRecord | undefined;
     let preparationLocked = false;
@@ -4506,7 +4472,6 @@ export class AgentManager {
       restartPrimerCtx,
       persistedDef?.taskBrief,
       persistedDef?.contract,
-      resolvedEvolution,
       projectGuidance,
       restartWorkRecord,
     );
@@ -4581,7 +4546,7 @@ export class AgentManager {
     // Persist the (re)resolved worktree so cleanup/C2 keep a source of truth even if the
     // prior row was cleared/missing (review fix: restart used to discard the record), and refresh
     // the resume block (reset sessionId → name) for adapter-backed, non-self-managed runtimes.
-    if (this.opts.ledger && (worktree || (injected.adapter && !injected.selfManaged) || resolvedEvolution || this.opts.ledger.get(name)?.evolution)) {
+    if (this.opts.ledger && (worktree || (injected.adapter && !injected.selfManaged))) {
       const existing = this.opts.ledger.get(name);
       const resume = injected.adapter && !injected.selfManaged
         ? // spec 240 — restart mints a FRESH session under the CURRENT derived home, so RE-DERIVE configHome (do
@@ -4607,7 +4572,6 @@ export class AgentManager {
         cwd,
         ...(worktree ? { worktree } : {}),
         resume,
-        evolution: resolvedEvolution,
       });
     }
     if (preparationLocked && worktree) {
@@ -5247,7 +5211,6 @@ export class AgentManager {
         fork: true,
       },
       resume: this.withConfigHome(forkName, forkDefinition, { runtime: src.runtime, sessionId: forkSessionId }),
-      ...(sourceRecord?.evolution ? { evolution: structuredClone(sourceRecord.evolution) } : {}),
       ...(worktree ? { worktree } : {}),
       cwd,
       // SDD 482 phase 2 — the case that justifies TWO fields rather than one enum. A fork has no

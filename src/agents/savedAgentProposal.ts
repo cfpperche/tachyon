@@ -186,11 +186,6 @@ export function savedAgentCreateMutation(
       // t-afc86e — a proposal carries no setup commands: the proposer describes an
       // agent, and workspace-local build steps are the human's to add after approval.
       worktree: { enabled: proposedWorktreeEnabled(spec), branch: "", setup: [] },
-      // t-f96b2f — a proposal never grants Evolution. Creation refuses it outright (the selector
-      // names a profile id the store mints for an agent that already exists), and letting an agent
-      // ASK for a self-evolving agent would be a capability arriving through the one door whose
-      // whole point is that a human decides what gets created.
-      selfEvolution: false,
       // t-d48775 — and a proposal carries no persistent instructions, for the reason directly above.
       // The Studio field is now writable, so this is the second door onto the same binding: an agent
       // that could fill it would be authoring the durable prompt of an agent a human has not read yet.

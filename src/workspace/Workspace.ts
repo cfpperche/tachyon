@@ -108,15 +108,8 @@ import {
 import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type ManagedEntryInfo, type RestartSessionMode } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
-import { EVOLUTION_SELECTOR_PATH } from "../config/agentProfileProjection.js";
 import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../config/agentWorkspaceCommandWrite.js";
 import { mergedPersistentInstructionsReferences, persistentInstructionsWriteFor } from "../config/agentInstructionsWrite.js";
-import {
-  evolutionSelectorNeedsProfileId,
-  evolutionSelectorWriteFor,
-  mergedEvolutionSelectorReferences,
-  promptWithEvolutionSelector,
-} from "../config/agentEvolutionSelectorWrite.js";
 import { agentLaunchPath } from "../agents/spawnPath.js";
 import { SessionLedger, durableBoundGeneration } from "../resume/SessionLedger.js";
 import { createFormationLifecycleHost } from "../agents/formation/lifecycleHost.js";
@@ -215,13 +208,11 @@ import {
   type BridgeClientRebindSettings,
   type ClientRebindState,
 } from "../bridge/clientRebind.js";
-import type { AuthorityHead, AuthorityHeadPort } from "../evolution/authorityIntegrity.js";
 import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { healUnknownBearerFromProc } from "../bridge/agentTokenHeal.js";
 import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import {
   agentProfileAuthoritiesSecretKey,
-  authorityHeadsSecretKey,
   callerIdentityInstanceIdStateKey,
   callerIdentityRegistryStateKey,
   hostActionSessionEpochStateKey,
@@ -243,16 +234,6 @@ import { TaskStore } from "../tasks/TaskStore.js";
 import { collectSessionInspection } from "../runtimeOps/collectSessionInspection.js";
 import type { InspectedSession } from "../runtimeOps/sessionInspection.js";
 import { wakeTaskAssignee, type TaskAssigneeWakePorts } from "../tasks/taskNotificationPolicy.js";
-import { EvolutionStore } from "../evolution/EvolutionStore.js";
-import { resolveEvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
-import { EvolutionCoordinator } from "../evolution/EvolutionCoordinator.js";
-import { declaredHarnessSkillNames } from "../evolution/skillBundle.js";
-import {
-  readEvolutionStudioCandidateDetail,
-  readEvolutionStudioOverview,
-  type EvolutionStudioCandidateDetail,
-  type EvolutionStudioOverview,
-} from "../evolution/studioProjection.js";
 import { ValidationStore } from "../validations/ValidationStore.js";
 import { ProbeService } from "../probe/ProbeService.js";
 import { ProbeStore } from "../probe/ProbeStore.js";
@@ -323,29 +304,6 @@ function failureIsCurrent(failureTs: string, injectionTs: string): boolean {
   if (!Number.isFinite(failureMs)) return true;
   if (!Number.isFinite(injectionMs)) return true;
   return failureMs > injectionMs;
-}
-
-function parseAuthorityHeads(raw: string | undefined): Map<string, AuthorityHead> {
-  if (raw === undefined || raw.length === 0) return new Map();
-  let value: unknown;
-  try { value = JSON.parse(raw); }
-  catch (error) { throw new Error(`authority freshness heads are corrupt: ${error instanceof Error ? error.message : String(error)}`); }
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("authority freshness heads must be an object");
-  const heads = new Map<string, AuthorityHead>();
-  for (const [key, candidate] of Object.entries(value as Record<string, unknown>)) {
-    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error(`authority head '${key}' is malformed`);
-    const revision = (candidate as Record<string, unknown>).revision;
-    const mac = (candidate as Record<string, unknown>).mac;
-    if (!Number.isSafeInteger(revision) || (revision as number) < 1 || typeof mac !== "string" || !/^[0-9a-f]{64}$/.test(mac)) {
-      throw new Error(`authority head '${key}' is malformed`);
-    }
-    heads.set(key, { revision: revision as number, mac });
-  }
-  return heads;
-}
-
-function serializeAuthorityHeads(heads: Map<string, AuthorityHead>): string {
-  return JSON.stringify(Object.fromEntries([...heads.entries()].sort(([a], [b]) => a.localeCompare(b))));
 }
 
 export interface WorkspaceDeps {
@@ -551,8 +509,6 @@ export class Workspace {
   readonly lifecycle: LifecycleMonitor;
   readonly pinStore: PinStore;
   readonly taskStore: TaskStore;
-  readonly evolutionStore: EvolutionStore;
-  private readonly evolutionCoordinator: EvolutionCoordinator;
   private readonly taskNotifications: TaskNotificationService;
   readonly validationStore: ValidationStore;
   readonly continuityStore: ContinuityStore;
@@ -596,8 +552,6 @@ export class Workspace {
   /** spec 351 — the digest-only per-agent token registry; undefined until the HMAC key is loaded (async,
    *  set at the tail of `_create` before the Bridge/any agent could actually use it). */
   private callerRegistry: CallerIdentityRegistry | undefined;
-  /** SecretStorage key, domain-separated from caller digests for durable authority seals. */
-  private authorityIntegrityKey: Buffer | undefined;
   /** t-50bbd4 — the formation lane's host port; undefined when the host key is unavailable. */
   private formationLifecycle: FormationLifecyclePort | undefined;
   /** SDD 490 — the adoption (write) host; undefined when the host key is unavailable. */
@@ -624,14 +578,10 @@ export class Workspace {
       closeCanonicalAgentProfile(source);
     }
   }
-  /** SecretStorage-backed exact MAC heads; kept outside agent-writable workspace metadata. */
-  private authorityHeads = new Map<string, AuthorityHead>();
   /** Host-custodied profile heads selected before any profile-backed config can load. */
   private agentProfileAuthorities = new Map<string, AgentProfileAuthorityRecord>();
   private readonly agentProfileHomeDir: string | undefined;
   private agentProfileAuthorityTail: Promise<void> = Promise.resolve();
-  /** Serializes the async SecretStorage read/prepare/readback sequence inside this extension host. */
-  private authorityHeadPrepareTail: Promise<void> = Promise.resolve();
   private readonly reloadTransactions: ReloadTransactionStore;
   private readonly hostActionAuditPath: string;
   private readonly hostActionSessionEpoch: number;
@@ -851,11 +801,6 @@ export class Workspace {
       // t-9d250c — any task's status, so a restart can say what became of the work its frozen brief
       // still names. Unknown ids answer undefined and the brief then claims nothing about them.
       taskStatusById: (id) => this.taskStore.find(id)?.status,
-      resolveEvolutionSnapshot: (principal) => resolveEvolutionStartupSnapshot(
-        this.workspaceRoot,
-        principal,
-        this.evolutionStore,
-      ),
       // spec 364 — stamp bound_generation from the live coordinator (0 until first listener-ready bump).
       getBridgeGeneration: () => this.clientRebind?.getGeneration() ?? 0,
       resolveCaptureId: (runtime, cwd, configHome) => runtime === "opencode"
@@ -1570,7 +1515,6 @@ export class Workspace {
       {
         onCrash: (agent, exitCode, willRestart, delayMs) => {
           this.waiters.notifyDead(agent, exitCode);
-          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' exited before submitting the review`);
           this.noticeQueue.clear(agent);
           void this.returnTaskClaimsForUnavailableAgent(
             agent,
@@ -1600,7 +1544,6 @@ export class Workspace {
         },
         onCleanExit: (agent) => {
           this.waiters.notifyDead(agent, 0);
-          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' exited before submitting the review`);
           this.noticeQueue.clear(agent);
           void this.returnTaskClaimsForUnavailableAgent(agent, `agent '${agent}' exited (0)`);
           this.pokeParentOnDeath(agent, "0");
@@ -1629,7 +1572,6 @@ export class Workspace {
          */
         onRequestedStop: (agent, exitCode) => {
           this.waiters.notifyDead(agent, exitCode);
-          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' was stopped before submitting the review`);
           this.noticeQueue.clear(agent);
           void this.returnTaskClaimsForUnavailableAgent(agent, `agent '${agent}' was stopped on request`);
           this.pokeParentOnDeath(agent, `stopped on request, exit ${exitCode !== undefined ? exitCode : "unknown"}`);
@@ -1657,7 +1599,6 @@ export class Workspace {
         },
         onGone: (agent) => {
           this.waiters.notifyGone(agent);
-          void this.evolutionCoordinator.onAgentUnavailable(agent, `agent '${agent}' stopped before submitting the review`);
           this.noticeQueue.clear(agent);
           if (!this.expectedDeath.has(agent)) {
             void this.returnTaskClaimsForUnavailableAgent(agent, `agent '${agent}' disappeared`);
@@ -1674,28 +1615,8 @@ export class Workspace {
     );
 
     this.pinStore = new PinStore(workspaceRoot);
-    this.evolutionStore = new EvolutionStore(workspaceRoot, {
-      reservedSkillNames: (name) => declaredHarnessSkillNames(
-        workspaceRoot,
-        asAgent(this.config?.agents[name])?.harness?.skills,
-      ),
-      authorityIntegrityKey: () => this.authorityIntegrityKey,
-      authorityHead: this.canonicalAuthorityHeadPort(),
-      sessionSnapshotsRoot: path.join(deps.host.globalStoragePath(), "evolution-session-snapshots", this.wsHash),
-    });
-    this.evolutionCoordinator = new EvolutionCoordinator({
-      store: this.evolutionStore,
-      declaredAgent: (name) => this.config?.agents[name],
-      sessionFor: (name) => this.manager.session(name),
-      activitySeq: (name) => this.currentActivitySeq(name),
-      deliverNotice: (name, line) => this.deliverNotice(name, line),
-      onReviewChanged: () => deps.onViewsChanged("agents"),
-      onError: (message) => this.host.notify(message, "error"),
-    });
     this.taskStore = new TaskStore(workspaceRoot, {
-      evolutionCompletionFor: (event) => this.evolutionCoordinator.completionMarker(event),
       onMutation: async (event) => {
-        await this.evolutionCoordinator.onTaskMutation(event);
         // t-57a00a — the assignee's wake-up lives HERE, at the store's sink, because that is the only
         // point every writer crosses. It used to hang off the Bridge's update_task handler, so an
         // agent assigning notified and a human assigning in the UI did not.
@@ -1840,7 +1761,6 @@ export class Workspace {
         tmux: this.tmux,
         pins: this.pinStore,
         tasks: this.taskStore,
-        evolution: this.evolutionStore,
         validations: this.validationStore,
         continuity: this.continuityStore,
         currentActivitySeq: (agent) => this.currentActivitySeq(agent),
@@ -2665,10 +2585,6 @@ export class Workspace {
     return callerIdentityRegistryStateKey(this.wsHash);
   }
 
-  private authorityHeadsSecretKey(): string {
-    return authorityHeadsSecretKey(this.wsHash);
-  }
-
   private profileAuthorityPort(): AgentProfileAuthorityPort {
     const refresh = async (): Promise<Map<string, AgentProfileAuthorityRecord>> => {
       await this.agentProfileAuthorityTail;
@@ -2734,171 +2650,6 @@ export class Workspace {
         records.delete(oldAgentName);
         records.set(newAgentName, structuredClone(target));
       }),
-    };
-  }
-
-  private authorityHeadMapKey(identity: string): string {
-    return `canonical:${identity}`;
-  }
-
-  private async currentAuthorityHead(identity: string): Promise<AuthorityHead | undefined> {
-    // A process-local snapshot is not an anti-rollback anchor: another extension host may have
-    // advanced custody since this Workspace was created. Do not interleave this read with this
-    // host's own read/modify/write, then refresh durable custody on every authority decision.
-    await this.authorityHeadPrepareTail;
-    const persisted = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
-    this.authorityHeads = persisted;
-    const head = persisted.get(this.authorityHeadMapKey(identity));
-    return head ? { ...head } : undefined;
-  }
-
-  private async prepareAuthorityHead(
-    identity: string,
-    next: AuthorityHead,
-    expectedMac?: string,
-  ): Promise<void> {
-    const prepared = this.authorityHeadPrepareTail.then(() =>
-      this.prepareAuthorityHeadSerialized(identity, next, expectedMac)
-    );
-    // A refusal must not poison unrelated later preparations, while every caller still
-    // receives its own exact failure.
-    this.authorityHeadPrepareTail = prepared.catch(() => undefined);
-    return prepared;
-  }
-
-  private async prepareAuthorityHeadSerialized(
-    identity: string,
-    next: AuthorityHead,
-    expectedMac?: string,
-  ): Promise<void> {
-    if (!identity || !Number.isSafeInteger(next.revision) || next.revision < 1 || !/^[0-9a-f]{64}$/.test(next.mac)) {
-      throw new Error("invalid authority freshness head");
-    }
-    // Refresh immediately before the RMW. Canonical writers are already serialized across
-    // hosts by DeliveryStore's SQLite BEGIN IMMEDIATE; this merge prevents a second host's
-    // committed head for another Delivery from being overwritten by a stale local snapshot.
-    // If a host did race outside that lock, the readback below refuses rather than trusting it.
-    this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
-    const mapKey = this.authorityHeadMapKey(identity);
-    const current = this.authorityHeads.get(mapKey);
-    if (expectedMac === undefined) {
-      if (current) {
-        if (current.revision === next.revision && current.mac === next.mac) return;
-        throw new Error(`authority head '${mapKey}' already exists with different state`);
-      }
-      if (next.revision !== 1) throw new Error(`initial authority head '${mapKey}' must start at revision 1`);
-    } else {
-      if (!current || current.mac !== expectedMac || next.revision !== current.revision + 1) {
-        throw new Error(`authority head '${mapKey}' changed or attempted a non-monotonic update`);
-      }
-    }
-    await this.commitAuthorityHead(mapKey, next);
-  }
-
-  /** Migration-only counterpart to `prepareAuthorityHeadSerialized`'s initial branch: establishes the
-   * first head for `identity` at its already-existing revision N (any N >= 1) instead of the fixed
-   * revision 1 that ordinary create requires. Guarded to only ever fire when there is no current head
-   * (or the exact same head is being re-applied), so it can only plant a first anchor at a record's true
-   * current version — there is no older signed state for that identity to roll back to. */
-  private async establishInitialAuthorityHead(identity: string, head: AuthorityHead): Promise<void> {
-    const established = this.authorityHeadPrepareTail.then(() =>
-      this.establishInitialAuthorityHeadSerialized(identity, head)
-    );
-    this.authorityHeadPrepareTail = established.catch(() => undefined);
-    return established;
-  }
-
-  private async establishInitialAuthorityHeadSerialized(identity: string, head: AuthorityHead): Promise<void> {
-    if (!identity || !Number.isSafeInteger(head.revision) || head.revision < 1 || !/^[0-9a-f]{64}$/.test(head.mac)) {
-      throw new Error("invalid authority freshness head");
-    }
-    this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
-    const mapKey = this.authorityHeadMapKey(identity);
-    const current = this.authorityHeads.get(mapKey);
-    if (current) {
-      if (current.revision === head.revision && current.mac === head.mac) return;
-      throw new Error(`authority head '${mapKey}' already exists with different state`);
-    }
-    await this.commitAuthorityHead(mapKey, head);
-  }
-
-  private async commitAuthorityHead(mapKey: string, head: AuthorityHead): Promise<void> {
-    const updated = new Map(this.authorityHeads);
-    updated.set(mapKey, { ...head });
-    await this.commitAuthorityHeads(updated, mapKey);
-  }
-
-  private async commitAuthorityHeads(updated: Map<string, AuthorityHead>, operation: string): Promise<void> {
-    const serialized = serializeAuthorityHeads(updated);
-    // SecretStorage is prepared before the workspace/SQLite commit. A crash after this await leaves
-    // the head ahead of workspace state, which is an explicit fail-closed recovery condition.
-    await this.host.setSecret(this.authorityHeadsSecretKey(), serialized);
-    const persisted = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
-    if (serializeAuthorityHeads(persisted) !== serialized) {
-      this.authorityHeads = persisted;
-      throw new Error(`authority head '${operation}' changed during durable prepare`);
-    }
-    this.authorityHeads = persisted;
-  }
-
-  private async retireAuthorityHead(identity: string, expectedMac?: string): Promise<void> {
-    const retired = this.authorityHeadPrepareTail.then(async () => {
-      if (!identity) throw new Error("invalid authority freshness identity");
-      this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
-      const mapKey = this.authorityHeadMapKey(identity);
-      const current = this.authorityHeads.get(mapKey);
-      if (!current) return;
-      if (expectedMac !== undefined && current.mac !== expectedMac) {
-        throw new Error(`authority head '${mapKey}' changed before retirement`);
-      }
-      const updated = new Map(this.authorityHeads);
-      updated.delete(mapKey);
-      await this.commitAuthorityHeads(updated, `retire:${mapKey}`);
-    });
-    this.authorityHeadPrepareTail = retired.catch(() => undefined);
-    return retired;
-  }
-
-  private async moveAuthorityHead(
-    fromIdentity: string,
-    toIdentity: string,
-    next: AuthorityHead,
-    expectedMac: string,
-  ): Promise<void> {
-    const moved = this.authorityHeadPrepareTail.then(async () => {
-      if (!fromIdentity || !toIdentity || fromIdentity === toIdentity
-        || !Number.isSafeInteger(next.revision) || next.revision < 1
-        || !/^[0-9a-f]{64}$/.test(next.mac) || !/^[0-9a-f]{64}$/.test(expectedMac)) {
-        throw new Error("invalid authority freshness move");
-      }
-      this.authorityHeads = parseAuthorityHeads(await this.host.getSecret(this.authorityHeadsSecretKey()));
-      const fromKey = this.authorityHeadMapKey(fromIdentity);
-      const toKey = this.authorityHeadMapKey(toIdentity);
-      const current = this.authorityHeads.get(fromKey);
-      const destination = this.authorityHeads.get(toKey);
-      if (!current || current.mac !== expectedMac) {
-        if (!current && destination?.revision === next.revision && destination.mac === next.mac) return;
-        throw new Error(`authority head '${fromKey}' changed before move`);
-      }
-      if (destination && (destination.revision !== next.revision || destination.mac !== next.mac)) {
-        throw new Error(`authority head '${toKey}' already exists with different state`);
-      }
-      const updated = new Map(this.authorityHeads);
-      updated.delete(fromKey);
-      updated.set(toKey, { ...next });
-      await this.commitAuthorityHeads(updated, `move:${fromKey}->${toKey}`);
-    });
-    this.authorityHeadPrepareTail = moved.catch(() => undefined);
-    return moved;
-  }
-
-  private canonicalAuthorityHeadPort(): AuthorityHeadPort {
-    return {
-      current: (identity) => this.currentAuthorityHead(identity),
-      prepare: (identity, next, expectedMac) => this.prepareAuthorityHead(identity, next, expectedMac),
-      establishInitial: (identity, head) => this.establishInitialAuthorityHead(identity, head),
-      retire: (identity, expectedMac) => this.retireAuthorityHead(identity, expectedMac),
-      move: (fromIdentity, toIdentity, next, expectedMac) => this.moveAuthorityHead(fromIdentity, toIdentity, next, expectedMac),
     };
   }
 
@@ -3063,8 +2814,6 @@ export class Workspace {
     try {
       const persisted = deps.host.getState<PersistableEntry[]>(ws.callerRegistryStateKey()) ?? [];
       const hmacKey = await loadOrCreateHmacKey(deps.host);
-      const authorityHeads = parseAuthorityHeads(await deps.host.getSecret(ws.authorityHeadsSecretKey()));
-      ws.authorityIntegrityKey = hmacKey;
       // t-50bbd4 — the formation lane finally gets its host. The suppression key is DERIVED from this
       // same machine-local key (domain-separated), so there is no new vault, no new key and no new
       // file; rotation follows the host key. Built here because this is where the key exists and
@@ -3081,7 +2830,6 @@ export class Workspace {
         hostRoot: path.join(workspaceRoot, ".tachyon", "formation-authority"),
         workspaceId: ws.wsHash,
       });
-      ws.authorityHeads = authorityHeads;
       ws.callerRegistry = new CallerIdentityRegistry(hmacKey, persisted);
     } catch (err) {
       ws.host.notify(ws.t("per-agent Bridge tokens and authority custody unavailable: {0} (falling back to the shared token; gated authority remains fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
@@ -3109,10 +2857,6 @@ export class Workspace {
       const renames = await reconcileAgentProfileRenames({
         workspaceRoot,
         authority: ws.profileAuthorityPort(),
-        evolution: {
-          readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
-          rename: (oldAgentName, newAgentName) => ws.evolutionStore.renameAgent(oldAgentName, newAgentName),
-        },
         live: {
           prepare: (oldAgentName, newAgentName) => ws.manager.prepareAgentProfileRename(oldAgentName, newAgentName),
           converge: (oldAgentName, newAgentName, snapshot) => ws.manager.convergeAgentProfileRename(oldAgentName, newAgentName, snapshot),
@@ -3127,10 +2871,6 @@ export class Workspace {
       const forgets = await reconcileAgentProfileForgets({
         workspaceRoot,
         authority: ws.profileAuthorityPort(),
-        evolution: {
-          readProfileId: async (agentName) => (await ws.evolutionStore.readProfile(agentName))?.profileId,
-          retire: (agentName, expectedProfileId) => ws.evolutionStore.retireAgent(agentName, expectedProfileId),
-        },
         live: {
           prepare: (agentName) => ws.manager.prepareAgentProfileForget(agentName),
           converge: (agentName, agentId, txid, snapshot) => ws.manager.convergeAgentProfileForget(agentName, agentId, txid, snapshot),
@@ -3941,7 +3681,6 @@ export class Workspace {
    * step here is idempotent.
    */
   async forgetAgent(name: string): Promise<void> {
-    await this.evolutionStore.retireAgent(name);
     forgetAgentFootprint(name, {
       workspaceRoot: this.workspaceRoot,
       ledger: this.ledger,
@@ -4096,11 +3835,10 @@ export class Workspace {
       throw new AgentProfileRefusal("agent-profile/revision-conflict", `agent '${name}' profile revision conflict`);
     }
     const record = this.ledger.get(name)?.worktree;
-    const [occupancy, liveDescendants, authority, evolutionProfile] = await Promise.all([
+    const [occupancy, liveDescendants, authority] = await Promise.all([
       this.manager.probeAgentOccupancy(name),
       this.manager.liveDescendants(name),
       this.profileAuthorityPort().read(name),
-      this.evolutionStore.readProfile(name),
     ]);
     const checkoutPresent = record ? fs.existsSync(record.path) : null;
     // A status probe that fails is not a fact about risk; reporting zeroes for it would be a
@@ -4134,8 +3872,6 @@ export class Workspace {
         : null,
       checkoutPresent,
       registryWorktreeBranch: this.managedWorktrees.list({ kind: "agent" }).find((entry) => entry.agent === name)?.branch ?? null,
-      evolutionProfilePresent: evolutionProfile?.profileId !== undefined,
-      evolutionProfileTreeEntryPresent: fs.existsSync(path.join(home, "evolution", "profile.json")),
       authorityPresent: authority !== undefined
         && authority.agentId === snapshot.profile.agentId
         && authority.canonicalSha256 === snapshot.provenance.canonical.sha256,
@@ -4182,10 +3918,6 @@ export class Workspace {
         ownerAgentName: this.config?.declaredOwner?.[name],
         expectedRevision: inspected.revision,
         authority: this.profileAuthorityPort(),
-          evolution: {
-          readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
-          retire: (agentName, expectedProfileId) => this.evolutionStore.retireAgent(agentName, expectedProfileId),
-        },
         live: {
           prepare: (agentName) => this.manager.prepareAgentProfileForget(agentName),
           converge: (agentName, agentId, txid, snapshot) => this.manager.convergeAgentProfileForget(agentName, agentId, txid, snapshot),
@@ -4892,7 +4624,6 @@ export class Workspace {
       // is left alone rather than collected on a guess.
       if (!isTemporaryInstance(rec) && !declaredInConfig.has(name) && !live.has(name)) {
         try {
-          await this.evolutionStore.retireAgent(name);
           forgetAgentFootprint(name, {
             workspaceRoot: this.workspaceRoot,
             ledger: this.ledger,
@@ -5108,9 +4839,6 @@ export class Workspace {
     ) {
       void this.restartBridge().catch(() => undefined);
     }
-    void this.evolutionCoordinator.reconcileCompletedTasks(this.taskStore.listRaw()).catch((error) => {
-      this.host.notify(this.t("Agent Evolution review reconciliation failed: {0}", error instanceof Error ? error.message : String(error)), "error");
-    });
     // t-8354ae — persist last-known-good roster for degraded sidebar rendering if config later breaks.
     if (config) writeConfigLkg(this.workspaceRoot, snapshotFromConfig(config, file));
     // Push the user's tmux overlay (settings.tmux) to the server-options layer;
@@ -5250,8 +4978,7 @@ export class Workspace {
    * This is where the two meet: `workspaceCommandWriteFor` turns the text into bytes plus digests
    * plus reference entries, and they ride the SAME lifecycle transaction as the patch that names
    * them. Publishing them separately would leave a window where the profile pins a digest nothing on
-   * disk satisfies — the fail-closed state the projection exists to refuse, and the reason
-   * `enableAgentSelfEvolution` was built this way first.
+   * disk satisfies — the fail-closed state the projection exists to refuse.
    */
   async commitAgentProfileStudio(mutation: AgentProfileStudioMutationV1): Promise<AgentProfileStudioSnapshotV1> {
     if (mutation.expectedRevision === undefined) {
@@ -5274,7 +5001,6 @@ export class Workspace {
     const current = await this.inspectAgentProfileLifecycle(mutation.agentName);
     const write = workspaceCommandWriteFor(mutation.editable, current.profile.workspace);
     const instructions = persistentInstructionsWriteFor(mutation.editable, current.profile.prompt);
-    const evolution = await this.evolutionSelectorWriteFor(current, mutation.editable.selfEvolution);
     const patch = patchProfileFromStudioMutation(mutation, current);
     const result = await this.commitAgentProfileLifecycle({
       agentName: mutation.agentName,
@@ -5282,47 +5008,24 @@ export class Workspace {
       expectedRevision: mutation.expectedRevision,
       // `references` is rebuilt whole rather than appended to: clearing a field must REMOVE its
       // entry, or the profile would keep a pin nothing points at and fail its own `requireKind`.
-      // The two writers CHAIN over one list — the evolution merge edits what the workspace-command
-      // merge produced, because rebuilding from the stored list twice would drop the first one.
+      // The two writers CHAIN over one list — each merge that rebuilt from
+      // `current.profile.references` would drop what the previous one just added.
       patch: {
         ...patch,
-        prompt: promptWithEvolutionSelector(patch.prompt, evolution),
-        // t-d48775 — a THIRD writer joins the chain, and it chains for the reason the other two do:
-        // each merge that rebuilt from `current.profile.references` would drop what the previous one
-        // just added. `patch.prompt` already carries (or has dropped) `prompt.instructions` —
-        // `patchProfileFromStudioMutation` resolves that id, because unlike the Evolution selector it
-        // needs nothing host-owned.
+        // t-d48775 — the instructions writer chains for the same reason. `patch.prompt` already
+        // carries (or has dropped) `prompt.instructions` — `patchProfileFromStudioMutation` resolves
+        // that id, because it needs nothing host-owned.
         references: mergedPersistentInstructionsReferences(
           current.profile,
           instructions,
-          mergedEvolutionSelectorReferences(
-            current.profile,
-            evolution,
-            mergedWorkspaceCommandReferences(current.profile, write),
-          ),
+          mergedWorkspaceCommandReferences(current.profile, write),
         ),
       },
-      ...(write.artifacts.length + evolution.artifacts.length + instructions.artifacts.length > 0
-        ? { artifacts: [...write.artifacts, ...evolution.artifacts, ...instructions.artifacts] }
+      ...(write.artifacts.length + instructions.artifacts.length > 0
+        ? { artifacts: [...write.artifacts, ...instructions.artifacts] }
         : {}),
     });
     return projectAgentProfileStudioSnapshot(result.snapshot);
-  }
-
-  /**
-   * t-f96b2f — resolve the Studio's Evolution toggle, minting a store profile only when the save is
-   * actually granting the capability.
-   *
-   * The mint is conditional and that is load-bearing in both directions: an agent that already
-   * carries a selector keeps the id it has (so a save that does not touch the toggle writes back
-   * exactly what it read), and a save that turns Evolution OFF must not create an Evolution profile
-   * on its way out.
-   */
-  private async evolutionSelectorWriteFor(current: AgentProfileLifecycleSnapshot, enabled: boolean) {
-    const minted = evolutionSelectorNeedsProfileId(current.profile, enabled)
-      ? (await this.evolutionStore.ensureProfile(current.agentName)).profileId
-      : undefined;
-    return evolutionSelectorWriteFor(current.profile, enabled, minted);
   }
 
   /**
@@ -5578,54 +5281,6 @@ export class Workspace {
     this.rebuildWatches();
     this.refreshAgentsViews();
     return result;
-  }
-
-  /**
-   * `t-d185e1` — turn on Agent Evolution for a DECLARED canonical agent.
-   *
-   * The projection grants `selfEvolution` only when the profile pins an `evolution-selector.json`
-   * whose bytes name a `profileId`, and `AgentManager.evolutionForFreshSession` refuses the spawn
-   * when that id disagrees with the Evolution store's active profile. Nothing wrote that selector, so
-   * once `agents:` narrowed to canonical pointers there was no product path to Evolution at all — the
-   * capability was projectable and unreachable.
-   *
-   * Order is forced by who mints the id: the store does, never the author. So the store's profile is
-   * ensured FIRST and its id is what gets pinned; an agent cannot mint its own Evolution profile on a
-   * first session that the selector must already describe.
-   *
-   * Everything lands in ONE lifecycle transaction — the selector bytes as an artifact, the pin and
-   * `prompt.evolution` as the patch — because the pin carries the artifact's sha256 and the authority
-   * is re-signed over the profile alone. Publishing them separately would leave a window where the
-   * profile pins a digest nothing on disk satisfies, which is precisely the fail-closed state the
-   * projection is built to refuse.
-   *
-   * t-f96b2f — this is no longer the only door: Agent Studio's toggle reaches the same effect through
-   * `commitAgentProfileStudio`. The BYTES, the pin and the field now come from
-   * `agentEvolutionSelectorWrite`, shared by both, so the two cannot drift. What stays here is what
-   * is genuinely this door's own: it is a bare enable, so meeting an agent that already has Evolution
-   * is a mistake worth refusing, where a form save is idempotent by design.
-   */
-  async enableAgentSelfEvolution(agentName: string): Promise<AgentProfileLifecycleCommitResult> {
-    const snapshot = await this.inspectAgentProfileLifecycle(agentName);
-    if (snapshot.profile.prompt?.evolution) {
-      throw new Error(`agent '${agentName}' already selects an Evolution profile`);
-    }
-    if ((snapshot.profile.references ?? []).some((reference) => reference.path === EVOLUTION_SELECTOR_PATH)) {
-      throw new Error(`agent '${agentName}' already carries an Evolution selector reference`);
-    }
-    // The store mints the id; this is the only source of truth for what the selector may name.
-    const profile = await this.evolutionStore.ensureProfile(agentName);
-    const write = evolutionSelectorWriteFor(snapshot.profile, true, profile.profileId);
-    return this.commitAgentProfileLifecycle({
-      agentName,
-      operation: "edit",
-      expectedRevision: snapshot.revision,
-      patch: {
-        prompt: promptWithEvolutionSelector(snapshot.profile.prompt, write),
-        references: mergedEvolutionSelectorReferences(snapshot.profile, write),
-      },
-      artifacts: write.artifacts,
-    });
   }
 
   /**
@@ -7085,38 +6740,6 @@ export class Workspace {
     return source?.mode === "profile" ? source.effectiveSha256 : undefined;
   }
 
-  async readAgentEvolutionOverview(agentName: string): Promise<EvolutionStudioOverview> {
-    const def = this.config?.agents[agentName];
-    return readEvolutionStudioOverview(
-      this.evolutionStore,
-      agentName,
-      asAgent(def)?.selfEvolution?.enabled === true,
-    );
-  }
-
-  async readAgentEvolutionCandidate(agentName: string, candidateId: string): Promise<EvolutionStudioCandidateDetail> {
-    return readEvolutionStudioCandidateDetail(this.evolutionStore, agentName, candidateId);
-  }
-
-  async approveAgentEvolutionCandidate(
-    agentName: string,
-    candidateId: string,
-    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
-  ): Promise<{ candidateId: string; activeVersion: number }> {
-    const result = await this.evolutionStore.approveCandidate(agentName, candidateId, input);
-    return { candidateId: result.candidate.id, activeVersion: result.profile.activeVersion };
-  }
-
-  async rejectAgentEvolutionCandidate(
-    agentName: string,
-    candidateId: string,
-    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
-  ): Promise<{ candidateId: string; activeVersion: number }> {
-    const candidate = await this.evolutionStore.rejectCandidate(agentName, candidateId, input);
-    const profile = await this.evolutionStore.readProfile(agentName);
-    return { candidateId: candidate.id, activeVersion: profile?.activeVersion ?? input.expectedActiveVersion };
-  }
-
   /** Agent Studio submit pipeline — webview form and the internal test seam. */
   studioSubmit = (submit: StudioSubmit): string[] | undefined => {
     const kind = submit.state.kind;
@@ -7239,11 +6862,7 @@ export class Workspace {
         ownerAgentName: this.config?.declaredOwner?.[oldName],
         expectedRevision: inspected.revision,
         authority: this.profileAuthorityPort(),
-          evolution: {
-          readProfileId: async (agentName) => (await this.evolutionStore.readProfile(agentName))?.profileId,
-          rename: (oldAgentName, newAgentName) => this.evolutionStore.renameAgent(oldAgentName, newAgentName),
-        },
-        live: {
+          live: {
           prepare: async () => liveSnapshot,
           converge: (oldAgentName, newAgentName, snapshot) => this.manager.convergeAgentProfileRename(oldAgentName, newAgentName, snapshot),
         },
@@ -7291,7 +6910,6 @@ export class Workspace {
       }
     }
     try {
-      await this.evolutionStore.renameAgent(oldName, newName);
     } catch (error) {
       // Config now names the new agent, so the old manager key is free for a rollback.
       const rollbackFailures: unknown[] = [error];
@@ -7313,7 +6931,7 @@ export class Workspace {
         }
       }
       if (rollbackFailures.length > 1) {
-        throw new AggregateError(rollbackFailures, "Agent Evolution rename failed and rollback was incomplete");
+        throw new AggregateError(rollbackFailures, "canonical agent rename failed and rollback was incomplete");
       }
       throw error;
     }

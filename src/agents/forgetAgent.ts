@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import { deleteActivityLog } from "../activity/logStore.js";
 import { removeEmptyAgentProfileHome } from "../config/agentProfileHome.js";
@@ -17,7 +16,6 @@ export const FORGET_AGENT_FOOTPRINTS = [
   "per-spawn settings file",
   "generated spawn brief",
   "durable pane transcript",
-  "Agent Evolution Profile",
   "emptied Agent Profile home",
 ] as const;
 
@@ -56,10 +54,9 @@ export function forgetAgent(name: string, deps: ForgetAgentDeps): void {
   attempt(() => removeSpawnSettings(deps.workspaceRoot, name));
   attempt(() => removeDerivedAgentFiles(deps.workspaceRoot, name));
   attempt(() => removePaneTranscript(deps.workspaceRoot, name));
-  attempt(() => fs.rmSync(path.join(deps.workspaceRoot, ".tachyon", "agents", name, "evolution"), { recursive: true, force: true }));
-  // t-4a1f85 — LAST, and only if the line above emptied it. Removing `evolution/` and keeping its
-  // parent left an `.tachyon/agents/<name>/` nobody would ever list again: this helper writes no
-  // journal, so no reconcile revisits it. `removeEmptyAgentProfileHome` states why the removal is
+  // t-4a1f85 — LAST, and only if everything above emptied it. Removing an agent's subtrees and
+  // keeping its parent left an `.tachyon/agents/<name>/` nobody would ever list again: this helper
+  // writes no journal, so no reconcile revisits it. `removeEmptyAgentProfileHome` states why the removal is
   // `rmdir` and not `rm -rf`; the short version is that this function is also reached for names that
   // may still own a canonical `agent.yml` or a human-authored profile data — the declared-terminal delete
   // (`deleteConfiguredAgent`) and the startup ledger GC (`Workspace.gcLedger`) — and the kernel
