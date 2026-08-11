@@ -6,8 +6,7 @@ import { orderTaskViewsForListing } from "../../tasks/listOrder.js";
 import { asAgent } from "../../config/loadConfig.js";
 import { TaskPrototypeStore } from "../../tasks/TaskPrototypeStore.js";
 import { reconcileLanded } from "../../tasks/reconcileLanded.js";
-import type { EvolutionCandidateInputTarget } from "../../evolution/EvolutionStore.js";
-import { type BridgeDeps, AGENT_NAME, CREATE_TASK_ARTIFACT_REF, EVOLUTION_PROPOSAL, EVOLUTION_REVIEW_ID, TASK_ARTIFACT_REF, TASK_AWAITING_HUMAN_KIND, TASK_EXPECT, TASK_ID, TASK_PRIORITY, TASK_STATUS, createTaskLimitErrorMap, createTaskString, definedPatch, emitTaskNotification, fail, notifyTaskJournalAppended, ok, prototypeBridgeView, resolveDeclaredActor, resolvedJournalAuthor, taskNotificationActor, taskReceipt } from "./shared.js";
+import { type BridgeDeps, AGENT_NAME, CREATE_TASK_ARTIFACT_REF, TASK_ARTIFACT_REF, TASK_AWAITING_HUMAN_KIND, TASK_EXPECT, TASK_ID, TASK_PRIORITY, TASK_STATUS, createTaskLimitErrorMap, createTaskString, definedPatch, emitTaskNotification, fail, notifyTaskJournalAppended, ok, prototypeBridgeView, resolveDeclaredActor, resolvedJournalAuthor, taskNotificationActor, taskReceipt } from "./shared.js";
 
 export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
 
@@ -119,50 +118,6 @@ export function registerTaskTools(mcp: McpServer, deps: BridgeDeps): void {
         return ok(JSON.stringify({ ...view, prototypes: prototypeBridgeView(prototypes) }, null, 2));
       } catch (err) {
         return fail(err);
-      }
-    },
-  );
-
-  mcp.registerTool(
-    "submit_evolution_review",
-    {
-      description:
-        "Submit the result of YOUR pending Tachyon Agent Evolution review. The review id comes from " +
-        "Tachyon's task-completion notice and is bound to the Bridge-resolved caller. Submit proposals:[] " +
-        "when nothing should be retained. Learning and standard Agent Skill proposals remain inert until " +
-        "a human approves them in Agent Studio; this tool never changes Persistent Instructions.",
-      inputSchema: {
-        review_id: EVOLUTION_REVIEW_ID,
-        proposals: z.array(EVOLUTION_PROPOSAL).max(8),
-      },
-    },
-    async ({ review_id, proposals }) => {
-      try {
-        if (!deps.evolution) throw new Error("Agent Evolution is not available on this Bridge");
-        const caller = deps.caller ?? { kind: "legacy" as const };
-        if (caller.kind !== "agent" || !caller.name) {
-          throw new Error("submit_evolution_review requires an agent-authenticated caller");
-        }
-        const submission = await deps.evolution.submitReview(
-          caller.name,
-          review_id,
-          proposals as EvolutionCandidateInputTarget[],
-        );
-        return ok(JSON.stringify({
-          review: {
-            id: submission.review.id,
-            taskId: submission.review.taskId,
-            status: submission.review.status,
-          },
-          candidates: submission.candidates.map((candidate) => ({
-            id: candidate.id,
-            kind: candidate.target.kind,
-            ...(candidate.target.kind === "skill" ? { name: candidate.target.name } : {}),
-          })),
-          replayed: submission.replayed,
-        }, null, 2));
-      } catch (error) {
-        return fail(error);
       }
     },
   );

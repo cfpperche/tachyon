@@ -31,7 +31,6 @@ import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/dom
 const AGENT_VALID_VALUES: Record<string, unknown> = {
   kind: "terminal",
   instructions: "you are a reviewer",
-  selfEvolution: { enabled: true },
   worktree: true,
   branch: "feature/x",
   worktreeSetup: "npm ci",
@@ -53,7 +52,6 @@ const MAXIMAL_TERMINAL_FORM: FormState = {
   cmd: "npm run dev",
   kind: "terminal",
   instructions: "you are a reviewer",
-  selfEvolution: true,
   watch: "src/**, package.json",
   steps: "npm test",
   cwd: "apps/web",

@@ -8,7 +8,6 @@ import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { isAgentProfileRefusal } from "../config/agentProfileRefusal.js";
 import type { AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
-import { EvolutionStoreError } from "../evolution/EvolutionStore.js";
 import { executeWait, type BridgeDeps } from "../bridge/tools.js";
 import { APPROVAL_CHANNEL_VSCODE_COMMAND, resolveApproval } from "../bridge/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
@@ -173,10 +172,6 @@ export async function executeExtensionQuery(
       return json(await workspace.inspectAgentSession(query.agent));
     case "agent.fork-preview":
       return json(await workspace.manager.planFork(query.agent));
-    case "evolution.overview":
-      return json(await workspace.readAgentEvolutionOverview(query.agent));
-    case "evolution.candidate":
-      return json(await workspace.readAgentEvolutionCandidate(query.agent, query.candidateId));
     case "tmux.snapshot":
       return json(await workspace.tmux.serverSnapshot(SESSION_PREFIX));
     case "tmux.capture":
@@ -623,16 +618,6 @@ export async function executeExtensionCommand(
       assertTachyonSession(command.session);
       workspace.terminals.close(command.agent, command.session);
       return json({ closed: true, session: command.session });
-    case "evolution.approve":
-      return evolutionCandidateMutation(() => workspace.approveAgentEvolutionCandidate(command.agent, command.candidateId, {
-        expectedActiveVersion: command.expectedActiveVersion,
-        ...(command.expectedTargetDigest !== undefined ? { expectedTargetDigest: command.expectedTargetDigest } : {}),
-      }));
-    case "evolution.reject":
-      return evolutionCandidateMutation(() => workspace.rejectAgentEvolutionCandidate(command.agent, command.candidateId, {
-        expectedActiveVersion: command.expectedActiveVersion,
-        ...(command.expectedTargetDigest !== undefined ? { expectedTargetDigest: command.expectedTargetDigest } : {}),
-      }));
     case "runtime-ops.provider.configure": {
       await context.providerObservations.configureProvider(command.provider, command.enabled
         ? { state: "granted", consent: "explicit-user", sources: ["cli"] }
@@ -673,17 +658,6 @@ function samePaneIdentity(
     && row.pid === expected.pid
     && row.startCommand === expected.startCommand
     && row.createdAt === expected.createdAt;
-}
-
-async function evolutionCandidateMutation(
-  run: () => Promise<{ candidateId: string; activeVersion: number }>,
-): Promise<JsonValue> {
-  try {
-    return json({ outcome: "ok", ...(await run()) });
-  } catch (error) {
-    if (error instanceof EvolutionStoreError) return json({ outcome: "error", code: error.code });
-    throw error;
-  }
 }
 
 async function configHealth(workspace: Workspace): Promise<JsonValue> {
@@ -940,8 +914,8 @@ async function deleteConfiguredAgent(
     // door. Measured, not assumed — a declared terminal holds NO session-ledger row, so `gcLedger`
     // (the only startup sweep that runs this cleanup for a name that left `tachyon.yml`) never fires
     // for it, and this door writes no journal, so no reconcile ever revisits it. The sweep does
-    // report the leftover home as `orphan-home`, and it then hands the human an `rmdir` that the
-    // surviving `evolution/` makes refuse.
+    // report the leftover home as `orphan-home`, and it then hands the human an `rmdir` that any
+    // surviving subtree makes refuse.
     //
     // Reversed, the same crash leaves a name that is still declared, still listed and still
     // addressable, with the footprint of a terminal that has never been launched — which is not
@@ -950,7 +924,7 @@ async function deleteConfiguredAgent(
     // states for suppression: never drop the handle to the thing you still have to clean.
     //
     // The trade, stated: if the config edit refuses AFTER the footprint is cleared, the activity
-    // log, transcript and Evolution profile are gone while the terminal stays declared. That loss
+    // log and transcript are gone while the terminal stays declared. That loss
     // was already this door's shape before the edit — `removeAgentWorktree` and
     // `stopAgentSessionForDelete` above destroy far more, irreversibly, ahead of the same line — and
     // it leaves a working entry rather than an orphan nobody can name.

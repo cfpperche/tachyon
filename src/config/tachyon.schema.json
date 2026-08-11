@@ -112,17 +112,6 @@
             "description": "Persistent operational specialization for this agent. Distinct from identity and the current execution task.",
             "type": "string"
           },
-          "selfEvolution": {
-            "description": "Opt in to Tachyon-owned, human-reviewed Agent Evolution. enabled:false or absence disables it. Agents only.",
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["enabled"],
-            "properties": {
-              "enabled": {
-                "type": "boolean"
-              }
-            }
-          },
           "worktree": {
             "description": "Run this agent in its own git worktree + branch (opt-in, off by default). Isolates parallel agents so they don't clobber each other's files.",
             "type": "boolean",

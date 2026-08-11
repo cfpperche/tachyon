@@ -45,8 +45,6 @@ export const AGENT_PROFILE_REFUSAL_CODES = [
   "agent-profile/forget-worktree-owned",
   /** Canonical authority for the agent (or its declared owner) is absent or no longer matches. */
   "agent-profile/forget-authority-stale",
-  /** Evolution's stored profile and the on-disk profile tree disagree about whether one exists. */
-  "agent-profile/forget-evolution-incomplete",
   /** t-4736b4 — a session still holds the agent while its worktree ownership is being released. */
   "agent-profile/worktree-release-agent-running",
   /**

@@ -43,8 +43,6 @@ describe("ManagedEntry union — agent-only capabilities are unrepresentable on 
     terminal.isolate = "transcript";
     // @ts-expect-error a terminal receives no brief
     terminal.instructions = "be helpful";
-    // @ts-expect-error a terminal has no AI to evolve
-    terminal.selfEvolution = { enabled: true };
     // @ts-expect-error ownership can only target agents
     terminal.subagents = ["child"];
     // @ts-expect-error a terminal is never backed by a canonical profile
@@ -89,7 +87,7 @@ describe("ManagedEntry union — agent-only capabilities are unrepresentable on 
   });
 
   it("keeps refusing the agent-only keys the parser already refused", () => {
-    // `harness`, `selfEvolution`, `instructions`, `isolate` and `subagents` were
+    // `harness`, `instructions`, `isolate` and `subagents` were
     // already refused for a terminal imperatively; the union does not weaken those diagnostics.
     const { warnings } = parseConfig(
       "terminals:\n  dev:\n    cmd: npm run dev\n    harness: {}\n",

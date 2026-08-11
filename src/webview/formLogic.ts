@@ -119,8 +119,6 @@ export interface FormState {
   cmd: string;
   kind: StudioKind;
   instructions: string;
-  /** spec 421 — opt in to Tachyon-owned, human-reviewed evolution. */
-  selfEvolution: boolean;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
   watch: string;
   /** newline-separated steps (runbook kind) — each line a command name or inline shell */
@@ -169,7 +167,6 @@ export interface FormIssue {
     | "cmd-required"
     | "steps-required"
     | "instructions-not-deliverable"
-    | "self-evolution-invalid"
     | "timing-invalid"
     | "target-required"
     | "terminal-cmd-is-attested-runtime";
@@ -206,9 +203,6 @@ export function validateForm(state: FormState, takenNames: string[], editingName
   if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
     issues.push({ code: "instructions-not-deliverable", blocking: false });
   }
-  if (state.selfEvolution !== undefined && typeof state.selfEvolution !== "boolean") {
-    issues.push({ code: "self-evolution-invalid", blocking: true });
-  }
   return issues;
 }
 
@@ -244,7 +238,6 @@ export function toEntry(state: FormState): Record<string, unknown> {
   const inferred = suggestKindForCommand(state.cmd);
   if (state.kind !== inferred) entry.kind = state.kind;
   if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
-  if (state.kind === "agent" && state.selfEvolution === true) entry.selfEvolution = { enabled: true };
   const watch = state.kind === "terminal" ? parseWatch(state.watch) : [];
   if (watch.length === 1) entry.watch = watch[0];
   else if (watch.length > 1) entry.watch = watch;
@@ -283,7 +276,6 @@ export function fromScheduleDef(name: string, def: ScheduleDef): FormState {
     branch: "",
     worktreeSetup: "",
     instructions: def.instructions ?? "",
-    selfEvolution: false,
     watch: "",
     steps: "",
     cwd: "",
@@ -310,7 +302,6 @@ export function fromCommandDef(name: string, def: { cmd: string; cwd?: string })
     branch: "",
     worktreeSetup: "",
     instructions: "",
-    selfEvolution: false,
     watch: "",
     steps: "",
     cwd: def.cwd ?? "",
@@ -332,7 +323,6 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
     branch: "",
     worktreeSetup: "",
     instructions: "",
-    selfEvolution: false,
     watch: "",
     steps: def.steps.join("\n"),
     cwd: "",
@@ -354,7 +344,6 @@ export function fromDef(name: string, entry: AgentDef): FormState {
     cmd: entry.cmd,
     kind: entry.kind,
     instructions: def?.instructions ?? "",
-    selfEvolution: def?.selfEvolution?.enabled === true,
     watch: entry.watch.join(", "),
     steps: "",
     cwd: entry.cwd ?? "",

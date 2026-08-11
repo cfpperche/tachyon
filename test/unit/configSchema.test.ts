@@ -26,22 +26,6 @@ interface SchemaNode {
 const schemaPath = path.join(process.cwd(), "src", "config", "tachyon.schema.json");
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8")) as SchemaNode;
 
-describe("tachyon.schema.json — agents.selfEvolution", () => {
-  it("publishes the closed opt-in object without an implicit default", () => {
-    const entrySchema = schema.properties?.agents?.additionalProperties;
-    const evolution = typeof entrySchema === "object" ? entrySchema.properties?.selfEvolution : undefined;
-
-    expect(evolution).toMatchObject({
-      type: "object",
-      additionalProperties: false,
-      required: ["enabled"],
-      properties: { enabled: { type: "boolean" } },
-    });
-    expect(evolution).not.toHaveProperty("default");
-    expect(evolution?.description).toMatch(/human-reviewed Agent Evolution/i);
-  });
-});
-
 describe("tachyon.schema.json — settings.companion", () => {
   it("publishes tabTools, allowedHosts, and lanAccess for Companion shells", () => {
     const settings = schema.properties?.settings;

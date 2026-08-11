@@ -6,7 +6,7 @@
  * every exhaustive switch in route.ts/studioRegistry.ts — the compiler is the checklist.
  *
  * D0 shipped "command" (the pilot). D1a added terminal/runbook/schedule. D1b (this PR) adds agent —
- * its evolution/profile domain messages are substantially larger than the other three's shared
+ * its profile domain messages are substantially larger than the other three's shared
  * shape, hence its own PR. D2 adds task (closes C.1b). D3 adds pin (closes C.4).
  *
  * t-337cdf — this remains the production type boundary for `studioRegistry.ts`; the standalone

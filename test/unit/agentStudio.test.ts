@@ -25,7 +25,6 @@ const BASE: FormState = {
   cmd: "claude",
   kind: "agent",
   instructions: "",
-  selfEvolution: false,
   watch: "",
   steps: "",
   cwd: "",
@@ -141,17 +140,6 @@ describe("formLogic", () => {
     // round-trips from a declared worktree agent
     const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    worktree: true\n    branch: feat/x\n    worktreeSetup:\n      - pnpm i\n");
     expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ worktree: true, branch: "feat/x", worktreeSetup: "pnpm i" });
-  });
-
-  it("round-trips only the enabled Agent Evolution opt-in (spec 421)", () => {
-    expect(toEntry({ ...BASE }).selfEvolution).toBeUndefined();
-    expect(toEntry({ ...BASE, selfEvolution: true })).toMatchObject({ selfEvolution: { enabled: true } });
-    expect(toEntry({ ...BASE, kind: "terminal", cmd: "bash", attention: false, selfEvolution: true }).selfEvolution).toBeUndefined();
-
-    const { config } = parseConfig("agents:\n  enabled:\n    cmd: codex\n    selfEvolution: {enabled: true}\n  disabled:\n    cmd: codex\n    selfEvolution: {enabled: false}\n");
-    expect(fromDef("enabled", config!.agents.enabled).selfEvolution).toBe(true);
-    expect(fromDef("disabled", config!.agents.disabled).selfEvolution).toBe(false);
-    expect(toEntry(fromDef("disabled", config!.agents.disabled)).selfEvolution).toBeUndefined();
   });
 
   // spec 358 phase 2 — Agent Studio no longer creates the deprecated isolate config tier

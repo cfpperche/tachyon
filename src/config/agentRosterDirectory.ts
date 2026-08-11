@@ -19,7 +19,7 @@ import path from "node:path";
  * ## Why the FILE decides membership, not the directory
  *
  * `agent.yml` is the definition. A directory without one is residue — an interrupted create, a
- * `forgetAgent` that took `evolution/`, profile data under a name nobody declared — and t-8b58b3
+ * `forgetAgent` that took the agent's subtrees, profile data under a name nobody declared — and t-8b58b3
  * already named that state `orphan-home` and gave it a reason a human can act on. Making the
  * directory alone sufficient would turn every one of those into a phantom agent in the sidebar,
  * which is exactly what t-bbe760 had to close before this cut was safe to make.

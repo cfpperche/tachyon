@@ -36,7 +36,6 @@ export const EXTENSION_QUERY_ACTIONS = [
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
   "agent-profile.forget-plan",
   "agent-profile.authorizable-capabilities",
-  "evolution.overview", "evolution.candidate",
   "tmux.snapshot", "tmux.health", "tmux.capture",
 ] as const;
 
@@ -54,7 +53,6 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "companion.unpair",
   "handoff.note", "prompt.inject", "runtime-ops.provider.configure",
   "runtime-config.mark-pending",
-  "evolution.approve", "evolution.reject",
   "tmux.kill", "tmux.recover", "terminal.open", "terminal.close",
   "agent-profile.studio-commit", "agent-profile.studio-lifecycle",
   "agent-profile.studio-bundle-clone", "agent-profile.studio-bundle-import",
@@ -105,8 +103,6 @@ export const extensionQuerySchema = z.union([
    *  outright instead of decoding a changed payload. Read-only; editing lives in Agent Studio. */
   z.object({ action: z.literal("agent.session-inspection"), agent: name }).strict(),
   z.object({ action: z.literal("agent.fork-preview"), agent: name }).strict(),
-  z.object({ action: z.literal("evolution.overview"), agent: name }).strict(),
-  z.object({ action: z.literal("evolution.candidate"), agent: name, candidateId: text(256, 1).regex(/^candidate-[A-Za-z0-9_-]+$/) }).strict(),
   z.object({ action: z.literal("tmux.snapshot") }).strict(),
   z.object({ action: z.literal("tmux.health") }).strict(),
   z.object({ action: z.literal("tmux.capture"), session: tmuxSession }).strict(),
@@ -261,20 +257,6 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     title: terminalTitle.optional(),
   }).strict(),
   z.object({ action: z.literal("terminal.close"), agent: terminalAgent, session: tmuxSession }).strict(),
-  z.object({
-    action: z.literal("evolution.approve"),
-    agent: name,
-    candidateId: text(256, 1).regex(/^candidate-[A-Za-z0-9_-]+$/),
-    expectedActiveVersion: z.number().int().nonnegative(),
-    expectedTargetDigest: sha256.optional(),
-  }).strict(),
-  z.object({
-    action: z.literal("evolution.reject"),
-    agent: name,
-    candidateId: text(256, 1).regex(/^candidate-[A-Za-z0-9_-]+$/),
-    expectedActiveVersion: z.number().int().nonnegative(),
-    expectedTargetDigest: sha256.optional(),
-  }).strict(),
   z.object({
     action: z.literal("runtime-ops.provider.configure"),
     provider: z.enum(["codex", "claude"]),

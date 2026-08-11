@@ -79,7 +79,6 @@ export class SelectedMemoryFormationTransactionService {
     });
     const nextVector: FormationAuthorityVector = {
       profile: structuredClone(current.profile),
-      ...(current.evolution ? { evolution: structuredClone(current.evolution) } : {}),
       memory: nextHead,
       generation: {
         ...structuredClone(current.generation),

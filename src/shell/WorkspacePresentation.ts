@@ -5,10 +5,6 @@ import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import type { ProbeView } from "../probe/probeView.js";
 import { isAgentRow, type AgentStatus, type FleetVM } from "../sidebar/types.js";
 import type { WorkspaceAgentProjectionV1 } from "../runtime-api/workspaceProjection.js";
-import type {
-  EvolutionStudioCandidateDetail,
-  EvolutionStudioOverview,
-} from "../evolution/studioProjection.js";
 import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
 import type { AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1, AgentProfileStudioLifecycleMutationV1, AgentProfileStudioLifecycleResultV1, AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../config/agentProfileStudio.js";
@@ -91,16 +87,6 @@ export interface WorkspaceAgentStudioTarget extends WorkspaceStudioTarget {
   exportAgentProfileStudioBundle(agent: string, expectedRevision: string): Promise<AgentProfileStudioBundleExportResultV1>;
   cloneAgentProfileStudioBundle(agent: string, expectedRevision: string, destinationAgentName: string): Promise<AgentProfileStudioBundleCreatedResultV1>;
   importAgentProfileStudioBundle(destinationAgentName: string, bytes: Buffer): Promise<AgentProfileStudioBundleCreatedResultV1>;
-  readAgentEvolutionOverview(agent: string): Promise<EvolutionStudioOverview>;
-  readAgentEvolutionCandidate(agent: string, candidateId: string): Promise<EvolutionStudioCandidateDetail>;
-  approveAgentEvolutionCandidate(agent: string, candidateId: string, input: {
-    expectedActiveVersion: number;
-    expectedTargetDigest?: string;
-  }): Promise<{ candidateId: string; activeVersion: number }>;
-  rejectAgentEvolutionCandidate(agent: string, candidateId: string, input: {
-    expectedActiveVersion: number;
-    expectedTargetDigest?: string;
-  }): Promise<{ candidateId: string; activeVersion: number }>;
 }
 
 export function workspacePresentationTarget(client: WorkspaceClient): WorkspacePresentationTarget {

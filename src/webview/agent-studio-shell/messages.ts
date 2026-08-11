@@ -1,8 +1,5 @@
 import { envelope } from "../shared/studio/protocol";
 import {
-  type AgentEvolutionCandidateDetailMessage,
-  type AgentEvolutionCandidateSummaryMessage,
-  type AgentEvolutionSummaryMessage,
   type AgentStudioPatch,
 } from "./domain";
 import type { AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
@@ -48,36 +45,6 @@ export const authorizableCapabilitiesMessage = (
   agent: string,
   capabilities: import("../../config/agentCapabilityCandidates.js").AuthorizableCapabilities,
 ) => envelope({ type: "authorizableCapabilities" as const, agent, capabilities });
-/** Webview → host: reload the bounded active-profile summary and proposal list. */
-export const refreshEvolutionMessage = (agent: string) => envelope({ type: "refreshEvolution" as const, agent });
-/** Webview → host: load exact text/files for one selected proposal. */
-export const loadEvolutionCandidateMessage = (agent: string, candidateId: string) =>
-  envelope({ type: "loadEvolutionCandidate" as const, agent, candidateId });
-export const approveEvolutionCandidateMessage = (
-  agent: string,
-  candidateId: string,
-  expectedActiveVersion: number,
-  expectedTargetDigest?: string,
-) => envelope({
-  type: "approveEvolutionCandidate" as const,
-  agent,
-  candidateId,
-  expectedActiveVersion,
-  ...(expectedTargetDigest !== undefined ? { expectedTargetDigest } : {}),
-});
-export const rejectEvolutionCandidateMessage = (
-  agent: string,
-  candidateId: string,
-  expectedActiveVersion: number,
-  expectedTargetDigest?: string,
-) => envelope({
-  type: "rejectEvolutionCandidate" as const,
-  agent,
-  candidateId,
-  expectedActiveVersion,
-  ...(expectedTargetDigest !== undefined ? { expectedTargetDigest } : {}),
-});
-
 export const refreshAgentProfileMessage = (agent: string) =>
   envelope({ type: "refreshAgentProfile" as const, agent });
 export const setAgentProfileEnabledMessage = (agent: string, expectedRevision: string, enabled: boolean) =>
@@ -98,21 +65,6 @@ export const setAgentProfileProposeGrantMessage = (agent: string, expectedRevisi
 export const exportSavedAgentProfileBundleMessage = (agent: string, expectedRevision: string) => envelope({ type: "exportSavedAgentProfileBundle" as const, agent, expectedRevision });
 export const cloneSavedAgentProfileBundleMessage = (agent: string, expectedRevision: string, destinationAgentName: string) => envelope({ type: "cloneSavedAgentProfileBundle" as const, agent, expectedRevision, destinationAgentName });
 export const importSavedAgentProfileBundleMessage = (agent: string, destinationAgentName: string, contentBase64: string) => envelope({ type: "importSavedAgentProfileBundle" as const, agent, destinationAgentName, contentBase64 });
-
-export const evolutionSummaryMessage = (summary: AgentEvolutionSummaryMessage) =>
-  envelope({ type: "evolutionSummary" as const, summary });
-export const evolutionCandidatesMessage = (agent: string, candidates: AgentEvolutionCandidateSummaryMessage[]) =>
-  envelope({ type: "evolutionCandidates" as const, agent, candidates });
-export const evolutionCandidateDetailMessage = (agent: string, detail: AgentEvolutionCandidateDetailMessage) =>
-  envelope({ type: "evolutionCandidateDetail" as const, agent, detail });
-export const evolutionActionResultMessage = (
-  agent: string,
-  candidateId: string,
-  status: "approved" | "rejected",
-  activeVersion: number,
-) => envelope({ type: "evolutionActionResult" as const, agent, candidateId, status, activeVersion });
-export const evolutionErrorMessage = (agent: string, code: string, message: string, conflict: boolean) =>
-  envelope({ type: "evolutionError" as const, agent, code, message, conflict });
 
 export const agentProfileSnapshotMessage = (
   action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant",

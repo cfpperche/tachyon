@@ -65,12 +65,11 @@ async function sourceFixture() {
         values: { PUBLIC_SETTING: "must-not-transfer" },
         secrets: { API_TOKEN: { provider: "vault", id: "secret-handle-42", purpose: "testing" } },
       },
-      prompt: { instructions: "local-instructions", evolution: "evolution" },
+      prompt: { instructions: "local-instructions" },
       lifecycle: { enabled: true, autostart: true },
       workspace: { cwd: "/machine/local/path" },
       capabilities: { mcp: ["tool"] },
       references: [
-        { id: "evolution", kind: "evolution", scope: "product", owner: "tachyon", path: "evolution.md", mode: "pinned", sha256: sha256("evolution"), version: "1" },
         { id: "tool", kind: "mcp", scope: "product", owner: "tachyon", path: "mcp/example", mode: "pinned", sha256: skillDigest, version: "1" },
       ],
     },
@@ -114,7 +113,6 @@ describe("portable agent profile bundle", () => {
       { kind: "environment", field: "environment.values.PUBLIC_SETTING" },
       { kind: "secret", field: "environment.secrets.API_TOKEN" },
       { kind: "reference", field: "capabilities.mcp", referenceId: "tool", referenceKind: "mcp" },
-      { kind: "reference", field: "prompt.evolution", referenceId: "evolution", referenceKind: "evolution" },
       { kind: "workspace", field: "workspace" },
       { kind: "lifecycle", field: "lifecycle" },
     ]));

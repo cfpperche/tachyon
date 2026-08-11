@@ -102,22 +102,10 @@ export const agentProfileStudioEditableSchemaV1 = z.object({
     setup: z.array(text(4096).min(1)).max(64),
   }).strict(),
   /**
-   * t-f96b2f — Agent Evolution, authored as the plain fact a human toggles: on or off.
-   *
-   * The profile stores it as a pinned `evolution-selector.json` plus a `prompt.evolution` pointing
-   * at it, and — exactly like `worktree.setup` above — that indirection stops here. The
-   * form authors intent; `agentEvolutionSelectorWrite` turns it into bytes, a digest and a reference
-   * inside the same transaction as the rest of the save.
-   *
-   * Required rather than optional for the same reason those two are: absent would be a third state
-   * between on and off, and this field's "off" has to be able to REMOVE a binding that exists.
-   */
-  selfEvolution: z.boolean(),
-  /**
    * t-d48775 — the agent's persistent instructions, authored as the TEXT a human types.
    *
    * The profile stores them as a pinned `instructions.md` plus a `prompt.instructions` naming it,
-   * and — exactly like `worktree.setup` and `selfEvolution` above — that indirection stops here.
+   * and — exactly like `worktree.setup` above — that indirection stops here.
    * `agentInstructionsWrite` turns the text into bytes, a digest and a reference inside the same
    * transaction as the rest of the save.
    *
@@ -332,7 +320,6 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
     secretNames: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)).max(128),
     prompt: z.object({
       instructions: z.boolean(),
-      evolution: z.boolean(),
       memoryPolicy: z.enum(["disabled", "runtime-managed", "human-approved"]).optional(),
     }).strict(),
     capabilities: z.object({
@@ -378,7 +365,6 @@ export const agentProfileStudioSnapshotSchemaV1 = z.object({
   provenance: z.object({
     canonical: z.object({ scope: z.literal("profile"), writable: z.literal(true), sha256: z.string().regex(REVISION) }).strict(),
     authority: z.object({ scope: z.literal("host"), writable: z.literal(false), revision: z.string().min(1).max(256), grants: z.number().int().nonnegative() }).strict(),
-    learned: z.object({ scope: z.literal("profile"), writable: z.literal(false), present: z.boolean() }).strict(),
     projection: z.object({ scope: z.literal("runtime"), writable: z.literal(false), active: z.boolean() }).strict(),
     nativeConfig: z.array(z.object({
       family: z.enum(["selectors", "permissions", "interface", "tooling", "featureFlags", "authentication", "memory", "diagnostics"]),
@@ -396,7 +382,6 @@ export type AgentProfileStudioSnapshotV1 = z.infer<typeof agentProfileStudioSnap
 
 export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycleSnapshot): AgentProfileStudioSnapshotV1 {
   const profile = snapshot.profile;
-  const evolutionBound = profile.prompt?.evolution !== undefined;
   return agentProfileStudioSnapshotSchemaV1.parse({
     schemaVersion: 1,
     kind: "agent-instance",
@@ -427,10 +412,6 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
         branch: profile.workspace?.worktree?.branch ?? "",
         setup: [...(snapshot.workspaceCommands?.setup ?? [])],
       },
-      // t-f96b2f — the same fact `bindings.prompt.evolution` reports, in the editable view the form
-      // saves back. One expression, read twice: a snapshot whose toggle disagreed with its own
-      // binding would be a form that shows one state and writes the other.
-      selfEvolution: evolutionBound,
       // t-d48775 — the instructions come back as TEXT, read from the pinned document by
       // `inspectAgentProfileLifecycle`. This line is the whole reason the snapshot carries those
       // bytes: `profile.prompt.instructions` is only a reference id, so projecting from it would
@@ -451,7 +432,6 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
       secretNames: Object.keys(profile.environment?.secrets ?? {}).sort(),
       prompt: {
         instructions: profile.prompt?.instructions !== undefined,
-        evolution: evolutionBound,
         ...(profile.prompt?.memory ? { memoryPolicy: profile.prompt.memory.policy } : {}),
       },
       capabilities: {
@@ -485,7 +465,6 @@ export function projectAgentProfileStudioSnapshot(snapshot: AgentProfileLifecycl
         revision: snapshot.provenance.authority.revision,
         grants: snapshot.provenance.authority.grants,
       },
-      learned: { ...snapshot.provenance.learned },
       projection: { ...snapshot.provenance.projection },
       nativeConfig: previewAgentNativeConfigPolicy(profile.runtime.adapter, profile.nativeConfig).map((entry) => ({
         family: entry.family,
@@ -538,21 +517,11 @@ export function createProfileFromStudioMutation(
   if (Object.values(parsed.editable.capabilities ?? {}).some((entries) => entries.length > 0)) {
     throw new Error("new canonical profile cannot select capability references before host authorization");
   }
-  // t-f96b2f — creation cannot grant Evolution, and the refusal is explicit rather than a silent
-  // drop. The selector must name a `profileId` only the Evolution store mints, and minting one for
-  // an agent whose transaction may still roll back would leave an Evolution profile behind for an
-  // agent that never existed. The form says the same thing where the human is standing: the whole
-  // Evolution section reads "Save agent first" until the profile exists.
-  if (parsed.editable.selfEvolution) {
-    throw new Error("Evolution is enabled on an existing agent: save this agent first, then turn it on");
-  }
   const createIds = studioWorkspaceCommandIds({
     setup: parsed.editable.worktree.setup,
   });
-  // t-d48775 — creation CAN bind persistent instructions, unlike Evolution above. The difference is
-  // where the id comes from: Evolution's names a `profileId` only its store can mint, so binding it
-  // before the transaction commits would strand a store profile for an agent that never existed.
-  // This id is a constant, and its document rides the same transaction as the profile that pins it.
+  // t-d48775 — creation binds persistent instructions: the id is a constant, and its document rides
+  // the same transaction as the profile that pins it.
   const instructionsRefusal = persistentInstructionsRefusal(parsed.editable.instructions);
   if (instructionsRefusal) throw new Error(instructionsRefusal);
   const instructionsId = studioPersistentInstructionsId({ instructions: parsed.editable.instructions });
@@ -605,14 +574,8 @@ export function patchProfileFromStudioMutation(
     throw new Error(`agent '${parsed.agentName}' profile revision conflict`);
   }
   const prompt = { ...(current.profile.prompt ?? {}) };
-  // t-f96b2f — `editable.selfEvolution` is NOT resolved here, and the spread above deliberately
-  // carries the stored `prompt.evolution` forward untouched. Binding it needs a profile id only the
-  // Evolution store can mint, which is async and host-owned, so the whole rule lives in
-  // `agentEvolutionSelectorWrite` and is applied by `Workspace.commitAgentProfileStudio` over this
-  // patch. Resolving the "off" half here and the "on" half there would be two records of one fact.
-  //
-  // t-d48775 — `prompt.instructions` IS resolved here, because unlike Evolution it needs nothing
-  // host-owned: the id is a constant and the rule is pure. Setting it and DELETING it both happen
+  // t-d48775 — `prompt.instructions` is resolved here: the id is a constant and the rule is pure,
+  // needing nothing host-owned. Setting it and DELETING it both happen
   // here, so clearing the field removes the binding instead of leaving a pin the writer no longer
   // publishes bytes for. A FOREIGN binding is returned unchanged by `studioPersistentInstructionsId`.
   const instructionsRefusal = persistentInstructionsRefusal(parsed.editable.instructions);

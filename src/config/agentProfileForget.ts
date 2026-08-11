@@ -25,7 +25,7 @@ const SCHEMA_VERSION = 1 as const;
 const FORGET_DIR = "forget";
 const JOURNAL = "journal.json";
 const PHASES = new Set<string>([
-  "intent", "committing", "evolution-retired", "authority-retired", "locator-removed",
+  "intent", "committing", "authority-retired", "locator-removed",
   "home-quarantined", "runtime-converged", "activated", "committed", "degraded",
 ]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -33,7 +33,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export type AgentProfileForgetPhase =
   | "intent"
   | "committing"
-  | "evolution-retired"
   | "authority-retired"
   /**
    * t-ae221c — never entered again; still handled by `rollForward` so an in-flight journal from an
@@ -68,7 +67,6 @@ export interface AgentProfileForgetJournal {
   targetConfigSha256?: string;
   sourceStanzaSha256?: string;
   profileManifest: TreeEntry[];
-  evolutionProfileId: string | null;
   liveSnapshot: AgentProfileForgetSnapshot;
   /**
    * What this transaction deliberately leaves on disk. It is the receipt an audit reads to tell a
@@ -99,11 +97,6 @@ export interface AgentProfileForgetJournal {
  */
 export { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "./agentForgetPlan.js";
 
-export interface AgentProfileForgetEvolutionPort {
-  readProfileId(agentName: string): Promise<string | undefined>;
-  retire(agentName: string, expectedProfileId: string | null): Promise<void>;
-}
-
 export interface CommitAgentProfileForgetInput {
   workspaceRoot: string;
   agentName: string;
@@ -111,7 +104,6 @@ export interface CommitAgentProfileForgetInput {
   /** Current declared owner, when the child is listed in another canonical profile. */
   ownerAgentName?: string;
   authority: AgentProfileAuthorityPort;
-  evolution: AgentProfileForgetEvolutionPort;
   live: {
     prepare(agentName: string): Promise<AgentProfileForgetSnapshot>;
     converge(agentName: string, agentId: string, txid: string, snapshot: AgentProfileForgetSnapshot): Promise<void>;
@@ -307,18 +299,6 @@ async function convergeOwnership(
   }
 }
 
-async function retireEvolution(evolution: AgentProfileForgetEvolutionPort, journal: AgentProfileForgetJournal): Promise<void> {
-  try {
-    await evolution.retire(journal.agentName, journal.evolutionProfileId);
-  } catch (error) {
-    const code = (error as { code?: unknown }).code;
-    if (code === "evolution/authority-invalid" || code === "evolution/profile-conflict") {
-      throw new CustodyError(error instanceof Error ? error.message : String(error));
-    }
-    throw error;
-  }
-}
-
 function quarantineHome(workspaceRoot: string, journal: AgentProfileForgetJournal): void {
   const source = profileRoot(workspaceRoot, journal.agentName);
   const destination = retiredAgentProfileRoot(workspaceRoot, journal.agentId, journal.txid);
@@ -343,10 +323,6 @@ async function rollForward(
 ): Promise<AgentProfileForgetJournal> {
   let journal = initial;
   if (journal.phase === "committing") {
-    await retireEvolution(input.evolution, journal);
-    journal = transition(txDir, journal, "evolution-retired", input.onPhase);
-  }
-  if (journal.phase === "evolution-retired") {
     await retireAuthority(input.authority, journal);
     journal = transition(txDir, journal, "authority-retired", input.onPhase);
   }
@@ -406,17 +382,6 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
     }
     const oldRoot = profileRoot(input.workspaceRoot, input.agentName);
     const profileManifest = treeManifest(oldRoot);
-    const evolutionProfileId = await input.evolution.readProfileId(input.agentName);
-    const hasEvolutionProfile = profileManifest.some((entry) => entry.path === "evolution/profile.json" && entry.kind === "file");
-    if ((evolutionProfileId === undefined) !== !hasEvolutionProfile) {
-      // Named rather than flattened even though no Studio button resolves it: the human who reads
-      // "evolution storage and the profile tree disagree" knows WHERE to look and that retrying is
-      // pointless, which is the whole difference between a refusal and "could not be completed".
-      throw new AgentProfileRefusal(
-        "agent-profile/forget-evolution-incomplete",
-        `agent '${input.agentName}': Agent Evolution profile storage and the canonical profile tree disagree about whether a stored profile exists; canonical forget will not run until they match`,
-      );
-    }
     let ownership: AgentProfileForgetJournal["ownership"];
     if (input.ownerAgentName) {
       const mutation = ownershipProfileMutation(input.workspaceRoot, input.ownerAgentName, input.agentName, undefined);
@@ -447,7 +412,6 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
       createdAt: new Date().toISOString(),
       sourceAuthority,
       profileManifest,
-      evolutionProfileId: evolutionProfileId ?? null,
       liveSnapshot,
       retainedBindings: AGENT_PROFILE_FORGET_RETAINED_BINDINGS,
       ...(ownership ? { ownership } : {}),

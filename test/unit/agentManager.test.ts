@@ -1,4 +1,3 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import crypto from "node:crypto";
 import { PARENT_CWD_REFUSAL } from "../../src/bridge/spawnContract.js";
@@ -26,8 +25,6 @@ import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "../../src/bridge/spawnContract.js";
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
-import { EvolutionStore } from "../../src/evolution/EvolutionStore.js";
-import { resolveEvolutionStartupSnapshot } from "../../src/evolution/startupSnapshot.js";
 import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentProfileResolver.js";
 import type { ResolvedAgentNativeConfigProjection } from "../../src/config/agentNativeConfigPolicy.js";
 import { agentGroupParent, agentIsNested } from "../../src/webview/sidebar/grouping.js";
@@ -299,154 +296,12 @@ function makeManager(yaml: string, tmuxOpts: { failRespawn?: boolean; failShowEn
   return { manager, sessions, dead, panes, composerDrafts, exitsOnExitCommand, composerInterloper, composerArrival, submittedLines, sentKeys, sentTexts, respawnArgs, newSessionArgs, spawned, killed, restarted };
 }
 
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "SDD 421 delivers the same approved evolution snapshot through every supported runtime channel",
-  ],
-});
-
 describe("AgentManager", () => {
   it("spawns a declared agent into a namespaced session", async () => {
     const { manager, sessions, spawned } = makeManager("agents:\n  claude:\n    cmd: claude\n");
     await manager.spawn("claude");
     expect(sessions.has(`tachyon-${HASH}-claude`)).toBe(true);
     expect(spawned).toEqual(["claude"]);
-  });
-
-  it("SDD 421 pins Agent Evolution to the session and resolves a newer version only on fresh restart", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-"));
-    try {
-      const evolution = new EvolutionStore(root);
-      const first = await evolution.createCandidate("reviewer", {
-        reviewId: "review-first",
-        taskId: "t-111111",
-        target: { kind: "learning", content: "Use the first approved method.", reason: "It is repeatable." },
-      });
-      const firstDetail = await evolution.candidateDetail("reviewer", first.id);
-      await evolution.approveCandidate("reviewer", first.id, {
-        expectedActiveVersion: 0,
-        expectedTargetDigest: firstDetail.currentTargetDigest,
-      });
-
-      const fake = fakeTmux();
-      const ledger = new SessionLedger(root);
-      let config = configOf("agents:\n  reviewer:\n    cmd: claude\n    selfEvolution: {enabled: true}\n");
-      const manager = new AgentManager({
-        tmux: fake.tmux,
-        wsHash: workspaceHash(root),
-        workspaceRoot: root,
-        ledger,
-        getConfig: () => config,
-      });
-      await manager.spawn("reviewer");
-      expect(fake.newSessionArgs[0]!.at(-1)).toContain("Use the first approved method.");
-      const pinned = ledger.get("reviewer")!.evolution!;
-      expect(pinned.version).toBe(1);
-
-      const second = await evolution.createCandidate("reviewer", {
-        reviewId: "review-second",
-        taskId: "t-222222",
-        target: { kind: "learning", content: "Use the second approved method.", reason: "It improves the next run." },
-      });
-      const secondDetail = await evolution.candidateDetail("reviewer", second.id);
-      await evolution.approveCandidate("reviewer", second.id, {
-        expectedActiveVersion: 1,
-        expectedTargetDigest: secondDetail.currentTargetDigest,
-      });
-      expect(ledger.get("reviewer")!.evolution).toEqual(pinned);
-
-      await manager.restart("reviewer", { stop: "force", session: "new" });
-      expect(fake.respawnArgs.at(-1)!.at(-1)).toContain("Use the second approved method.");
-      expect(ledger.get("reviewer")!.evolution).toMatchObject({ version: 2, agent: "reviewer" });
-      expect(ledger.get("reviewer")!.evolution!.digest).not.toBe(pinned.digest);
-
-      const versionTwoDigest = ledger.get("reviewer")!.evolution!.digest;
-      config = configOf("agents:\n  reviewer:\n    cmd: grok\n    selfEvolution: {enabled: true}\n");
-      await manager.restart("reviewer", { stop: "force", session: "new" });
-      expect(fake.respawnArgs.at(-1)!.at(-1)).toContain("Use the second approved method.");
-      expect(ledger.get("reviewer")!.evolution).toMatchObject({ version: 2, digest: versionTwoDigest });
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("canonical Evolution selector fails closed when the authorized active profile identity differs", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-selector-"));
-    try {
-      const evolution = new EvolutionStore(root);
-      const candidate = await evolution.createCandidate("reviewer", {
-        reviewId: "review-selector",
-        taskId: "t-selector",
-        target: { kind: "learning", content: "Authorized learning.", reason: "Selector binding test." },
-      });
-      const detail = await evolution.candidateDetail("reviewer", candidate.id);
-      await evolution.approveCandidate("reviewer", candidate.id, {
-        expectedActiveVersion: 0,
-        expectedTargetDigest: detail.currentTargetDigest,
-      });
-      const config = configOf("agents:\n  reviewer:\n    cmd: codex\n    selfEvolution: { enabled: true }\n");
-      asAgent(config.agents.reviewer)!.profileEvolution = {
-        profileId: "another-profile",
-        selectorSha256: "a".repeat(64),
-      };
-      const fake = fakeTmux();
-      const manager = new AgentManager({
-        tmux: fake.tmux,
-        wsHash: workspaceHash(root),
-        workspaceRoot: root,
-        ledger: new SessionLedger(root),
-        getConfig: () => config,
-      });
-
-      await expect(manager.spawn("reviewer")).rejects.toThrow(
-        "Agent Evolution active profile does not match canonical selector",
-      );
-      expect(fake.newSessionArgs).toEqual([]);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  it("SDD 421 delivers the same approved evolution snapshot through every supported runtime channel", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-agent-manager-evolution-runtimes-"));
-    try {
-      const evolution = new EvolutionStore(root);
-      const candidate = await evolution.createCandidate("reviewer", {
-        reviewId: "review-runtime-parity",
-        taskId: "t-333333",
-        target: { kind: "learning", content: "Keep runtime-neutral evidence.", reason: "The profile belongs to Tachyon." },
-      });
-      const detail = await evolution.candidateDetail("reviewer", candidate.id);
-      await evolution.approveCandidate("reviewer", candidate.id, {
-        expectedActiveVersion: 0,
-        expectedTargetDigest: detail.currentTargetDigest,
-      });
-      const expected = await resolveEvolutionStartupSnapshot(root, "reviewer", evolution);
-
-      for (const cmd of ["claude", "codex", "agy", "gemini", "opencode", "grok", "hermes", "pi"]) {
-        const fake = fakeTmux();
-        const ledger = new SessionLedger(root);
-        const config = configOf(`agents:\n  reviewer:\n    cmd: ${cmd}\n    selfEvolution: {enabled: true}\n`);
-        const manager = new AgentManager({
-          tmux: fake.tmux,
-          wsHash: workspaceHash(root),
-          workspaceRoot: root,
-          ledger,
-          getConfig: () => config,
-          materializePiSessionDir: (name) => path.join(root, ".tachyon", "pi-sessions", name),
-        });
-
-        await manager.spawn("reviewer");
-        const session = sessionName(workspaceHash(root), "reviewer");
-        const delivered = cmd === "hermes"
-          ? fake.sessionEnv.get(session)?.HERMES_TUI_QUERY
-          : fake.newSessionArgs[0]?.at(-1);
-        expect(delivered, `runtime=${cmd}`).toContain("Keep runtime-neutral evidence.");
-        expect(ledger.get("reviewer")?.evolution, `runtime=${cmd}`).toEqual(expected);
-      }
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
   });
 
   it("rejects spawning an unknown agent without a Temporary cmd, accepts with one", async () => {
@@ -3795,31 +3650,25 @@ describe("AgentManager — session resume (spec 209)", () => {
    * t-4a1f85 — the ACTOR × TRIGGER that reaches `forgetAgent` most often: a Temporary agent dismissed
    * by a human in the sidebar, or by an agent through Bridge `dismiss_agent`. Both land here.
    *
-   * `forgetAgent` used to remove `.tachyon/agents/<name>/evolution` and leave the parent standing.
-   * Nothing revisited it — this path writes no journal, so no reconcile owns it — and the one sweep
-   * that enumerates the directory called it `absent`, "there is nothing to remove".
+   * `forgetAgent` used to remove a per-agent subtree and leave the parent standing. Nothing revisited
+   * it — this path writes no journal, so no reconcile owns it — and the one sweep that enumerates the
+   * directory called it `absent`, "there is nothing to remove".
    *
    * The neighbour is the policy argument: the removal is `rmdir`, so a home that still holds a
-   * human-authored note loses its Evolution subtree and keeps everything else, directory included.
+   * human-authored note is kept whole, directory included.
    */
   it("dismissTemporary takes the Agent Profile home it emptied and keeps one that still holds human data", async () => {
     const { manager, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n");
     const home = (name: string) => path.join(ws, ".tachyon", "agents", name);
     await manager.spawn("eph", { cmd: "opencode", parent: "main" });
     await manager.spawn("noteful", { cmd: "opencode", parent: "main" });
-    // Seeded exactly the way EvolutionStore.atomicWrite seeds it: the recursive mkdir of
-    // `<home>/evolution/profile.json` is what mints the home in the first place.
-    for (const name of ["eph", "noteful"]) {
-      fs.mkdirSync(path.join(home(name), "evolution"), { recursive: true });
-      fs.writeFileSync(path.join(home(name), "evolution", "profile.json"), "{}\n", "utf8");
-    }
+    for (const name of ["eph", "noteful"]) fs.mkdirSync(home(name), { recursive: true });
     fs.writeFileSync(path.join(home("noteful"), "notes.md"), "# a human note\n", "utf8");
 
     manager.dismissTemporary("eph");
     manager.dismissTemporary("noteful");
 
     expect(fs.existsSync(home("eph"))).toBe(false);
-    expect(fs.existsSync(path.join(home("noteful"), "evolution"))).toBe(false);
     expect(fs.readdirSync(home("noteful"))).toEqual(["notes.md"]);
     expect(fs.readFileSync(path.join(home("noteful"), "notes.md"), "utf8")).toBe("# a human note\n");
     // Idempotent like every other footprint: the dismissNode→kill double-call must not throw.
@@ -3834,17 +3683,11 @@ describe("AgentManager — session resume (spec 209)", () => {
     fs.mkdirSync(path.join(home, "sessions"), { recursive: true });
     fs.writeFileSync(path.join(home, "config.toml"), "model = \"gpt-5\"\n", "utf8");
     fs.writeFileSync(path.join(home, "sessions", "session.jsonl"), "{}\n", "utf8");
-    const evolutionRoot = path.join(ws, ".tachyon", "agents", name, "evolution");
-    fs.mkdirSync(path.join(evolutionRoot, "skills", "helper"), { recursive: true });
-    fs.writeFileSync(path.join(evolutionRoot, "profile.json"), "{}\n", "utf8");
-    fs.writeFileSync(path.join(evolutionRoot, "skills", "helper", "SKILL.md"), "# helper\n", "utf8");
-
     expect(() => forgetAgent(name, {
       workspaceRoot: ws,
       removeHarnessHome: (agent) => new HarnessManager(ws).remove(agent),
     })).not.toThrow();
     expect(fs.existsSync(home)).toBe(false);
-    expect(fs.existsSync(evolutionRoot)).toBe(false);
   });
 
   it("canonical forgetAgent footprint list names every per-agent removal surface", () => {
@@ -3858,7 +3701,6 @@ describe("AgentManager — session resume (spec 209)", () => {
       "per-spawn settings file",
       "generated spawn brief",
       "durable pane transcript",
-      "Agent Evolution Profile",
       "emptied Agent Profile home",
     ]);
   });

@@ -61,7 +61,6 @@ function lifecycleSnapshot(watch?: string[]): AgentProfileLifecycleSnapshot {
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: "d".repeat(64) },
       authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 0 },
-      learned: { scope: "profile", writable: false, present: false },
       projection: { scope: "runtime", writable: false, active: false },
     },
   };
@@ -79,7 +78,6 @@ function mutation(expectedRevision?: string): AgentProfileStudioMutationV1 {
       cwd: "",
       lifecycle: { autostart: false, restart: "never", attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
-      selfEvolution: false,
       instructions: "",
       isolation: "",
       capabilities: { skills: [], mcp: [], hooks: [] },

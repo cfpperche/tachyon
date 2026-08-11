@@ -21,7 +21,6 @@ export function blankCommandFields(): FormState {
     cmd: "",
     kind: "command",
     instructions: "",
-    selfEvolution: false,
     watch: "",
     steps: "",
     cwd: "",

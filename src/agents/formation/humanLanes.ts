@@ -50,7 +50,7 @@ export class HumanLaneSuppressionAuthority {
     issuedAt: string;
   }): HumanLaneSuppressionReceipt {
     const lanes = [...input.lanes].sort();
-    const expected = (["instructions", "evolution", "memory"] as const)
+    const expected = (["instructions", "memory"] as const)
       .filter((lane) => input.vector.profile.lanes[lane].mode === "profile").sort();
     if (new Set(lanes).size !== lanes.length || formationDigest(lanes) !== formationDigest(expected)) {
       throw new HumanFormationLaneError("suppression receipt must cover every enabled human lane exactly once");
@@ -80,7 +80,7 @@ export class HumanLaneSuppressionAuthority {
     const { mac, ...payload } = receipt;
     const expectedMac = crypto.createHmac("sha256", this.key).update(suppressionPayload(payload)).digest();
     const actualMac = /^[a-f0-9]{64}$/.test(mac) ? Buffer.from(mac, "hex") : Buffer.alloc(0);
-    const enabled = (["instructions", "evolution", "memory"] as const)
+    const enabled = (["instructions", "memory"] as const)
       .filter((lane) => vector.profile.lanes[lane].mode === "profile").sort();
     const issuedAt = Date.parse(receipt.issuedAt);
     const now = Date.parse(verifiedAt);
@@ -114,7 +114,7 @@ function validateLaneRenderer(
 }
 
 function rejectLegacyModes(vector: FormationAuthorityVector): void {
-  for (const laneName of ["instructions", "evolution", "memory"] as FormationLaneName[]) {
+  for (const laneName of ["instructions", "memory"] as FormationLaneName[]) {
     if (vector.profile.lanes[laneName].mode === "legacy") throw new HumanFormationLaneError("canonical human-lane resolution cannot consume legacy authority");
   }
 }

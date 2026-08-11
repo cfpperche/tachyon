@@ -8,12 +8,10 @@ import {
 } from "../../src/agents/formation/authorityStore.js";
 import {
   formationDigest,
-  formationSkillInventoryDigest,
   formationSkillRelativePathError,
   profileActivationHeadV2FromV1,
   validateFormationAuthorityVector,
   type FormationAuthorityVector,
-  type EvolutionActivationHeadV2,
   type FormationGenerationHeadV1,
   type ProfileActivationHeadV2,
 } from "../../src/agents/formation/domain.js";
@@ -50,7 +48,6 @@ function profile(revision = 1): ProfileActivationHeadV2 {
     runtimeInspector: { adapter: "codex", id: "inspector", version: "1", sha256: HEX_C },
     lanes: {
       instructions: { mode: "disabled" },
-      evolution: { mode: "disabled" },
       memory: { mode: "disabled" },
     },
   };
@@ -130,10 +127,9 @@ describe("agent formation authority foundation", () => {
     expect(Object.values(upgraded.lanes)).toEqual([
       { mode: "disabled" },
       { mode: "disabled" },
-      { mode: "disabled" },
     ]);
     expect(JSON.stringify(upgraded)).not.toContain("plugin");
-    expect(FORMATION_GOVERNED_LANES).toEqual(["instructions", "evolution", "memory"]);
+    expect(FORMATION_GOVERNED_LANES).toEqual(["instructions", "memory"]);
   });
 
   it("rejects mixed identities and unbound active heads", () => {
@@ -141,34 +137,6 @@ describe("agent formation authority foundation", () => {
     wrong.generation.agentId = OTHER_AGENT_ID;
     expect(validateFormationAuthorityVector(wrong)).toContain("generation authority belongs to another agentId");
 
-    const enabled = vector();
-    enabled.profile.lanes.evolution = {
-      mode: "profile",
-      required: true,
-      selectorId: "evolution",
-      subjectId: "profile-one",
-      path: "evolution/profile.json",
-      sourceSha256: HEX_A,
-      rendererContract: "evolution-renderer-v1",
-      rendererSha256: HEX_B,
-    };
-    expect(validateFormationAuthorityVector(enabled)).toContain("enabled Evolution lane has no activation head");
-
-    const orphan = vector();
-    orphan.evolution = {
-      schemaVersion: 2,
-      workspaceId: WORKSPACE_ID,
-      agentId: AGENT_ID,
-      profileId: "profile-one",
-      revision: 1,
-      priorRevision: 0,
-      activeVersion: 1,
-      profileManifestSha256: HEX_A,
-      learningsSha256: HEX_B,
-      skillsInventorySha256: formationSkillInventoryDigest([]),
-      skillInventory: [],
-    } satisfies EvolutionActivationHeadV2;
-    expect(validateFormationAuthorityVector(orphan)).toContain("disabled/legacy Evolution lane must not have an activation head");
   });
 
   it("publishes resolver-owned bytes once and replays after authority advances", () => {
@@ -244,16 +212,7 @@ describe("agent formation authority foundation", () => {
     expect(() => prepare(store, "fresh-resolver", initial)).toThrow("another authority vector");
   });
 
-  it("does not publish Evolution skills for a disabled lane and rejects unsafe paths", () => {
-    const context = fixture();
-    const initial = vector();
-    context.store.replaceVector({ operationId: "generation-skills", caller: human, mutation: "bootstrap", vector: initial });
-    context.setPayload({
-      startupPrompt: "prompt",
-      reanchorReminder: "reminder",
-      evolutionSkills: [{ path: "repo-check/SKILL.md", bytes: "# Skill\n" }],
-    });
-    expect(() => prepare(context.store, "fresh-skills", initial)).toThrow("disabled Evolution lane");
+  it("rejects unsafe lane artifact paths", () => {
     for (const unsafe of ["../SKILL.md", "/tmp/SKILL.md", "plugins/x/SKILL.md", "x\\SKILL.md", "C:/x/SKILL.md"]) {
       expect(formationSkillRelativePathError(unsafe), unsafe).toBeDefined();
     }
@@ -271,14 +230,6 @@ describe("agent formation authority foundation", () => {
       vector: vector(3, 2, profile(3)),
       expectedGenerationSha256: formationDigest(first.generation),
     })).toThrow("exactly one");
-    expect(() => store.replaceVector({
-      operationId: "generation-sequence-label",
-      caller: human,
-      mutation: "evolution-promotion",
-      vector: vector(2, 1, profile(2)),
-      expectedGenerationSha256: formationDigest(first.generation),
-    })).toThrow("may change only Evolution");
-
     const retired = vector(2, 1);
     retired.generation.retired = true;
     store.replaceVector({

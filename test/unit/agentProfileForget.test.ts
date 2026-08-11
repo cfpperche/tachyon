@@ -10,7 +10,6 @@ import {
   commitAgentProfileForget,
   reconcileAgentProfileForgets,
   retiredAgentProfileRoot,
-  type AgentProfileForgetEvolutionPort,
 } from "../../src/config/agentProfileForget.js";
 import { commitAgentProfileLifecycle } from "../../src/config/agentProfileLifecycle.js";
 import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
@@ -44,20 +43,9 @@ class MemoryAuthority implements AgentProfileAuthorityPort {
   }
 }
 
-class MemoryEvolution implements AgentProfileForgetEvolutionPort {
-  readonly profiles = new Map<string, string>();
-  readonly retired: string[] = [];
-  async readProfileId(name: string) { return this.profiles.get(name); }
-  async retire(name: string, expectedProfileId: string | null) {
-    expect(this.profiles.get(name) ?? null).toBe(expectedProfileId);
-    if (!this.retired.includes(name)) this.retired.push(name);
-  }
-}
-
 async function fixture() {
   const root = temporaryWorkspace();
   const authority = new MemoryAuthority();
-  const evolution = new MemoryEvolution();
   const created = await commitAgentProfileLifecycle({
     workspaceRoot: root,
     agentName: "reviewer",
@@ -66,10 +54,7 @@ async function fixture() {
     authority,
     activateState: () => undefined,
   });
-  evolution.profiles.set("reviewer", "evolution-1");
   const home = path.join(root, ".tachyon", "agents", "reviewer");
-  fs.mkdirSync(path.join(home, "evolution"));
-  fs.writeFileSync(path.join(home, "evolution", "profile.json"), '{"profileId":"evolution-1"}\n');
   fs.mkdirSync(path.join(home, "plugins", "future-plugin"), { recursive: true });
   fs.writeFileSync(path.join(home, "plugins", "future-plugin", "plugin.json"), "{}\n");
   const liveSnapshot: AgentProfileForgetSnapshot = {
@@ -84,7 +69,7 @@ async function fixture() {
       converged.push(`${agentId}:${txid}`);
     },
   };
-  return { root, authority, evolution, created, home, live, converged };
+  return { root, authority, created, home, live, converged };
 }
 
 afterEach(() => {
@@ -100,7 +85,6 @@ describe("canonical agent profile forget", () => {
       agentName: "reviewer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
     });
@@ -110,7 +94,6 @@ describe("canonical agent profile forget", () => {
     expect(fs.existsSync(input.home)).toBe(false);
     const retired = retiredAgentProfileRoot(input.root, result.agentId, result.txid);
     expect(fs.readFileSync(path.join(retired, "plugins", "future-plugin", "plugin.json"), "utf8")).toBe("{}\n");
-    expect(input.evolution.retired).toEqual(["reviewer"]);
     expect(input.converged).toHaveLength(1);
     expect(agentProfileForgetBlocked(input.root, "reviewer")).toBe(false);
     const replacement = await commitAgentProfileLifecycle({
@@ -151,7 +134,6 @@ describe("canonical agent profile forget", () => {
       ownerAgentName: "boss",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
     });
@@ -188,7 +170,6 @@ describe("canonical agent profile forget", () => {
       ownerAgentName: "boss",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
       onPhase: (phase) => { if (phase === "authority-retired") throw new Error("interrupt"); },
@@ -201,7 +182,6 @@ describe("canonical agent profile forget", () => {
     await expect(reconcileAgentProfileForgets({
       workspaceRoot: input.root,
       authority: input.authority,
-      evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
     })).resolves.toMatchObject({ reconciled: [expect.any(String)], degraded: [] });
@@ -218,7 +198,6 @@ describe("canonical agent profile forget", () => {
       agentName: "reviewer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      evolution: input.evolution,
       live: {
         ...input.live,
         prepare: async () => {
@@ -244,7 +223,6 @@ describe("canonical agent profile forget", () => {
       agentName: "reviewer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
       onPhase: (phase) => { if (phase === "authority-retired") throw new Error("crash"); },
@@ -254,7 +232,6 @@ describe("canonical agent profile forget", () => {
     const recovered = await reconcileAgentProfileForgets({
       workspaceRoot: input.root,
       authority: input.authority,
-      evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
     });
@@ -279,7 +256,6 @@ describe("canonical agent profile forget", () => {
       agentName: "reviewer",
       expectedRevision: input.created.revision,
       authority: input.authority,
-      evolution: input.evolution,
       live: input.live,
       activateState: () => undefined,
       onPhase: (phase) => {

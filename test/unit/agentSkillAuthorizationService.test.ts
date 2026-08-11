@@ -171,7 +171,7 @@ describe("t-5498a6 — the reference and the grant land together, at the digest 
     writeSkill(root, ".claude/skills/house-style", "# house\n");
     const { port, state } = ports(
       profile({
-        references: [{ id: "evolution-selector", kind: "evolution", scope: "profile", owner: "agent-0000", path: "evolution-selector.json", mode: "pinned", sha256: "c".repeat(64) }],
+        references: [{ id: "house-rules", kind: "instructions", scope: "profile", owner: "agent-0000", path: "instructions.md", mode: "pinned", sha256: "c".repeat(64) }],
       } as Partial<AgentProfileV1>),
       [{ referenceId: "some-mcp", sourceSha256: "d".repeat(64), adapter: "claude", kind: "mcp" }],
     );
@@ -183,7 +183,7 @@ describe("t-5498a6 — the reference and the grant land together, at the digest 
       ports: port,
     });
 
-    expect(state.profile.references!.map((reference) => reference.id).sort()).toEqual(["evolution-selector", "house-style"]);
+    expect(state.profile.references!.map((reference) => reference.id).sort()).toEqual(["house-rules", "house-style"]);
     expect(state.grants.map((grant: { referenceId: string }) => grant.referenceId).sort()).toEqual(["house-style", "some-mcp"]);
   });
 });

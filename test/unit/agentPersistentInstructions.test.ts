@@ -40,7 +40,6 @@ function snapshot(current: AgentProfileV1): AgentProfileLifecycleSnapshot {
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: "d".repeat(64) },
       authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 0 },
-      learned: { scope: "profile", writable: false, present: false },
       projection: { scope: "runtime", writable: false, active: true },
     },
   };
@@ -58,7 +57,6 @@ function mutation(instructions: string) {
       cwd: "",
       lifecycle: { autostart: false, restart: "never" as const, attention: true },
       worktree: { enabled: false, branch: "", setup: [] },
-      selfEvolution: false,
       instructions,
       isolation: "" as const,
     },
@@ -123,25 +121,23 @@ describe("t-d48775 — the persistent-instructions document contract", () => {
 
   it("clears its own binding when the field is emptied, and keeps every other reference", () => {
     const owned = profile({
-      prompt: { instructions: "persistent-instructions", evolution: "evolution-selector" },
+      prompt: { instructions: "persistent-instructions" },
       references: [
         { id: "persistent-instructions", kind: "instructions", scope: "profile", owner: AGENT_ID, path: "instructions.md", mode: "pinned", sha256: sha256("old\n") },
-        { id: "evolution-selector", kind: "evolution", scope: "profile", owner: AGENT_ID, path: "evolution-selector.json", mode: "pinned", sha256: sha256("{}") },
       ],
     });
     const patched = patchProfileFromStudioMutation(mutation(""), snapshot(owned));
-    expect(patched.prompt).toEqual({ evolution: "evolution-selector" });
+    expect(patched.prompt).toBeUndefined();
     const merged = mergedPersistentInstructionsReferences(owned, persistentInstructionsWriteFor({ instructions: "" }, owned.prompt));
-    expect(merged.map((reference) => reference.id)).toEqual(["evolution-selector"]);
+    expect(merged.map((reference) => reference.id)).toEqual([]);
 
     // And re-authoring puts exactly one entry back, stamped with this agent's ownership.
     const rewritten = mergedPersistentInstructionsReferences(owned, persistentInstructionsWriteFor({ instructions: "new" }, owned.prompt));
     expect(rewritten).toEqual([
-      owned.references![1],
       { id: "persistent-instructions", kind: "instructions", scope: "profile", owner: AGENT_ID, path: "instructions.md", mode: "pinned", sha256: sha256("new\n") },
     ]);
     expect(patchProfileFromStudioMutation(mutation("new"), snapshot(owned)).prompt)
-      .toEqual({ instructions: "persistent-instructions", evolution: "evolution-selector" });
+      .toEqual({ instructions: "persistent-instructions" });
   });
 
   it("chains over the reference list the other Studio writers produced instead of rebuilding it", () => {

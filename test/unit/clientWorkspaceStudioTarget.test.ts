@@ -7,7 +7,6 @@ import {
   workspaceExtensionCommandSuccessV1,
   workspaceExtensionQuerySuccessV1,
 } from "../../src/engine-service/protocol.js";
-import { EvolutionStoreError } from "../../src/evolution/EvolutionStore.js";
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { CommandStudioAdapter } from "../../src/webview/CommandStudioAdapter.js";
@@ -69,10 +68,10 @@ describe("ClientWorkspaceStudioTarget", () => {
       editable: {
         displayName: "Ada", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, instructions: "", isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, instructions: "", isolation: "",
       },
-      bindings: { grants: { proposeSavedAgent: false }, foreignWorkspaceCommands: false, foreignPersistentInstructions: false, environmentValueNames: [], secretNames: ["TOKEN"], prompt: { instructions: false, evolution: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, tooling: { skills: [], mcp: [], hooks: [] }, externalReferences: 0 },
-      provenance: { canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) }, authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 0 }, learned: { scope: "profile", writable: false, present: false }, projection: { scope: "runtime", writable: false, active: false } },
+      bindings: { grants: { proposeSavedAgent: false }, foreignWorkspaceCommands: false, foreignPersistentInstructions: false, environmentValueNames: [], secretNames: ["TOKEN"], prompt: { instructions: false }, capabilities: { skills: 0, mcp: 0, hooks: 0, pi: 0 }, tooling: { skills: [], mcp: [], hooks: [] }, externalReferences: 0 },
+      provenance: { canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) }, authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 0 }, projection: { scope: "runtime", writable: false, active: false } },
     };
     const fake = new FakeWorkspaceClient({
       identity,
@@ -260,78 +259,6 @@ describe("ClientWorkspaceStudioTarget", () => {
       .rejects.toThrow("engine write failed");
   });
 
-  it("routes Agent Evolution overview/detail/actions through the persistent engine", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-client-studio-evolution-"));
-    roots.push(root);
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents:\n  Ada:\n    cmd: codex\n    selfEvolution: { enabled: true }\n", "utf8");
-    const identity = projectionIdentity(root);
-    const summary = {
-      agent: "Ada",
-      enabled: true,
-      profilePresent: true,
-      activeVersion: 1,
-      pendingCount: 1,
-      activeLearnings: [],
-      activeSkillNames: [],
-    };
-    const candidate = {
-      id: "candidate-one",
-      reviewId: "review-one",
-      taskId: "t-123456",
-      createdAt: "2026-07-21T18:00:00.000Z",
-      status: "pending" as const,
-      kind: "learning" as const,
-      reason: "Reusable correction.",
-    };
-    let failResolve = false;
-    const fake = new FakeWorkspaceClient({
-      identity,
-      snapshot: projectionSnapshot(identity),
-      query: async (query) => {
-        if (query.method !== "extension.query") throw new Error("unexpected query");
-        if (query.input.action === "evolution.overview") {
-          return workspaceExtensionQuerySuccessV1(query, { summary, candidates: [candidate] });
-        }
-        if (query.input.action === "evolution.candidate") {
-          return workspaceExtensionQuerySuccessV1(query, {
-            ...candidate,
-            expectedActiveVersion: 1,
-            learningContent: "Run the focused test first.",
-          });
-        }
-        throw new Error("unexpected evolution query");
-      },
-      invoke: async (_operationId, command) => {
-        if (command.method !== "extension.invoke"
-          || (command.input.action !== "evolution.approve" && command.input.action !== "evolution.reject")) {
-          throw new Error("unexpected evolution command");
-        }
-        if (failResolve) {
-          return workspaceExtensionCommandSuccessV1(command, {
-            outcome: "error",
-            code: "evolution/promotion-conflict",
-          });
-        }
-        return workspaceExtensionCommandSuccessV1(command, { outcome: "ok", candidateId: candidate.id, activeVersion: 2 });
-      },
-    });
-    let evolutionOperation = 0;
-    const target = new ClientWorkspaceStudioTarget(fake, {
-      extensionUri: {} as StudioDeps["extensionUri"],
-      operationId: () => `evolution-operation-${++evolutionOperation}`,
-    });
-
-    await expect(target.readAgentEvolutionOverview("Ada")).resolves.toEqual({ summary, candidates: [candidate] });
-    await expect(target.readAgentEvolutionCandidate("Ada", candidate.id)).resolves.toMatchObject({
-      id: candidate.id,
-      learningContent: "Run the focused test first.",
-    });
-    await expect(target.approveAgentEvolutionCandidate("Ada", candidate.id, { expectedActiveVersion: 1 }))
-      .resolves.toEqual({ candidateId: candidate.id, activeVersion: 2 });
-    failResolve = true;
-    await expect(target.rejectAgentEvolutionCandidate("Ada", candidate.id, { expectedActiveVersion: 1 }))
-      .rejects.toMatchObject({ code: "evolution/promotion-conflict" } satisfies Partial<EvolutionStoreError>);
-  });
 });
 
 function config(...commands: string[]): string {

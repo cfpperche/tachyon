@@ -31,8 +31,6 @@ function facts(patch: Partial<AgentForgetPlanFactsV1> = {}): AgentForgetPlanFact
     ledgerWorktree: null,
     checkoutPresent: null,
     registryWorktreeBranch: null,
-    evolutionProfilePresent: false,
-    evolutionProfileTreeEntryPresent: false,
     authorityPresent: true,
     locatorPresent: true,
     profileHomePresent: true,
@@ -60,7 +58,6 @@ describe("t-e722ce: the forget plan", () => {
     expect(projectAgentForgetPlan(facts()).steps.map((entry) => entry.id)).toEqual([
       "stop-session",
       "remove-worktree",
-      "retire-evolution",
       "retire-authority",
       "remove-locator",
       "quarantine-profile",
@@ -101,10 +98,6 @@ describe("t-e722ce: the forget plan", () => {
     expect(step(facts({ authorityPresent: false }), "retire-authority")).toMatchObject({
       state: "blocked",
       refusalCode: "agent-profile/forget-authority-stale",
-    });
-    expect(step(facts({ evolutionProfilePresent: true }), "retire-evolution")).toMatchObject({
-      state: "blocked",
-      refusalCode: "agent-profile/forget-evolution-incomplete",
     });
   });
 

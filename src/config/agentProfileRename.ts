@@ -34,7 +34,6 @@ export type AgentProfileRenamePhase =
    * has nothing left to say.
    */
   | "locator-written"
-  | "evolution-moved"
   | "live-converged"
   | "activated"
   | "committed"
@@ -60,7 +59,6 @@ export interface AgentProfileRenameJournal {
   /** t-ae221c — legacy `tachyon.yml` stanza digests. Read but never written, and never acted on. */
   sourceStanzaSha256?: string;
   targetStanzaSha256?: string;
-  evolutionProfileId: string | null;
   liveSnapshot: CanonicalLiveRenameSnapshot | null;
   /** Parent-side ownership edge updated in the same transaction as the child rename. */
   ownership?: {
@@ -73,11 +71,6 @@ export interface AgentProfileRenameJournal {
   degradedReason?: string;
 }
 
-export interface AgentProfileRenameEvolutionPort {
-  readProfileId(agentName: string): Promise<string | undefined>;
-  rename(oldAgentName: string, newAgentName: string): Promise<boolean>;
-}
-
 export interface CommitAgentProfileRenameInput {
   workspaceRoot: string;
   oldAgentName: string;
@@ -86,7 +79,6 @@ export interface CommitAgentProfileRenameInput {
   /** Current declared owner, when the child is listed in another canonical profile. */
   ownerAgentName?: string;
   authority: AgentProfileAuthorityPort;
-  evolution: AgentProfileRenameEvolutionPort;
   live?: {
     prepare(oldAgentName: string, newAgentName: string): Promise<CanonicalLiveRenameSnapshot>;
     converge(oldAgentName: string, newAgentName: string, snapshot: CanonicalLiveRenameSnapshot): Promise<void>;
@@ -210,17 +202,6 @@ function sameTree(root: string, expected: TreeEntry[]): boolean {
   catch { return false; }
 }
 
-function manifestPart(entries: TreeEntry[], part: "evolution" | "profile"): TreeEntry[] {
-  return entries.filter((entry) => entry.path === "."
-    || (part === "evolution" ? entry.path === "evolution" || entry.path.startsWith("evolution/")
-      : entry.path !== "evolution" && !entry.path.startsWith("evolution/")));
-}
-
-function sameManifestPart(root: string, expected: TreeEntry[], part: "evolution" | "profile"): boolean {
-  try { return isDeepStrictEqual(manifestPart(treeManifest(root), part), manifestPart(expected, part)); }
-  catch { return false; }
-}
-
 function exists(file: string): boolean {
   try { fs.lstatSync(file); return true; }
   catch (error) {
@@ -234,7 +215,6 @@ function moveProfileDirectory(
   from: string,
   to: string,
   manifest: TreeEntry[],
-  evolutionPresent: boolean,
 ): void {
   const parent = path.dirname(from);
   requireSafeDirectory(workspaceRoot, parent);
@@ -243,38 +223,6 @@ function moveProfileDirectory(
   fs.renameSync(from, to);
   syncDirectory(parent);
   if (!sameTree(to, manifest) || exists(from)) throw new Error("profile directory move did not converge");
-  if (evolutionPresent) {
-    const rootMode = manifest.find((entry) => entry.path === ".")?.mode ?? 0o700;
-    fs.mkdirSync(from, { mode: rootMode });
-    fs.chmodSync(from, rootMode);
-    fs.renameSync(path.join(to, "evolution"), path.join(from, "evolution"));
-    syncDirectory(from);
-    syncDirectory(to);
-    syncDirectory(parent);
-    if (!sameManifestPart(from, manifest, "evolution") || !sameManifestPart(to, manifest, "profile")) {
-      throw new Error("profile and Evolution homes did not split safely for rename");
-    }
-  }
-}
-
-async function convergeEvolution(input: Pick<CommitAgentProfileRenameInput, "evolution">, journal: AgentProfileRenameJournal): Promise<void> {
-  const oldProfileId = await input.evolution.readProfileId(journal.oldAgentName);
-  const newProfileId = await input.evolution.readProfileId(journal.newAgentName);
-  if (journal.evolutionProfileId === null) {
-    if (oldProfileId !== undefined || newProfileId !== undefined) throw new Error("Agent Evolution appeared during profile rename");
-    return;
-  }
-  if (oldProfileId === undefined && newProfileId === journal.evolutionProfileId) return;
-  if (oldProfileId !== journal.evolutionProfileId || newProfileId !== undefined) {
-    throw new Error("Agent Evolution state conflicts with profile rename");
-  }
-  if (!await input.evolution.rename(journal.oldAgentName, journal.newAgentName)) {
-    throw new Error("Agent Evolution rename did not find its recorded source");
-  }
-  if (await input.evolution.readProfileId(journal.oldAgentName) !== undefined
-    || await input.evolution.readProfileId(journal.newAgentName) !== journal.evolutionProfileId) {
-    throw new Error("Agent Evolution rename did not converge");
-  }
 }
 
 function readJournal(txDir: string): AgentProfileRenameJournal {
@@ -337,11 +285,7 @@ async function convergeOwnership(input: CommitAgentProfileRenameInput, journal: 
 async function rollForward(input: CommitAgentProfileRenameInput, txDir: string, journal: AgentProfileRenameJournal): Promise<AgentProfileRenameJournal> {
   const oldRoot = profileRoot(input.workspaceRoot, journal.oldAgentName);
   const newRoot = profileRoot(input.workspaceRoot, journal.newAgentName);
-  if (!sameManifestPart(newRoot, journal.profileManifest, "profile")) throw new Error("profile rename target tree changed");
-  await convergeEvolution(input, journal);
-  if (journal.phase !== "evolution-moved" && journal.phase !== "live-converged" && journal.phase !== "activated" && journal.phase !== "committed") {
-    journal = transition(txDir, journal, "evolution-moved", input.onPhase);
-  }
+  if (!sameTree(newRoot, journal.profileManifest)) throw new Error("profile rename target tree changed");
   await convergeOwnership(input, journal);
   if (exists(oldRoot)) {
     if (fs.readdirSync(oldRoot).length !== 0) throw new Error("profile rename source home retained unexpected data");
@@ -368,16 +312,6 @@ function compensateProfile(workspaceRoot: string, journal: AgentProfileRenameJou
   const newRoot = profileRoot(workspaceRoot, journal.newAgentName);
   if (sameTree(oldRoot, journal.profileManifest) && !exists(newRoot)) return;
   if (!exists(oldRoot) && sameTree(newRoot, journal.profileManifest)) {
-    fs.renameSync(newRoot, oldRoot);
-    syncDirectory(path.dirname(oldRoot));
-    if (sameTree(oldRoot, journal.profileManifest) && !exists(newRoot)) return;
-  }
-  if (journal.evolutionProfileId !== null && sameManifestPart(oldRoot, journal.profileManifest, "evolution")
-    && sameManifestPart(newRoot, journal.profileManifest, "profile")) {
-    fs.renameSync(path.join(oldRoot, "evolution"), path.join(newRoot, "evolution"));
-    fs.rmdirSync(oldRoot);
-    syncDirectory(path.dirname(oldRoot));
-    if (!sameTree(newRoot, journal.profileManifest)) throw new Error("profile rename split home could not be reassembled");
     fs.renameSync(newRoot, oldRoot);
     syncDirectory(path.dirname(oldRoot));
     if (sameTree(oldRoot, journal.profileManifest) && !exists(newRoot)) return;
@@ -418,8 +352,6 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
       throw new Error(`canonical authority for '${input.oldAgentName}' is missing or stale`);
     }
     if (await input.authority.read(input.newAgentName)) throw new Error(`canonical authority for '${input.newAgentName}' already exists`);
-    const oldEvolution = await input.evolution.readProfileId(input.oldAgentName);
-    if (await input.evolution.readProfileId(input.newAgentName) !== undefined) throw new Error(`Agent Evolution Profile already exists for '${input.newAgentName}'`);
     const oldRoot = profileRoot(input.workspaceRoot, input.oldAgentName);
     const newRoot = profileRoot(input.workspaceRoot, input.newAgentName);
     // t-ae221c — THE destination-conflict check. It used to be one of two: this one, and a scan
@@ -459,18 +391,12 @@ export async function commitAgentProfileRename(input: CommitAgentProfileRenameIn
       profileManifest,
       sourceAuthority,
       targetAuthority,
-      evolutionProfileId: oldEvolution ?? null,
       liveSnapshot,
       ...(ownership ? { ownership } : {}),
     };
     writeJournal(txDir, journal);
     input.onPhase?.("intent");
-    const hasEvolutionTree = profileManifest.some((entry) => entry.path === "evolution");
-    const hasEvolutionProfile = profileManifest.some((entry) => entry.path === "evolution/profile.json");
-    if ((oldEvolution === undefined && hasEvolutionTree) || (oldEvolution !== undefined && !hasEvolutionProfile)) {
-      throw new Error("Agent Evolution profile storage is incomplete");
-    }
-    moveProfileDirectory(input.workspaceRoot, oldRoot, newRoot, profileManifest, oldEvolution !== undefined);
+    moveProfileDirectory(input.workspaceRoot, oldRoot, newRoot, profileManifest);
     journal = transition(txDir, journal, "profile-moved", input.onPhase);
     try {
       await input.authority.move(input.oldAgentName, input.newAgentName, sourceAuthority, targetAuthority);

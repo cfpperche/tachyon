@@ -113,25 +113,6 @@ export class WorkspaceShellHandle implements WorkspaceAgentStudioTarget {
   exportAgentProfileStudioBundle(agent: string, expectedRevision: string) { return this.studio.exportAgentProfileStudioBundle(agent, expectedRevision); }
   cloneAgentProfileStudioBundle(agent: string, expectedRevision: string, destinationAgentName: string) { return this.studio.cloneAgentProfileStudioBundle(agent, expectedRevision, destinationAgentName); }
   importAgentProfileStudioBundle(destinationAgentName: string, bytes: Buffer) { return this.studio.importAgentProfileStudioBundle(destinationAgentName, bytes); }
-  readAgentEvolutionOverview(agent: string) { return this.studio.readAgentEvolutionOverview(agent); }
-  readAgentEvolutionCandidate(agent: string, candidateId: string) {
-    return this.studio.readAgentEvolutionCandidate(agent, candidateId);
-  }
-  approveAgentEvolutionCandidate(
-    agent: string,
-    candidateId: string,
-    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
-  ) {
-    return this.studio.approveAgentEvolutionCandidate(agent, candidateId, input);
-  }
-  rejectAgentEvolutionCandidate(
-    agent: string,
-    candidateId: string,
-    input: { expectedActiveVersion: number; expectedTargetDigest?: string },
-  ) {
-    return this.studio.rejectAgentEvolutionCandidate(agent, candidateId, input);
-  }
-
   /** t-a39c7d — clear done(unseen) via engine sidebar mutation. */
   async markAgentPaneSeen(agent: string): Promise<void> {
     await this.sidebar.mutateSidebar({ action: "agent.markSeen", id: agent });

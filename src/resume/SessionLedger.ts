@@ -8,7 +8,6 @@ import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { SharedDependencyState } from "../worktree/dependencySharing.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
-import { immutableEvolutionStartupSnapshot, isEvolutionStartupSnapshot, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,
@@ -149,8 +148,6 @@ export interface SessionRecord {
    * at read time would re-create the inference this replaces.
    */
   instance?: AgentInstancePolicy;
-  /** Immutable human-approved Agent Evolution snapshot offered to this exact session. */
-  evolution?: EvolutionStartupSnapshot;
   /** Explicit terminal state for a row that remains visible until dismiss/restart. */
   lifecycle?: SessionLifecycle;
   updatedAt: string;
@@ -388,20 +385,19 @@ function normalize(r: unknown): SessionRecord | null {
   const updatedAt = typeof o.updatedAt === "string" ? o.updatedAt : new Date(0).toISOString();
 
   // New (211) shape: a def and/or resume object (+ spec 210 worktree + spec 364 bridgeClient).
-  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.evolution !== undefined || o.lifecycle !== undefined) {
+  if (o.def !== undefined || o.resume !== undefined || o.worktree !== undefined || o.bridgeClient !== undefined || o.lifecycle !== undefined) {
     const def = parseDef(o.def);
     const resume = parseResume(o.resume);
     const worktree = parseWorktree(o.worktree);
     const bridgeClient = parseBridgeClient(o.bridgeClient);
-    const evolution = parseEvolution(o.evolution);
     const lifecycle = parseLifecycle(o.lifecycle);
     const instance = parseInstancePolicy(o.instance);
-    if (!def && !resume && !worktree && !bridgeClient && !evolution) return null;
+    if (!def && !resume && !worktree && !bridgeClient) return null;
     // t-04052d — a row whose `instance` did not parse is KEPT, not dropped. Dropping it would delete
     // the very evidence the activation gate refuses on, turning its ledger check into a no-op and
     // discarding a pre-cut operator's rows without telling them. It survives here and is refused
     // there; no reader can get a policy answer out of it in the meantime.
-    return { def, resume, worktree, bridgeClient, evolution, lifecycle, instance, cwd: o.cwd, updatedAt };
+    return { def, resume, worktree, bridgeClient, lifecycle, instance, cwd: o.cwd, updatedAt };
   }
 
   // SDD 478 M4 — the pre-211 flat record (`{runtime, sessionId, cwd, cmd, declared}`) predates the
@@ -480,11 +476,6 @@ function parseDef(d: unknown): SessionDef | undefined {
       : {}),
     ...(typeof o.contractSkipReason === "string" ? { contractSkipReason: o.contractSkipReason } : {}), // spec 246 D6
   };
-}
-
-function parseEvolution(value: unknown): EvolutionStartupSnapshot | undefined {
-  if (!isEvolutionStartupSnapshot(value)) return undefined;
-  return immutableEvolutionStartupSnapshot(value);
 }
 
 /** A persisted spawn-contract (spec 246) — required strings plus exactly one populated completion. */

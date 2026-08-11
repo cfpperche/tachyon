@@ -35,11 +35,8 @@ import {
   browseMessage,
   cancelMessage,
   dirtyMessage,
-  approveEvolutionCandidateMessage,
-  loadEvolutionCandidateMessage,
   patchMessage,
   readyMessage,
-  refreshEvolutionMessage,
   refreshAgentProfileMessage,
   setAgentProfileEnabledMessage,
   renameAgentProfileMessage,
@@ -50,17 +47,12 @@ import {
   exportSavedAgentProfileBundleMessage,
   cloneSavedAgentProfileBundleMessage,
   importSavedAgentProfileBundleMessage,
-  rejectEvolutionCandidateMessage,
   saveMessage,
 } from "./messages";
 import { RuntimeLogo } from "./runtimeLogos";
-import { EvolutionSection } from "./EvolutionSection";
 import { ForgetPlanView } from "./ForgetPlanView";
 import type { AgentForgetPlanResultV1 } from "../../config/agentForgetPlan";
 import type {
-  AgentEvolutionCandidateDetailMessage,
-  AgentEvolutionCandidateSummaryMessage,
-  AgentEvolutionSummaryMessage,
   AgentStudioEntity,
   AgentStudioFields,
   AgentStudioHostMessage,
@@ -94,12 +86,7 @@ import { persistentInstructionsRefusal } from "../../config/agentInstructionsDoc
  *
  * t-610705 (Phase D, D1b) — Control-hosted now: props-driven, same split as every other migrated studio
  * (command-studio-shell/App.tsx's doc comment has the full rationale for routeKey/mountNonce/useStudioFreeze/
- * eager ref updates). The evolution message handling below is otherwise unchanged from the
- * standalone-panel version — those messages already carry their own `agent` field and are host-validated
- * against the CURRENT binding's entityId (agentStudioDomain.ts via StudioRegistryEntry.handleDomainMessage,
- * D1b — the retired Control host wired the same check in studioHost.ts), so no client-side identity
- * work was needed there beyond routing every evolution message through the same
- * identity-stamping `post` wrapper.
+ * eager ref updates).
  */
 export interface AgentStudioAppProps {
   dispatch: StudioDispatch;
@@ -156,11 +143,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   // from, this is the form having no subject left. Conflating them is what kept a removed agent's
   // whole editor mounted under a red line, with Save one keystroke from clickable.
   const [tombstone, setTombstone] = useState<StudioTombstoneInfo | undefined>(undefined);
-  const [evolutionSummary, setEvolutionSummary] = useState<AgentEvolutionSummaryMessage | undefined>(undefined);
-  const [evolutionCandidates, setEvolutionCandidates] = useState<AgentEvolutionCandidateSummaryMessage[] | undefined>(undefined);
-  const [evolutionDetail, setEvolutionDetail] = useState<AgentEvolutionCandidateDetailMessage | undefined>(undefined);
-  const [evolutionBusy, setEvolutionBusy] = useState<string | undefined>(undefined);
-  const [evolutionNotice, setEvolutionNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>(undefined);
   const [profileBusy, setProfileBusy] = useState<string | undefined>(undefined);
   const [profileNotice, setProfileNotice] = useState<{ kind: "success" | "error"; text: string } | undefined>(undefined);
   const [profileConflict, setProfileConflict] = useState(false);
@@ -211,11 +193,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
     setFields(fieldsRef.current);
     setHostError(undefined);
     setLoadFailed(false);
-    setEvolutionSummary(undefined);
-    setEvolutionCandidates(undefined);
-    setEvolutionDetail(undefined);
-    setEvolutionBusy(undefined);
-    setEvolutionNotice(undefined);
     setProfileBusy(undefined);
     setProfileNotice(undefined);
     setRenameConfirmOpen(false);
@@ -263,11 +240,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setEntityId(d.entity.name);
       setHostError(undefined);
       setLoadFailed(false);
-      setEvolutionSummary(undefined);
-      setEvolutionCandidates(undefined);
-      setEvolutionDetail(undefined);
-      setEvolutionBusy(d.entity.name ? "overview" : undefined);
-      setEvolutionNotice(undefined);
       setProfileBusy(undefined);
       setProfileNotice(undefined);
       setProfileConflict(false);
@@ -281,9 +253,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       setOwnershipDraft(d.entity.ownership ? [...d.entity.ownership.subagents] : undefined);
       setBundleAction(undefined); setBundleDestination(""); setBundleImportBase64(undefined);
       setReady(true);
-      if (d.entity.name) {
-        post(refreshEvolutionMessage(d.entity.name));
-      }
     } else if (d.type === "tombstone") {
       setTombstone(readTombstoneMessage(d));
       setHostError(undefined);
@@ -322,36 +291,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
       fieldsRef.current = next;
       dirtyRef.current = computeAgentDirty(entityRef.current, next);
       setFields(next);
-    } else if (d.type === "evolutionSummary") {
-      // A stale response for a previously viewed agent is discarded silently. All evolution
-      // branches use the same binding check because only the matching-agent path clears
-      // matching-agent path ever cleared `evolutionBusy`, so a stale response for a previously-viewed
-      // agent left "Loading evolution state…" stuck forever).
-      if (entityRef.current?.name !== d.summary.agent) return;
-      setEvolutionSummary(d.summary);
-    } else if (d.type === "evolutionCandidates") {
-      if (entityRef.current?.name !== d.agent) return;
-      setEvolutionCandidates(d.candidates);
-      setEvolutionBusy(undefined);
-    } else if (d.type === "evolutionCandidateDetail") {
-      if (entityRef.current?.name !== d.agent) return;
-      setEvolutionDetail(d.detail);
-      setEvolutionBusy(undefined);
-      setEvolutionNotice(undefined);
-    } else if (d.type === "evolutionActionResult") {
-      if (entityRef.current?.name !== d.agent) return;
-      const labels = entityRef.current.evolutionLabels;
-      setEvolutionDetail(undefined);
-      setEvolutionBusy("overview");
-      setEvolutionNotice({
-        kind: "success",
-        text: `${d.status === "approved" ? labels.approved : labels.rejected}. ${labels.nextSession}`,
-      });
-    } else if (d.type === "evolutionError") {
-      if (entityRef.current?.name !== d.agent) return;
-      setEvolutionBusy(undefined);
-      if (d.conflict) setEvolutionDetail(undefined);
-      setEvolutionNotice({ kind: "error", text: d.message });
     } else if (d.type === "agentProfileSnapshot") {
       const current = entityRef.current;
       if (!current || current.storage !== "canonical") return;
@@ -561,27 +500,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   const persistentInstructionsProblem = persistentInstructionsRefusal(fields.instructions);
   const savedAgent = entity.name;
   const mutationDisabled = !savedAgent || frozen;
-  const refreshEvolution = () => {
-    if (!savedAgent || frozenRef.current) return;
-    setEvolutionBusy("overview");
-    setEvolutionNotice(undefined);
-    post(refreshEvolutionMessage(savedAgent));
-  };
-  const inspectEvolutionCandidate = (candidateId: string) => {
-    if (!savedAgent || frozenRef.current) return;
-    setEvolutionDetail(undefined);
-    setEvolutionBusy(`candidate:${candidateId}`);
-    setEvolutionNotice(undefined);
-    post(loadEvolutionCandidateMessage(savedAgent, candidateId));
-  };
-  const resolveEvolutionCandidate = (detail: AgentEvolutionCandidateDetailMessage, action: "approve" | "reject") => {
-    if (!savedAgent || frozenRef.current) return;
-    setEvolutionBusy(action);
-    setEvolutionNotice(undefined);
-    post(action === "approve"
-      ? approveEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest)
-      : rejectEvolutionCandidateMessage(savedAgent, detail.id, detail.expectedActiveVersion, detail.expectedTargetDigest));
-  };
   const canonicalLifecycleDisabled = !canonicalSnapshot || !!profileBusy || dirty || frozen || profileRetired;
   // Declared + still-declarable, so a checked row can always be UNCHECKED even after the target
   // stopped qualifying as a candidate (it stops qualifying precisely BECAUSE this agent owns it).
@@ -817,7 +735,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   </div>
                 )}
                 {(profileBusy || profileNotice) && (
-                  <div class={`ash-evolution-notice ${profileNotice?.kind === "error" ? "ash-evolution-notice-error" : ""}`} role="status" aria-live="polite">
+                  <div class={`ash-profile-notice ${profileNotice?.kind === "error" ? "ash-profile-notice-error" : ""}`} role="status" aria-live="polite">
                     {profileBusy ? `${profileBusy}…` : profileNotice?.text}
                     {profileNotice?.kind === "error" && canonicalSnapshot && !profileBusy && <Button onClick={() => runCanonicalLifecycle(
                       "Refreshing profile",
@@ -836,7 +754,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 <div class="ash-profile-source-grid">
                   <ProfileSourceCard title={profileLabels.authoredProfile} access={profileLabels.writable} scope={profileLabels.profileScope} state={canonicalSnapshot.provenance.canonical.sha256.slice(0, 12) + "…"} />
                   <ProfileSourceCard title={profileLabels.hostAuthority} access={profileLabels.readOnly} scope={profileLabels.hostScope} state={`${profileLabels.grants}: ${canonicalSnapshot.provenance.authority.grants}`} />
-                  <ProfileSourceCard title={profileLabels.learnedState} access={profileLabels.readOnly} scope={profileLabels.profileScope} state={canonicalSnapshot.provenance.learned.present ? profileLabels.present : profileLabels.absent} />
                   <ProfileSourceCard title={profileLabels.runtimeProjection} access={profileLabels.readOnly} scope={profileLabels.runtimeScope} state={canonicalSnapshot.provenance.projection.active ? profileLabels.active : profileLabels.inactive} />
                 </div>
                 <div class="ash-profile-bindings">
@@ -1179,29 +1096,6 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                   : entity.persistentInstructionsHelp}</div>
               {persistentInstructionsProblem && <div class="hint ash-native-config-risk">{persistentInstructionsProblem}</div>}
             </section>
-
-            <EvolutionSection
-              labels={entity.evolutionLabels}
-              savedAgent={savedAgent}
-              enabled={fields.selfEvolution}
-              // t-f96b2f — this was `toggleDisabled={canonical}`, and `canonical` is always true, so
-              // the control could never be used: `Workspace.enableAgentSelfEvolution` had been
-              // complete since t-d185e1 with zero callers. It is wired now, and stays read-only for
-              // exactly one case — an agent that does not exist yet. Evolution pins a selector naming
-              // a profile id the Evolution store mints, so it needs the profile the save is about to
-              // create; the section already says "Save agent first" for everything else it offers.
-              toggleDisabled={canonical && !canonicalSnapshot}
-              summary={evolutionSummary}
-              candidates={evolutionCandidates}
-              detail={evolutionDetail}
-              busy={evolutionBusy}
-              notice={evolutionNotice}
-              onToggle={(enabled) => set("selfEvolution", enabled)}
-              onRefresh={refreshEvolution}
-              onInspect={inspectEvolutionCandidate}
-              onApprove={(detail) => resolveEvolutionCandidate(detail, "approve")}
-              onReject={(detail) => resolveEvolutionCandidate(detail, "reject")}
-            />
 
             <><div class="checks ash-check-grid">
               <label><input type="checkbox" checked={fields.autostart} onChange={(e) => set("autostart", (e.currentTarget as HTMLInputElement).checked)} /> Auto-start</label>

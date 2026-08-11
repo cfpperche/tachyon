@@ -89,7 +89,7 @@ describe("t-ae221c — the roster is the directory", () => {
   it("counts a directory with a readable agent.yml, and nothing else", () => {
     const root = temporaryRoot("tachyon-roster-scan-");
     writeProfile(root);
-    // Residue an interrupted create or a `forgetAgent` that took `evolution/` leaves behind.
+    // Residue an interrupted create or a `forgetAgent` that took a subtree leaves behind.
     fs.mkdirSync(path.join(root, ".tachyon", "agents", "ghost"), { recursive: true });
     // A name the product could never have written; it is still a directory somebody made.
     fs.mkdirSync(path.join(root, ".tachyon", "agents", "not a name"), { recursive: true });

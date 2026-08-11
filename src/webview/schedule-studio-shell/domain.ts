@@ -22,7 +22,6 @@ export function blankScheduleFields(): FormState {
     cmd: "",
     kind: "schedule",
     instructions: "",
-    selfEvolution: false,
     watch: "",
     steps: "",
     cwd: "",

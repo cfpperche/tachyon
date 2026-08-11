@@ -66,7 +66,7 @@ export function agentStanzaSection(text: string | undefined, name: string): Sect
  * here that the loader accepts would be silent data loss, and that is the assertion.
  */
 export const TERMINAL_STRIPPED_AGENT_KEYS = [
-  "kind", "instructions", "selfEvolution", "worktree", "branch", "worktreeSetup",
+  "kind", "instructions", "worktree", "branch", "worktreeSetup",
 ] as const;
 
 /** A `terminals:` entry must not carry agent-only fields (kind is implied; no AI, no worktree) — strip them. */

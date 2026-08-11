@@ -385,9 +385,9 @@ export class FormationBootstrapService {
 /**
  * Generation 1, and only generation 1.
  *
- * Evolution and memory stay `disabled` even though `validateVectorTransition` would permit initial
- * heads for them at bootstrap. Both lanes have their own promotion publishers, and those presuppose
- * an active vector; letting adoption author them would be a second way to author them.
+ * The memory lane stays `disabled` even though `validateVectorTransition` would permit an initial
+ * head for it at bootstrap. That lane has its own promotion publisher, and it presupposes an active
+ * vector; letting adoption author it would be a second way to author it.
  */
 function buildGenerationOne(input: {
   workspaceId: string;
@@ -410,7 +410,6 @@ function buildGenerationOne(input: {
     runtimeInspector: { ...input.runtimeInspector },
     lanes: {
       instructions: input.lanes.instructions,
-      evolution: { mode: "disabled" },
       memory: { mode: "disabled" },
     },
   };

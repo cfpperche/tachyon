@@ -5,7 +5,6 @@ import { composeAgentPrompt } from "../../src/agents/promptLayers.js";
 describe("prompt composition without Soul or Role", () => {
   it("keeps the remaining layers in their established order and omits removed manifest facts", () => {
     const instructions = "Persistent instructions.";
-    const canonicalEvolution = "Canonical evolution.";
     const selectedMemory = "Selected memory.";
     const taskBrief = "Current execution task.";
     const sessionWorkRecord = {
@@ -14,7 +13,6 @@ describe("prompt composition without Soul or Role", () => {
     };
     const composed = composeAgentPrompt({
       instructions,
-      formationEvolution: canonicalEvolution,
       selectedMemory,
       bridgeGuidance: true,
       taskBrief,
@@ -25,8 +23,7 @@ describe("prompt composition without Soul or Role", () => {
     const guidance = "[Tachyon] You are part of a Tachyon team.";
     const workRecord = "WORK ON RECORD";
 
-    expect(body.indexOf(instructions)).toBeLessThan(body.indexOf(canonicalEvolution));
-    expect(body.indexOf(canonicalEvolution)).toBeLessThan(body.indexOf(selectedMemory));
+    expect(body.indexOf(instructions)).toBeLessThan(body.indexOf(selectedMemory));
     expect(body.indexOf(selectedMemory)).toBeLessThan(body.indexOf(guidance));
     expect(body.indexOf(guidance)).toBeLessThan(body.indexOf(taskBrief));
     expect(body.indexOf(taskBrief)).toBeLessThan(body.indexOf(workRecord));
@@ -36,7 +33,6 @@ describe("prompt composition without Soul or Role", () => {
         source: "profile-definition",
         sha256: crypto.createHash("sha256").update(instructions).digest("hex"),
       },
-      canonicalEvolution: true,
       selectedMemory: true,
       bridgeGuidance: true,
       task: { kind: "contract", completion: "deliverable" },

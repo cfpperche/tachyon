@@ -473,12 +473,9 @@ export class HumanLaneTransactionService {
       || input.nextVector.generation.workspaceId !== current.generation.workspaceId
       || input.nextVector.generation.agentId !== current.generation.agentId
       || formationDigest(input.nextVector.generation.profile) !== formationDigest(current.generation.profile)
-      || formationDigest(input.nextVector.generation.evolution ?? null) !== formationDigest(current.generation.evolution ?? null)
       || formationDigest(input.nextVector.generation.memory ?? null) !== formationDigest(current.generation.memory ?? null)
       || input.nextVector.generation.rendererContractsSha256 !== current.generation.rendererContractsSha256
       || formationDigest(input.nextVector.profile) !== formationDigest(current.profile)
-      || (input.nextVector.evolution === undefined) !== (current.evolution === undefined)
-      || (input.nextVector.evolution && current.evolution && formationDigest(input.nextVector.evolution) !== formationDigest(current.evolution))
       || (input.nextVector.memory === undefined) !== (current.memory === undefined)
       || (input.nextVector.memory && current.memory && formationDigest(input.nextVector.memory) !== formationDigest(current.memory))) {
       throw new FormationAuthorityStoreError("agent retirement must preserve every lane authority and retire the exact active generation");

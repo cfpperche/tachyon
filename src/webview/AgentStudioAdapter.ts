@@ -9,10 +9,8 @@ import {
   canonicalAgentFields,
   canDiscardAgentFields,
   computeAgentDirty,
-  createAgentEvolutionLabels,
   createAgentProfileLabels,
   serializeAgentPatch,
-  type AgentEvolutionLabels,
   type AgentProfileLabels,
   type AgentStudioEntity,
   type AgentStudioFields,
@@ -37,7 +35,6 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
 
   constructor(
     private readonly ws: WorkspaceAgentStudioTarget,
-    private readonly evolutionLabels: AgentEvolutionLabels = createAgentEvolutionLabels(),
     private readonly persistentInstructionsHelp = "When supported, delivered at startup through the selected runtime.",
     private readonly profileLabels: AgentProfileLabels = createAgentProfileLabels(),
   ) {}
@@ -58,7 +55,6 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
       flagMap: FLAG_SUGGESTIONS,
       defaultCwd: deps.defaultCwd,
       persistentInstructionsHelp: this.persistentInstructionsHelp,
-      evolutionLabels: this.evolutionLabels,
       profileLabels: this.profileLabels,
     };
     if (entityId === undefined) {

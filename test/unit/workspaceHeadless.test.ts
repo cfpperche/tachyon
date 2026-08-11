@@ -19,13 +19,12 @@ import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPr
 import { harnessHome, harnessRoot } from "../../src/harness/HarnessManager.js";
 import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
 import type { FormState } from "../../src/webview/formLogic.js";
-import { renderEvolutionLearnings } from "../../src/evolution/domain.js";
 import { parse as parseYaml, stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
 import type { AgentProfileStudioMutationV1 } from "../../src/config/agentProfileStudio.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
-import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, enableSavedAgentSelfEvolution, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
+import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 import { asAgent, composeCommand } from "../../src/config/loadConfig.js";
 import { composeAgentPrompt } from "../../src/agents/promptLayers.js";
 import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
@@ -397,115 +396,6 @@ async function savedAgentStateWorkspace(
   return { root, ws };
 }
 
-/**
- * SDD 478 M7 — a workspace whose canonical agents have Evolution ENABLED.
- *
- * The projection pins the Evolution selector to a profileId, and only the store mints one, so the
- * store's profile has to exist before the selector can name it: seed a workspace, create the
- * profiles through its own authority, re-sign the profiles, and reload. A canonical agent therefore
- * cannot create its Evolution profile on first session — the profile is what the declaration points
- * at, so it precedes the declaration.
- */
-/**
- * `t-d185e1` — Evolution has a product writer, so the capability is reachable and not merely
- * projectable.
- *
- * `projectDefinition` grants `selfEvolution` only when the profile pins an `evolution-selector.json`
- * naming a `profileId`. Nothing in `src/` ever wrote that file or that reference, so once `agents:`
- * narrowed to canonical pointers, no declared agent could enable Evolution by any product path —
- * only `enableSavedAgentSelfEvolution` above, a TEST helper, could reach the enabled projection. A
- * capability that exists in the projection and nowhere a human can get to is not a capability.
- *
- * The ordering is forced, not stylistic: the Evolution store mints the `profileId`, never the author,
- * and `AgentManager.evolutionForFreshSession` refuses a spawn whose snapshot id disagrees with the
- * pinned one. So the store's profile must exist before the selector that names it.
- */
-describe("t-d185e1 — enabling Evolution on a declared canonical agent", () => {
-  async function canonicalWorkspace(name: string) {
-    const root = mkdir();
-    const { host, secrets } = canonicalHost(root, [{ name, spec: { runtime: "claude" } }]);
-    const deps = { host, onViewsChanged: () => {} };
-    const ws = await Workspace.createForTest(root, deps, { tmux: fakeTmux().tmux, startBridge: false });
-    return { root, ws, deps, secrets, name };
-  }
-
-  const profileOf = (root: string, name: string) =>
-    parseYaml(fs.readFileSync(path.join(root, ".tachyon", "agents", name, "agent.yml"), "utf8")) as Record<string, unknown>;
-
-  it("starts unreachable: a fresh canonical agent has no selector and no selfEvolution", async () => {
-    const { root, ws, name } = await canonicalWorkspace("reviewer");
-    try {
-      expect(fs.existsSync(path.join(root, ".tachyon", "agents", name, "evolution-selector.json"))).toBe(false);
-      expect(asAgent(ws.config?.agents[name])?.selfEvolution).toBeUndefined();
-    } finally { ws.dispose(); }
-  });
-
-  it("pins the selector the projection reads, naming the id the STORE minted", async () => {
-    const { root, ws, name } = await canonicalWorkspace("reviewer");
-    try {
-      await ws.enableAgentSelfEvolution(name);
-
-      const bytes = fs.readFileSync(path.join(root, ".tachyon", "agents", name, "evolution-selector.json"), "utf8");
-      const stored = (await ws.evolutionStore.readProfile(name))?.profileId;
-      expect(stored).toBeTruthy();
-      // Exactly these two keys: the reader refuses any extra one outright.
-      expect(JSON.parse(bytes)).toEqual({ profileId: stored, schemaVersion: 1 });
-
-      const profile = profileOf(root, name);
-      const pinned = (profile.references as Array<Record<string, unknown>>)
-        .find((reference) => reference.path === "evolution-selector.json")!;
-      expect(pinned).toMatchObject({ kind: "evolution", scope: "profile", owner: profile.agentId, mode: "pinned" });
-      // The pin is what makes the bytes trustworthy — a mismatched digest fails the whole projection
-      // closed, so the digest is the property worth asserting rather than mere presence.
-      expect(pinned.sha256).toBe(createHash("sha256").update(bytes).digest("hex"));
-      expect((profile.prompt as Record<string, unknown>).evolution).toBe(pinned.id);
-    } finally { ws.dispose(); }
-  });
-
-  it("makes the capability REACHABLE: a reloaded workspace projects selfEvolution enabled", async () => {
-    // The point of the task. Everything above could hold while the projection still refused.
-    const { root, ws, deps, name } = await canonicalWorkspace("reviewer");
-    let stored: string | undefined;
-    try {
-      await ws.enableAgentSelfEvolution(name);
-      stored = (await ws.evolutionStore.readProfile(name))?.profileId;
-    } finally { ws.dispose(); }
-
-    const reloaded = await Workspace.createForTest(root, deps, { tmux: fakeTmux().tmux, startBridge: false });
-    try {
-      const projected = asAgent(reloaded.config?.agents[name]);
-      expect(projected?.selfEvolution).toEqual({ enabled: true });
-      expect(projected?.profileEvolution?.profileId).toBe(stored);
-    } finally { reloaded.dispose(); }
-  });
-
-  it("refuses a second enable rather than pinning a second selector", async () => {
-    const { ws, name } = await canonicalWorkspace("reviewer");
-    try {
-      await ws.enableAgentSelfEvolution(name);
-      await expect(ws.enableAgentSelfEvolution(name)).rejects.toThrow(/already selects an Evolution profile/);
-    } finally { ws.dispose(); }
-  });
-});
-
-async function createEvolvingWorkspace(
-  names: readonly string[],
-  runtime: SavedAgentSpec["runtime"],
-  fake: ReturnType<typeof fakeTmux>,
-) {
-  const root = mkdir();
-  const { host, secrets } = canonicalHost(root, names.map((name) => ({ name, spec: { runtime } })));
-  const deps = { host, onViewsChanged: () => {} };
-  // The seed workspace gets its own tmux: disposing it must not tear down the channel the case
-  // itself is about to spawn through.
-  const seed = await Workspace.createForTest(root, deps, { tmux: fakeTmux().tmux, startBridge: false });
-  for (const name of names) {
-    enableSavedAgentSelfEvolution(root, name, (await seed.evolutionStore.ensureProfile(name)).profileId, secrets);
-  }
-  seed.dispose();
-  return { root, host, ws: await Workspace.createForTest(root, deps, { tmux: fake.tmux, startBridge: false }) };
-}
-
 async function makeWorkspace(
   onViewsChanged: (view: ViewKind) => void = () => {},
   opts: {
@@ -849,7 +739,7 @@ it("t-afc86e: an agent's setup commands survive a save that does not touch them"
     displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
     cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
     worktree: { enabled: true, branch: "", setup: ["python -m venv .venv", "pip install -e ."] },
-    selfEvolution: false, instructions: "", isolation: "",
+    instructions: "", isolation: "",
     ...over,
   });
 
@@ -935,7 +825,7 @@ it("t-d48775: persistent instructions written in Agent Studio survive a reload a
     displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
     cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
     worktree: { enabled: false, branch: "", setup: [] },
-    selfEvolution: false, instructions: "", isolation: "",
+    instructions: "", isolation: "",
     ...over,
   });
 
@@ -1051,144 +941,6 @@ it("t-d48775: the Saved Agent creation door refuses instructions it cannot publi
   }
 });
 
-/**
- * t-f96b2f — the Evolution toggle's ROUND TRIP, in BOTH directions.
- *
- * `Workspace.enableAgentSelfEvolution` had been complete since t-d185e1 and had zero callers: the
- * form rendered the toggle `disabled={canonical}` with `canonical` always true, so the capability
- * was built and never wired. Wiring it is the easy half. The half worth a test is that the state
- * SURVIVES — and it has to survive symmetrically, because each direction fails in its own way:
- *
- * - ON must survive a save that does not touch the toggle. If the form read the toggle from
- *   anywhere but the snapshot it saves back, or if the host rebuilt `references` from the stored
- *   list after another writer had already rebuilt it, the next unrelated edit would unbind
- *   Evolution. Nothing would throw: the agent would just quietly stop evolving.
- * - OFF must survive the same save. `patchProfileFromStudioMutation` spreads the STORED prompt
- *   forward, so an unresolved `prompt.evolution` would come back on its own — the t-bd14d8 watch
- *   trap, where a value nobody re-authored outlives every edit.
- *
- * And turning it off is not the mirror of turning it on: the reference must leave with the field,
- * or `projectCanonicalAgentProfile` refuses the WHOLE profile for a non-capability reference nothing
- * points at. So "off" is asserted on the projection too, not only in the snapshot.
- *
- * Driven through `commitAgentProfileStudio` / `inspectAgentProfileStudio` — the doors the webview
- * calls — and checked on disk, because a projection echoing its own input back would pass while the
- * file said something else.
- */
-it("t-f96b2f: the Evolution toggle survives a save that does not touch it, ON and OFF", async () => {
-  const root = mkdir();
-  const homeDir = mkdir();
-  fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
-  const host = new SharedSecretHost(mkdir(), new Map());
-  const ws = await Workspace.createForTest(
-    root,
-    { host, onViewsChanged: () => {} },
-    { tmux: fakeTmux().tmux, startBridge: false, agentProfileHomeDir: homeDir },
-  );
-  const profileDir = path.join(root, ".tachyon", "agents", "reviewer");
-  const selectorFile = path.join(profileDir, "evolution-selector.json");
-  const storedProfile = () => parseYaml(fs.readFileSync(path.join(profileDir, "agent.yml"), "utf8")) as {
-    prompt?: Record<string, unknown>;
-    references?: Array<Record<string, unknown>>;
-  };
-  const editable = (over: Partial<AgentProfileStudioMutationV1["editable"]> = {}): AgentProfileStudioMutationV1["editable"] => ({
-    displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
-    cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-    // A verify gate rides along on purpose: the two writers CHAIN over one reference list, and a
-    // rebuild from the stored list instead of from the previous writer's output would drop this
-    // gate every time the Evolution toggle moved. Nothing else in this case would notice.
-    worktree: { enabled: true, branch: "", setup: [] }, selfEvolution: false, instructions: "", isolation: "",
-    ...over,
-  });
-  /** An edit that says nothing about Evolution: the form refills from the snapshot and renames. */
-  const saveUnrelatedEdit = async (displayName: string) => {
-    const reopened = await ws.inspectAgentProfileStudio("reviewer");
-    return ws.commitAgentProfileStudio({
-      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: reopened.revision,
-      editable: { ...reopened.editable, displayName },
-    });
-  };
-
-  try {
-    const created = await ws.commitAgentProfileStudio({
-      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", editable: editable(),
-    });
-    // 1. Creation cannot grant it: the selector names an id only the store mints, for an agent that
-    //    already exists. The refusal is explicit rather than a silent drop.
-    expect(created.editable.selfEvolution).toBe(false);
-    expect(fs.existsSync(selectorFile)).toBe(false);
-    await expect(ws.commitAgentProfileStudio({
-      schemaVersion: 1, kind: "agent-instance", agentName: "newcomer", editable: editable({ selfEvolution: true }),
-    })).rejects.toThrow(/save this agent first/);
-
-    // 2. Turning it ON writes all three halves in one transaction, and the bytes name the id the
-    //    STORE minted — never one the author chose.
-    // The verify gate is edited in the SAME save, which is what makes the chaining real: this patch
-    // carries a freshly digested workspace-verify reference, and an evolution merge that rebuilt from
-    // the STORED list would write the previous digest back over it.
-    const enabled = await ws.commitAgentProfileStudio({
-      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: created.revision,
-      editable: editable({ selfEvolution: true }),
-    });
-    expect(enabled.editable.selfEvolution).toBe(true);
-    const minted = (await ws.evolutionStore.readProfile("reviewer"))?.profileId;
-    expect(minted).toBeTruthy();
-    expect(JSON.parse(fs.readFileSync(selectorFile, "utf8"))).toEqual({ profileId: minted, schemaVersion: 1 });
-    const pinned = storedProfile().references!.find((reference) => reference.path === "evolution-selector.json")!;
-    expect(pinned).toMatchObject({ kind: "evolution", scope: "profile", mode: "pinned" });
-    expect(pinned.sha256).toBe(createHash("sha256").update(fs.readFileSync(selectorFile)).digest("hex"));
-    expect(storedProfile().prompt?.evolution).toBe(pinned.id);
-    // 3. The projection RUNS it — this is the fact the whole capability exists to produce.
-    expect(asAgent(ws.config?.agents.reviewer)?.selfEvolution).toEqual({ enabled: true });
-    expect(asAgent(ws.config?.agents.reviewer)?.profileEvolution?.profileId).toBe(minted);
-    // The other writer's reference survived the same patch.
-
-    // 4. THE FIRST ONE THAT MATTERS. An unrelated edit, exactly as a human makes it: the form refills
-    //    from the snapshot, so anything the snapshot did not carry is written back as its default.
-    const stillOn = await saveUnrelatedEdit("Renamed Reviewer");
-    expect(stillOn.editable.displayName).toBe("Renamed Reviewer");
-    expect(stillOn.editable.selfEvolution).toBe(true);
-    expect(storedProfile().prompt?.evolution).toBe(pinned.id);
-    expect(asAgent(ws.config?.agents.reviewer)?.selfEvolution).toEqual({ enabled: true });
-    // The id was not re-minted either: a save that changes nothing must publish nothing.
-    expect((await ws.evolutionStore.readProfile("reviewer"))?.profileId).toBe(minted);
-
-    // 5. Turning it OFF takes the reference with it. Leaving the entry behind would not be residue —
-    //    the projection refuses the entire profile over a reference nothing points at.
-    const off = await ws.commitAgentProfileStudio({
-      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: stillOn.revision,
-      editable: { ...stillOn.editable, selfEvolution: false },
-    });
-    expect(off.editable.selfEvolution).toBe(false);
-    expect(storedProfile().prompt?.evolution).toBeUndefined();
-    expect(asAgent(ws.config?.agents.reviewer)?.selfEvolution).toBeUndefined();
-    expect(storedProfile().references ?? []).toEqual([]);
-    // The selector FILE stays: nothing reads an unreferenced file, and deleting artifacts would add
-    // a compensation path with real failure modes. Stated as an assertion so it stays a decision.
-    expect(fs.existsSync(selectorFile)).toBe(true);
-    // Nor did turning it off discard what the agent learned — the store profile is untouched.
-    expect((await ws.evolutionStore.readProfile("reviewer"))?.profileId).toBe(minted);
-
-    // 6. THE SECOND ONE THAT MATTERS, and the one the stored-prompt spread would have failed: OFF has
-    //    to survive the same untouched save. A value nobody re-authored must not come back.
-    const stillOff = await saveUnrelatedEdit("Reviewer Again");
-    expect(stillOff.editable.selfEvolution).toBe(false);
-    expect(storedProfile().prompt?.evolution).toBeUndefined();
-    expect(asAgent(ws.config?.agents.reviewer)?.selfEvolution).toBeUndefined();
-
-    // 7. And it can be turned back on, which is a second publish of the same artifact path — the
-    //    write-once channel t-afc86e replaced with a CAS-guarded replacement.
-    const reEnabled = await ws.commitAgentProfileStudio({
-      schemaVersion: 1, kind: "agent-instance", agentName: "reviewer", expectedRevision: stillOff.revision,
-      editable: { ...stillOff.editable, selfEvolution: true },
-    });
-    expect(reEnabled.editable.selfEvolution).toBe(true);
-    expect(asAgent(ws.config?.agents.reviewer)?.profileEvolution?.profileId).toBe(minted);
-  } finally {
-    ws.dispose();
-  }
-});
-
 it("creates and edits canonical Agent Studio profiles through a redacted CAS boundary", async () => {
   const root = mkdir();
   const homeDir = mkdir();
@@ -1207,7 +959,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, selfEvolution: false, instructions: "", isolation: "transcript",
+        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, instructions: "", isolation: "transcript",
       },
     });
     // t-ca9086: human-authorized Studio create writes enabled; start/autostart remain separate.
@@ -1222,7 +974,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, selfEvolution: false, instructions: "", isolation: "transcript",
+        worktree: { enabled: true, branch: "feature/reviewer", setup: [] }, instructions: "", isolation: "transcript",
       },
     });
     expect(edited.editable).toMatchObject({ displayName: "Review Agent", runtime: { adapter: "codex", executable: "codex" } });
@@ -1234,7 +986,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
       editable: {
         displayName: "Stale", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, instructions: "", isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, instructions: "", isolation: "",
       },
     })).rejects.toThrow("revision conflict");
     expect((await ws.inspectAgentProfileStudio("reviewer")).editable.displayName).toBe("Review Agent");
@@ -1260,7 +1012,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
       editable: {
         displayName: "Reviewer", runtime: { adapter: "codex", executable: "codex" },
         cwd: "", lifecycle: { autostart: false, restart: "never", attention: true },
-        worktree: { enabled: false, branch: "", setup: [] }, selfEvolution: false, instructions: "", isolation: "",
+        worktree: { enabled: false, branch: "", setup: [] }, instructions: "", isolation: "",
       },
     });
     // t-05dff5 — a stale revision RESOLVES as a governed refusal instead of rejecting: it is an
@@ -1373,7 +1125,6 @@ it("renames a running canonical profile and keeps the same live session through 
       operation: "create",
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     });
-    const evolution = await ws.evolutionStore.ensureProfile("reviewer");
     await ws.manager.spawn("reviewer");
     ws.terminals.open("reviewer", ws.manager.session("reviewer"));
     expect(fake.sessions.has(ws.manager.session("reviewer"))).toBe(true);
@@ -1382,8 +1133,6 @@ it("renames a running canonical profile and keeps the same live session through 
     expect(ws.config?.agents.reviewer).toBeUndefined();
     expect(asAgent(ws.config?.agents.maintainer)?.profileLifecycle).toMatchObject({ agentId: created.snapshot.agentId });
     expect(await ws.inspectAgentProfileLifecycle("maintainer")).toMatchObject({ agentId: created.snapshot.agentId });
-    expect(await ws.evolutionStore.readProfile("reviewer")).toBeUndefined();
-    expect(await ws.evolutionStore.readProfile("maintainer")).toMatchObject({ profileId: evolution.profileId, agent: "maintainer" });
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "reviewer"))).toBe(false);
     expect(fs.existsSync(path.join(root, ".tachyon", "agents", "maintainer", "agent.yml"))).toBe(true);
     expect(fake.sessions.has(ws.manager.session("reviewer"))).toBe(false);
@@ -1413,7 +1162,6 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
       operation: "create",
       createProfile: { runtime: { adapter: "codex", executable: "codex" } },
     });
-    await ws.evolutionStore.ensureProfile("reviewer");
     ws.ledger.record("reviewer", { cwd: root, updatedAt: "captured", instance: { lifetime: "saved", resumePolicy: "restartable" } });
     const activityDir = path.join(root, ".tachyon", "activity");
     fs.mkdirSync(activityDir, { recursive: true });
@@ -1567,14 +1315,14 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
 describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", () => {
   const homeOf = (root: string) => path.join(root, ".tachyon", "agents", "b");
 
-  /** A declared terminal `b` that has run once and owns an Evolution profile inside its home. */
+  /** A declared terminal `b` that has run once and owns an Agent Profile home. */
   async function terminalWithFootprint() {
     const made = await makeWorkspace();
     const root = made.ws.workspaceRoot;
     await made.ws.manager.spawn("b");
-    await made.ws.evolutionStore.ensureProfile("b");
+    fs.mkdirSync(homeOf(root), { recursive: true });
     expect(made.ws.config?.agents.b?.kind).toBe("terminal");
-    expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+    expect(fs.existsSync(homeOf(root))).toBe(true);
     // Measured, and the reason `gcLedger` can never finish this door's work: a declared terminal
     // holds no session-ledger row, so the one startup sweep that runs `forgetAgent` for a name that
     // left `tachyon.yml` never sees this name.
@@ -1629,7 +1377,6 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
       // The `rmdir` refuses, which is the guard rather than a check in front of one, so the bytes
       // stay — and since t-8b58b3 what stays is named instead of reported as `absent`.
       expect(fs.readFileSync(path.join(homeOf(root), "notes.md"), "utf8")).toContain("a human note");
-      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(false);
       expect(await sweepState(ws)).toBe("orphan-home");
     } finally {
       ws.dispose();
@@ -1659,7 +1406,7 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
     try {
       expect((await tools.get("dismiss_agent")!({ name: "b" })).isError).toBe(true);
       expect(ws.config?.agents.b?.kind).toBe("terminal");
-      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+      expect(fs.existsSync(homeOf(root))).toBe(true);
     } finally {
       ws.dispose();
     }
@@ -1673,7 +1420,7 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
       expect(fs.readFileSync(file, "utf8")).not.toContain("  b:");
       // Nothing runs, by design — and the whole footprint stays. What the product owes this shape is
       // a name for it, which the sweep gives.
-      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+      expect(fs.existsSync(homeOf(root))).toBe(true);
       expect(await sweepState(ws)).toBe("orphan-home");
     } finally {
       ws.dispose();
@@ -1688,7 +1435,7 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
       // the entry is still declared the name is listed, addressable, and the retry finishes it —
       // whereas a row deleted first strands the footprint below with no journal and no door.
       expect(ws.config?.agents.b?.kind).toBe("terminal");
-      expect(fs.existsSync(path.join(homeOf(root), "evolution"))).toBe(true);
+      expect(fs.existsSync(homeOf(root))).toBe(true);
       await runDoor(ws, deleteCommand);
       expect(ws.config?.agents.b).toBeUndefined();
       expect(fs.existsSync(homeOf(root))).toBe(false);
@@ -1972,105 +1719,6 @@ it("directs legacy Agent Studio submissions to canonical Agent Studio", async ()
   ws.dispose();
 });
 
-it("moves Evolution on rename while disable and profile edits retain the same canonical profile", async () => {
-  // SDD 478 M7 — the disable and the runtime change used to arrive as inline `agents:` text through
-  // writeTachyonConfigText, which the config writer now refuses. Both are canonical profile edits,
-  // so they are made where they live. The runtime half is now a stronger refusal than an edit —
-  // "runtime adapter changes require an explicit authority migration" — so the ordinary edit that
-  // stands in for it is a profile field. The guarantee under test is unchanged: no edit may disturb
-  // the agent's Evolution state, and a rename must carry it.
-  const { ws } = await makeWorkspace(() => {}, { canonical: [{ name: "reviewer", spec: { runtime: "codex" } }] });
-  const profile = await ws.evolutionStore.ensureProfile("reviewer");
-  const originalRoot = ws.evolutionStore.rootFor("reviewer");
-
-  const retargeted = await ws.commitAgentProfileLifecycle({
-    agentName: "reviewer",
-    operation: "edit",
-    expectedRevision: (await ws.inspectAgentProfileLifecycle("reviewer")).revision,
-    patch: { displayName: "Reviewer" },
-  });
-  const disabled = await ws.commitAgentProfileLifecycle({
-    agentName: "reviewer",
-    operation: "set-enabled",
-    expectedRevision: retargeted.revision,
-    enabled: false,
-  });
-  expect(ws.config?.agents.reviewer).toMatchObject({ cmd: "codex" });
-  expect((await ws.readAgentEvolutionOverview("reviewer")).summary).toMatchObject({
-    enabled: false,
-    profilePresent: true,
-    activeVersion: 0,
-  });
-  expect(ws.evolutionStore.rootFor("reviewer")).toBe(originalRoot);
-  expect((await ws.evolutionStore.readProfile("reviewer"))?.profileId).toBe(profile.profileId);
-
-  await ws.commitAgentProfileLifecycle({
-    agentName: "reviewer",
-    operation: "set-enabled",
-    expectedRevision: disabled.revision,
-    enabled: true,
-  });
-  await ws.renameAgent("reviewer", "maintainer");
-  expect(ws.config?.agents.reviewer).toBeUndefined();
-  expect(ws.config?.agents.maintainer?.cmd).toBe("codex");
-  expect(await ws.evolutionStore.readProfile("reviewer")).toBeUndefined();
-  expect(await ws.evolutionStore.readProfile("maintainer")).toMatchObject({
-    profileId: profile.profileId,
-    agent: "maintainer",
-    activeVersion: 0,
-  });
-  const reusedOldName = await ws.evolutionStore.ensureProfile("reviewer");
-  expect(reusedOldName.profileId).not.toBe(profile.profileId);
-
-  await ws.forgetAgent("maintainer");
-  expect(fs.existsSync(ws.evolutionStore.rootFor("maintainer"))).toBe(false);
-  // t-4a1f85 — `Workspace.forgetAgent` is the UNGOVERNED tail (the declared delete and the startup
-  // ledger GC both reach it), and it must never take a canonical Saved Agent's home with it. The
-  // `rmdir` refuses because `agent.yml` is still inside; only the governed forget quarantines a home.
-  expect(fs.existsSync(path.join(ws.workspaceRoot, ".tachyon", "agents", "maintainer", "agent.yml"))).toBe(true);
-  const recreated = await ws.evolutionStore.ensureProfile("maintainer");
-  expect(recreated.profileId).not.toBe(profile.profileId);
-  await ws.dispose();
-});
-
-it("uses Workspace authority for Evolution profile creation and rejects tampered production startup", async () => {
-  // SDD 478 M7 — was "first-session creation": a canonical agent's Evolution profile is minted
-  // before the declaration that pins it (see createEvolvingWorkspace), so what is provable here is
-  // that the profile the WORKSPACE's own authority created starts a session, and a forged one does not.
-  const { ws } = await createEvolvingWorkspace(["fresh", "tampered"], "claude", fakeTmux());
-  await ws.manager.spawn("fresh");
-  await expect(ws.evolutionStore.readProfile("fresh")).resolves.toMatchObject({ agent: "fresh", activeVersion: 0 });
-
-  await ws.evolutionStore.ensureProfile("tampered");
-  await fs.promises.writeFile(ws.evolutionStore.learningsPath("tampered"), renderEvolutionLearnings([{
-    id: "forged",
-    sourceTaskId: "t-999999",
-    sourceReviewId: "review-forged",
-    approvedAt: "2026-07-21T20:00:00.000Z",
-    content: "Unapproved edit.",
-  }]), "utf8");
-  await expect(ws.manager.spawn("tampered")).rejects.toMatchObject({ code: "evolution/authority-invalid" });
-  await ws.dispose();
-});
-
-it("rolls back a declared agent rename when the Evolution destination already exists", async () => {
-  const { ws } = await makeWorkspace(() => {}, { canonical: [{ name: "reviewer", spec: { runtime: "codex" } }] });
-  const reviewer = await ws.evolutionStore.ensureProfile("reviewer");
-  const orphan = await ws.evolutionStore.ensureProfile("maintainer");
-
-  // SDD 478 M7 — a declared agent is canonical now, so the rename takes the profile-transaction
-  // branch, which reports the same conflict as a plain message instead of an `evolution/*` code.
-  // What the case is here to prove is the rollback below: neither side may be left half-moved.
-  await expect(ws.renameAgent("reviewer", "maintainer")).rejects.toThrow(
-    "Agent Evolution Profile already exists for 'maintainer'",
-  );
-  expect(ws.config?.agents.reviewer?.cmd).toBe("codex");
-  expect(ws.config?.agents.maintainer).toBeUndefined();
-  expect(await ws.evolutionStore.readProfile("reviewer")).toEqual(reviewer);
-  expect(await ws.evolutionStore.readProfile("maintainer")).toEqual(orphan);
-  await ws.dispose();
-});
-
 /** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`
  *  fires without the lifecycle tick awaiting it. */
 const flush = () => new Promise((r) => setTimeout(r, 0));
@@ -2184,147 +1832,6 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
 
 
 
-  it("serializes host authority-head prepares so concurrent updates cannot lose sibling heads", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
-    const host = new FakeHost(mkdir());
-    const fake = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
-    const secretKey = `tachyon.authorityHeads.v1.${workspaceHash(root)}`;
-    const originalSetSecret = host.setSecret.bind(host);
-    const writes: string[] = [];
-    let enterFirst!: () => void;
-    let releaseFirst!: () => void;
-    const firstEntered = new Promise<void>((resolve) => { enterFirst = resolve; });
-    const firstReleased = new Promise<void>((resolve) => { releaseFirst = resolve; });
-    host.setSecret = async (key, value) => {
-      if (key === secretKey) {
-        writes.push(value);
-        if (writes.length === 1) {
-          enterFirst();
-          await firstReleased;
-        }
-      }
-      await originalSetSecret(key, value);
-    };
-    const prepare = (ws as unknown as {
-      prepareAuthorityHead(identity: string, next: { revision: number; mac: string }, expectedMac?: string): Promise<void>;
-    }).prepareAuthorityHead.bind(ws);
-    try {
-      const first = prepare("delivery-a", { revision: 1, mac: "a".repeat(64) });
-      await firstEntered;
-      const second = prepare("delivery-b", { revision: 1, mac: "b".repeat(64) });
-      await flushMicrotasks();
-      expect(writes).toHaveLength(1);
-
-      releaseFirst();
-      await Promise.all([first, second]);
-
-      const persisted = JSON.parse(await host.getSecret(secretKey) ?? "{}") as Record<string, unknown>;
-      expect(persisted).toEqual({
-        "canonical:delivery-a": { revision: 1, mac: "a".repeat(64) },
-        "canonical:delivery-b": { revision: 1, mac: "b".repeat(64) },
-      });
-    } finally {
-      ws.dispose();
-    }
-  });
-
-  it("refreshes shared authority custody before a stale host prepares another head", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
-    const secrets = new Map<string, string>();
-    const firstFake = fakeTmux();
-    const secondFake = fakeTmux();
-    const first = await Workspace.createForTest(
-      root,
-      { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} },
-      { tmux: firstFake.tmux, startBridge: false },
-    );
-    const second = await Workspace.createForTest(
-      root,
-      { host: new SharedSecretHost(mkdir(), secrets), onViewsChanged: () => {} },
-      { tmux: secondFake.tmux, startBridge: false },
-    );
-    const prepareFirst = (first as unknown as {
-      prepareAuthorityHead(identity: string, next: { revision: number; mac: string }): Promise<void>;
-    }).prepareAuthorityHead.bind(first);
-    const prepareSecond = (second as unknown as {
-      prepareAuthorityHead(identity: string, next: { revision: number; mac: string }): Promise<void>;
-    }).prepareAuthorityHead.bind(second);
-    try {
-      await prepareFirst("delivery-a", { revision: 1, mac: "c".repeat(64) });
-      await prepareSecond("delivery-b", { revision: 1, mac: "d".repeat(64) });
-
-      const secretKey = `tachyon.authorityHeads.v1.${workspaceHash(root)}`;
-      expect(JSON.parse(secrets.get(secretKey) ?? "{}")).toEqual({
-        "canonical:delivery-a": { revision: 1, mac: "c".repeat(64) },
-        "canonical:delivery-b": { revision: 1, mac: "d".repeat(64) },
-      });
-    } finally {
-      first.dispose();
-      second.dispose();
-    }
-  });
-
-
-
-
-  it("keeps anti-rollback CAS intact for ordinary heads while the migration-only initial path stays guarded", async () => {
-    const root = mkdir();
-    fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n    autostart: false\n", "utf8");
-    const host = new FakeHost(mkdir());
-    const fake = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false });
-    const prepare = (ws as unknown as {
-      prepareAuthorityHead(identity: string, next: { revision: number; mac: string }, expectedMac?: string): Promise<void>;
-    }).prepareAuthorityHead.bind(ws);
-    const establishInitial = (ws as unknown as {
-      establishInitialAuthorityHead(identity: string, head: { revision: number; mac: string }): Promise<void>;
-    }).establishInitialAuthorityHead.bind(ws);
-    const secretKey = `tachyon.authorityHeads.v1.${workspaceHash(root)}`;
-    try {
-      // Ordinary create still establishes the first head at a fixed revision 1.
-      await prepare("delivery-anti-rollback", { revision: 1, mac: "a".repeat(64) });
-      expect(JSON.parse(await host.getSecret(secretKey) ?? "{}")).toEqual({
-        "canonical:delivery-anti-rollback": { revision: 1, mac: "a".repeat(64) },
-      });
-
-      // A same-revision "update" under the correct expectedMac (non-monotonic) is refused.
-      await expect(prepare("delivery-anti-rollback", { revision: 1, mac: "b".repeat(64) }, "a".repeat(64)))
-        .rejects.toThrow(/non-monotonic update/);
-      // A stale/incorrect expectedMac (an attacker replaying an older CAS token) is refused too.
-      await expect(prepare("delivery-anti-rollback", { revision: 2, mac: "c".repeat(64) }, "9".repeat(64)))
-        .rejects.toThrow(/non-monotonic update/);
-      // Both refused attempts left the durable head untouched.
-      expect(JSON.parse(await host.getSecret(secretKey) ?? "{}")).toEqual({
-        "canonical:delivery-anti-rollback": { revision: 1, mac: "a".repeat(64) },
-      });
-
-      // The migration-only initial path can never overwrite or lower an existing head.
-      await expect(establishInitial("delivery-anti-rollback", { revision: 5, mac: "d".repeat(64) }))
-        .rejects.toThrow(/already exists with different state/);
-      // It is idempotent on the exact same head.
-      await expect(establishInitial("delivery-anti-rollback", { revision: 1, mac: "a".repeat(64) })).resolves.toBeUndefined();
-      expect(JSON.parse(await host.getSecret(secretKey) ?? "{}")).toEqual({
-        "canonical:delivery-anti-rollback": { revision: 1, mac: "a".repeat(64) },
-      });
-
-      // A fresh identity may be established at N > 1 only by the migration-only path...
-      await expect(establishInitial("delivery-legacy-v7", { revision: 7, mac: "e".repeat(64) })).resolves.toBeUndefined();
-      // ...but once established, ordinary CAS rules govern it: a non-monotonic follow-up is refused...
-      await expect(prepare("delivery-legacy-v7", { revision: 7, mac: "f".repeat(64) }, "e".repeat(64)))
-        .rejects.toThrow(/non-monotonic update/);
-      // ...and only a genuine revision+1 advance under the correct expectedMac succeeds.
-      await expect(prepare("delivery-legacy-v7", { revision: 8, mac: "f".repeat(64) }, "e".repeat(64))).resolves.toBeUndefined();
-      expect(JSON.parse(await host.getSecret(secretKey) ?? "{}")).toMatchObject({
-        "canonical:delivery-legacy-v7": { revision: 8, mac: "f".repeat(64) },
-      });
-    } finally {
-      ws.dispose();
-      await fake.cleanup();
-    }
-  });
 
 
 
@@ -2484,18 +1991,16 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     ws.dispose();
   });
 
-  it("keeps a removed agent footprint retryable when authority retirement fails", async () => {
+  it("reports a footprint-removal failure instead of taking the startup sweep down", async () => {
     const { ws, host } = await makeWorkspace();
     ws.ledger.record("old", { def: { cmd: "sh", kind: "agent" }, cwd: ws.workspaceRoot, updatedAt: "t", instance: { lifetime: "saved", resumePolicy: "restartable" } });
-    await ws.evolutionStore.ensureProfile("old");
-    vi.spyOn(ws.evolutionStore, "retireAgent").mockRejectedValueOnce(new Error("secret storage unavailable"));
+    vi.spyOn(ws.harness, "retireCredentials").mockImplementationOnce(() => { throw new Error("secret storage unavailable"); });
 
-    await (ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> })
-      .gcLedger(new Set(), new Set());
+    await expect((ws as unknown as { gcLedger(declaredInConfig: Set<string>, live: Set<string>): Promise<void> })
+      .gcLedger(new Set(), new Set())).resolves.toBeUndefined();
 
-    expect(ws.ledger.get("old")).toBeDefined();
-    expect(fs.existsSync(ws.evolutionStore.rootFor("old"))).toBe(true);
-    expect(host.notices.some((notice) => notice.level === "warn" && notice.message.includes("secret storage unavailable"))).toBe(true);
+    expect(host.notices.some((notice) => notice.level === "warn"
+      && notice.message.includes("Could not finish cleanup for removed agent old"))).toBe(true);
     ws.dispose();
   });
 
@@ -3901,7 +3406,7 @@ it("t-28bf8f: a kill refused by a live root process moves nothing, and the retry
     expect(fs.existsSync(record.path)).toBe(true);
     expect(branchesOf(root)).toContain(record.branch);
     // The per-spawn settings file stands for the whole ephemeral footprint `removeEphemeralFootprint`
-    // deletes — harness home, activity log, pane transcript, evolution profile. None of it is
+    // deletes — harness home, activity log, pane transcript. None of it is
     // recoverable, which is why this had to be PREVENTED rather than rolled back after the fact.
     expect(fs.existsSync(spawnSettingsPath(root, "filho"))).toBe(true);
 

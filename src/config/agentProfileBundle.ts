@@ -168,7 +168,6 @@ function excludedRequirements(profile: AgentProfileV1, consumed: ReadonlySet<str
   for (const name of Object.keys(profile.environment?.secrets ?? {})) requirements.push({ kind: "secret", field: `environment.secrets.${name}` });
   for (const name of profile.inherit?.environment ?? []) requirements.push({ kind: "environment", field: `inherit.environment.${name}` });
   for (const name of profile.inherit?.workspace ?? []) requirements.push({ kind: "workspace", field: `inherit.workspace.${name}` });
-  if (profile.prompt?.evolution) requirements.push(referencedRequirement(profile, "prompt.evolution", profile.prompt.evolution));
   if (profile.prompt?.memory?.reference) requirements.push(referencedRequirement(profile, "prompt.memory.reference", profile.prompt.memory.reference));
   else if (profile.prompt?.memory) requirements.push({ kind: "reference", field: "prompt.memory" });
   const lists: Array<[string, readonly string[]]> = [

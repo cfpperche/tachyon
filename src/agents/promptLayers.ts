@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { bridgeGuidanceTail } from "./bridgeGuidance.js";
 import { briefCarriesTaskSubstance } from "../bridge/spawnContract.js";
-import { renderEvolutionPromptLayer, type EvolutionStartupSnapshot } from "../evolution/startupSnapshot.js";
 import { renderSessionWorkRecord, sessionRecordManifest, type SessionWorkRecord } from "./sessionWorkRecord.js";
 
 export interface AgentPromptLayers {
@@ -18,9 +17,6 @@ export interface AgentPromptLayers {
     formationGeneration: number;
     formationGenerationSha256: string;
   };
-  evolution?: EvolutionStartupSnapshot;
-  /** Canonical formation-owned Evolution layer. Mutually exclusive with the legacy startup snapshot. */
-  formationEvolution?: string;
   /** Canonical, human-approved selected-memory layer. */
   selectedMemory?: string;
   bridgeGuidance: boolean;
@@ -50,8 +46,6 @@ export interface AgentPromptManifest {
         formationGeneration: number;
         formationGenerationSha256: string;
       };
-  evolution?: { version: number; digest: string };
-  canonicalEvolution?: true;
   selectedMemory?: true;
   bridgeGuidance: boolean;
   task: PromptTaskLayer;
@@ -68,9 +62,6 @@ const present = (value: string | undefined): string | undefined => value?.trim()
 const sha256 = (value: string): string => crypto.createHash("sha256").update(value).digest("hex");
 
 export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody {
-  if (layers.evolution && present(layers.formationEvolution)) {
-    throw new Error("legacy and canonical Evolution layers cannot be composed together");
-  }
   // t-e3aaae — a brief carries a task only when something other than the fixed protocol boilerplate
   // survives in it. A validated contract is substance by construction; anything else must prove it,
   // so a boilerplate-only row can never announce itself as `task brief (present)`.
@@ -90,8 +81,6 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
         // exactly the wrong place to keep a label that names a mechanism the product no longer has.
         : { source: "profile-definition" as const, sha256: sha256(instructions) },
     } : {}),
-    ...(layers.evolution ? { evolution: { version: layers.evolution.version, digest: layers.evolution.digest } } : {}),
-    ...(present(layers.formationEvolution) ? { canonicalEvolution: true as const } : {}),
     ...(present(layers.selectedMemory) ? { selectedMemory: true as const } : {}),
     bridgeGuidance: layers.bridgeGuidance,
     task: !hasTaskBrief
@@ -102,11 +91,8 @@ export function composeAgentPrompt(layers: AgentPromptLayers): ComposedAgentBody
     ...(layers.sessionWorkRecord ? { sessionRecord: sessionRecordManifest(layers.sessionWorkRecord) } : {}),
   };
   const guidance = layers.bridgeGuidance ? bridgeGuidanceTail() : undefined;
-  const evolution = layers.evolution ? renderEvolutionPromptLayer(layers.evolution) : undefined;
   const body = [
     instructions,
-    evolution,
-    present(layers.formationEvolution),
     present(layers.selectedMemory),
     guidance,
     present(layers.taskBrief),

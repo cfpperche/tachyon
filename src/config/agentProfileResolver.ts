@@ -223,7 +223,6 @@ export interface NormalizedAgentDefinition {
   environment?: NormalizedAgentEnvironment;
   prompt?: AgentProfileV1["prompt"] & {
     legacyInstructionsSha256?: string;
-    legacyEvolutionEnabled?: boolean;
   };
   lifecycle?: AgentProfileV1["lifecycle"];
   workspace?: NormalizedAgentWorkspace;
@@ -491,7 +490,7 @@ function resolveReferences(
         // t-b0cfd4 — a CAPABILITY that cannot be captured is withheld by name; anything else still
         // fails the profile. The distinction is what the failure costs: a capability is one tool the
         // agent will not have, and the agent without it is still the agent. A prompt lane, an
-        // Evolution selector or a setup reference is part of what the agent IS, so resolving it
+        // A setup reference is part of what the agent IS, so resolving it
         // wrong would produce a different agent rather than a smaller one.
         if (CAPABILITY_REFERENCE_KINDS.has(reference.kind) && error instanceof AgentCapabilitySourceError) {
           withheld.push(withheldFrom(reference, error));
@@ -712,7 +711,7 @@ function projectionDigestInput(projection: Omit<ResolvedAgentCapabilityProjectio
  *   - profile parse / schema / unsupported version / missing agentId (`parseAgentProfile`)
  *   - host authority boundary on the profile head (`authorityErrors`)
  *   - double authority (canonical + legacy at once)
- *   - non-capability reference failures (instructions, evolution, setup) — those define the agent
+ *   - non-capability reference failures (instructions, setup) — those define the agent
  *   - inheritance / native attestation / provenance coverage failures
  *
  * Those are not "one capability costs itself"; resolving them wrong would produce a different agent
@@ -1223,11 +1222,8 @@ function legacyDefinition(definition: AgentEntry, runtime: { adapterId: string; 
       legacyCommandSha256: sha256(definition.cmd),
     },
     ...(legacyEnvironmentNames.length > 0 ? { environment: { legacyUnclassifiedNames: legacyEnvironmentNames } } : {}),
-    ...((definition.instructions || definition.selfEvolution) ? {
-      prompt: {
-        ...(definition.instructions ? { legacyInstructionsSha256: sha256(definition.instructions) } : {}),
-        ...(definition.selfEvolution?.enabled ? { legacyEvolutionEnabled: true } : {}),
-      },
+    ...(definition.instructions ? {
+      prompt: { legacyInstructionsSha256: sha256(definition.instructions) },
     } : {}),
     lifecycle: {
       autostart: definition.autostart,

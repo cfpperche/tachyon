@@ -9,7 +9,7 @@ import {
   type ProjectGuidanceSettings,
 } from "./projectGuidance.js";
 import { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
-import { AGENT_NAME_PATTERN, asciiFoldAgentName } from "./nameValidation.js";
+import { AGENT_NAME_PATTERN } from "./nameValidation.js";
 import { runtimePromptAdapter } from "../agents/runtimePromptAdapters.js";
 import { ATTESTED_RUNTIMES } from "../runtime/attestedRuntimes.js";
 import { parseLaunchCommand } from "../runtime/launchPreflight.js";
@@ -161,10 +161,6 @@ export interface AgentEntry extends ManagedEntryBase {
   kind: "agent";
   /** role prompt, delivered as a positional arg on spawn for CLIs that accept one */
   instructions?: string;
-  /** spec 421 — opt in to Tachyon-owned, human-reviewed agent evolution. */
-  selfEvolution?: SelfEvolutionDef;
-  /** Internal canonical selector. Active bytes still require the host-custodied Evolution head. */
-  profileEvolution?: { profileId: string; selectorSha256: string };
   /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
   worktree?: boolean;
   /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
@@ -220,11 +216,6 @@ export interface AgentEntry extends ManagedEntryBase {
  */
 export interface TerminalEntry extends ManagedEntryBase {
   kind: "terminal";
-}
-
-/** Closed v1 opt-in. Absence and enabled:false are equivalent disabled states. */
-export interface SelfEvolutionDef {
-  enabled: boolean;
 }
 
 /**
@@ -713,7 +704,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 /** Every recognized entry key. `isolate` remains recognized only as a deprecated read-compat key. `kind`/
  *  `instructions` are recognized everywhere (so they're never "unknown"); under `terminals:` they're rejected
  *  explicitly with a clearer message instead. */
-const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "selfEvolution", "worktree", "branch", "worktreeSetup", "harness", "isolate", "subagents"];
+const AGENT_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart", "kind", "instructions", "worktree", "branch", "worktreeSetup", "harness", "isolate", "subagents"];
 
 /** Recognized harness keys (spec 226/228 plus spec 406 Pi resources). */
 const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skills", "extensions", "prompts", "themes", "packages"];
@@ -1035,7 +1026,6 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   if (forceTerminal) {
     if (def.kind !== undefined) discarded.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
     if (def.instructions !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "instructions", "a terminal receives no brief"));
-    if (def.selfEvolution !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "a terminal has no AI to evolve"));
   } else if (def.kind !== undefined) {
     if (def.kind !== "agent" && def.kind !== "terminal") discarded.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
     else agent.kind = def.kind;
@@ -1117,23 +1107,6 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       discarded.push(`agents.${name}.instructions: must be a string`);
     } else if (agentEntry && def.instructions.trim().length > 0) {
       agentEntry.instructions = def.instructions;
-    }
-  }
-  if (def.selfEvolution !== undefined) {
-    if (forceTerminal || agent.kind === "terminal") {
-      if (!forceTerminal) discarded.push(agentOnlyKeyRefusal(section, name, "selfEvolution", "this entry is a terminal — it has no AI to evolve"));
-    } else if (!isPlainObject(def.selfEvolution)) {
-      discarded.push(`agents.${name}.selfEvolution: must be a mapping with enabled: boolean`);
-    } else {
-      const evolution = def.selfEvolution;
-      if (typeof evolution.enabled !== "boolean") {
-        discarded.push(`agents.${name}.selfEvolution.enabled: must be a boolean`);
-      } else {
-        agent.selfEvolution = { enabled: evolution.enabled };
-      }
-      for (const key of Object.keys(evolution)) {
-        if (key !== "enabled") discarded.push(`agents.${name}.selfEvolution: unknown key '${key}'`);
-      }
     }
   }
   if (def.restart !== undefined) {
@@ -1336,23 +1309,6 @@ export function parseConfig(yamlText: string): ParseResult {
       }
       const agent = parseAgentEntry("agents", name, def, discarded, warnings);
       if (agent) agents[name] = agent;
-    }
-    const evolutionEnabledByFold = new Map<string, string>();
-    for (const [name, entry] of Object.entries(agents)) {
-      const folded = asciiFoldAgentName(name);
-      const agent = asAgent(entry);
-      if (agent?.selfEvolution?.enabled === true) {
-        const prior = evolutionEnabledByFold.get(folded);
-        if (prior !== undefined) {
-          discarded.push(
-            `agents.${name}.selfEvolution: conflicts with evolution-enabled agent '${prior}' after ASCII case folding` +
-            ` — dropped from '${name}'; rename one of them`,
-          );
-          delete agent.selfEvolution;
-        } else {
-          evolutionEnabledByFold.set(folded, name);
-        }
-      }
     }
   }
 

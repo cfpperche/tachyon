@@ -179,7 +179,6 @@ describe("TaskStore", () => {
     const active = JSON.parse(fs.readFileSync(taskPath, "utf8"));
     fs.writeFileSync(taskPath, `${JSON.stringify({
       ...active,
-      evolutionCompletion: { agent: "worker", revision: "a".repeat(64) },
     }, null, 2)}\n`, "utf8");
 
     const [released] = await store.returnUnavailableAgentClaims("worker", {
@@ -191,7 +190,6 @@ describe("TaskStore", () => {
     expect(released).toMatchObject({
       status: "active",
       awaitingHuman: { reason: "confirm the delivered result" },
-      evolutionCompletion: { agent: "worker", revision: "a".repeat(64) },
     });
     expect(released?.assignee).toBeUndefined();
     expect(store.journal.read(task.id).at(-1)?.text).toContain("ownership released; status remains active");
@@ -281,24 +279,6 @@ describe("TaskStore", () => {
       .resolves.toMatchObject({ status: "done" });
     await Promise.resolve();
     expect(asyncFailure.get(task.id).status).toBe("done");
-  });
-
-  it("persists an evolution completion obligation before an asynchronous observer can be lost", async () => {
-    const revision = "a".repeat(64);
-    const tasks = new TaskStore(root, {
-      evolutionCompletionFor: (event) => event.after.lastDeliverer
-        ? { agent: event.after.lastDeliverer, revision }
-        : undefined,
-      onMutation: async () => { throw new Error("process ended before observer work"); },
-    });
-    const task = await tasks.create({ title: "durable evolution obligation", author: "human" });
-    await tasks.update(task.id, { status: "triaged", assignee: "reviewer" });
-    await tasks.update(task.id, { status: "active" });
-    await expect(tasks.update(task.id, { status: "done" })).resolves.toMatchObject({
-      evolutionCompletion: { agent: "reviewer", revision },
-    });
-    await Promise.resolve();
-    expect(new TaskStore(root).get(task.id).evolutionCompletion).toEqual({ agent: "reviewer", revision });
   });
 
   // t-370286 — a prematurely-triaged task can be returned for re-evaluation; the move unscopes it.

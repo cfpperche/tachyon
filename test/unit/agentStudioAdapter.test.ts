@@ -4,7 +4,6 @@ import {
   blankAgentFields,
   canonicalAgentFields,
   codexNativeConfigChoice,
-  createAgentEvolutionLabels,
   createAgentProfileLabels,
   serializeAgentPatch,
   setCodexNativeConfigChoice,
@@ -40,7 +39,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     editable: {
       displayName: "Frontend", runtime: { adapter: "codex", executable: "codex", model: "gpt-example" },
       cwd: "apps/web", lifecycle: { autostart: true, restart: "on-crash", attention: false },
-      worktree: { enabled: true, branch: "feature/web", setup: [] }, selfEvolution: false,
+      worktree: { enabled: true, branch: "feature/web", setup: [] },
       instructions: "", isolation: "transcript",
     },
     bindings: {
@@ -49,7 +48,7 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
       foreignPersistentInstructions: false,
       environmentValueNames: ["PUBLIC_VALUE"],
       secretNames: ["API_TOKEN"],
-      prompt: { instructions: false, evolution: true },
+      prompt: { instructions: false },
       capabilities: { skills: 1, mcp: 0, hooks: 0, pi: 0 },
       tooling: { skills: [], mcp: [], hooks: [] },
       externalReferences: 1,
@@ -57,7 +56,6 @@ function profileSnapshot(agentName = "frontend"): AgentProfileStudioSnapshotV1 {
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) },
       authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 0 },
-      learned: { scope: "profile", writable: false, present: true },
       projection: { scope: "runtime", writable: false, active: false },
     },
   };
@@ -109,7 +107,6 @@ describe("AgentStudioAdapter — load", () => {
     expect(result.entity.defaultCwd).toBe("/ws/root");
     expect(result.entity.persistentInstructionsHelp).toBe("When supported, delivered at startup through the selected runtime.");
     expect(result.entity.chips.find((c) => c.bin === "claude")?.detected).toBe(true);
-    expect(result.entity.evolutionLabels.title).toBe("Agent Evolution");
     expect(result.entity.fields.canonical?.nativeConfig).toEqual({
       permissions: {
         source: "global",
@@ -132,21 +129,10 @@ describe("AgentStudioAdapter — load", () => {
     });
   });
 
-  it("projects host-localized Evolution labels into the browser entity", async () => {
-    const { ws } = fakeWorkspace();
-    const labels = createAgentEvolutionLabels((message) => `localized:${message}`);
-    const result = await new AgentStudioAdapter(ws, labels).load(undefined);
-    expect(result.status).toBe("ok");
-    if (result.status !== "ok") throw new Error("unreachable");
-    expect(result.entity.evolutionLabels.title).toBe("localized:Agent Evolution");
-    expect(result.entity.evolutionLabels.approve).toBe("localized:Approve");
-  });
-
   it("projects host-localized runtime-neutral Persistent Instructions help", async () => {
     const { ws } = fakeWorkspace();
     const result = await new AgentStudioAdapter(
       ws,
-      createAgentEvolutionLabels(),
       "localized:runtime-neutral startup delivery",
     ).load(undefined);
     expect(result.status).toBe("ok");
@@ -158,7 +144,6 @@ describe("AgentStudioAdapter — load", () => {
     const { ws } = fakeWorkspace();
     const result = await new AgentStudioAdapter(
       ws,
-      createAgentEvolutionLabels(),
       "help",
       createAgentProfileLabels((message) => `localized:${message}`),
     ).load(undefined);
@@ -279,35 +264,9 @@ describe("AgentStudioAdapter — save", () => {
       // declares none, so they serialize as the empty values that mean "no gate, no setup" — which
       // is what CLEARING them looks like too, and why they are always sent rather than omitted.
       worktree: { enabled: true, branch: "feature/web", setup: [] },
-      // t-f96b2f — the toggle travels on every save for the same reason: `false` is how the human
-      // turns Evolution OFF, so an omitted field would be indistinguishable from "leave it alone".
-      selfEvolution: false,
       isolation: "transcript",
     }));
     expect(submits).toEqual([]);
-  });
-
-  /**
-   * t-f96b2f — the WEBVIEW half of the Evolution round trip: an agent that HAS Evolution must have it
-   * again after a save that renamed something else.
-   *
-   * The host half is proven end-to-end in `workspaceHeadless.test.ts`. This is the other place the
-   * state can be lost, and it loses it silently: the form rebuilds its fields from the snapshot on
-   * every open, so a toggle read from anywhere the save does not write back renders OFF for an
-   * evolving agent, and the next save turns the capability off without anyone asking.
-   */
-  it("carries an ENABLED Evolution toggle back out of a save that renamed something else", async () => {
-    const mutations: AgentProfileStudioMutationV1[] = [];
-    const { ws } = fakeWorkspace({ commit: async (mutation) => { mutations.push(mutation); return profileSnapshot(mutation.agentName); } });
-    const adapter = new AgentStudioAdapter(ws);
-    const snapshot = profileSnapshot();
-    const evolving = { ...snapshot, editable: { ...snapshot.editable, selfEvolution: true } };
-
-    const fields = canonicalAgentFields(evolving);
-    expect(fields.selfEvolution).toBe(true);
-
-    expect(await adapter.save("frontend", serializeAgentPatch(fields, true)!)).toEqual({ status: "ok" });
-    expect(mutations[0]?.editable.selfEvolution).toBe(true);
   });
 
   /**
