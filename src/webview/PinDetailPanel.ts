@@ -71,7 +71,7 @@ export class PinDetailPanelManager {
     const studioTarget = (target: SectionPanelTarget) => this.getStudios().find((row) => row.wsHash === target.project);
     return {
       app,
-      styleFiles: ["codicon.css", "design-system.css", "vscode-theme.css", "rich-doc.css", "studio-frame.css", "pin-studio.css", "pin-preview.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "vscode-theme.css", "rich-doc.css", "studio-frame.css", "pin-studio.css", "pin-preview.css"],
       csp: { frameSrc: "self", imgBlob: true, connectSrc: true, workerSrc: "blob" },
       // Pin Studio renders the same shared SketchModal as Task Studio. Keep its static Excalidraw
       // bootstrap on the document host too: without these URLs the app accepts the Sketch click but

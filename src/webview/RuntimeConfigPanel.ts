@@ -64,7 +64,7 @@ export class RuntimeConfigPanelManager {
   private configFor(app: WebviewAppEntry): SectionAppConfig<RuntimeConfigRefreshKind> {
     return {
       app,
-      styleFiles: ["codicon.css", "design-system.css", "runtime-config.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "runtime-config.css"],
       title: () => vscode.l10n.t("Runtime Config"),
       bootstrapGlobals: () => ({ __TACHYON_STRINGS__: runtimeConfigStrings() }),
       refreshKindFor: runtimeConfigRefreshKind,

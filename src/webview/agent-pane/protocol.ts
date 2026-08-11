@@ -8,6 +8,20 @@ export const AGENT_PANE_READY = "agent-pane/ready" as const;
 
 export type AgentPaneInjectKind = "stage" | "submit" | "template";
 
+export interface AgentPanePickerItem {
+  id: string;
+  label: string;
+  description?: string;
+  detail?: string;
+}
+
+export interface AgentPanePickerRequest {
+  requestId: string;
+  title: string;
+  placeholder?: string;
+  items: AgentPanePickerItem[];
+}
+
 export type AgentPaneToHost =
   | { type: typeof AGENT_PANE_READY }
   | { type: "agent-pane/input"; data: string }
@@ -18,6 +32,7 @@ export type AgentPaneToHost =
   | { type: "agent-pane/submit"; text: string }
   /** Open the 381 template picker preselected for this pane's agent. */
   | { type: "agent-pane/inject-template" }
+  | { type: "agent-pane/picker-result"; requestId: string; selectedId?: string }
   /** Pin the current xterm selection into the project pin list (Slice 2). */
   | { type: "agent-pane/pin-selection"; text: string }
   /** Re-attach this pane's tmux client after a detach (t-feaaea) — the session outlived it. */
@@ -63,6 +78,7 @@ export type AgentPaneFromHost =
   | { type: "agent-pane/delivery"; ok: boolean; mode: "stage" | "submit"; message: string }
   /** Place an inject marker at the current viewport line (no PTY bytes). */
   | { type: "agent-pane/mark"; kind: AgentPaneInjectKind }
+  | ({ type: "agent-pane/picker" } & AgentPanePickerRequest)
   | { type: "agent-pane/pin-result"; ok: boolean; message: string };
 
 export function isAgentPaneToHost(value: unknown): value is AgentPaneToHost {
@@ -79,6 +95,10 @@ export function isAgentPaneToHost(value: unknown): value is AgentPaneToHost {
     return typeof (value as { text?: unknown }).text === "string";
   }
   if (t === "agent-pane/inject-template" || t === "agent-pane/reattach") return true;
+  if (t === "agent-pane/picker-result") {
+    const row = value as { requestId?: unknown; selectedId?: unknown };
+    return typeof row.requestId === "string" && (row.selectedId === undefined || typeof row.selectedId === "string");
+  }
   if (t === "agent-pane/pin-selection") {
     return typeof (value as { text?: unknown }).text === "string";
   }

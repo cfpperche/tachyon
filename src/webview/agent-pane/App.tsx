@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { AgentPaneFontMetrics, AgentPaneFromHost, AgentPaneInjectKind, AgentPaneToHost } from "./protocol";
 import { foreignClientBannerText } from "../../presentation/foreignTmuxClient";
 import { gridChanged, sanitizeFontMetrics, type GridSize } from "./geometry";
+import { QuickPicker } from "../shared/ui/QuickPicker";
 
 export interface AgentPaneAppProps {
   postMessage: (msg: AgentPaneToHost) => void;
@@ -97,6 +98,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
+  const [picker, setPicker] = useState<Extract<AgentPaneFromHost, { type: "agent-pane/picker" }> | null>(null);
   /** True while xterm has an active (non-empty) selection — visual affordance only. */
   const [hasSelection, setHasSelection] = useState(false);
   /**
@@ -240,6 +242,10 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       }
       if (msg.type === "agent-pane/pin-result") {
         setFlash(msg.message);
+        return;
+      }
+      if (msg.type === "agent-pane/picker") {
+        setPicker(msg);
         return;
       }
       if (msg.type === "agent-pane/attach-state") {
@@ -439,6 +445,23 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
         </div>
         {flash ? <div class="agent-pane__flash" role="status">{flash}</div> : null}
       </footer>
+      {picker ? (
+        <QuickPicker
+          open
+          data-testid="agent-pane-template-picker"
+          title={picker.title}
+          placeholder={picker.placeholder}
+          items={picker.items}
+          onClose={() => {
+            postMessage({ type: "agent-pane/picker-result", requestId: picker.requestId });
+            setPicker(null);
+          }}
+          onSelect={(item) => {
+            postMessage({ type: "agent-pane/picker-result", requestId: picker.requestId, selectedId: item.id });
+            setPicker(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

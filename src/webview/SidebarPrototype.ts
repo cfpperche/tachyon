@@ -199,7 +199,7 @@ export class SidebarPrototypeProvider implements vscode.WebviewViewProvider {
     view.webview.html = renderWebviewShell({
       cspSource: view.webview.cspSource,
       title: "Tachyon",
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("sidebar.css")],
+      styles: [uri("codicon.css"), uri("design-system.css"), uri("quick-picker.css"), uri("sidebar.css")],
       bundle: uri("sidebar.js"),
       mode: "live",
       imgBlob: true,

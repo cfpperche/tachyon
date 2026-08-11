@@ -57,7 +57,7 @@ export class ProbeResultPanelManager {
     return {
       app,
       // Measured before cutover: cockpit.css has zero .probes-root consumers; probes.css owns them all.
-      styleFiles: ["codicon.css", "design-system.css", "probes.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "probes.css"],
       title: (target) => {
         const caller = callerFrom(target);
         return caller ? vscode.l10n.t("Probes — {0}", caller) : vscode.l10n.t("Captured Probes");
