@@ -35,6 +35,7 @@ import { ENGINE_SHELL_PROTOCOL, type EngineBundleManifestV1, type EngineServiceI
 import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
+import { bundledDaemonFixture } from "../helpers/daemonFixtureBundle.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -874,8 +875,7 @@ function hello(identity: EngineServiceIdentityV1, shellId: string): EngineShellH
 }
 
 function spawnWorker(encodedOptions: string): ChildProcessWithoutNullStreams {
-  const viteNode = path.join(process.cwd(), "node_modules/vite-node/vite-node.mjs");
-  const worker = path.join(process.cwd(), "test/fixtures/engineSupervisorWorker.ts");
+  const worker = bundledDaemonFixture("engineSupervisorWorker.ts");
   // t-93ec7f: the daemon fixture is a new Tachyon machine. Host isolation (beforeAll) already
   // redirects XDG/TMUX on process.env; strip every ambient TACHYON_* so a live fleet token never
   // reaches the child, then reintroduce only the private tmux pointer the daemon needs.
@@ -887,7 +887,7 @@ function spawnWorker(encodedOptions: string): ChildProcessWithoutNullStreams {
   });
   delete childEnv.TMUX;
   assertNoFleetLeak(childEnv);
-  const child = spawn(process.execPath, [viteNode, worker, encodedOptions], {
+  const child = spawn(process.execPath, [worker, encodedOptions], {
     stdio: ["pipe", "pipe", "pipe"],
     env: childEnv,
   });
@@ -911,6 +911,13 @@ function spawnWorker(encodedOptions: string): ChildProcessWithoutNullStreams {
  * and the supervisor allows that start DEFAULT_START_TIMEOUT_MS = 10_000 — the same 10_000 this file
  * already passes as `startTimeoutMs`. The boot budget below is that number, for literally the same
  * boot, rather than a fresh one chosen to make today's red go away.
+ *
+ * t-d1f356 — and the paragraph above is now HISTORY: `spawnWorker` no longer launches vite-node. The
+ * fixture is bundled once per round (test/globalSetup/daemonFixtureBundles.ts) and spawned as plain
+ * `node`, which is what production does, so a child boots in ~0.2s instead of ~2s and this file fell
+ * from 41.4s to 9.9s. THE BUDGET DOES NOT MOVE, and not out of caution: 10_000 was derived from
+ * production's DEFAULT_START_TIMEOUT_MS rather than from the harness cost that just disappeared, so
+ * nothing it was measuring changed. Buying a second back in a wait is how contention becomes flake.
  *
  * What the test actually asserts is the refusal and the EXIT, so that keeps a tight budget of its
  * own, counted from the moment the child first speaks. The failure worth catching here is a leaked

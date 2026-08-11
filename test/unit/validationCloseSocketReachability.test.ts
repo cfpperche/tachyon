@@ -27,6 +27,7 @@ import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
+import { bundledDaemonFixture } from "../helpers/daemonFixtureBundle.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -161,9 +162,8 @@ async function startDaemon(): Promise<Daemon> {
   });
   assertNoFleetLeak(childEnv);
   const socketPath = path.join(runtimeRoot, "engine.sock");
-  const viteNode = path.join(process.cwd(), "node_modules/vite-node/vite-node.mjs");
-  const worker = path.join(process.cwd(), "test/fixtures/daemonEngineServiceWorker.ts");
-  const child = spawn(process.execPath, [viteNode, worker, workspaceRoot, storageRoot, mediaRoot, socketPath], {
+  const worker = bundledDaemonFixture("daemonEngineServiceWorker.ts");
+  const child = spawn(process.execPath, [worker, workspaceRoot, storageRoot, mediaRoot, socketPath], {
     stdio: ["pipe", "pipe", "pipe"],
     env: childEnv,
   });
