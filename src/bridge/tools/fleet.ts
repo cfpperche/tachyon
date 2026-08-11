@@ -419,11 +419,17 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
       try {
         const info = await managedEntry(deps, name);
         if (!info) return fail(new Error(`agent '${name}' not found`));
-        // SDD 482 phase 5 — the rename phase 3 deferred, now that behaviour is settled. The OLD term
-        // is kept in the same sentence rather than replaced outright: an agent or operator searching
-        // logs for "declared in tachyon.yml" still finds this, which is what a compatibility alias
-        // means for a message nobody can grep twice.
+        // t-849277 — `saved` is a lifetime, not an entity kind. Both profile-backed agents and
+        // declared terminals have that lifetime, but only the former can use the removal-proposal
+        // and Agent Studio doors. A terminal's human door is the sidebar Remove action; its API door
+        // is the same `config.agent.delete` operation that action invokes.
         if (info.lifetime === "saved") {
+          if (info.kind === "terminal") {
+            return fail(new Error(
+              `agent '${name}' is a terminal declared in tachyon.yml and cannot be dismissed through the Bridge; ` +
+              "use Remove in the sidebar, or invoke config.agent.delete",
+            ));
+          }
           return fail(new Error(
             `agent '${name}' is a Saved Agent (declared in tachyon.yml) and cannot be dismissed through the Bridge; ` +
             "use propose_saved_agent_removal for a human-approved retirement, or remove it from Agent Studio",
