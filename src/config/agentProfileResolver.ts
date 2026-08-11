@@ -910,7 +910,13 @@ function resolveCapabilities(
       continue;
     }
     const name = path.posix.basename(reference.path);
-    if (adapter === "claude" && !requireGrant(reference, "skill")) continue;
+    // t-a7063c — no adapter condition, like the mcp/hook/pi lines below it. The `adapter === "claude"`
+    // guard was born in 8ef994c3 (t-2f37e7, "project Claude profile capabilities") and was never
+    // generalized when delivery to codex/grok/pi arrived, so a selected skill reached three of the four
+    // runtimes without the exact host-custodied grant the projection text the human ATTESTS already
+    // promises (`agentProfileProjection.ts:110` for grok, `:126` for codex). Making the code honor the
+    // attestation is strictly stricter and changes no promise, so no inspector bump is due.
+    if (!requireGrant(reference, "skill")) continue;
     if (claim("skills", name, id)) {
       pendingSkills.push({ referenceId: id, name, source: captured });
       markDelivered(reference);

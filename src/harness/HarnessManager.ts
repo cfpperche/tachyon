@@ -1683,6 +1683,31 @@ export class HarnessManager {
     }
   }
 
+  /**
+   * t-987347 — EMPTY IS A SELECTION, and this is what executes it.
+   *
+   * Zero selection produces no capability projection at all (`agentProfileResolver`,
+   * `deliveredAnything`), so `def.profileCapabilities` is undefined and `Workspace.materializeHarness`
+   * routes a REVOKED profile to a different door than a selected one. Every `if (capabilities)` guard
+   * therefore describes the one case a revocation never reaches: measured 2026-08-10, the grok profile
+   * lost its `capabilities:` block, its private home was regenerated the next day, and all three
+   * granted skill trees were still sitting in `$GROK_HOME/skills` with their 07/08 mtimes — reachable,
+   * because `~/.grok/skills` is a documented Grok discovery root that the config's `[skills] ignore`
+   * covers only for PROJECT roots.
+   *
+   * So the purge is unconditional and runs BEFORE the decision to re-materialize, exactly as Claude's
+   * sweep has always done. `entries` names what THIS runtime's grant path writes into the private home
+   * and nothing else — `apagar demais é pior que apagar de menos`: codex projects its skill tree into
+   * the launch project's `.agents/skills`, shared with the plugin installer, and pi's resource
+   * generations are content-addressed, inert without the `--skill` args a revoked profile no longer
+   * receives, and may still be open in a live process. Neither is swept from here.
+   */
+  private purgeProfileCapabilityProjection(home: string, entries: readonly string[] = []): void {
+    for (const entry of [...entries, PROFILE_CAPABILITY_ROOT]) {
+      fs.rmSync(path.join(home, entry), { recursive: true, force: true });
+    }
+  }
+
   private writeProfileCapabilityManifest(agent: string, home: string, projection: ResolvedAgentCapabilityProjection): void {
     const root = this.ensureProfileCapabilityRoot(agent, home);
     const manifest = {
@@ -1831,6 +1856,12 @@ export class HarnessManager {
 
   private materializePiBaseHome(agent: string, options: { exactTrustCwd?: string } = {}): MaterializedHarness {
     const home = materializePiAgentHome(this.workspaceRoot, agent);
+    // t-987347 — the one door every Pi path passes through, so a profile that lost its selection
+    // cannot keep an attestation that says it still has one. The resource generations under
+    // `.tachyon-resources` are deliberately left where they are: they are content-addressed, a
+    // revoked profile no longer receives the explicit `--skill` args that are Pi's only way to reach
+    // them, and a still-live process may have them open (see materializePiHomeOnly).
+    this.purgeProfileCapabilityProjection(home);
     const exactTrust = options.exactTrustCwd === undefined
       ? undefined
       : [...new Set([this.workspaceRoot, options.exactTrustCwd].map((folder) => fs.realpathSync(folder)))];
@@ -2560,9 +2591,11 @@ export class HarnessManager {
       throw new Error(`runtime '${adapter.runtime}' is not compatible with the Codex native configuration projection`);
     }
     const home = this.materializeHome(agent, adapter, cwd);
-    if (capabilities) {
-      fs.rmSync(path.join(this.ensureProfileCapabilityRoot(agent, home), "manifest.json"), { force: true });
-    }
+    // t-987347 — unconditional, because the guard this replaced (`if (capabilities)`) named the one
+    // case a revocation never reaches. Codex's skill tree is NOT swept with it: it is projected into
+    // the launch project's `.agents/skills`, a directory the plugin installer also owns, so removing
+    // it here would delete plugin installs belonging to every other agent in the workspace.
+    this.purgeProfileCapabilityProjection(home);
     const configPath = path.join(home, "config.toml");
     const values: Array<[string, string | undefined]> = [
       ["model", nativeConfig?.selectors.model],
@@ -3353,6 +3386,12 @@ export class HarnessManager {
   ): string {
     const home = bridgeGrokHome(this.workspaceRoot, agent);
     fs.mkdirSync(home, { recursive: true });
+    // t-987347 — this is the door a grok profile with NO selection reaches, and the only one that
+    // runs on both paths: `materializeProfileCapabilities` calls it first and re-materializes the
+    // selected tree immediately after, so purging here is "rebuild from the current selection"
+    // rather than "delete". `skills` joins the sweep because for grok the granted tree lives in this
+    // home; nothing else writes it (`materializeSkills` targets the harness home, a different root).
+    this.purgeProfileCapabilityProjection(home, ["skills"]);
 
     const authLink = path.join(home, "auth.json");
     const authTarget = path.join(this.realGrokHome, "auth.json");
