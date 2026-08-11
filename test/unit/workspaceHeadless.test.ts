@@ -1409,7 +1409,11 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
       { workspaceRoot: root, caller: { kind: "agent", name: "a" }, manager: ws.manager } as never,
     );
     try {
-      expect((await tools.get("dismiss_agent")!({ name: "b" })).isError).toBe(true);
+      const result = await tools.get("dismiss_agent")!({ name: "b" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0]?.text).toContain("config.agent.delete");
+      expect(result.content[0]?.text).not.toContain("propose_saved_agent_removal");
+      expect(result.content[0]?.text).not.toContain("Agent Studio");
       expect(ws.config?.agents.b?.kind).toBe("terminal");
       expect(fs.existsSync(homeOf(root))).toBe(true);
     } finally {
