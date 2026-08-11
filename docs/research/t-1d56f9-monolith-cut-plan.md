@@ -129,7 +129,7 @@ Ordem interna sugerida: (3) makeCockpitDeps → (2) makeServerInspectorDeps → 
 Padrão de corte: um `CockpitHostContext` (`live`, `panel`, `deps`, `navEpoch`/`readyEpoch`, `isCurrent`) passado a módulos `register*Section(ctx)` — espelha o que messages/ já fizeram no cliente.
 
 **Guarda existente (forte):**  
-`cockpitReadyHandshake`, `cockpitRouter`, `cockpitMissionBoard`, `cockpitActivity`, `cockpitProbes`, `cockpitFleetActions`, `cockpitNavPendingBracket`, `cockpitSupersededDispose`, `cockpitCssParity`, `cockpitStudio`, `cockpitWorktreeActions`, …
+`cockpitReadyHandshake`, `cockpitRouter`, `cockpitMissionBoard`, `cockpitActivity`, `cockpitProbes`, `cockpitFleetActions`, `cockpitNavPendingBracket`, `cockpitSupersededDispose`, `cockpitCssParity`, `cockpitStudio`, `worktreeActions`, …
 
 **Primeiro a quebrar:**
 
