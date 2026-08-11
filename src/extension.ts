@@ -525,22 +525,27 @@ function wsOf<T extends { ws?: WorkspacePresentationTarget; workspaceHash?: stri
 }
 
 
+type PromptPicker = (request: {
+  title: string;
+  placeholder?: string;
+  items: Array<{ id: string; label: string; description?: string; detail?: string }>;
+}) => Promise<string | undefined>;
+
 /** spec 381 — shell selection/confirmation; the persistent engine revalidates and delivers.
  *  Returns true only when inject completed (false on cancel / empty catalog / refused).
  *
- *  t-be359b — the three QuickPicks below STAY NATIVE, and they do NOT all stay for the same reason.
+ *  t-de3dfc — the Agent Pane supplies `pickInSurface`: host lists, webview chooses, host executes.
+ *  Without that surface (Command Palette / sidebar), the picks stay native. The AGENT pick remains
+ *  native in every case because the Agent Pane always supplies `preselectedAgent` and never reaches it.
  *  Three doors reach this function: the agent pane webview (`openTemplateInject`), the Command
- *  Palette, and the sidebar's agent row.
- *    · the TEMPLATE and DELIVERY picks are reachable from the agent pane, which IS a surface of
- *      ours — so they are the one place in this sweep where the honest answer is "there is somewhere
- *      to draw, and we still cannot draw there yet". `QuickPicker.tsx` renders `ds-qp-*`, whose rules
- *      and colour tokens live only in `design-system.css`, and `AgentPanePanel.ts` withholds that
- *      sheet on purpose (its Tachyon Mono @font-face breaks xterm cell metrics). The gap is
- *      packaging, not design: those styles are not separable from that font today. Splitting them is
- *      a change to a shared asset every surface consumes and needs its own before/after evidence.
- *    · the AGENT pick is not reachable from that door at all: the agent pane always passes
- *      `preselectedAgent`, so it only runs for the Command Palette — no surface, native is right. */
-async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAgent?: string): Promise<boolean> {
+ *  Palette, and the sidebar's agent row. Only the pane supplies `pickInSurface`; its template and
+ *  delivery questions therefore render in that live webview. The AGENT pick is unreachable there
+ *  because the pane always passes `preselectedAgent` — it remains native by construction. */
+async function injectPromptTemplateFlow(
+  ws: WorkspaceShellHandle,
+  preselectedAgent?: string,
+  pickInSurface?: PromptPicker,
+): Promise<boolean> {
   const catalog = jsonObject(await extensionQuery(ws, { action: "prompt.catalog" }), "prompt.catalog");
   const relDir = typeof catalog.relDir === "string" ? catalog.relDir : ".tachyon/prompts";
   const skippedCount = typeof catalog.skippedCount === "number" ? catalog.skippedCount : 0;
@@ -565,15 +570,25 @@ async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAge
     return false;
   }
 
-  const tplPick = await vscode.window.showQuickPick(
-    templates.map((template) => ({
-      label: template.title,
-      description: template.id,
-      detail: template.body.split("\n")[0]?.slice(0, 120),
-      template,
-    })),
-    { title: vscode.l10n.t("Inject prompt template"), placeHolder: vscode.l10n.t("Choose a template") },
-  );
+  const templateRows = templates.map((template) => ({
+    label: template.title,
+    description: template.id,
+    detail: template.body.split("\n")[0]?.slice(0, 120),
+    template,
+  }));
+  const pickedTemplateId = pickInSurface
+    ? await pickInSurface({
+        title: vscode.l10n.t("Inject prompt template"),
+        placeholder: vscode.l10n.t("Choose a template"),
+        items: templateRows.map((row) => ({ id: row.template.id, label: row.label, description: row.description, detail: row.detail })),
+      })
+    : undefined;
+  const tplPick = pickInSurface
+    ? templateRows.find((row) => row.template.id === pickedTemplateId)
+    // No product surface is open for the Command Palette / sidebar door, so native is intentional.
+    : await vscode.window.showQuickPick(templateRows, {
+        title: vscode.l10n.t("Inject prompt template"), placeHolder: vscode.l10n.t("Choose a template"),
+      });
   if (!tplPick) return false;
   const template = tplPick.template;
 
@@ -591,26 +606,32 @@ async function injectPromptTemplateFlow(ws: WorkspaceShellHandle, preselectedAge
     agentName = agentPick.label;
   }
 
-  const modePick = await vscode.window.showQuickPick(
-    [
-      {
-        label: vscode.l10n.t("Stage in composer"),
-        description: vscode.l10n.t("default"),
-        detail: vscode.l10n.t("Paste without Enter — review before sending"),
-        mode: "stage" as const,
-      },
-      {
-        label: vscode.l10n.t("Submit now"),
-        description: vscode.l10n.t("explicit"),
-        detail: vscode.l10n.t("Paste + Enter — refused when the agent is busy"),
-        mode: "submit" as const,
-      },
-    ],
+  const modeRows = [
     {
-      title: vscode.l10n.t("Delivery for '{0}' → {1}", template.title, agentName),
-      placeHolder: vscode.l10n.t("Stage or submit?"),
+      label: vscode.l10n.t("Stage in composer"),
+      description: vscode.l10n.t("default"),
+      detail: vscode.l10n.t("Paste without Enter — review before sending"),
+      mode: "stage" as const,
     },
-  );
+    {
+      label: vscode.l10n.t("Submit now"),
+      description: vscode.l10n.t("explicit"),
+      detail: vscode.l10n.t("Paste + Enter — refused when the agent is busy"),
+      mode: "submit" as const,
+    },
+  ];
+  const modeTitle = vscode.l10n.t("Delivery for '{0}' → {1}", template.title, agentName);
+  const pickedModeId = pickInSurface
+    ? await pickInSurface({
+        title: modeTitle,
+        placeholder: vscode.l10n.t("Stage or submit?"),
+        items: modeRows.map((row) => ({ id: row.mode, label: row.label, description: row.description, detail: row.detail })),
+      })
+    : undefined;
+  const modePick = pickInSurface
+    ? modeRows.find((row) => row.mode === pickedModeId)
+    // Same no-surface door as the template choice above.
+    : await vscode.window.showQuickPick(modeRows, { title: modeTitle, placeHolder: vscode.l10n.t("Stage or submit?") });
   if (!modePick) return false;
   const submit = modePick.mode === "submit";
 
@@ -2308,7 +2329,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
       // Detached pane: "is my agent gone, or only the window onto it?" — tmux answers that.
       sessionAlive: async (session) => terminalTmux.hasSession(session),
-      openTemplateInject: async (agentName) => injectPromptTemplateFlow(ws, agentName),
+      openTemplateInject: async (agentName, choose) => injectPromptTemplateFlow(ws, agentName, choose),
       createPinFromSelection: async (text, agentName) => {
         const title = pinTitleFromSelection(text, agentName);
         if (!title) throw new Error(vscode.l10n.t("Nothing selected."));

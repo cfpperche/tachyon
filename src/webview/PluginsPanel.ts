@@ -261,7 +261,7 @@ export class PluginsPanelManager {
       // `cockpit.css`, so this app would have rendered flush to the tab edge. It is `plugins.css`'s own
       // rule now — the same class of trap as t-32c872, one property over, and the one the Phase A
       // consumption check cannot see because it reads `#root` height chains and not padding.
-      styleFiles: ["codicon.css", "design-system.css", "plugins.tailwind.css", "plugins.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "plugins.tailwind.css", "plugins.css"],
       title: () => vscode.l10n.t("Plugins"),
       refreshKindFor: pluginsRefreshKind,
       bind: (session) => {

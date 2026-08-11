@@ -166,7 +166,7 @@ export class TaskDetailPanelManager {
       // mermaid sheet MarkdownView's blocks need, then this surface's own. This phase changes where the
       // screen renders, not how it looks.
       styleFiles: [
-        "codicon.css", "design-system.css", "vscode-theme.css", "task-studio.tailwind.css",
+        "codicon.css", "design-system.css", "quick-picker.css", "vscode-theme.css", "task-studio.tailwind.css",
         "rich-doc.css", "studio-frame.css", "task-studio.css", "mermaid-block.css", "task-detail.css",
       ],
       csp: { frameSrc: "self", imgBlob: true, connectSrc: true, workerSrc: "blob" },

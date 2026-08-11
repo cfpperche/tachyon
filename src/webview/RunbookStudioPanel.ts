@@ -22,7 +22,7 @@ export class RunbookStudioPanelManager extends SingleModeStudioPanelManager {
         app: webviewApp("runbook-studio-shell"),
         styleFiles: [
           "codicon.css",
-          "design-system.css",
+          "design-system.css", "quick-picker.css",
           "vscode-theme.css",
           "studio-frame.css",
           "runbook-studio-shell.css",

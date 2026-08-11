@@ -46,7 +46,7 @@ export class HandoffPanelManager {
   private configFor(app: WebviewAppEntry): SectionAppConfig<RefreshKind> {
     return {
       app,
-      styleFiles: ["codicon.css", "design-system.css", "mermaid-block.css", "activity.css", "handoff.css"],
+      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "mermaid-block.css", "activity.css", "handoff.css"],
       title: () => vscode.l10n.t("Project Handoff"),
       refreshKindFor: handoffRefreshKind,
       bind: (session) => {

@@ -39,7 +39,7 @@ export type ShellExtensionPoint = (typeof SHELL_EXTENSION_POINTS)[number];
 
 /** The baseline stylesheet layer a CONFORMING surface links first, in this order: the icon font, then the
  *  sheet that carries the design system itself. A surface missing the latter declares `base-style`. */
-export const SHELL_BASE_STYLESHEETS = ["codicon.css", "design-system.css"] as const;
+export const SHELL_BASE_STYLESHEETS = ["codicon.css", "design-system.css", "quick-picker.css"] as const;
 
 /** The one baseline sheet that CARRIES the design system (tokens + base components + the body baseline). */
 export const SHELL_DESIGN_SYSTEM_STYLESHEET = "design-system.css";

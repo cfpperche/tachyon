@@ -22,7 +22,7 @@ export class TerminalStudioPanelManager extends SingleModeStudioPanelManager {
         app: webviewApp("terminal-studio-shell"),
         styleFiles: [
           "codicon.css",
-          "design-system.css",
+          "design-system.css", "quick-picker.css",
           "vscode-theme.css",
           "studio-frame.css",
           "terminal-studio-shell.css",

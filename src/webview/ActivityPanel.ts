@@ -127,7 +127,7 @@ export class ActivityPanelManager {
       // consumers, so there is nothing to move or share; the standalone app stops linking it.
       styleFiles: [
         "codicon.css",
-        "design-system.css",
+        "design-system.css", "quick-picker.css",
         "highlight.css",
         "katex.min.css",
         "mermaid-block.css",
