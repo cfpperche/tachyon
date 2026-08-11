@@ -410,7 +410,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         "Dismiss a stopped Temporary managed entry from this workspace. This removes the ephemeral row and its durable " +
         "Temporary footprint; it is only valid for Temporary entries that are no longer running. Use kill_agent first for " +
         "a running Temporary instance. Tachyon activity and pane transcripts are deleted, and so is the private runtime " +
-        "home under .tachyon/bridge-mcp (grok/hermes) — with a receipt naming its size. A harness home under " +
+        "home under .tachyon/bridge-mcp (Grok/Hermes, with a receipt naming its size), plus the file-shaped configs there for Claude/OpenCode. A harness home under " +
         ".tachyon/harness keeps its runtime-native caches, which are not a uniform archive. Declared tachyon.yml agents " +
         "cannot be dismissed through the Bridge.",
       inputSchema: { name: AGENT_NAME },
