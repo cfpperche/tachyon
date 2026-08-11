@@ -81,9 +81,17 @@ export function StudioFrame(props: StudioFrameProps) {
         <div class="sf-actions">
           {props.headerActions}
           <Button disabled={props.frozen} onClick={props.onCancel}>{labels.cancel}</Button>
-          <Button variant="primary" disabled={!props.canSave || props.frozen} onClick={props.onSave}>
-            {props.saveInFlight ? labels.saving : labels.save}
-          </Button>
+          {/*
+            t-831332 — loadFailed means the host answered with no document. Save is not disabled
+            here: it is ABSENT. Same reason as t-b643ac's tombstone: a greyed Save promises a path
+            that does not exist. canSave={false} only greys the control; it still claims "there is
+            something to save once conditions improve".
+          */}
+          {!props.loadFailed && (
+            <Button variant="primary" disabled={!props.canSave || props.frozen} onClick={props.onSave}>
+              {props.saveInFlight ? labels.saving : labels.save}
+            </Button>
+          )}
         </div>
       </header>
 

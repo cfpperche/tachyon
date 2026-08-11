@@ -157,7 +157,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Sche
   if (!entity) {
     return (
       <StudioLoadError
-        title={scheduleStudioTitleFor(mode, entityId, entity)}
+        entityType="schedule"
         error={hostError}
         backLink={backLink}
         onClose={() => post(cancelMessage())}

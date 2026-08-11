@@ -1,6 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { StudioFrame } from "./StudioFrame";
 import type { StudioError } from "./errorTaxonomy";
+import { studioLoadErrorTitle } from "./studioLoadErrorTitle";
 
 /**
  * t-f4e186 — what a studio shows when the host ANSWERED and the answer was not a document.
@@ -26,18 +27,27 @@ import type { StudioError } from "./errorTaxonomy";
  *
  * There is deliberately nothing new on this screen. It is `StudioFrame` with NO regions: the
  * load-failure banner it already draws, the error list it already draws, and Cancel, which is the
- * only action a document with no subject has. `pipeline-studio` — the one shell whose guard reads
- * `if (!ready)` alone — has rendered exactly this since spec 350 T4, title included, and it is the
- * measured control in `test/browser/studioLoadErrorShells.test.ts`. What lands here is that
- * behaviour reaching the other seven, not a new opinion about how a failure should look.
+ * only action a document with no subject has. Save is out of the tree (t-831332), same reason the
+ * tombstone (t-b643ac) never drew it: a disabled control is a promise that a path exists.
  *
- * The title comes from the shell's own `titleFor`, with whatever it knows — which after a failed
- * load is the "new" title, because the host never told it an identity. That is the same thing
- * pipeline-studio has always shown ("New Pipeline"), and it claims nothing the client cannot know.
+ * ## Title: name the surface, not an entity (t-831332)
+ *
+ * The `error` envelope carries no identity — four hosts post it bare
+ * (`SingleModeStudioPanelManager`, `StudioPanelManagerBase`, `TaskDetailPanel`, `PinDetailPanel`).
+ * Calling `titleFor` with no entity falls through to "New Agent" / "New Pipeline" and asserts a
+ * create-flow the human is not in. What this screen knows is which studio it is and that the load
+ * failed; the banner already says the second half. The title is therefore the surface name only:
+ * `studioLoadErrorTitle(entityType)` → "Agent Studio", "Command Studio", …
  */
+
+export { studioLoadErrorTitle } from "./studioLoadErrorTitle";
+
 export interface StudioLoadErrorProps {
-  /** the shell's own `titleFor(mode, entityId, entity)` — see the note above about what it can know. */
-  title: string;
+  /**
+   * the studio's entity kind (`agent`, `command`, `task`, …) — the one fact the client always has
+   * even when the host sent no identity. See `studioLoadErrorTitle`.
+   */
+  entityType: string;
   /** the host's error, when it sent one. Absent still renders the banner: the load failed either way. */
   error?: StudioError;
   backLink?: ComponentChildren;
@@ -45,10 +55,10 @@ export interface StudioLoadErrorProps {
   onClose: () => void;
 }
 
-export function StudioLoadError({ title, error, backLink, onClose }: StudioLoadErrorProps) {
+export function StudioLoadError({ entityType, error, backLink, onClose }: StudioLoadErrorProps) {
   return (
     <StudioFrame
-      title={title}
+      title={studioLoadErrorTitle(entityType)}
       backLink={backLink}
       errors={error ? [error] : []}
       dirty={false}

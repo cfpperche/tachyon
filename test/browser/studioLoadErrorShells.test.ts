@@ -10,6 +10,7 @@ import { runbookStudioShellFixtures } from "../../scripts/webview-preview/fixtur
 import { scheduleStudioShellFixtures } from "../../scripts/webview-preview/fixtures/schedule-studio-shell";
 import { terminalStudioShellFixtures } from "../../scripts/webview-preview/fixtures/terminal-studio-shell";
 import { pipelineStudioFixtures } from "../../scripts/webview-preview/fixtures/pipeline-studio";
+import { studioLoadErrorTitle } from "../../src/webview/shared/studio/studioLoadErrorTitle";
 
 /**
  * t-f4e186 — an `error` envelope that arrives with NO prior `load` must not leave the surface
@@ -34,12 +35,25 @@ import { pipelineStudioFixtures } from "../../scripts/webview-preview/fixtures/p
  * Task Studio and Pin Studio hold the identical guard (TaskDetailPanel.ts / PinDetailPanel.ts post the
  * same bare `error`), and take the same fix; they are absent here only because the preview catalog has
  * no `load-error` route for either — see t-f4e186's journal.
+ *
+ * ## t-831332 — no entity claim, no dead Save
+ *
+ * An error envelope carries no identity. The screen must not invent one (titleFor's "New …" path)
+ * and must not offer Save when there is no subject. Assertions are structural and fixture-supplied:
+ *
+ *   - title equals `studioLoadErrorTitle(entityType)` — the surface the shell knows it is;
+ *   - button labels do not include Save (absent, not merely disabled — same as t-b643ac's tombstone).
+ *
+ * A string search for "New Agent" would go green the day someone rewords the create-flow title; these
+ * do not.
  */
 
 interface ShellUnderTest {
   view: string;
   /** the exact text the fixture puts on the wire — the assertion is "this reached the screen". */
   message: string;
+  /** the studio kind the shell already knows — used to derive the only honest load-error title. */
+  entityType: string;
 }
 
 function loadErrorMessage(fixtures: Record<string, { vm: unknown }>, view: string): string {
@@ -50,12 +64,12 @@ function loadErrorMessage(fixtures: Record<string, { vm: unknown }>, view: strin
 }
 
 const SHELLS: ShellUnderTest[] = [
-  { view: "agent-studio-shell", message: loadErrorMessage(agentStudioShellFixtures, "agent-studio-shell") },
-  { view: "command-studio-shell", message: loadErrorMessage(commandStudioShellFixtures, "command-studio-shell") },
-  { view: "runbook-studio-shell", message: loadErrorMessage(runbookStudioShellFixtures, "runbook-studio-shell") },
-  { view: "schedule-studio-shell", message: loadErrorMessage(scheduleStudioShellFixtures, "schedule-studio-shell") },
-  { view: "terminal-studio-shell", message: loadErrorMessage(terminalStudioShellFixtures, "terminal-studio-shell") },
-  { view: "pipeline-studio", message: loadErrorMessage(pipelineStudioFixtures, "pipeline-studio") },
+  { view: "agent-studio-shell", entityType: "agent", message: loadErrorMessage(agentStudioShellFixtures, "agent-studio-shell") },
+  { view: "command-studio-shell", entityType: "command", message: loadErrorMessage(commandStudioShellFixtures, "command-studio-shell") },
+  { view: "runbook-studio-shell", entityType: "runbook", message: loadErrorMessage(runbookStudioShellFixtures, "runbook-studio-shell") },
+  { view: "schedule-studio-shell", entityType: "schedule", message: loadErrorMessage(scheduleStudioShellFixtures, "schedule-studio-shell") },
+  { view: "terminal-studio-shell", entityType: "terminal", message: loadErrorMessage(terminalStudioShellFixtures, "terminal-studio-shell") },
+  { view: "pipeline-studio", entityType: "pipeline", message: loadErrorMessage(pipelineStudioFixtures, "pipeline-studio") },
 ];
 
 let browser: Browser;
@@ -82,6 +96,9 @@ interface Surface {
   /** StudioFrame's load-failure banner, the one this defect kept unreachable. */
   hasLoadErrorBanner: boolean;
   text: string;
+  title: string;
+  /** every enabled OR disabled button label — Save must not be among them after t-831332. */
+  buttonLabels: string[];
 }
 
 async function readSurface(surface: Frame): Promise<Surface> {
@@ -89,6 +106,8 @@ async function readSurface(surface: Frame): Promise<Surface> {
     stillLoading: !!document.querySelector(".ds-degrade"),
     hasLoadErrorBanner: !!document.querySelector(".sf-banner-error"),
     text: (document.body.innerText || "").replace(/\s+/g, " ").trim(),
+    title: (document.querySelector(".sf-title")?.textContent || "").trim(),
+    buttonLabels: [...document.querySelectorAll("button")].map((b) => (b.textContent || "").trim()),
   }));
 }
 
@@ -112,6 +131,33 @@ describe("t-f4e186 — an error answer never leaves a studio in the loading stat
         expect(after.hasLoadErrorBanner, `${shell.view}: no load-failure banner`).toBe(true);
         // RED pre-fix: the host's own sentence never reached the document.
         expect(after.text, `${shell.view}: the delivered error text is not on screen`).toContain(shell.message);
+      } finally {
+        await page.close();
+      }
+    }, HANG_TIMEOUT_MS);
+  }
+});
+
+describe("t-831332 — a load-error screen claims only the surface and offers no dead Save", () => {
+  for (const shell of SHELLS) {
+    it(`${shell.view}: titles the surface and leaves Save out of the tree`, async () => {
+      const page = await browser.newPage();
+      try {
+        await page.bringToFront();
+        const surface = await openPreview(page, server.origin, {
+          query: { view: shell.view, fixture: "load-error" },
+        });
+        await surface.waitForSelector(".sf-banner-error", { visible: true, timeout: 8_000 }).catch(() => undefined);
+
+        const after = await readSurface(surface);
+        // Positive: the title is exactly what the screen knows (which studio), computed the same way
+        // production computes it — not a create-flow label and not a fabricated entity id.
+        expect(after.title, `${shell.view}: title must name the surface, not an entity`).toBe(
+          studioLoadErrorTitle(shell.entityType),
+        );
+        // Positive structural: Save is absent. A disabled Save still appears in this list (pre-fix).
+        expect(after.buttonLabels, `${shell.view}: Save survived on a document with no subject`).not.toContain("Save");
+        expect(after.buttonLabels).toContain("Cancel");
       } finally {
         await page.close();
       }
