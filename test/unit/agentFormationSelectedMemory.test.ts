@@ -71,7 +71,6 @@ async function fixture() {
     runtimeInspector: { adapter: "codex", id: "inspector", version: "1", sha256: "b".repeat(64) },
     lanes: {
       instructions: { mode: "disabled" },
-      evolution: { mode: "disabled" },
       memory: {
         mode: "profile", required: true, selectorId: "selected-memory", subjectId: ACTIVATION_ID,
         path: "memory/manifest.json", sourceSha256: manifestSha256,

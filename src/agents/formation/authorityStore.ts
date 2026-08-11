@@ -3,11 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import {
-  evolutionActivationHeadV2Schema,
   formationDigest,
   formationGenerationHeadV1Schema,
   formationSessionSelectorV1Schema,
-  formationSkillInventoryDigest,
   formationSnapshotManifestV1Schema,
   memoryActivationHeadV1Schema,
   profileActivationHeadV2Schema,
@@ -128,7 +126,7 @@ export interface FormationLaunchAuthorizationInput {
   parentSessionId?: string;
 }
 
-export type FormationVectorMutation = "bootstrap" | "profile-edit" | "evolution-promotion" | "memory-promotion" | "retire";
+export type FormationVectorMutation = "bootstrap" | "profile-edit" | "memory-promotion" | "retire";
 
 export interface FormationSkillPayload {
   path: string;
@@ -141,8 +139,6 @@ export interface ResolvedFormationPayload {
   rendererContractsSha256: string;
   startupPrompt: Buffer | string;
   reanchorReminder: Buffer | string;
-  evolutionLearnings?: Buffer | string;
-  evolutionSkills?: readonly FormationSkillPayload[];
   selectedMemory?: readonly FormationSkillPayload[];
   nativeSuppression?: FormationNativeSuppressionEvidenceV1;
 }
@@ -234,8 +230,6 @@ export interface FormationMutationReceipt {
 interface StoredPayload {
   startupPrompt: string;
   reanchorReminder: string;
-  evolutionLearnings?: string;
-  evolutionSkills: Array<{ path: string; bytes: string; executable: boolean }>;
   selectedMemory?: Array<{ path: string; bytes: string }>;
 }
 
@@ -290,15 +284,13 @@ function parseVector(raw: string): FormationAuthorityVector {
   const record = value as Record<string, unknown>;
   const profile = profileActivationHeadV2Schema.safeParse(record.profile);
   const generation = formationGenerationHeadV1Schema.safeParse(record.generation);
-  const evolution = record.evolution === undefined ? undefined : evolutionActivationHeadV2Schema.safeParse(record.evolution);
   const memory = record.memory === undefined ? undefined : memoryActivationHeadV1Schema.safeParse(record.memory);
-  if (!profile.success || !generation.success || (evolution && !evolution.success) || (memory && !memory.success)) {
+  if (!profile.success || !generation.success || (memory && !memory.success)) {
     throw new FormationAuthorityStoreError("formation authority vector has an invalid schema");
   }
   const parsed: FormationAuthorityVector = {
     profile: profile.data,
     generation: generation.data,
-    ...(evolution?.success ? { evolution: evolution.data } : {}),
     ...(memory?.success ? { memory: memory.data } : {}),
   };
   const errors = validateFormationAuthorityVector(parsed);
@@ -351,7 +343,7 @@ function validateVectorTransition(
   if (!current) {
     return mutation === "bootstrap"
       && next.generation.generation === 1 && next.generation.priorGeneration === 0 && !next.generation.retired
-      && initialHead(next.profile) && (!next.evolution || initialHead(next.evolution)) && (!next.memory || initialHead(next.memory))
+      && initialHead(next.profile) && (!next.memory || initialHead(next.memory))
       ? [] : ["initial formation vector requires an active bootstrap generation 1"];
   }
   const errors: string[] = [];
@@ -364,7 +356,7 @@ function validateVectorTransition(
 
   if (mutation === "profile-edit") {
     if (!exactRevisionAdvance(current.profile, next.profile)) errors.push("profile edit must advance the active profile revision by exactly one");
-    for (const lane of ["evolution", "memory"] as const) {
+    for (const lane of ["memory"] as const) {
       const currentHead = current[lane];
       const nextHead = next[lane];
       const nextLaneEnabled = next.profile.lanes[lane].mode === "profile";
@@ -373,17 +365,8 @@ function validateVectorTransition(
       if (currentHead && !nextLaneEnabled && nextHead) errors.push(`disabled ${lane} lane must remove its authority head`);
     }
   }
-  if (mutation === "evolution-promotion") {
-    if (!sameValue(next.profile, current.profile) || !sameValue(next.memory, current.memory)) {
-      errors.push("Evolution promotion may change only Evolution authority and formation generation");
-    }
-    if (!next.evolution || !(current.evolution ? exactRevisionAdvance(current.evolution, next.evolution) : initialHead(next.evolution))) {
-      errors.push("Evolution promotion must initialize revision 1 or advance the active revision by exactly one");
-    }
-    if (next.profile.lanes.evolution.mode !== "profile") errors.push("Evolution promotion requires an enabled Evolution lane");
-  }
   if (mutation === "memory-promotion") {
-    if (!sameValue(next.profile, current.profile) || !sameValue(next.evolution, current.evolution)) {
+    if (!sameValue(next.profile, current.profile)) {
       errors.push("memory promotion may change only memory authority and formation generation");
     }
     if (!next.memory || !(current.memory ? exactRevisionAdvance(current.memory, next.memory) : initialHead(next.memory))) {
@@ -396,7 +379,7 @@ function validateVectorTransition(
   }
   if (mutation === "retire") {
     if (!next.generation.retired || current.generation.retired) errors.push("retire requires one active-to-retired transition");
-    if (!sameValue(next.profile, current.profile) || !sameValue(next.evolution, current.evolution) || !sameValue(next.memory, current.memory)) {
+    if (!sameValue(next.profile, current.profile) || !sameValue(next.memory, current.memory)) {
       errors.push("retire cannot mutate formation lane authority");
     }
   } else if (next.generation.retired) errors.push("only the retire operation may retire a formation generation");
@@ -952,7 +935,7 @@ export class FormationAuthorityStore {
     try { intent = JSON.parse(String(row.intent_json)) as unknown; }
     catch { throw new FormationAuthorityStoreError("formation mutation barrier intent is corrupt"); }
     const mutation = String(row.mutation) as FormationVectorMutation;
-    if (!["bootstrap", "profile-edit", "evolution-promotion", "memory-promotion", "retire"].includes(mutation)) {
+    if (!["bootstrap", "profile-edit", "memory-promotion", "retire"].includes(mutation)) {
       throw new FormationAuthorityStoreError("formation mutation barrier kind is corrupt");
     }
     const kind = String(row.caller_kind);
@@ -1001,31 +984,14 @@ export class FormationAuthorityStore {
         verifiedAt: this.now(),
       })) throw new FormationAuthorityStoreError("native formation suppression is invalid at publication");
     }
-    const skills = [...(resolved.evolutionSkills ?? [])].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
     const selectedMemory = [...(resolved.selectedMemory ?? [])].sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
     const startup = this.objectStore.digest(resolved.startupPrompt);
     const reanchor = this.objectStore.digest(resolved.reanchorReminder);
     const objects: FormationObject[] = [
       { kind: "startup-prompt", ...startup },
       { kind: "reanchor-reminder", ...reanchor },
-      ...(resolved.evolutionLearnings === undefined ? [] : [{
-        kind: "evolution-learnings" as const,
-        path: "evolution/LEARNINGS.md",
-        ...this.objectStore.digest(resolved.evolutionLearnings),
-      }]),
-      ...skills.map((skill) => ({ kind: "evolution-skill" as const, path: skill.path, ...this.objectStore.digest(skill.bytes), executable: skill.executable === true })),
       ...selectedMemory.map((entry) => ({ kind: "selected-memory" as const, path: entry.path, ...this.objectStore.digest(entry.bytes) })),
     ];
-    if (vector.profile.lanes.evolution.mode !== "profile" && (skills.length > 0 || resolved.evolutionLearnings !== undefined)) {
-      throw new FormationAuthorityStoreError("disabled Evolution lane cannot publish active artifacts");
-    }
-    if (vector.profile.lanes.evolution.mode === "profile") {
-      const learningObject = objects.find((object) => object.kind === "evolution-learnings");
-      if (!vector.evolution || !learningObject || learningObject.sha256 !== vector.evolution.learningsSha256
-        || formationSkillInventoryDigest(objects) !== vector.evolution.skillsInventorySha256) {
-        throw new FormationAuthorityStoreError("Evolution skill inventory does not match active authority");
-      }
-    }
     if (vector.profile.lanes.memory.mode !== "profile" && selectedMemory.length > 0) {
       throw new FormationAuthorityStoreError("disabled memory lane cannot publish selected-memory artifacts");
     }
@@ -1055,8 +1021,6 @@ export class FormationAuthorityStore {
       payload: {
         startupPrompt: asBuffer(resolved.startupPrompt).toString("base64"),
         reanchorReminder: asBuffer(resolved.reanchorReminder).toString("base64"),
-        ...(resolved.evolutionLearnings === undefined ? {} : { evolutionLearnings: asBuffer(resolved.evolutionLearnings).toString("base64") }),
-        evolutionSkills: skills.map((skill) => ({ path: skill.path, bytes: asBuffer(skill.bytes).toString("base64"), executable: skill.executable === true })),
         selectedMemory: selectedMemory.map((entry) => ({ path: entry.path, bytes: asBuffer(entry.bytes).toString("base64") })),
       },
     };
@@ -1066,8 +1030,6 @@ export class FormationAuthorityStore {
     const sources = [
       Buffer.from(payload.startupPrompt, "base64"),
       Buffer.from(payload.reanchorReminder, "base64"),
-      ...(payload.evolutionLearnings === undefined ? [] : [Buffer.from(payload.evolutionLearnings, "base64")]),
-      ...payload.evolutionSkills.map((skill) => Buffer.from(skill.bytes, "base64")),
       ...(payload.selectedMemory ?? []).map((entry) => Buffer.from(entry.bytes, "base64")),
     ];
     if (sources.length !== manifest.objects.length) throw new FormationAuthorityStoreError("formation payload inventory mismatch");

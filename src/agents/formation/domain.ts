@@ -41,7 +41,7 @@ const profileLaneSchema = z.object({
 
 export const formationLaneSchema = z.discriminatedUnion("mode", [legacyLaneSchema, disabledLaneSchema, profileLaneSchema]);
 export type FormationLane = z.infer<typeof formationLaneSchema>;
-export type FormationLaneName = "instructions" | "evolution" | "memory";
+export type FormationLaneName = "instructions" | "memory";
 
 export const formationNativeSuppressionEvidenceV1Schema = z.object({
   schemaVersion: z.literal(1),
@@ -49,7 +49,7 @@ export const formationNativeSuppressionEvidenceV1Schema = z.object({
   sourceVectorSha256: digest,
   runtimeAdapter: publicId,
   runtimeTrustClass: publicId,
-  lanes: z.array(z.enum(["instructions", "evolution", "memory"])).max(3),
+  lanes: z.array(z.enum(["instructions", "memory"])).max(2),
   issuedAt: z.string().datetime(),
   mac: digest,
 }).strict();
@@ -72,7 +72,6 @@ export const profileActivationHeadV2Schema = z.object({
   }).strict(),
   lanes: z.object({
     instructions: formationLaneSchema,
-    evolution: formationLaneSchema,
     memory: formationLaneSchema,
   }).strict(),
 }).strict().superRefine((head, ctx) => {
@@ -87,48 +86,6 @@ export const profileActivationHeadV2Schema = z.object({
 export type ProfileActivationHeadV2 = z.infer<typeof profileActivationHeadV2Schema>;
 
 const authorityRefSchema = z.object({ revision, digest }).strict();
-
-export const evolutionActivationHeadV2Schema = z.object({
-  schemaVersion: z.literal(2),
-  workspaceId: publicId,
-  agentId: z.string().uuid(),
-  profileId: publicId,
-  revision,
-  priorRevision: z.number().int().min(0),
-  activeVersion: z.number().int().min(0),
-  profileManifestSha256: digest,
-  learningsSha256: digest,
-  skillsInventorySha256: digest,
-  skillInventory: z.array(z.object({
-    path: z.string(),
-    sha256: digest,
-    bytes: z.number().int().min(0).max(16 * 1024 * 1024),
-    executable: z.boolean(),
-  }).strict()).max(1024),
-}).strict().superRefine((head, ctx) => {
-  if (head.revision !== head.priorRevision + 1) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["revision"], message: "must advance priorRevision by exactly one" });
-  }
-  const paths = new Set<string>();
-  for (const [index, entry] of head.skillInventory.entries()) {
-    if (formationSkillRelativePathError(entry.path) || !entry.path.startsWith("evolution/")) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skillInventory", index, "path"], message: "must be a safe Evolution snapshot path" });
-    }
-    const canonicalPath = entry.path.toLowerCase();
-    if (canonicalPath === "evolution/learnings.md") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skillInventory", index, "path"], message: "is reserved for active Evolution learnings" });
-    }
-    if (paths.has(canonicalPath) || (index > 0 && head.skillInventory[index - 1]!.path >= entry.path)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skillInventory", index, "path"], message: "must be unique and strictly sorted" });
-    }
-    paths.add(canonicalPath);
-  }
-  const objects: FormationObject[] = head.skillInventory.map((entry) => ({ kind: "evolution-skill", ...entry }));
-  if (formationSkillInventoryDigest(objects) !== head.skillsInventorySha256) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["skillsInventorySha256"], message: "must bind the complete skill inventory" });
-  }
-});
-export type EvolutionActivationHeadV2 = z.infer<typeof evolutionActivationHeadV2Schema>;
 
 export const memoryActivationHeadV1Schema = z.object({
   schemaVersion: z.literal(1),
@@ -173,7 +130,6 @@ export const formationGenerationHeadV1Schema = z.object({
   priorGeneration: z.number().int().min(0),
   retired: z.boolean(),
   profile: authorityRefSchema,
-  evolution: authorityRefSchema.optional(),
   memory: authorityRefSchema.optional(),
   rendererContractsSha256: digest,
 }).strict().superRefine((head, ctx) => {
@@ -186,7 +142,6 @@ export type FormationGenerationHeadV1 = z.infer<typeof formationGenerationHeadV1
 export interface FormationAuthorityVector {
   profile: ProfileActivationHeadV2;
   generation: FormationGenerationHeadV1;
-  evolution?: EvolutionActivationHeadV2;
   memory?: MemoryActivationHeadV1;
 }
 
@@ -194,16 +149,14 @@ export function validateFormationAuthorityVector(vector: FormationAuthorityVecto
   const errors: string[] = [];
   const parsedProfile = profileActivationHeadV2Schema.safeParse(vector.profile);
   const parsedGeneration = formationGenerationHeadV1Schema.safeParse(vector.generation);
-  const parsedEvolution = vector.evolution ? evolutionActivationHeadV2Schema.safeParse(vector.evolution) : undefined;
   const parsedMemory = vector.memory ? memoryActivationHeadV1Schema.safeParse(vector.memory) : undefined;
   if (!parsedProfile.success) errors.push("profile activation head is invalid");
   if (!parsedGeneration.success) errors.push("formation generation head is invalid");
-  if (parsedEvolution && !parsedEvolution.success) errors.push("Evolution activation head is invalid");
   if (parsedMemory && !parsedMemory.success) errors.push("memory activation head is invalid");
   if (errors.length > 0) return errors;
 
-  const { profile, generation, evolution, memory } = vector;
-  for (const [label, value] of [["profile", profile], ["generation", generation], ["Evolution", evolution], ["memory", memory]] as const) {
+  const { profile, generation, memory } = vector;
+  for (const [label, value] of [["profile", profile], ["generation", generation], ["memory", memory]] as const) {
     if (!value) continue;
     if (value.workspaceId !== profile.workspaceId) errors.push(`${label} authority belongs to another workspace`);
     if (value.agentId !== profile.agentId) errors.push(`${label} authority belongs to another agentId`);
@@ -211,19 +164,6 @@ export function validateFormationAuthorityVector(vector: FormationAuthorityVecto
   const profileDigest = formationDigest(profile);
   if (generation.profile.revision !== profile.revision || generation.profile.digest !== profileDigest) {
     errors.push("formation generation does not bind the exact profile activation head");
-  }
-
-  const evolutionLane = profile.lanes.evolution;
-  if (evolutionLane.mode === "profile") {
-    if (!evolution) errors.push("enabled Evolution lane has no activation head");
-    else {
-      if (evolutionLane.subjectId !== evolution.profileId) errors.push("Evolution selector subject does not match activation profileId");
-      if (!generation.evolution || generation.evolution.revision !== evolution.revision
-        || generation.evolution.digest !== formationDigest(evolution)) errors.push("formation generation does not bind the exact Evolution head");
-    }
-  } else {
-    if (evolution) errors.push("disabled/legacy Evolution lane must not have an activation head");
-    if (generation.evolution) errors.push("disabled/legacy Evolution lane must not have an active generation reference");
   }
 
   const memoryLane = profile.lanes.memory;
@@ -253,13 +193,13 @@ export function formationSkillRelativePathError(value: string): string | undefin
   if (segments.length < 2 || segments.some((segment) => !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(segment)
     || segment === "." || segment === "..")) return "must contain canonical non-dot path segments";
   if (["plugin", "plugins", ".tachyon", "config", "hooks", "mcp"].includes(segments[0]!.toLowerCase())) {
-    return "must stay inside the Evolution skill namespace";
+    return "must stay inside the lane artifact namespace";
   }
   return undefined;
 }
 
 export const formationObjectSchema = z.object({
-  kind: z.enum(["startup-prompt", "reanchor-reminder", "evolution-learnings", "evolution-skill", "selected-memory"]),
+  kind: z.enum(["startup-prompt", "reanchor-reminder", "selected-memory"]),
   path: z.string().superRefine((value, ctx) => {
     const error = formationSkillRelativePathError(value);
     if (error) ctx.addIssue({ code: z.ZodIssueCode.custom, message: error });
@@ -299,18 +239,12 @@ export const formationSnapshotManifestV1Schema = z.object({
       const normalizedPath = object.path.toLowerCase();
       if (paths.has(normalizedPath)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "collides with another immutable object path" });
       paths.add(normalizedPath);
-      if (object.kind === "evolution-skill" && normalizedPath === "evolution/learnings.md") {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "is reserved for active Evolution learnings" });
-      }
     }
-    if ((object.kind === "evolution-skill" || object.kind === "evolution-learnings" || object.kind === "selected-memory") && !object.path) {
+    if (object.kind === "selected-memory" && !object.path) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index, "path"], message: "is required for lane artifacts" });
     }
     if ((object.kind === "startup-prompt" || object.kind === "reanchor-reminder") && (object.path !== undefined || object.executable !== undefined)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "prompt objects cannot declare path or executable" });
-    }
-    if (object.kind === "evolution-learnings" && (object.path !== "evolution/LEARNINGS.md" || object.executable !== undefined)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "Evolution learnings must use the canonical non-executable path" });
     }
     if (object.kind === "selected-memory" && (!object.path?.startsWith("memory/active/") || object.executable !== undefined)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["objects", index], message: "selected memory must use its canonical non-executable namespace" });
@@ -318,13 +252,6 @@ export const formationSnapshotManifestV1Schema = z.object({
   }
 });
 export type FormationSnapshotManifestV1 = z.infer<typeof formationSnapshotManifestV1Schema>;
-
-export function formationSkillInventoryDigest(objects: readonly FormationObject[]): string {
-  return formationDigest(objects
-    .filter((object) => object.kind === "evolution-skill")
-    .map((object) => ({ path: object.path, sha256: object.sha256, bytes: object.bytes, executable: object.executable === true }))
-    .sort((left, right) => left.path! < right.path! ? -1 : left.path! > right.path! ? 1 : 0));
-}
 
 export const formationSessionSelectorV1Schema = z.object({
   schemaVersion: z.literal(FORMATION_SELECTOR_SCHEMA_VERSION),
@@ -364,7 +291,6 @@ export function profileActivationHeadV2FromV1(input: {
     runtimeInspector: input.legacy.runtimeInspector,
     lanes: {
       instructions: { mode: "disabled" },
-      evolution: { mode: "disabled" },
       memory: { mode: "disabled" },
     },
   });

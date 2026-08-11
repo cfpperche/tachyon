@@ -37,4 +37,4 @@ export function validateFormationSessionTransition(
 }
 
 /** Plugin state is deliberately absent from the closed formation/session contract. */
-export const FORMATION_GOVERNED_LANES = Object.freeze(["instructions", "evolution", "memory"] as const);
+export const FORMATION_GOVERNED_LANES = Object.freeze(["instructions", "memory"] as const);
