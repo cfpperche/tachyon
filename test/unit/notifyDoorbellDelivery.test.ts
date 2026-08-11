@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
@@ -151,19 +151,13 @@ async function withCoordAndChild() {
   return { ...made, session: made.ws.manager.session("coord") };
 }
 
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "THE MEASURED BUG: a doorbell from a child the coordinator has since KILLED is still delivered",
-    "a HOST poke about a killed child is still purged — the ghost fix keeps its original scope",
-    "a host poke about a child that is still ALIVE is delivered (no over-purge)",
-    "baseline: busy at enqueue, idle later, child alive → delivered",
-    "an authored report delayed past ten minutes is delivered with honest live-sender provenance",
-    "expiry names the sender and the line, the way overflow already names its count",
-    "a notice queued because recovery held the mutex is drained in the same idle pass",
-    "a submit whose completion could not be observed keeps the notice queued for the next idle",
-    "a human draft in the composer holds the drain without losing the notice",
-  ],
-});
+/**
+ * t-b10d93 — the child below is spawned with `cmd: opencode`, and its credential is substrate: the only
+ * thing left wanting it, once `HERMETIC_PREFLIGHT` above removed the preflight, is
+ * `HarnessManager.materializeHome` copying `<XDG_DATA_HOME>/opencode/auth.json`. Injecting a fixture
+ * file replaces the nine-title skip list this file used to carry, so the nine run on any machine.
+ */
+useDisposableRuntimeAuth(["opencode"]);
 
 describe("t-fb1453 — an agent-authored doorbell outlives its author", () => {
   it("THE MEASURED BUG: a doorbell from a child the coordinator has since KILLED is still delivered", async () => {
