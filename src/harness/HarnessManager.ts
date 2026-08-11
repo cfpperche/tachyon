@@ -2374,6 +2374,15 @@ export class HarnessManager {
     const home = this.home(agent);
     fs.mkdirSync(home, { recursive: true });
 
+    // t-fc1df8 — this is the one private-home door both Claude routes cross. A grantless Temporary
+    // child is auto-isolated to transcript and never reaches materializeCanonicalClaudeProfileHome,
+    // so keeping the sweep in that capability-aware branch left an old, name-reused `skills` tree
+    // live under a profile that grants nothing. Purge before either route decides what to rebuild;
+    // the selected route immediately re-materializes its current captured skills below.
+    if (adapter.runtime === "claude") {
+      this.purgeProfileCapabilityProjection(home, ["skills"]);
+    }
+
     if (h.xdg) {
       // spec t-e2ebe3 — opencode XDG layout: three subdirs under the home + auth COPY (mode 600) under the
       // data subdir. COPY (not symlink): opencode refreshes its token in place and a shared symlink would
@@ -2758,7 +2767,7 @@ export class HarnessManager {
     const home = this.materializeHome(agent, adapter, cwd);
     this.materializeCanonicalClaudeBootstrap(home, cwd);
 
-    for (const entry of ["CLAUDE.md", "settings.local.json", "mcp.json", "plugins", "agents", "commands", "skills", PROFILE_CAPABILITY_ROOT]) {
+    for (const entry of ["CLAUDE.md", "settings.local.json", "mcp.json", "plugins", "agents", "commands"]) {
       fs.rmSync(path.join(home, entry), { recursive: true, force: true });
     }
 

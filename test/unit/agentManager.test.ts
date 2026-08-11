@@ -4074,6 +4074,37 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(newSessionArgs).toHaveLength(1);
   });
 
+  it("t-fc1df8: a grantless Claude child purges stale skills from its reused private home", async () => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-claude-revoked-"));
+    dirs.push(base);
+    const realHome = path.join(base, "realhome");
+    fs.mkdirSync(realHome, { recursive: true });
+    fs.writeFileSync(path.join(realHome, ".credentials.json"), '{"token":"CLAUDE"}');
+
+    let harnessMgr: HarnessManager;
+    const { manager, ws } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
+      // Mirrors Workspace.materializeHarness's production routing: a Temporary Claude child with
+      // no parent grant has no profileCapabilities and is auto-injected isolate:transcript, so it
+      // reaches materializeHomeOnly rather than the capability materializer.
+      materializeHarness: ({ name, def }) => {
+        const adapter = adapterFor(def.cmd);
+        if (!harnessable(adapter) || !adapter) return null;
+        if (def.isolate === "transcript") return harnessMgr.materializeHomeOnly(name, adapter);
+        return null;
+      },
+    });
+    harnessMgr = new HarnessManager(ws, realHome, {}, path.join(realHome, ".claude.json"));
+
+    const staleSkill = path.join(harnessHome(ws, "reused-child"), "skills", "old-grant", "SKILL.md");
+    fs.mkdirSync(path.dirname(staleSkill), { recursive: true });
+    fs.writeFileSync(staleSkill, "# stale grant\n");
+
+    await manager.spawn("reused-child", { cmd: "claude", parent: "boss" });
+
+    expect(asAgent(manager.defOf("reused-child"))?.profileCapabilities).toBeUndefined();
+    expect(fs.existsSync(path.join(harnessHome(ws, "reused-child"), "skills"))).toBe(false);
+  });
+
   it("spec 358 / t-e2ebe3: opencode delegation also passes with an isolated worktree", async () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
