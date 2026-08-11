@@ -208,7 +208,13 @@ binaries, not the docs — Claude 2.1.227, codex-cli 0.146.1, grok 1.0.0, pi 0.8
 none of these mechanisms today**, which alone caps every cell at `~`; the named holes are why `✓` would
 be wrong even after wiring. **Claude `~`:** `sandbox.enabled` is real OS-enforced confinement but covers
 **Bash**, not every tool — `Edit`/`Write` are governed by permission rules, and `bypassPermissions`
-skips those rules, so a bypass agent has no write boundary at all. **Codex `~`:** `workspace-write`
+skips those rules, so a bypass agent has no write boundary at all. **Measured directly on 2.1.228
+(`t-5313dc`, 2026-08-11), not inferred from flags:** the same command run twice, differing only in
+`--permission-mode`, with each prompt requiring one `Write` to an absolute path outside both the cwd
+and `additionalDirectories` and with Bash prohibited — `dontAsk` was denied and wrote nothing, while
+`bypassPermissions` reported success and the file existed with the exact bytes. Pointing the declared
+writable directory at the agent's worktree therefore cannot confine an authorized bypass agent, which
+is why this cell cannot become `✓` by wiring alone. **Codex `~`:** `workspace-write`
 genuinely confines and accepts explicit additional roots, but `/tmp` and `$TMPDIR` are writable **by
 default** and must be removed by hand. **Grok `~`:** `--sandbox workspace` confines the whole process
 via Landlock/Seatbelt — the strongest of the four — but a **built-in** profile warns and continues when

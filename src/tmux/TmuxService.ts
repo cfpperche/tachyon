@@ -124,20 +124,31 @@ export function isolatedArgs(args: string[]): string[] {
  * host can inherit an env with NO UTF-8 locale — notably when VS Code is launched
  * from Windows into WSL, the login shell's LANG never reaches the host — so tmux
  * runs 8-bit and mangles multibyte output (the mojibake you get copying from a
- * pane). This returns the locale vars to FORCE UTF-8, but ONLY when the inherited
- * env doesn't already declare one — we never override a UTF-8 locale the user has.
+ * pane). The same 8-bit path is what makes tmux's format `vis()` turn a literal
+ * TAB into `_` in `-F` output (t-86f3e6): `sessionStates`/`serverSnapshot` then
+ * `split("\t")` into one field and report plausible-but-wrong liveness.
+ *
+ * Returns the locale vars to FORCE UTF-8, but ONLY when the effective ctype is
+ * not already UTF-8 — we never override a UTF-8 locale the user has.
+ * Effective ctype follows POSIX: LC_ALL > LC_CTYPE > LANG. Checking "any of the
+ * three looks like UTF-8" is wrong when e.g. LANG is UTF-8 but LC_ALL=C wins.
+ *
+ * When forcing, set LANG + LC_CTYPE + LC_ALL together: merging only LANG/LC_CTYPE
+ * leaves a non-UTF-8 LC_ALL from process.env in place, and glibc still picks C.
  * C.UTF-8 is the always-present UTF-8 locale on Linux/WSL; en_US.UTF-8 on macOS.
- * Returns {} (a no-op) for an already-UTF-8 env, so well-configured hosts are
- * untouched. Merge into the exec/spawn/terminal env at the boundary.
+ * Returns {} (a no-op) for an already-UTF-8 effective env. Merge into the
+ * exec/spawn/terminal env at the boundary.
  */
 export function utf8LocaleEnv(
   base: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): Record<string, string> {
   const isUtf8 = (v?: string) => !!v && /utf-?8/i.test(v);
-  if (isUtf8(base.LC_ALL) || isUtf8(base.LC_CTYPE) || isUtf8(base.LANG)) return {};
+  // POSIX ctype precedence — not "any declared var looks UTF-8".
+  const effective = base.LC_ALL || base.LC_CTYPE || base.LANG;
+  if (isUtf8(effective)) return {};
   const locale = platform === "darwin" ? "en_US.UTF-8" : "C.UTF-8";
-  return { LANG: locale, LC_CTYPE: locale };
+  return { LANG: locale, LC_CTYPE: locale, LC_ALL: locale };
 }
 
 type ExecFileImpl = typeof execFile;

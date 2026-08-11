@@ -4,7 +4,7 @@ import { execFileSync, execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TmuxService, isolatedArgs, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TmuxService, isolatedArgs, utf8LocaleEnv, type ExecResult } from "../../src/tmux/TmuxService.js";
 import { ControlModeClient, type DeadMapEntry } from "../../src/tmux/ControlModeClient.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 
@@ -144,6 +144,66 @@ describe.skipIf(!tmuxAvailable())("TmuxService against real tmux", () => {
     const states = (await tmux.sessionStates("tachyon-itest-")) ?? new Map();
     expect(states.get("tachyon-itest-alive")).toEqual({ dead: false, exitCode: undefined });
     await tmux.killSession("tachyon-itest-alive");
+  });
+
+  /**
+   * t-86f3e6 — guard that must run under an 8-bit locale, not only on UTF-8 hosts.
+   *
+   * tmux `vis()` turns TAB into `_` in `-F` output when the client's effective ctype is C/POSIX.
+   * Without forcing UTF-8 at the exec boundary, `sessionStates`/`serverSnapshot` parse one field
+   * per line and report plausible-but-wrong liveness (dead never true, pid 0, concatenated name).
+   * This builds a C-locale base env deliberately, then applies the same merge production uses.
+   */
+  it("t-86f3e6: sessionStates and serverSnapshot stay correct when the process locale is C", async () => {
+    const sock = `tachyon-langc-${process.pid}`;
+    const cBase: NodeJS.ProcessEnv = {
+      ...process.env,
+      LANG: "C",
+      LC_ALL: "C",
+      LC_CTYPE: "C",
+    };
+    delete cBase.TMUX;
+    delete cBase.TMUX_PANE;
+    // Production merge: strip TMUX (test) + utf8LocaleEnv (product). Both are required.
+    const childEnv = { ...cBase, ...utf8LocaleEnv(cBase) };
+    delete childEnv.TMUX;
+    delete childEnv.TMUX_PANE;
+    expect(childEnv.LC_ALL).toMatch(/utf-?8/i);
+
+    const execC = (args: string[]): Promise<ExecResult> =>
+      new Promise((resolve, reject) => {
+        execFile("tmux", isolatedArgs(args), { encoding: "utf8", env: childEnv }, (err, stdout, stderr) => {
+          if (err) reject(new Error(stderr.trim() || err.message));
+          else resolve({ stdout, stderr });
+        });
+      });
+    const svc = new TmuxService(execC, sock);
+    try {
+      await svc.newSession({ name: "tachyon-langc-live", cmd: "sh" });
+      await svc.newSession({ name: "tachyon-langc-dead", cmd: "sh -c 'exit 9'" });
+
+      let deadState: { dead: boolean; exitCode?: number } | undefined;
+      for (let i = 0; i < 40; i++) {
+        await sleep(50);
+        deadState = (await svc.sessionStates("tachyon-langc-"))?.get("tachyon-langc-dead");
+        if (deadState?.dead && deadState.exitCode !== undefined) break;
+      }
+      const liveState = (await svc.sessionStates("tachyon-langc-"))?.get("tachyon-langc-live");
+      expect(liveState).toEqual({ dead: false, exitCode: undefined });
+      expect(deadState).toEqual({ dead: true, exitCode: 9 });
+
+      const snap = await waitUntil(
+        () => svc.serverSnapshot("tachyon-langc-"),
+        (rows) =>
+          rows.some((r) => r.session === "tachyon-langc-dead" && r.dead && r.exitCode === 9) &&
+          rows.some((r) => r.session === "tachyon-langc-live" && !r.dead && r.pid > 0),
+        { label: "LANG=C snapshot live+dead" },
+      );
+      // Must not be the silent-wrong shape: session name carrying every field joined by `_`.
+      expect(snap.every((r) => !r.session.includes("_0_"))).toBe(true);
+    } finally {
+      killSocket(sock);
+    }
   });
 
   it("capture with scrollback reach (-S) returns history beyond the visible pane", async () => {
