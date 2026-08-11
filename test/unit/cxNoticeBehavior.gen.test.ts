@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
@@ -148,13 +148,13 @@ function agentIncarnationsOf(ws: Workspace): Map<string, number> {
   return (ws as unknown as { agentIncarnations: Map<string, number> }).agentIncarnations;
 }
 
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "a queued notice carries its source child's incarnation and a poke from a dead incarnation is dropped even after a same-name respawn",
-    "t-572cef: a live child whose incarnation entry is missing (modeling a reload survivor) still has its poke delivered",
-    "t-572cef: a text-identical notify_agent relay is not absorbed into a child poke's dedup slot and survives the child's death",
-  ],
-});
+/**
+ * t-b10d93 — `cwdProbe` below is spawned with `cmd: opencode`, and its credential is substrate: with
+ * `HERMETIC_PREFLIGHT` above already off the executing path, the only remaining reader is
+ * `HarnessManager.materializeHome` copying `<XDG_DATA_HOME>/opencode/auth.json`. A fixture file
+ * replaces the three-title skip list this file used to carry.
+ */
+useDisposableRuntimeAuth(["opencode"]);
 
 describe("container-generated delegation behavior", () => {
   it("a queued notice carries its source child's incarnation and a poke from a dead incarnation is dropped even after a same-name respawn", async () => {

@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth, useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -47,21 +47,16 @@ import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
  * lifecycle are wired together correctly. Substrate is injected via `Workspace.createForTest`.
  */
 
-/** Substrate, not subject: the harness materializer needs a credential FILE to link, nothing more. */
-useDisposableRuntimeAuth(["claude", "codex"]);
-
 /**
- * t-a12966 — claude and codex used to be listed here too; both were substrate, so both are injected
- * now (`useDisposableRuntimeAuth` above) and the tests below run on any machine. What is left is the
- * one dependency a fixture cannot supply: opencode's preflight runs the installed runtime.
+ * Substrate, not subject: the harness materializer needs a credential FILE to link, nothing more.
+ *
+ * t-a12966 injected claude and codex. t-b10d93 added opencode, which had stayed declared-and-skipped
+ * on the grounds that its preflight runs the installed runtime — true of the preflight, and stubbed
+ * out above (`HERMETIC_PREFLIGHT`) since t-35c998. The door still refusing was
+ * `HarnessManager.materializeHome`, which copies `<XDG_DATA_HOME>/opencode/auth.json` and fails closed
+ * when it is absent: substrate, and a fixture supplies it. All three run on any machine now.
  */
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "pokes the live parent with the child's matched prompt line when it enters needs-input",
-    "falls back to a generic line when no matched prompt text is available",
-    "queues (via deliverNotice, per 341) rather than typing into a busy parent",
-  ],
-});
+useDisposableRuntimeAuth(["claude", "codex", "opencode"]);
 
 describe("resolveAgentProfileHomeDir", () => {
   it("uses an isolated absolute home only inside Dev Host", () => {
