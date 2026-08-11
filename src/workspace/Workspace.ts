@@ -259,6 +259,7 @@ import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
 import { composerProfileFor } from "../runtime/composerRegion.js";
+import type { RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
 import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";
@@ -359,6 +360,15 @@ export interface WorkspaceSeams {
   terminals?: TerminalPresentation;
   /** test-only native-profile inspection home; production inspects the real runtime home. */
   agentProfileHomeDir?: string;
+  /**
+   * t-35c998 — the launch preflight registry the AgentManager checks before every spawn. Production
+   * omits it and gets the real one, where the opencode adapter EXECUTES `opencode providers list`
+   * because reading the runtime's own credential store is the only honest answer to "is this
+   * authenticated?". A unit test that inherits that runs an external CLI once per spawn, which is the
+   * machine-dependence SDD 387 forbids; `test/helpers/hermeticLaunchPreflight` is what goes here.
+   * `AgentManager` already accepted this seam directly — only the Workspace door was missing.
+   */
+  launchPreflight?: RuntimeLaunchPreflightPort;
 }
 
 /** Dev Host may inspect a disposable runtime home; normal installed workspaces always use os.homedir(). */
@@ -767,6 +777,8 @@ export class Workspace {
       tmux: this.tmux,
       wsHash: this.wsHash,
       workspaceRoot,
+      // t-35c998 — test-only; absent in production, where AgentManager builds the real registry.
+      ...(seams.launchPreflight ? { launchPreflight: seams.launchPreflight } : {}),
       // t-8168a7 — list() carries Attention's real-turn latch. The manager is constructed before the
       // monitor, but this thunk is first read after construction, when the monitor exists.
       hasStartedTurn: (name) => this.monitor?.hasStartedTurn(name),

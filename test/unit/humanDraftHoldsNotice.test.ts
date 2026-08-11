@@ -1,4 +1,5 @@
 import { skipTestsWithoutOptionalRuntimeAuth, useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
@@ -11,6 +12,13 @@ import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
 import { RUNTIME_PROFILES } from "../../src/runtime/runtimeProfile.js";
 import { ATTESTED_RUNTIMES } from "../../src/runtime/attestedRuntimes.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
+
+/**
+ * t-35c998 — hermetic launch preflight: production's opencode adapter runs `opencode providers list`
+ * to answer "is this authenticated?", which made every `cmd: opencode` spawn below execute an
+ * installed CLI. The stub answers as a credentialed home does; other adapters stay real.
+ */
+const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 
 /**
  * t-a53dd9 — the notice that was submitted ON TOP of the workspace owner's half-typed message.
@@ -175,7 +183,7 @@ async function withCoordAndChild(composerLine = EMPTY_COMPOSER) {
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\n", "utf8");
   const host = new FakeHost(mkdir());
   const { tmux, sent, panes, keys } = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   await ws.manager.spawn("coord", { cmd: "claude" });
   await ws.manager.spawn("child", { cmd: "opencode", parent: "coord" });
   const session = ws.manager.session("coord");
