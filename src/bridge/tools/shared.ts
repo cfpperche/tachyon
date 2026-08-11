@@ -41,7 +41,6 @@ import type { TaskNotificationEvent } from "../../tasks/taskNotificationPolicy.j
 import type { TaskPrototypeSnapshot } from "../../tasks/TaskPrototypeStore.js";
 import { RuntimeLaunchPreflightError } from "../../runtime/launchPreflight.js";
 import { RuntimeLaunchReadinessError } from "../../runtime/launchReadiness.js";
-import type { EvolutionStore } from "../../evolution/EvolutionStore.js";
 
 export type NotifyLevel = "info" | "warn" | "error";
 /**
@@ -87,8 +86,6 @@ export interface BridgeDeps {
   pins: PinStore;
   /** spec 325 — project work queue entity (.tachyon/tasks/*.json). */
   tasks: TaskStore;
-  /** SDD 421 — canonical Agent Evolution profiles, reviews, and candidates. */
-  evolution?: EvolutionStore;
   /** spec 344 — project validation queue entity (.tachyon/validations/*.json), independent from SDD. */
   validations: ValidationStore;
   /** spec 241 — per-agent continuity briefs (.tachyon/continuity/<agent>.md). Enables get/set/status_continuity. */
@@ -656,27 +653,6 @@ export const TASK_EXPECT = z.object({
   updatedAt: z.string().min(1).optional(),
 }).optional();
 export const TASK_AWAITING_HUMAN_KIND = z.enum(["decision", "validation", "dogfood"]);
-export const EVOLUTION_REVIEW_ID = z.string().regex(/^review-[A-Za-z0-9_-]+$/, "review id must be review-<id>");
-export const EVOLUTION_SKILL_FILE = z.object({
-  path: z.string().min(1).max(500),
-  content: z.string().max(256 * 1024),
-  executable: z.boolean().optional(),
-});
-export const EVOLUTION_PROPOSAL = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("learning"),
-    content: z.string().min(1).max(4000),
-    reason: z.string().min(1).max(2000),
-  }),
-  z.object({
-    kind: z.literal("skill"),
-    operation: z.enum(["create", "update"]),
-    name: z.string().regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
-    reason: z.string().min(1).max(2000),
-    expectedTargetDigest: z.string().regex(/^[0-9a-f]{64}$/).optional(),
-    files: z.array(EVOLUTION_SKILL_FILE).min(1).max(64),
-  }),
-]);
 export const VALIDATION_ID = z.string().regex(/^v-[0-9a-f]{6}$/, "validation id must be v-<6hex>");
 export const VALIDATION_STATUS = z.enum(["pending", "triaged", "running", "closed"]);
 export const VALIDATION_EXECUTOR = z.enum(["human", "agent", "either"]);
@@ -843,7 +819,7 @@ export function definedPatch<T extends Record<string, unknown>>(input: T): Parti
 export function taskReceipt(before: Task | undefined, after: Task, requested: string[]): string {
   const changed = requested.filter((field) => field !== "expect");
   const cleared = before
-    ? (["assignee", "awaitingHuman", "evolutionCompletion"] as const).filter(
+    ? (["assignee", "awaitingHuman"] as const).filter(
         (field) => before[field] !== undefined && after[field] === undefined && !changed.includes(field),
       )
     : [];

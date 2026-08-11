@@ -179,7 +179,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "set_project_handoff",
       "spawn_agent",
       "spawn_terminal",
-      "submit_evolution_review",
       "unregister_worktree",
       "update_pin",
       "update_task",
