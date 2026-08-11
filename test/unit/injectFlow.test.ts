@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { injectTargets, previewBody, submitRefuseReason } from "../../src/prompts/injectFlow.js";
+import { injectTargets, isEvidencedWorking, previewBody, submitRefuseReason } from "../../src/prompts/injectFlow.js";
 
 describe("injectTargets", () => {
   it("keeps the running member of the supplied agent collection", () => {
@@ -15,12 +15,22 @@ describe("injectTargets", () => {
 
 describe("submitRefuseReason", () => {
   it("refuses working, throttled, and occupied composer", () => {
-    expect(submitRefuseReason("working", false)).toBe("working");
-    expect(submitRefuseReason("throttled", false)).toBe("throttled");
-    expect(submitRefuseReason("idle", true)).toBe("composer-occupied");
-    expect(submitRefuseReason(undefined, false)).toBeUndefined();
-    expect(submitRefuseReason("needs-input", false)).toBeUndefined();
+    expect(submitRefuseReason("working", false, true)).toBe("working");
+    expect(submitRefuseReason("throttled", false, undefined)).toBe("throttled");
+    expect(submitRefuseReason("idle", true, undefined)).toBe("composer-occupied");
+    expect(submitRefuseReason(undefined, false, undefined)).toBeUndefined();
+    expect(submitRefuseReason("needs-input", false, undefined)).toBeUndefined();
   });
+
+  it.each(["spawn", "restart", "resume", "fork", "crash-recovery"])(
+    "%s: synthetic working without turn evidence does not refuse the human submit",
+    () => {
+      expect(submitRefuseReason("working", false, false)).toBeUndefined();
+      expect(submitRefuseReason("working", false, undefined)).toBeUndefined();
+      expect(submitRefuseReason("working", false, true)).toBe("working");
+      expect(isEvidencedWorking("working", false)).toBe(false);
+    },
+  );
 });
 
 describe("previewBody", () => {

@@ -42,6 +42,38 @@ describe("PinStore", () => {
     expect(store.list().map((p) => p.id)).toEqual([a.id]);
   });
 
+  it("retries an internally generated id collision inside create", () => {
+    const generatedIds = ["p-111111", "p-111111", "p-222222"];
+    const deterministicStore = new PinStore(root, () => generatedIds.shift()!);
+
+    const first = deterministicStore.create("first", "human");
+    const second = deterministicStore.create("second", "human");
+
+    expect(first.id).toBe("p-111111");
+    expect(second.id).toBe("p-222222");
+    expect(deterministicStore.list().map((pin) => pin.id)).toEqual(["p-111111", "p-222222"]);
+  });
+
+  it("stops retrying internally generated id collisions after a bounded number of attempts", () => {
+    let attempts = 0;
+    const deterministicStore = new PinStore(root, () => {
+      attempts += 1;
+      return "p-111111";
+    });
+    deterministicStore.create("first", "human");
+
+    expect(() => deterministicStore.create("never created", "human")).toThrow("after 8 attempts");
+    expect(attempts).toBe(9); // one successful create, then eight bounded retries
+    expect(deterministicStore.list().map((pin) => pin.text)).toEqual(["first"]);
+  });
+
+  it("rejects a caller-supplied id that already exists", () => {
+    store.create("first", "human", { id: "p-111111" });
+
+    expect(() => store.create("duplicate", "human", { id: "p-111111" })).toThrow("pin 'p-111111' already exists");
+    expect(store.list().map((pin) => pin.text)).toEqual(["first"]);
+  });
+
   it("preserves concurrent read-modify-write creates from separate processes", async () => {
     const repoRoot = process.cwd();
     const workerPath = path.join(root, "pin-writer.ts");

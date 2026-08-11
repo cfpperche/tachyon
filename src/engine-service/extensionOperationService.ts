@@ -332,7 +332,7 @@ export async function executeExtensionCommand(
       if (!(await workspace.tmux.hasSession(session))) throw new Error(`agent '${command.agent}' is not running`);
       if (command.submit) {
         const attention = workspace.attentionOf(command.agent);
-        const refused = submitRefuseReason(attention?.state, attention?.composerOccupied);
+        const refused = submitRefuseReason(attention?.state, attention?.composerOccupied, attention?.hasStartedTurn);
         if (refused) throw new Error(`prompt submit refused — '${command.agent}' is ${refused}`);
         await workspace.tmux.sendSubmittedLine(session, template.body);
       } else {

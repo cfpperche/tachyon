@@ -124,8 +124,8 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function forceStateOf(ws: Workspace, agent: string, state: string) {
   const original = ws.monitor.stateOf.bind(ws.monitor);
-  (ws.monitor as unknown as { stateOf(a: string): { state: string } | undefined }).stateOf = (a: string) =>
-    a === agent ? { state } : original(a);
+  (ws.monitor as unknown as { stateOf(a: string): { state: string; hasStartedTurn?: boolean } | undefined }).stateOf = (a: string) =>
+    a === agent ? { state, hasStartedTurn: state === "working" } : original(a);
 }
 
 function pokeNeedsInputOf(ws: Workspace) {

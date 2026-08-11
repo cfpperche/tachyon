@@ -210,6 +210,17 @@ function makeMonitor(agents: Record<string, FakeAgent>) {
 const SETTINGS: AttentionSettings = { enabled: true, silenceSec: 8, patterns: [] };
 
 describe("AttentionMonitor", () => {
+  it("t-4c82fa: measures the synthetic working window on the production 3s poll grid", async () => {
+    const f = makeMonitor({ claude: { content: "$ ", cpu: null, settings: SETTINGS } });
+    await f.advance(0);
+    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "working", hasStartedTurn: false });
+    await f.advance(3_000);
+    await f.advance(3_000);
+    expect(f.monitor.stateOf("claude")?.state).toBe("working");
+    await f.advance(3_000);
+    expect(f.monitor.stateOf("claude")).toMatchObject({ state: "idle", hasStartedTurn: false });
+  });
+
   it("t-8168a7 review: reload seeds a finished stationary pane from durable turn evidence", async () => {
     let now = 1_000_000;
     const monitor = new AttentionMonitor({
