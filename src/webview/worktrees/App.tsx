@@ -1,8 +1,14 @@
 import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { SectionsModel, WorktreeRow } from "../../sections/model";
-import { Badge, Button, EmptyState, ListRow, PageChrome, QuickPicker, type QuickPickerItem } from "../shared/ui";
-import type { WorktreeLandResult, WorktreeReviewFiles, WorktreesAction, WorktreesStrings as Strings } from "./messages";
+import { Badge, Button, ConfirmForm, EmptyState, ListRow, PageChrome, QuickPicker, type QuickPickerItem } from "../shared/ui";
+import type {
+  WorktreeLandResult,
+  WorktreePrDraftView,
+  WorktreeReviewFiles,
+  WorktreesAction,
+  WorktreesStrings as Strings,
+} from "./messages";
 
 /**
  * spec 444 — hygiene classification groups, in action-priority order.
@@ -603,6 +609,14 @@ export const defaultStrings: Strings = {
   landReviewPickTitle: "Review '{0}' — {1} changed file(s)",
   landReviewPickPlaceholder: "Open a file's diff ({0} ↔ {1})",
   landReviewPickEmpty: "No changed file matches",
+  landPrFormTitle: "Create PR for '{0}'",
+  landPrFormSubtitle: "Open a GitHub PR for branch '{0}'?",
+  landPrTitleLabel: "PR title",
+  landPrBodyLabel: "Body",
+  landPrConfirm: "Create PR",
+  landPrBase: "Base branch: {0}",
+  landPrBaseDefault: "Base: gh's default — confirm on the PR page",
+  landPrDirty: "⚠ Uncommitted changes won't be in the PR — commit them first.",
   landCompare: "Review shows {0}..{1} — the commits this command would land, not the working tree.",
   landCompareBlocked: "Review opens a committed-history comparison, not the working tree.",
   landCompareNoTrunk: "No local trunk to compare against — review shows this branch against the ref it was forked from.",
@@ -645,16 +659,25 @@ export const defaultStrings: Strings = {
  * local state: the picker is open exactly while the host's candidate set is present, and closing it is
  * clearing that set (`onCloseReviewFiles`). One source of truth, no second copy that can drift out of
  * step with the list the host measured — and no state for a re-render to resurrect after a poll.
+ *
+ * t-f3ded3 — `prDraft` is the same kind of host PUSH for the PR form. Present ⇒ ConfirmForm is open;
+ * cancel or panel close clears it and nothing is created. Confirm posts the edited title and clears.
+ * The 3s poll keeps replacing the MODEL underneath; the draft lives here so a re-render cannot take
+ * the open form away mid-edit.
  */
-export function App({ model, strings: s, post, reviewFiles, landResult, onCloseReviewFiles }: {
+export function App({ model, strings: s, post, reviewFiles, prDraft, landResult, onCloseReviewFiles, onClosePrDraft }: {
   model?: SectionsModel;
   strings: Strings;
   post: (action: WorktreesAction) => void;
   reviewFiles?: WorktreeReviewFiles | null;
+  prDraft?: WorktreePrDraftView | null;
   /** SDD 498 — the last land outcome, shown on the row it names and nowhere else. */
   landResult?: WorktreeLandResult | null;
   onCloseReviewFiles?: () => void;
+  onClosePrDraft?: () => void;
 }) {
+  // Remount the form when the host pushes a new draft so the field reseeds from composePrTitle.
+  const draftKey = prDraft ? `${prDraft.id}:${prDraft.title}:${prDraft.body}:${prDraft.dirty}` : "";
   return (
     <main class="ds-page">
       <PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />
@@ -674,6 +697,59 @@ export function App({ model, strings: s, post, reviewFiles, landResult, onCloseR
           }}
         />
       ) : null}
+      {prDraft ? (
+        <PrDraftForm
+          key={draftKey}
+          s={s}
+          draft={prDraft}
+          onCancel={() => onClosePrDraft?.()}
+          onConfirm={(title) => {
+            onClosePrDraft?.();
+            post({ type: "worktreeConfirmPr", id: prDraft.id, title });
+          }}
+        />
+      ) : null}
     </main>
+  );
+}
+
+/**
+ * t-f3ded3 — PR draft form shell around ConfirmForm.
+ *
+ * Title is editable and starts as the host's seed; body/meta are read-only facts from the host.
+ * Cancel (Escape, scrim, button) only closes — no message to the host, so no create runs. Panel
+ * close mid-flow is the same: draft state dies with the webview; the next click probes fresh.
+ */
+function PrDraftForm({
+  s,
+  draft,
+  onCancel,
+  onConfirm,
+}: {
+  s: Strings;
+  draft: WorktreePrDraftView;
+  onCancel: () => void;
+  onConfirm: (title: string) => void;
+}) {
+  const meta = [
+    draft.base ? s.landPrBase.replace("{0}", draft.base) : s.landPrBaseDefault,
+    draft.dirty ? s.landPrDirty : null,
+  ].filter((line): line is string => line !== null);
+  return (
+    <ConfirmForm
+      open
+      data-testid="worktree-pr-form"
+      title={s.landPrFormTitle.replace("{0}", draft.subject)}
+      subtitle={s.landPrFormSubtitle.replace("{0}", draft.branch)}
+      fieldLabel={s.landPrTitleLabel}
+      fieldValue={draft.title}
+      previewLabel={s.landPrBodyLabel}
+      preview={draft.body}
+      meta={meta}
+      confirmLabel={s.landPrConfirm}
+      cancelLabel={s.wtCancel}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    />
   );
 }

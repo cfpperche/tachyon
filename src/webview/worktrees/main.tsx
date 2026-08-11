@@ -8,10 +8,12 @@ import { App, defaultStrings } from "./App";
 import {
   WORKTREES_MODEL,
   WORKTREE_LAND_RESULT,
+  WORKTREE_PR_DRAFT,
   WORKTREE_REVIEW_FILES,
   pollWorktreesAction,
   readyMessage,
   type WorktreeLandResult,
+  type WorktreePrDraftView,
   type WorktreeReviewFiles,
   type WorktreesAction,
 } from "./messages";
@@ -27,6 +29,9 @@ function Root() {
   // dismiss. The 3s poll keeps replacing the MODEL underneath it, which is why the picker lives here and
   // not inside a row: a row that re-renders must not take the open list away from the human using it.
   const [reviewFiles, setReviewFiles] = useState<WorktreeReviewFiles | null>(null);
+  // t-f3ded3 — the host's PR draft. Present ⇒ ConfirmForm is open; cleared on cancel/confirm.
+  // Panel close mid-flow drops this state with the webview — no create fires; next click probes fresh.
+  const [prDraft, setPrDraft] = useState<WorktreePrDraftView | null>(null);
   // SDD 498 — the last land outcome, held HERE for the same reason the picker is: the 3s poll replaces
   // the model underneath, and a refusal naming the exit a human has to take must not be swept away by
   // the next refresh. It is keyed by row id, so an outcome is only ever shown on the row it belongs to.
@@ -36,6 +41,7 @@ function Root() {
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type === WORKTREES_MODEL) setModel(event.data.model);
       else if (event.data?.type === WORKTREE_REVIEW_FILES) setReviewFiles(event.data.review as WorktreeReviewFiles);
+      else if (event.data?.type === WORKTREE_PR_DRAFT) setPrDraft(event.data.draft as WorktreePrDraftView);
       else if (event.data?.type === WORKTREE_LAND_RESULT) setLandResult(event.data.result as WorktreeLandResult);
     };
     window.addEventListener("message", onMessage);
@@ -52,8 +58,10 @@ function Root() {
       strings={strings}
       post={post}
       reviewFiles={reviewFiles}
+      prDraft={prDraft}
       landResult={landResult}
       onCloseReviewFiles={() => setReviewFiles(null)}
+      onClosePrDraft={() => setPrDraft(null)}
     />
   );
 }

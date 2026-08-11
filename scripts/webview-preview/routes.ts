@@ -19,7 +19,7 @@ import { handoffMessage } from "../../src/webview/handoff/messages";
 import { humanInboxItemMessage, humanInboxMessage } from "../../src/webview/human-inbox/messages";
 import { taskMessage } from "../../src/webview/task-detail/messages";
 import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
-import { worktreesModelMessage } from "../../src/webview/worktrees/messages";
+import { worktreePrDraftMessage, worktreesModelMessage } from "../../src/webview/worktrees/messages";
 import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
 import { settingsModelMessage } from "../../src/webview/settings/messages";
 import { systemModelMessage } from "../../src/webview/system/messages";
@@ -36,6 +36,7 @@ import {
   runtimeConfigFixtureSnapshot,
   runtimeConfigPreviewStrings,
   strings as cockpitStrings,
+  worktreesPrDraftFixture,
 } from "./fixtures/cockpit";
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskDetailFixtures } from "./fixtures/task-detail";
@@ -405,9 +406,21 @@ export const ROUTES: Record<string, Route> = {
     bundle: "/dist/webview/worktrees.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/worktrees.css"],
     frame: { w: 880, h: 900 },
-    fixtures: { default: cockpitFixtures.worktrees },
+    // t-f3ded3 — `pr-draft` wraps the model with a host draft so ConfirmForm opens over the land block.
+    fixtures: {
+      default: cockpitFixtures.worktrees,
+      "pr-draft": worktreesPrDraftFixture as never,
+    },
     module: true,
-    makeMessage: (vm) => worktreesModelMessage(vm as never),
+    globals: { __TACHYON_STRINGS__: cockpitStrings },
+    makeMessage: (vm) => {
+      // t-f3ded3 — a draft fixture is `{ model, prDraft }`; the default is the bare sections model.
+      if (vm && typeof vm === "object" && "prDraft" in (vm as object) && "model" in (vm as object)) {
+        const wrapped = vm as { model: unknown; prDraft: Parameters<typeof worktreePrDraftMessage>[0] };
+        return [worktreesModelMessage(wrapped.model as never), worktreePrDraftMessage(wrapped.prDraft)];
+      }
+      return worktreesModelMessage(vm as never);
+    },
   },
   // t-5f2b5b — no `fleet` route: SDD 485 D7's Fleet app is deleted. The roster it previewed is the
   // sidebar's own AgentsRoster, and `?view=sidebar&fixture=agent-states` renders it in the surface that

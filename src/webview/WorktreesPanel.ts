@@ -9,11 +9,13 @@ import {
   worktreesErrorMessage,
   worktreesModelMessage,
   worktreeLandResultMessage,
+  worktreePrDraftMessage,
   worktreeReviewFilesMessage,
   type WorktreeLandResult,
+  type WorktreePrDraftView,
   type WorktreeReviewFile,
 } from "./worktrees/messages.js";
-import type { WorktreeReviewSelection } from "../presentation/items.js";
+import type { WorktreePrDraft, WorktreePrSelection, WorktreeReviewSelection } from "../presentation/items.js";
 
 export const WORKTREES_VIEW_TYPE = "tachyonWorktrees";
 type WorktreesRefreshKind = "worktrees";
@@ -117,7 +119,14 @@ export class WorktreesPanelManager {
       // named as gone instead of opening a diff of nothing.
       await this.dispatch(session, "tachyon.reviewWorktreeItem", message.id, { file: message.path });
     } else if (message.type === "worktreeCreatePr" && typeof message.id === "string") {
-      await this.dispatch(session, "tachyon.createWorktreePrItem", message.id);
+      // t-f3ded3 — ask the same command for a draft (probe at THIS click), then draw ConfirmForm.
+      // Refusal answers undefined and opens no form; create still runs only on confirm.
+      const draft = await this.dispatch(session, "tachyon.createWorktreePrItem", message.id, "draft");
+      const view = prDraftOf(message.id, draft);
+      if (view) session.post(worktreePrDraftMessage(view));
+    } else if (message.type === "worktreeConfirmPr" && typeof message.id === "string" && typeof message.title === "string") {
+      // Confirm carries the edited title only. The host re-resolves the row and creates; no second probe.
+      await this.dispatch(session, "tachyon.createWorktreePrItem", message.id, { title: message.title });
     } else if (message.type === "worktreeLand" && typeof message.id === "string") {
       await this.land(session, message.id);
     } else if (message.type === "worktreeBatchCleanup" && Array.isArray(message.items)) {
@@ -148,7 +157,7 @@ export class WorktreesPanelManager {
     session: SectionPanelSession<WorktreesRefreshKind>,
     command: "tachyon.reviewWorktreeItem" | "tachyon.createWorktreePrItem",
     worktreeId: string,
-    select?: WorktreeReviewSelection,
+    select?: WorktreeReviewSelection | WorktreePrSelection,
   ): Promise<unknown> {
     const project = session.target.project;
     if (!project) throw new Error("Worktrees dashboard has no project");
@@ -223,6 +232,29 @@ function reviewCandidatesOf(value: unknown): { label: string; base: string; curr
   return { label: c.label, base: c.base, current: c.current, files };
 }
 
+/**
+ * t-f3ded3 — the command's draft answer, narrowed to what ConfirmForm shows.
+ *
+ * Checked rather than asserted (same as review candidates): only the fields the form needs cross
+ * into the webview. A refusal (no worktree, not ready) answers undefined — no form at all.
+ */
+function prDraftOf(id: string, value: unknown): WorktreePrDraftView | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const d = value as WorktreePrDraft;
+  if (typeof d.subject !== "string" || typeof d.branch !== "string") return undefined;
+  if (typeof d.title !== "string" || typeof d.body !== "string") return undefined;
+  if (!(d.base === null || typeof d.base === "string") || typeof d.dirty !== "boolean") return undefined;
+  return {
+    id,
+    subject: d.subject,
+    branch: d.branch,
+    title: d.title,
+    body: d.body,
+    base: d.base,
+    dirty: d.dirty,
+  };
+}
+
 export function worktreesRefreshKind(message: unknown): WorktreesRefreshKind | undefined {
   if (!message || typeof message !== "object") return undefined;
   const type = (message as { type?: unknown }).type;
@@ -270,6 +302,15 @@ function worktreesStrings(): Record<string, string> {
     landReviewPickTitle: t("Review '{0}' — {1} changed file(s)"),
     landReviewPickPlaceholder: t("Open a file's diff ({0} ↔ {1})"),
     landReviewPickEmpty: t("No changed file matches"),
+    // t-f3ded3 — same sentences the native InputBox + modal used; the form is ours, the words stay.
+    landPrFormTitle: t("Create PR for '{0}'"),
+    landPrFormSubtitle: t("Open a GitHub PR for branch '{0}'?"),
+    landPrTitleLabel: t("PR title"),
+    landPrBodyLabel: t("Body"),
+    landPrConfirm: t("Create PR"),
+    landPrBase: t("Base branch: {0}"),
+    landPrBaseDefault: t("Base: gh's default — confirm on the PR page"),
+    landPrDirty: t("⚠ Uncommitted changes won't be in the PR — commit them first."),
     landCompare: t("Review shows {0}..{1} — the commits this command would land, not the working tree."),
     landCompareBlocked: t("Review opens a committed-history comparison, not the working tree."),
     landCompareNoTrunk: t("No local trunk to compare against — review shows this branch against the ref it was forked from."),

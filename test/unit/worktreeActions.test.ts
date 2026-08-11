@@ -188,13 +188,15 @@ describe("SDD 501 — review and propose dispatch to the commands that already e
     ]);
   });
 
-  it("propose reaches the spec 223 command — no second PR flow in this panel", async () => {
+  it("propose reaches the spec 223 command for a draft — no second PR flow in this panel", async () => {
     const h = harness();
     const panelA = await open(h.manager, "ws-a");
     panelA.webview.__receive({ type: "worktreeCreatePr", id: "a-only" });
     await flush();
+    // t-f3ded3 — `select: "draft"` is the whole change on this door: same command, asked for its
+    // draft instead of asked to draw a native InputBox + modal.
     expect(dispatched()).toEqual([
-      { command: "tachyon.createWorktreePrItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only" }] },
+      { command: "tachyon.createWorktreePrItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only", select: "draft" }] },
     ]);
   });
 
@@ -304,6 +306,73 @@ describe("SDD 501 — review and propose dispatch to the commands that already e
     await flush();
     h.manager.refresh();
     await flush();
+    await flush();
+    expect(dispatched()).toEqual([]);
+  });
+
+  /**
+   * t-f3ded3 — title is collected in OUR ConfirmForm, not in VS Code's InputBox + modal.
+   *
+   * The panel asks the same command for a draft (probe at that click), posts it to the webview, and
+   * sends the confirmed title back through the same command. Two properties: the panel opens NO
+   * native input/modal, and confirm reaches the one create command with the edited title.
+   */
+  const PR_DRAFT = {
+    subject: "tachyon/change/a",
+    branch: "tachyon/change/a",
+    title: "Change a",
+    body: "Branch `tachyon/change/a` → `main`.\n\n🤖 Opened from a Tachyon worktree.",
+    base: "main",
+    dirty: false,
+  };
+
+  it("hands the PR draft to the webview's own form, and opens no native picker", async () => {
+    __setCommandResult("tachyon.createWorktreePrItem", PR_DRAFT);
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeCreatePr", id: "a-only" });
+    await flush();
+    expect(posted(panelA, "worktreePrDraft")).toEqual([
+      { type: "worktreePrDraft", draft: { id: "a-only", ...PR_DRAFT } },
+    ]);
+    // The panel itself never draws native chrome; the command is mocked and returns a draft.
+    expect(__getQuickPickCalls()).toEqual([]);
+  });
+
+  it("sends the confirmed title back through the SAME create command", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeConfirmPr", id: "a-only", title: "Edited title" });
+    await flush();
+    expect(dispatched()).toEqual([
+      { command: "tachyon.createWorktreePrItem", args: [{ workspaceHash: "ws-a", worktreeId: "a-only", select: { title: "Edited title" } }] },
+    ]);
+  });
+
+  it("opens no form when the command refuses a draft", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeCreatePr", id: "a-only" });
+    await flush();
+    expect(posted(panelA, "worktreePrDraft")).toEqual([]);
+  });
+
+  it("opens no form for a malformed draft answer", async () => {
+    for (const answer of [{ subject: "b" }, { title: 1 }, "nope", null]) {
+      __resetVscodeMock();
+      __setCommandResult("tachyon.createWorktreePrItem", answer);
+      const h = harness();
+      const panelA = await open(h.manager, "ws-a");
+      panelA.webview.__receive({ type: "worktreeCreatePr", id: "a-only" });
+      await flush();
+      expect(posted(panelA, "worktreePrDraft"), JSON.stringify(answer)).toEqual([]);
+    }
+  });
+
+  it("ignores a confirm message with no title", async () => {
+    const h = harness();
+    const panelA = await open(h.manager, "ws-a");
+    panelA.webview.__receive({ type: "worktreeConfirmPr", id: "a-only" });
     await flush();
     expect(dispatched()).toEqual([]);
   });

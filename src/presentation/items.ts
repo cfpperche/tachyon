@@ -23,7 +23,13 @@ export interface PipelineNodeItem { ws?: WorkspacePresentationTarget; runId?: st
  * forwarding a target a webview message could have shaped. Same duck-typing rule as the rest of this
  * file — a handler reads these fields and nothing else.
  */
-export interface WorktreeRowItem { ws?: WorkspacePresentationTarget; workspaceHash?: string; worktreeId: string; select?: WorktreeReviewSelection }
+export interface WorktreeRowItem {
+  ws?: WorkspacePresentationTarget;
+  workspaceHash?: string;
+  worktreeId: string;
+  /** Review (t-ea5425) or PR form (t-f3ded3) selection chrome — command decides which shapes it accepts. */
+  select?: WorktreeReviewSelection | WorktreePrSelection;
+}
 
 /**
  * t-ea5425 — which chrome picks the changed file, said by the CALLER.
@@ -34,3 +40,25 @@ export interface WorktreeRowItem { ws?: WorkspacePresentationTarget; workspaceHa
  * Only the SELECTION varies: every door opens the diff through the one flow in `extension.ts`.
  */
 export type WorktreeReviewSelection = "list" | { file: string };
+
+/**
+ * t-f3ded3 — which chrome collects the PR title and confirms, said by the CALLER.
+ *
+ * `"draft"` probes readiness at click, composes title/body/meta, and returns them — opens nothing.
+ * The Worktrees webview draws the product ConfirmForm. `{ title }` says that form already confirmed;
+ * the host creates the PR with the edited title. Omitting it keeps the native InputBox + modal, which
+ * is still the right product for a sidebar tree item with no surface of its own.
+ * Only the SELECTION chrome varies: readiness probe and PR create stay on the host.
+ */
+export type WorktreePrSelection = "draft" | { title: string };
+
+/** t-f3ded3 — draft payload a webview caller gets back from `"draft"`. */
+export interface WorktreePrDraft {
+  subject: string;
+  branch: string;
+  title: string;
+  body: string;
+  /** Persisted base branch, or null when gh will pick its default. */
+  base: string | null;
+  dirty: boolean;
+}

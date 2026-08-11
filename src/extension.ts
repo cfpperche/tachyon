@@ -3756,11 +3756,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           notify(vscode.l10n.t("Nothing to review — this checkout has no committed history to compare."), "warn");
           return undefined;
         }
+        // t-f3ded3 — select is a union with PR shapes; only review shapes reach this door.
+        const reviewSelect = item.select === "list" || (item.select && typeof item.select === "object" && "file" in item.select)
+          ? item.select
+          : undefined;
         return await reviewWorktreeDiff(
           { cwd: review.record.path, baseRef: review.comparison.base, headRef: review.comparison.head },
           review.changedFiles,
           review.record.branch,
-          item.select,
+          reviewSelect,
         );
       }
       const review = await worktreeReview(ws, { agent: item.agentName });
@@ -3791,8 +3795,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // SDD 501 — reachable from the land block too, by managed-registry row id. The probe-at-click
       // property is exactly what makes that safe to put on a polled dashboard, so nothing below moves
       // earlier; `prReadinessProbedAtClick.test.ts` is the guard.
+      // t-f3ded3 — `select` decides only which chrome collects the title. It is read on the worktree-row
+      // arm alone: that door's caller is the Worktrees WEBVIEW, which has ConfirmForm of its own.
+      //   · `"draft"` → probe at this click, compose, return the draft; open nothing (webview draws);
+      //   · `{ title }` → that form already confirmed; create with the edited title, no second probe;
+      //   · omitted → native InputBox + modal (sidebar tree item has no surface of its own).
+      // Readiness probe and PR create stay here; only the selection chrome moved.
       const ws = wsOf(item);
-      if (!ws) return;
+      if (!ws) return undefined;
       const review = "worktreeId" in item
         ? await worktreeReview(ws, { worktreeId: item.worktreeId })
         : await worktreeReview(ws, { agent: item.agentName });
@@ -3802,16 +3812,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const subject = "worktreeId" in item ? (rec?.branch ?? item.worktreeId) : item.agentName;
       if (!rec) {
         notify(vscode.l10n.t("'{0}' has no worktree", subject), "warn");
-        return;
+        return undefined;
       }
       if (!fs.existsSync(rec.path)) {
         notify(vscode.l10n.t("'{0}'s worktree path no longer exists", subject), "warn");
-        return;
+        return undefined;
       }
+      // t-f3ded3 — confirm arm: the form already collected the title at the draft click. Re-resolve
+      // body/base from live state and create; do NOT probe again (guard: probe at click only).
+      const prSelect = "worktreeId" in item ? item.select : undefined;
+      const confirmTitle = prSelect && typeof prSelect === "object" && "title" in prSelect
+        ? String(prSelect.title).trim()
+        : undefined;
+      if (confirmTitle !== undefined) {
+        if (!confirmTitle) return undefined;
+        try {
+          const base = rec.baseBranch ?? null;
+          const body = composePrBody({ branch: rec.branch, base: base ?? undefined });
+          const result = await createWorktreePr(rec, { title: confirmTitle, body, base: base ?? undefined }, ws.git.gitExec);
+          if ("error" in result) {
+            notify(vscode.l10n.t("PR failed: {0}", result.error), "error");
+            return undefined;
+          }
+          const open = await showNotification(
+            result.existing ? vscode.l10n.t("A PR already exists for '{0}'.", rec.branch) : vscode.l10n.t("PR opened for '{0}'.", rec.branch),
+            "info",
+            [vscode.l10n.t("Open PR")],
+          );
+          if (open) await vscode.env.openExternal(vscode.Uri.parse(result.url));
+        } catch (err) {
+          notify(vscode.l10n.t("PR failed: {0}", err instanceof Error ? err.message : String(err)), "error");
+        }
+        return undefined;
+      }
+      // Draft + native arms: probe happens HERE, at the human's click — never at render, never at confirm.
       const readiness = await probePrReadiness(rec.path, true, ws.git.gitExec);
       if (!readiness.ready) {
         notify(vscode.l10n.t("Can't open a PR: {0}", readiness.reason ?? "not ready"), "warn");
-        return;
+        return undefined;
       }
       try {
         // Base BRANCH: ONLY the one persisted at worktree-create (a true fork off a known branch). We
@@ -3824,12 +3862,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           branch: rec.branch,
           base: base ?? undefined,
         });
+        const seededTitle = composePrTitle(rec.branch);
+        if (prSelect === "draft") {
+          // Hand the draft to the webview's ConfirmForm. No InputBox, no modal — the panel draws.
+          return {
+            subject,
+            branch: rec.branch,
+            title: seededTitle,
+            body,
+            base,
+            dirty,
+          };
+        }
         const title = await vscode.window.showInputBox({
           title: vscode.l10n.t("Create PR for '{0}'", subject),
           prompt: vscode.l10n.t("PR title"),
-          value: composePrTitle(rec.branch),
+          value: seededTitle,
         });
-        if (!title) return; // cancelled / empty
+        if (!title) return undefined; // cancelled / empty
         const meta = [
           base ? vscode.l10n.t("Base branch: {0}", base) : vscode.l10n.t("Base: gh's default — confirm on the PR page"),
           dirty ? vscode.l10n.t("⚠ Uncommitted changes won't be in the PR — commit them first.") : null,
@@ -3840,11 +3890,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           [vscode.l10n.t("Create PR")],
           { modal: true, detail: `${meta.join("\n")}\n\n${title}\n\n${body}` },
         );
-        if (!ok) return;
+        if (!ok) return undefined;
         const result = await createWorktreePr(rec, { title, body, base: base ?? undefined }, ws.git.gitExec);
         if ("error" in result) {
           notify(vscode.l10n.t("PR failed: {0}", result.error), "error");
-          return;
+          return undefined;
         }
         const open = await showNotification(
           result.existing ? vscode.l10n.t("A PR already exists for '{0}'.", rec.branch) : vscode.l10n.t("PR opened for '{0}'.", rec.branch),
@@ -3856,6 +3906,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The worktree can vanish mid-flow (after the existsSync guard) → git/gh reject; surface it.
         notify(vscode.l10n.t("PR failed: {0}", err instanceof Error ? err.message : String(err)), "error");
       }
+      return undefined;
     }),
     vscode.commands.registerCommand("tachyon.reinjectContinuityItem", async (item: AgentItem) => {
       // spec 241 — manually re-inject the agent's continuity brief (type the rebuild-context pointer into the

@@ -1923,6 +1923,24 @@
     ]
   },
   {
+    "view": "worktrees",
+    "fixture": "pr-draft",
+    "url": "/scripts/webview-preview/index.html?view=worktrees&fixture=pr-draft",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Worktrees",
+    "aliases": [
+      "worktrees",
+      "managed worktrees",
+      "checkout hygiene"
+    ]
+  },
+  {
     "view": "settings",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=settings&fixture=default",
