@@ -45,6 +45,7 @@ const READY: LandFacts = {
   commits: 2,
   verified: { tree: "41d0c7a9be2201fe3b6c8d47a05e91cc73b2f8de", at: "2026-08-07T16:41:09.220Z" },
   trunkIsAncestorOfHead: true,
+  trunkHead: null,
   primaryBranch: "main",
   primaryDirty: false,
 };

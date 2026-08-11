@@ -3,7 +3,16 @@ import { buildSectionsModel, collectNeedsFor, type WorkspaceBundle } from "../se
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { POLL, READY, worktreesErrorMessage, worktreesModelMessage, worktreeReviewFilesMessage, type WorktreeReviewFile } from "./worktrees/messages.js";
+import {
+  POLL,
+  READY,
+  worktreesErrorMessage,
+  worktreesModelMessage,
+  worktreeLandResultMessage,
+  worktreeReviewFilesMessage,
+  type WorktreeLandResult,
+  type WorktreeReviewFile,
+} from "./worktrees/messages.js";
 import type { WorktreeReviewSelection } from "../presentation/items.js";
 
 export const WORKTREES_VIEW_TYPE = "tachyonWorktrees";
@@ -16,6 +25,13 @@ export interface WorktreesDeps {
   forget(id: string, wsHash: string): Promise<string | undefined>;
   /** t-d29398 — release a preserved checkout's Git quarantine (non-destructive; never removes). */
   releaseLock(id: string, wsHash: string): Promise<string | undefined>;
+  /**
+   * SDD 498 — fast-forward the trunk onto this delivery, in the primary checkout.
+   *
+   * Unlike its neighbours this does NOT answer a refusal string for a toast: the outcome — success or
+   * refusal — is rendered in the land block, where the exit it names has room to be read and stays put.
+   */
+  land(id: string, wsHash: string): Promise<WorktreeLandResult>;
 }
 
 /**
@@ -102,6 +118,8 @@ export class WorktreesPanelManager {
       await this.dispatch(session, "tachyon.reviewWorktreeItem", message.id, { file: message.path });
     } else if (message.type === "worktreeCreatePr" && typeof message.id === "string") {
       await this.dispatch(session, "tachyon.createWorktreePrItem", message.id);
+    } else if (message.type === "worktreeLand" && typeof message.id === "string") {
+      await this.land(session, message.id);
     } else if (message.type === "worktreeBatchCleanup" && Array.isArray(message.items)) {
       for (const item of message.items) {
         const row = item as { id?: unknown; op?: unknown };
@@ -135,6 +153,34 @@ export class WorktreesPanelManager {
     const project = session.target.project;
     if (!project) throw new Error("Worktrees dashboard has no project");
     return await vscode.commands.executeCommand(command, { workspaceHash: project, worktreeId, ...(select ? { select } : {}) });
+  }
+
+  /**
+   * SDD 498 — the one gesture that moves the trunk.
+   *
+   * The project is the panel's own immutable one, never the row's `wsHash` — the same rule every
+   * mutation here already obeys (SDD 485 D6). The outcome is POSTED to the block and then the model is
+   * re-sent: the post carries the words, the refresh carries the freshly measured preconditions, and a
+   * successful land makes the row's work contained in the trunk so the block removes itself.
+   */
+  private async land(session: SectionPanelSession<WorktreesRefreshKind>, id: string): Promise<void> {
+    const project = session.target.project;
+    if (!project) throw new Error("Worktrees dashboard has no project");
+    let result: WorktreeLandResult;
+    try {
+      result = await this.deps.land(id, project);
+    } catch (error) {
+      // An engine that cannot be reached is a refusal that must SAY so. There is deliberately no
+      // extension-host fallback: a second implementation of the decision is the defect SDD 498 removes.
+      result = {
+        id,
+        ok: false,
+        reason: error instanceof Error ? error.message : String(error),
+        fix: "the engine did not answer, so nothing was landed. Check that it is running and try again — nothing falls back to the extension host for this act",
+      };
+    }
+    session.post(worktreeLandResultMessage(result));
+    await this.send(session);
   }
 
   private async runOne(
@@ -195,7 +241,11 @@ function worktreesStrings(): Record<string, string> {
     copyPath: t("Copy path"),
     noneListed: t("Nothing listed for this workspace yet."),
     landTitle: t("Land this delivery"),
-    landIntro: t("Tachyon never moves the trunk. When every precondition below is proved, this is the exact command — you run it."),
+    // SDD 498 — this sentence used to read "Tachyon never moves the trunk … you run it", and it is
+    // false now: the product performs the fast-forward under a human's click. What has NOT changed is
+    // the half that matters, so the new text says it explicitly — green is information, never
+    // permission, and nothing lands on its own.
+    landIntro: t("When every precondition below is proved, Tachyon fast-forwards the trunk onto this delivery, in the primary checkout, when you press Land. It never lands on its own."),
     landCommandLabel: t("Land command"),
     landCopyCommand: t("Copy command"),
     landBlocked: t(
@@ -209,6 +259,11 @@ function worktreesStrings(): Record<string, string> {
     landCheckPrimaryClean: t("Primary checkout clean"),
     landFixLabel: t("Fix"),
     landCommits: t("commit(s)"),
+    landAction: t("Land"),
+    landActing: t("Landing…"),
+    landOk: t("Landed — '{0}' moved {1} → {2}."),
+    landRefused: t("Not landed."),
+    landUndo: t("To undo, in the primary checkout:"),
     landReview: t("Review these changes"),
     landPropose: t("Open a pull request"),
     // t-ea5425 — the same two sentences the native quick pick showed, now on the product picker.

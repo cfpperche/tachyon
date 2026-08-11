@@ -47,6 +47,11 @@ export const EXTENSION_COMMAND_ACTIONS = [
   "config.companion.allowedHosts",
   "config.ideBrowser.enabled",
   "agent.fork", "agent.continue-task", "worktree.remove", "worktree.delete-branch", "worktree.forget-record", "worktree.remove-managed", "worktree.release-lock",
+  // SDD 498 (t-7cb971) — the governed land door. Interface-only by construction: extension operations
+  // are dispatched by the Interface through the engine, and no Bridge tool reaches this registry.
+  // Deliberately NOT a host-action capability — that broker refuses callers whose kind is not "agent"
+  // (src/host-action/policy.ts), so registering it there would make the door agent-only.
+  "worktree.land",
   "agent.inject-continuity", "agent.resume-all", "workspace.stop-all", "pipeline.start", "pipeline.approve",
   "pipeline.reject", "pipeline.cancel", "pipeline.rerun", "pipeline.dismiss", "pipeline.apply-input", "pipeline.delete",
   "bridge.restart", "bridge.stop", "bridge.refresh-tools", "config.health",
@@ -231,6 +236,10 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     id: text(256, 1),
     deleteBranch: z.boolean().optional(),
   }).strict(),
+  // SDD 498 — registry-id-scoped like its neighbours above. It carries the row id and NOTHING else:
+  // no sha, no branch, no path. Everything the act needs is re-measured in the engine from that id, so
+  // a caller cannot name a commit the preconditions were never checked against.
+  z.object({ action: z.literal("worktree.land"), id: text(256, 1) }).strict(),
   // t-d29398 — release a preserved checkout's Git quarantine. Registry-id-scoped like the two above,
   // human-initiated from the Worktrees tab, and non-destructive: it removes the lock, never the tree.
   z.object({ action: z.literal("worktree.release-lock"), id: text(256, 1) }).strict(),

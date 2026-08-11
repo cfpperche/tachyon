@@ -57,6 +57,18 @@
 .ck-land-command-label { font-size: var(--ds-micro); color: var(--ds-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .ck-land-command-text { display: block; width: 100%; box-sizing: border-box; overflow-wrap: anywhere; background: color-mix(in srgb, var(--ds-fg) 8%, transparent); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: var(--ds-1) var(--ds-2); font-size: var(--ds-small); user-select: all; }
 .ck-land-blocked { margin: var(--ds-2) 0 0; font-size: var(--ds-small); color: var(--ds-warn); }
+/* SDD 498 — Land and Copy share one row beneath the command, wrapping at 360 rather than squeezing. */
+.ck-land-command-actions { display: flex; align-items: center; gap: var(--ds-2); flex-wrap: wrap; }
+/* SDD 498 — the outcome. It sits BELOW the decision it reports on and is bordered rather than tinted
+   edge-to-edge, so a refusal reads as an answer to the press instead of as a sixth check. A refusal
+   carries the exit the human has to take, which is why it lives here at the card's width and not in a
+   toast: it must survive the next 3s poll and be readable in full at 360. */
+.ck-land-outcome { margin-top: var(--ds-2); padding: var(--ds-2); border: 1px solid var(--ds-border); border-left-width: 3px; border-radius: var(--ds-radius); font-size: var(--ds-small); display: flex; flex-direction: column; gap: var(--ds-1); }
+.ck-land-outcome p { margin: 0; }
+.ck-land-outcome-ok { border-left-color: var(--ds-ok); }
+.ck-land-outcome-bad { border-left-color: var(--ds-err); color: var(--ds-warn); }
+.ck-land-outcome-bad .ck-land-fix { color: var(--ds-fg); }
+.ck-land-undo { font-size: var(--ds-micro); color: var(--ds-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 /* SDD 501 — the read-only doors, separated from the decision by a rule rather than by distance: the
    block has to keep reading as ONE decision with two ways to look first, not as three buttons competing.
    `wrap` for the same 360 reason as the command above — the sentence naming the base takes the full

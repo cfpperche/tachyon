@@ -2,7 +2,7 @@ import type { ComponentChildren } from "preact";
 import { useState } from "preact/hooks";
 import type { SectionsModel, WorktreeRow } from "../../sections/model";
 import { Badge, Button, EmptyState, ListRow, PageChrome, QuickPicker, type QuickPickerItem } from "../shared/ui";
-import type { WorktreeReviewFiles, WorktreesAction, WorktreesStrings as Strings } from "./messages";
+import type { WorktreeLandResult, WorktreeReviewFiles, WorktreesAction, WorktreesStrings as Strings } from "./messages";
 
 /**
  * spec 444 — hygiene classification groups, in action-priority order.
@@ -68,19 +68,30 @@ const LAND_CHECK_LABEL: Record<string, keyof Strings> = {
  * reasons and the exits instead, because a command that would fail wastes the reader's time and one
  * that would SUCCEED when it should not is the defect this replaces.
  *
- * Tachyon does not run it. That is stated in the block rather than implied, so nobody goes looking for
- * a button that is deliberately absent.
+ * SDD 498 — and now Tachyon DOES run it, under this block's Land button. Two things about that are
+ * deliberate and load-bearing:
+ *
+ * The button exists only when `command` does — that is, only when every check is green. A red
+ * precondition renders NO button rather than a disabled one; a control that is visible and cannot be
+ * pressed is the pattern this project has been removing, and the block already refuses in words.
+ *
+ * The command stays on screen, and Copy still works. The button is an addition to the suggestion, not
+ * a replacement for it: a human who would rather run it themselves keeps the exact string, and one who
+ * wants to read what they are about to authorize can still see it.
  */
 function LandBlock({
   s,
   land,
   row,
+  result,
   onCopyText,
   onPost,
 }: {
   s: Strings;
   land: NonNullable<WorktreeRow["land"]>;
   row: WorktreeRow;
+  /** SDD 498 — the outcome of the last land asked for on THIS row, rendered in place. */
+  result?: WorktreeLandResult;
   onCopyText: (text: string) => void;
   onPost: (action: WorktreesAction) => void;
 }) {
@@ -131,15 +142,57 @@ function LandBlock({
         <div class="ck-land-command">
           <span class="ck-land-command-label">{s.landCommandLabel}</span>
           <code class="ck-mono ck-land-command-text">{land.command}</code>
-          <Button variant="primary" onClick={() => onCopyText(land.command!)}>
-            {s.landCopyCommand}
-          </Button>
+          {/* SDD 498 — Land is the primary act now; Copy stays for the human who would rather run it
+              themselves, demoted to `default` because there is a better door beside it. The two sit in
+              their own ROW: their parent is a column so the command keeps the full width (readable at
+              360), and without this wrapper the buttons would stack under it one per line. */}
+          <div class="ck-land-command-actions">
+            <Button variant="primary" onClick={() => onPost({ type: "worktreeLand", id: row.id, ...wsHash })}>
+              {s.landAction}
+            </Button>
+            <Button variant="default" onClick={() => onCopyText(land.command!)}>
+              {s.landCopyCommand}
+            </Button>
+          </div>
         </div>
       ) : (
         <p class="ck-land-blocked" role="status">
           {s.landBlocked.replace("{0}", String(blocked.length))}
         </p>
       )}
+      {/* SDD 498 — the outcome lives HERE, not in a toast. A refusal carries the exit the human has to
+          take, and that is exactly the text that must not disappear on a timer (t-2656d7, t-7d6013).
+          `role="status"` for a land that worked, `role="alert"` for one that did not. */}
+      {result ? (
+        result.ok && result.landed ? (
+          <div class="ck-land-outcome ck-land-outcome-ok" role="status" data-testid="worktree-land-outcome">
+            <p>
+              {s.landOk
+                .replace("{0}", result.landed.trunkRef)
+                .replace("{1}", result.landed.before.slice(0, 12))
+                .replace("{2}", result.landed.after.slice(0, 12))}
+            </p>
+            {/* The undo target is git's own: the trunk head this act moved off, which the reflog holds
+                too. Offered at the one moment a human is most likely to want it — right after seeing
+                the trunk move — rather than kept as Tachyon state. */}
+            <span class="ck-land-undo">{s.landUndo}</span>
+            <code class="ck-mono ck-land-command-text">
+              {`git -C ${result.landed.primaryPath} reset --hard ${result.landed.before.slice(0, 12)}`}
+            </code>
+          </div>
+        ) : (
+          <div class="ck-land-outcome ck-land-outcome-bad" role="alert" data-testid="worktree-land-outcome">
+            <p>
+              <b>{s.landRefused}</b> {result.reason}
+            </p>
+            {result.fix ? (
+              <p class="ck-land-fix">
+                <b>{s.landFixLabel}:</b> {result.fix}
+              </p>
+            ) : null}
+          </div>
+        )
+      ) : null}
       {/* SDD 501 — reading the code and proposing it are READ-ONLY doors, so they sit below the
           decision rather than beside it: only "Copy command" is `primary`, and a blocked delivery keeps
           both of these (a red check is when looking matters most). Neither draws a diff — the review
@@ -200,6 +253,7 @@ export function WorktreesHygiene({
   s,
   rows,
   unavailable,
+  landResult,
   onRevealPath,
   onCopyText,
   onPost,
@@ -207,6 +261,8 @@ export function WorktreesHygiene({
   s: Strings;
   rows: WorktreeRow[];
   unavailable?: Array<{ folder: string; reason: string }>;
+  /** SDD 498 — the last land outcome; rendered on the row whose id it carries. */
+  landResult?: WorktreeLandResult | null;
   onRevealPath: (path: string) => void;
   onCopyText: (text: string) => void;
   onPost: (action: WorktreesAction) => void;
@@ -327,7 +383,14 @@ export function WorktreesHygiene({
            its width with the action buttons; the land block is the whole row's business and reads at the
            card's width there. Measured at 880: 0.58 of the card before, 1.00 after. */
         footer={group === "record-only" || !row.land ? undefined : (
-          <LandBlock s={s} land={row.land} row={row} onCopyText={onCopyText} onPost={onPost} />
+          <LandBlock
+            s={s}
+            land={row.land}
+            row={row}
+            result={landResult && landResult.id === row.id ? landResult : undefined}
+            onCopyText={onCopyText}
+            onPost={onPost}
+          />
         )}
         actions={
           /* t-d29398 — the locked arm comes BEFORE the Agent-Studio hand-off, and that ordering is
@@ -519,7 +582,7 @@ export const defaultStrings: Strings = {
   copyPath: "Copy path",
   noneListed: "Nothing listed for this workspace yet.",
   landTitle: "Land this delivery",
-  landIntro: "Tachyon never moves the trunk. When every precondition below is proved, this is the exact command — you run it.",
+  landIntro: "When every precondition below is proved, Tachyon fast-forwards the trunk onto this delivery, in the primary checkout, when you press Land. It never lands on its own.",
   landCommandLabel: "Land command",
   landCopyCommand: "Copy command",
   landBlocked: "Not ready to land — {0} precondition(s) not proved. No command is offered: one that would fail wastes your time, and one that would succeed here would land something nobody verified.",
@@ -530,6 +593,11 @@ export const defaultStrings: Strings = {
   landCheckPrimaryClean: "Primary checkout clean",
   landFixLabel: "Fix",
   landCommits: "commit(s)",
+  landAction: "Land",
+  landActing: "Landing\u2026",
+  landOk: "Landed \u2014 '{0}' moved {1} \u2192 {2}.",
+  landRefused: "Not landed.",
+  landUndo: "To undo, in the primary checkout:",
   landReview: "Review these changes",
   landPropose: "Open a pull request",
   landReviewPickTitle: "Review '{0}' — {1} changed file(s)",
@@ -578,17 +646,19 @@ export const defaultStrings: Strings = {
  * clearing that set (`onCloseReviewFiles`). One source of truth, no second copy that can drift out of
  * step with the list the host measured — and no state for a re-render to resurrect after a poll.
  */
-export function App({ model, strings: s, post, reviewFiles, onCloseReviewFiles }: {
+export function App({ model, strings: s, post, reviewFiles, landResult, onCloseReviewFiles }: {
   model?: SectionsModel;
   strings: Strings;
   post: (action: WorktreesAction) => void;
   reviewFiles?: WorktreeReviewFiles | null;
+  /** SDD 498 — the last land outcome, shown on the row it names and nowhere else. */
+  landResult?: WorktreeLandResult | null;
   onCloseReviewFiles?: () => void;
 }) {
   return (
     <main class="ds-page">
       <PageChrome title={s.worktreesTitle} hint={s.worktreesHint} />
-      {model ? <WorktreesHygiene s={s} rows={model.worktrees} unavailable={model.worktreesUnavailable} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={post} /> : null}
+      {model ? <WorktreesHygiene s={s} rows={model.worktrees} unavailable={model.worktreesUnavailable} landResult={landResult} onRevealPath={(path) => post({ type: "revealPath", path })} onCopyText={(text) => post({ type: "copyText", text })} onPost={post} /> : null}
       {reviewFiles ? (
         <QuickPicker
           open

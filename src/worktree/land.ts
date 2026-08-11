@@ -1,6 +1,7 @@
 /**
- * t-7cb971 — SUGGEST AND COPY: the exact land command for a delivery that is ready, plus the state of
- * every precondition behind it. This module never lands anything. It composes a string a human runs.
+ * t-7cb971 — the exact land command for a delivery that is ready, plus the state of every
+ * precondition behind it. This module is read-only: it measures and composes; `landAct.ts` performs
+ * the command only after the Interface asks and the engine reuses this probe.
  *
  * WHY IT EXISTS. Tachyon models the AUTHORITY to integrate but not the ACT: an agent isolated in a
  * worktree delivers to the edge of its own branch and stops, and a human then types a git command by
@@ -8,12 +9,9 @@
  * this host: eight hand-run merges, three of which broke the trunk. Every one of those three failed on
  * a condition already computable here.
  *
- * WHAT IT DELIBERATELY DOES NOT DO. It never runs git in a mutating mode, and the string it produces
- * is only ever routed to the clipboard. `landCommandNeverExecuted.test.ts` holds that line for the
- * whole of `src/`: no git invocation anywhere in the product may pass `merge` or `--ff-only`.
- * The record-only posture is unchanged — this slice is the half of t-7cb971 that is correct under
- * BOTH answers to its open product question, because if the product may never mutate the trunk, the
- * task itself says the right move is "give the human the exact command, ready".
+ * WHAT IT DELIBERATELY DOES NOT DO. It never runs git in a mutating mode. The same suggestion feeds
+ * both the visible block and the click-time decision; `landDoorHasNoAgentDoor.test.ts` guards the
+ * authority boundary and records `landAct.ts` as the sole mutating address.
  *
  * THE COMMAND NAMES A COMMIT, NEVER A BRANCH. Every check below is evidence about one tree. A command
  * that said `merge --ff-only <branch>` would be evidence about the tree that existed when the panel
@@ -117,6 +115,13 @@ export interface LandFacts {
   verified: { tree: string; at: string } | null;
   /** Is the local trunk an ancestor of HEAD — i.e. is a fast-forward possible at all. null = unmeasured. */
   trunkIsAncestorOfHead: boolean | null;
+  /**
+   * SDD 498 D6 — where the local trunk actually is. Only used to say *moved to what* when the
+   * fast-forward check is red: after 2026-08-11 that is the operator's immediate next question, and
+   * the incident was diagnosed by comparing hashes after the fact. null = unmeasured, and the message
+   * then says only what it can prove.
+   */
+  trunkHead: string | null;
   /** Branch checked out in the primary checkout, or null when unreadable/detached. */
   primaryBranch: string | null;
   /** Uncommitted changes in the primary checkout. null = unmeasured. */
@@ -186,7 +191,9 @@ export function landSuggestion(facts: LandFacts): LandSuggestion {
     checks.push({
       id: "fast-forward",
       ok: false,
-      detail: `'${trunk}' has moved past this branch's base — ${short(head)} does not contain it`,
+      detail: facts.trunkHead
+        ? `'${trunk}' has moved to ${short(facts.trunkHead)} and is no longer contained in ${short(head)}`
+        : `'${trunk}' has moved past this branch's base — ${short(head)} does not contain it`,
       fix: `integrate '${trunk}' into this branch and re-run the verify gate; the combined tree is the one that lands, and nothing has verified it yet`,
     });
   } else {
@@ -235,7 +242,11 @@ export function landSuggestion(facts: LandFacts): LandSuggestion {
       id: "primary-clean",
       ok: false,
       detail: "the primary checkout has uncommitted changes",
-      fix: "commit, stash or discard them there — a fast-forward carries them onto the trunk's new state, where nobody verified them",
+      // SDD 498 D5 — "stash" was here and is deliberately gone. The stash stack belongs to the
+      // REPOSITORY, not to a checkout, so on a host running parallel worktrees it is shared state:
+      // docs/project-guidance records 2026-08-01, where one agent's `pop` restored a different
+      // agent's work. The product should not hand a human shared-state advice as its first suggestion.
+      fix: "commit or discard them there — a fast-forward carries them onto the trunk's new state, where nobody verified them",
     });
   } else {
     checks.push({
@@ -356,6 +367,11 @@ export async function probeLandSuggestion(deps: ProbeLandDeps): Promise<LandSugg
   const primary = deps.primary ?? (await probePrimaryCheckout(git, worktreePath));
   const record = head ? await readVerificationRecord(worktreePath, head, git, deps.readFile) : undefined;
   const trunkIsAncestorOfHead = trunkRef && head ? await isAncestor(git, worktreePath, trunkRef, head) : null;
+  // SDD 498 D6 — read ONLY on the red path. This runs per row at a 3s poll (measured 13ms/row), and a
+  // trunk that is an ancestor needs no "moved to what": the answer is only ever printed by the refusal.
+  const trunkHead = trunkIsAncestorOfHead === false && trunkRef
+    ? await gitLine(git, ["rev-parse", trunkRef], worktreePath)
+    : null;
 
   return landSuggestion({
     head,
@@ -366,6 +382,7 @@ export async function probeLandSuggestion(deps: ProbeLandDeps): Promise<LandSugg
     commits: deps.commits,
     verified: record ? { tree: record.tree, at: record.at } : null,
     trunkIsAncestorOfHead,
+    trunkHead,
     primaryBranch: primary.branch,
     primaryDirty: primary.dirty,
   });
