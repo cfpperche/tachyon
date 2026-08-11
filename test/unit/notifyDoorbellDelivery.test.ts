@@ -9,6 +9,7 @@ import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
+import { readDoorbellTrailEvents } from "../../src/bridge/doorbell.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 
 /**
@@ -112,7 +113,7 @@ async function makeWorkspace() {
   const host = new FakeHost(mkdir());
   const { tmux, sessions, sent } = fakeTmux();
   const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
-  return { ws, host, sessions, sent };
+  return { ws, host, sessions, sent, root };
 }
 
 /** Flushes the best-effort async chains the poke/deliver paths fire without awaiting. */
@@ -160,6 +161,21 @@ async function withCoordAndChild() {
 useDisposableRuntimeAuth(["opencode"]);
 
 describe("t-fb1453 — an agent-authored doorbell outlives its author", () => {
+  it("records queue overflow durably without changing the authored-doorbell retention policy (t-2153ae)", async () => {
+    const { ws, root } = await withCoordAndChild();
+    forceStateOf(ws, "coord", "working");
+
+    for (let i = 0; i < 21; i += 1) {
+      await priv(ws).deliverNotice("coord", `${DOORBELL} #${i}`, doorbellMetadataFor(ws, "child"));
+    }
+
+    expect(priv(ws).noticeQueue.count("coord")).toBe(20);
+    expect(readDoorbellTrailEvents(root).filter((event) => "event" in event && event.event === "overflow-drop")).toEqual([
+      expect.objectContaining({ event: "overflow-drop", to: "coord", dropped: 1, queued: 20 }),
+    ]);
+    ws.dispose();
+  });
+
   it("Tachyon × freshly spawned synthetic working delivers instead of queueing (t-4c82fa)", async () => {
     const { ws, sent, session } = await withCoordAndChild();
     forceStateOf(ws, "coord", "working", { hasStartedTurn: false });
