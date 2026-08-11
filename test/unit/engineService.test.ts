@@ -834,6 +834,17 @@ describe("daemon engine service", () => {
       { status: "ok", method: "agent.start" },
     );
     await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
+    expectOkMatching(await first.invoke("operation-engine-stop-0001", {
+      schemaVersion: 1,
+      method: "agent.stop",
+      input: { agent: "worker" },
+    }), "agent.stop", { status: "ok", method: "agent.stop", outcome: "stopped" });
+    expectOkMatching(
+      await first.invoke("operation-engine-start-after-stop-0001", startCommand),
+      "agent.start (after confirmed stop)",
+      { status: "ok", method: "agent.start" },
+    );
+    await waitForEvent(first, (event) => event.kind === "views-changed" && event.payload.view === "agents");
     expectOkMatching(await first.invoke("operation-engine-kill-0001", {
       schemaVersion: 1,
       method: "agent.kill",

@@ -936,6 +936,10 @@ export function applyNativeLaneSuppressionCommand(cmd: string): { cmd: string; a
 export class AgentManager {
 
   static readonly STOPPING_FALLBACK_MS = 15_000;
+  /** t-22944a — five measured Grok 1.0.0 active-tool exits completed in 992–1,032ms.
+   * Two seconds keeps about one second of margin without inheriting the row's 15s durable
+   * stop-failed threshold. This confirms an outcome only; it never escalates to a signal. */
+  static readonly STOP_CONFIRM_TIMEOUT_MS = 2_000;
   static readonly POSTMORTEM_MAX_LINES = 1000;
   static readonly POSTMORTEM_MAX_BYTES = 64 * 1024;
   /**
@@ -3611,6 +3615,25 @@ export class AgentManager {
       // would read as stopped — which is why the row keeps PAINTING the non-zero exit code beside
       // "stopped" instead of hiding it (see `deadSubline`).
       throw err;
+    }
+  }
+
+  /** Confirm a graceful Stop without increasing its authority. */
+  async confirmGracefulStop(
+    name: string,
+    timeoutMs = AgentManager.STOP_CONFIRM_TIMEOUT_MS,
+  ): Promise<"stopped" | "alive" | "unknown"> {
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    while (true) {
+      try {
+        const state = (await this.agentStates()).get(name);
+        if (state === undefined || state.dead) return "stopped";
+      } catch {
+        return "unknown";
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return "alive";
+      await sleep(Math.min(50, remaining));
     }
   }
 
