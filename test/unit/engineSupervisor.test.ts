@@ -86,6 +86,89 @@ afterEach(async () => {
 });
 
 describe("persistent engine supervisor", () => {
+  it("keeps a working engine until the human explicitly approves the destructive upgrade", async () => {
+    const fixture = workspaceFixture();
+    let active: ChildProcessWithoutNullStreams | undefined;
+    let stops = 0;
+    const launcher: EngineDaemonLauncher = async (input) => {
+      active = spawnWorker(input.encodedOptions);
+      return "started";
+    };
+    const stopper: EngineDaemonStopper = async () => {
+      stops += 1;
+      const child = active;
+      active = undefined;
+      if (child) await stopChild(child);
+    };
+    const baseOptions = {
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher,
+      stopper,
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    } as const;
+    await ensureDaemonEngine(baseOptions);
+    const newer = stageTestBundle(fixture.root, "guard-v2", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.79.0", "stable");
+    const prompts: unknown[] = [];
+
+    await expect(ensureDaemonEngine({
+      ...baseOptions,
+      bundle: newer,
+      workingSnapshot: async () => ({ state: "known", agents: ["builder"] }),
+      confirmUpgrade: async (snapshot) => {
+        prompts.push(snapshot);
+        return false;
+      },
+    })).rejects.toMatchObject({ code: "ENGINE_UPGRADE_DECLINED" });
+
+    expect(prompts).toEqual([{ state: "known", agents: ["builder"] }]);
+    expect(stops).toBe(0);
+  });
+
+  it("surfaces an unknown working snapshot instead of silently treating it as empty", async () => {
+    const fixture = workspaceFixture();
+    let active: ChildProcessWithoutNullStreams | undefined;
+    const launcher: EngineDaemonLauncher = async (input) => {
+      active = spawnWorker(input.encodedOptions);
+      return "started";
+    };
+    const stopper: EngineDaemonStopper = async () => {
+      const child = active;
+      active = undefined;
+      if (child) await stopChild(child);
+    };
+    const baseOptions = {
+      workspaceRoot: fixture.workspace,
+      bundle: fixture.bundle,
+      runtime: fixture.runtime,
+      storageRoot: fixture.storage,
+      controlSocketPath: fixture.socket,
+      launcher,
+      stopper,
+      startTimeoutMs: 10_000,
+      pollMs: 20,
+    } as const;
+    await ensureDaemonEngine(baseOptions);
+    const newer = stageTestBundle(fixture.root, "unknown-v2", { min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL }, "0.79.0", "stable");
+    const prompts: unknown[] = [];
+
+    await ensureDaemonEngine({
+      ...baseOptions,
+      bundle: newer,
+      workingSnapshot: async () => ({ state: "unknown" }),
+      confirmUpgrade: async (snapshot) => {
+        prompts.push(snapshot);
+        return true;
+      },
+    });
+
+    expect(prompts).toEqual([{ state: "unknown" }]);
+  });
+
   it("derives one canonical private identity and an allowlisted systemd launch", () => {
     // Keep the synthetic XDG path realistic: AF_UNIX has a deliberately enforced 100-byte budget.
     const root = temp("tes-path-");

@@ -436,7 +436,7 @@ export type WorkspaceCommandResultV1 =
       message: string;
     };
 
-export type WorkspaceQueryMethodV1 = "activity.context" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view" | "extension.query";
+export type WorkspaceQueryMethodV1 = "activity.context" | "agent.working" | "probe.view" | "task.board" | "task.detail" | "task.studio" | "pin.studio" | "handoff.view" | "sidebar.view" | "runtime-ops.view" | "extension.query";
 
 export interface WorkspaceProbeViewRowV1 {
   runId: string;
@@ -472,6 +472,11 @@ export interface WorkspaceProbeViewV1 {
 
 /** Authenticated, side-effect-free reads do not enter the mutation operation registry. */
 export type WorkspaceQueryV1 =
+  | {
+      schemaVersion: 1;
+      method: "agent.working";
+      input: Record<string, never>;
+    }
   | {
       schemaVersion: 1;
       method: "activity.context";
@@ -524,6 +529,12 @@ export type WorkspaceQueryV1 =
     };
 
 export type WorkspaceQueryResultV1 =
+  | {
+      schemaVersion: 1;
+      method: "agent.working";
+      status: "ok";
+      agents: string[];
+    }
   | {
       schemaVersion: 1;
       method: "activity.context";
@@ -866,6 +877,7 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
       && typeof value.input.agent === "string"
       && AGENT_NAME_RE.test(value.input.agent);
   }
+  if (value.method === "agent.working") return hasOnlyKeys(value.input, []);
   if (value.method === "task.board") {
     return hasOnlyKeys(value.input, ["liveTemporaryAgents"])
       && Array.isArray(value.input.liveTemporaryAgents)
@@ -900,8 +912,15 @@ export function isWorkspaceQueryV1(value: unknown): value is WorkspaceQueryV1 {
 
 export function isWorkspaceQueryResultV1(value: unknown): value is WorkspaceQueryResultV1 {
   if (!isRecord(value) || value.schemaVersion !== 1
-    || (value.method !== "activity.context" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view" && value.method !== "extension.query")) return false;
+    || (value.method !== "activity.context" && value.method !== "agent.working" && value.method !== "probe.view" && value.method !== "task.board" && value.method !== "task.detail" && value.method !== "task.studio" && value.method !== "pin.studio" && value.method !== "handoff.view" && value.method !== "sidebar.view" && value.method !== "runtime-ops.view" && value.method !== "extension.query")) return false;
   if (value.status === "ok") {
+    if (value.method === "agent.working") {
+      return hasOnlyKeys(value, ["schemaVersion", "method", "status", "agents"])
+        && Array.isArray(value.agents)
+        && value.agents.length <= 500
+        && value.agents.every((agent) => typeof agent === "string" && AGENT_NAME_RE.test(agent))
+        && new Set(value.agents).size === value.agents.length;
+    }
     if (value.method === "extension.query") {
       return hasOnlyKeys(value, ["schemaVersion", "method", "status", "action", "value"])
         && isExtensionQueryActionV1(value.action)

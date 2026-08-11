@@ -25,6 +25,7 @@ import {
   type EngineServiceIdentityV1,
 } from "./protocol.js";
 import type { StartDaemonEngineServiceOptions } from "./engineService.js";
+import { EngineControlClient } from "./controlClient.js";
 
 const DEFAULT_START_TIMEOUT_MS = 10_000;
 const DEFAULT_POLL_MS = 40;
@@ -107,7 +108,13 @@ export interface EnsureDaemonEngineOptions {
   /** Test/platform adapter overrides. Production derives private per-user locations. */
   controlSocketPath?: string;
   storageRoot?: string;
+  /** Interactive shells gate a destructive upgrade; absent means no human is available, so upgrade proceeds. */
+  confirmUpgrade?: (snapshot: EngineUpgradeWorkingSnapshot) => Promise<boolean>;
+  /** Deterministic test seam; production queries the still-running engine over control. */
+  workingSnapshot?: (socketPath: string, identity: EngineServiceIdentityV1) => Promise<EngineUpgradeWorkingSnapshot>;
 }
+
+export type EngineUpgradeWorkingSnapshot = { state: "known"; agents: string[] } | { state: "unknown" };
 
 export interface EnsuredDaemonEngine {
   identity: EngineServiceIdentityV1;
@@ -184,6 +191,8 @@ export async function ensureDaemonEngine(options: EnsureDaemonEngineOptions): Pr
         stopper,
         timeoutMs,
         pollMs,
+        confirmUpgrade: options.confirmUpgrade,
+        workingSnapshot: options.workingSnapshot,
       });
     }
     return {
@@ -485,6 +494,8 @@ interface UpgradeDaemonEngineInput {
   stopper: EngineDaemonStopper;
   timeoutMs: number;
   pollMs: number;
+  confirmUpgrade?: (snapshot: EngineUpgradeWorkingSnapshot) => Promise<boolean>;
+  workingSnapshot?: (socketPath: string, identity: EngineServiceIdentityV1) => Promise<EngineUpgradeWorkingSnapshot>;
 }
 
 async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<EnsuredDaemonEngine> {
@@ -541,6 +552,22 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
         "ROLLBACK_BUNDLE_MISMATCH",
         "Tachyon kept the running engine because its rollback bundle does not match the live incarnation.",
       );
+    }
+
+    // A shell with no human surface (Dev Host, CI, or another headless caller) deliberately upgrades
+    // without prompting. Blocking activation where nobody can answer would strand automation.
+    if (input.confirmUpgrade) {
+      const snapshot = await (input.workingSnapshot ?? queryWorkingAgents)(input.controlSocketPath, current)
+        .catch((): EngineUpgradeWorkingSnapshot => ({ state: "unknown" }));
+      if (snapshot.state === "unknown" || snapshot.agents.length > 0) {
+        const accepted = await input.confirmUpgrade(snapshot).catch(() => false);
+        if (!accepted) {
+          throw new EngineSupervisorError(
+            "ENGINE_UPGRADE_DECLINED",
+            "Tachyon kept the current engine because the upgrade was not explicitly approved.",
+          );
+        }
+      }
     }
 
     const transitionId = randomUUID();
@@ -662,6 +689,36 @@ async function upgradeDaemonEngine(input: UpgradeDaemonEngineInput): Promise<Ens
       );
     }
   });
+}
+
+async function queryWorkingAgents(
+  socketPath: string,
+  identity: EngineServiceIdentityV1,
+): Promise<EngineUpgradeWorkingSnapshot> {
+  const control = new EngineControlClient({
+    socketPath,
+    timeoutMs: 750,
+    commandTimeoutMs: 750,
+    hello: {
+      schemaVersion: 1,
+      op: "attach",
+      workspaceRoot: identity.workspaceRoot,
+      workspaceHash: identity.workspaceHash,
+      shell: { id: `upgrade-preflight-${randomUUID()}`, version: identity.engineVersion, locale: "en" },
+      protocol: identity.protocol,
+      capabilities: [],
+      // The preflight lease never mutates settings; the digest is required only to fingerprint a shell attach.
+      settingsDigest: createHash("sha256").update("upgrade-preflight").digest("hex"),
+    },
+  });
+  try {
+    await control.attach();
+    const result = await control.query({ schemaVersion: 1, method: "agent.working", input: {} });
+    if (result.status !== "ok" || result.method !== "agent.working") return { state: "unknown" };
+    return { state: "known", agents: result.agents };
+  } finally {
+    if (control.attached) await control.detach().catch(() => undefined);
+  }
 }
 
 function buildLaunchInput(input: {
