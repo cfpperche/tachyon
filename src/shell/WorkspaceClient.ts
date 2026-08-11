@@ -106,6 +106,7 @@ export interface ConnectRemoteWorkspaceClientOptions {
   settings?: DaemonSettingsSnapshot;
   migrationProvider?: EngineStateMigrationProvider;
   uiHandler?: WorkspaceUiRequestHandler;
+  confirmEngineUpgrade?: EnsureDaemonEngineOptions["confirmUpgrade"];
   supervisor?: Omit<EnsureDaemonEngineOptions, "workspaceRoot" | "bundle" | "runtime" | "settings" | "migrationProvider">;
   /** Deterministic test/platform seam; production uses ensureDaemonEngine. */
   ensure?: EnsureEngine;
@@ -245,6 +246,7 @@ export class RemoteWorkspaceClient implements WorkspaceClient {
       runtime: { ...options.runtime },
       settings,
       migrationProvider: options.migrationProvider,
+      confirmUpgrade: options.confirmEngineUpgrade,
     };
   }
 

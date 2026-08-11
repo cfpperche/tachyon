@@ -1,4 +1,7 @@
 {
+  "Upgrade anyway": "Atualizar mesmo assim",
+  "Tachyon could not verify whether agents are working. Upgrading the engine may interrupt an in-flight turn.": "O Tachyon não conseguiu verificar se há agentes trabalhando. Atualizar o engine pode interromper um turno em andamento.",
+  "Upgrading the Tachyon engine will interrupt in-flight work for: {0}": "Atualizar o engine do Tachyon interromperá o trabalho em andamento de: {0}",
   "Activity — {0}": "Atividade — {0}",
   "Several Activity views are open — click the one you want, then run “Open Raw Transcript”.": "Várias visualizações de Atividade estão abertas — clique na que você quer e execute “Abrir transcrição bruta”.",
   " (+{0} more)": " (+{0} outros)",

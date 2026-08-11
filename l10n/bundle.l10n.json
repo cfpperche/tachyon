@@ -1,4 +1,7 @@
 {
+  "Upgrade anyway": "Upgrade anyway",
+  "Tachyon could not verify whether agents are working. Upgrading the engine may interrupt an in-flight turn.": "Tachyon could not verify whether agents are working. Upgrading the engine may interrupt an in-flight turn.",
+  "Upgrading the Tachyon engine will interrupt in-flight work for: {0}": "Upgrading the Tachyon engine will interrupt in-flight work for: {0}",
   " ({0} file(s) skipped)": " ({0} file(s) skipped)",
   "Agent '{0}' is no longer available.": "Agent '{0}' is no longer available.",
   "Agent '{0}' is not running.": "Agent '{0}' is not running.",
