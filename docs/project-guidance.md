@@ -99,10 +99,17 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   a check that did not run.
 - Integrate `main` once at the end inside the change worktree, verify that combined tree, and deliver
   there. If `main` moves again, re-integrate and reverify.
-- Moving `main` is a HUMAN action in the primary checkout, not the delivering agent's. Two product
-  facts put it there: an agent is isolated to its own worktree, and the integrate door is
+- Moving `main` is a HUMAN action in the primary checkout, not the delivering agent's. **One product
+  fact and one convention** put it there, and the difference matters: the integrate door is
   record-only — it proves containment and records the fact, and never runs a main-mutating Git
-  command. There is also a mechanical reason: while the primary checkout sits on `main`, advancing
+  command — while "an agent stays in its own worktree" is an INSTRUCTION the agent is given, not a
+  boundary the product enforces. An agent has a shell; a `cd` in a compound command reaches the
+  primary checkout, and on 2026-07-30 one did exactly that twice in a single session (`t-5313dc`).
+  Measured 2026-08-11 across the four attested runtimes: Claude's sandbox covers Bash but not
+  `Edit`/`Write`, Codex confines but admits `/tmp` by default, Grok's built-in profile warns and
+  continues when enforcement fails, and Pi has no sandbox at all — so no runtime-portable
+  confinement exists to promise (`docs/research/runtime-write-discovery-isolation-t5313dc.md`).
+  There is also a mechanical reason: while the primary checkout sits on `main`, advancing
   the ref from outside leaves its index and working tree inconsistent with the new HEAD, so the only
   safe place to fast-forward is that checkout itself. An agent that has verified its tree reports the
   commit and stops; it does not reach across. Closing this loop inside the product — a governed land

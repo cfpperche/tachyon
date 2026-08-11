@@ -32,7 +32,7 @@ integração ou remoção sem autoridade e evidência suficiente é governança.
 | Activity | Histórico operacional de agentes e ações. | **Qualquer — padrão** | A visualização pode não ser usada. |
 | Isolamento de transcript | Namespace de conversa separado por agente. | **Qualquer — opt-in** | Sim. |
 | Harness isolado | MCPs, skills, regras e hooks por agente. | **Qualquer — opt-in** | Sim. |
-| Worktree isolada | Checkout e branch separados. | **Qualquer — opt-in** | Sim. |
+| Worktree isolada | Checkout e branch separados — **local de trabalho, não confinamento de escrita**. O agente recebe a worktree e a instrução de ficar nela; nenhum runtime medido impõe essa fronteira, e o Pi não tem sandbox nenhum. Ver [paridade, dimensão 22](runtimes/parity.md). | **Qualquer — opt-in** | Sim. |
 | Delivery canônica | Uma worktree reutilizada sequencialmente pelos participantes da mesma mudança. | **Qualquer — governado** | Pode ser evitada usando delegação sem `gate`. |
 | Commands | Comandos curados acionados por humanos ou agentes. | **Qualquer — opt-in** | Sim. |
 | Runbooks | Procedimentos sequenciais com resultado por etapa. | **Qualquer — opt-in** | Sim. |
