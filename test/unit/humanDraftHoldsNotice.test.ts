@@ -1,4 +1,4 @@
-import { skipTestsWithoutOptionalRuntimeAuth, useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
+import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, expect, it, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -195,34 +195,19 @@ async function withCoordAndChild(composerLine = EMPTY_COMPOSER) {
 const doorbellMetadataFor = (ws: Workspace, sender: string) => priv(ws).sourceNoticeMetadata(sender, "agent-authored");
 
 /**
- * t-a12966 — this file needs TWO different things from the machine, and only one of them is
- * substrate.
+ * t-a12966 / t-b10d93 — this file needs TWO credentials from the machine, and BOTH are substrate.
  *
- * The coordinator is a claude agent: its harness wants a credential FILE to link, which is injected
- * below. The child it pokes is spawned with `cmd: opencode`, and opencode is a different animal —
- * its launch preflight EXECUTES the installed runtime to ask whether it is authenticated, so no
- * fixture can stand in. Measured while classifying: the list here declared `claude`, which is the
- * dependency that does NOT bind. On a host with claude credentials and no opencode these twelve
- * went red rather than pending, blaming the composer guard for a missing runtime.
+ * The coordinator is a claude agent: its harness wants a credential FILE to link. The child it pokes
+ * is spawned with `cmd: opencode`, which used to be a different animal — its launch preflight EXECUTES
+ * the installed runtime to ask whether it is authenticated, so those twelve were declared-and-skipped.
+ * t-35c998 took that preflight out of this file's path (`HERMETIC_PREFLIGHT` above); what was left
+ * refusing is `HarnessManager.materializeHome`, which only wants to copy
+ * `<XDG_DATA_HOME>/opencode/auth.json` — a file, so a fixture supplies it too and the twelve run
+ * everywhere. Measured while classifying (t-a12966): the list here once declared `claude`, the
+ * dependency that does NOT bind; on a host with claude credentials and no opencode these went red
+ * rather than pending, blaming the composer guard for a missing runtime.
  */
-useDisposableRuntimeAuth(["claude"]);
-
-skipTestsWithoutOptionalRuntimeAuth({
-  opencode: [
-    "an unsent composer tells the human the agent is idle and names the remedy exactly once",
-    "THE MEASURED BUG: the poll says the composer is free, the pane says a human is typing — nothing is injected",
-    "the sender is TOLD a human is holding it — a queued doorbell that waits on a person says so",
-    "NO REGRESSION: an empty composer still delivers immediately, exactly as before",
-    "NO REGRESSION: Claude's dim suggestion is not a human and does not hold the queue (t-c5f29b bytes)",
-    "the held notice arrives when the draft leaves — waiting, not discarding",
-    "a queued notice is not flushed into a pane the human started typing in meanwhile",
-    "the HOST poke rides the same guard — the fix cannot be walked around through the other door",
-    "the rate-limit auto-continue does not press Enter on a human's draft, and re-arms instead of dying",
-    "with a free composer the auto-continue still presses Enter, exactly as before",
-    "an abandoned draft cannot hold a live-state poke forever: the TTL is swept even while the composer is held",
-    "the exit does not depend on an event: the heartbeat sweeps a queue nothing else touches",
-  ],
-});
+useDisposableRuntimeAuth(["claude", "opencode"]);
 
 describe("t-a53dd9 — a human typing is not idleness", () => {
   it("an unsent composer tells the human the agent is idle and names the remedy exactly once", async () => {
