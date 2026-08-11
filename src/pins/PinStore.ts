@@ -68,8 +68,12 @@ export function mintPinId(): string {
 export class PinStore {
   private static readonly lockTimeoutMs = 5_000;
   private static readonly lockPollMs = 10;
+  private static readonly generatedIdAttempts = 8;
 
-  constructor(private readonly workspaceRoot: string) {}
+  constructor(
+    private readonly workspaceRoot: string,
+    private readonly generateId: () => string = mintPinId,
+  ) {}
 
   get dir(): string {
     return path.join(this.workspaceRoot, ".tachyon");
@@ -110,19 +114,28 @@ export class PinStore {
   create(text: string, by: string, opts: { tags?: string[]; now?: string; id?: string } = {}): Pin {
     const t = text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
-    const pin: Pin = {
-      id: opts.id ?? mintPinId(),
-      text: t,
-      by,
-      createdAt: opts.now ?? new Date().toISOString(),
-      done: false,
-    };
-    applyTags(pin, opts.tags);
+    let pin!: Pin;
     this.mutatePins((pins) => {
+      pin = {
+        id: opts.id ?? this.generateAvailableId(pins),
+        text: t,
+        by,
+        createdAt: opts.now ?? new Date().toISOString(),
+        done: false,
+      };
+      applyTags(pin, opts.tags);
       if (pins.some((candidate) => candidate.id === pin.id)) throw new Error(`pin '${pin.id}' already exists`);
       return [...pins, pin];
     });
     return pin;
+  }
+
+  private generateAvailableId(pins: Pin[]): string {
+    for (let attempt = 0; attempt < PinStore.generatedIdAttempts; attempt += 1) {
+      const id = this.generateId();
+      if (!pins.some((candidate) => candidate.id === id)) return id;
+    }
+    throw new Error(`failed to generate a unique pin id after ${PinStore.generatedIdAttempts} attempts`);
   }
 
   setDone(id: string, done: boolean): Pin {
