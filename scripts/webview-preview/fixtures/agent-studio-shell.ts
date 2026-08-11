@@ -5,7 +5,7 @@
  */
 
 import type { AgentStudioEntity } from "../../../src/webview/agent-studio-shell/domain";
-import { blankAgentFields, canonicalAgentFields, createAgentEvolutionLabels, createAgentProfileLabels } from "../../../src/webview/agent-studio-shell/domain";
+import { blankAgentFields, canonicalAgentFields, createAgentProfileLabels } from "../../../src/webview/agent-studio-shell/domain";
 import type { AgentProfileStudioSnapshotV1 } from "../../../src/config/agentProfileStudio";
 import type { AgentForgetPlanResultV1 } from "../../../src/config/agentForgetPlan";
 import type { Fixture, Route } from "../routes";
@@ -65,7 +65,6 @@ const executableForgetPlan: AgentForgetPlanResultV1 = {
         state: "will-run",
         detail: "deletes the checkout at /home/dev/.cache/tachyon/worktrees/reviewer; branch tachyon/reviewer was created by Tachyon and is deleted if git can safe-delete it",
       },
-      { id: "retire-evolution", state: "will-run", detail: "retires the stored Agent Evolution profile" },
       { id: "retire-authority", state: "will-run", detail: "retires this agent's record in the host authority vault" },
       { id: "remove-locator", state: "will-run", detail: "removes the 'reviewer' entry from tachyon.yml" },
       { id: "quarantine-profile", state: "will-run", detail: "moves .tachyon/agents/reviewer/ into the retirement receipt" },
@@ -111,7 +110,6 @@ const blockedForgetPlan: AgentForgetPlanResultV1 = {
         refusalCode: "agent-profile/worktree-release-agent-running",
         resolution: "Stop scout, tester first — they share this worktree.",
       },
-      { id: "retire-evolution", state: "satisfied", detail: "this agent has no Agent Evolution profile" },
       { id: "retire-authority", state: "will-run", detail: "retires this agent's record in the host authority vault" },
       { id: "remove-locator", state: "will-run", detail: "removes the 'reviewer' entry from tachyon.yml" },
       { id: "quarantine-profile", state: "will-run", detail: "moves .tachyon/agents/reviewer/ into the retirement receipt" },
@@ -157,7 +155,6 @@ const chips = ATTESTED_RUNTIMES.map((bin, index) => ({
 }));
 
 const flagMap = { claude: ["--dangerously-skip-permissions", "--model sonnet", "--model haiku", "--permission-mode plan", "--continue"] };
-const evolutionLabels = createAgentEvolutionLabels();
 const profileLabels = createAgentProfileLabels();
 
 /**
@@ -175,7 +172,6 @@ const newEntity: AgentStudioEntity = {
   flagMap,
   defaultCwd: "/home/dev/project",
   persistentInstructionsHelp: "When supported, delivered at startup through the selected runtime.",
-  evolutionLabels,
   profileLabels,
 };
 
@@ -196,7 +192,6 @@ const denseEntity: AgentStudioEntity = {
   flagMap,
   defaultCwd: "/home/dev/project",
   persistentInstructionsHelp: "When supported, delivered at startup through the selected runtime.",
-  evolutionLabels,
   profileLabels,
 };
 
@@ -212,7 +207,7 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     displayName: "Repository reviewer", runtime: { adapter: "codex", executable: "codex", model: "gpt-5.6" },
     cwd: "apps/reviewer", lifecycle: { autostart: true, restart: "on-crash", attention: true },
     worktree: { enabled: true, branch: "feature/reviewer", setup: ["pnpm install", "pnpm --filter web build"] },
-    selfEvolution: true, instructions: "you are a code reviewer; read the diff and flag correctness issues", isolation: "transcript",
+    instructions: "you are a code reviewer; read the diff and flag correctness issues", isolation: "transcript",
     capabilities: { skills: ["review-checklist"], mcp: ["docs-search"], hooks: [] },
   },
   bindings: {
@@ -220,7 +215,7 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
     foreignWorkspaceCommands: false,
     foreignPersistentInstructions: false,
     environmentValueNames: ["NODE_ENV"], secretNames: ["GITHUB_TOKEN"],
-    prompt: { instructions: true, evolution: true, memoryPolicy: "human-approved" },
+    prompt: { instructions: true, memoryPolicy: "human-approved" },
     capabilities: { skills: 3, mcp: 1, hooks: 1, pi: 0 }, externalReferences: 2,
     tooling: {
       skills: [{ id: "review-checklist", scope: "profile" }, { id: "repo-search", scope: "project" }],
@@ -231,7 +226,6 @@ const canonicalSnapshot: AgentProfileStudioSnapshotV1 = {
   provenance: {
     canonical: { scope: "profile", writable: true, sha256: "b".repeat(64) },
     authority: { scope: "host", writable: false, revision: "authority-r7", grants: 2 },
-    learned: { scope: "profile", writable: false, present: true },
     projection: { scope: "runtime", writable: false, active: false },
   },
 };

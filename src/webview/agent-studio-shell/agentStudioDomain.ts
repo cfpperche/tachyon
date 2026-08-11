@@ -3,7 +3,7 @@
  * AgentStudioPanelManager.handleDomainMessage onto the
  * generic StudioRegistryEntry.handleDomainMessage extension point (studioRegistry.ts). Kept in its
  * own file rather than inline in studioRegistry.ts — this is by far the largest per-studio domain
- * surface across canonical-profile and Agent Evolution actions, and studioRegistry.ts
+ * surface across canonical-profile actions, and studioRegistry.ts
  * stays a thin per-studio index (command/terminal's handler is a 3-line browse→cwd forward; this one
  * genuinely needs its own module).
  *
@@ -18,17 +18,11 @@
  */
 import * as vscode from "vscode";
 import type { WorkspaceAgentStudioTarget } from "../../shell/WorkspacePresentation.js";
-import { EvolutionStoreError } from "../../evolution/EvolutionStore.js";
 import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "../../config/agentProfileRefusal.js";
 import { redactSecrets } from "../../bridge/redact.js";
 import { envelope } from "../shared/studio/protocol.js";
 import { validateAgentStudioInboundMessage } from "./domain.js";
 import {
-  evolutionActionResultMessage,
-  evolutionCandidateDetailMessage,
-  evolutionCandidatesMessage,
-  evolutionErrorMessage,
-  evolutionSummaryMessage,
   agentProfileErrorMessage,
   agentProfileNoticeMessage,
   authorizableCapabilitiesMessage,
@@ -48,8 +42,6 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     const type = typeof message.type === "string" ? message.type : "";
     if (type.toLowerCase().includes("agentprofile")) {
       postAgentProfileError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed canonical profile message"));
-    } else if (type.toLowerCase().includes("evolution")) {
-      postEvolutionError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed Agent Evolution message"));
     } else {
       postAgentProfileError(ctx, ctx.entityId ?? "Agent", new Error("Rejected malformed Agent Studio message"));
     }
@@ -63,8 +55,6 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
   if (!agent || m.agent !== agent) {
     if (m.type.toLowerCase().includes("agentprofile")) {
       postAgentProfileError(ctx, agent ?? "Agent", new Error("Canonical profile action does not match this Agent Studio entity"));
-    } else if (m.type.toLowerCase().includes("evolution")) {
-      postEvolutionError(ctx, agent ?? "Agent", new Error("Evolution action does not match this saved Agent Studio entity"));
     } else {
       postAgentProfileError(ctx, agent ?? "Agent", new Error("Action does not match this saved Agent Studio entity"));
     }
@@ -130,9 +120,6 @@ export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, c
     });
     return;
   }
-  if (m.type === "refreshEvolution") { void refreshEvolution(ws, ctx, agent); return; }
-  if (m.type === "loadEvolutionCandidate") { void loadEvolutionCandidate(ws, ctx, agent, m.candidateId); return; }
-  if (m.type === "approveEvolutionCandidate" || m.type === "rejectEvolutionCandidate") { void resolveEvolutionCandidate(ws, ctx, agent, m); return; }
   if (m.type === "authorizeSkill") { void authorizeSkill(ws, ctx, agent, m.skillName, m.reauthorize); return; }
   if (m.type === "authorizePlugin") { void authorizePlugin(ws, ctx, agent, m.pluginName, m.reauthorize); return; }
   if (m.type === "refreshAuthorizableCapabilities") { void refreshCandidates(ws, ctx, agent); return; }
@@ -450,59 +437,3 @@ async function browse(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext):
   if (picked?.[0]) ctx.post(envelope({ type: "cwd" as const, value: picked[0].fsPath }));
 }
 
-async function refreshEvolution(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string): Promise<void> {
-  try {
-    const overview = await ws.readAgentEvolutionOverview(agent);
-    ctx.post(evolutionSummaryMessage(overview.summary));
-    ctx.post(evolutionCandidatesMessage(agent, overview.candidates));
-  } catch (error) {
-    postEvolutionError(ctx, agent, error);
-  }
-}
-
-async function loadEvolutionCandidate(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, agent: string, candidateId: string): Promise<void> {
-  try {
-    const detail = await ws.readAgentEvolutionCandidate(agent, candidateId);
-    ctx.post(evolutionCandidateDetailMessage(agent, detail));
-  } catch (error) {
-    postEvolutionError(ctx, agent, error);
-  }
-}
-
-async function resolveEvolutionCandidate(
-  ws: WorkspaceAgentStudioTarget,
-  ctx: StudioDomainContext,
-  agent: string,
-  message: { type: "approveEvolutionCandidate" | "rejectEvolutionCandidate"; candidateId: string; expectedActiveVersion: number; expectedTargetDigest?: string },
-): Promise<void> {
-  const input = {
-    expectedActiveVersion: message.expectedActiveVersion,
-    ...(message.expectedTargetDigest !== undefined ? { expectedTargetDigest: message.expectedTargetDigest } : {}),
-  };
-  try {
-    const result = message.type === "approveEvolutionCandidate"
-      ? await ws.approveAgentEvolutionCandidate(agent, message.candidateId, input)
-      : await ws.rejectAgentEvolutionCandidate(agent, message.candidateId, input);
-    ctx.post(evolutionActionResultMessage(
-      agent,
-      result.candidateId,
-      message.type === "approveEvolutionCandidate" ? "approved" : "rejected",
-      result.activeVersion,
-    ));
-    await refreshEvolution(ws, ctx, agent);
-  } catch (error) {
-    postEvolutionError(ctx, agent, error);
-    if (error instanceof EvolutionStoreError && error.code === "evolution/promotion-conflict") {
-      await refreshEvolution(ws, ctx, agent);
-    }
-  }
-}
-
-function postEvolutionError(ctx: StudioDomainContext, agent: string, error: unknown): void {
-  const conflict = error instanceof EvolutionStoreError && error.code === "evolution/promotion-conflict";
-  const code = error instanceof EvolutionStoreError ? error.code : "evolution/io-error";
-  const message = conflict
-    ? vscode.l10n.t("This proposal changed or was already reviewed. The latest evolution state was loaded.")
-    : vscode.l10n.t("The Agent Evolution action could not be completed.");
-  ctx.post(evolutionErrorMessage(agent, code, message, conflict));
-}

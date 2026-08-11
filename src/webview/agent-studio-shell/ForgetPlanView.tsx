@@ -19,7 +19,6 @@ import type {
 const STEP_TITLES: Record<AgentForgetPlanStepId, string> = {
   "stop-session": "Stop the session",
   "remove-worktree": "Release the worktree",
-  "retire-evolution": "Retire the Agent Evolution profile",
   "retire-authority": "Retire the host authority",
   "remove-locator": "Remove it from tachyon.yml",
   "quarantine-profile": "Retire the canonical profile",

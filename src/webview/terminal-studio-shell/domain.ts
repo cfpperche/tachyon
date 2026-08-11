@@ -21,7 +21,6 @@ export function blankTerminalFields(): FormState {
     cmd: "",
     kind: "terminal",
     instructions: "",
-    selfEvolution: false,
     watch: "",
     steps: "",
     cwd: "",

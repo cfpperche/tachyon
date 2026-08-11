@@ -131,7 +131,6 @@ const TERMINAL_PROBE_VALUES: Record<string, unknown> = {
   attention: { enabled: true, silenceSec: 30, patterns: ["waiting for approval"] },
   kind: "terminal",
   instructions: "you are a reviewer",
-  selfEvolution: { enabled: true },
   worktree: true,
   branch: "feature/x",
   worktreeSetup: "npm ci",
@@ -165,7 +164,7 @@ describe("t-26ba8f — the family: a no-op Studio save is the identity on the lo
     // Equality in BOTH directions, and no exemption list: a probe for a key the schema no longer
     // declares is the same rot from the other end, and there is no such thing as a key that cannot be
     // probed — the probe measures whether the loader ACCEPTS the key, and a refusal is a valid answer
-    // (it is the answer `kind`, `instructions`, `worktree`, `branch`, `worktreeSetup`, `selfEvolution`
+    // (it is the answer `kind`, `instructions`, `worktree`, `branch`, `worktreeSetup`
     // and `harness` already give). Adding a key to `tachyon.schema.json` must mean deciding here what
     // a terminal does with it.
     expect(Object.keys(TERMINAL_PROBE_VALUES).sort()).toEqual(schemaEntryKeys().sort());
@@ -220,7 +219,6 @@ function tunedProfileSnapshot(): AgentProfileLifecycleSnapshot {
     provenance: {
       canonical: { scope: "profile", writable: true, sha256: "d".repeat(64) },
       authority: { scope: "host", writable: false, revision: "lifecycle-one", grants: 0 },
-      learned: { scope: "profile", writable: false, present: false },
       projection: { scope: "runtime", writable: false, active: false },
     },
   };

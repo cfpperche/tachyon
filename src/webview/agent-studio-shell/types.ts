@@ -1,8 +1,5 @@
 import type { StudioDomainMessage, StudioHostCoreMessage, StudioWebviewCoreMessage } from "../shared/studio/protocol";
 import type {
-  AgentEvolutionCandidateDetailMessage,
-  AgentEvolutionCandidateSummaryMessage,
-  AgentEvolutionSummaryMessage,
   AgentStudioEntity,
   AgentStudioPatch,
 } from "./domain";
@@ -12,10 +9,6 @@ import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleE
 import type { AgentForgetPlanResultV1 } from "../../config/agentForgetPlan";
 
 export type {
-  AgentEvolutionCandidateDetailMessage,
-  AgentEvolutionCandidateSummaryMessage,
-  AgentEvolutionLabels,
-  AgentEvolutionSummaryMessage,
   AgentStudioEntity,
   AgentStudioFields,
   AgentStudioPatch,
@@ -25,11 +18,6 @@ export type {
 export type AgentStudioHostMessage =
   | StudioHostCoreMessage<AgentStudioEntity, string, AgentStudioPatch>
   | StudioDomainMessage<{ type: "cwd"; value: string }>
-  | StudioDomainMessage<{ type: "evolutionSummary"; summary: AgentEvolutionSummaryMessage }>
-  | StudioDomainMessage<{ type: "evolutionCandidates"; agent: string; candidates: AgentEvolutionCandidateSummaryMessage[] }>
-  | StudioDomainMessage<{ type: "evolutionCandidateDetail"; agent: string; detail: AgentEvolutionCandidateDetailMessage }>
-  | StudioDomainMessage<{ type: "evolutionActionResult"; agent: string; candidateId: string; status: "approved" | "rejected"; activeVersion: number }>
-  | StudioDomainMessage<{ type: "evolutionError"; agent: string; code: string; message: string; conflict: boolean }>
   | StudioDomainMessage<{ type: "agentProfileSnapshot"; action: "refresh" | "set-enabled" | "rename" | "set-subagents" | "set-propose-saved-agent-grant"; snapshot: AgentProfileStudioSnapshotV1 }>
   | StudioDomainMessage<{ type: "agentProfileOwnership"; agent: string; ownership: AgentOwnershipViewV1 }>
   /** t-e722ce — the read-only plan (or the refusal that stopped it being computed). */
@@ -57,15 +45,6 @@ export type AgentStudioWebviewMessage =
   | StudioDomainMessage<{ type: "authorizeSkill"; agent: string; skillName: string }>
   | StudioDomainMessage<{ type: "authorizePlugin"; agent: string; pluginName: string }>
   | StudioDomainMessage<{ type: "refreshAuthorizableCapabilities"; agent: string }>
-  | StudioDomainMessage<{ type: "refreshEvolution"; agent: string }>
-  | StudioDomainMessage<{ type: "loadEvolutionCandidate"; agent: string; candidateId: string }>
-  | StudioDomainMessage<{
-      type: "approveEvolutionCandidate" | "rejectEvolutionCandidate";
-      agent: string;
-      candidateId: string;
-      expectedActiveVersion: number;
-      expectedTargetDigest?: string;
-    }>
   | StudioDomainMessage<{ type: "refreshAgentProfile"; agent: string }>
   | StudioDomainMessage<{ type: "setAgentProfileEnabled"; agent: string; expectedRevision: string; enabled: boolean }>
   | StudioDomainMessage<{ type: "renameAgentProfile"; agent: string; expectedRevision: string; newName: string }>
