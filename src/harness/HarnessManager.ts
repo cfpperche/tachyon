@@ -3252,6 +3252,14 @@ export class HarnessManager {
     opts: { procRoot?: string; onOutcome?: (outcome: BridgeRuntimeHomeRetirement) => void } = {},
   ): BridgeRuntimeHomeRetirement[] {
     const outcomes: BridgeRuntimeHomeRetirement[] = [];
+    // t-652153 — Claude and OpenCode materialize regular files in the same namespace rather than
+    // runtime-home directories. They have no resumable/cache payload and cannot be a process cwd, so
+    // end-of-life removes them directly. This must live on the canonical retirement door: relying on
+    // the next-start orphan sweep left the file behind after dismiss/Forget and let a same-name spawn
+    // inherit an artifact belonging to the previous identity until it happened to be overwritten.
+    for (const file of [bridgeMcpPath(this.workspaceRoot, agent), bridgeOpencodeMcpPath(this.workspaceRoot, agent)]) {
+      try { fs.rmSync(file, { force: true }); } catch { /* best-effort, like the directory retirement below */ }
+    }
     for (const runtime of bridgeRuntimeHomeRuntimes()) {
       const home = bridgeRuntimeHome(this.workspaceRoot, agent, runtime);
       try {

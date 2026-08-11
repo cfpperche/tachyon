@@ -19,7 +19,7 @@ import {
   POST_CUT_SESSION_ATTESTATION_ENV,
   withPostCutAttestation,
 } from "../../src/agents/legacyFleetGate.js";
-import { HarnessManager, bridgeGrokHome, bridgeHermesHome, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
+import { HarnessManager, bridgeGrokHome, bridgeHermesHome, bridgeMcpPath, bridgeOpencodeMcpPath, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
 import { adapterFor, harnessable } from "../../src/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
@@ -3626,7 +3626,7 @@ describe("AgentManager — session resume (spec 209)", () => {
   // t-7bc276 — the door PRODUCTION uses. Bridge `dismiss_agent` and the UI dismiss both land on
   // dismissTemporary, which is why this asserts there and not on forgetAgent: the removal existed in
   // HarnessManager all along and simply never got called from here, so wiring is the whole defect.
-  it("dismissTemporary removes the private bridge-mcp runtime home a non-harness grok/hermes agent ran out of", async () => {
+  it("dismissTemporary removes every private bridge-mcp artifact shape through the canonical UI/Bridge door", async () => {
     const { manager, ws } = resumeHarness("agents:\n  main:\n    cmd: claude\n", {
       // Exactly how Workspace wires it — a fake would prove the test's own wiring, not the product's.
       removeBridgeRuntimeHome: (name) => { new HarnessManager(ws).retireBridgeRuntimeHomes(name, { procRoot: path.join(ws, "no-proc") }); },
@@ -3643,6 +3643,10 @@ describe("AgentManager — session resume (spec 209)", () => {
     fs.writeFileSync(path.join(grokHome, "bundled", "asset.bin"), "x".repeat(1024), "utf8");
     fs.mkdirSync(hermesHome, { recursive: true });
     fs.writeFileSync(path.join(hermesHome, "state.db"), "db", "utf8");
+    const claudeFile = bridgeMcpPath(ws, "oneshot");
+    const opencodeFile = bridgeOpencodeMcpPath(ws, "oneshot");
+    fs.writeFileSync(claudeFile, "{}\n", "utf8");
+    fs.writeFileSync(opencodeFile, "{}\n", "utf8");
     // A sibling's home proves the removal is keyed by name and does not sweep the neighbours.
     const sibling = bridgeGrokHome(ws, "survivor");
     fs.mkdirSync(sibling, { recursive: true });
@@ -3652,6 +3656,8 @@ describe("AgentManager — session resume (spec 209)", () => {
 
     expect(fs.existsSync(grokHome)).toBe(false);
     expect(fs.existsSync(hermesHome)).toBe(false);
+    expect(fs.existsSync(claudeFile)).toBe(false);
+    expect(fs.existsSync(opencodeFile)).toBe(false);
     expect(fs.existsSync(sibling)).toBe(true);
   });
 
@@ -3737,7 +3743,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       "activity log and writer state",
       "session-owner ledger rows",
       "private runtime-home credentials",
-      "private bridge-mcp runtime home",
+      "private bridge-mcp runtime artifacts",
       "legacy/idempotent Pi session subtree",
       "per-spawn settings file",
       "generated spawn brief",
