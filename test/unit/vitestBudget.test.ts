@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   admitVitestRun,
   admitOrFallback,
@@ -12,6 +12,8 @@ import {
   sizeFromShare,
   vitestPoolMb,
   measureTreePssMb,
+  vitestBudgetTrailPath,
+  type VitestBudgetTrailEvent,
   type VitestClaim,
 } from "../../src/host/vitestBudget.js";
 import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "../../src/host/hostResources.js";
@@ -59,6 +61,8 @@ const TIGHT_HOST: HostMemorySnapshot = { ...HOST, memTotalMb: 11_000, memAvailab
 
 const temporaries: string[] = [];
 const spawned: ReturnType<typeof spawn>[] = [];
+/** Snapshot of the trail env at module load — restored after each test so we never leak a redirect. */
+const trailEnvAtLoad = process.env.TACHYON_VITEST_BUDGET_TRAIL;
 
 function tempDir(prefix: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -75,6 +79,26 @@ function brokenLedgerPath(): string {
   return tempDir("tachyon-vitest-budget-broken-");
 }
 
+function trailFile(): string {
+  return path.join(tempDir("tachyon-vitest-trail-"), "events.jsonl");
+}
+
+function readTrail(file: string): VitestBudgetTrailEvent[] {
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as VitestBudgetTrailEvent);
+}
+
+beforeEach(() => {
+  // t-bd9c61 — production defaults the trail to `<cwd>/.tachyon/…`. Every admit without an explicit
+  // trailPath would otherwise append into this worktree's `.tachyon/` during the unit suite. Sink
+  // the default into a temp file for the duration of each test; tests that assert the trail pass
+  // `trailPath` themselves.
+  process.env.TACHYON_VITEST_BUDGET_TRAIL = path.join(tempDir("tachyon-vitest-trail-sink-"), "events.jsonl");
+});
+
 afterEach(() => {
   for (const child of spawned.splice(0)) {
     try {
@@ -84,6 +108,8 @@ afterEach(() => {
     }
   }
   for (const dir of temporaries.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  if (trailEnvAtLoad === undefined) delete process.env.TACHYON_VITEST_BUDGET_TRAIL;
+  else process.env.TACHYON_VITEST_BUDGET_TRAIL = trailEnvAtLoad;
 });
 
 /** A real live process to anchor a claim to, so pid liveness is exercised rather than stubbed. */
@@ -930,5 +956,182 @@ describe("nested vitest inherits its ancestor's claim (t-690f52)", () => {
     expect(chain!).not.toContain(process.pid);
 
     expect(ancestorPids(process.pid, path.join(tempDir("tachyon-no-proc-"), "absent"))).toBeUndefined();
+  });
+});
+
+/**
+ * t-bd9c61 — the live ledger dies with `/tmp` and reaps dead PIDs; post-crash diagnosis needs a
+ * durable line per admit and refuse. These tests pin the trail, not the sizer.
+ */
+describe("vitest budget durable trail (t-bd9c61)", () => {
+  const shared = {
+    memory: HOST,
+    cpuCount: 8,
+    reserveMb: RESERVE_MB,
+    invocationMb: INVOCATION_MB,
+    workerMb: WORKER_MB,
+    measure: () => undefined as number | undefined,
+  };
+
+  it("defaults the trail under the workspace .tachyon, not under tmpdir", () => {
+    const previous = process.env.TACHYON_VITEST_BUDGET_TRAIL;
+    delete process.env.TACHYON_VITEST_BUDGET_TRAIL;
+    try {
+      const resolved = vitestBudgetTrailPath("/repo/checkout");
+      expect(resolved).toBe(path.join("/repo/checkout", ".tachyon", "vitest-budget-events.jsonl"));
+      expect(resolved.includes("tmpdir") || resolved.startsWith("/tmp")).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.TACHYON_VITEST_BUDGET_TRAIL;
+      else process.env.TACHYON_VITEST_BUDGET_TRAIL = previous;
+    }
+  });
+
+  it("appends one admit line with who, size, and the siblings visible at that instant", () => {
+    const ledger = ledgerFile();
+    const trail = trailFile();
+    const firstPid = liveProcess();
+    const first = admitVitestRun({
+      ...shared,
+      label: "first",
+      ledgerPath: ledger,
+      trailPath: trail,
+      pid: firstPid,
+    });
+    expect(first.ok).toBe(true);
+
+    const second = admitVitestRun({
+      ...shared,
+      label: "second",
+      ledgerPath: ledger,
+      trailPath: trail,
+      pid: liveProcess(),
+    });
+    expect(second.ok).toBe(true);
+
+    const events = readTrail(trail);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({
+      event: "admit",
+      label: "first",
+      pid: firstPid,
+      siblings: [],
+    });
+    expect(events[0]!.workers).toBeGreaterThan(0);
+    expect(events[0]!.costMb).toBeGreaterThan(0);
+    expect(events[0]!.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    // Closed field set: nothing beyond who / size / siblings / clock.
+    expect(Object.keys(events[0]!).sort()).toEqual(
+      ["at", "costMb", "event", "label", "pid", "siblings", "workers"].sort(),
+    );
+
+    expect(events[1]).toMatchObject({ event: "admit", label: "second" });
+    expect(events[1]!.siblings).toEqual([
+      expect.objectContaining({
+        label: "first",
+        pid: firstPid,
+        workers: events[0]!.workers,
+        costMb: events[0]!.costMb,
+      }),
+    ]);
+  });
+
+  it("appends a refuse line naming the holders that filled the budget", () => {
+    const ledger = ledgerFile();
+    const trail = trailFile();
+    // Fill the pool the same way the concurrent-sum test does.
+    for (let i = 0; i < 10; i++) {
+      admitVitestRun({
+        ...shared,
+        label: `fill${i}`,
+        ledgerPath: ledger,
+        trailPath: trail,
+        pid: liveProcess(),
+      });
+    }
+    const before = readTrail(trail).length;
+    const refused = admitVitestRun({
+      ...shared,
+      label: "overflow",
+      ledgerPath: ledger,
+      trailPath: trail,
+      pid: liveProcess(),
+    });
+    expect(refused.ok).toBe(false);
+
+    const events = readTrail(trail);
+    expect(events.length).toBe(before + 1);
+    const last = events[events.length - 1]!;
+    expect(last).toMatchObject({ event: "refuse", label: "overflow" });
+    expect(last.siblings.length).toBeGreaterThan(0);
+    expect(last.workers).toBeUndefined();
+    expect(last.costMb).toBeUndefined();
+    // Refuse answers "who was holding" — every sibling field is who/size, nothing else.
+    for (const sibling of last.siblings) {
+      expect(Object.keys(sibling).sort()).toEqual(["costMb", "label", "pid", "workers"]);
+    }
+  });
+
+  it("records an unaccounted fallback admit so a ledger-invisible run still leaves a post-mortem line", () => {
+    const trail = trailFile();
+    const decision = admitOrFallback(
+      {
+        ...shared,
+        label: "ghost",
+        ledgerPath: brokenLedgerPath(),
+        trailPath: trail,
+        pid: liveProcess(),
+      },
+      () => {},
+    );
+    expect(decision.ok).toBe(true);
+    const events = readTrail(trail);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      event: "admit",
+      label: "ghost",
+      workers: 1,
+      siblings: [],
+      unaccounted: true,
+    });
+  });
+
+  it("does not let a broken trail path refuse a run — the ledger is the guard, the trail is evidence", () => {
+    const ledger = ledgerFile();
+    // A trail path whose parent cannot be created as a directory: use a FILE as the parent segment.
+    const blocker = path.join(tempDir("tachyon-vitest-trail-block-"), "not-a-dir");
+    fs.writeFileSync(blocker, "x");
+    const decision = admitVitestRun({
+      ...shared,
+      label: "still-runs",
+      ledgerPath: ledger,
+      trailPath: path.join(blocker, "events.jsonl"),
+      pid: liveProcess(),
+    });
+    expect(decision.ok).toBe(true);
+    // Ledger still recorded the claim; only the trail failed.
+    expect(readLedger(ledger)).toHaveLength(1);
+  });
+
+  it("does not trail a nested inherit — that run is not a new host-wide claim", () => {
+    const ledger = ledgerFile();
+    const trail = trailFile();
+    const holder = liveProcess();
+    fs.writeFileSync(ledger, JSON.stringify([
+      { pid: holder, workers: 6, costMb: 3_968, startedAtMs: Date.now(), label: "holder" },
+    ] satisfies VitestClaim[]));
+    const nested = admitVitestRun({
+      ...shared,
+      label: "child",
+      ledgerPath: ledger,
+      trailPath: trail,
+      pid: liveProcess(),
+      ancestorsOf: () => [holder],
+      measure: () => 100,
+      invocationMb: 512,
+      maxUsefulWorkers: 1,
+    });
+    expect(nested.ok).toBe(true);
+    if (nested.ok) expect(nested.claim.costMb).toBe(0);
+    expect(readTrail(trail)).toEqual([]);
   });
 });
