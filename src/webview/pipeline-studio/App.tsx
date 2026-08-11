@@ -3,6 +3,7 @@ import { Button, IconButton } from "../shared/ui";
 import { StudioFrame } from "../shared/studio/StudioFrame";
 import { canSave as computeCanSave } from "../shared/studio/dirtyGating";
 import type { StudioError } from "../shared/studio/errorTaxonomy";
+import { studioLoadErrorTitle } from "../shared/studio/studioLoadErrorTitle";
 import { computePipelineDirty, pipelineTitleFor, validatePipelineFields } from "./domain";
 import type { PipelineEntity, PipelineFields } from "./domain";
 import { cancelMessage, dirtyMessage, importStagesMessage, patchMessage, readyMessage, saveMessage } from "./messages";
@@ -91,7 +92,9 @@ export function App({ dispatch }: { dispatch: PipelineStudioDispatch }) {
 
   return (
     <StudioFrame
-      title={pipelineTitleFor(mode, entityId, entity)}
+      // t-831332 — on a failed load the client has no identity; titleFor falls to "New Pipeline".
+      // Name the surface instead, same contract StudioLoadError owns for the seven real shells.
+      title={loadFailed ? studioLoadErrorTitle("pipeline") : pipelineTitleFor(mode, entityId, entity)}
       errors={errors}
       dirty={dirty}
       saveInFlight={saveInFlight}

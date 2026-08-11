@@ -325,7 +325,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: PinS
   if (!entity) {
     return (
       <StudioLoadError
-        title={pinStudioTitleFor("new", undefined, undefined)}
+        entityType="pin"
         error={hostError}
         backLink={backLink}
         onClose={() => post(cancelMessage())}

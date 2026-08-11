@@ -434,7 +434,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Task
   if (!entity) {
     return (
       <StudioLoadError
-        title={taskStudioTitleFor("new", undefined, undefined)}
+        entityType="task"
         error={hostError}
         backLink={backLink}
         onClose={() => post(cancelMessage())}

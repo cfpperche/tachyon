@@ -161,7 +161,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Runb
   if (!entity) {
     return (
       <StudioLoadError
-        title={runbookStudioTitleFor(mode, entityId, entity)}
+        entityType="runbook"
         error={hostError}
         backLink={backLink}
         onClose={() => post(cancelMessage())}

@@ -182,7 +182,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Term
   if (!entity) {
     return (
       <StudioLoadError
-        title={terminalStudioTitleFor(mode, entityId, entity)}
+        entityType="terminal"
         error={hostError}
         backLink={backLink}
         onClose={() => post(cancelMessage())}

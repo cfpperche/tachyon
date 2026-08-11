@@ -423,7 +423,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
   if (!entity) {
     return (
       <StudioLoadError
-        title={agentStudioTitleFor(mode, entityId, entity)}
+        entityType="agent"
         error={hostError}
         backLink={backLink}
         onClose={() => post(cancelMessage())}

@@ -10,6 +10,7 @@ import {
 import { hasBlockingErrors, mapUnknownError, NO_VALIDATION_ERRORS, type StudioError } from "../../src/webview/shared/studio/errorTaxonomy.js";
 import { canSave, requiresDiscardConfirmation } from "../../src/webview/shared/studio/dirtyGating.js";
 import { decideRestore } from "../../src/webview/shared/studio/restoreDecisions.js";
+import { studioLoadErrorTitle } from "../../src/webview/shared/studio/studioLoadErrorTitle.js";
 
 // spec 350 T1 — the shell's pure decision modules: versioned protocol with a disciplined domain slot,
 // error taxonomy (unknown = blocking), save gating, and restore decisions. DOM-free by design (dueto F1/F2).
@@ -116,6 +117,27 @@ describe("discard confirmation", () => {
 
   it("skips confirmation when the adapter says the fields already match the loaded snapshot", () => {
     expect(requiresDiscardConfirmation({ dirty: true, canDiscard: true })).toBe(false);
+  });
+});
+
+describe("t-831332 — load-error title names the surface, never a fake entity", () => {
+  it("capitalizes the entity kind and appends Studio", () => {
+    expect(studioLoadErrorTitle("agent")).toBe("Agent Studio");
+    expect(studioLoadErrorTitle("command")).toBe("Command Studio");
+    expect(studioLoadErrorTitle("pipeline")).toBe("Pipeline Studio");
+    expect(studioLoadErrorTitle("task")).toBe("Task Studio");
+    expect(studioLoadErrorTitle("pin")).toBe("Pin Studio");
+  });
+
+  it("does not invent a create-flow or entity identity claim", () => {
+    // The defect was titleFor("new") → "New Agent" on a failed load. This helper must never produce
+    // that shape: no "New …", no trailing entity id.
+    for (const kind of ["agent", "command", "terminal", "runbook", "schedule", "task", "pin", "pipeline"]) {
+      const title = studioLoadErrorTitle(kind);
+      expect(title.startsWith("New ")).toBe(false);
+      expect(title).not.toMatch(/—/);
+      expect(title).toBe(`${kind.charAt(0).toUpperCase()}${kind.slice(1)} Studio`);
+    }
   });
 });
 

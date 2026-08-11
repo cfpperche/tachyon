@@ -194,7 +194,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Comm
   if (!entity) {
     return (
       <StudioLoadError
-        title={commandStudioTitleFor(mode, entityId, entity)}
+        entityType="command"
         error={hostError}
         backLink={backLink}
         onClose={() => post(cancelMessage())}
