@@ -2,7 +2,8 @@
 
 _Created 2026-06-18._
 
-**Status:** draft — DESIGN — gate LOCKED by the maintainer (2026-06-18): (1) **one engine + `input:` optional**
+**Status:** draft
+**Status detail:** draft — DESIGN — gate LOCKED by the maintainer (2026-06-18): (1) **one engine + `input:` optional**
 (no second type), (2) **`task` conditionally-required via the work-source rule** (optional for a
 configured `agent:` node under `input: required`; required for `input: none` agent nodes and `cmd:` nodes;
 no rename), (3) **input source = file** `.tachyon/runs/<id>.input.md` with InputBox/tree as a writer

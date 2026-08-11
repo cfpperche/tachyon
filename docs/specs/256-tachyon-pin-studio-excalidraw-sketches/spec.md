@@ -1,6 +1,11 @@
 # Spec 256 - Pin Studio Excalidraw sketches
 
-**Status:** implemented locally; EDH dogfood and payload sweep complete before merge. **Surface:** Pin Studio v2 adds Excalidraw-powered sketch blocks and screenshot annotation on top of the rich pin storage shipped in spec 255. **UI impact:** ui. **Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit && bash scripts/check-engine-boundary.sh && node esbuild.mjs && env -u TMUX npx vitest run`
+**Status:** shipped
+**Closure:** Landed in commit `b345da96`; the original status records completed EDH dogfood and payload sweep.
+**Status detail:** implemented locally; EDH dogfood and payload sweep complete before merge.
+**Surface:** Pin Studio v2 adds Excalidraw-powered sketch blocks and screenshot annotation on top of the rich pin storage shipped in spec 255.
+**UI impact:** ui.
+**Verify:** `npx tsc --noEmit && npx tsc -p tsconfig.webview.json --noEmit && bash scripts/check-engine-boundary.sh && node esbuild.mjs && env -u TMUX npx vitest run`
 
 > **Origin.** Spec 255 intentionally shipped Tiptap rich pins first and deferred Excalidraw to v2. Now that v1 is implemented, dogfooded, and pushed on `tachyon/spec-255-pin-studio-rich-pins`, v2 should add the drawing/annotation capability without weakening the v1 guarantees: pins remain the coordination surface, `.tachyon/pins.json` remains a small summary index, rich detail stays local by default, and no binary/base64 payload enters sidebar or MCP list payloads.
 

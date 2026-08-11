@@ -1,6 +1,12 @@
 # Spec 241 — per-agent continuity (working memory across session boundaries)
 
-**Status:** shipped · **Date:** 2026-06-21 · **Follows:** spec 216 (role re-anchor), spec 239 (activity log), spec 192 (notes/pins), spec 209 (session resume), spec 225 (fork) · **Runtime:** claude v1 · **Debate:** see `debate.md` (D3 corrected; D7–D10 added) · **Closure:** read-path amendment shipped for t-c35335
+**Status:** shipped
+**Closure:** read-path amendment shipped for t-c35335
+**Status detail:** shipped
+**Date:** 2026-06-21
+**Follows:** spec 216 (role re-anchor), spec 239 (activity log), spec 192 (notes/pins), spec 209 (session resume), spec 225 (fork)
+**Runtime:** claude v1
+**Debate:** see `debate.md` (D3 corrected; D7–D10 added)
 
 ## Problem
 

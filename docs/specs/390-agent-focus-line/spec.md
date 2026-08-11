@@ -2,7 +2,9 @@
 
 _Created 2026-07-16._
 
-**Status:** closed (2026-07-16)
+**Status:** shipped
+**Closure:** Landed on main in commit `9af59fd7`; v1 acceptance is checked and the spec records approved POC plus closed Dev Host dogfood on 2026-07-16.
+**Status detail:** closed (2026-07-16)
 
 **Branch:** `grok/agent-focus-line-poc` → main
 

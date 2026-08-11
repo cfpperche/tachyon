@@ -2,7 +2,8 @@
 
 _Created 2026-06-16._
 
-**Status:** IMPLEMENTED + REVIEWED 2026-06-17 — codex impl review (228+229) folded in (1 BLOCKER +
+**Status:** in-progress
+**Status detail:** IMPLEMENTED + REVIEWED 2026-06-17 — codex impl review (228+229) folded in (1 BLOCKER +
 3 MAJOR + 2 MINOR); 578 unit tests + typecheck + build green. NOT yet shipped. Completes the isolated
 harness (spec 226) beyond MCP — the rest of what dogfood pin `p-ea86ad` asked for. All three verified
 live; `inherit: global` deferred.

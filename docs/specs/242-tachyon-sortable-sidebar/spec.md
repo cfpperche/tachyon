@@ -1,6 +1,13 @@
 # Spec 242 — sortable sidebar lists (flat + human-chosen order, default A–Z)
 
-**Status:** shipped · **Date:** 2026-06-21 · **Follows:** spec 237 (sidebar webview) · **Surface:** sidebar webview (`src/webview/sidebar/`, `src/sidebar/`) · **Review:** see `debate.md` (plan) + `tasks.md` (impl closure) · **EDH:** pending (pure UI)
+**Status:** shipped
+**Closure:** Shipped per the implementation closure in `tasks.md` and the completed plan review in `debate.md`; EDH verification remained a recorded follow-up.
+**Status detail:** shipped
+**Date:** 2026-06-21
+**Follows:** spec 237 (sidebar webview)
+**Surface:** sidebar webview (`src/webview/sidebar/`, `src/sidebar/`)
+**Review:** see `debate.md` (plan) + `tasks.md` (impl closure)
+**EDH:** pending (pure UI)
 
 ## Problem
 

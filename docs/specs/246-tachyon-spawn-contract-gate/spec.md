@@ -1,6 +1,13 @@
 # Spec 246 — Spawn-contract gate (structured handoff on agent-initiated child spawns)
 
-**Status:** IMPLEMENTED + codex-reviewed 2026-06-22 (BLOCK → 3 items folded: launcher-aware `resolveBinary` so a gated AI spawn also RECEIVES its brief [#1]; `env -u` no longer a false-negative [#3]; `contractSkipReason` persisted [#2]). 972 unit tests + tsc main/webview green. · **Date:** 2026-06-22 · **Follows:** spec 245 (project handoff), 236 (Bridge tools), 216 (Bridge guidance / role composition) · **Surface:** `src/bridge/tools.ts` (`spawn_agent` schema + handler), `src/roles/templates.ts` (contract→brief composition), `src/agents/AgentManager.ts` (persist structured contract; optional `contractChecked` guard) · **Review:** codex design debate DONE (NEEDS-REVISION 5 items → folded below) · **UI impact:** none (Bridge/MCP + spawn composition only)
+**Status:** shipped
+**Closure:** Landed in commit `2e1343bb`; the implementation review findings were folded and the spec records 972 tests plus both typechecks green.
+**Status detail:** IMPLEMENTED + codex-reviewed 2026-06-22 (BLOCK → 3 items folded: launcher-aware `resolveBinary` so a gated AI spawn also RECEIVES its brief [#1]; `env -u` no longer a false-negative [#3]; `contractSkipReason` persisted [#2]). 972 unit tests + tsc main/webview green.
+**Date:** 2026-06-22
+**Follows:** spec 245 (project handoff), 236 (Bridge tools), 216 (Bridge guidance / role composition)
+**Surface:** `src/bridge/tools.ts` (`spawn_agent` schema + handler), `src/roles/templates.ts` (contract→brief composition), `src/agents/AgentManager.ts` (persist structured contract; optional `contractChecked` guard)
+**Review:** codex design debate DONE (NEEDS-REVISION 5 items → folded below)
+**UI impact:** none (Bridge/MCP + spawn composition only)
 
 > **Origin:** second concrete step of the "migrate Agent0's harness into Tachyon, minimal pollution" thesis (after spec 245). The migrated mechanism is Agent0's **`delegation-gate`** — a `PreToolUse` hook that blocks an `Agent`/`Task` dispatch unless it carries a 5-field handoff (TASK / CONTEXT / CONSTRAINTS / DELIVERABLE-or-DONE_WHEN). Codex dueto (2026-06-22) picked this over secrets-preflight/validator because it is the clean **runtime-neutral** unit: Tachyon validates the spawn *request* at an orchestration chokepoint it already owns, so it gates a claude **and** a codex/gemini/opencode child identically — unlike an injected claude `--settings` hook, which would be claude-only (a half-migration). Classification = **adapt**.
 
