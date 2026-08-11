@@ -28,9 +28,11 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(A({ status: "stopped", resumable: true }))).toEqual(["activity"]);
     expect(actionsFor(A({ status: "stopped", exited: true }))).toContain("activity"); // clean-exit pane has a transcript
   });
-  it("crashed → inspect + openPane + kill + restart", () => {
-    expect(actionsFor(A({ status: "crashed" }))).toEqual(expect.arrayContaining(["inspect", "openPane", "kill", "restart"]));
+  it("crashed → inspect + openPane + reapPane + restart", () => {
+    expect(actionsFor(A({ status: "crashed" }))).toEqual(expect.arrayContaining(["inspect", "openPane", "reapPane", "restart"]));
     expect(actionsFor(A({ status: "crashed" }))).not.toContain("stop");
+    // t-c515c0 — there is no process to force-kill; what is left is the session tmux still holds.
+    expect(actionsFor(A({ status: "crashed" }))).not.toContain("kill");
   });
   it("stopped → spawn; + resume only when resumable; NO inspect/openPane (no pane to open)", () => {
     expect(actionsFor(A({ status: "stopped" }))).toContain("spawn");
@@ -42,15 +44,156 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(primaryActions(A({ status: "stopped" }))).not.toContain("inspect");
     expect(primaryActions(A({ status: "stopped" }))).not.toContain("openPane");
   });
-  // t-9d76b1 — a stop Tachyon asked for that the runtime answered with 130 (grok, hermes) is `stopped`,
-  // NOT `crashed`, and its remain-on-exit pane still holds the `^C` and the code. `hasPane`'s fallback
-  // reads "stopped" as "no pane", so the row must carry the measured `pane: true` — otherwise the fix to
-  // the badge would have taken Inspect / Open pane / Kill away from the pane it describes.
-  it("a requested stop with a non-zero exit keeps its postmortem pane doors", () => {
+  /**
+   * t-9d76b1 established the half that stays: a stop Tachyon ASKED for, which grok answers with 130, is
+   * `stopped` and not `crashed`, and the row still has to carry the measured `pane: true` — `hasPane`'s
+   * fallback reads "stopped" as "no pane", and without the marker the row would lose the tmux session it
+   * still owns. That is a real fix and this test is not permission to undo it.
+   *
+   * t-c515c0 replaces what that task ALSO asserted here — that the row "keeps its postmortem pane doors"
+   * because the pane "still holds the `^C` and the code". Measured over the full scrollback on claude,
+   * codex, grok and pi, the pane holds ONE line: tmux's own `Pane is dead (status …)`. The TUI restores
+   * the primary screen on the way out. So the doors that promised a transcript are gone, the door that
+   * reaps the session stays, and it is named for what it does.
+   *
+   * It is asserted as an EXACT SET, which is the other half of what went wrong: the assertion this
+   * replaces used `arrayContaining`, so it passed green while the row offered `Kill forced` for a
+   * process that had already exited. A containment check cannot see a wrong set — only an equality can.
+   */
+  it("a requested stop offers no pane doors, keeps one door to reap the session, and is NOT a crash", () => {
     const a = A({ status: "stopped", pane: true, sub: "stopped (exit 130)", resumable: true });
-    expect(actionsFor(a)).toEqual(expect.arrayContaining(["inspect", "openPane", "kill", "restart", "resume"]));
-    expect(actionsFor(a)).not.toContain("spawn");
-    expect(actionsFor(a)).not.toContain("stop"); // it is already gone
+    expect(actionsFor(a)).toEqual([
+      "activity", "probes", "reapPane",
+      "restart", "restartNew", "restartForceNew",
+      "resume", "continueTask", "edit", "editYaml", "clone",
+    ]);
+    expect(primaryActions(a)).toEqual(["activity"]);
+    expect(moreActions(a)).toEqual([
+      "probes", "reapPane",
+      "restart", "restartNew", "restartForceNew",
+      "resume", "continueTask", "edit", "editYaml", "clone",
+    ]);
+    // The pair the owner had to choose between: a stop and a crash must not offer the same repertoire.
+    const crashed = A({ status: "crashed", pane: true, resumable: true });
+    expect(actionsFor(a)).not.toEqual(actionsFor(crashed));
+    expect(actionsFor(crashed)).toContain("inspect"); // its pane DID keep the screen it died on
+    expect(actionsFor(a)).not.toContain("inspect");
+  });
+
+  /**
+   * t-c515c0 — the EXACT set each state offers, stated once, in one place.
+   *
+   * This exists because containment checks are what let the defect ship. Every assertion about this
+   * matrix used `toContain` / `arrayContaining`, so a row could offer a whole extra door — `Kill forced`
+   * on an agent that had already exited — with every test green. A set equality is the only shape that
+   * fails when the set is WRONG rather than merely incomplete, and it fails just as loudly when someone
+   * renames an action instead of removing it.
+   *
+   * Read it as the answer to "what does a person get on this row?", state by state.
+   */
+  const PROCESS_PRESUMING: ActionId[] = ["inspect", "openPane", "stop", "kill", "reinjectContinuity", "injectPrompt"];
+  const MATRIX: { state: string; vm: AgentVM; all: ActionId[]; inline: ActionId[]; live: boolean }[] = [
+    {
+      state: "running",
+      vm: A({ status: "running" }),
+      all: ["activity", "probes", "inspect", "openPane", "stop", "kill", "restart", "restartNew", "restartForceNew", "reinjectContinuity", "injectPrompt", "continueTask", "edit", "editYaml", "clone"],
+      inline: ["activity", "inspect", "openPane"],
+      live: true,
+    },
+    {
+      // The graceful stop did not land: the process IS still there, so the live repertoire is correct.
+      state: "stop-failed",
+      vm: A({ status: "stop-failed" }),
+      all: ["activity", "probes", "inspect", "openPane", "stop", "kill", "restart", "restartNew", "restartForceNew", "reinjectContinuity", "injectPrompt", "continueTask", "edit", "editYaml", "clone"],
+      inline: ["activity", "inspect", "openPane"],
+      live: true,
+    },
+    {
+      state: "stopping (graceful stop in flight)",
+      vm: A({ status: "stopping" }),
+      all: ["activity", "probes"],
+      inline: ["activity"],
+      live: false,
+    },
+    {
+      // Died without restoring the screen, so its pane still holds what it painted last: doors stay.
+      state: "crashed (pane held)",
+      vm: A({ status: "crashed", pane: true, resumable: true }),
+      all: ["activity", "probes", "inspect", "openPane", "reapPane", "restart", "restartNew", "restartForceNew", "resume", "continueTask", "edit", "editYaml", "clone"],
+      inline: ["activity", "inspect", "openPane"],
+      live: false,
+    },
+    {
+      // THE ROW THIS TASK IS ABOUT: the human asked for the stop, grok answered 130.
+      state: "stopped on request (pane held, exit 130)",
+      vm: A({ status: "stopped", pane: true, sub: "stopped (exit 130)", resumable: true }),
+      all: ["activity", "probes", "reapPane", "restart", "restartNew", "restartForceNew", "resume", "continueTask", "edit", "editYaml", "clone"],
+      inline: ["activity"],
+      live: false,
+    },
+    {
+      // Exited 0 and Tachyon already collected the pane: nothing left to reap.
+      state: "clean exit, pane collected",
+      vm: A({ status: "stopped", exited: true, pane: false, resumable: true }),
+      all: ["activity", "probes", "restart", "restartNew", "restartForceNew", "resume", "continueTask", "edit", "editYaml", "clone"],
+      inline: ["activity"],
+      live: false,
+    },
+    {
+      // Exited 0 but the pane is still standing — reapable, and still not openable.
+      state: "clean exit, pane not yet collected",
+      vm: A({ status: "stopped", exited: true, pane: true, resumable: true }),
+      all: ["activity", "probes", "reapPane", "restart", "restartNew", "restartForceNew", "resume", "continueTask", "edit", "editYaml", "clone"],
+      inline: ["activity"],
+      live: false,
+    },
+    {
+      // The residue t-c515c0 found: `pane` absent entirely. The old fallback invented one here.
+      state: "clean exit, pane unstamped",
+      vm: A({ status: "stopped", exited: true }),
+      all: ["activity", "probes", "restart", "restartNew", "restartForceNew", "continueTask", "edit", "editYaml", "clone"],
+      inline: ["activity"],
+      live: false,
+    },
+    {
+      state: "never started / killed (no pane)",
+      vm: A({ status: "stopped", resumable: true }),
+      all: ["activity", "probes", "spawn", "resume", "continueTask", "edit", "editYaml", "clone"],
+      inline: ["activity"],
+      live: false,
+    },
+  ];
+
+  it.each(MATRIX)("exact action set — $state", ({ state, vm, all, inline, live }) => {
+    expect(actionsFor(vm), `${state}: full set`).toEqual(all);
+    expect(primaryActions(vm), `${state}: inline bar`).toEqual(inline);
+    expect(moreActions(vm), `${state}: overflow`).toEqual(all.filter((id) => !inline.includes(id)));
+    if (!live) {
+      // Nothing that presumes a process survives on a row that has none. Named as a list so a NEW
+      // process-presuming action has to be classified here rather than quietly appear on a dead row.
+      for (const id of PROCESS_PRESUMING) {
+        if (id === "inspect" || id === "openPane") continue; // a crash's pane still has a screen to show
+        expect(actionsFor(vm), `${state}: offers ${id} with no process`).not.toContain(id);
+      }
+    }
+  });
+
+  it("t-c515c0 — a dead row never offers Kill forced, on any shape that reaches one", () => {
+    for (const vm of MATRIX.filter((m) => !m.live).map((m) => m.vm)) {
+      expect(actionsFor(vm)).not.toContain("kill");
+      expect(primaryActions(vm)).not.toContain("kill");
+      expect(moreActions(vm)).not.toContain("kill");
+    }
+    // …and the door that replaces it is never offered where there is a process to stop instead.
+    for (const vm of MATRIX.filter((m) => m.live).map((m) => m.vm)) {
+      expect(actionsFor(vm)).not.toContain("reapPane");
+    }
+  });
+
+  it("t-c515c0 — reapPane is named and iconed for reaping, not for killing", () => {
+    expect(ACTION_META.reapPane.label).not.toMatch(/kill/i);
+    expect(ACTION_META.reapPane.icon).not.toMatch(/disconnect|trash/);
+    expect(ACTION_META.kill.label).toMatch(/kill/i); // the live row's door keeps saying what it does
   });
 
   it("clean exit (stopped + exited) → no Open terminal/pane; Activity/Restart/Resume, NOT spawn", () => {
@@ -66,7 +209,13 @@ describe("sidebar action matrix (spec 237)", () => {
     expect(inline).not.toContain("openPane");
     expect(inline).not.toContain("kill");
     expect(moreActions(A({ status: "stopped", exited: true, resumable: true }))).toEqual(expect.arrayContaining(["restart", "resume"]));
-    expect(moreActions(A({ status: "stopped", exited: true }))).toContain("kill"); // dead pane still exists
+    // t-c515c0 — this used to assert `kill`, on the reasoning that "dead pane still exists". It did not:
+    // for a CLEAN exit Tachyon collects the pane and stamps `pane: false`, and this shape (no `pane` at
+    // all) was reaching the old fallback's `|| !!a.exited` arm and inventing one. A row offering to reap
+    // a session that is already gone is the same defect as offering to kill a process that already
+    // exited — the guard now says the row has neither door.
+    expect(moreActions(A({ status: "stopped", exited: true }))).not.toContain("kill");
+    expect(moreActions(A({ status: "stopped", exited: true }))).not.toContain("reapPane");
     expect(actionsFor(A({ status: "stopped", exited: true, resumable: true }))).toContain("resume");
   });
   it("clean exit after auto-clear → Activity/Restart/Resume, no Kill and no Start", () => {
@@ -272,7 +421,7 @@ describe("sidebar action matrix (spec 237)", () => {
   });
 
   it("inline toolbar is read-only only; lifecycle/destructive actions live in overflow for declared and ad-hoc agents", () => {
-    const unsafe: ActionId[] = ["stop", "restart", "remove", "resume", "kill", "spawn"];
+    const unsafe: ActionId[] = ["stop", "restart", "remove", "resume", "kill", "reapPane", "spawn"];
     for (const a of [
       A({ status: "running", resumable: true }),
       A({ status: "running", resumable: true, adhoc: true, canDismiss: true }),

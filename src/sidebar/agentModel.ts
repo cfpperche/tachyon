@@ -339,8 +339,15 @@ export function toAgentVM(a: AgentRaw, x: AgentExtras = {}): AgentVM {
     // t-9d76b1 — a dead row HAS a pane: remain-on-exit keeps the postmortem until dismiss/restart, and
     // that is measured, not inferred. `hasPane` in actions.ts otherwise falls back to `status !==
     // "stopped"`, which was true only because every dead-and-not-clean row used to be `crashed`; a
-    // requested stop is `stopped`, and the fallback would have hidden Inspect / Open pane / Kill for the
-    // very pane that holds the `^C` and the exit code.
+    // requested stop is `stopped`, and the fallback would have hidden the row's only door to the tmux
+    // session that is still standing.
+    //
+    // t-c515c0 CORRECTS the reason this comment used to give — that the pane holds "the `^C` and the
+    // exit code". Measured over the full scrollback on claude, codex, grok and pi: it does not. The TUI
+    // restores the primary screen as it exits, and the postmortem retains ONE line, tmux's own `Pane is
+    // dead (status …)`. So the pane is real and worth REAPING, and it is not worth opening — actions.ts
+    // no longer offers Inspect / Open pane here, and offers `reapPane` instead of `kill`. A crash is the
+    // other case: it never restores the screen, so its pane does still hold the last thing it painted.
     ...(a.cleanExited ? { pane: false } : a.dead ? { pane: true } : {}),
     ...(x.worktree ? { worktree: x.worktree } : {}),
     ...(x.liveBranch ? { liveBranch: x.liveBranch } : {}),

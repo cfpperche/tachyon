@@ -7,7 +7,7 @@ import { isAgentRow, type AgentVM } from "./types";
  * rest. Unit-tested. Wiring these ids to real commands is the next increment.
  */
 export type ActionId =
-  | "activity" | "probes" | "inspect" | "openPane" | "stop" | "kill"
+  | "activity" | "probes" | "inspect" | "openPane" | "stop" | "kill" | "reapPane"
   | "restart" | "restartNew" | "restartForceNew"
   | "spawn" | "resume" | "fork" | "reinjectContinuity" | "injectPrompt"
   // t-41117e — Continue task in… (webview opens destination picker; host only runs agent.continue-task).
@@ -32,6 +32,13 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   openPane: { icon: "terminal", label: "Open agent pane" },
   stop: { icon: "primitive-square", label: "Stop graceful" },
   kill: { icon: "debug-disconnect", label: "Kill forced" },
+  // t-c515c0 — the SAME host operation as `kill` (both run `agent.kill`, whose whole effect on a dead
+  // row is tmux `kill-session`), named for what it actually does once the process is gone: tmux is
+  // still holding the postmortem pane, and this is the row's only door that lets that session go.
+  // "Kill forced" in a debug-disconnect icon described force-killing something that had already
+  // exited — the noise that taught the owner the state on screen could not be trusted. The operation
+  // was never noise: removing it outright would strand the dead session until a restart.
+  reapPane: { icon: "clear-all", label: "Collect dead pane" },
   // spec 389 — one-click default (graceful+resume); variants live next to it in ⋯, no VS Code QuickPick.
   restart: { icon: "debug-restart", label: "Restart" },
   restartNew: { icon: "debug-restart", label: "Restart new section" },
@@ -56,12 +63,31 @@ const isRunning = (a: AgentVM) =>
 /** Activity is a durable, per-agent history. It does not require a live tmux pane; a stopped AI row may still
  *  have useful log/context to inspect before the user decides between Resume and a fresh start. */
 const canViewActivity = (a: AgentVM) => isAgentRow(a);
-/** A tmux pane exists — live, crashed, or a clean-exit postmortem. Only a killed/never-started "stopped"
- *  row has no pane. Clean-exit postmortems are deliberately not user-facing terminals: the next meaningful
- *  actions are Activity, Resume, or Restart, not reopening a dead pane. */
-const hasPane = (a: AgentVM) => a.pane ?? (a.status !== "stopped" || !!a.exited);
+/**
+ * A tmux SESSION exists for this row — either with a live process in it, or holding the postmortem pane
+ * tmux keeps under remain-on-exit. It answers "is there anything left to reap?", never "is it usable?".
+ *
+ * t-c515c0 — the old fallback's `|| !!a.exited` arm is gone. A clean exit whose `pane: false` had not
+ * been stamped fell through this arm as "has a pane", which is how a `{stopped, exited}` row kept
+ * offering to kill a pane Tachyon had already collected. A predicate that only holds while a field is
+ * ABSENT is luck, not a rule.
+ */
+const hasPane = (a: AgentVM) => a.pane ?? a.status !== "stopped";
 const isCleanExit = (a: AgentVM) => a.status === "stopped" && !!a.exited;
-const isCleanExitPostmortem = (a: AgentVM) => isCleanExit(a) && hasPane(a);
+/**
+ * The pane is worth OPENING — a different question from whether it still exists, and the one the row
+ * was getting wrong.
+ *
+ * t-c515c0, MEASURED (task journal): a graceful stop lets the runtime's TUI restore the primary screen,
+ * so the pane tmux keeps retains exactly ONE line — tmux's own `Pane is dead (status …)`. That was read
+ * on claude, codex, grok and pi alike, over the full scrollback and not just the visible screen. Open
+ * terminal / Open agent pane there promise a transcript that measurably is not inside it.
+ *
+ * A process that dies WITHOUT restoring the screen keeps its alternate screen, and the same measurement
+ * read 20 non-blank lines back off a killed pane. So a crash genuinely still has something to show, and
+ * keeps both doors: that is why a stop and a crash must not resolve to the same set here.
+ */
+const canOpenPane = (a: AgentVM) => hasPane(a) && (isRunning(a) || a.status === "crashed");
 const canRestart = (_a: AgentVM) => true;
 /** Resume (with saved context) replays an AI agent's transcript — offered for stopped|crashed (incl.
  *  clean-exit) when resumable. Terminals have no transcript, so they never resume. */
@@ -92,9 +118,13 @@ export function actionsFor(a: AgentVM): ActionId[] {
   if (canViewActivity(a)) out.push("probes");
   if (a.status === "stopping") return hasStudioForget(a) ? out : [...out, "remove"];
   if (hasPane(a)) {
-    if (!isCleanExitPostmortem(a)) out.push("inspect", "openPane");
+    if (canOpenPane(a)) out.push("inspect", "openPane");
+    // t-c515c0 — the two arms are different OPERATIONS, not one operation under two conditions. With a
+    // process there, Stop asks it to exit and Kill forced takes it down. With the process already gone
+    // there is nothing to kill: what remains is the session tmux is still holding, and reaping it is
+    // the only thing this door can still do.
     if (isRunning(a)) out.push("stop", "kill");
-    else out.push("kill");
+    else out.push("reapPane");
     if (canRestart(a)) out.push("restart", "restartNew", "restartForceNew");
   } else if (isCleanExit(a) && canRestart(a)) out.push("restart", "restartNew", "restartForceNew");
   else out.push("spawn");
@@ -119,7 +149,9 @@ export function primaryActions(a: AgentVM): ActionId[] {
   const out: ActionId[] = [];
   if (canViewActivity(a)) out.push("activity");
   if (a.status === "stopping") return out;
-  if (hasPane(a) && !isCleanExitPostmortem(a)) out.push("inspect", "openPane");
+  // Same predicate as `actionsFor`, deliberately: the inline bar and the menu cannot disagree about
+  // whether this row has a pane worth opening.
+  if (canOpenPane(a)) out.push("inspect", "openPane");
   return out;
 }
 

@@ -41,8 +41,10 @@ describe("agentModel.toAgentVM (spec 237)", () => {
     it("is stopped, keeps its real exit code, and never fabricates `exited (0)`", () => {
       const vm = toAgentVM(raw({ name: "grok", dead: true, stopRequested: true, exitCode: 130 }), { resumable: true });
       expect(vm).toMatchObject({ status: "stopped", sub: "stopped (exit 130)", resumable: true });
-      // 130 is a dead pane worth inspecting — NOT a collected clean exit, whose postmortem rules
-      // (actions.ts `isCleanExitPostmortem`) deliberately stop offering the pane.
+      // `exited` means "exited ZERO", so 130 leaves it unset. t-c515c0: that is what keeps the row's
+      // `pane: true` marker meaningful — the session tmux still holds is reapable from the row. It is
+      // NOT a pane worth opening; measured, a postmortem pane retains one line (tmux's `Pane is dead`),
+      // so actions.ts offers `reapPane` here and keeps Inspect / Open pane for crashes.
       expect(vm.exited).toBeUndefined();
     });
 
