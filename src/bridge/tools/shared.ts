@@ -111,6 +111,7 @@ export interface BridgeDeps {
   probeSyncCapMs?: number;
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
   attentionOf?: (agent: string) => string | undefined;
+  hasStartedTurn?: (agent: string) => boolean | undefined;
   /**
    * SDD 420 — tab-scoped Companion tools. All require opaque companion tabId
    * (from user_browser_tabs_list). Blocks until extension fulfills or times out.

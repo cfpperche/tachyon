@@ -242,6 +242,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // relied on by other suites below: list_agents attention + wait_for_agent) and a genuinely-busy state
   // to exercise write_input's refusal path without disturbing those other tests.
   let claudeAttention: "working" | "idle" | "needs-input" | "throttled" = "needs-input";
+  let claudeHasStartedTurn = true;
   let claudeComposerOccupied = false;
   // t-75e9c7 — agent_touched_files' git port, keyed by worktree cwd; empty by default (no fixture
   // wires deps.agentWorktrees here, so every live agent hits the honest "no isolated worktree"
@@ -275,6 +276,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     onTasksChanged: () => { taskChanges += 1; },
     onValidationsChanged: () => { validationChanges += 1; },
     attentionOf: (agent) => (agent === "claude" ? claudeAttention : undefined),
+    hasStartedTurn: (agent) => (agent === "claude" ? claudeHasStartedTurn : undefined),
     composerOccupiedOf: (agent) => (agent === "claude" ? claudeComposerOccupied : undefined),
     composerDraftNow: async (agent) => (agent === "claude" ? claudeComposerDraftNow : undefined),
     deliverNotice: async (target, line, metadata) => {
@@ -1343,6 +1345,19 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       expect(sessions.get(`tachyon-${HASH}-claude`)).toBe(before);
     } finally {
       claudeAttention = "needs-input";
+    }
+  });
+
+  it("write_input: Agent × freshly spawned synthetic working is accepted without positive turn evidence (t-4c82fa)", async () => {
+    claudeAttention = "working";
+    claudeHasStartedTurn = false;
+    try {
+      const result = await client.callTool({ name: "write_input", arguments: { name: "claude", text: "first assignment" } });
+      expect(result.isError).toBeFalsy();
+      expect(JSON.stringify(result.content)).toContain("submitted");
+    } finally {
+      claudeAttention = "needs-input";
+      claudeHasStartedTurn = true;
     }
   });
 

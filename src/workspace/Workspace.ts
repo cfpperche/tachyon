@@ -145,6 +145,7 @@ import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
 import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
+import { isEvidencedWorking } from "../prompts/injectFlow.js";
 import { contextRenewalGesture, type ContextRenewalMode } from "../anchor/compaction.js";
 import { authRequiredOf, describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import { authRequiredLaunchNotice, loginFinishedNotice } from "./authRequiredNotice.js";
@@ -1804,6 +1805,7 @@ export class Workspace {
         probe: this.probeService,
         probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.attentionOf(agent)?.state,
+        hasStartedTurn: (agent) => this.monitor.hasStartedTurn(agent),
         composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
         // t-a53dd9 — the at-injection reading write_input prefers over the cached one above.
         composerDraftNow: (agent) => this.monitor.probeComposerOccupied(agent),
@@ -4240,7 +4242,8 @@ export class Workspace {
     // presentation layer already claims has happened.
     const attention = this.attentionOf(agent);
     const state = attention?.state;
-    if (state === "working" || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {
+    const evidencedWorking = isEvidencedWorking(state, attention?.hasStartedTurn);
+    if (evidencedWorking || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {
       return this.enqueueNotice(agent, line, metadata, attention?.composerOccupied ? "human-draft" : undefined);
     }
     // t-a53dd9 — the check above is a poll up to ATTENTION_POLL_MS old; this one is taken NOW, against
