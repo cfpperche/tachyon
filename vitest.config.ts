@@ -118,7 +118,10 @@ export default defineConfig({
     // to sit here rather than in a test file: a leak is only visible once the LAST worker is done, and
     // nothing orders a test file after the rest. `setup` also stamps the run id that lets the check
     // attribute a server to this run on a host running several agents' suites at once.
-    globalSetup: ["test/globalSetup/tmuxLeakGuard.ts"],
+    // t-d1f356 — and the daemon fixture bundles, built once per round so no child pays a vite-node
+    // transform of the daemon import graph. It is registered AFTER the leak guard on purpose: vitest
+    // tears globalSetups down in reverse, and the guard's teardown throws on a finding.
+    globalSetup: ["test/globalSetup/tmuxLeakGuard.ts", "test/globalSetup/daemonFixtureBundles.ts"],
     // t-eaf963 — the real Codex prompt projection is scheduler-sensitive work, not ordinary unit
     // work. Projects in the same group run together; group 1 starts only after group 0 has drained.
     // Keep the 10s process bound and the installed CLI coverage, but never make either compete with

@@ -7,6 +7,7 @@ import { EngineControlClient } from "../../src/engine-service/controlClient.js";
 import type { EngineServiceIdentityV1, EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
+import { bundledDaemonFixture } from "../helpers/daemonFixtureBundle.js";
 
 const roots: string[] = [];
 const children: ChildProcessWithoutNullStreams[] = [];
@@ -23,12 +24,11 @@ describe("persistent engine process boundary", () => {
     const runtime = path.join(root, "runtime");
     fs.mkdirSync(runtime, { mode: 0o700 });
     const socketPath = path.join(runtime, "engine.sock");
-    const viteNode = path.join(process.cwd(), "node_modules/vite-node/vite-node.mjs");
-    const worker = path.join(process.cwd(), "test/fixtures/engineControlWorker.ts");
+    const worker = bundledDaemonFixture("engineControlWorker.ts");
     // t-93ec7f: control-server fixture is still a real child process; do not inherit fleet TACHYON_*.
     const childEnv = isolatedDaemonChildEnv();
     assertNoFleetLeak(childEnv);
-    const child = spawn(process.execPath, [viteNode, worker, root, socketPath], {
+    const child = spawn(process.execPath, [worker, root, socketPath], {
       stdio: ["pipe", "pipe", "pipe"],
       env: childEnv,
     });
