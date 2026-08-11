@@ -9,6 +9,7 @@ import { waitUntil } from "../helpers/settle.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 import {
   assertReapableRoot,
+  isPaneForkChild,
   reapTmuxServers,
   reapTmuxServersUnder,
   tmuxServersUnder,
@@ -81,6 +82,32 @@ function stopServer(name: string, tmuxTmpdir: string | undefined): void {
   }
 }
 
+/**
+ * Every pid the scan would CONSIDER, before it classifies any of them — the pane fork child included.
+ * The test needs to see what `tmuxServersUnder` hides, so this deliberately repeats the two identity
+ * reads (`comm` and the server's own `TMUX_TMPDIR`) instead of calling it.
+ */
+function candidatePids(tmuxTmpdir: string): Array<{ pid: number; ppid: number; stdin: string | null }> {
+  const found: Array<{ pid: number; ppid: number; stdin: string | null }> = [];
+  for (const pid of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(pid)) continue;
+    try {
+      if (fs.readFileSync(`/proc/${pid}/comm`, "utf8").trim() !== "tmux: server") continue;
+      if (!fs.readFileSync(`/proc/${pid}/environ`, "utf8").includes(`TMUX_TMPDIR=${tmuxTmpdir}\0`)) continue;
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+      // Past the LAST `") "`: tmux's own comm is "(tmux: server)", so counting fields from the left
+      // shifts every one of them.
+      const ppid = Number(stat.slice(stat.lastIndexOf(") ") + 2).split(" ")[1]);
+      let stdin: string | null = null;
+      try { stdin = fs.readlinkSync(`/proc/${pid}/fd/0`); } catch { /* unreadable */ }
+      found.push({ pid: Number(pid), ppid, stdin });
+    } catch {
+      /* exited mid-scan */
+    }
+  }
+  return found;
+}
+
 describe("t-8f48da — what may be swept, and what may never be", () => {
   it("accepts a fixture directory and refuses every shape that could contain the fleet's socket", () => {
     const fixture = makeSocketTemp("tachyon-reap-root-");
@@ -144,6 +171,75 @@ describe("t-8f48da — what may be swept, and what may never be", () => {
       }
     },
   );
+
+  /**
+   * `t-ffc5bf` — the false positive that failed 9 of 150 rounds of
+   * `validationCloseSocketReachability` on a tree whose tests were all green.
+   *
+   * The daemon's shutdown was measured CORRECT: across 41 monitored rounds the anchor server was
+   * born before the daemon exited (41/41) and died with it (never after). What outlived both, by up
+   * to 40ms, was the process the server forks for the anchor's pane — a copy of the server down to
+   * its `comm`, argv and environment. The parent-based rule drops that child only while its server
+   * is alive to be its parent, so once the server exited the guard reported the child as a leaked
+   * tmux server and failed the round. Nothing ever leaked: the process was gone on its own inside
+   * 50ms, and 5 of 8 red rounds already said "Stopped 0 of them" because the reap found it dead.
+   */
+  it.skipIf(!tmuxAvailable())(
+    "a pane fork child whose server already exited is not reported as a leaked server",
+    () => {
+      const fixture = makeSocketTemp("tachyon-reap-orphan-");
+      const tmuxTmpdir = path.join(fixture, "tmux-tmp");
+      fs.mkdirSync(tmuxTmpdir, { recursive: true, mode: 0o700 });
+      const started: string[] = [];
+      let child: number | undefined;
+      let observed = false;
+      try {
+        // The child outlives its server by tens of milliseconds, so the observation can miss. Missing
+        // it makes the assertion vacuous, never red — retry until the state is actually in hand, and
+        // let the expectation below prove it was.
+        for (let attempt = 0; attempt < 5 && !observed; attempt++) {
+          const name = privateSocketName(`orphan-${attempt}`);
+          started.push(name);
+          startServer(name, tmuxTmpdir);
+          const pair = candidatePids(path.resolve(tmuxTmpdir));
+          const pids = new Set(pair.map((p) => p.pid));
+          const forked = pair.find((p) => pids.has(p.ppid));
+          const server = pair.find((p) => !pids.has(p.ppid));
+          if (!forked || !server) continue;
+          // The two are told apart HERE by parentage, on a live pair, which is what licenses telling
+          // them apart by stdin once the parent is gone.
+          expect(server.stdin, "a tmux server daemonizes onto /dev/null").toBe("/dev/null");
+          expect(forked.stdin ?? "", "the pane fork child carries the pane's pts").toMatch(/^\/dev\/pts\//);
+
+          // Contained by construction: a pid this test started, in a socket directory it created.
+          process.kill(server.pid, "SIGKILL");
+          child = forked.pid;
+          if (!fs.existsSync(`/proc/${child}`)) continue; // it beat us to exiting; try again
+          observed = true;
+          expect(
+            tmuxServersUnder([fixture]).map((s) => s.pid),
+            "the orphaned fork child is not a server, and its own server is gone",
+          ).toEqual([]);
+          // …and it really was still running while we said that.
+          expect(fs.existsSync(`/proc/${child}`), "the child was alive for the scan above").toBe(true);
+        }
+        expect(observed, "the orphaned-child state was reproduced").toBe(true);
+      } finally {
+        if (child !== undefined) { try { process.kill(child, "SIGKILL"); } catch { /* already gone */ } }
+        for (const name of started) stopServer(name, tmuxTmpdir);
+      }
+    },
+  );
+
+  it("stdin separates the two, and an unreadable one is KEPT so the guard cannot go blind", () => {
+    expect(isPaneForkChild("/dev/pts/8")).toBe(true);
+    // What the kernel answers once the pty master is closed — the shape the guard actually meets.
+    expect(isPaneForkChild("/dev/pts/8 (deleted)")).toBe(true);
+    expect(isPaneForkChild("/dev/null")).toBe(false);
+    // "I could not measure it" must never read as "it may pass": an unreadable fd 0 keeps the
+    // candidate, so a real server stays visible to the guard on the one shape nobody can check.
+    expect(isPaneForkChild(null)).toBe(false);
+  });
 
   it.skipIf(!tmuxAvailable())(
     "the reap stops a server through its own socket, while an AMBIENT server stays invisible to the scan",
