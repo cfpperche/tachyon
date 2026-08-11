@@ -4431,6 +4431,69 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(h.ledger.get(forkName)?.resume?.configHome).toBe(forkHome);
   });
 
+  it("t-987347: create, restart, resume, crash-recovery and fork all re-materialize a profile that lost its selection", async () => {
+    // The TRIGGER half of the actor × trigger list for t-987347; the RUNTIME half lives in
+    // harness.test.ts and asserts what each runtime's door does to the disk. The actor here is "the
+    // profile lost its selection", whose shape is `profileCapabilities: undefined` — zero selection
+    // produces no projection at all (agentProfileResolver, `deliveredAnything`), which is exactly why
+    // a revocation is routed somewhere else than a grant and why it stopped reaching the disk.
+    //
+    // Crash-recovery is not a sixth door: `Workspace.recoverFromCrash` is
+    // `manager.restart({ stop: "force", session: "resume" })`, driven here under that name so the
+    // list stays the list the repository's rule asks for rather than four of five.
+    const materialized: Array<{ name: string; capabilities: unknown }> = [];
+    const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+      resolveCurrentSessionFull: async () => UUID,
+      seedTranscript: () => true,
+      materializeHarness: ({ name, def }) => {
+        materialized.push({ name, capabilities: def.profileCapabilities });
+        const home = path.join(h.ws, ".tachyon", "harness", name);
+        fs.mkdirSync(home, { recursive: true });
+        return { home, env: { CLAUDE_CONFIG_DIR: home }, args: [] };
+      },
+    });
+    const def = asAgent(h.manager.defOf("claude"))!;
+    def.profileLifecycle = {
+      enabled: true,
+      agentId: "11111111-1111-4111-8111-111111111111",
+      canonicalSha256: "a".repeat(64),
+      authorityRevision: "r1",
+    };
+    def.profileNativeConfig = { adapter: "claude", selectors: {}, settings: {} };
+    // No `profileCapabilities`: this IS the revoked profile.
+
+    const at = (trigger: string) => ({ trigger, count: materialized.length });
+    const reached: Array<{ trigger: string; count: number }> = [];
+    await h.manager.spawn("claude");
+    reached.push(at("create"));
+    await h.manager.restart("claude", { stop: "force", session: "new" });
+    reached.push(at("restart"));
+    await h.manager.resume("claude", {
+      def: { cmd: "claude", kind: "agent" },
+      resume: { runtime: "claude", sessionId: UUID },
+      cwd: h.ws,
+      instance: { lifetime: "saved" as const, resumePolicy: "restartable" as const, lifecycleHooks: true },
+      updatedAt: "t",
+    });
+    reached.push(at("resume"));
+    await h.manager.restart("claude", { stop: "force", session: "resume" });
+    reached.push(at("crash-recovery"));
+    const forkName = await h.manager.commitFork(await h.manager.planFork("claude"));
+    reached.push(at("fork"));
+
+    // Every trigger added a materialization, and every one of them carried the revoked shape.
+    expect(reached).toEqual([
+      { trigger: "create", count: 1 },
+      { trigger: "restart", count: 2 },
+      { trigger: "resume", count: 3 },
+      { trigger: "crash-recovery", count: 4 },
+      { trigger: "fork", count: 5 },
+    ]);
+    expect(materialized.map((entry) => entry.capabilities)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+    expect(materialized.slice(0, 4).map((entry) => entry.name)).toEqual(["claude", "claude", "claude", "claude"]);
+    expect(materialized[4]?.name).toBe(forkName);
+  });
+
   it("t-088454: canonical Claude worktree fork seeds from source home/cwd to destination home/cwd", async () => {
     const sourceWorktree = { path: "/wt/source", branch: "tachyon/source", tachyonCreatedBranch: true, baseRef: "sha", baseBranch: "main", createdAt: "t" };
     const seeds: Array<[string, string]> = [];

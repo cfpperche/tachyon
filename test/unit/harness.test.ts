@@ -730,6 +730,108 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.readdirSync(path.join(selected.home, "skills"))).toEqual([]);
   });
 
+  it("t-987347: zero selection purges the private capability projection on claude, codex, grok and pi", () => {
+    // ACTOR × TRIGGER. The actor is "the profile lost its selection"; the five triggers (create,
+    // restart, resume, fork, crash-recovery) all converge on `AgentManager.materializeRuntimeHarness`,
+    // and that convergence is asserted in agentManager.test.ts rather than repeated four times here.
+    //
+    // What varies HERE is the RUNTIME, and that is the whole defect: zero selection produces NO
+    // projection at all (`agentProfileResolver.ts`, `deliveredAnything`), so `def.profileCapabilities`
+    // is undefined and `Workspace.materializeHarness` routes a REVOKED profile to a different door
+    // than a selected one. Every assertion below therefore calls the door a revoked profile actually
+    // reaches — never `materializeProfileCapabilities`, which a profile with no selection can never
+    // enter. The pre-existing empty-projection test above passes for exactly that reason and still
+    // left `$GROK_HOME/skills` on disk in production.
+    const realGrokHome = path.join(path.dirname(realHome), "revoked-grok");
+    const realCodexHome = path.join(path.dirname(realHome), "revoked-codex");
+    const realPiHome = path.join(path.dirname(realHome), "revoked-pi");
+    for (const home of [realGrokHome, realCodexHome, realPiHome]) fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
+    fs.writeFileSync(path.join(realCodexHome, "auth.json"), '{"token":"CODEX"}');
+    fs.writeFileSync(path.join(realPiHome, "auth.json"), '{"openai":{"type":"oauth"}}');
+    const cwd = path.join(path.dirname(ws), "revoked-worktree");
+    fs.mkdirSync(cwd, { recursive: true });
+
+    const skillSource = (bytes: string) => ({
+      source: ".tachyon/plugins/sdd/skills/sdd",
+      sourcePath: path.join(ws, ".tachyon/plugins/sdd/skills/sdd"),
+      type: "tree" as const,
+      sha256: "c".repeat(64),
+      entries: [
+        { path: ".", type: "directory" as const, mode: 0o755 },
+        { path: "SKILL.md", type: "file" as const, mode: 0o644, bytes: Buffer.from(bytes) },
+      ],
+    });
+    const projectionFor = (adapter: ResolvedAgentCapabilityProjection["adapter"]): ResolvedAgentCapabilityProjection => ({
+      schemaVersion: 1,
+      adapter,
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "c".repeat(64) }],
+      skills: [{ name: "sdd", source: skillSource("# Granted SDD\n") }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    });
+    const mgr = new HarnessManager(
+      ws, realHome, PROC, path.join(realHome, ".claude.json"), realCodexHome,
+      undefined, undefined, realGrokHome, undefined, realPiHome,
+    );
+    const manifestOf = (home: string) => path.join(home, ".tachyon-profile-capabilities", "manifest.json");
+    const bridge = { type: "http", url: "http://127.0.0.1:9/mcp", headers: { Authorization: "Bearer ${TACHYON_BRIDGE_TOKEN}" } };
+
+    // claude — the runtime that already gets this right, kept as the control: if its unconditional
+    // sweep ever regresses, this case says so beside the three that were repaired.
+    const claudeNative = { adapter: "claude" as const, selectors: {}, settings: {} };
+    const claudeGranted = mgr.materializeCanonicalClaudeProfileHome(
+      "revoked-claude", claude, { nativeConfig: claudeNative, capabilities: projectionFor("claude") }, cwd, bridge,
+    );
+    expect(fs.existsSync(path.join(claudeGranted.home, "skills", "sdd", "SKILL.md"))).toBe(true);
+    mgr.materializeCanonicalClaudeHome("revoked-claude", claude, cwd, claudeNative, bridge);
+    expect(fs.existsSync(path.join(claudeGranted.home, "skills"))).toBe(false);
+    expect(fs.existsSync(manifestOf(claudeGranted.home))).toBe(false);
+
+    // grok — the measured defect. The granted tree lives in the private home itself, and the door a
+    // revoked profile reaches (`Workspace.materializeHarness`, the profileLifecycle grok arm) is
+    // `materializeBridgeMcpGrok`, which re-wrote config.toml and left the skills beside it.
+    const grokNative = { adapter: "grok" as const, selectors: {} };
+    const grokGranted = mgr.materializeProfileCapabilities("revoked-grok", projectionFor("grok"), grok, cwd, bridge, grokNative);
+    expect(fs.readFileSync(path.join(grokGranted.home, "skills", "sdd", "SKILL.md"), "utf8")).toBe("# Granted SDD\n");
+    expect(fs.existsSync(manifestOf(grokGranted.home))).toBe(true);
+    const grokRevoked = mgr.materializeBridgeMcpGrok("revoked-grok", bridge, cwd, { exactTrust: true, nativeConfig: grokNative });
+    expect(grokRevoked).toBe(grokGranted.home);
+    expect(fs.existsSync(path.join(grokGranted.home, "skills"))).toBe(false);
+    expect(fs.existsSync(manifestOf(grokGranted.home))).toBe(false);
+    // …and the home is still a working home: the purge runs BEFORE the rest of the materialization,
+    // never after it.
+    expect(fs.existsSync(path.join(grokRevoked, "config.toml"))).toBe(true);
+    expect(fs.existsSync(path.join(grokRevoked, "auth.json"))).toBe(true);
+
+    // codex — same guard, different geometry. Only the manifest lives in the private home; the skill
+    // tree is projected into the LAUNCH PROJECT's `.agents/skills`, which the plugin installer also
+    // owns (plugins/engine.ts). Purging that tree here would delete plugin installs for every other
+    // agent, so this asserts the private half only and the shared half is carried as its own task.
+    const codexNative = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
+    const codexGranted = mgr.materializeCanonicalCodexProfileHome(
+      "revoked-codex", codex, { nativeConfig: codexNative, capabilities: projectionFor("codex") }, cwd, bridge,
+    );
+    expect(fs.existsSync(manifestOf(codexGranted.home))).toBe(true);
+    mgr.materializeCanonicalCodexHome("revoked-codex", codex, codexNative, cwd);
+    expect(fs.existsSync(manifestOf(codexGranted.home))).toBe(false);
+    expect(fs.readFileSync(path.join(codexGranted.home, "config.toml"), "utf8")).toContain('model = "gpt-5.6"');
+
+    // pi — the same guard again. Pi's resource GENERATIONS are content-addressed, inert without the
+    // explicit `--skill` args a revoked profile no longer receives, and may still be open in a live
+    // process, so they are deliberately not swept; the manifest is the attestation and it must go.
+    const piGranted = mgr.materializeProfileCapabilities("revoked-pi", projectionFor("pi"), pi, cwd);
+    expect(piGranted.args.some((arg) => arg.includes("sdd"))).toBe(true);
+    expect(fs.existsSync(manifestOf(piGranted.home))).toBe(true);
+    const piRevoked = mgr.materializePiHomeOnly("revoked-pi", { exactTrustCwd: cwd });
+    expect(piRevoked.args.some((arg) => arg.includes("sdd"))).toBe(false);
+    expect(fs.existsSync(manifestOf(piGranted.home))).toBe(false);
+    expect(fs.existsSync(path.join(piGranted.home, "auth.json"))).toBe(true);
+  });
+
   it("spec 298: codex harness writes private config.toml, symlinks auth, and returns CODEX_HOME only", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex");
     fs.mkdirSync(codexHome, { recursive: true });
