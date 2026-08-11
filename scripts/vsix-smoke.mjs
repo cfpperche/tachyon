@@ -215,7 +215,9 @@ try {
   if (!ready || !refused) exitCode = 1;
   else console.log("vsix-smoke: PASS — the packaged engine starts on Electron and refuses by name without Node");
 } finally {
-  retireEngines();
+  // t-10fda8 — stop the private tmux server BEFORE removing the tree. Removing the directory is
+  // not cleanup (t-8f48da): a server whose socket file is unlinked keeps running.
+  retireEngines(work);
   if (keep) console.log(`vsix-smoke: kept working directory ${work}`);
   else fs.rmSync(work, { recursive: true, force: true });
 }
@@ -366,8 +368,15 @@ function engineWorkspaceKey(workspaceRoot) {
  *
  * The staged runtime and bundle under `~/.local/share/tachyon/` are deliberately left alone. They are
  * content-addressed and shared with real installs, so they are a cache, not residue.
+ *
+ * t-10fda8 — the kill MUST carry the smoke's private `TMUX_TMPDIR`. `-L <name>` resolves the socket
+ * under `$TMUX_TMPDIR/tmux-<uid>/`, and this process's ambient env does not have that value (only the
+ * editor child does — see `childEnv`). Measured: `tmux -L <name> kill-server` without that env looks
+ * in the default socket directory, returns non-zero, and the smoke then `rmSync`s the work tree while
+ * the server keeps running with cwd under the deleted workspace. That is the t-8f48da shape from a
+ * producer that never went through `trackTempDir`.
  */
-function retireEngines() {
+function retireEngines(work) {
   for (const key of startedEngines) {
     const unit = `tachyon-engine-${key}.service`;
     quiet("systemctl", ["--user", "stop", unit]);
@@ -377,13 +386,88 @@ function retireEngines() {
     const stateHome = process.env.XDG_STATE_HOME?.trim() || path.join(os.homedir(), ".local", "state");
     fs.rmSync(path.join(stateHome, "tachyon", "engines", key), { recursive: true, force: true });
   }
-  quiet("tmux", ["-L", TMUX_SOCKET, "kill-server"]);
+  const tmuxTmpdir = path.join(work, "tmux");
+  // Drop $TMUX so this kill cannot be redirected at the fleet (t-9713ff / test/helpers/tmuxEnv.ts).
+  const tmuxEnv = { ...process.env, TMUX_TMPDIR: tmuxTmpdir };
+  delete tmuxEnv.TMUX;
+  delete tmuxEnv.TMUX_PANE;
+  // Prefer the absolute socket path: -S does not depend on ambient TMUX_TMPDIR resolution.
+  const socket = path.join(tmuxTmpdir, `tmux-${process.getuid?.() ?? 0}`, TMUX_SOCKET);
+  if (fs.existsSync(socket)) quiet("tmux", ["-S", socket, "kill-server"], tmuxEnv);
+  else quiet("tmux", ["-L", TMUX_SOCKET, "kill-server"], tmuxEnv);
+  // Belt: if kill-server missed (socket already unlinked, race), stop any server whose OWN
+  // TMUX_TMPDIR still names this work tree — identity from /proc, never from a process name.
+  reapPrivateTmuxUnder(work);
+}
+
+/**
+ * Stop every live `tmux: server` whose own `TMUX_TMPDIR` sits under `root`.
+ *
+ * Same identity rule as `test/helpers/tmuxReap.ts`: the server's environ, not ours. This script is a
+ * release step, not a vitest file, so it cannot share `trackTempDir`'s afterAll — it has to reap
+ * itself before `rmSync`. Linux-only (`/proc`); elsewhere there is nothing to read.
+ */
+function reapPrivateTmuxUnder(root) {
+  if (!fs.existsSync("/proc/self")) return;
+  const bound = path.resolve(root) + path.sep;
+  for (const name of fs.readdirSync("/proc")) {
+    if (!/^\d+$/.test(name)) continue;
+    try {
+      if (fs.readFileSync(`/proc/${name}/comm`, "utf8").trim() !== "tmux: server") continue;
+      const env = readProcEnviron(name);
+      const tmuxTmpdir = env.get("TMUX_TMPDIR");
+      if (!tmuxTmpdir) continue;
+      const resolved = path.resolve(tmuxTmpdir);
+      if (resolved !== path.resolve(root) && !resolved.startsWith(bound)) continue;
+      // Pane fork children look like servers (t-ffc5bf); a real server has /dev/null on stdin.
+      try {
+        const stdin = fs.readlinkSync(`/proc/${name}/fd/0`);
+        if (stdin.startsWith("/dev/pts/")) continue;
+      } catch {
+        /* unreadable: keep, never treat "could not measure" as "may pass" */
+      }
+      const argv = fs.readFileSync(`/proc/${name}/cmdline`, "utf8").split("\0").filter(Boolean);
+      let socketPath = null;
+      for (let i = 0; i < argv.length; i++) {
+        if (argv[i] === "-S" && argv[i + 1]) {
+          socketPath = path.resolve(argv[i + 1]);
+          break;
+        }
+        if (argv[i] === "-L" && argv[i + 1]) {
+          socketPath = path.join(resolved, `tmux-${process.getuid?.() ?? 0}`, argv[i + 1]);
+          break;
+        }
+      }
+      if (socketPath && fs.existsSync(socketPath)) {
+        quiet("tmux", ["-S", socketPath, "kill-server"]);
+        continue;
+      }
+      // Socket gone, process still up — the exact residue this task found. Re-check identity, then SIGTERM.
+      if (fs.readFileSync(`/proc/${name}/comm`, "utf8").trim() !== "tmux: server") continue;
+      if (readProcEnviron(name).get("TMUX_TMPDIR") !== tmuxTmpdir) continue;
+      process.kill(Number(name), "SIGTERM");
+    } catch {
+      /* pid exited mid-scan, or not readable — not ours either way */
+    }
+  }
+}
+
+function readProcEnviron(pid) {
+  const env = new Map();
+  for (const entry of fs.readFileSync(`/proc/${pid}/environ`, "utf8").split("\0")) {
+    const eq = entry.indexOf("=");
+    if (eq > 0) env.set(entry.slice(0, eq), entry.slice(eq + 1));
+  }
+  return env;
 }
 
 /** Absent is the goal state, so every teardown call is best effort. */
-function quiet(bin, argv) {
+function quiet(bin, argv, env = process.env) {
   try {
-    execFileSync(bin, argv, { stdio: "ignore" });
+    const scrubbed = { ...env };
+    delete scrubbed.TMUX;
+    delete scrubbed.TMUX_PANE;
+    execFileSync(bin, argv, { stdio: "ignore", env: scrubbed });
   } catch {
     /* already gone */
   }
