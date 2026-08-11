@@ -538,6 +538,15 @@ export async function executeExtensionCommand(
       });
       return json(result as unknown as JsonValue);
     }
+    case "worktree.land": {
+      // SDD 498 (t-7cb971) — the engine runs git, and there is NO extension-host fallback (plan.md
+      // D2). A fallback would be a second implementation of the decision, and this whole door exists
+      // so that the thing which decides is the thing that was shown. The service re-measures the five
+      // preconditions through the same probe the panel drew from, refuses with the failing check's own
+      // words, and only then fast-forwards the trunk in the primary checkout.
+      const result = await workspace.managedWorktrees.land(command.id);
+      return json(result as unknown as JsonValue);
+    }
     case "worktree.release-lock": {
       // t-d29398 — and this one deliberately does NOT hand agent entries back to Agent Studio the way
       // the removal above does. The refusal there protects a checkout from being DELETED by a surface
