@@ -1,0 +1,810 @@
+{
+  "samples": [
+    {
+      "index": 0,
+      "meminfo_kb": {
+        "MemTotal": 16373808,
+        "MemFree": 2280048,
+        "MemAvailable": 8450860,
+        "SwapTotal": 33554432,
+        "SwapFree": 33486508,
+        "Buffers": 1691740,
+        "Cached": 4611240,
+        "AnonPages": 6427296
+      },
+      "agents": {
+        "agentcost": {
+          "attention": "working",
+          "runtime_name": "grok",
+          "primary_pid": 446562,
+          "primary_comm": "grok",
+          "primary_rss_kb": 144412,
+          "primary_pss_kb": 82000,
+          "tree_n": 5,
+          "tree_rss_kb": 176388,
+          "tree_pss_kb": 96272,
+          "buckets": {
+            "runtime": {
+              "rss": 151448,
+              "pss": 83907,
+              "pss_missing": 0,
+              "n": 2,
+              "procs": [
+                {
+                  "pid": 446562,
+                  "comm": "grok",
+                  "rss_kb": 144412,
+                  "pss_kb": 82000,
+                  "cmd": "grok -s 282439a4-ef3a-4239-8a4c-a43769532b41 --always-approve \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"agentcost\", spawned by \"claude-fork-1\".\nProtocol (apply when relevant):\n"
+                }
+              ]
+            },
+            "workload": {
+              "rss": 3816,
+              "pss": 989,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": []
+            },
+            "helper": {
+              "rss": 21124,
+              "pss": 11376,
+              "pss_missing": 0,
+              "n": 2,
+              "procs": [
+                {
+                  "pid": 461033,
+                  "comm": "python3",
+                  "rss_kb": 13592,
+                  "pss_kb": 9679,
+                  "cmd": "python3"
+                }
+              ]
+            }
+          }
+        },
+        "budgetclose": {
+          "attention": "working",
+          "runtime_name": "claude",
+          "primary_pid": 267616,
+          "primary_comm": "claude",
+          "primary_rss_kb": 485400,
+          "primary_pss_kb": 369235,
+          "tree_n": 1,
+          "tree_rss_kb": 485400,
+          "tree_pss_kb": 369235,
+          "buckets": {
+            "runtime": {
+              "rss": 485400,
+              "pss": 369235,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 267616,
+                  "comm": "claude",
+                  "rss_kb": 485400,
+                  "pss_kb": 369235,
+                  "cmd": "claude -n tachyon-tachyon-budgetclose \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"budgetclose\", spawned by \"claude-fork-1\".\nProtocol (apply when relevant):\n  - Waking another age"
+                }
+              ]
+            }
+          }
+        },
+        "claude": {
+          "attention": "idle",
+          "runtime_name": "claude",
+          "primary_pid": 155129,
+          "primary_comm": "claude",
+          "primary_rss_kb": 555704,
+          "primary_pss_kb": 440115,
+          "tree_n": 1,
+          "tree_rss_kb": 555704,
+          "tree_pss_kb": 440115,
+          "buckets": {
+            "runtime": {
+              "rss": 555704,
+              "pss": 440115,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 155129,
+                  "comm": "claude",
+                  "rss_kb": 555704,
+                  "pss_kb": 440115,
+                  "cmd": "claude --resume 05dfb028-5b5a-47f2-92dc-7820167f9a83 --setting-sources user --settings /home/goat/tachyon/.tachyon/harness/claude/settings.json --model claude-opus-5 --mcp-config /"
+                }
+              ]
+            }
+          }
+        },
+        "claude-fork-1": {
+          "attention": "working",
+          "runtime_name": "claude",
+          "primary_pid": 155728,
+          "primary_comm": "claude",
+          "primary_rss_kb": 565940,
+          "primary_pss_kb": 450207,
+          "tree_n": 1,
+          "tree_rss_kb": 565940,
+          "tree_pss_kb": 450207,
+          "buckets": {
+            "runtime": {
+              "rss": 565940,
+              "pss": 450207,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 155728,
+                  "comm": "claude",
+                  "rss_kb": 565940,
+                  "pss_kb": 450207,
+                  "cmd": "claude --resume 288e1df8-a2c7-40e0-af9e-6f6103ee60b0 --mcp-config /home/goat/tachyon/.tachyon/bridge-mcp/claude-fork-1.json --settings /home/goat/tachyon/.tachyon/spawn-settings/cl"
+                }
+              ]
+            }
+          }
+        },
+        "claude-fork-2": {
+          "attention": "idle",
+          "runtime_name": "claude",
+          "primary_pid": 156828,
+          "primary_comm": "claude",
+          "primary_rss_kb": 381888,
+          "primary_pss_kb": 271602,
+          "tree_n": 1,
+          "tree_rss_kb": 381888,
+          "tree_pss_kb": 271602,
+          "buckets": {
+            "runtime": {
+              "rss": 381888,
+              "pss": 271602,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 156828,
+                  "comm": "claude",
+                  "rss_kb": 381888,
+                  "pss_kb": 271602,
+                  "cmd": "claude --resume 4ea2a7f1-4784-4305-afd2-b818074b3f88 --mcp-config /home/goat/tachyon/.tachyon/bridge-mcp/claude-fork-2.json --settings /home/goat/tachyon/.tachyon/spawn-settings/cl"
+                }
+              ]
+            }
+          }
+        },
+        "deadrow": {
+          "attention": "working",
+          "runtime_name": "claude",
+          "primary_pid": 245004,
+          "primary_comm": "claude",
+          "primary_rss_kb": 533244,
+          "primary_pss_kb": 417119,
+          "tree_n": 1,
+          "tree_rss_kb": 533244,
+          "tree_pss_kb": 417119,
+          "buckets": {
+            "runtime": {
+              "rss": 533244,
+              "pss": 417119,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 245004,
+                  "comm": "claude",
+                  "rss_kb": 533244,
+                  "pss_kb": 417119,
+                  "cmd": "claude -n tachyon-tachyon-deadrow \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"deadrow\", spawned by \"claude\".\nProtocol (apply when relevant):\n  - Waking another agent carries ONE "
+                }
+              ]
+            }
+          }
+        },
+        "specstatus": {
+          "attention": "working",
+          "runtime_name": "codex",
+          "primary_pid": 440708,
+          "primary_comm": "codex",
+          "primary_rss_kb": 223784,
+          "primary_pss_kb": 161514,
+          "tree_n": 3,
+          "tree_rss_kb": 290868,
+          "tree_pss_kb": 198958,
+          "buckets": {
+            "runtime": {
+              "rss": 290868,
+              "pss": 198958,
+              "pss_missing": 0,
+              "n": 3,
+              "procs": [
+                {
+                  "pid": 440708,
+                  "comm": "codex",
+                  "rss_kb": 223784,
+                  "pss_kb": 161514,
+                  "cmd": "/home/goat/.nvm/versions/node/v24.11.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex --dangerously-bypass-hook-trus"
+                },
+                {
+                  "pid": 443322,
+                  "comm": "codex-code-mode",
+                  "rss_kb": 17136,
+                  "pss_kb": 9664,
+                  "cmd": "/home/goat/.nvm/versions/node/v24.11.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex-code-mode-host"
+                },
+                {
+                  "pid": 440691,
+                  "comm": "MainThread",
+                  "rss_kb": 49948,
+                  "pss_kb": 27780,
+                  "cmd": "node /home/goat/.nvm/versions/node/v24.11.1/bin/codex --dangerously-bypass-hook-trust -c hooks.SessionStart=[{matcher=\"startup|resume|clear|compact\",hooks=[{type=\"command\",command="
+                }
+              ]
+            }
+          }
+        },
+        "stoppath": {
+          "attention": "working",
+          "runtime_name": "codex",
+          "primary_pid": 432682,
+          "primary_comm": "codex",
+          "primary_rss_kb": 225992,
+          "primary_pss_kb": 163722,
+          "tree_n": 6,
+          "tree_rss_kb": 432292,
+          "tree_pss_kb": 271501,
+          "buckets": {
+            "runtime": {
+              "rss": 420860,
+              "pss": 268816,
+              "pss_missing": 0,
+              "n": 4,
+              "procs": [
+                {
+                  "pid": 432682,
+                  "comm": "codex",
+                  "rss_kb": 225992,
+                  "pss_kb": 163722,
+                  "cmd": "/home/goat/.nvm/versions/node/v24.11.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex --dangerously-bypass-hook-trus"
+                },
+                {
+                  "pid": 436778,
+                  "comm": "codex-code-mode",
+                  "rss_kb": 17056,
+                  "pss_kb": 9584,
+                  "cmd": "/home/goat/.nvm/versions/node/v24.11.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex-code-mode-host"
+                },
+                {
+                  "pid": 432671,
+                  "comm": "MainThread",
+                  "rss_kb": 50016,
+                  "pss_kb": 27790,
+                  "cmd": "node /home/goat/.nvm/versions/node/v24.11.1/bin/codex --dangerously-bypass-hook-trust -c hooks.SessionStart=[{matcher=\"startup|resume|clear|compact\",hooks=[{type=\"command\",command="
+                },
+                {
+                  "pid": 456569,
+                  "comm": "grok",
+                  "rss_kb": 127796,
+                  "pss_kb": 67720,
+                  "cmd": "grok Use shell tool to run sleep 120, then tell me it finished."
+                }
+              ]
+            },
+            "helper": {
+              "rss": 11432,
+              "pss": 2685,
+              "pss_missing": 0,
+              "n": 2,
+              "procs": []
+            }
+          }
+        },
+        "suitefloor": {
+          "attention": "working",
+          "runtime_name": "claude",
+          "primary_pid": 264824,
+          "primary_comm": "claude",
+          "primary_rss_kb": 486916,
+          "primary_pss_kb": 370844,
+          "tree_n": 1,
+          "tree_rss_kb": 486916,
+          "tree_pss_kb": 370844,
+          "buckets": {
+            "runtime": {
+              "rss": 486916,
+              "pss": 370844,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 264824,
+                  "comm": "claude",
+                  "rss_kb": 486916,
+                  "pss_kb": 370844,
+                  "cmd": "claude -n tachyon-tachyon-suitefloor \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"suitefloor\", spawned by \"claude-fork-1\".\nProtocol (apply when relevant):\n  - Waking another agent"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "infra": [
+        {
+          "label": "tmux-tachyon",
+          "pid": 3174,
+          "rss_kb": 18276,
+          "pss_kb": 14747,
+          "comm": "tmux: server"
+        },
+        {
+          "label": "vscode-extensionHost",
+          "pid": 152077,
+          "rss_kb": 754384,
+          "pss_kb": 708102,
+          "comm": "MainThread"
+        },
+        {
+          "label": "tachyon-engine",
+          "pid": 153435,
+          "rss_kb": 413880,
+          "pss_kb": 409550,
+          "comm": "tachyon-engine:"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 153471,
+          "rss_kb": 6732,
+          "pss_kb": 1226,
+          "comm": "tmux: client"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 153822,
+          "rss_kb": 6880,
+          "pss_kb": 1353,
+          "comm": "tmux: client"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 179124,
+          "rss_kb": 6940,
+          "pss_kb": 1377,
+          "comm": "tmux: client"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 179362,
+          "rss_kb": 6876,
+          "pss_kb": 1356,
+          "comm": "tmux: client"
+        },
+        {
+          "label": "tachyon-engine",
+          "pid": 461027,
+          "rss_kb": 3816,
+          "pss_kb": 989,
+          "comm": "bash"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 1932864,
+          "rss_kb": 4672,
+          "pss_kb": 1381,
+          "comm": "tmux: server"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 4165650,
+          "rss_kb": 4788,
+          "pss_kb": 1463,
+          "comm": "tmux: server"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "meminfo_kb": {
+        "MemTotal": 16373808,
+        "MemFree": 2125528,
+        "MemAvailable": 8315924,
+        "SwapTotal": 33554432,
+        "SwapFree": 33486508,
+        "Buffers": 1692348,
+        "Cached": 4630180,
+        "AnonPages": 6553580
+      },
+      "agents": {
+        "agentcost": {
+          "attention": "working",
+          "runtime_name": "grok",
+          "primary_pid": 446562,
+          "primary_comm": "grok",
+          "primary_rss_kb": 144392,
+          "primary_pss_kb": 81980,
+          "tree_n": 5,
+          "tree_rss_kb": 176760,
+          "tree_pss_kb": 96286,
+          "buckets": {
+            "runtime": {
+              "rss": 151428,
+              "pss": 83706,
+              "pss_missing": 0,
+              "n": 2,
+              "procs": [
+                {
+                  "pid": 446562,
+                  "comm": "grok",
+                  "rss_kb": 144392,
+                  "pss_kb": 81980,
+                  "cmd": "grok -s 282439a4-ef3a-4239-8a4c-a43769532b41 --always-approve \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"agentcost\", spawned by \"claude-fork-1\".\nProtocol (apply when relevant):\n"
+                }
+              ]
+            },
+            "workload": {
+              "rss": 3816,
+              "pss": 889,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": []
+            },
+            "helper": {
+              "rss": 21516,
+              "pss": 11691,
+              "pss_missing": 0,
+              "n": 2,
+              "procs": [
+                {
+                  "pid": 461033,
+                  "comm": "python3",
+                  "rss_kb": 13984,
+                  "pss_kb": 10039,
+                  "cmd": "python3"
+                }
+              ]
+            }
+          }
+        },
+        "budgetclose": {
+          "attention": "working",
+          "runtime_name": "claude",
+          "primary_pid": 267616,
+          "primary_comm": "claude",
+          "primary_rss_kb": 484120,
+          "primary_pss_kb": 367684,
+          "tree_n": 1,
+          "tree_rss_kb": 484120,
+          "tree_pss_kb": 367684,
+          "buckets": {
+            "runtime": {
+              "rss": 484120,
+              "pss": 367684,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 267616,
+                  "comm": "claude",
+                  "rss_kb": 484120,
+                  "pss_kb": 367684,
+                  "cmd": "claude -n tachyon-tachyon-budgetclose \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"budgetclose\", spawned by \"claude-fork-1\".\nProtocol (apply when relevant):\n  - Waking another age"
+                }
+              ]
+            }
+          }
+        },
+        "claude": {
+          "attention": "idle",
+          "runtime_name": "claude",
+          "primary_pid": 155129,
+          "primary_comm": "claude",
+          "primary_rss_kb": 570340,
+          "primary_pss_kb": 454736,
+          "tree_n": 1,
+          "tree_rss_kb": 570340,
+          "tree_pss_kb": 454736,
+          "buckets": {
+            "runtime": {
+              "rss": 570340,
+              "pss": 454736,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 155129,
+                  "comm": "claude",
+                  "rss_kb": 570340,
+                  "pss_kb": 454736,
+                  "cmd": "claude --resume 05dfb028-5b5a-47f2-92dc-7820167f9a83 --setting-sources user --settings /home/goat/tachyon/.tachyon/harness/claude/settings.json --model claude-opus-5 --mcp-config /"
+                }
+              ]
+            }
+          }
+        },
+        "claude-fork-1": {
+          "attention": "working",
+          "runtime_name": "claude",
+          "primary_pid": 155728,
+          "primary_comm": "claude",
+          "primary_rss_kb": 562476,
+          "primary_pss_kb": 446720,
+          "tree_n": 1,
+          "tree_rss_kb": 562476,
+          "tree_pss_kb": 446720,
+          "buckets": {
+            "runtime": {
+              "rss": 562476,
+              "pss": 446720,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 155728,
+                  "comm": "claude",
+                  "rss_kb": 562476,
+                  "pss_kb": 446720,
+                  "cmd": "claude --resume 288e1df8-a2c7-40e0-af9e-6f6103ee60b0 --mcp-config /home/goat/tachyon/.tachyon/bridge-mcp/claude-fork-1.json --settings /home/goat/tachyon/.tachyon/spawn-settings/cl"
+                }
+              ]
+            }
+          }
+        },
+        "claude-fork-2": {
+          "attention": "idle",
+          "runtime_name": "claude",
+          "primary_pid": 156828,
+          "primary_comm": "claude",
+          "primary_rss_kb": 381888,
+          "primary_pss_kb": 271588,
+          "tree_n": 1,
+          "tree_rss_kb": 381888,
+          "tree_pss_kb": 271588,
+          "buckets": {
+            "runtime": {
+              "rss": 381888,
+              "pss": 271588,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 156828,
+                  "comm": "claude",
+                  "rss_kb": 381888,
+                  "pss_kb": 271588,
+                  "cmd": "claude --resume 4ea2a7f1-4784-4305-afd2-b818074b3f88 --mcp-config /home/goat/tachyon/.tachyon/bridge-mcp/claude-fork-2.json --settings /home/goat/tachyon/.tachyon/spawn-settings/cl"
+                }
+              ]
+            }
+          }
+        },
+        "deadrow": {
+          "attention": "working",
+          "runtime_name": "claude",
+          "primary_pid": 245004,
+          "primary_comm": "claude",
+          "primary_rss_kb": 528240,
+          "primary_pss_kb": 412005,
+          "tree_n": 1,
+          "tree_rss_kb": 528240,
+          "tree_pss_kb": 412005,
+          "buckets": {
+            "runtime": {
+              "rss": 528240,
+              "pss": 412005,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 245004,
+                  "comm": "claude",
+                  "rss_kb": 528240,
+                  "pss_kb": 412005,
+                  "cmd": "claude -n tachyon-tachyon-deadrow \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"deadrow\", spawned by \"claude\".\nProtocol (apply when relevant):\n  - Waking another agent carries ONE "
+                }
+              ]
+            }
+          }
+        },
+        "specstatus": {
+          "attention": "working",
+          "runtime_name": "codex",
+          "primary_pid": 440708,
+          "primary_comm": "codex",
+          "primary_rss_kb": 223784,
+          "primary_pss_kb": 161514,
+          "tree_n": 3,
+          "tree_rss_kb": 290868,
+          "tree_pss_kb": 198957,
+          "buckets": {
+            "runtime": {
+              "rss": 290868,
+              "pss": 198957,
+              "pss_missing": 0,
+              "n": 3,
+              "procs": [
+                {
+                  "pid": 440708,
+                  "comm": "codex",
+                  "rss_kb": 223784,
+                  "pss_kb": 161514,
+                  "cmd": "/home/goat/.nvm/versions/node/v24.11.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex --dangerously-bypass-hook-trus"
+                },
+                {
+                  "pid": 443322,
+                  "comm": "codex-code-mode",
+                  "rss_kb": 17136,
+                  "pss_kb": 9664,
+                  "cmd": "/home/goat/.nvm/versions/node/v24.11.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex-code-mode-host"
+                },
+                {
+                  "pid": 440691,
+                  "comm": "MainThread",
+                  "rss_kb": 49948,
+                  "pss_kb": 27779,
+                  "cmd": "node /home/goat/.nvm/versions/node/v24.11.1/bin/codex --dangerously-bypass-hook-trust -c hooks.SessionStart=[{matcher=\"startup|resume|clear|compact\",hooks=[{type=\"command\",command="
+                }
+              ]
+            }
+          }
+        },
+        "stoppath": {
+          "attention": "working",
+          "runtime_name": "codex",
+          "primary_pid": 432682,
+          "primary_comm": "codex",
+          "primary_rss_kb": 225880,
+          "primary_pss_kb": 163610,
+          "tree_n": 8,
+          "tree_rss_kb": 447532,
+          "tree_pss_kb": 277506,
+          "buckets": {
+            "runtime": {
+              "rss": 424676,
+              "pss": 272630,
+              "pss_missing": 0,
+              "n": 4,
+              "procs": [
+                {
+                  "pid": 432682,
+                  "comm": "codex",
+                  "rss_kb": 225880,
+                  "pss_kb": 163610,
+                  "cmd": "/home/goat/.nvm/versions/node/v24.11.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex --dangerously-bypass-hook-trus"
+                },
+                {
+                  "pid": 436778,
+                  "comm": "codex-code-mode",
+                  "rss_kb": 19656,
+                  "pss_kb": 12184,
+                  "cmd": "/home/goat/.nvm/versions/node/v24.11.1/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex-code-mode-host"
+                },
+                {
+                  "pid": 432671,
+                  "comm": "MainThread",
+                  "rss_kb": 50016,
+                  "pss_kb": 27788,
+                  "cmd": "node /home/goat/.nvm/versions/node/v24.11.1/bin/codex --dangerously-bypass-hook-trust -c hooks.SessionStart=[{matcher=\"startup|resume|clear|compact\",hooks=[{type=\"command\",command="
+                },
+                {
+                  "pid": 456569,
+                  "comm": "grok",
+                  "rss_kb": 129124,
+                  "pss_kb": 69048,
+                  "cmd": "grok Use shell tool to run sleep 120, then tell me it finished."
+                }
+              ]
+            },
+            "helper": {
+              "rss": 22856,
+              "pss": 4876,
+              "pss_missing": 0,
+              "n": 4,
+              "procs": []
+            }
+          }
+        },
+        "suitefloor": {
+          "attention": "working",
+          "runtime_name": "claude",
+          "primary_pid": 264824,
+          "primary_comm": "claude",
+          "primary_rss_kb": 490588,
+          "primary_pss_kb": 374509,
+          "tree_n": 1,
+          "tree_rss_kb": 490588,
+          "tree_pss_kb": 374509,
+          "buckets": {
+            "runtime": {
+              "rss": 490588,
+              "pss": 374509,
+              "pss_missing": 0,
+              "n": 1,
+              "procs": [
+                {
+                  "pid": 264824,
+                  "comm": "claude",
+                  "rss_kb": 490588,
+                  "pss_kb": 374509,
+                  "cmd": "claude -n tachyon-tachyon-suitefloor \u2500\u2500 TACHYON PRIMER \u2500\u2500\nIdentity: you are agent \"suitefloor\", spawned by \"claude-fork-1\".\nProtocol (apply when relevant):\n  - Waking another agent"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "infra": [
+        {
+          "label": "tmux-tachyon",
+          "pid": 3174,
+          "rss_kb": 18336,
+          "pss_kb": 14783,
+          "comm": "tmux: server"
+        },
+        {
+          "label": "vscode-extensionHost",
+          "pid": 152077,
+          "rss_kb": 754140,
+          "pss_kb": 707857,
+          "comm": "MainThread"
+        },
+        {
+          "label": "tachyon-engine",
+          "pid": 153435,
+          "rss_kb": 516820,
+          "pss_kb": 512489,
+          "comm": "tachyon-engine:"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 153471,
+          "rss_kb": 6732,
+          "pss_kb": 1201,
+          "comm": "tmux: client"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 153822,
+          "rss_kb": 6880,
+          "pss_kb": 1331,
+          "comm": "tmux: client"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 179124,
+          "rss_kb": 6940,
+          "pss_kb": 1349,
+          "comm": "tmux: client"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 179362,
+          "rss_kb": 6876,
+          "pss_kb": 1336,
+          "comm": "tmux: client"
+        },
+        {
+          "label": "tachyon-engine",
+          "pid": 461027,
+          "rss_kb": 3816,
+          "pss_kb": 889,
+          "comm": "bash"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 1932864,
+          "rss_kb": 4672,
+          "pss_kb": 1358,
+          "comm": "tmux: server"
+        },
+        {
+          "label": "tmux-tachyon",
+          "pid": 4165650,
+          "rss_kb": 4788,
+          "pss_kb": 1437,
+          "comm": "tmux: server"
+        }
+      ]
+    }
+  ]
+}
