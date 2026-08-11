@@ -88,6 +88,34 @@ export function assertReapableRoot(dir: string): string {
   return resolved;
 }
 
+/** `fd 0` as the kernel resolves it, or null when it cannot be read. */
+function stdinOf(pid: string): string | null {
+  try { return fs.readlinkSync(`/proc/${pid}/fd/0`); } catch { return null; }
+}
+
+/**
+ * `t-ffc5bf` — is this candidate the process a tmux server FORKS FOR A PANE, rather than a server?
+ *
+ * Measured on tmux 3.6, 60/60 deterministic reproductions of the state the guard actually observes:
+ * a server daemonizes with `/dev/null` on 0/1/2, while the child it forks for a pane has already
+ * called `login_tty` and carries the pane's pts on the same descriptors. Nothing else separates
+ * them — the child is a copy of the server down to its `comm`, argv and environment.
+ *
+ * Two fields were tried and rejected before this one, both by measurement rather than by argument.
+ * `tty_nr` looks like the same fact and is worthless here: in 20 of 41 observed children the tty is
+ * REVOKED when the server dies, so both read 0 in exactly the window that matters. "Holds an open
+ * `/dev/ptmx`" is the server's positive identity and would go blind on a real leak, because a server
+ * whose panes are all dead (`pane_dead`, first-class in this repo) holds no pty master at all.
+ *
+ * `null` — fd 0 unreadable — KEEPS the candidate, and that direction is the whole point rather than
+ * caution: "I could not measure it" must never read as "it may pass". A real server whose `/proc`
+ * turns unreadable has to stay visible to the guard; reading the fallback the other way would delete
+ * a leak report on the one shape nobody can check.
+ */
+export function isPaneForkChild(stdin: string | null): boolean {
+  return stdin !== null && stdin.startsWith("/dev/pts/");
+}
+
 function readEnviron(pid: string): Map<string, string> {
   const env = new Map<string, string>();
   for (const entry of fs.readFileSync(`/proc/${pid}/environ`, "utf8").split("\0")) {
@@ -137,6 +165,13 @@ export function tmuxServersUnder(roots: readonly string[]): TmuxServerRecord[] {
       if (!tmuxTmpdir) continue; // the fleet's server has none — this is the line that spares it
       const resolved = path.resolve(tmuxTmpdir) + path.sep;
       if (!bounds.some((bound) => resolved.startsWith(bound))) continue;
+      // t-ffc5bf — drop the pane fork child HERE, because the parent-based rule at the bottom can
+      // only see it while its server is still alive. Once the server has exited — which is the
+      // CORRECT outcome of a fixture's teardown — the child is reparented to init/systemd, survives
+      // that rule, and gets reported as a leaked server: measured 9 of 150 rounds of
+      // `validationCloseSocketReachability` red on a green tree, the process gone on its own within
+      // 50ms every time and nothing left on the host. The two rules cover complementary windows.
+      if (isPaneForkChild(stdinOf(pid))) continue;
       const argv = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").filter(Boolean);
       found.push({
         pid: Number(pid),
@@ -158,6 +193,8 @@ export function tmuxServersUnder(roots: readonly string[]): TmuxServerRecord[] {
   // matching pids for ~a second, one the child of the other. Counting both would make a leak report
   // say two where one server exists, and would send a signal to a pid that is about to become a
   // shell. A server never has a server for a parent, so the child is the one to drop.
+  // This rule holds only while the SERVER is still alive to be that parent, which is why the stdin
+  // rule above exists: it is the same child seen after its server exited (t-ffc5bf).
   const pids = new Set(found.map((server) => server.pid));
   return found.filter((server) => !pids.has(server.ppid));
 }
