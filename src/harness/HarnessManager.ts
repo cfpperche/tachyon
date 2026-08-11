@@ -2590,6 +2590,30 @@ export class HarnessManager {
     ) {
       throw new Error(`runtime '${adapter.runtime}' is not compatible with the Codex native configuration projection`);
     }
+    // t-94d49a — REFUSE rather than replace a directory this projection does not own. The skill tree
+    // below goes to `<cwd>/.agents/skills`, and with the agent's worktree OFF `cwd` IS the workspace
+    // root — where that directory belongs to the plugin installer (`src/plugins/engine.ts` codex
+    // `skillsRel`, recorded per install in `src/plugins/lockfile.ts` so uninstall removes exactly
+    // what it created). `replaceCapturedSkillTree` swaps the WHOLE directory, so the launch would
+    // delete the workspace's entire plugin roster.
+    //
+    // Launching anyway without projecting was the other candidate outcome and measurement rejects
+    // it. On codex-cli 0.146.1 (`codex debug prompt-input`, temp fixture): every
+    // `<cwd>/.agents/skills/<name>` is model-visible regardless of `CODEX_HOME`; `[skills] paths`
+    // adds no private root; and the one suppression that works, `[[skills.config]] name/enabled`,
+    // is keyed by NAME — which is the t-f842f0 collision itself, since a granted skill and a plugin
+    // skill share the name. So that launch would hand the agent the ENTIRE ambient roster under a
+    // profile that granted none of it — the inheritance t-62f599 withdrew the worktree skill
+    // projection to stop. Composition with a per-entry owner is t-f842f0; refusing is what this
+    // measurement supports today.
+    if (capabilities && path.resolve(cwd ?? this.workspaceRoot) === path.resolve(this.workspaceRoot)) {
+      const collision = path.join(path.resolve(this.workspaceRoot), ".agents", "skills");
+      throw new HarnessUnavailableError(
+        agent,
+        `its Codex skill grants would replace ${collision}, which holds this workspace's plugin installs — `
+        + "give this agent a worktree so it launches outside the workspace root, or remove its skill grants",
+      );
+    }
     const home = this.materializeHome(agent, adapter, cwd);
     // t-987347 — unconditional, because the guard this replaced (`if (capabilities)`) named the one
     // case a revocation never reaches. Codex's skill tree is NOT swept with it: it is projected into
@@ -2658,6 +2682,8 @@ export class HarnessManager {
       // Codex discovers user-authored skills from the launch project's `.agents/skills`, not
       // CODEX_HOME. This tree is still an exact grant projection: it is rebuilt solely from the
       // resolved, digest-pinned capability snapshot and never copied from the ambient workspace.
+      // The one root it must never own — the workspace's own, shared with the plugin installer —
+      // was refused above (t-94d49a), so this replacement only ever lands in the agent's worktree.
       this.replaceCapturedSkillTree(agent, path.join(cwd ?? this.workspaceRoot, ".agents"), capabilities);
       this.writeProfileCapabilityManifest(agent, home, capabilities);
     }
