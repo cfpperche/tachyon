@@ -2583,26 +2583,54 @@ describe("AgentManager — session resume (spec 209)", () => {
     });
   });
 
-  it("t-0b2f30: transcriptPathOf resolves OpenCode storage as a session-shaped Activity path", async () => {
-    const { manager, ledger, ws } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", {
-      resolveCaptureSession: async (_rt, _cwd, configHome, id) =>
-        id === "ses_agent" && configHome?.endsWith(".local/share") ? { id, path: `${ws}/data/opencode/storage` } : null,
-      homeDir: () => `${ws}/home`,
-      fileExists: (p) => p === `${ws}/data/opencode/storage`,
-    });
-    await manager.spawn("opencode");
-    const rec = ledger.get("opencode")!;
-    ledger.record("opencode", { ...rec, resume: { ...rec.resume!, sessionId: "ses_agent" } });
+  /**
+   * t-86467a — `runtimeConfigHome`'s opencode branch reads `XDG_DATA_HOME` FROM THE PROCESS, which is
+   * correct in production and is what the override test below measures. A test about that branch
+   * therefore has to DECLARE which of the two states it is measuring instead of inheriting the host's:
+   * the "no override" test was red on any machine with `XDG_DATA_HOME` set (an agent worktree with a
+   * private home, the whole-suite lab t-ed0f43 requires) and green on the maintainer's checkout, so the
+   * gate said green in both places while proving different things — the class t-a12966 mapped.
+   *
+   * Pass `undefined` to measure the unset state. Restores the previous value, including its absence.
+   */
+  async function withXdgDataHome(value: string | undefined, run: () => Promise<void>): Promise<void> {
+    const prev = process.env.XDG_DATA_HOME;
+    if (value === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = value;
+    try {
+      await run();
+    } finally {
+      if (prev === undefined) delete process.env.XDG_DATA_HOME;
+      else process.env.XDG_DATA_HOME = prev;
+    }
+  }
 
-    await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({
-      path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode", sessionId: "ses_agent",
+  it("t-0b2f30: transcriptPathOf resolves OpenCode storage as a session-shaped Activity path", async () => {
+    await withXdgDataHome(undefined, async () => { // t-86467a — declares the no-override lab, never the host's
+      let seenConfigHome: string | undefined;
+      const { manager, ledger, ws } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", {
+        resolveCaptureSession: async (_rt, _cwd, configHome, id) => {
+          seenConfigHome = configHome;
+          return id === "ses_agent" ? { id, path: `${ws}/data/opencode/storage` } : null;
+        },
+        homeDir: () => `${ws}/home`,
+        fileExists: (p) => p === `${ws}/data/opencode/storage`,
+      });
+      await manager.spawn("opencode");
+      const rec = ledger.get("opencode")!;
+      ledger.record("opencode", { ...rec, resume: { ...rec.resume!, sessionId: "ses_agent" } });
+
+      await expect(manager.transcriptPathOf("opencode")).resolves.toEqual({
+        path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode", sessionId: "ses_agent",
+      });
+      // With no override the config home is the XDG default under the INJECTED home — exactly, not
+      // merely a path ending in `.local/share` (the old suffix check passed for any host's XDG root).
+      expect(seenConfigHome).toBe(path.join(ws, "home", ".local", "share"));
     });
   });
 
   it("t-0b2f30: runtimeConfigHome's opencode branch honors an ambient XDG_DATA_HOME override", async () => {
-    const prevXdg = process.env.XDG_DATA_HOME;
-    process.env.XDG_DATA_HOME = "/custom/xdg-data";
-    try {
+    await withXdgDataHome("/custom/xdg-data", async () => {
       let seenConfigHome: string | undefined;
       const { manager, ledger, ws } = resumeHarness("agents:\n  opencode:\n    cmd: opencode\n", {
         resolveCaptureSession: async (_rt, _cwd, configHome, id) => {
@@ -2620,10 +2648,7 @@ describe("AgentManager — session resume (spec 209)", () => {
         path: `${ws}/data/opencode/storage/ses_agent.jsonl`, runtime: "opencode", sessionId: "ses_agent",
       });
       expect(seenConfigHome).toBe("/custom/xdg-data"); // NOT the hardcoded `${ws}/home/.local/share`
-    } finally {
-      if (prevXdg === undefined) delete process.env.XDG_DATA_HOME;
-      else process.env.XDG_DATA_HOME = prevXdg;
-    }
+    });
   });
 
   it("t-0b2f30: two same-cwd opencode agents refuse newest-by-cwd guessing (shared config home, no ownership fallback)", async () => {
