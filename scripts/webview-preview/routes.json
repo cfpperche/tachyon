@@ -304,6 +304,25 @@
     ]
   },
   {
+    "view": "sidebar",
+    "fixture": "config-discards",
+    "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=config-discards",
+    "frame": {
+      "w": 340,
+      "h": 760
+    },
+    "tags": [
+      "synthetic-edge"
+    ],
+    "title": "Tachyon Sidebar",
+    "aliases": [
+      "sidebar",
+      "fleet",
+      "control tab",
+      "control launcher"
+    ]
+  },
+  {
     "view": "activity",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=activity&fixture=default",

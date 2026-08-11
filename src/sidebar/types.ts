@@ -5,6 +5,7 @@
  * components don't change. This is the "UI decoupled from rules" contract.
  */
 import type { CardTemplateConfig } from "./cardTemplate.js";
+import type { ConfigDiscardsVM } from "../config/configDiscards.js";
 import type { EntryKind } from "../config/loadConfig.js";
 import type { ResumeRuntime } from "../resume/adapters.js";
 import type { TiptapJSON } from "../richDoc/types.js";
@@ -259,6 +260,14 @@ export interface FleetVM {
    * MUST show this banner and must not render the empty-roster placeholder when agents/ledger/LKG exist.
    */
   configError?: ConfigErrorVM;
+  /**
+   * t-7d6013 — set when the last successful load DROPPED declarations the file asked for, and the
+   * human has not dismissed that exact set yet. The fleet is healthy: rows are never marked
+   * `configInvalid` from this, and no degraded roster is drawn. Absent means "nothing discarded, or
+   * already read and dismissed" — the two are indistinguishable here on purpose, because the banner
+   * has the same job in both.
+   */
+  configDiscards?: ConfigDiscardsVM;
   /**
    * SDD 479 — the project's agent-card layout, per FOLDER (it comes from that folder's tachyon.yml):
    * the template every agent row uses, plus any per-runtime override, each already resolved to a

@@ -18,6 +18,11 @@ export interface DomainActionSource {
   invokeNoticeInboxAction?(noticeId: string, actionId: string): Promise<boolean>;
   /** t-a39c7d — human focused agent pane; clear done(unseen). */
   markAgentPaneSeen?(agent: string): void;
+  /**
+   * t-7d6013 — the human dismissed the config-discard banner. Takes the SIGNATURE that was on
+   * screen and reports whether it still matched, so a stale click hides nothing.
+   */
+  dismissConfigDiscards?(signature: string): boolean;
 }
 
 export interface DomainActionDeps {

@@ -3,6 +3,7 @@ import { CARD_COMPONENT_IDS, CARD_TEMPLATE_VERSION, type CardComponentId } from 
 import type { FleetVM, HandoffVM, PinVM, ProposalVM, WorkspaceRef } from "../sidebar/types.js";
 import { fitSidebarWireText, SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "../sidebar/wireText.js";
 import { AGENT_NAME_PATTERN } from "../config/nameValidation.js";
+import { CONFIG_DISCARD_ENTRY_LIMIT } from "../config/configDiscards.js";
 import {
   buildSidebarFleet,
   type SidebarFleetServiceOptions,
@@ -227,6 +228,17 @@ const fleet = z.object({
     path: displayText(4_096, 1),
     errors: z.array(displayText(2_000, 1)).min(1).max(100),
     summary: displayText(2_000, 1),
+  }).strict().optional(),
+  // t-7d6013 — the discard record. Declared here or this STRICT object rejects the whole fleet, which
+  // is the failure SDD 478 M5 paid for. `entries` is capped at the producer's own limit + the one row
+  // that reports the elision; `signature` is the dismissal identity and must survive the round trip
+  // verbatim, or the gesture would arrive at the engine naming a set that cannot be matched.
+  configDiscards: z.object({
+    file: displayText(256, 1),
+    path: displayText(4_096, 1),
+    entries: z.array(displayText(2_000, 1)).min(1).max(CONFIG_DISCARD_ENTRY_LIMIT + 1),
+    summary: displayText(2_000, 1),
+    signature: z.string().regex(/^[a-f0-9]{16}$/),
   }).strict().optional(),
   // t-aa2780 — the engine's own report that its daemon log ring holds an error line. Declared here or
   // this STRICT object rejects the whole fleet (SDD 478 M5). OPTIONAL on purpose: a projection built
