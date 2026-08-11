@@ -72,6 +72,10 @@ const COLLAPSED_KEYS_KEY = "tachyon.sidebar.collapsed";
 const ACTION_CMD: Record<Exclude<ActionId, "inspect" | "openPane" | "activity" | "probes" | "continueTask">, string> = {
   stop: "tachyon.stopAgentItem",
   kill: "tachyon.killAgentItem",
+  // t-c515c0 — deliberately the SAME command. On a row whose process is gone, `agent.kill` reduces to
+  // the tmux `kill-session` that reaps the postmortem pane, so this is one operation the row names for
+  // the state it is in — not a second door with its own handler to drift apart from this one.
+  reapPane: "tachyon.killAgentItem",
   restart: "tachyon.restartAgentItem",
   restartNew: "tachyon.restartAgentNewItem",
   restartForceNew: "tachyon.restartAgentForceNewItem",

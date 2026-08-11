@@ -6,6 +6,32 @@ Marketplace release notes.
 
 ## Unreleased
 
+### Fixed
+
+- **A stopped agent no longer offers the repertoire of a running one** (`t-c515c0`). The row for an
+  agent the human stopped read `stopped (exit 130)` and carried, beside it, the same bar as a live
+  agent: Open terminal, Open agent pane, and a **Kill forced** for a process that had already exited.
+
+  What the doors promised is not in the pane. Measured over the full scrollback on claude, codex, grok
+  and pi, a postmortem pane retains exactly ONE line — tmux's own `Pane is dead (status …)` — because
+  the runtime's TUI restores the primary screen as it exits. The two comments in the code that
+  justified keeping those doors ("the pane still holds the `^C` and the exit code") were wrong, and are
+  corrected rather than left behind. A **crash** is the other case and keeps its doors: it never
+  restores the screen, so the same measurement read 20 lines back off a killed pane. A requested stop
+  and a crash no longer offer the same set — telling them apart was the whole complaint.
+
+  `Kill forced` was not noise, which is why it stayed: on a dead row that command reduces to the tmux
+  `kill-session` that reaps the postmortem, and it is the row's only door to it. It is now named for
+  what it does — **Collect dead pane** — with its own icon, and it is offered only where there is no
+  process left. A clean exit whose pane Tachyon already collected offers neither door; that shape used
+  to invent a pane through a fallback that only held while the field was absent.
+
+  The exit code itself is unchanged and still shown. `130` is not a grok convention: measured, bare
+  grok exits 0 (9 of 9), while a stop through Tachyon — which starts every agent with its brief as a
+  prompt, so the process is mid-turn — exits 130 in 3 of 5 runs and does not die at all in the other 2.
+  The number describes what the process was doing, not whether the stop was asked for, so nothing keys
+  on it; the intent is still read from the recorded request.
+
 ## 0.79.0 — an engine upgrade asks before killing a turn in flight
 
 ### Fixed
