@@ -18,29 +18,60 @@ export interface DoorbellEvent {
   pointer?: string;
 }
 
+/**
+ * t-2153ae — a queue overflow used to exist only as a transient host toast. This record makes the
+ * loss measurable; it does not limit the wait, expire authored reports, or prevent stale delivery.
+ */
+export interface DoorbellOverflowEvent {
+  event: "overflow-drop";
+  to: string;
+  at: string;
+  dropped: number;
+  queued: number;
+}
+
+export type DoorbellTrailEvent = DoorbellEvent | DoorbellOverflowEvent;
+
 export const DOORBELLS_REL_PATH = path.join(".tachyon", "doorbells.jsonl");
 
 export function appendDoorbellEvent(workspaceRoot: string, event: DoorbellEvent): void {
+  appendDoorbellTrailEvent(workspaceRoot, event);
+}
+
+export function appendDoorbellOverflowEvent(workspaceRoot: string, event: DoorbellOverflowEvent): void {
+  appendDoorbellTrailEvent(workspaceRoot, event);
+}
+
+function appendDoorbellTrailEvent(workspaceRoot: string, event: DoorbellTrailEvent): void {
   const file = path.join(workspaceRoot, DOORBELLS_REL_PATH);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, `${JSON.stringify(event)}\n`, "utf8");
 }
 
-export function readDoorbellEvents(workspaceRoot: string): DoorbellEvent[] {
+export function readDoorbellTrailEvents(workspaceRoot: string): DoorbellTrailEvent[] {
   const file = path.join(workspaceRoot, DOORBELLS_REL_PATH);
   if (!fs.existsSync(file)) return [];
-  return fs
-    .readFileSync(file, "utf8")
-    .split(/\r?\n/)
-    .filter((line) => line.trim())
-    .map((line) => {
-      try {
-        return JSON.parse(line) as Partial<DoorbellEvent>;
-      } catch {
-        return undefined;
+  const events: DoorbellTrailEvent[] = [];
+  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      if (event.event === "overflow-drop") {
+        if (typeof event.to === "string" && typeof event.at === "string" && typeof event.dropped === "number" && typeof event.queued === "number") {
+          events.push(event as unknown as DoorbellOverflowEvent);
+        }
+      } else if (typeof event.from === "string" && typeof event.to === "string" && typeof event.at === "string") {
+        events.push(event as unknown as DoorbellEvent);
       }
-    })
-    .filter((e): e is DoorbellEvent => !!e && typeof e.from === "string" && typeof e.to === "string" && typeof e.at === "string");
+    } catch {
+      // One damaged append must not hide the rest of the durable trail.
+    }
+  }
+  return events;
+}
+
+export function readDoorbellEvents(workspaceRoot: string): DoorbellEvent[] {
+  return readDoorbellTrailEvents(workspaceRoot).filter((event): event is DoorbellEvent => !("event" in event));
 }
 
 /**

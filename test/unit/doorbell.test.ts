@@ -2,7 +2,15 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { appendDoorbellEvent, readDoorbellEvents, readDoorbellEventsFor, hasDoorbellRung, DOORBELLS_REL_PATH } from "../../src/bridge/doorbell.js";
+import {
+  appendDoorbellEvent,
+  appendDoorbellOverflowEvent,
+  readDoorbellEvents,
+  readDoorbellEventsFor,
+  readDoorbellTrailEvents,
+  hasDoorbellRung,
+  DOORBELLS_REL_PATH,
+} from "../../src/bridge/doorbell.js";
 
 describe("doorbell", () => {
   const roots: string[] = [];
@@ -78,6 +86,22 @@ describe("doorbell", () => {
       { from: "worker", to: "boss", at: "2026-07-07T10:00:00.000Z", summary: "t-abc done", pointer: "t-abc" },
       { from: "worker", to: "boss", at: "2026-07-07T10:05:00.000Z" },
     ]);
+  });
+
+  it("keeps overflow records in the durable trail but out of notice and completion readers (t-2153ae)", () => {
+    const ws = root();
+    appendDoorbellEvent(ws, { from: "worker", to: "boss", at: "2026-07-07T10:00:00.000Z", summary: "done" });
+    appendDoorbellOverflowEvent(ws, {
+      event: "overflow-drop",
+      to: "boss",
+      at: "2026-07-07T10:01:00.000Z",
+      dropped: 1,
+      queued: 20,
+    });
+
+    expect(readDoorbellTrailEvents(ws)).toHaveLength(2);
+    expect(readDoorbellEventsFor(ws, "boss").notices.map((event) => event.summary)).toEqual(["done"]);
+    expect(hasDoorbellRung(ws, "worker", "boss", "2026-07-07T09:00:00.000Z")).toBe(true);
   });
 
   it("readDoorbellEventsFor returns only events addressed to the given agent, oldest-first", () => {
