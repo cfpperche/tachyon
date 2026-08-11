@@ -27,6 +27,7 @@ import {
 import { isResumable } from "../resume/SessionLedger.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
+import { composerProfileFor } from "../runtime/composerRegion.js";
 import {
   isJsonValue,
   scheduleDefFromExtensionCommand,
@@ -332,9 +333,16 @@ export async function executeExtensionCommand(
       if (!(await workspace.tmux.hasSession(session))) throw new Error(`agent '${command.agent}' is not running`);
       if (command.submit) {
         const attention = workspace.attentionOf(command.agent);
-        const refused = submitRefuseReason(attention?.state, attention?.composerOccupied, attention?.hasStartedTurn);
+        const freshComposerOccupied = await workspace.monitor.probeComposerOccupied(command.agent);
+        const refused = submitRefuseReason(
+          attention?.state,
+          freshComposerOccupied ?? attention?.composerOccupied,
+          attention?.hasStartedTurn,
+        );
         if (refused) throw new Error(`prompt submit refused — '${command.agent}' is ${refused}`);
-        await workspace.tmux.sendSubmittedLine(session, template.body);
+        await workspace.tmux.sendSubmittedLine(session, template.body, {
+          composer: composerProfileFor(workspace.manager.defOf(command.agent)?.cmd),
+        });
       } else {
         await workspace.tmux.sendKeys(session, template.body, false);
       }
