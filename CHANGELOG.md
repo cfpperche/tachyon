@@ -6,6 +6,46 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.81.0 — three doors write into a pane, and all three now read it at the moment they write
+
+Tachyon delivers text into a running agent's terminal through three doors: the Interface (you typing a
+prompt), an Agent (`write_input` / `notify_agent` over the Bridge), and Tachyon itself (queued
+notices). Each decided differently whether the pane was free, and each could be wrong in its own way.
+This release makes the three read the same region, with the same runtime-measured rule, at the instant
+they write.
+
+### Fixed
+
+- **The Interface door stopped deciding from a stale poll** (`t-344fa6`). `prompt.inject` read composer
+  occupancy from the attention poll rather than from the pane, so a human draft created after that poll
+  could be overwritten — and it submitted without the runtime's composer profile, falling back to the
+  legacy last-line heuristic that this release's predecessor replaced. It now probes immediately before
+  writing, keeping the cached value only as the fallback for runtimes with no measured signal, and
+  passes the profile so the same region reader governs it. Twelve lines of product code: the machinery
+  was already there, built by the other two doors.
+
+- **A queue overflow leaves a durable record** (`t-2153ae`). Dropping the oldest notice past the
+  per-recipient cap only ever produced a transient toast, so the loss could not be counted after the
+  fact. It is now an `overflow-drop` event in the doorbell trail, with its own shape so that
+  `read_notices` and completion checks never mistake it for a doorbell.
+
+  **The proposed fix was refused on its own measurement.** Making the queue visible — a new projection
+  and UI — was the recommendation; the numbers behind it were a live queue of zero, zero recipients with
+  a pending queue, zero observed overflows, and 91% of new notices already lifted out of the broken
+  class by the previous release. Building a surface for a condition that does not occur is the wrong
+  trade. What was worth fixing is that the event left no trace at all, which is why "it never happened"
+  could not be demonstrated. The record does not limit the wait, expire an authored report, or prevent
+  a stale delivery — it only makes a previously silent loss measurable.
+
+- **A studio that fails to load names the surface, not an invented entity** (`t-831332`). The error
+  screen said "New Agent" for a document that never loaded, because the error envelope carries no
+  identity, and it offered a Save with nothing to save. The title now states what the screen actually
+  knows — which studio it is, and that it failed — and the dead action is gone. One shared surface, not
+  eight shells.
+
+- **A dead pane stopped reading as alive under a non-UTF-8 locale** (`t-86f3e6`), where tmux substitutes
+  its field separator and the helper meant to prevent exactly that had two holes of its own.
+
 ## 0.80.0 — the product stops claiming what it has not verified
 
 Six defects here share one shape, and it is the shape this codebase produces most: a surface
