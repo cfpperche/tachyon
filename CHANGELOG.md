@@ -6,6 +6,88 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.78.0 — granting a skill worked; taking it back did not
+
+Removing a capability from an agent's profile left the files on its disk. Measured on the
+maintainer's own workspace: the `grok` profile lost its `capabilities:` block on 09/08 at 21:54, the
+private home was regenerated at 01:08 the next day, a session ran at 01:57 — and three skill trees
+from 07/08 were still sitting there, one of them `agent-browser`, which drives a real browser.
+
+### Fixed
+
+- **A revoked skill is now removed from disk** (`t-987347`). The cause is a routing one: a profile
+  that loses its selection produces no projection, so `profileCapabilities` is `undefined` and the
+  revocation enters through a *different door* than the grant. Every `if (capabilities)` guard was
+  therefore describing exactly the case a revocation never reaches. **Empty is a selection, not the
+  absence of one.**
+
+  The purge is now unconditional and runs *before* deciding to re-materialize — but it was not copied
+  from Claude's sweep. It removes what each runtime's grant path writes into the private home and
+  nothing else, per runtime: `grok` its `skills/` and manifest; `codex` only the manifest, because its
+  skill tree lands in `<cwd>/.agents/skills`, a directory the **plugin installer** also owns, and
+  sweeping there would delete plugin installs for every agent in the workspace (`t-f842f0`); `pi` only
+  the manifest, because its generations are content-addressed and a revoked profile no longer gets the
+  `--skill` arguments that are the only way to reach them. Claude was already correct and became the
+  test's control.
+
+  All four runtimes were measured rather than assumed: **codex had the defect too**, and pi's residue
+  was inert but its manifest lied.
+
+- **The skill grant is now checked for every runtime, not just Claude** (`t-a7063c`). The exact
+  host-custodied grant was required only when the adapter was `claude`; the neighbouring mcp, hook and
+  generic lines never had that condition. The guard was born in a Claude-specific task and was never
+  generalized when delivery to codex, grok and pi arrived. Meanwhile the inspector text the human
+  **attests** already promised the check for both grok and codex. Making the code honour the
+  attestation is strictly stricter, so no promise changed.
+
+- **A Studio save no longer deletes what the form cannot show** (`t-26ba8f`). Measured round trip:
+  `attention: {enabled: true, silenceSec: 30, patterns: [...]}` came back as `attention: true` after a
+  save that edited nothing. `env` was found by the same measurement and fixed with it.
+
+- **The Grok preflight stops approving a CLI with no credential** (`t-5dcf47`). Grok 1.0.0 prints its
+  model catalog in both auth states — measured with a live credential and an empty home, the only
+  difference is the first line — so the catalog never was an auth signal. Authentication is now read
+  from the banner, and an unrecognized banner fails to `unverifiable`, never to `supported`.
+
+- **A studio that fails to load says so** (`t-f4e186`). `!ready || !entity` conflated "the host has not
+  answered" with "the host answered and sent no document", so an error left the spinner as the
+  *terminal* state. Seven of the eight studio shells had it; `pipeline-studio` was already correct and
+  became the control.
+
+- **The land card uses the width of the card** (`t-ea5425`), and picking a file to review happens in
+  Tachyon's own list instead of VS Code's. Measured at 880px: the block went from 480 of 824 usable
+  pixels to 798, and the one actionable line stopped breaking into three.
+
+- **The journal reads back in the order it was written** (`t-c89c52`). Entries sharing a millisecond
+  were ordered by a random id — 100 of 200 reads preserved append order, an exact coin flip. The
+  tiebreak is now the file's own line order; no persisted format changed.
+
+- **The onboarding template opens clean in the editor** (`t-fe772a`). The product accepted every key
+  in `tachyon.yml.example`, and the editor marked two of them red, because the bundled JSON schema had
+  fallen behind the parser. A newcomer believes the editor, not the product, and deletes working
+  configuration.
+
+### Internal
+
+- **The gate's worker pool is sized by the measured CPU knee, not by free RAM** (`t-fb7025`,
+  `t-392418`). Two runs on the same tree: 15 workers → 91s wall and a load-1 peak of 16.67; 8 workers →
+  88s and 8.63. The suite is 392s of CPU whose longest single file is 55s, so the makespan is pinned
+  regardless. The cap is now **6**, the conservative side of that knee, chosen to be calibrated by use.
+  A duplicated `typecheck` was removed from inside the suite — the gate already runs it 35 seconds
+  earlier — freeing 46.5s of CPU per run.
+
+- **The test suite stops leaking tmux servers** (`t-8f48da`). 1946 were alive on this host, 1719 with a
+  working directory that had already been deleted. Deleting the directory is not cleanup: a server
+  whose socket is gone keeps running. Reaping now happens where the private socket is created.
+
+- **The gate stops answering "is this machine logged in?" on the agent's behalf** (`t-a12966`). 8273
+  tests swept; skips now declare a reason and `verify-full` names any file whose skips declared none.
+
+- **Notice delivery stops claiming a submit it cannot see** (`t-7a297f`). A wrapped composer line was
+  read one row deep, so a 433-character notice was compared against the 120 characters recovered — and
+  the mismatch was reported as *delivered*, which also disabled the retry. 92% of notices are long
+  enough to wrap.
+
 ## 0.77.0 — Tachyon runs without the SDD plugin installed
 
 The maintainer's rule, and the acceptance criterion it produced: *"sdd é plugin e não deve estar no
