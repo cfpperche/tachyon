@@ -1182,6 +1182,30 @@ describe("git-hook target — load + preview + fingerprint (spec 264)", () => {
     expect(hooksPathDrift).not.toBe(base);
     expect(priorDrift).not.toBe(base);
   });
+
+  it("install leaves git-hooks inert; apply/unapply preserves the human executable hook and its mode", async () => {
+    const ws = tmp("tachyon-githook-apply-");
+    execFileSync("git", ["init", "-q"], { cwd: ws });
+    const humanHook = path.join(ws, ".git/hooks/pre-commit");
+    fs.writeFileSync(humanHook, "#!/bin/sh\necho human\n", { mode: 0o755 });
+    const humanMode = fs.statSync(humanHook).mode & 0o777;
+    const { plugin } = loadPlugin(makeGitHookPlugin());
+    const preview = previewInstall(plugin!, ws, new Set(), await import("../../src/plugins/gitHookState.js").then((m) => m.gatherGitHookState(ws, ["pre-commit"])));
+    expect((await applyInstall(plugin!, preview, ws, new Set(), { gitHookConfirmed: true })).installed).toBe(true);
+    expect(fs.readFileSync(path.join(ws, ".git/config"), "utf8")).not.toContain("hooksPath");
+    expect(fs.existsSync(path.join(ws, ".tachyon/githooks/pre-commit"))).toBe(false);
+
+    expect((await applyContribution("sdd", { kind: "git-hook", name: "pre-commit" }, ws)).applied).toBe(true);
+    const dispatcher = path.join(ws, ".tachyon/githooks/pre-commit");
+    expect(fs.statSync(dispatcher).mode & 0o111).not.toBe(0);
+    expect(fs.readFileSync(path.join(ws, ".tachyon/githooks/pre-commit.run"), "utf8")).toContain("leaves/");
+
+    expect((await unapplyContribution("sdd", { kind: "git-hook", name: "pre-commit" }, ws)).unapplied).toBe(true);
+    expect(fs.readFileSync(humanHook, "utf8")).toBe("#!/bin/sh\necho human\n");
+    expect(fs.statSync(humanHook).mode & 0o777).toBe(humanMode);
+    expect(humanMode & 0o111).not.toBe(0);
+    expect(fs.existsSync(dispatcher)).toBe(false);
+  });
 });
 
 describe("previewInstall — declared-runtime targeting (spec 263)", () => {

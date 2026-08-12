@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { loadPlugin, previewInstall, applyInstall } from "../../src/plugins/engine.js";
+import { loadPlugin, previewInstall, applyInstall, applyContribution } from "../../src/plugins/engine.js";
 import { gatherGitHookState } from "../../src/plugins/gitHookState.js";
 import { GitHookStore } from "../../src/plugins/gitHookRegistry.js";
 
@@ -38,7 +38,9 @@ async function install(ws: string, pluginDir: string) {
   const { plugin } = loadPlugin(pluginDir);
   const target = new Set(plugin!.manifest.runtimes);
   const gitState = await gatherGitHookState(ws, plugin!.gitHooks.map((g) => g.event));
-  return applyInstall(plugin!, previewInstall(plugin!, ws, target, gitState), ws, target, { mcpConfirmed: true, gitHookConfirmed: true });
+  const result = await applyInstall(plugin!, previewInstall(plugin!, ws, target, gitState), ws, target, { mcpConfirmed: true, gitHookConfirmed: true });
+  if (result.installed) for (const hook of plugin!.gitHooks) await applyContribution(plugin!.manifest.name, { kind: "git-hook", name: hook.event }, ws);
+  return result;
 }
 
 /** Stage a unique change and attempt a commit; return {ok, marker lines}. */

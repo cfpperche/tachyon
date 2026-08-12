@@ -382,10 +382,10 @@ export class PluginsPanelManager {
         if (m.pluginName && m.server) await this.guard(io, () => this.unapplyMcpOp(ws, m.pluginName as string, m.server as string, io));
         return;
       case "applyContribution":
-        if (m.pluginName && m.contributionKind && m.contributionName) await this.guard(io, () => this.applyContributionOp(ws, m.pluginName as string, m.contributionKind as "skill" | "hook", m.contributionName as string, io));
+        if (m.pluginName && m.contributionKind && m.contributionName) await this.guard(io, () => this.applyContributionOp(ws, m.pluginName as string, m.contributionKind as "skill" | "hook" | "git-hook", m.contributionName as string, io));
         return;
       case "unapplyContribution":
-        if (m.pluginName && m.contributionKind && m.contributionName) await this.guard(io, () => this.unapplyContributionOp(ws, m.pluginName as string, m.contributionKind as "skill" | "hook", m.contributionName as string, io));
+        if (m.pluginName && m.contributionKind && m.contributionName) await this.guard(io, () => this.unapplyContributionOp(ws, m.pluginName as string, m.contributionKind as "skill" | "hook" | "git-hook", m.contributionName as string, io));
         return;
     }
   }
@@ -806,6 +806,7 @@ export class PluginsPanelManager {
       mcpStatuses: applied.store ? this.mcpStatuses(ws, applied.store) : undefined,
       skillStatuses: applied.store ? this.contributionStatuses(ws, applied.store, "skill") : undefined,
       hookStatuses: applied.store ? this.contributionStatuses(ws, applied.store, "hook") : undefined,
+      gitHookStatuses: applied.store ? this.gitHookStatuses(ws, applied.store) : undefined,
       ...(applied.error ? { appliedError: applied.error } : {}),
     });
   }
@@ -833,17 +834,26 @@ export class PluginsPanelManager {
     return buildContributionStatuses(Object.values(lock.plugins), kind === "skill" ? "skill-dir" : "settings-hook", (plugin, name) => store.isApplied(plugin, { kind, name }));
   }
 
-  private async applyContributionOp(ws: WorkspaceGitPresentationTarget, pluginName: string, kind: "skill" | "hook", name: string, io: PanelIO): Promise<void> {
+  private gitHookStatuses(ws: WorkspaceGitPresentationTarget, store: AppliedStateStore): Record<string, { name: string; applied: boolean }[]> {
+    const out: Record<string, { name: string; applied: boolean }[]> = {};
+    for (const p of Object.values(this.lockfile(ws)?.plugins ?? {})) {
+      const names = [...new Set((p.gitHooks ?? []).map((g) => g.event))].sort();
+      if (names.length > 0) out[p.name] = names.map((name) => ({ name, applied: store.isApplied(p.name, { kind: "git-hook", name }) }));
+    }
+    return out;
+  }
+
+  private async applyContributionOp(ws: WorkspaceGitPresentationTarget, pluginName: string, kind: "skill" | "hook" | "git-hook", name: string, io: PanelIO): Promise<void> {
     io.postBusy(`Applying ${kind} ${name}…`);
-    const r = applyContribution(pluginName, { kind, name }, ws.workspaceRoot);
+    const r = await applyContribution(pluginName, { kind, name }, ws.workspaceRoot);
     if (!r.applied) { io.postResult(false, r.errors[0] ?? `Could not apply '${name}'.`); return; }
     this.onPluginsChanged(); io.post();
     io.postResult(true, `Applied ${kind} '${name}'.${kind === "hook" ? " Restart a running session for the change to take effect." : ""}`);
   }
 
-  private async unapplyContributionOp(ws: WorkspaceGitPresentationTarget, pluginName: string, kind: "skill" | "hook", name: string, io: PanelIO): Promise<void> {
+  private async unapplyContributionOp(ws: WorkspaceGitPresentationTarget, pluginName: string, kind: "skill" | "hook" | "git-hook", name: string, io: PanelIO): Promise<void> {
     io.postBusy(`Un-applying ${kind} ${name}…`);
-    const r = unapplyContribution(pluginName, { kind, name }, ws.workspaceRoot);
+    const r = await unapplyContribution(pluginName, { kind, name }, ws.workspaceRoot);
     if (!r.unapplied) { io.postResult(false, r.errors[0] ?? `Could not un-apply '${name}'.`); return; }
     this.onPluginsChanged(); io.post();
     const orphan = r.orphans > 0 ? " A human-edited copy was left in place." : "";
@@ -852,7 +862,7 @@ export class PluginsPanelManager {
 
   private async applyMcpOp(ws: WorkspaceGitPresentationTarget, pluginName: string, server: string, io: PanelIO): Promise<void> {
     io.postBusy(`Applying MCP server ${server}…`);
-    const r = applyContribution(pluginName, { kind: "mcp", name: server }, ws.workspaceRoot);
+    const r = await applyContribution(pluginName, { kind: "mcp", name: server }, ws.workspaceRoot);
     if (!r.applied) { io.postResult(false, r.errors[0] ?? `Could not apply '${server}'.`); return; }
     this.onPluginsChanged();
     io.post();
@@ -861,7 +871,7 @@ export class PluginsPanelManager {
 
   private async unapplyMcpOp(ws: WorkspaceGitPresentationTarget, pluginName: string, server: string, io: PanelIO): Promise<void> {
     io.postBusy(`Un-applying MCP server ${server}…`);
-    const r = unapplyContribution(pluginName, { kind: "mcp", name: server }, ws.workspaceRoot);
+    const r = await unapplyContribution(pluginName, { kind: "mcp", name: server }, ws.workspaceRoot);
     if (!r.unapplied) { io.postResult(false, r.errors[0] ?? `Could not un-apply '${server}'.`); return; }
     this.onPluginsChanged();
     io.post();

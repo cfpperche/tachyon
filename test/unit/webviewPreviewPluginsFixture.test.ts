@@ -78,6 +78,7 @@ describe("plugins preview fixture fidelity", () => {
       mcpStatuses: { "agent-browser": [{ name: "db-tools", applied: false }, { name: "remote-api", applied: true }] },
       skillStatuses: { "agent-browser": [{ name: "browser-automation", applied: false }] },
       hookStatuses: { "agent-browser": [{ name: "PreToolUse", applied: true }] },
+      gitHookStatuses: { "agent-browser": [{ name: "pre-commit", applied: false }] },
     });
     expect((vms as unknown as { mcpApply: unknown }).mcpApply).toEqual(real);
     const ab = real.installed.find((p) => p.name === "agent-browser");
