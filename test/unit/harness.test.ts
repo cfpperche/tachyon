@@ -807,17 +807,19 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(path.join(grokRevoked, "config.toml"))).toBe(true);
     expect(fs.existsSync(path.join(grokRevoked, "auth.json"))).toBe(true);
 
-    // codex — same guard, different geometry. Only the manifest lives in the private home; the skill
-    // tree is projected into the LAUNCH PROJECT's `.agents/skills`, which the plugin installer also
-    // owns (plugins/engine.ts). Purging that tree here would delete plugin installs for every other
-    // agent, so this asserts the private half only and the shared half is carried as its own task.
+    // codex — same guard, two geometries. The manifest lives in the private home. The skill tree
+    // lives in the launch project's `.agents/skills`. When that project IS a worktree
+    // (`cwd !== workspaceRoot`) the tree is THIS grant path's, so empty selection removes it
+    // (t-f842f0). The workspace-root half belongs to the plugin installer and is asserted below.
     const codexNative = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
     const codexGranted = mgr.materializeCanonicalCodexProfileHome(
       "revoked-codex", codex, { nativeConfig: codexNative, capabilities: projectionFor("codex") }, cwd, bridge,
     );
     expect(fs.existsSync(manifestOf(codexGranted.home))).toBe(true);
+    expect(fs.readFileSync(path.join(cwd, ".agents", "skills", "sdd", "SKILL.md"), "utf8")).toBe("# Granted SDD\n");
     mgr.materializeCanonicalCodexHome("revoked-codex", codex, codexNative, cwd);
     expect(fs.existsSync(manifestOf(codexGranted.home))).toBe(false);
+    expect(fs.existsSync(path.join(cwd, ".agents", "skills"))).toBe(false);
     expect(fs.readFileSync(path.join(codexGranted.home, "config.toml"), "utf8")).toContain('model = "gpt-5.6"');
 
     // pi — the same guard again. Pi's resource GENERATIONS are content-addressed, inert without the
@@ -978,6 +980,71 @@ describe("HarnessManager materialize (fs)", () => {
     const plain = mgr.materializeCanonicalCodexHome("coder", codex, nativeConfig, ws);
     expect(fs.readFileSync(path.join(plain.home, "config.toml"), "utf8")).toContain('model = "gpt-5.6"');
     expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+  });
+
+  it("t-f842f0: empty Codex selection purges the worktree skill tree and never the plugin roster", () => {
+    // ACTOR × TRIGGER. Actor: the profile lost its skill selection. Trigger: any door that
+    // rematerializes the Codex home (`materializeCanonicalCodexHome` and `materializeHomeOnly`
+    // both cross `materializeHome`). Geometry is the whole defect: the grant path writes
+    // `<cwd>/.agents/skills`, and that path is the plugin installer's IFF cwd is the workspace
+    // root. Measured 2026-08-12 on /home/goat/tachyon: 11 lockfile `skill-dir` targets under
+    // `.agents/skills/<name>`, no on-disk owner mark inside those dirs, this worktree has none.
+    const codexHome = path.join(path.dirname(realHome), "realcodex-f842f0");
+    fs.mkdirSync(codexHome, { recursive: true });
+    fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
+    const rosterSkill = path.join(ws, ".agents", "skills", "workspace-plugin", "SKILL.md");
+    fs.mkdirSync(path.dirname(rosterSkill), { recursive: true });
+    const rosterBytes = "workspace plugin bytes\n";
+    fs.writeFileSync(rosterSkill, rosterBytes);
+    const launchCwd = path.join(ws, "owned-worktree");
+    fs.mkdirSync(launchCwd);
+    const skillBytes = Buffer.from("# Granted SDD\n");
+    const projection: ResolvedAgentCapabilityProjection = {
+      schemaVersion: 1,
+      adapter: "codex",
+      sha256: "a".repeat(64),
+      effectiveProfileSha256: "b".repeat(64),
+      sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: "shared/sdd", sha256: "c".repeat(64) }],
+      skills: [{ name: "sdd", source: { source: "shared/sdd", sourcePath: path.join(ws, "shared/sdd"), type: "tree", sha256: "c".repeat(64), entries: [
+        { path: ".", type: "directory", mode: 0o755 },
+        { path: "SKILL.md", type: "file", mode: 0o644, bytes: skillBytes },
+      ] } }],
+      mcp: {},
+      hooks: {},
+      pi: { extensions: [], prompts: [], themes: [], packages: [] },
+    };
+    const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"), codexHome);
+    const nativeConfig = { adapter: "codex" as const, selectors: { model: "gpt-5.6" } };
+
+    mgr.materializeCanonicalCodexProfileHome("coder", codex, { nativeConfig, capabilities: projection }, launchCwd);
+    expect(fs.readFileSync(path.join(launchCwd, ".agents", "skills", "sdd", "SKILL.md"), "utf8")).toBe("# Granted SDD\n");
+    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+
+    mgr.materializeCanonicalCodexHome("coder", codex, nativeConfig, launchCwd);
+    expect(fs.existsSync(path.join(launchCwd, ".agents", "skills"))).toBe(false);
+    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+    expect(fs.readdirSync(path.join(ws, ".agents", "skills"))).toEqual(["workspace-plugin"]);
+
+    // isolate:transcript / no-native-config also crosses materializeHome — leftover tree goes too.
+    fs.mkdirSync(path.join(launchCwd, ".agents", "skills", "sdd"), { recursive: true });
+    fs.writeFileSync(path.join(launchCwd, ".agents", "skills", "sdd", "SKILL.md"), "# leftover\n");
+    mgr.materializeHomeOnly("coder", codex, launchCwd);
+    expect(fs.existsSync(path.join(launchCwd, ".agents", "skills"))).toBe(false);
+    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+
+    // workspace root is the installer's. Empty selection must not invent a sweep there.
+    mgr.materializeCanonicalCodexHome("coder", codex, nativeConfig, ws);
+    mgr.materializeHomeOnly("coder", codex, ws);
+    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+    expect(fs.readdirSync(path.join(ws, ".agents", "skills"))).toEqual(["workspace-plugin"]);
+
+    // a leftover retired worktree link (t-62f599) is fail-closed: never follow it into the roster
+    fs.mkdirSync(path.join(launchCwd, ".agents"), { recursive: true });
+    fs.symlinkSync(path.join(ws, ".agents", "skills"), path.join(launchCwd, ".agents", "skills"));
+    expect(() => mgr.materializeHomeOnly("coder", codex, launchCwd)).toThrow(HarnessUnavailableError);
+    expect(() => mgr.materializeHomeOnly("coder", codex, launchCwd)).toThrow(/skill projection target must be a real directory/);
+    expect(fs.readFileSync(rosterSkill, "utf8")).toBe(rosterBytes);
+    expect(fs.readdirSync(path.join(ws, ".agents", "skills"))).toEqual(["workspace-plugin"]);
   });
 
   it("spec 298: codex inherit:workspace preserves workspace config.toml and overlays declared servers", () => {
