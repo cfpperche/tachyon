@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
+import type { NoticeDeliveryResult } from "../bridge/tools.js";
 import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 import { buildBoardSnapshot, type BoardSnapshot } from "../tasks/boardSnapshot.js";
 import type { ReorderLaneInput, TaskStore } from "../tasks/TaskStore.js";
@@ -39,9 +41,13 @@ export interface LegacyBoardSource extends WorkspacePresentationTarget {
   readonly taskStore: TaskStore;
   readonly validationStore: ValidationStore;
   /**
-   * t-c6c4ad — optional in-process inject port (full Workspace has this; thin fakes may omit).
-   * When present, a human close wakes the author the same way the engine path does.
-   * Return type is intentionally open: real tmux returns a SubmitReceipt; callers ignore it.
+   * t-b805b5 — queue-aware wake (full Workspace has this). Same door as approval resolution
+   * (`approvalResolutionPorts` / t-d79534): busy authors are enqueued, not typed into mid-turn.
+   */
+  readonly deliverNotice?: (agent: string, line: string) => Promise<NoticeDeliveryResult>;
+  /**
+   * t-c6c4ad — optional raw inject fallback when `deliverNotice` is absent (thin fakes).
+   * Prefer `deliverNotice` so a busy author is queued instead of receiving a blind submit.
    */
   readonly tmux?: { sendSubmittedLine(session: string, text: string): Promise<unknown> };
 }
@@ -65,13 +71,26 @@ export function legacyBoardTarget(source: LegacyBoardSource): WorkspaceBoardTarg
     reorderLane: async (status, priority, input) => { await source.taskStore.reorderLane(status, priority, input); },
     // t-98256c — the in-process shell path is the human in the editor, same as the engine command.
     // t-c6c4ad — durable close first; best-effort author wake when the source can inject (Workspace).
+    // t-b805b5 — wake through deliverNotice (approval twin), not a bare sendSubmittedLine.
     closeValidation: async (id, input) => {
       const closed = await source.validationStore.closeRound(id, { ...input, actor: EDITOR_HUMAN_ACTOR });
-      if (source.tmux) {
+      const listEntries = async () => (await source.manager.list()) as ValidationCloseLiveEntry[];
+      if (source.deliverNotice) {
+        const ports = approvalResolutionPorts({
+          listEntries: async () => (await source.manager.list()) as Array<{ session: string; running: boolean; name: string }>,
+          deliverNotice: source.deliverNotice,
+        });
         await wakeValidationClosedAuthors({
           validation: closed,
           outcome: input.outcome,
-          listEntries: async () => (await source.manager.list()) as ValidationCloseLiveEntry[],
+          listEntries,
+          inject: ports.inject,
+        });
+      } else if (source.tmux) {
+        await wakeValidationClosedAuthors({
+          validation: closed,
+          outcome: input.outcome,
+          listEntries,
           inject: async (session, text) => {
             await source.tmux!.sendSubmittedLine(session, text);
             return { receipt: `tmux:${session}` };

@@ -12,6 +12,7 @@ import type { Validation } from "../../src/validations/types.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
 import { legacyBoardTarget } from "../../src/shell/BoardTarget.js";
 import { composeFixedApprovalResponse } from "../../src/bridge/approvalRequest.js";
+import type { NoticeDeliveryResult } from "../../src/bridge/tools.js";
 
 /**
  * t-c6c4ad / t-ebde5f — Validation close must wake the author without inventing an actor.
@@ -203,7 +204,7 @@ describe("legacyBoardTarget.closeValidation wakes the author once", () => {
     for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("persists the closed round AND injects the FIXED line when the author is live", async () => {
+  it("persists the closed round AND wakes via deliverNotice when the author is live", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vclose-wake-"));
     roots.push(root);
     const store = new ValidationStore(root);
@@ -213,6 +214,7 @@ describe("legacyBoardTarget.closeValidation wakes the author once", () => {
       executor: "human",
     });
 
+    const deliverNotice = vi.fn(async (): Promise<NoticeDeliveryResult> => ({ status: "notified" }));
     const sendSubmittedLine = vi.fn(async () => {});
     const target = legacyBoardTarget({
       workspaceRoot: root,
@@ -232,6 +234,7 @@ describe("legacyBoardTarget.closeValidation wakes the author once", () => {
       },
       taskStore: { reorderLane: async () => {} } as never,
       validationStore: store,
+      deliverNotice,
       tmux: { sendSubmittedLine },
     });
 
@@ -243,11 +246,61 @@ describe("legacyBoardTarget.closeValidation wakes the author once", () => {
     expect(closed.rounds[0]?.outcome).toBe("passed");
     expect(closed.rounds[0]?.result_note).toBe("aprovado");
 
-    expect(sendSubmittedLine).toHaveBeenCalledTimes(1);
-    expect(sendSubmittedLine).toHaveBeenCalledWith(
-      "tachyon-h-codex",
+    // t-b805b5 — agent-addressed notice delivery, not a raw session write.
+    expect(deliverNotice).toHaveBeenCalledTimes(1);
+    expect(deliverNotice).toHaveBeenCalledWith(
+      "codex-canonico",
       composeFixedValidationClosedResponse(created, "passed"),
     );
+    expect(sendSubmittedLine).not.toHaveBeenCalled();
+  });
+
+  it("queues for a busy author instead of typing a bare submit into their composer", async () => {
+    // Twin of t-d79534: mid-turn author must be enqueued; a naked sendSubmittedLine would land in an
+    // occupied composer and never start a turn while the durable close already succeeded.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-vclose-queued-"));
+    roots.push(root);
+    const store = new ValidationStore(root);
+    const created = await store.create({
+      title: "author mid-turn",
+      author: "codex-canonico",
+      executor: "human",
+    });
+
+    const deliverNotice = vi.fn(async (): Promise<NoticeDeliveryResult> => ({ status: "queued", queued: 1 }));
+    const sendSubmittedLine = vi.fn(async () => {});
+    const target = legacyBoardTarget({
+      workspaceRoot: root,
+      wsHash: "ws-test",
+      folderName: "tachyon",
+      manager: {
+        list: async () => [
+          {
+            name: "codex-canonico",
+            session: "tachyon-h-codex",
+            running: true,
+            kind: "agent" as const,
+            declared: true,
+          },
+        ],
+        listAgents: async () => [],
+      },
+      taskStore: { reorderLane: async () => {} } as never,
+      validationStore: store,
+      deliverNotice,
+      tmux: { sendSubmittedLine },
+    });
+
+    await target.closeValidation(created.id, { outcome: "passed", result_note: "ok" });
+
+    expect(store.get(created.id).status).toBe("closed");
+    expect(deliverNotice).toHaveBeenCalledTimes(1);
+    expect(deliverNotice).toHaveBeenCalledWith(
+      "codex-canonico",
+      composeFixedValidationClosedResponse(created, "passed"),
+    );
+    // The queue held the wake — no blind session write.
+    expect(sendSubmittedLine).not.toHaveBeenCalled();
   });
 
   it("still persists the close when the author has no live session", async () => {
@@ -259,6 +312,7 @@ describe("legacyBoardTarget.closeValidation wakes the author once", () => {
       author: "codex-canonico",
       executor: "human",
     });
+    const deliverNotice = vi.fn(async (): Promise<NoticeDeliveryResult> => ({ status: "notified" }));
     const sendSubmittedLine = vi.fn(async () => {});
     const target = legacyBoardTarget({
       workspaceRoot: root,
@@ -272,11 +326,13 @@ describe("legacyBoardTarget.closeValidation wakes the author once", () => {
       },
       taskStore: { reorderLane: async () => {} } as never,
       validationStore: store,
+      deliverNotice,
       tmux: { sendSubmittedLine },
     });
 
     await target.closeValidation(created.id, { outcome: "failed", result_note: "broke" });
     expect(store.get(created.id).status).toBe("closed");
+    expect(deliverNotice).not.toHaveBeenCalled();
     expect(sendSubmittedLine).not.toHaveBeenCalled();
   });
 
