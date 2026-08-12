@@ -2072,7 +2072,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       removePiSessionDir: opts.removePiSessionDir,
       launchPreflight: opts.launchPreflight ?? HERMETIC_PREFLIGHT,
     });
-    return { manager, ledger, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ambiguousInventory, ws, hash };
+    return { manager, ledger, tmux, sessions, dead, cmds, newSessionArgs, respawnArgs, startArgs, paneInjections, failRespawn, ambiguousInventory, ws, hash };
   }
 
 
@@ -3267,6 +3267,29 @@ describe("AgentManager — session resume (spec 209)", () => {
     const joined = paneInjections.join("\n");
     expect(joined).toContain("── TACHYON PRIMER ──");
     expect(joined).toContain("── END BEFORE FINISHING ──");
+  });
+
+  it("t-ff34db Q: a lost resume-primer Enter is reported as unconfirmed instead of sent", async () => {
+    const warnings: string[] = [];
+    const { manager, tmux } = resumeHarness("agents:\n  codex:\n    cmd: codex\n", {
+      resolveCaptureId: async () => "captured-id",
+      notify: (message) => warnings.push(message),
+    });
+    const submit = vi.spyOn(tmux, "sendSubmittedLine").mockResolvedValue({
+      status: "submit-unconfirmed",
+      reason: "still-staged",
+      attempts: 4,
+    });
+    const rec = { def: { cmd: "codex", kind: "agent" as const }, resume: { runtime: "codex" as const, sessionId: "" }, cwd: "/ws", declared: true, updatedAt: "t" };
+
+    await manager.resume("codex", rec, { injectPrimer: true });
+
+    expect(submit).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("── TACHYON PRIMER ──"),
+      expect.objectContaining({ composer: expect.any(Object) }),
+    );
+    expect(warnings).toEqual(["resume primer for 'codex' was typed but submission could not be confirmed"]);
   });
 
   it("resume() throws ResumeUnavailableError when the transcript is gone (fallback signal)", async () => {

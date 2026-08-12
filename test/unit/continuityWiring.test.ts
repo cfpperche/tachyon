@@ -1,5 +1,5 @@
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,7 +20,10 @@ import { agentLogId } from "../../src/activity/logStore.js";
 
 class FakeHost implements EngineHost {
   t = (m: string, ...a: (string | number | boolean)[]): string => m.replace(/\{(\d+)\}/g, (_x, i) => String(a[Number(i)] ?? ""));
-  notify(_m: string, _l: NotifyLevel = "info", _act?: NoticeAction[]): void {}
+  readonly notifications: Array<{ message: string; level: NotifyLevel }> = [];
+  notify(message: string, level: NotifyLevel = "info", _act?: NoticeAction[]): void {
+    this.notifications.push({ message, level });
+  }
   focusPrimaryView(): void {}
   openTask(): void {}
   executeCommand(command: string): Promise<unknown> {
@@ -125,9 +128,10 @@ async function makeWs(agent = "claude", runtime: AttestedRuntime = "claude", sel
   const secrets = savedAgentSecrets(root, [fixture]);
   fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml([fixture]), "utf8");
   const { tmux, sessions, sent } = capturingTmux();
-  const ws = await Workspace.createForTest(root, { host: new SecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux, startBridge: false });
+  const host = new SecretHost(mkdir(), secrets);
+  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
   await ws.manager.spawn(agent); // populates the fake session so hasSession() is true
-  return { ws, root, sessions, sent, secrets };
+  return { ws, root, sessions, sent, secrets, host };
 }
 
 async function reloadWs(root: string, tmux: TmuxService, secrets: Map<string, string>) {
@@ -144,6 +148,7 @@ function appendActivity(root: string, agent: string, n: number): void {
 type WorkspacePrivates = {
   maybeRemindCheckpoint(agent: string): Promise<void>;
   maybeRemindHandoff(agent: string): Promise<void>;
+  runSchedule(name: string, def: { spawn: string; instructions?: string }): Promise<void>;
 };
 const priv = (ws: Workspace): WorkspacePrivates => ws as unknown as WorkspacePrivates;
 
@@ -375,6 +380,52 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     await ws.injectContinuity("claude", "manual", { origin: "ui" });
     expect(sent.filter((s) => s.includes("malformed")).length).toBe(1);
     expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(30);
+  });
+
+  it("t-ff34db O: a lost continuity Enter stays unconfirmed instead of marking the brief restored", async () => {
+    const { ws, root } = await makeWs();
+    ws.continuityStore.write("claude", "# Current Goal\nship the fix", { sourceActivitySeq: 0 });
+    appendActivity(root, "claude", 30);
+    ws.continuityState.markDiscontinuity("claude", 30);
+    const tmux = (ws as unknown as { tmux: TmuxService }).tmux;
+    const submit = vi.spyOn(tmux, "sendSubmittedLine").mockResolvedValue({
+      status: "submit-unconfirmed",
+      reason: "still-staged",
+      attempts: 4,
+    });
+
+    await ws.injectContinuity("claude", "manual", { origin: "ui" });
+
+    expect(submit).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("Continuity available"),
+      expect.objectContaining({ composer: expect.any(Object) }),
+    );
+    expect(ws.continuityState.read("claude").discontinuitySinceRestore).toBe(true);
+    expect(ws.continuityState.read("claude").lastNudgeSeq).toBeUndefined();
+  });
+
+  it("t-ff34db P: a lost schedule Enter is reported as unconfirmed instead of sent", async () => {
+    const { ws, host } = await makeWs();
+    vi.spyOn(ws.manager, "runningAgents").mockResolvedValue(["claude"]);
+    const tmux = (ws as unknown as { tmux: TmuxService }).tmux;
+    const submit = vi.spyOn(tmux, "sendSubmittedLine").mockResolvedValue({
+      status: "submit-unconfirmed",
+      reason: "still-staged",
+      attempts: 4,
+    });
+
+    await priv(ws).runSchedule("standup", { spawn: "claude", instructions: "summarize progress" });
+
+    expect(submit).toHaveBeenCalledWith(
+      expect.any(String),
+      "summarize progress",
+      expect.objectContaining({ composer: expect.any(Object) }),
+    );
+    expect(host.notifications).toContainEqual({
+      message: "schedule 'standup' instructions were typed but submission could not be confirmed",
+      level: "warn",
+    });
   });
 
   it("continuityBadge: missing → fresh after a write", async () => {
