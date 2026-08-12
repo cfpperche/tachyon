@@ -11,6 +11,7 @@ import { fixtureEngineUnitName } from "../../scripts/dev-host/stop-bridge.mjs";
 const {
   assertWorkspaceNotRepoRoot,
   assertPointerSessionIdle,
+  assertDevHostWindowIdle,
   clear,
   fixtureNew,
   materializeWorkspaceMirror,
@@ -269,6 +270,38 @@ describe("dev-host pointer", () => {
     fs.writeFileSync(sessionFile, JSON.stringify({ edhPid: 2_147_483_647 }));
     expect(() => assertPointerSessionIdle(pointerRoot)).not.toThrow();
     expect(fs.existsSync(sessionFile)).toBe(false);
+  });
+
+  it("t-7ee246: refuses to re-point while a live F5 EDH owns the mirror, and names both exits", () => {
+    arm();
+    const pointerRoot = pathsOf(repo).root;
+    const meta = JSON.parse(fs.readFileSync(path.join(pointerRoot, "meta.json"), "utf8"));
+    const processTable = () => [{
+      pid: 4242,
+      argv: [
+        "/opt/vscode/code",
+        meta.workspaceArg,
+        `--extensionDevelopmentPath=${meta.extensionLink}`,
+      ],
+    }];
+
+    expect(() => assertDevHostWindowIdle(pointerRoot, { processTable })).toThrow(
+      /would replace its disposable workspace mirror.*close that EDH window.*point --force/is,
+    );
+    expect(() => arm({ processTable })).toThrow(/live Dev Host window.*pid=4242/i);
+  });
+
+  it("t-7ee246: closed/crashed EDH permits point, and --force explicitly overrides a live one", () => {
+    arm();
+    const pointerRoot = pathsOf(repo).root;
+    const meta = JSON.parse(fs.readFileSync(path.join(pointerRoot, "meta.json"), "utf8"));
+    const liveProcessTable = () => [{
+      pid: 4242,
+      argv: ["/opt/vscode/code", meta.workspaceArg, `--extensionDevelopmentPath=${meta.extensionLink}`],
+    }];
+
+    expect(() => arm({ processTable: () => [] })).not.toThrow();
+    expect(() => arm({ processTable: liveProcessTable, force: true })).not.toThrow();
   });
 
   it("links node_modules from primary when worktree lacks them", () => {

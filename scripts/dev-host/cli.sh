@@ -592,7 +592,7 @@ Preferred human path (F5 from monorepo window):
   (from a linked worktree, point/status/clear auto-redirect to primary monorepo)
 
 Commands:
-  point        Arm stable F5 "Tachyon: Dev Host" (pointer under monorepo .tachyon/dev-host)
+  point        Arm stable F5 "Tachyon: Dev Host" (refuses a live EDH; --force overrides)
   point-status Doctor-style F5 pointer status (exit 1 if broken)
   point-clear  Clear the F5 pointer
   fixture-new  Scaffold test/fixtures/<slug>-dogfood (--intent focus|metrics)

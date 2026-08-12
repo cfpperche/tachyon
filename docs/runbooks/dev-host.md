@@ -346,6 +346,13 @@ state lives in `.tachyon/dev-host/session.json`; screenshots/logs in `.tachyon/d
 `up` refuses if a session is already live (`--force` overrides a stale one). **Always `down` when
 finished** — a detached EDH left running holds the CDP port and the pointer's engine.
 
+A human F5 EDH has no session marker, so `point` measures the live VS Code/Electron process instead:
+the owning main process carries this pointer's exact workspace and `--extensionDevelopmentPath`
+arguments. If it is still alive, `point` refuses before rematerializing the disposable mirror and
+tells you to close that EDH window. After a normal exit or crash the process is gone, so no stale
+marker can lock the command. `point --force …` is the explicit escape hatch when overwriting a live
+window is intentional; its mirror state will be discarded.
+
 ### Crossing `Developer: Reload Window` (restore verification)
 
 Restore is the only family of product behaviour that **requires** a reload to be observed, so the

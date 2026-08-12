@@ -23,6 +23,10 @@ export interface DevHostPointOptions {
   spec?: string | null;
   slug?: string | null;
   owner?: string | null;
+  /** Explicitly permit rematerializing a mirror still owned by a live F5 EDH. */
+  force?: boolean;
+  /** Test seam for the process-backed live-window guard. */
+  processTable?: () => Array<{ pid: number; argv: string[] }>;
 }
 
 export interface DevHostFixtureNewOptions {
@@ -110,6 +114,10 @@ export function pathsOf(repoRoot: string): DevHostPaths;
 export function assertWorkspaceNotRepoRoot(workspaceAbs: string, repoRootAbs: string): void;
 export function assertWorktreeLooksValid(worktreeAbs: string): string;
 export function assertWorkspaceDir(workspaceAbs: string): string;
+export function assertDevHostWindowIdle(
+  pointerRoot: string,
+  opts?: { force?: boolean; processTable?: () => Array<{ pid: number; argv: string[] }> },
+): void;
 export function materializeWorkspaceMirror(mirrorDir: string, fixtureAbs: string): string;
 
 /** t-f0efc5 — a fixture is multi-root when it carries exactly one `.code-workspace` naming its folders. */
