@@ -547,6 +547,7 @@ export class IdeBrowserBridgeManager {
         delivery: "pending",
     });
     try {
+      const attentionAtDelivery = await this.readAgentAttention(targetAgent);
       const receipt = await ws.activity.sendAgentInput(targetAgent, prompt, true);
       const deliveryStatus = receipt.status === "submitted" ? "submitted" : "submit-unconfirmed";
       const deliveryReason = "reason" in receipt ? receipt.reason : receipt.status;
@@ -575,7 +576,11 @@ export class IdeBrowserBridgeManager {
         this.lastPick = null;
         await this.cdp.pushDesignModeChat({ type: "selection", clear: true, consumed: true });
       }
-      this.beginChatReplyWait(targetAgent, turnId);
+      const alreadyBusy = attentionAtDelivery.running
+        && (attentionAtDelivery.state === "working"
+          || attentionAtDelivery.state === "throttled"
+          || attentionAtDelivery.state === "needs-input");
+      this.beginChatReplyWait(targetAgent, turnId, alreadyBusy);
     } catch (err) {
       this.clearChatReplyWait();
       const msg = err instanceof Error ? err.message : String(err);
@@ -666,9 +671,9 @@ export class IdeBrowserBridgeManager {
     });
   }
 
-  private beginChatReplyWait(agent: string, turnId: string): void {
+  private beginChatReplyWait(agent: string, turnId: string, alreadyBusyAtDelivery = false): void {
     this.clearChatReplyWait();
-    this.chatWait = { turnId, agent, sawBusy: false };
+    this.chatWait = { turnId, agent, sawBusy: false, awaitPostDeliveryStart: alreadyBusyAtDelivery };
     // Poll real agent attention — never assume "stopped" while still working.
     this.chatPollTimer = setInterval(() => {
       void this.pollChatAgentState();
@@ -702,6 +707,14 @@ export class IdeBrowserBridgeManager {
     // Wait may have been cleared or superseded while we awaited attention.
     if (!this.chatWait || this.chatWait.turnId !== turnId) return;
     const busy = running && (state === "working" || state === "throttled" || state === "needs-input");
+
+    // A turn that was already busy when delivery happened cannot be this prompt's turn. Observe its
+    // end, then require a later non-busy -> busy edge before an idle edge can end this wait.
+    if (this.chatWait.awaitPostDeliveryStart) {
+      if (!busy) this.chatWait.awaitPostDeliveryStart = false;
+      await this.pushTyping(true, agent, "sent");
+      return;
+    }
 
     if (busy) {
       this.chatWait.sawBusy = true;

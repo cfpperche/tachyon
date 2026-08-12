@@ -16,6 +16,8 @@ export type DmChatTurnWait = {
   agent: string;
   /** True once attention has been working/throttled/needs-input for this wait. */
   sawBusy: boolean;
+  /** A busy turn already existed at delivery; it must end before a later turn can count. */
+  awaitPostDeliveryStart?: boolean;
 };
 
 export type DmChatReplyMatch =

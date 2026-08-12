@@ -1191,6 +1191,9 @@ export function workspaceCommandSuccessV1(
   command: WorkspaceCommandV1,
   studioErrors: readonly string[] = [],
 ): WorkspaceCommandResultV1 {
+  if (command.method === "agent.input" && !command.input.submit) {
+    return { schemaVersion: 1, method: "agent.input", status: "ok", receipt: { status: "typed-unsubmitted" } };
+  }
   if (command.method === "agent.input" || command.method === "task.studio.apply" || command.method === "pin.studio.apply"
     || command.method === "handoff.ensure" || command.method === "handoff.distill"
     || command.method === "sidebar.mutate" || command.method === "extension.invoke"

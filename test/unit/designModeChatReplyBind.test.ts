@@ -116,8 +116,8 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
   });
 
   it("does not bind a wait to a turn that was already working before delivery", async () => {
-    mgr.beginChatReplyWait("alice", "dm-turn-new", true);
     mgr.readAgentAttention = async () => ({ state: "working", running: true });
+    mgr.beginChatReplyWait("alice", "dm-turn-new", true);
     await mgr.pollChatAgentState();
     expect(mgr.chatWait).toMatchObject({ sawBusy: false, awaitPostDeliveryStart: true });
 

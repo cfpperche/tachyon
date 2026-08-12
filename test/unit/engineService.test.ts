@@ -761,7 +761,10 @@ describe("daemon engine service", () => {
       input: { agent: "worker", text: "printf 'once\\n' >> .tachyon-agent-input-proof", submit: true },
     };
     const inputSent = await first.invoke("operation-agent-input-0001", agentInput);
-    expectOk(inputSent, "agent.input");
+    expectOkMatching(inputSent, "agent.input", {
+      status: "ok",
+      receipt: { status: "submitted" },
+    });
     expect(await first.invoke("operation-agent-input-0001", agentInput)).toEqual(inputSent);
     expectOkMatching(await first.invoke("operation-engine-restart-0001", {
       schemaVersion: 1,

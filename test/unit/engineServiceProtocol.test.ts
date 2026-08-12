@@ -281,6 +281,7 @@ describe("persistent engine protocol", () => {
       schemaVersion: 1,
       method: "agent.input",
       status: "ok",
+      receipt: { status: "typed-unsubmitted" },
     });
     expect(isWorkspaceCommandV1({ ...input, input: { ...input.input, submit: "no" } })).toBe(false);
     expect(isWorkspaceCommandV1({ ...input, input: { ...input.input, text: "x".repeat(48 * 1024 + 1) } })).toBe(false);
