@@ -7,7 +7,7 @@ import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type Pane
 import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "./inspector/model.js";
-import { CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
+import { asAgent, CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
 import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
@@ -24,6 +24,7 @@ import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { resolveSection } from "./sections/resolveSection.js";
 import { resolveSectionDestination } from "./sections/route.js";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
+import { deliverAgentPaneText } from "./webview/agentPaneDelivery.js";
 import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
 import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
@@ -2319,13 +2320,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       },
       // t-edbe36 — measure foreign shell co-attach; never detach clients we did not spawn.
       listClients: async (session) => terminalTmux.listSessionClients(session),
-      // Same hardened tmux delivery as prompt.inject (381) — stage without Enter / submit with Enter.
+      // Same hardened tmux delivery as prompt.inject (381 / t-2c2384) — stage without Enter /
+      // submit with Enter + measured composer profile (without profile, wrap falls to the legacy
+      // last-line heuristic and can report delivery for a still-staged draft).
+      // Shell projection has no cmd/runtime field; declared agents resolve via config (same source
+      // Studio edits). Temporary agents without a config entry degrade honestly (no profile).
       deliverText: async (session, text, submit) => {
-        if (submit) {
-          await terminalTmux.sendSubmittedLine(session, text);
-        } else {
-          await terminalTmux.sendKeys(session, text, false);
-        }
+        await deliverAgentPaneText(
+          terminalTmux,
+          session,
+          text,
+          submit,
+          asAgent(ws.config?.agents?.[agent])?.cmd,
+        );
       },
       // Detached pane: "is my agent gone, or only the window onto it?" — tmux answers that.
       sessionAlive: async (session) => terminalTmux.hasSession(session),
