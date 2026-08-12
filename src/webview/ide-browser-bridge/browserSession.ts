@@ -4,13 +4,12 @@
  * Owns: debug-session lifecycle, ensure/launch, reset, withCdpRecovery, navigate.
  * Does not own HTTP, Design Mode chat, or pick assembly.
  *
- * Session correlation note (t-849f52, recorded only — not fixed here):
- * - `launchBrowser` accepts the first `isBrowserDebugSession` child with a parent;
- *   there is no correlation id linking the child to *this* launch.
- * - `resetBrowserSession` may also stop `vscode.debug.activeDebugSession` when its
- *   name includes "Tachyon", which can cross-stop another manager's session.
+ * Each launch carries a private correlation id on its editor-browser parent.
+ * The controller adopts only the direct CDP child of that parent and tears down
+ * only the exact sessions it retained (t-849f52).
  */
 
+import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
 import { IdeBrowserCdpSession, isBrowserDebugSession } from "./cdpSession.js";
 
@@ -80,6 +79,7 @@ export class BrowserSessionController {
   private onSessionEnded: (() => void) | null = null;
   private trackedChildId: string | null = null;
   private trackedParentId: string | null = null;
+  private trackedParentSession: vscode.DebugSession | null = null;
   private resetInFlight = false;
   private resetReason: string | null = null;
   private orphanCheckTimer: ReturnType<typeof setTimeout> | null = null;
@@ -148,6 +148,7 @@ export class BrowserSessionController {
     }
     if (session.id === this.trackedParentId) {
       this.trackedParentId = null;
+      this.trackedParentSession = null;
     }
   }
 
@@ -209,6 +210,7 @@ export class BrowserSessionController {
       `[ide-browser] resetBrowserSession reason=${reason} child=${this.trackedChildId ?? "none"} parent=${this.trackedParentId ?? "none"}`,
     );
     const session = this.cdp.session;
+    const parentSession = this.trackedParentSession ?? session?.parentSession ?? null;
     this.cdp.dispose();
     if (session) {
       try {
@@ -217,29 +219,25 @@ export class BrowserSessionController {
         /* already gone */
       }
       // Also stop parent if present (editor-browser launches parent+child).
-      if (session.parentSession) {
+      if (parentSession) {
         try {
-          await vscode.debug.stopDebugging(session.parentSession);
+          await vscode.debug.stopDebugging(parentSession);
         } catch {
           /* ignore */
         }
       }
-    }
-    // Best-effort: stop any leftover Tachyon IDE Browser sessions.
-    // NOTE (t-849f52): only inspects activeDebugSession; name match can cross managers.
-    for (const s of vscode.debug.activeDebugSession
-      ? [vscode.debug.activeDebugSession]
-      : []) {
-      if (isBrowserDebugSession(s) && s.name.includes("Tachyon")) {
-        try {
-          await vscode.debug.stopDebugging(s);
-        } catch {
-          /* ignore */
-        }
+    } else if (parentSession) {
+      // The child may already be gone while its editor-browser parent survives.
+      // Retaining the exact object lets this controller clean up only its launch.
+      try {
+        await vscode.debug.stopDebugging(parentSession);
+      } catch {
+        /* already gone */
       }
     }
     this.trackedChildId = null;
     this.trackedParentId = null;
+    this.trackedParentSession = null;
     if (this.orphanCheckTimer) {
       clearTimeout(this.orphanCheckTimer);
       this.orphanCheckTimer = null;
@@ -277,11 +275,12 @@ export class BrowserSessionController {
   }
 
   /**
-   * Launch editor-browser and attach CDP to the child session.
-   * No correlation id on the startDebugging call / child acceptance (t-849f52).
+   * Launch editor-browser and attach CDP to its direct child session.
    */
   async launchBrowser(initialUrl: string): Promise<void> {
     this.log.appendLine(`[ide-browser] launching editor-browser url=${initialUrl}`);
+    const launchId = randomUUID();
+    let launchedParent: vscode.DebugSession | null = null;
 
     let childResolve: (s: vscode.DebugSession | null) => void;
     const childPromise = new Promise<vscode.DebugSession | null>((resolve) => {
@@ -289,8 +288,20 @@ export class BrowserSessionController {
     });
     const timeout = setTimeout(() => childResolve(null), 20_000);
     const sub = vscode.debug.onDidStartDebugSession((session) => {
-      // First browser child with a parent wins — not scoped to this launch's correlation.
-      if (isBrowserDebugSession(session) && session.parentSession) {
+      if (
+        session.type === "editor-browser"
+        && session.configuration.tachyonIdeBrowserLaunchId === launchId
+      ) {
+        launchedParent = session;
+        this.trackedParentId = session.id;
+        this.trackedParentSession = session;
+        return;
+      }
+      if (
+        launchedParent
+        && isBrowserDebugSession(session)
+        && session.parentSession?.id === launchedParent.id
+      ) {
         clearTimeout(timeout);
         sub.dispose();
         childResolve(session);
@@ -311,6 +322,7 @@ export class BrowserSessionController {
       name: "Tachyon IDE Browser",
       url: initialUrl,
       internalConsoleOptions: "neverOpen",
+      tachyonIdeBrowserLaunchId: launchId,
     }, {
       noDebug: true,
       suppressDebugToolbar: true,
@@ -338,6 +350,7 @@ export class BrowserSessionController {
     }
     this.trackedChildId = child.id;
     this.trackedParentId = child.parentSession?.id ?? null;
+    this.trackedParentSession = child.parentSession ?? launchedParent;
     await this.cdp.connectToDebugSession(child, (m) => this.log.appendLine(`[ide-browser] ${m}`));
     this.log.appendLine(
       `[ide-browser] CDP connected child=${child.id} parent=${this.trackedParentId ?? "none"}`,

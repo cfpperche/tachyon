@@ -113,13 +113,15 @@ describe("BrowserSessionController terminate log (t-1c8195)", () => {
   let parent: FakeSession;
   let child: FakeSession;
   let connectSpy: { mockRestore(): void };
+  const stopped: string[] = [];
 
   beforeEach(() => {
     startListeners.clear();
     endListeners.clear();
-    parent = session({ id: "parent" });
+    parent = session({ id: "parent", type: "editor-browser" });
     child = session({ id: "child", parentSession: parent });
     active = undefined;
+    stopped.length = 0;
     (vscode as unknown as { debug: unknown }).debug = {
       onDidStartDebugSession: (cb: (s: vscode.DebugSession) => void) => {
         startListeners.add(cb);
@@ -132,7 +134,8 @@ describe("BrowserSessionController terminate log (t-1c8195)", () => {
       get activeDebugSession() {
         return active;
       },
-      startDebugging: async () => {
+      startDebugging: async (_folder: unknown, configuration: vscode.DebugConfiguration) => {
+        (parent as unknown as { configuration: vscode.DebugConfiguration }).configuration = configuration;
         for (const cb of startListeners) cb(parent);
         active = child;
         for (const cb of startListeners) cb(child);
@@ -141,6 +144,7 @@ describe("BrowserSessionController terminate log (t-1c8195)", () => {
       stopDebugging: async (target?: vscode.DebugSession) => {
         const ended = target ?? active;
         if (!ended) return;
+        stopped.push(ended.id);
         if (active?.id === ended.id) active = ended.parentSession as FakeSession | undefined;
         for (const cb of endListeners) cb(ended);
       },
@@ -216,5 +220,39 @@ describe("BrowserSessionController terminate log (t-1c8195)", () => {
       line.includes("replacement child under tracked parent") && line.includes("new=child-2"),
     )).toBe(true);
     expect(ctl.cdp.session?.id).toBe("child");
+  });
+
+  it("does not adopt a browser child started by another controller", async () => {
+    const { ctl } = controller();
+    const foreignParent = session({ id: "foreign-parent", type: "editor-browser" });
+    const foreignChild = session({ id: "foreign-child", parentSession: foreignParent });
+    (vscode.debug.startDebugging as unknown as ReturnType<typeof vi.fn>) = vi.fn(
+      async (_folder: unknown, configuration: vscode.DebugConfiguration) => {
+        for (const cb of startListeners) cb(foreignParent);
+        for (const cb of startListeners) cb(foreignChild);
+        (parent as unknown as { configuration: vscode.DebugConfiguration }).configuration = configuration;
+        for (const cb of startListeners) cb(parent);
+        active = child;
+        for (const cb of startListeners) cb(child);
+        return true;
+      },
+    );
+
+    await ctl.launchBrowser("about:blank");
+
+    expect(ctl.cdp.session?.id).toBe("child");
+  });
+
+  it("resetting one controller does not stop another controller's active session", async () => {
+    const { ctl } = controller();
+    const foreignParent = session({ id: "foreign-parent", type: "editor-browser" });
+    const foreignChild = session({ id: "foreign-child", parentSession: foreignParent });
+    await ctl.launchBrowser("about:blank");
+    active = foreignChild;
+
+    await ctl.resetBrowserSession("manager-stop");
+
+    expect(stopped).toEqual(["child", "parent"]);
+    expect(stopped).not.toContain("foreign-child");
   });
 });
