@@ -1458,6 +1458,25 @@
     ]
   },
   {
+    "view": "plugins",
+    "fixture": "mcp-apply",
+    "url": "/scripts/webview-preview/index.html?view=plugins&fixture=mcp-apply",
+    "frame": {
+      "w": 880,
+      "h": 900
+    },
+    "tags": [
+      "captured-host-vm"
+    ],
+    "title": "Plugins",
+    "aliases": [
+      "plugins",
+      "plugin manager",
+      "install plugin",
+      "marketplace"
+    ]
+  },
+  {
     "view": "human-inbox",
     "fixture": "list",
     "url": "/scripts/webview-preview/index.html?view=human-inbox&fixture=list",

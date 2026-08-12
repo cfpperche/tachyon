@@ -22,6 +22,7 @@ function textFor(p: InstalledPluginVM): string {
     p.status.latestVersion ?? "",
     p.status.detail ?? "",
     ...p.runtimes.map((r) => `${r.runtime} ${r.present ? "present installed" : "missing drift"}`),
+    ...(p.mcpServers ?? []).map((s) => `${s.name} mcp ${s.applied ? "applied" : "installed not applied"}`),
   ].join(" ").toLowerCase();
 }
 

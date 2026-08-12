@@ -30,6 +30,7 @@ import {
 const SKILL: ContributionRef = { kind: "skill", name: "pdf-processing" };
 const OTHER_SKILL: ContributionRef = { kind: "skill", name: "code-review" };
 const HOOK: ContributionRef = { kind: "hook", name: "PreToolUse" };
+const MCP: ContributionRef = { kind: "mcp", name: "db-tools" };
 
 let ws: string;
 beforeEach(() => { ws = fs.mkdtempSync(path.join(os.tmpdir(), "applied-state-")); });
@@ -43,19 +44,21 @@ const writeRaw = (text: string): void => {
 };
 
 describe("contribution identity", () => {
-  it("round-trips a skill and a hook id", () => {
+  it("round-trips a skill, a hook and an mcp id", () => {
     expect(contributionId(SKILL)).toBe("skill:pdf-processing");
     expect(contributionId(HOOK)).toBe("hook:PreToolUse");
+    expect(contributionId(MCP)).toBe("mcp:db-tools");
     expect(parseContributionId("skill:pdf-processing")).toEqual(SKILL);
     expect(parseContributionId("hook:PreToolUse")).toEqual(HOOK);
+    expect(parseContributionId("mcp:db-tools")).toEqual(MCP);
   });
 
-  it("refuses a kind Phase A does not own, and a name that is not valid for its kind", () => {
-    // `mcp-server` is Phase C and `view` is out by decision — neither is spellable as applied state.
-    expect(parseContributionId("mcp:some-server")).toBeNull();
+  it("refuses a kind this record does not own, and a name that is not valid for its kind", () => {
+    // `view` is out by decision — not spellable as applied state.
     expect(parseContributionId("view:dashboard")).toBeNull();
     expect(parseContributionId("skill:Not-Kebab")).toBeNull();
     expect(parseContributionId("hook:has-a-dash")).toBeNull();
+    expect(parseContributionId("mcp:Not-Kebab")).toBeNull();
     expect(parseContributionId("skill:../escape")).toBeNull();
     expect(parseContributionId("nocolon")).toBeNull();
     expect(parseContributionId(42)).toBeNull();
@@ -77,7 +80,7 @@ describe("applied record — parse + serialize", () => {
     expect(parseAppliedState(JSON.stringify({ schemaVersion: 1, plugins: [] })).errors[0]).toMatch(/plugins/);
     expect(parseAppliedState(JSON.stringify({ schemaVersion: 1, plugins: { "Not Kebab": [] } })).errors[0]).toMatch(/valid plugin name/);
     expect(parseAppliedState(JSON.stringify({ schemaVersion: 1, plugins: { sdd: "skill:x" } })).errors[0]).toMatch(/must be a list/);
-    const bad = parseAppliedState(JSON.stringify({ schemaVersion: 1, plugins: { sdd: ["mcp:x"] } }));
+    const bad = parseAppliedState(JSON.stringify({ schemaVersion: 1, plugins: { sdd: ["view:x"] } }));
     expect(bad.state).toBeUndefined();
     expect(bad.errors[0]).toMatch(/contribution id/);
   });
@@ -104,13 +107,15 @@ describe("AppliedStateStore — the acts a human performs", () => {
     expect(store().isApplied("sdd", HOOK)).toBe(false);
   });
 
-  it("keys a skill and a hook independently — a plugin shipping both has two switches", () => {
+  it("keys a skill, a hook and an mcp server independently — a plugin shipping all three has three switches", () => {
     store().markApplied("sdd", SKILL);
     store().markApplied("sdd", HOOK);
-    expect(store().appliedFor("sdd")).toEqual([HOOK, SKILL]);
+    store().markApplied("sdd", MCP);
+    expect(store().appliedFor("sdd")).toEqual([HOOK, MCP, SKILL]);
     store().markUnapplied("sdd", HOOK);
     expect(store().isApplied("sdd", SKILL)).toBe(true);
     expect(store().isApplied("sdd", HOOK)).toBe(false);
+    expect(store().isApplied("sdd", MCP)).toBe(true);
   });
 
   it("keys per plugin — two plugins may apply the same contribution name independently", () => {
@@ -170,7 +175,7 @@ describe("AppliedStateStore — the acts a human performs", () => {
     expect(() => store().isApplied("sdd", SKILL)).toThrow(AppliedStateError);
     // and a write path refuses too, rather than overwriting a record it could not understand
     expect(() => store().markApplied("sdd", SKILL)).toThrow(AppliedStateError);
-    writeRaw(JSON.stringify({ schemaVersion: 1, plugins: { sdd: ["skill:pdf-processing", "mcp:x"] } }));
+    writeRaw(JSON.stringify({ schemaVersion: 1, plugins: { sdd: ["skill:pdf-processing", "view:x"] } }));
     expect(() => store().read()).toThrow(/corrupt/);
   });
 

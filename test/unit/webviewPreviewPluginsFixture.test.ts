@@ -68,6 +68,22 @@ describe("plugins preview fixture fidelity", () => {
     expect(sg?.status).toEqual({ kind: "source-changed", detail: "still v2.0.1" });
     expect(sg?.actions).toEqual(["reapply", "remove"]);
   });
+
+  it("Phase C mcp-apply matches the real builder (installed-not-applied vs applied)", () => {
+    const real = buildPluginsViewModel({
+      lockfileText: lockText(),
+      present,
+      intact,
+      updateChecks: up,
+      mcpStatuses: { "agent-browser": [{ name: "db-tools", applied: false }, { name: "remote-api", applied: true }] },
+    });
+    expect((vms as unknown as { mcpApply: unknown }).mcpApply).toEqual(real);
+    const ab = real.installed.find((p) => p.name === "agent-browser");
+    expect(ab?.mcpServers).toEqual([
+      { name: "db-tools", applied: false },
+      { name: "remote-api", applied: true },
+    ]);
+  });
 });
 
 /**

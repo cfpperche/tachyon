@@ -20,6 +20,8 @@ import {
   applyUpdate,
   previewRemove,
   applyRemove,
+  applyContribution,
+  unapplyContribution,
   repairGitHooks,
   MANIFEST_REL,
   PAYLOAD_ROOT,
@@ -37,7 +39,8 @@ import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence,
 import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type ProvisionProgress } from "../plugins/toolProvisionRun.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReqLock } from "../plugins/lockfile.js";
-import { buildPluginsViewModel, buildExternalStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
+import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
+import { AppliedStateError, AppliedStateStore } from "../plugins/appliedState.js";
 import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
 
 /**
@@ -108,6 +111,8 @@ interface InboundMsg {
   /** spec 287 — present ⇒ the assisted install was triggered from an INSTALLED plugin's card (resolve the
    *  requirement from this plugin's lockfile entry, not a pending consent op). */
   pluginName?: string;
+  /** SDD 486 Phase C — MCP server name for applyMcp / unapplyMcp. */
+  server?: string;
 }
 
 function trueActions(input: Record<string, boolean>): Record<string, true> {
@@ -367,6 +372,12 @@ export class PluginsPanelManager {
         return;
       case "cancel":
         io.setPending(undefined);
+        return;
+      case "applyMcp":
+        if (m.pluginName && m.server) await this.guard(io, () => this.applyMcpOp(ws, m.pluginName as string, m.server as string, io));
+        return;
+      case "unapplyMcp":
+        if (m.pluginName && m.server) await this.guard(io, () => this.unapplyMcpOp(ws, m.pluginName as string, m.server as string, io));
         return;
     }
   }
@@ -776,7 +787,53 @@ export class PluginsPanelManager {
       }
       lockfileText = undefined;
     }
-    return buildPluginsViewModel({ lockfileText, present, intact: this.intactRuntimes(ws), updateChecks, externalStatuses: this.externalStatuses(ws), declared: this.declaredRuntimes(ws) });
+    const applied = this.appliedMcp(ws);
+    return buildPluginsViewModel({
+      lockfileText,
+      present,
+      intact: this.intactRuntimes(ws, applied.store),
+      updateChecks,
+      externalStatuses: this.externalStatuses(ws),
+      declared: this.declaredRuntimes(ws),
+      mcpStatuses: applied.store ? this.mcpStatuses(ws, applied.store) : undefined,
+      ...(applied.error ? { appliedError: applied.error } : {}),
+    });
+  }
+
+  /** Read the applied record fail-closed: a corrupt file is an error banner, never "everything unapplied". */
+  private appliedMcp(ws: WorkspaceGitPresentationTarget): { store?: AppliedStateStore; error?: string } {
+    try {
+      const store = new AppliedStateStore(ws.workspaceRoot);
+      store.read(); // throw if corrupt; missing file is the empty state
+      return { store };
+    } catch (e) {
+      return { error: e instanceof AppliedStateError ? e.message : e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  private mcpStatuses(ws: WorkspaceGitPresentationTarget, store: AppliedStateStore): Record<string, { name: string; applied: boolean }[]> {
+    const lock = this.lockfile(ws);
+    if (!lock) return {};
+    return buildMcpStatuses(Object.values(lock.plugins), (plugin, name) => store.isApplied(plugin, { kind: "mcp", name }));
+  }
+
+  private async applyMcpOp(ws: WorkspaceGitPresentationTarget, pluginName: string, server: string, io: PanelIO): Promise<void> {
+    io.postBusy(`Applying MCP server ${server}…`);
+    const r = applyContribution(pluginName, { kind: "mcp", name: server }, ws.workspaceRoot);
+    if (!r.applied) { io.postResult(false, r.errors[0] ?? `Could not apply '${server}'.`); return; }
+    this.onPluginsChanged();
+    io.post();
+    io.postResult(true, `Applied MCP server '${server}'. Restart a running session for it to appear.`);
+  }
+
+  private async unapplyMcpOp(ws: WorkspaceGitPresentationTarget, pluginName: string, server: string, io: PanelIO): Promise<void> {
+    io.postBusy(`Un-applying MCP server ${server}…`);
+    const r = unapplyContribution(pluginName, { kind: "mcp", name: server }, ws.workspaceRoot);
+    if (!r.unapplied) { io.postResult(false, r.errors[0] ?? `Could not un-apply '${server}'.`); return; }
+    this.onPluginsChanged();
+    io.post();
+    const extra = r.orphans > 0 ? " A human-edited copy was left in place." : "";
+    io.postResult(true, `Un-applied MCP server '${server}'.${extra} Restart a running session to drop the tools.`);
   }
 
   /** spec 287 (D3) — per installed plugin, its declared external (system) tools with present/missing + whether an
@@ -806,13 +863,21 @@ export class PluginsPanelManager {
    *  runtime is intact iff every target it recorded (settings file / skill dir / mcp config) still exists. This
    *  is the honest "installed & present" signal for the card pills — unlike `detectRuntimes`, it is correct for
    *  a skills-only install that lands in `.agents/skills/` and never creates a `.codex/` dir. */
-  private intactRuntimes(ws: WorkspaceGitPresentationTarget): Record<string, Runtime[]> {
+  private intactRuntimes(ws: WorkspaceGitPresentationTarget, applied?: AppliedStateStore): Record<string, Runtime[]> {
     const lock = this.lockfile(ws);
     const out: Record<string, Runtime[]> = {};
     for (const p of Object.values(lock?.plugins ?? {})) {
       out[p.name] = p.runtimes.filter((rt) => {
-        const targets = p.targets.filter((t) => t.runtime === rt);
-        return targets.length > 0 && targets.every((t) => fs.existsSync(path.join(ws.workspaceRoot, t.file)));
+        // Phase C: an unapplied mcp-server target names a shared config that may not exist yet.
+        // Counting that as drift would paint installed-not-applied as absent. Skip unapplied MCP
+        // files; if nothing else remains, the runtime is still intact (the plugin is installed).
+        const targets = p.targets.filter((t) => {
+          if (t.runtime !== rt) return false;
+          if (t.kind === "mcp-server" && t.ref && applied && !applied.isApplied(p.name, { kind: "mcp", name: t.ref })) return false;
+          return true;
+        });
+        if (targets.length === 0) return p.targets.some((t) => t.runtime === rt);
+        return targets.every((t) => fs.existsSync(path.join(ws.workspaceRoot, t.file)));
       });
     }
     return out;

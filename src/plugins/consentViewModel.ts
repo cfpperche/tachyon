@@ -201,13 +201,12 @@ export interface ConsentVM {
   skills?: ConsentSkill[];
   /** colliding skill destinations needing a Keep/Replace decision; Replace is destructive (double-confirm). */
   skillCollisions?: ConsentSkillCollision[];
-  /** ⑥ MCP servers this install/update materializes (the highest-risk capability — arbitrary process/network). */
+  /** ⑥ MCP servers this plugin ships (Phase C: install records them; they stay inert until apply). */
   mcp?: ConsentMcp[];
-  /** colliding MCP server names needing a Keep/Replace decision. */
+  /** colliding MCP server names needing a Keep/Replace decision (records which name apply may overwrite). */
   mcpCollisions?: ConsentMcpCollision[];
-  /** true when this install/update writes ANY MCP server → the drawer requires a SECOND confirmation (OQ5:
-   *  stronger than skills' Replace-only double-confirm, because an installed server is agent-invokable
-   *  process/network authority). */
+  /** true when this plugin ships ANY MCP server → the drawer requires a dedicated acknowledgement
+   *  (the servers are not written at install; apply is the act that arms them). */
   requiresMcpConfirm?: boolean;
   /** ⑦ spec 264 — git-hooks this install/update registers (run on EVERY commit, for every actor). */
   gitHooks?: ConsentGitHook[];

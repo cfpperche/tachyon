@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPluginsViewModel, buildExternalStatuses, type UpdateCheck } from "../../src/plugins/viewModel.js";
+import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, type UpdateCheck } from "../../src/plugins/viewModel.js";
 import type { PluginLock } from "../../src/plugins/lockfile.js";
 import { serializeLockfile } from "../../src/plugins/lockfile.js";
 import type { Runtime } from "../../src/plugins/manifest.js";
@@ -216,6 +216,36 @@ describe("buildPluginsViewModel", () => {
     const plain = vm.installed.find((p) => p.name === "plain")!;
     expect(plain.externalTools).toBeUndefined();
   });
+
+  it("Phase C — attaches injected mcpStatuses; installed-not-applied is a row, not omitted", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "mcp-pl", version: "1.0.0", runtimes: ["claude"] }, { name: "plain", version: "1.0.0", runtimes: ["claude"] }]),
+      present: ws("claude"),
+      mcpStatuses: {
+        "mcp-pl": [
+          { name: "db", applied: false },
+          { name: "api", applied: true },
+        ],
+        plain: [],
+      },
+    });
+    expect(vm.installed.find((p) => p.name === "mcp-pl")!.mcpServers).toEqual([
+      { name: "db", applied: false },
+      { name: "api", applied: true },
+    ]);
+    expect(vm.installed.find((p) => p.name === "plain")!.mcpServers).toBeUndefined();
+  });
+
+  it("Phase C — a corrupt applied-state is a banner, not an empty plugin list", () => {
+    const vm = buildPluginsViewModel({
+      lockfileText: lockText([{ name: "mcp-pl", version: "1.0.0", runtimes: ["claude"] }]),
+      present: ws("claude"),
+      appliedError: ".tachyon/plugins-applied.json is corrupt — fix or delete it",
+    });
+    expect(vm.appliedError).toMatch(/corrupt/);
+    expect(vm.installed).toHaveLength(1);
+    expect(vm.parseError).toBeUndefined();
+  });
 });
 
 describe("buildExternalStatuses (spec 287 D3 — host gather mapping)", () => {
@@ -261,6 +291,32 @@ describe("buildExternalStatuses (spec 287 D3 — host gather mapping)", () => {
 
   it("a plugin with an empty externalTools array is omitted (no empty row)", () => {
     expect(buildExternalStatuses([mk("x", [])], () => ({ present: true }))).toEqual({});
+  });
+});
+
+describe("buildMcpStatuses — Phase C card rows", () => {
+  const mcpLock = (name: string, refs: string[]): PluginLock =>
+    ({
+      name,
+      version: "1.0.0",
+      runtimes: ["claude", "codex"],
+      targets: refs.flatMap((ref) => [
+        { runtime: "claude", kind: "mcp-server", file: ".mcp.json", ref, removal: { command: "npx" } },
+        { runtime: "codex", kind: "mcp-server", file: ".codex/config.toml", ref, removal: "[mcp_servers.x]" },
+      ]),
+    }) as PluginLock;
+
+  it("dedupes a server recorded for two runtimes into one row, keyed by applied-state", () => {
+    const out = buildMcpStatuses([mcpLock("mcp-pl", ["db", "api"]), { name: "plain", version: "1.0.0", runtimes: ["claude"], targets: [] } as PluginLock], (plugin, name) => plugin === "mcp-pl" && name === "db");
+    expect(out["mcp-pl"]).toEqual([
+      { name: "api", applied: false },
+      { name: "db", applied: true },
+    ]);
+    expect(out.plain).toBeUndefined();
+  });
+
+  it("omits a plugin that ships no mcp-server targets", () => {
+    expect(buildMcpStatuses([{ name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [] } as PluginLock], () => true)).toEqual({});
   });
 });
 

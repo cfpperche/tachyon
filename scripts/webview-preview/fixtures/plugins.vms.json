@@ -497,5 +497,139 @@
       }
     ],
     "empty": false
+  },
+  "mcpApply": {
+    "present": [
+      "claude",
+      "codex"
+    ],
+    "installed": [
+      {
+        "name": "agent-browser",
+        "version": "2.1.1",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v0.12.2#path=agent-browser",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ],
+        "mcpServers": [
+          {
+            "name": "db-tools",
+            "applied": false
+          },
+          {
+            "name": "remote-api",
+            "applied": true
+          }
+        ]
+      },
+      {
+        "name": "dep-audit",
+        "version": "0.1.0",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v0.11.0#path=dep-audit",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ]
+      },
+      {
+        "name": "sdd",
+        "version": "1.1.0",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v0.5.0#path=sdd",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ]
+      },
+      {
+        "name": "secrets-guard",
+        "version": "2.0.1",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v0.9.0#path=secrets-guard",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ]
+      },
+      {
+        "name": "visual-qa",
+        "version": "0.1.0",
+        "sourceSpec": "github:cfpperche/tachyon-plugins@v0.12.1#path=visual-qa",
+        "shortCommit": "a1b2c3d",
+        "localInstall": false,
+        "runtimes": [
+          {
+            "runtime": "claude",
+            "present": true
+          },
+          {
+            "runtime": "codex",
+            "present": true
+          }
+        ],
+        "status": {
+          "kind": "up-to-date"
+        },
+        "actions": [
+          "remove"
+        ]
+      }
+    ],
+    "empty": false
   }
 }

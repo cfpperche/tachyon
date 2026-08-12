@@ -115,6 +115,8 @@ function PluginsRoot() {
       openDocs: (name: string) => post({ type: "openDocs", name }),
       installExternal: (externalTool: string, pluginName?: string) =>
         post({ type: "installExternal", externalTool, ...(pluginName ? { pluginName } : {}) }),
+      applyMcp: (pluginName: string, server: string) => post({ type: "applyMcp", pluginName, server }),
+      unapplyMcp: (pluginName: string, server: string) => post({ type: "unapplyMcp", pluginName, server }),
     }),
     [toastApi],
   );

@@ -34,7 +34,7 @@ import { parseCodexHooksBlock } from "./adapters/codex.js";
 import { parseGrokHooksBlock } from "./adapters/grok.js";
 import { readFile, atomicWrite } from "./fsx.js";
 import { PLUGIN_PAYLOAD_ROOT, PLUGIN_SKILLS_DIR } from "./paths.js";
-import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, removeMcpServerText, currentMcp, mcpRepEquals, writeMcpConfig } from "./mcpConfig.js";
+import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, setMcpFromRemoval, removeMcpServerText, currentMcp, mcpRepEquals, writeMcpConfig } from "./mcpConfig.js";
 import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "./source.js";
 import { fetchSource, defaultGitRun, resolveLatestSemverTag, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
@@ -60,6 +60,7 @@ import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCou
 import { dependencyStates, type DependencyState } from "./pluginDeps.js";
 import { agentEntriesOfLkg, readConfigLkg } from "../config/configLkg.js";
 import { runtimeOf } from "../resume/adapters.js";
+import { AppliedStateError, AppliedStateStore, type ContributionRef } from "./appliedState.js";
 
 /** spec 265 — the repo-root-RELATIVE launcher path baked into a resolved git-hook leaf (clone-safe; git runs
  *  hooks with cwd = the repo top-level). The launcher itself derives the workspace from its own location. */
@@ -1251,7 +1252,11 @@ function resolveMcpWrites(mcpTargets: McpPlanItem[], mcpDecisions: Record<string
 }
 
 /** PHASE 2d — build the materialized-target set (the uninstall manifest) + the runtimes this install touches,
- *  from the resolved hooks/skills/mcp writes. */
+ *  from the resolved hooks/skills/mcp writes.
+ *
+ *  SDD 486 Phase C: MCP servers are still *recorded* here (so apply/unapply have a removal identity), but
+ *  activateInstall does not write them unless AppliedStateStore says that server is applied. Install must
+ *  not expand the agent's tool surface. */
 function buildInstallTargets(fresh: InstallPreview, skillsToWrite: Array<SkillPlanItem & { replace: boolean }>, mcpToWrite: McpPlanItem[], pluginRoot: string): { runtimes: Runtime[]; targets: MaterializedTarget[] } {
   const runtimes: Runtime[] = [];
   const targets: MaterializedTarget[] = [];
@@ -1326,12 +1331,20 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
     if (!newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
   }
 
-  // 6) MCP servers — merge each consented server; clean up servers THIS plugin owned but the new version dropped.
-  // Content-aware: a server the user edited away from what we recorded is left as an orphan, never clobbered.
-  // (Tachyon writes the entry ONLY; each runtime's own MCP approval still gates actually running it — OQ6.)
-  // ${PLUGIN_ROOT}/… in command/args is substituted for the absolute payload root before write (t-b6180e).
+  // 6) MCP servers — SDD 486 Phase C: install records lockfile targets but does NOT write the runtime
+  // config unless the contribution is already applied (an update of a live server). First install leaves
+  // the agent's tool surface unchanged. Content-aware stale cleanup still drops a previously-applied
+  // server the new version no longer ships, and never clobbers a human-edited entry.
   const pluginRoot = pluginPayloadAbs(workspaceRoot, plugin.manifest.name);
   const mcpBefore = new Map(fresh.mcpConfigBefore.map((c) => [c.destRel, c.text]));
+  let appliedMcp: Set<string>;
+  try {
+    appliedMcp = new Set(
+      new AppliedStateStore(workspaceRoot).appliedFor(plugin.manifest.name).filter((r) => r.kind === "mcp").map((r) => r.name),
+    );
+  } catch (e) {
+    return partial("reading applied-state", e);
+  }
   const priorMcpRuntimes = priorMcpTargets.map((t) => t.runtime).filter((rt): rt is Runtime => rt !== undefined);
   const mcpRuntimes = new Set<Runtime>([...mcpToWrite.map((m) => m.runtime), ...priorMcpRuntimes]);
   for (const rt of mcpRuntimes) {
@@ -1344,17 +1357,24 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
       return `${mcpRel} changed since preview — re-preview and re-consent before installing`;
     }
     let text = rd.text;
-    const writeRefs = new Set(mcpToWrite.filter((m) => m.runtime === rt).map((m) => m.ref));
+    const writeRefs = new Set(mcpToWrite.filter((m) => m.runtime === rt && appliedMcp.has(m.ref)).map((m) => m.ref));
     try {
       for (const t of priorMcpTargets) {
         if (t.runtime !== rt || !t.ref || writeRefs.has(t.ref)) continue;
+        if (!appliedMcp.has(t.ref)) continue; // never applied — nothing on disk that is ours to drop
         if (mcpRepEquals(currentMcp(rt, text, t.ref), t.removal)) text = removeMcpServerText(rt, text, t.ref);
       }
-      for (const m of mcpToWrite.filter((x) => x.runtime === rt)) text = setMcpServer(rt, text, m.server, pluginRoot);
-      writeMcpConfig(file, text ?? "");
+      for (const m of mcpToWrite.filter((x) => x.runtime === rt && appliedMcp.has(x.ref))) text = setMcpServer(rt, text, m.server, pluginRoot);
+      if (text !== rd.text) writeMcpConfig(file, text ?? "");
     } catch (e) {
       return partial(`writing ${mcpRel}`, e);
     }
+  }
+  // a server the new version dropped is no longer applyable — forget it so a later re-add is a fresh apply
+  const stillShipped = new Set(mcpToWrite.map((m) => m.ref));
+  const store = new AppliedStateStore(workspaceRoot);
+  for (const name of appliedMcp) {
+    if (!stillShipped.has(name)) store.markUnapplied(plugin.manifest.name, { kind: "mcp", name });
   }
 
   // 7) git-hooks LAST — under the repo lock, write leaves + publish the snapshot + dispatcher, then claim hooksPath.
@@ -1993,6 +2013,17 @@ export async function applyRemove(pluginName: string, workspaceRoot: string, opt
 
   // un-merge each recorded MCP server, content-aware: remove it only if the on-disk entry still equals what we
   // wrote; a server the user has since edited is left in place and counted as an orphan (never clobbered).
+  // Phase C: a target that was never applied (and is absent on disk) is not an orphan — install no longer writes it.
+  // Only consult applied-state when this plugin recorded MCP targets; a corrupt record must not block
+  // uninstall of a hooks-only plugin.
+  let appliedMcp = new Set<string>();
+  if (mcpTargets.length > 0) {
+    try {
+      appliedMcp = new Set(new AppliedStateStore(workspaceRoot).appliedFor(pluginName).filter((r) => r.kind === "mcp").map((r) => r.name));
+    } catch (e) {
+      return { removed: false, orphans: 0, errors: [e instanceof Error ? e.message : String(e)] };
+    }
+  }
   const mcpByRuntime = new Map<Runtime, MaterializedTarget[]>();
   for (const t of mcpTargets) {
     if (!t.runtime) return { removed: false, orphans: 0, errors: ["internal: mcp target missing runtime after validation"] };
@@ -2005,7 +2036,9 @@ export async function applyRemove(pluginName: string, workspaceRoot: string, opt
     const rd = readFile(file);
     let text: string | undefined = rd.missing ? undefined : rd.text;
     for (const t of ts) {
-      if (mcpRepEquals(currentMcp(rt, text, t.ref as string), t.removal)) text = removeMcpServerText(rt, text, t.ref as string);
+      const current = currentMcp(rt, text, t.ref as string);
+      if (current === undefined && !appliedMcp.has(t.ref as string)) continue; // never applied, nothing to un-merge
+      if (mcpRepEquals(current, t.removal)) text = removeMcpServerText(rt, text, t.ref as string);
       else orphans += 1;
     }
     writeMcpConfig(file, text ?? "");
@@ -2022,6 +2055,13 @@ export async function applyRemove(pluginName: string, workspaceRoot: string, opt
   // plugin has tools left.
   removeProvisionedTools(plan.lock, plan.lockfile, workspaceRoot);
   writeLockfile(workspaceRoot, plan.lockfile);
+  // Phase C — drop this plugin from the applied record so a later re-install does not find MCP servers
+  // already marked applied (t-17d885 residue). Best-effort: the plugin is already gone from the lockfile.
+  try {
+    new AppliedStateStore(workspaceRoot).forgetPlugin(pluginName);
+  } catch {
+    /* corrupt applied-state must not fail an otherwise-complete uninstall */
+  }
 
   // spec 263 — last, tidy up the RUNTIME ancestor dirs THIS install created (now that their content is gone).
   // Non-recursive rmdir = the filesystem enforces "empty only" atomically (no TOCTOU): a dir that pre-existed,
@@ -2091,6 +2131,132 @@ function removeProvisionedTools(removedLock: PluginLock, lockfileAfter: Lockfile
       ...(anyDataLeft && l.dataShimSha256 && l.dataValidatorSha256 ? { dataShimSha256: l.dataShimSha256, dataValidatorSha256: l.dataValidatorSha256 } : {}),
     };
   }
+}
+
+// ── apply / unapply (SDD 486 Phase C — mcp-server) ──────────────────────────
+
+export interface ApplyContributionResult {
+  applied: boolean;
+  errors: string[];
+}
+
+export interface UnapplyContributionResult {
+  unapplied: boolean;
+  orphans: number;
+  errors: string[];
+}
+
+function mcpRefOf(ref: ContributionRef): string | undefined {
+  return ref.kind === "mcp" ? ref.name : undefined;
+}
+
+/** The lockfile mcp-server targets for one contribution name, already shape-validated. */
+function mcpTargetsFor(lock: PluginLock, name: string): MaterializedTarget[] {
+  return mcpTargetsOf(lock).filter((t) => t.ref === name);
+}
+
+/**
+ * Apply one contribution. Phase C implements `mcp` only — a skill/hook ref is refused so this door
+ * cannot silently become a third un-merge path. Writes every recorded mcp-server target for that
+ * name (one per runtime) using the lockfile `removal` identity, then marks the store.
+ */
+export function applyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { replace?: boolean } = {}): ApplyContributionResult {
+  const name = mcpRefOf(ref);
+  if (!name) return { applied: false, errors: [`applyContribution: kind '${ref.kind}' is not implemented here (Phase C owns mcp only)`] };
+
+  const lockRead = readLockfile(workspaceRoot);
+  if (!lockRead.lockfile) return { applied: false, errors: lockRead.errors };
+  const lock = lockRead.lockfile.plugins[pluginName];
+  if (!lock) return { applied: false, errors: [`plugin '${pluginName}' is not installed`] };
+
+  const targets = mcpTargetsFor(lock, name);
+  if (targets.length === 0) return { applied: false, errors: [`plugin '${pluginName}' has no mcp-server named '${name}'`] };
+
+  for (const t of targets) {
+    if (!t.runtime || !validMcpDest(t.runtime, t.file) || !validMcpRemoval(t.runtime, name, t.removal)) {
+      return { applied: false, errors: [`lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config target`] };
+    }
+  }
+
+  // collision: a same-name server that is not our recorded removal is the user's — refuse unless replace.
+  const byFile = new Map<string, { runtime: Runtime; text: string | undefined }>();
+  for (const t of targets) {
+    const rt = t.runtime as Runtime;
+    if (!byFile.has(t.file)) {
+      const rd = readMcpConfig(workspaceRoot, rt, t.file);
+      if (rd.error) return { applied: false, errors: [rd.error] };
+      byFile.set(t.file, { runtime: rt, text: rd.text });
+    }
+    const slot = byFile.get(t.file)!;
+    const current = currentMcp(rt, slot.text, name);
+    if (current !== undefined && !mcpRepEquals(current, t.removal) && opts.replace !== true) {
+      return { applied: false, errors: [`MCP server '${name}' (${rt}) collides with an existing server in ${t.file}`] };
+    }
+  }
+
+  try {
+    for (const [fileRel, slot] of byFile) {
+      let text = slot.text;
+      for (const t of targets.filter((x) => x.file === fileRel)) {
+        text = setMcpFromRemoval(slot.runtime, text, name, t.removal);
+      }
+      writeMcpConfig(path.join(workspaceRoot, fileRel), text ?? "");
+    }
+    new AppliedStateStore(workspaceRoot).markApplied(pluginName, ref);
+  } catch (e) {
+    return { applied: false, errors: [e instanceof AppliedStateError ? e.message : e instanceof Error ? e.message : String(e)] };
+  }
+  return { applied: true, errors: [] };
+}
+
+/**
+ * Un-apply one contribution. Removes only the lockfile `removal` identity from each runtime config —
+ * a human-edited same-name server is left in place and counted as an orphan. The payload stays.
+ */
+export function unapplyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string): UnapplyContributionResult {
+  const name = mcpRefOf(ref);
+  if (!name) return { unapplied: false, orphans: 0, errors: [`unapplyContribution: kind '${ref.kind}' is not implemented here (Phase C owns mcp only)`] };
+
+  const lockRead = readLockfile(workspaceRoot);
+  if (!lockRead.lockfile) return { unapplied: false, orphans: 0, errors: lockRead.errors };
+  const lock = lockRead.lockfile.plugins[pluginName];
+  if (!lock) return { unapplied: false, orphans: 0, errors: [`plugin '${pluginName}' is not installed`] };
+
+  const targets = mcpTargetsFor(lock, name);
+  if (targets.length === 0) return { unapplied: false, orphans: 0, errors: [`plugin '${pluginName}' has no mcp-server named '${name}'`] };
+
+  for (const t of targets) {
+    if (!t.runtime || !validMcpDest(t.runtime, t.file) || !validMcpRemoval(t.runtime, name, t.removal)) {
+      return { unapplied: false, orphans: 0, errors: [`lockfile: mcp-server target '${t.file}' (${t.runtime}) is not a valid MCP config target`] };
+    }
+  }
+
+  let orphans = 0;
+  try {
+    const byFile = new Map<string, { runtime: Runtime; text: string | undefined }>();
+    for (const t of targets) {
+      const rt = t.runtime as Runtime;
+      if (!byFile.has(t.file)) {
+        const rd = readMcpConfig(workspaceRoot, rt, t.file);
+        if (rd.error) return { unapplied: false, orphans: 0, errors: [rd.error] };
+        byFile.set(t.file, { runtime: rt, text: rd.text });
+      }
+    }
+    for (const [fileRel, slot] of byFile) {
+      let text = slot.text;
+      for (const t of targets.filter((x) => x.file === fileRel)) {
+        const current = currentMcp(slot.runtime, text, name);
+        if (current === undefined) continue; // already absent
+        if (mcpRepEquals(current, t.removal)) text = removeMcpServerText(slot.runtime, text, name);
+        else orphans += 1;
+      }
+      writeMcpConfig(path.join(workspaceRoot, fileRel), text ?? "");
+    }
+    new AppliedStateStore(workspaceRoot).markUnapplied(pluginName, ref);
+  } catch (e) {
+    return { unapplied: false, orphans: 0, errors: [e instanceof AppliedStateError ? e.message : e instanceof Error ? e.message : String(e)] };
+  }
+  return { unapplied: true, orphans, errors: [] };
 }
 
 // ── update (3-way: baseline vs current vs new) ──────────────────────────────

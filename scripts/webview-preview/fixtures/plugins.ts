@@ -19,6 +19,7 @@ const captured = vms as unknown as {
   empty: PluginsViewModel;
   runtimeGap: PluginsViewModel;
   sourceChanged: PluginsViewModel;
+  mcpApply: PluginsViewModel;
 };
 
 export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
@@ -38,4 +39,8 @@ export const pluginsFixtures: Record<string, Fixture<PluginsViewModel>> = {
 
   // t-4e5f11 — secrets-guard: same version, different source bytes → badge "source changed · still vX" + Reapply.
   "source-changed": { provenance: "captured-host-vm", vm: captured.sourceChanged },
+
+  // SDD 486 Phase C — agent-browser ships two MCP servers: one applied, one installed-not-applied.
+  // The visual failure to design against is the unapplied row looking like the server is absent.
+  "mcp-apply": { provenance: "captured-host-vm", vm: captured.mcpApply },
 };

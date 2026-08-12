@@ -48,13 +48,15 @@ const PLUGIN_NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const SKILL_NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 /** hook contribution names: a runtime hook EVENT, e.g. `PreToolUse` (the adapters' PascalCase sets). */
 const HOOK_EVENT_RE = /^[A-Za-z][A-Za-z0-9]*$/;
+/** mcp contribution names: lowercase kebab — the server name IS the lockfile `ref` / config key (`mcp.ts`). */
+const MCP_NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
 /**
- * The two projected kinds Phase A covers. `mcp-server` is Phase C and `view` is out by decision
- * (spec.md § Non-goals), so neither is spellable here — an id naming one fails to parse rather than
- * being recorded as a fact nothing can honour.
+ * The projected kinds the applied record can name. `view` is out by decision (spec.md § Non-goals),
+ * so an id naming one fails to parse rather than being recorded as a fact nothing can honour.
+ * `mcp` is Phase C (t-7f52f6): same store as skills/hooks, not a second file.
  */
-export type ContributionKind = "skill" | "hook";
+export type ContributionKind = "skill" | "hook" | "mcp";
 
 /**
  * One independently applicable thing a plugin ships. Runtime-agnostic ON PURPOSE: `apply` fans out to
@@ -62,18 +64,19 @@ export type ContributionKind = "skill" | "hook";
  * contribution, in this workspace" and never "this contribution, for Codex but not Claude".
  *
  * The granularity matches what a removal can name. A `skill-dir` target is identified by its skill
- * name and a `settings-hook` target by its event (`engine.ts:1248` records `ref: event`), so
- * `{kind, name}` resolves to exactly the lockfile targets an un-apply must undo, in every runtime.
+ * name, a `settings-hook` target by its event (`engine.ts` records `ref: event`), and an
+ * `mcp-server` target by its server name (`ref: name`), so `{kind, name}` resolves to exactly the
+ * lockfile targets an un-apply must undo, in every runtime.
  */
 export interface ContributionRef {
   kind: ContributionKind;
-  /** a skill's kebab name, or a hook's event name. */
+  /** a skill's kebab name, a hook's event name, or an MCP server's kebab name. */
   name: string;
 }
 
 export class AppliedStateError extends Error {}
 
-/** The stable string identity used as the on-disk key: `skill:<name>` / `hook:<Event>`. */
+/** The stable string identity used as the on-disk key: `skill:<name>` / `hook:<Event>` / `mcp:<name>`. */
 export function contributionId(ref: ContributionRef): string {
   return `${ref.kind}:${ref.name}`;
 }
@@ -87,6 +90,7 @@ export function parseContributionId(id: unknown): ContributionRef | null {
   const name = id.slice(sep + 1);
   if (kind === "skill") return SKILL_NAME_RE.test(name) ? { kind: "skill", name } : null;
   if (kind === "hook") return HOOK_EVENT_RE.test(name) ? { kind: "hook", name } : null;
+  if (kind === "mcp") return MCP_NAME_RE.test(name) ? { kind: "mcp", name } : null;
   return null;
 }
 
@@ -160,7 +164,7 @@ export function parseAppliedState(rawJson: string): AppliedStateParseResult {
     raw.forEach((id, i) => {
       const ref = parseContributionId(id);
       if (!ref) {
-        errors.push(`applied.plugins.${name}[${i}]: '${String(id)}' is not a contribution id (skill:<kebab> | hook:<Event>)`);
+        errors.push(`applied.plugins.${name}[${i}]: '${String(id)}' is not a contribution id (skill:<kebab> | hook:<Event> | mcp:<kebab>)`);
         return;
       }
       seen.add(contributionId(ref));
