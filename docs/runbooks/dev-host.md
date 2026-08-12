@@ -298,16 +298,15 @@ console + pageerrors, captured continuously), `driver.log`, `host.log`, `result.
 | `shot(name)` | screenshot the workbench → `<out>/<name>.png` |
 | `log(msg)` / `sleep(ms)` | timestamped driver log line / delay |
 
-`scripts/dev-host/scenarios/t-0e8a9a-agent-studio-nav-loop.mjs` is the worked reference: it opens
-Control, edits an agent, clicks the breadcrumb back, and asserts the route actually stays put — the
-exact repro that caught the studio nav-checkpoint teardown bug (t-0e8a9a). Copy it as a template for
-any "click here, then this should happen" webview repro.
+Scenarios under `scripts/dev-host/scenarios/` are the worked form: each opens a surface, acts, and
+asserts. Copy one as a template for any "click here, then this should happen" webview repro — live
+examples named elsewhere in this runbook include `companion-one-qr.mjs` and
+`t-5fc17d-reload-traversal.mjs`.
 
 **Webview-console caveat:** the parent CDP target does NOT surface a webview iframe's own
 `console.log` (separate execution context). When you need client-side visibility, inject a spy INTO
 the frame with `frame.evaluate` — e.g. `window.addEventListener('message', …)` recording inbound host
-messages into a `window.__x` array, then read it back with another `frame.evaluate`. The reference
-scenario does exactly this to prove the checkpoint/ack handshake.
+messages into a `window.__x` array, then read it back with another `frame.evaluate`.
 
 Requirements: `Xvfb`, `puppeteer-core` (dep), a compatible VS Code binary (`resolve-code.mjs` finds
 `.vscode-test/…/bin/code` — the sh launcher, NOT the raw ELF, which is the tunnel CLI). The harness
