@@ -39,6 +39,8 @@ export const IDE_BROWSER_INSTANCE_FRESHNESS_MS = 30_000;
 export const IDE_BROWSER_INSTANCE_HEADER = "x-tachyon-ide-browser-instance";
 /** Request auth header (shell checks equality against the instance token). */
 export const IDE_BROWSER_TOKEN_HEADER = "x-tachyon-ide-browser-token";
+/** Shared ceiling for DevTools-equivalent evaluation through MCP and host HTTP. */
+export const IDE_BROWSER_EVAL_MAX_CHARS = 50_000;
 
 /**
  * Wire protocol version for the HTTP route map.
@@ -184,6 +186,9 @@ export function decodeIdeBrowserHttpRequest(
     case IDE_BROWSER_ROUTES.eval: {
       const expression = typeof raw.expression === "string" ? raw.expression : "";
       if (!expression) return { ok: false, status: 400, error: "expression required" };
+      if (expression.length > IDE_BROWSER_EVAL_MAX_CHARS) {
+        return { ok: false, status: 400, error: `expression must be at most ${IDE_BROWSER_EVAL_MAX_CHARS} characters` };
+      }
       return { ok: true, path: match.path, body: { expression } };
     }
 
