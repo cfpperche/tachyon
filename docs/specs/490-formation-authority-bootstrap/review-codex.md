@@ -26,9 +26,9 @@ settled in the contract rather than deferred to implementation planning.
   `HumanLaneTransactionService` exists.
 - A human adoption act is consistent with SDD 427's delivered rule that workspace bytes cannot
   activate themselves; no second legitimate **bootstrap** publisher exists today. Evolution and
-  selected-memory publishers require human callers but both presuppose an active current vector
-  (`src/agents/formation/evolutionTransactions.ts:59-69`,
-  `src/agents/formation/memoryTransactions.ts:51-61`), so they do not compete for moment zero.
+  selected-memory publishers require human callers but both presuppose an active current vector,
+  and the selected-memory publisher is no longer in the tree (t-56ced4 removed
+  `src/agents/formation/memoryTransactions.ts`), so they do not compete for moment zero.
 - Keeping Soul and persistent instructions distinct is settled and was not reopened by this review.
 - The unadopted-agent and hand-edited-file negative scenarios are the right fail-closed invariants;
   they become strong once tested through the same production lifecycle door as adoption and launch.
