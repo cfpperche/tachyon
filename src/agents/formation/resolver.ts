@@ -1,4 +1,3 @@
-import type { SelectedMemoryStore } from "../../memory/SelectedMemoryStore.js";
 import { composeAgentPrompt } from "../promptLayers.js";
 import type { ResolvedFormationPayload } from "./authorityStore.js";
 import { formationDigest, validateFormationAuthorityVector, type FormationAuthorityVector } from "./domain.js";
@@ -8,10 +7,7 @@ import {
   type HumanLaneSuppressionReceipt,
   resolveHumanFormationPayload,
 } from "./humanLanes.js";
-import {
-  resolveSelectedMemoryFormationLane,
-  SELECTED_MEMORY_RENDERER_SHA256,
-} from "./memoryLane.js";
+import { SELECTED_MEMORY_RENDERER_SHA256 } from "./memoryLane.js";
 
 export const COMPLETE_FORMATION_RENDERER_CONTRACT = "tachyon-complete-agent-formation-v1";
 
@@ -46,11 +42,6 @@ export interface ResolveCompleteFormationInput {
   runtimeTrustClass: string;
   suppressionAuthority: HumanLaneSuppressionAuthority;
   suppressionReceipt: HumanLaneSuppressionReceipt;
-  memoryStore?: SelectedMemoryStore;
-}
-
-function payloadText(value: Buffer | string): string {
-  return Buffer.isBuffer(value) ? value.toString("utf8") : value;
 }
 
 /** Resolves every enabled lane or fails the whole fresh formation; no partial payload exists. */
@@ -70,22 +61,12 @@ export async function resolveCompleteFormationPayload(input: ResolveCompleteForm
     ...input,
     expectedRendererContractsSha256: rendererContractsSha256,
   });
-  let memory: Awaited<ReturnType<typeof resolveSelectedMemoryFormationLane>> | undefined;
   if (input.vector.profile.lanes.memory.mode === "profile") {
-    if (!input.memoryStore) throw new CompleteFormationResolutionError("enabled selected-memory lane requires its host store");
-    memory = await resolveSelectedMemoryFormationLane({
-      workspaceRoot: input.workspaceRoot,
-      workspaceId: input.workspaceId,
-      agentId: input.agentId,
-      agentName: input.agentName,
-      vector: input.vector,
-      store: input.memoryStore,
-    });
+    throw new CompleteFormationResolutionError("selected-memory store was removed (t-56ced4); an enabled memory lane cannot resolve");
   }
 
   const layers = {
     instructions: human.instructions?.body,
-    selectedMemory: memory ? payloadText(memory.startupPrompt) : undefined,
     bridgeGuidance: input.bridgeGuidance,
   };
   const startupBody = composeAgentPrompt({
@@ -102,6 +83,5 @@ export async function resolveCompleteFormationPayload(input: ResolveCompleteForm
     startupPrompt,
     reanchorReminder: ["── AGENT FORMATION REMINDER V1 ──", reminderBody, "── END AGENT FORMATION REMINDER V1 ──"].join("\n"),
     nativeSuppression: structuredClone(human.suppression),
-    ...(memory?.selectedMemory === undefined ? {} : { selectedMemory: memory.selectedMemory }),
   };
 }
