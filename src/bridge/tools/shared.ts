@@ -112,6 +112,8 @@ export interface BridgeDeps {
   /** Attention state of an agent ("working" | "idle" | "needs-input"), when monitoring is active. */
   attentionOf?: (agent: string) => string | undefined;
   hasStartedTurn?: (agent: string) => boolean | undefined;
+  /** Native runtime lifecycle edge, authenticated and bound to the current per-spawn credential. */
+  publishRuntimeStatus?: (agent: string, event: "stopped") => boolean;
   /**
    * SDD 420 — tab-scoped Companion tools. All require opaque companion tabId
    * (from user_browser_tabs_list). Blocks until extension fulfills or times out.

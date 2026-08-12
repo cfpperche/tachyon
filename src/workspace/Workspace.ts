@@ -1806,6 +1806,7 @@ export class Workspace {
         probeCwd: () => this.workspaceRoot,
         attentionOf: (agent) => this.attentionOf(agent)?.state,
         hasStartedTurn: (agent) => this.monitor.hasStartedTurn(agent),
+        publishRuntimeStatus: (agent, event) => this.monitor.publishRuntimeStatus(agent, event),
         composerOccupiedOf: (agent) => this.attentionOf(agent)?.composerOccupied,
         // t-a53dd9 — the at-injection reading write_input prefers over the cached one above.
         composerDraftNow: (agent) => this.monitor.probeComposerOccupied(agent),

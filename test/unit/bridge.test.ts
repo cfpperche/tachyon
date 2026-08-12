@@ -108,7 +108,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // hand-written "who's touching what" list.
   // t-167b5c — 77 → 78: read_notices, the durable read door onto .tachyon/doorbells.jsonl (spec 493).
   // t-1926ce — 78 → 79: read-only orphan process reporting for deleted managed worktrees.
-  it("exposes exactly the 81 canonical tools, including the explicit Terminal operation", async () => {
+  it("exposes exactly the 82 canonical tools, including runtime lifecycle ingest and the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -175,6 +175,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "run_host_action",
       "run_runbook",
       "runtime_condition",
+      "runtime_status_publish",
       "set_continuity",
       "set_project_handoff",
       "spawn_agent",

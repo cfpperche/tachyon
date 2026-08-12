@@ -87,9 +87,9 @@ describe("t-8ea8e0 — self-evolution is not a capability this product has", () 
       { registerTool: (name: string) => { registered.push(name); } } as never,
       { workspaceRoot: process.cwd(), caller: { kind: "agent", name: "a" } } as never,
     );
-    // 78 tools, none of which submits a proposal about the agent's own future. A new tool of any
+    // 79 tools, none of which submits a proposal about the agent's own future. A new tool of any
     // name changes this count, which is what forces the decision back through review.
-    expect(registered.length).toBe(78);
+    expect(registered.length).toBe(79);
     expect(new Set(registered).size).toBe(registered.length);
   });
 

@@ -38,10 +38,12 @@ import {
   handoffPointerPath,
   persistenceStopFile,
   persistenceStopRecorderPath,
+  runtimeStatusPublisherPath,
   sessionOwnerRecorderPath,
   sessionOwnersFile,
   spawnSettingsPath,
   PERSISTENCE_STOP_RECORDER_SOURCE,
+  RUNTIME_STATUS_PUBLISHER_SOURCE,
   SESSION_CONTINUITY_POINTER_SOURCE,
   SESSION_HANDOFF_POINTER_SOURCE,
   SESSION_OWNER_RECORDER_SOURCE,
@@ -2908,6 +2910,8 @@ export class HarnessManager {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
+    const runtimeStatusPublisher = runtimeStatusPublisherPath(this.workspaceRoot);
+    atomicWrite(runtimeStatusPublisher, RUNTIME_STATUS_PUBLISHER_SOURCE);
     let pointer: { pointerPath: string; handoffPath: string } | undefined;
     if (handoffPath) {
       const pointerPath = handoffPointerPath(this.workspaceRoot);
@@ -2928,7 +2932,7 @@ export class HarnessManager {
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
-    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence);
+    const settings = buildOwnershipSettings(recorder, agent, sessionOwnersFile(this.workspaceRoot), pointer, persistence, {}, { publisherPath: runtimeStatusPublisher, runtime: "grok" });
     const hooksRoot = path.join(grokHome, "hooks");
     fs.mkdirSync(hooksRoot, { recursive: true });
     atomicWrite(path.join(hooksRoot, "session-start.json"), `${JSON.stringify({ hooks: { SessionStart: settings.hooks.SessionStart } }, null, 2)}\n`);
@@ -3573,6 +3577,8 @@ export class HarnessManager {
     // truncate it mid-read and silently drop the ownership row (codex review). renameSync is atomic on the
     // same fs, so a reader sees either the old or new complete file, never a torn one.
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
+    const runtimeStatusPublisher = runtimeStatusPublisherPath(this.workspaceRoot);
+    atomicWrite(runtimeStatusPublisher, RUNTIME_STATUS_PUBLISHER_SOURCE);
     // spec 245 — when a handoff path is given, also materialize the SessionStart pointer script + add its command
     // (a one-line additionalContext pointer to the project handoff; never the content).
     let pointer: { pointerPath: string; handoffPath: string } | undefined;
@@ -3599,7 +3605,7 @@ export class HarnessManager {
       skipDangerousModePermissionPrompt: opts.skipDangerousModePermissionPrompt,
       statusLine: opts.statusLine,
       ...(opts.projectedHooks ? { projectedHooks: opts.projectedHooks } : {}),
-    });
+    }, { publisherPath: runtimeStatusPublisher, runtime: "claude" });
     const file = spawnSettingsPath(this.workspaceRoot, agent);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     atomicWrite(file, `${JSON.stringify(settings, null, 2)}\n`); // same race for the per-agent settings on restart/resume
@@ -3622,6 +3628,8 @@ export class HarnessManager {
     const recorder = sessionOwnerRecorderPath(this.workspaceRoot);
     fs.mkdirSync(path.dirname(recorder), { recursive: true });
     atomicWrite(recorder, SESSION_OWNER_RECORDER_SOURCE);
+    const runtimeStatusPublisher = runtimeStatusPublisherPath(this.workspaceRoot);
+    atomicWrite(runtimeStatusPublisher, RUNTIME_STATUS_PUBLISHER_SOURCE);
     let pointer: { pointerPath: string; handoffPath: string } | undefined;
     if (handoffPath) {
       const pointerPath = handoffPointerPath(this.workspaceRoot);
@@ -3642,7 +3650,7 @@ export class HarnessManager {
         failureFile: persistenceHookFailureFile(this.workspaceRoot),
       };
     }
-    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence, opts.projectedHooks);
+    return buildCodexSessionStartHookConfig(recorder, sessionOwnersFile(this.workspaceRoot), pointer, persistence, opts.projectedHooks, runtimeStatusPublisher);
   }
 
   /** Agent names with a materialized Bridge `--mcp-config` file (`<name>.json`), for the GC sweep. */

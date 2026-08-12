@@ -40,12 +40,14 @@ import { registerScheduleTools } from "./tools/automation-schedules.js";
 import { registerApprovalTools } from "./tools/human-approvals.js";
 import { registerNotifyTool } from "./tools/human-notify.js";
 import { registerProbeTools } from "./tools/fleet-probes.js";
+import { registerRuntimeStatusTools } from "./tools/runtime-status.js";
 
 /**
  * Register every Bridge MCP tool. Domain registrars run in the historical registration order so the
  * catalog (names, descriptions, schemas, order) stays byte-identical for inventory comparison.
  */
 export function registerTools(mcp: McpServer, deps: BridgeDeps): void {
+  registerRuntimeStatusTools(mcp, deps);
   registerWorktreeTools(mcp, deps);
   registerRuntimeSecurityTools(mcp, deps);
   registerHostActionTools(mcp, deps);
