@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import os from "node:os";
+import path from "node:path";
 import { readHostMemory } from "./src/host/hostResources";
 import { admitOrFallback } from "./src/host/vitestBudget";
 
@@ -38,6 +39,11 @@ process.stderr.write(`[vitest:browser] ${admission.reason}\n`);
 process.on("exit", () => admission.claim.release());
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      vscode: path.resolve(__dirname, "test/mocks/vscode.ts"),
+    },
+  },
   test: {
     include: ["test/browser/**/*.test.ts"],
     environment: "node",
