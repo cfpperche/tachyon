@@ -147,6 +147,14 @@ Living dogfood for `design_mode_chat_reply` tool-call reliability (blocks confid
 - **Live schema gap:** running Bridge `tools/list` omitted `turnId` despite 0.62.0 source; engine
   process was long-lived. Re-check after engine reload when dogfooding panel land.
 
+## F8 Visual QA evidence pack (`t-7f994f`, 2026-08-12)
+
+- **How:** `TACHYON_ENGINE_CHANNEL=dev npm run build` → `scripts/dev-host/cli.sh point --fixture ide-browser-dogfood` → `node scripts/dev-host/headless-session.mjs up` (Xvfb `:97` + CDP) → commands `Tachyon: Open IDE Browser` / `Tachyon: Design Mode On` → pick via in-page click with picker armed → reply via real host `POST /design-mode/chat-reply` (same door as MCP tool).
+- **Artifacts:** `evidence/design-mode-toolbar.png`, `pick-attach.png`, `chat-reply.png`, `status-bar-cluster.png` (~510 KiB total).
+- **Post t-47503a:** inject UI + status bar cluster still paint after manager/hostServer/browserSession split; no regression visible in chrome layout.
+- **Defect noted:** Selection card covers Design Mode chat transcript when both open (reply present in DOM, not visible until card closed). Filed as separate bug task; not fixed in F8.
+- **visual-qa skill:** not used for capture path (web-only skill; this surface is EDH + CDP inject). Judgment still recorded under Visual QA Evidence/Verdict for `/sdd close`.
+
 ## Ratify log
 
 - 2026-08-04 — Product lean agreed in conversation: Design Mode viable as Tachyon product slice;
