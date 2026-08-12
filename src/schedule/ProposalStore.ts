@@ -29,7 +29,8 @@ export interface ScheduleProposal {
   schedule: ScheduleDef;
 }
 
-const CAP = 10;
+/** Same per-proposer attention ceiling as the sibling Saved Agent proposal queue. */
+export const SCHEDULE_PROPOSAL_PENDING_CEILING = 3;
 export const SCHEDULE_PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000;
 
 export function scheduleProposalExpired(proposal: Pick<ScheduleProposal, "expiresAt">, nowMs = Date.now()): boolean {
@@ -73,8 +74,12 @@ export class ProposalStore {
   /** Records a proposal. Dedupes by name (a re-proposal replaces the prior pending one). */
   create(name: string, schedule: ScheduleDef, by: string, reason?: string): ScheduleProposal {
     const proposals = this.list().filter((p) => p.name !== name);
-    if (proposals.length >= CAP) {
-      throw new Error(`too many pending schedule proposals (cap ${CAP}) — approve or reject some first`);
+    const mine = proposals.filter((proposal) => proposal.by === by && !scheduleProposalExpired(proposal));
+    if (mine.length >= SCHEDULE_PROPOSAL_PENDING_CEILING) {
+      throw new Error(
+        `agent '${by}' already has ${mine.length} pending schedule proposals ` +
+        `(ceiling ${SCHEDULE_PROPOSAL_PENDING_CEILING}); approve or reject one before proposing another`,
+      );
     }
     const createdAt = new Date().toISOString();
     const proposal: ScheduleProposal = {

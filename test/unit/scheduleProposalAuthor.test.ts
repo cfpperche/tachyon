@@ -3,7 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { ProposalStore, SCHEDULE_PROPOSAL_TTL_MS } from "../../src/schedule/ProposalStore.js";
+import {
+  ProposalStore,
+  SCHEDULE_PROPOSAL_PENDING_CEILING,
+  SCHEDULE_PROPOSAL_TTL_MS,
+} from "../../src/schedule/ProposalStore.js";
 import { buildHumanInbox } from "../../src/humanInbox/model.js";
 import type { CallerSnapshot } from "../../src/bridge/callerIdentity.js";
 
@@ -49,7 +53,7 @@ function bridge(caller: CallerSnapshot | undefined) {
     if (!handler) throw new Error("propose_schedule is not registered");
     return handler({ name, every: "1h", run: "test", reason: "nightly regression" });
   };
-  return { proposals, toasts, propose };
+  return { root, proposals, toasts, propose };
 }
 
 /**
@@ -111,6 +115,42 @@ describe("who proposed a schedule (t-fbefec)", () => {
     expect(result.isError, result.content[0]?.text).not.toBe(true);
 
     expect(proposals.list()[0]?.by).toBe("claude-opus5-3");
+  });
+});
+
+describe("schedule proposal volume ceiling (t-e5ecec)", () => {
+  it("limits only this proposer's live pending work and reports both usage and limit", async () => {
+    const mine = bridge({ kind: "agent", name: "codex-canonico" });
+    for (let index = 0; index < SCHEDULE_PROPOSAL_PENDING_CEILING; index += 1) {
+      const accepted = await mine.propose(`mine-${index}`);
+      expect(accepted.isError, accepted.content[0]?.text).not.toBe(true);
+    }
+
+    const refused = await mine.propose("one-too-many");
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]?.text).toContain(
+      `already has ${SCHEDULE_PROPOSAL_PENDING_CEILING} pending schedule proposals`,
+    );
+    expect(refused.content[0]?.text).toContain(`ceiling ${SCHEDULE_PROPOSAL_PENDING_CEILING}`);
+
+    // A neighbour's queue is independent, and resolving one of mine immediately frees its slot.
+    const neighbour = new ProposalStore(mine.root);
+    expect(() => neighbour.create("theirs", { every: "1h", run: "test" }, "claude-runtime")).not.toThrow();
+    mine.proposals.remove(mine.proposals.list().find((proposal) => proposal.by === "codex-canonico")!.id);
+    const afterResolution = await mine.propose("after-resolution");
+    expect(afterResolution.isError, afterResolution.content[0]?.text).not.toBe(true);
+  });
+
+  it("does not let expired proposals hold a slot", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-08-12T12:00:00.000Z"));
+    const { proposals } = bridge({ kind: "agent", name: "codex-canonico" });
+    for (let index = 0; index < SCHEDULE_PROPOSAL_PENDING_CEILING; index += 1) {
+      proposals.create(`stale-${index}`, { every: "1h", run: "test" }, "codex-canonico");
+    }
+
+    vi.advanceTimersByTime(SCHEDULE_PROPOSAL_TTL_MS);
+    expect(() => proposals.create("fresh", { every: "1h", run: "test" }, "codex-canonico")).not.toThrow();
   });
 });
 
