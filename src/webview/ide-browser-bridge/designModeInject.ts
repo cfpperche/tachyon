@@ -664,6 +664,12 @@ export function buildDesignModeInjectExpression(
       #tachyon-dm-agent-menu button[aria-selected="true"] {
         background: var(--ds-hover, rgba(255,255,255,0.08));
       }
+      #tachyon-dm-agent-menu button:disabled {
+        white-space: normal;
+        line-height: 1.35;
+        cursor: default;
+        opacity: 0.9;
+      }
 
       /* Group chat panel — messenger aesthetics, DS tokens */
       #tachyon-dm-chat {
@@ -1033,6 +1039,7 @@ export function buildDesignModeInjectExpression(
   /* ── Chat (sole agent channel; selection is attach context only) ── */
   let agents = [];
   let activeAgent = '';
+  let emptyReason = '';
   let chatOpen = false;
   let chatItems = [];
   let hasMoreBefore = false;
@@ -1150,7 +1157,8 @@ export function buildDesignModeInjectExpression(
     if (!agents.length) {
       const emptyBtn = document.createElement('button');
       emptyBtn.type = 'button';
-      emptyBtn.textContent = 'No running agents';
+      emptyBtn.textContent = emptyReason || 'No running agents';
+      emptyBtn.title = emptyBtn.textContent;
       emptyBtn.disabled = true;
       agentMenu.appendChild(emptyBtn);
     } else {
@@ -1183,7 +1191,11 @@ export function buildDesignModeInjectExpression(
       if (payload.type === 'agents') {
         agents = Array.isArray(payload.agents) ? payload.agents.slice() : [];
         if (typeof payload.active === 'string') activeAgent = payload.active;
+        emptyReason = (!agents.length && typeof payload.emptyReason === 'string')
+          ? payload.emptyReason.trim()
+          : '';
         syncAgentUi();
+        if (agentMenu && !agentMenu.hidden) openAgentMenu();
         return;
       }
       if (payload.type === 'selection') {

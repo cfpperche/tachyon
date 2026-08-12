@@ -58,6 +58,12 @@ describe("buildDesignModeInjectExpression", () => {
     expect(src).not.toMatch(/group · one thread/);
   });
 
+  it("renders host-provided emptyReason in the agent menu (t-a4060b)", () => {
+    expect(src).toContain("payload.emptyReason");
+    expect(src).toMatch(/emptyReason\s*\|\|\s*'No running agents'/);
+    expect(src).toMatch(/type === 'agents'[\s\S]*emptyReason/);
+  });
+
   it("unifies agent send on chat only — selection card has no note/send", () => {
     expect(src).toContain("tachyon-dm-selection-chip");
     expect(src).toContain("__clearSelection");
