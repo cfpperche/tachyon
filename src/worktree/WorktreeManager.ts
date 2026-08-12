@@ -208,7 +208,7 @@ function listedWorktree(output: string, targetPath: string): { locked: boolean; 
  * carry out. Whoever moves or renames the door edits this line, and every refusal follows.
  */
 export const RELEASE_LOCK_HINT =
-  'open Control → Worktrees and use "Release lock" on this checkout — it shows what is inside (commits, uncommitted changes) before anything is released';
+  'Open Control → Worktrees and use "Release lock" on this checkout — it shows what is inside (commits, uncommitted changes) before anything is released';
 
 /**
  * t-d29398 — the refusal a human meets when a checkout an EARLIER launch quarantined is still locked.
@@ -222,7 +222,7 @@ export function preservedLockRefusal(worktreePath: string, lockReason?: string):
   const provenance = lockReason === "added with --lock" || !lockReason
     ? "an earlier launch was interrupted before it could hand this checkout over, and its Git quarantine is still held"
     : `it is held by a Git worktree lock (reason: ${lockReason})`;
-  return `cannot reuse preserved worktree at ${worktreePath}: ${provenance}. Fixing the original failure does not clear it — ${RELEASE_LOCK_HINT}.`;
+  return `${RELEASE_LOCK_HINT}. Cannot reuse preserved worktree at ${worktreePath}: ${provenance}. Fixing the original failure does not clear it.`;
 }
 
 /** The reason git recorded inside `.git/worktrees/<id>/locked`, when it is readable. */
@@ -712,7 +712,7 @@ export class WorktreeManager {
       if (!listed) throw new Error(`persisted worktree is not registered with Git: ${rec.path}`);
       if (listed.locked) {
         throw new Error(
-          `persisted worktree remains Git-locked and requires explicit recovery: ${rec.path}; ${RELEASE_LOCK_HINT}`,
+          `${RELEASE_LOCK_HINT}. Persisted worktree remains Git-locked and requires explicit recovery: ${rec.path}`,
         );
       }
 
@@ -765,7 +765,7 @@ export class WorktreeManager {
     }
     if (listed && !this.exists(wtPath) && o.quarantineForLaunch) {
       throw new WorktreeUnavailableError(
-        `cannot prepare worktree at ${wtPath}: Git metadata survives but the checkout path is missing; inspect and recover it explicitly`,
+        `Inspect and recover this checkout explicitly — cannot prepare worktree at ${wtPath}: Git metadata survives but the checkout path is missing`,
         "recovery-preserved",
       );
     }

@@ -148,7 +148,9 @@ describe("t-d29398 — the refusal a preserved lock produces, and the door it na
     // EARLIER launch left this, so fixing the original cause was never going to clear it.
     expect(message).toContain("Release lock");
     expect(message).toContain("Control → Worktrees");
+    expect(message).toMatch(/^Open Control → Worktrees/);
     expect(message).toMatch(/earlier launch was interrupted/);
+    expect(message.indexOf("Control → Worktrees")).toBeLessThan(message.indexOf(first.record.path));
   });
 
   it("releases the lock without touching what is inside, and the next launch reuses the checkout", async () => {
