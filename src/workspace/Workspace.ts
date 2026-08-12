@@ -6389,6 +6389,11 @@ export class Workspace {
     // It never stops or deletes anything — it reports and names the governed action. `start()` returns
     // without activating, so a running fleet is left exactly as it was for the operator to end.
     //
+    // t-613361 — that early return is NOT Bridge/engine teardown. The Bridge listener was started in
+    // `_create` (and the engine process continues past this call); refusal only skips the fleet
+    // interpretation half of THIS method. Bridge read/write, Control, and scheduler stay up. See
+    // `legacyFleetGate.ts` "What a refusal does NOT shut down".
+    //
     // t-ae221c — the same question, asked of the record that now answers it. "Backed by a canonical
     // profile" was a pointer in `tachyon.yml`; it is a readable `.tachyon/agents/<name>/agent.yml`.
     // An unreadable or absent directory yields an empty set — which makes every agent look inline
