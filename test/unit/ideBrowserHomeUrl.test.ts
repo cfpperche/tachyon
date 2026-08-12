@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   IDE_BROWSER_HOME_URL_FALLBACK,
   normalizeIdeBrowserHomeUrl,
+  normalizeIdeBrowserNavigationUrl,
 } from "../../src/webview/ide-browser-bridge/homeUrl.js";
 
 describe("normalizeIdeBrowserHomeUrl", () => {
@@ -28,5 +29,16 @@ describe("normalizeIdeBrowserHomeUrl", () => {
   it("rejects non-http schemes", () => {
     expect(normalizeIdeBrowserHomeUrl("file:///tmp/x")).toBe("about:blank");
     expect(normalizeIdeBrowserHomeUrl("javascript:alert(1)")).toBe("about:blank");
+  });
+});
+
+describe("normalizeIdeBrowserNavigationUrl", () => {
+  it("reports an explicit rejected scheme instead of silently opening about:blank", () => {
+    expect(() => normalizeIdeBrowserNavigationUrl("javascript:alert(1)"))
+      .toThrow("scheme 'javascript:' is not allowed");
+  });
+
+  it("keeps bare-host normalization consistent with homeUrl", () => {
+    expect(normalizeIdeBrowserNavigationUrl("localhost:3000")).toBe("https://localhost:3000/");
   });
 });

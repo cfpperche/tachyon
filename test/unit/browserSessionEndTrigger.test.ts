@@ -166,6 +166,28 @@ describe("BrowserSessionController terminate log (t-1c8195)", () => {
     return { ctl, lines };
   }
 
+  it("rejects a disallowed scheme by name before command or agent navigation", async () => {
+    const { ctl } = controller();
+    vi.spyOn(ctl, "withCdpRecovery").mockImplementation(async (_url, fn) => fn());
+    vi.spyOn(ctl, "ensureBrowser").mockResolvedValue(undefined);
+    const navigate = vi.spyOn(ctl.cdp, "navigate").mockResolvedValue(undefined);
+
+    await expect(ctl.navigate("file:///tmp/report.html")).rejects.toThrow(/scheme 'file:'/);
+
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the home policy of interpreting a bare host as HTTPS", async () => {
+    const { ctl } = controller();
+    vi.spyOn(ctl, "withCdpRecovery").mockImplementation(async (_url, fn) => fn());
+    vi.spyOn(ctl, "ensureBrowser").mockResolvedValue(undefined);
+    const navigate = vi.spyOn(ctl.cdp, "navigate").mockResolvedValue(undefined);
+
+    await ctl.navigate("localhost:3000");
+
+    expect(navigate).toHaveBeenCalledWith("https://localhost:3000/");
+  });
+
   it("logs child-ended-parent-active when the child dies and the parent becomes active", async () => {
     const { ctl, lines } = controller();
     await ctl.launchBrowser("about:blank");
