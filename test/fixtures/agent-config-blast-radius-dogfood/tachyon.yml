@@ -11,7 +11,3 @@ settings:
   maxAgents: 4
 
 agents: {}
-terminals:
-  shell:
-    cmd: sh
-    autostart: false

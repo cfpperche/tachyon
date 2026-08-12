@@ -1,0 +1,3 @@
+cmd: sh -c "echo memtest-started; exec sleep 3600"
+autostart: false
+attention: false

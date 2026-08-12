@@ -14,9 +14,6 @@ import { degradedRosterExtras } from "../config/configFailure.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 import { projectAgentProfileStudioSnapshot } from "../config/agentProfileStudio.js";
 import {
-  upsertAgent,
-  cloneAgent,
-  deleteAgent,
   deleteCommand,
   deleteRunbook,
   setCompanionTabTools,
@@ -372,10 +369,9 @@ export async function executeExtensionCommand(
       if (workspace.config?.agents[command.agent]?.kind !== "terminal") {
         throw new Error(`'${command.agent}' is not a canonical agent or declared terminal`);
       }
-      return configMutation(workspace, () => workspace.mutateConfig(
-        (text) => cloneAgent(text ?? "", command.agent, command.newName),
-        () => onViewsChanged("agents"),
-      ));
+      const changed = workspace.cloneTerminalDeclaration(command.agent, command.newName);
+      if (changed) onViewsChanged("agents");
+      return json({ changed });
     }
     case "config.agent.rename":
       await workspace.renameAgent(command.agent, command.newName);
@@ -959,10 +955,10 @@ async function deleteConfiguredAgent(
     // `stopAgentSessionForDelete` above destroy far more, irreversibly, ahead of the same line — and
     // it leaves a working entry rather than an orphan nobody can name.
     await workspace.forgetAgent(agent);
-    const changed = workspace.mutateConfig((text) => deleteAgent(text ?? "", agent));
+    const changed = workspace.deleteTerminalDeclaration(agent);
     if (!changed) {
       throw new Error(
-        `could not remove '${agent}' from tachyon.yml; its per-agent footprint is already cleared and the entry is still declared — run the removal again`,
+        `could not remove '${agent}' from .tachyon/terminals; its per-agent footprint is already cleared and the entry is still declared — run the removal again`,
       );
     }
     onViewsChanged("agents");
@@ -1008,14 +1004,9 @@ async function promoteAgent(
     throw new Error("only a terminal instance can be saved to tachyon.yml; create an agent in Agent Studio instead");
   }
   if (workspace.config?.agents[agent] !== undefined) throw new Error(`'${agent}' is already declared in tachyon.yml`);
-  const changed = workspace.mutateConfig(
-    // t-c1ef82 — the `terminals:` block, because that is the only block this file still declares
-    // anything in. The former `addAgent` wrote into `agents:` regardless of kind; since t-ae221c that
-    // block is retired and read-and-dropped, so an entry written there would simply never come back.
-    (text) => upsertAgent(text ?? "", agent, { cmd: definition.cmd }, undefined, "terminals"),
-    () => onViewsChanged("agents"),
-  );
-  if (!changed) throw new Error(`could not save '${agent}' to tachyon.yml`);
+  const changed = workspace.promoteTerminalDeclaration(agent, definition.cmd);
+  if (changed) onViewsChanged("agents");
+  if (!changed) throw new Error(`could not save '${agent}' to .tachyon/terminals/${agent}.yml`);
   // t-04052d — PROMOTION, and the one place the two axes and the capability must be written apart.
   // A durable Profile now exists for this name (the config edit above), so the definition outlives the
   // process: `lifetime` becomes `saved` and it may be started again from that Profile. What does NOT

@@ -16,8 +16,3 @@ settings:
     homeUrl: about:blank
 
 agents: {}
-
-terminals:
-  shell:
-    cmd: sh
-    autostart: false

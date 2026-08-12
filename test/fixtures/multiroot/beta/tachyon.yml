@@ -1,4 +1,1 @@
-# SDD 478 M7 — see alpha: `cmd: sh` is a process, so this row is a terminal.
-terminals:
-  beta-agent:
-    cmd: sh
+{}

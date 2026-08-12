@@ -180,6 +180,15 @@ describe("t-72ff5a sidebar workspace scope — headless Visual QA", () => {
     }, 60_000);
   }
 
+  it("terminal roster remains readable at the repository's wide and narrow widths", async () => {
+    for (const w of WIDTHS) {
+      await shoot("terminals-single-root", { fleets: [alpha], initialTab: "Terminals", selectedWsHash: "hash-alpha" }, w);
+      const g = await geometry();
+      expect(g.rowNames, `@ ${w.id}: terminal rows`).toEqual(expect.arrayContaining(["dev", "shell"]));
+      expect(g.docWidth, `@ ${w.id}: horizontal overflow`).toBeLessThanOrEqual(g.viewportWidth);
+    }
+  }, 60_000);
+
   it("multi-root: switching the selector moves every scoped tab, and the two look identical to single-root", async () => {
     for (const w of WIDTHS) {
       await shoot("agents-multi-root-selected-beta", { fleets: [alpha, beta], initialTab: "Agents", selectedWsHash: "hash-beta" }, w);

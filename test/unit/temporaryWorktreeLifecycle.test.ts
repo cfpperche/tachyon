@@ -376,8 +376,8 @@ function promoteWorld(opts: { worktree?: WorktreeRecord; kind?: "agent" | "termi
       remove: () => { writes.push("ledger-remove"); },
     },
     config: { agents: {} },
-    mutateConfig: (mutate: (text: string) => { text: string }) => {
-      writes.push(`config:${mutate("agents: {}\n").text}`);
+    promoteTerminalDeclaration: (name: string, cmd: string) => {
+      writes.push(`terminal:${name}:${cmd}`);
       return true;
     },
     manager: { forgetTemporary: () => { writes.push("forget-temporary"); } },
@@ -401,12 +401,10 @@ describe("t-d06da3 — promotion does not orphan a checkout by omission", () => 
 
     await promote(workspace, "helper");
 
-    const written = writes.find((w) => w.startsWith("config:"))!;
-    expect(written).toContain("cmd: codex");
-    // t-c1ef82 — the BLOCK carries the kind now, and that is the point rather than a detail: a
-    // terminal written into `agents:` with `kind: terminal` beside it is the retired inline form the
-    // loader refuses. Asserting the block is what proves the entry is readable at all.
-    expect(written).toMatch(/terminals:[\s\S]*helper:/);
+    const written = writes.find((w) => w.startsWith("terminal:"))!;
+    // The declaration writer receives only the terminal name and command. Isolation has no path
+    // into the new flat terminal file.
+    expect(written).toBe("terminal:helper:codex");
     expect(written).not.toContain("worktree");
   });
 

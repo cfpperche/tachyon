@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { stringify } from "yaml";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
+import { agentsOf, asAgent, parseConfig } from "../../src/config/loadConfig.js";
 import { parseLockfile } from "../../src/plugins/lockfile.js";
 import { annotateAuthorized, listAuthorizableCapabilities } from "../../src/config/agentCapabilityCandidates.js";
 import { authorizedSkillStates, skillOriginFor } from "../../src/config/agentSkillAuthorizationService.js";
@@ -188,7 +188,7 @@ describe("agent-config-blast-radius fixture (t-588644)", () => {
     const { input } = scenario();
     const before = loadProfileAwareConfig(input);
 
-    expect(Object.keys(before.config!.agents).sort()).toEqual(["bystander", "pinned"]);
+    expect(Object.keys(agentsOf(before.config)).sort()).toEqual(["bystander", "pinned"]);
     expect(before.profileErrors).toEqual([]);
   });
 
@@ -201,7 +201,7 @@ describe("agent-config-blast-radius fixture (t-588644)", () => {
     drift(root);
 
     const after = loadProfileAwareConfig(input);
-    expect(Object.keys(after.config!.agents).sort()).toEqual(["bystander", "pinned"]);
+    expect(Object.keys(agentsOf(after.config)).sort()).toEqual(["bystander", "pinned"]);
     expect(after.errors).toEqual([]);
     expect(after.profileErrors).toEqual([]);
     expect(after.config!.agentSources.pinned).toMatchObject({ mode: "profile" });
