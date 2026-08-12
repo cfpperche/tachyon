@@ -12,9 +12,9 @@
  *     only its own name and the doorbell guidance, and recovered `t-5bfb72` by scanning the board
  *     for `assignee == me && status == active` — an inference, not a handoff, and one that silently
  *     picks the wrong task the moment two are assigned.
- *  2. WHERE it was allowed to do it. The same restart said nothing about isolation, and the agent
+ *  2. WHERE it was instructed to do it. The same restart said nothing about its checkout, and the agent
  *     committed straight to the primary checkout although its (pane-delivered, now-lost)
- *     instructions had required an isolated worktree.
+ *     instructions had required work in a separate worktree.
  *
  * This module renders both as explicit record. It is pure and table-testable: the manager supplies
  * the facts, this decides only how they read. Nothing here infers — an empty assignment list is
@@ -79,14 +79,14 @@ export const MAX_HEADER_TASK_IDS = 3;
 function isolationLines(isolation: SessionIsolation): string[] {
   if (isolation.kind === "worktree") {
     return [
-      `Isolation: git worktree ${isolation.path} on branch ${isolation.branch}.`,
+      `Checkout: separate git worktree ${isolation.path} on branch ${isolation.branch}. This is the session's working directory, not a write-confinement boundary.`,
       "Make every change here. Do not edit, commit to, or push the primary checkout from this session.",
     ];
   }
   return [
-    `Isolation: none on record — this session runs in the shared checkout ${isolation.cwd}.`,
+    `Checkout: shared — this session runs in ${isolation.cwd}.`,
     "No worktree or branch was recorded for you, so nothing here authorizes committing to the trunk." +
-      " If your work needs an isolated checkout, create one before you change tracked files; do not assume" +
+      " If your work needs a separate checkout, create one before you change tracked files; do not assume" +
       " an earlier conversation already granted that.",
   ];
 }

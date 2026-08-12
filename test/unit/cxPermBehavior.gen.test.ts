@@ -111,7 +111,7 @@ describe("container-generated delegation behavior", () => {
 
   it("an ungated, shared-cwd delegated opencode agent (parent set, no worktree) does NOT get the Tachyon permission block", async () => {
     // Security review (782f1c6, HIGH): t-e2ebe3 made this population possible — a genuinely delegated
-    // (`parent` truthy) opencode agent that inherits the parent's cwd instead of an isolated worktree.
+    // (`parent` truthy) opencode agent that inherits the parent's cwd instead of a separate worktree.
     // The permission block's `bash:"allow"` is unconfined shell access with no `external_directory`
     // bound on it, so this population must fall back to opencode's own default, not get the block.
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-cxperm-"));

@@ -20,7 +20,7 @@ import type { TerminalStudioEntity, TerminalStudioFields, TerminalStudioHostMess
  * for the nav-transaction freeze). Nothing here is Terminal-specific except the field UI and the
  * domain compute functions — the generic machinery is a straight port.
  *
- * t-b54ead — there is deliberately NO "Git worktree isolation" section here, and re-adding one is a
+ * t-b54ead — there is deliberately NO "Separate git checkout + branch" section here, and re-adding one is a
  * regression rather than a feature. `worktree`, `branch`, and `worktreeSetup` are agent-only by
  * consumption, so `parseAgentEntry` refuses all three under `terminals:` — and `Workspace.mutateConfig`
  * refuses to write a config the loader would discard from, which made Save fail with a message pointing

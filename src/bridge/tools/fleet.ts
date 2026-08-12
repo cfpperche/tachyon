@@ -74,7 +74,7 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
             // The old text also offered "spawn top-level", which an agent caller cannot do at all: an
             // omitted `parent` resolves to the caller itself (spec 351), so every spawn it makes is
             // parented. This says what the parameter DOES, to the caller who reads it most.
-            "isolate this agent in its own git worktree + branch, instead of inheriting a directory. "
+            "give this agent its own git worktree + branch, instead of inheriting a directory. "
             + "For a delegated child this is the governed alternative to cwd (which is refused for a parented "
             + "child): it opts out of running where its parent runs and is born in its own checkout. "
             + "Dismissing the child removes that checkout with it; a branch holding unmerged commits is kept.",

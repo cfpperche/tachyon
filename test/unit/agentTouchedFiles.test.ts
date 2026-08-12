@@ -34,7 +34,7 @@ describe("collectAgentTouchedFiles (t-75e9c7)", () => {
     expect(rows).toEqual([]);
   });
 
-  it("an agent with no isolated worktree is reported honestly, never folded into 'touched nothing'", async () => {
+  it("an agent with no separate worktree is reported honestly, never folded into 'touched nothing'", async () => {
     const rows = await collectAgentTouchedFiles(
       [{ name: "shared", running: true }],
       () => undefined,
@@ -45,7 +45,7 @@ describe("collectAgentTouchedFiles (t-75e9c7)", () => {
         agent: "shared",
         worktree: false,
         files: [],
-        note: "no isolated worktree — this agent shares a checkout, so its touched files cannot be derived from a branch diff",
+        note: "no separate worktree — this agent shares a checkout, so its touched files cannot be derived from a branch diff",
       },
     ]);
   });

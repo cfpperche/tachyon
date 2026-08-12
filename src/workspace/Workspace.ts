@@ -1191,7 +1191,7 @@ export class Workspace {
         this.monitor?.reset(name);
         this.freshTurnBaselines.delete(name);
       },
-      // spec 210 — worktree isolation: resolve the cwd a session is born in.
+      // spec 210 — separate worktree checkout: resolve the cwd a session is born in.
       // spec 230 — a pipeline node spawns into its RUN's worktree (registered just before spawnNode);
       // this overrides the per-agent worktree path so the chain shares one checkout.
       resolveSpawnCwd: async (ctx) => {
@@ -1705,7 +1705,7 @@ export class Workspace {
     this.proposals = new ProposalStore(workspaceRoot);
 
     // spec 257 — the captured headless A2A probe lane. Read-only by default; write-capable probes are
-    // refused in this build (worktree isolation for them is a follow-up — D8 auth does real work here).
+    // refused in this build (separate worktrees for them are a follow-up — D8 auth does real work here).
     this.probeStore = new ProbeStore(path.join(workspaceRoot, ".tachyon", "probes"));
     this.probeService = new ProbeService({
       adapters: new Map([

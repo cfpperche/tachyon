@@ -36,7 +36,7 @@ export interface SavedAgentProposalReview {
   expired: boolean;
   agentName: string;
   /**
-   * t-4071e4 — whether the approved agent would get its own isolated worktree. A structured field as
+   * t-4071e4 — whether the approved agent would get its own separate worktree. A structured field as
    * well as review prose, so a surface that renders a summary rather than the `dangerous` list still
    * shows the decision instead of dropping it.
    */
@@ -155,8 +155,8 @@ export function buildSavedAgentProposalReview(input: {
     dangerous.push({
       label: "workspace",
       detail:
-        "asked NOT to be isolated: it would run in the shared workspace checkout, so its edits and any "
-        + "branch switch land where your other work lives. An isolated worktree is the default — this "
+        "asked to use the shared workspace checkout, so its edits and any "
+        + "branch switch land where your other work lives. A separate worktree is the default — this "
         + "proposal deliberately opted out.",
     });
   }
@@ -197,8 +197,8 @@ export function buildSavedAgentProposalReview(input: {
         ? `${proposal.proposer} → ownership.subagents adds ${spec.name}`
         : `no declaredOwner edge (top-level Saved Agent)`,
       worktreeEnabled
-        ? `runs in its OWN isolated git worktree under the governed worktrees root (path and branch not chosen by the proposer)`
-        : `runs in the SHARED workspace checkout — no isolated worktree`,
+        ? `runs in its OWN git worktree under the governed worktrees root (separate checkout and branch; path and branch not chosen by the proposer)`
+        : `runs in the SHARED workspace checkout — no separate worktree`,
       `created enabled; not started (no session, no running worktree, no task assignment)`,
     ],
     baseConfigSha256: proposal.base.configSha256,

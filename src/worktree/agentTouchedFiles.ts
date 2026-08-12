@@ -9,7 +9,7 @@
  *
  * `WorktreeManager.changedFiles` (spec 213) computes the working-tree comparison, tracked +
  * untracked and rename/copy-aware. This module chooses its comparison ref, shapes "one row per live
- * agent", and says so honestly when an agent has no isolated worktree or a legacy worktree has no
+ * agent", and says so honestly when an agent has no separate worktree or a legacy worktree has no
  * recorded base branch from which to remove branch drift.
  */
 import type { ChangedFile } from "./review.js";
@@ -61,7 +61,7 @@ export async function collectAgentTouchedFiles(
           agent: a.name,
           worktree: false,
           files: [],
-          note: "no isolated worktree — this agent shares a checkout, so its touched files cannot be derived from a branch diff",
+          note: "no separate worktree — this agent shares a checkout, so its touched files cannot be derived from a branch diff",
         };
       }
       let comparisonRef = wt.baseRef;

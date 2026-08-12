@@ -3,7 +3,7 @@
  * precondition behind it. This module is read-only: it measures and composes; `landAct.ts` performs
  * the command only after the Interface asks and the engine reuses this probe.
  *
- * WHY IT EXISTS. Tachyon models the AUTHORITY to integrate but not the ACT: an agent isolated in a
+ * WHY IT EXISTS. Tachyon models the AUTHORITY to integrate but not the ACT: an agent working in a separate
  * worktree delivers to the edge of its own branch and stops, and a human then types a git command by
  * hand — without the preconditions the product already knows how to check. Measured 2026-08-06/07 on
  * this host: eight hand-run merges, three of which broke the trunk. Every one of those three failed on

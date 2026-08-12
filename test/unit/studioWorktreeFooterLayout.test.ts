@@ -17,13 +17,13 @@ function readSrc(rel: string): string {
 describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions footer)", () => {
   it("agent-studio-shell places the worktree section in fields and omits sideActions", () => {
     const src = readSrc("src/webview/agent-studio-shell/App.tsx");
-    expect(src).toContain("Git worktree isolation");
+    expect(src).toContain("Separate git checkout + branch");
     expect(src).toContain("ash-cwd");
     // worktree markup is inside the fields region tree, not a sideActions prop
     expect(src).not.toMatch(/sideActions\s*:/);
     // ordering: Working directory input appears before the worktree summary in source
     const cwdAt = src.indexOf('for="ash-cwd"');
-    const worktreeAt = src.indexOf("Git worktree isolation");
+    const worktreeAt = src.indexOf("Separate git checkout + branch");
     expect(cwdAt).toBeGreaterThan(-1);
     expect(worktreeAt).toBeGreaterThan(cwdAt);
   });

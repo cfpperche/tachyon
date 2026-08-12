@@ -105,7 +105,7 @@
             "type": "string"
           },
           "worktree": {
-            "description": "Run this agent in its own git worktree + branch (opt-in, off by default). Isolates parallel agents so they don't clobber each other's files.",
+            "description": "Run this agent in its own git worktree + branch (opt-in, off by default). This provides a separate checkout and working directory; it does not confine writes.",
             "type": "boolean",
             "default": false
           },
@@ -311,7 +311,7 @@
             },
             "sharedDirectories": {
               "type": "array",
-              "description": "Repo-relative literal directories to symlink from the primary checkout into isolated worktrees. Only entries that exist as directories and are gitignored are admitted; invalid entries warn and are skipped. There is no product default.",
+              "description": "Repo-relative literal directories to symlink from the primary checkout into separate worktrees. Only entries that exist as directories and are gitignored are admitted; invalid entries warn and are skipped. There is no product default.",
               "items": { "type": "string", "minLength": 1 },
               "uniqueItems": true
             }

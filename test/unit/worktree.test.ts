@@ -302,7 +302,7 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
       });
     });
 
-    it("parented worktree:true opts into its own isolated worktree", async () => {
+    it("parented worktree:true opts into its own separate worktree", async () => {
       const h = deps({ resolveParent: async (p: string) => (p === "boss" ? { cwd: "/wt/h/boss", known: true } : { known: false }) });
       const r = await resolveWorktreeCwd({ name: "helper", worktree: true, parent: "boss", isRestart: false }, h.d);
       expect(r).toEqual({ cwd: "/wt/h/rev", worktree: REC, created: true });
@@ -565,7 +565,7 @@ describe("WorktreeManager — pure resolvers (spec 210)", () => {
           h.d,
         )).rejects.toMatchObject({
           reason: "not-repo",
-          message: expect.stringContaining("asked for an isolated worktree under parent 'boss'"),
+          message: expect.stringContaining("asked for a separate worktree under parent 'boss'"),
         });
         // A notice would be the tell that it degraded and carried on.
         expect(h.notices).toEqual([]);

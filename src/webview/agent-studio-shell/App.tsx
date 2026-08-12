@@ -1111,7 +1111,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
               * discarding transcript and work in progress with no human gesture. Terminal Studio keeps
               * its `Watch files` field, and that is where the capability lives. */}
 
-            {/* t-da80ed — an isolated agent's working directory IS its worktree, and the runtime
+            {/* t-da80ed — a worktree agent's working directory IS its worktree, and the runtime
              * already overwrites this field's value with the worktree path. Leaving it editable let a
              * human type a path, save without error, and get nothing. Disabled, and the placeholder
              * states the directory that will actually be used instead of the workspace root. */}
@@ -1127,7 +1127,7 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
                 />
                 <Button disabled={fields.worktree} onClick={() => post(browseMessage())}>Browse</Button>
               </div>
-              {fields.worktree && <div class="hint">This agent runs in its own git worktree, which is its working directory. Turn the isolation off below to choose a directory.</div>}
+              {fields.worktree && <div class="hint">This agent runs in its own git worktree, which is its working directory. Turn the separate checkout off below to choose a directory.</div>}
               {canonical && <div class="hint">{profileLabels.canonicalTrustHelp}</div>}
             </div>
 
@@ -1135,9 +1135,9 @@ export function App({ dispatch, routeKey, mountNonce, incoming, backLink }: Agen
              * under Working directory). StudioFrame's sideActions slot sits AFTER flex:1 main and
              * was pinning these as a lonely bottom footer with a huge empty void on short forms. */}
             <section class="ash-static-section" aria-labelledby="ash-worktree-title">
-              <div class="ash-label" id="ash-worktree-title">Git worktree isolation</div>
-              <div class="hint">Run this agent in a dedicated branch and worktree, with optional setup commands.</div>
-              {/* t-da80ed — turning isolation ON clears the working directory in the same gesture.
+              <div class="ash-label" id="ash-worktree-title">Separate git checkout + branch</div>
+              <div class="hint">Run this agent in a dedicated branch and worktree, with optional setup commands. This chooses its working directory; it does not confine writes.</div>
+              {/* t-da80ed — turning the separate checkout ON clears the working directory in the same gesture.
                 * Without this, a profile that already carried a cwd would disable the field while
                 * keeping its value, and the save would then refuse over something the human can
                 * neither see nor edit. */}

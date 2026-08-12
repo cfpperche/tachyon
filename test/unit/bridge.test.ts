@@ -245,7 +245,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   let claudeHasStartedTurn = true;
   let claudeComposerOccupied = false;
   // t-75e9c7 — agent_touched_files' git port, keyed by worktree cwd; empty by default (no fixture
-  // wires deps.agentWorktrees here, so every live agent hits the honest "no isolated worktree"
+  // wires deps.agentWorktrees here, so every live agent hits the honest "no separate worktree"
   // branch — the real diff-vs-baseRef behaviour is proven with real git in worktree.integration.test.ts).
   const touchedFilesByCwd: Record<string, ChangedFile[]> = {};
   // t-a53dd9 — the SAME question answered from the pane instead of from the poll. Independent of
@@ -1889,7 +1889,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     >;
     const claude = report.find((r) => r.agent === "claude");
     expect(claude).toMatchObject({ worktree: false, files: [] });
-    expect(claude?.note).toMatch(/no isolated worktree/);
+    expect(claude?.note).toMatch(/no separate worktree/);
     // claude-cowntdown is a declared Saved Agent that is not running — not live, not reported.
     expect(report.some((r) => r.agent === "claude-cowntdown")).toBe(false);
   });

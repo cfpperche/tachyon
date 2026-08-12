@@ -83,7 +83,7 @@ commands and runbooks stay plain declarations.
 - **A persistent engine** — agents outlive the editor; a reboot restores them with their conversation.
 - **The MCP Bridge** — every Tachyon-spawned agent gets a scoped, authenticated control plane for the
   fleet, with no manual wiring.
-- **Worktree isolation** — an agent can own its branch and checkout, verify it, and open the PR from
+- **Separate worktree and branch** — an agent can own its branch and checkout, verify it, and open the PR from
   the sidebar.
 - **Deliberate capabilities** — a plugin or skill reaches an agent only after a human authorizes it,
   pinned to the exact content approved. When that content changes the agent says so and offers to

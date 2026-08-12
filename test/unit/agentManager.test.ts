@@ -719,7 +719,7 @@ describe("AgentManager", () => {
         await manager.restart("worker", { stop: "force", session: "new" });
 
         const brief = delivered(root, fake, from);
-        expect(brief).toContain("Isolation: none on record");
+        expect(brief).toContain("Checkout: shared");
         expect(brief).toContain("nothing here authorizes committing to the trunk");
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
@@ -747,9 +747,9 @@ describe("AgentManager", () => {
         await manager.restart("worker", { stop: "force", session: "new" });
 
         const brief = delivered(root, fake, from);
-        expect(brief).toContain(`Isolation: git worktree ${checkout} on branch tachyon/change/t-5bfb72.`);
+        expect(brief).toContain(`Checkout: separate git worktree ${checkout} on branch tachyon/change/t-5bfb72.`);
         expect(brief).toContain("Do not edit, commit to, or push the primary checkout");
-        expect(brief).not.toContain("Isolation: none on record");
+        expect(brief).not.toContain("Checkout: shared");
       } finally {
         fs.rmSync(root, { recursive: true, force: true });
       }
@@ -4095,10 +4095,10 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(warnings[0]).toContain("same-user processes may read it");
   });
 
-  it("spec t-e2ebe3: private-home opencode delegation passes UNGATED (no isolated worktree required)", async () => {
+  it("spec t-e2ebe3: private-home opencode delegation passes UNGATED (no separate worktree required)", async () => {
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n");
     // The gated-only restriction was REMOVED — opencode now rates private-home (per-agent XDG), so a
-    // parented spawn delegates without a worktree. (Pre-t-e2ebe3: this threw "requires an isolated worktree".)
+    // parented spawn delegates without a worktree. (Pre-t-e2ebe3: this threw "requires a separate worktree".)
     await manager.spawn("reviewer", { cmd: "opencode", parent: "boss" });
     expect(newSessionArgs).toHaveLength(1);
   });
@@ -4134,7 +4134,7 @@ describe("AgentManager — session resume (spec 209)", () => {
     expect(fs.existsSync(path.join(harnessHome(ws, "reused-child"), "skills"))).toBe(false);
   });
 
-  it("spec 358 / t-e2ebe3: opencode delegation also passes with an isolated worktree", async () => {
+  it("spec 358 / t-e2ebe3: opencode delegation also passes with a separate worktree", async () => {
     const REC = { path: "/wt/h/reviewer", branch: "tachyon/reviewer", tachyonCreatedBranch: true, baseRef: "b", createdAt: "t" };
     const { manager, newSessionArgs } = resumeHarness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => ({ cwd: REC.path, worktree: REC }),
@@ -7542,7 +7542,7 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
     expect(newSessionArgs).toHaveLength(0);
   });
 
-  it("t-e2ebe3: parented opencode spawn delegates without requiring isolated worktree", async () => {
+  it("t-e2ebe3: parented opencode spawn delegates without requiring a separate worktree", async () => {
     const { manager, newSessionArgs } = harness("agents:\n  boss:\n    cmd: claude\n", {
       resolveSpawnCwd: async () => null,
     });

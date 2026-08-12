@@ -63,7 +63,7 @@ export interface AgentVM {
   delegator?: string;
   declaredOwner?: string;
   sub?: string;
-  /** Config/ledger branch when the agent has worktree isolation (gates Review/PR/Remove). Not necessarily live HEAD. */
+  /** Config/ledger branch when the agent has a separate worktree (gates Review/PR/Remove). Not necessarily live HEAD. */
   worktree?: string;
   /** spec 384 — live HEAD branch name in the agent's session cwd (sidebar badge). */
   liveBranch?: string;

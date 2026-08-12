@@ -80,7 +80,7 @@ describe("Saved Agent proposal review (SDD 482 phase 4C)", () => {
       "claude-runtime → ownership.subagents adds importer",
       // t-4071e4 — where the agent would RUN belongs next to "not started": both describe the posture
       // the approval commits to, and an approval screen that omits it hides the whole impact.
-      "runs in its OWN isolated git worktree under the governed worktrees root (path and branch not chosen by the proposer)",
+      "runs in its OWN git worktree under the governed worktrees root (separate checkout and branch; path and branch not chosen by the proposer)",
       "created enabled; not started (no session, no running worktree, no task assignment)",
     ]);
   });
@@ -271,20 +271,20 @@ describe("requested ownership is validated where the proposer can still learn wh
   });
 });
 
-describe("t-4071e4 — the human sees the isolation decision", () => {
-  it("shows the isolated default in `affected`, and calls out ONLY the opt-out as dangerous", () => {
-    const isolated = review();
-    expect(isolated.worktreeEnabled).toBe(true);
-    expect(isolated.affected.join("\n")).toContain("OWN isolated git worktree");
+describe("t-4071e4 — the human sees the separate-checkout decision", () => {
+  it("shows the separate-worktree default in `affected`, and calls out ONLY the opt-out as dangerous", () => {
+    const separate = review();
+    expect(separate.worktreeEnabled).toBe(true);
+    expect(separate.affected.join("\n")).toContain("OWN git worktree");
     // The safe default is not a grant of authority, so it must not appear in `dangerous` — that list
     // stays readable as "what approving hands over".
-    expect(isolated.dangerous.some((d) => d.label === "workspace")).toBe(false);
+    expect(separate.dangerous.some((d) => d.label === "workspace")).toBe(false);
 
     const shared = review(proposal({ workspace: { worktree: false } }));
     expect(shared.worktreeEnabled).toBe(false);
     const sharedText = shared.dangerous.find((d) => d.label === "workspace")!.detail;
-    expect(sharedText).toContain("NOT to be isolated");
     expect(sharedText).toContain("shared workspace checkout");
+    expect(sharedText).toContain("A separate worktree is the default");
     expect(shared.affected.join("\n")).toContain("SHARED workspace checkout");
   });
 
