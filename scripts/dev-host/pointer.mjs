@@ -26,6 +26,7 @@ import fs from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readProcessTable } from "./edh-process.mjs";
 import { probeFixtureEngine, stopFixtureBridge, stopFixtureEngine } from "./stop-bridge.mjs";
 
 const SELF = "dev-host";
@@ -763,6 +764,7 @@ export function point(opts) {
 
   const p = pathsOf(repoRoot);
   assertPointerSessionIdle(p.root);
+  assertDevHostWindowIdle(p.root, { force: opts.force, processTable: opts.processTable });
   ensureDir(p.base);
   ensureDir(p.userData);
   ensureDir(p.extensions);
@@ -1130,6 +1132,57 @@ export function assertPointerSessionIdle(pointerRoot) {
 }
 
 /**
+ * Refuse to rematerialize a mirror that a human F5 Dev Host window is still using (t-7ee246).
+ *
+ * This deliberately measures the owning process, not an intent marker: the Electron main process
+ * carries both the exact workspace argument and extension-development path from this pointer. Its
+ * renderer/extension-host children carry `--type=`, so they cannot create duplicate matches. When
+ * the window exits or crashes the process disappears, which means this guard cannot become a stale
+ * lock. The existing session.json guard remains authoritative for headless-session's other door.
+ */
+export function assertDevHostWindowIdle(pointerRoot, opts = {}) {
+  if (opts.force) return;
+  const metaFile = path.join(pointerRoot, "meta.json");
+  if (!fs.existsSync(metaFile)) return;
+  let meta;
+  try { meta = JSON.parse(fs.readFileSync(metaFile, "utf8")); }
+  catch {
+    throw new Error(
+      `${SELF}: existing pointer metadata is unreadable, so point cannot safely identify a live Dev Host window; `
+      + `repair/remove the pointer or use point --force to intentionally overwrite it.`,
+    );
+  }
+  const workspaceArg = typeof meta.workspaceArg === "string" ? meta.workspaceArg : meta.workspaceLink;
+  const extensionLink = meta.extensionLink;
+  if (typeof workspaceArg !== "string" || typeof extensionLink !== "string") {
+    throw new Error(
+      `${SELF}: existing pointer metadata is incomplete, so point cannot safely identify a live Dev Host window; `
+      + `repair/remove the pointer or use point --force to intentionally overwrite it.`,
+    );
+  }
+  const extensionArg = `--extensionDevelopmentPath=${extensionLink}`;
+  const processTable = opts.processTable ?? readProcessTable;
+  const owner = processTable().find((proc) =>
+    processHasExactArg(proc, workspaceArg)
+    && processHasExactArg(proc, extensionArg)
+    && !proc.argv.some((arg) => arg.startsWith("--type=")));
+  if (!owner) return;
+  throw new Error(
+    `${SELF}: live Dev Host window owns this pointer (pid=${owner.pid}); point would replace its disposable workspace mirror. `
+    + `Close that EDH window and run point again, or use point --force to intentionally overwrite it.`,
+  );
+}
+
+function processHasExactArg(proc, expected) {
+  if (proc.argv.includes(expected)) return true;
+  if (typeof proc.rawCmdline !== "string") return false;
+  const nulParts = proc.rawCmdline.split("\0").filter(Boolean);
+  if (nulParts.length !== 1) return nulParts.includes(expected);
+  const escaped = expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`).test(nulParts[0]);
+}
+
+/**
  * Flags retired by spec 448, with the replacement each one maps to.
  *
  * These fail immediately rather than warning for a release — the maintainer's explicit call
@@ -1170,6 +1223,8 @@ export function parseArgs(argv) {
       const v = argv[++i];
       if (v === undefined) throw new Error(`${SELF}: ${a} requires a value`);
       out[a.slice(2)] = v;
+    } else if (a === "--force") {
+      out.force = true;
     } else if (a.startsWith("--")) {
       throw new Error(`${SELF}: unknown flag ${a}`);
     } else {
@@ -1210,8 +1265,8 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (sub === "help" || sub === "-h" || sub === "--help") {
     console.log(`Usage (run from the checkout you want to dogfood):
-  scripts/dev-host/cli.sh point --fixture SLUG [--spec NNN] [--slug SLUG]
-  scripts/dev-host/cli.sh point --workspace PATH [--spec NNN] [--slug SLUG]
+  scripts/dev-host/cli.sh point --fixture SLUG [--spec NNN] [--slug SLUG] [--force]
+  scripts/dev-host/cli.sh point --workspace PATH [--spec NNN] [--slug SLUG] [--force]
   scripts/dev-host/cli.sh fixture-new --slug SLUG [--spec NNN] [--intent focus|metrics]
   scripts/dev-host/cli.sh point-status
   scripts/dev-host/cli.sh point-clear
@@ -1228,6 +1283,7 @@ Removed (spec 448, no deprecation window): --owner, --slot, --activate, --no-act
 
 --worktree is optional and defaults to the current checkout; pass it only to arm a different one.
 --fixture resolves test/fixtures/<slug> or <slug>-dogfood under this checkout, then the primary.
+--force permits point to replace the disposable mirror while its F5 Dev Host window is still live.
 Dependencies (node_modules, .tachyon/bin) are still borrowed from the primary checkout when absent.
 `);
     return 0;
@@ -1258,6 +1314,7 @@ Dependencies (node_modules, .tachyon/bin) are still borrowed from the primary ch
       workspace,
       spec: args.spec,
       slug: args.slug ?? (args.fixture ? String(args.fixture).replace(/-dogfood$/, "") : null),
+      force: args.force,
     });
     console.log(`${SELF}: armed`);
     console.log(`  checkout:  ${repoRoot}`);

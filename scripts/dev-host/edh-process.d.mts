@@ -1,6 +1,7 @@
 export interface ProcessRow {
   pid: number;
   argv: string[];
+  rawCmdline?: string;
 }
 
 export interface PickEdhPidOptions {

@@ -136,7 +136,11 @@ describe("dev-host EDH process resolution", () => {
       fs.writeFileSync(path.join(root, "77", "cmdline"), "");
 
       expect(readProcessTable(root)).toEqual([
-        { pid: 4242, argv: [ELECTRON, `--remote-debugging-port=${PORT}`] },
+        {
+          pid: 4242,
+          argv: [ELECTRON, `--remote-debugging-port=${PORT}`],
+          rawCmdline: `${ELECTRON}\0--remote-debugging-port=${PORT}\0`,
+        },
       ]);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

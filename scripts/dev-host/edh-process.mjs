@@ -52,7 +52,10 @@ export function readProcessTable(procRoot = "/proc") {
     if (!raw) continue;
     const argv = tokenizeCmdline(raw);
     if (argv.length === 0) continue;
-    rows.push({ pid: Number(entry), argv });
+    // Keep the original bytes as well as the legacy token view. Electron rewrites its process title
+    // into one whitespace-delimited blob; callers matching paths (which may contain spaces) need the
+    // raw form to test an exact delimited argument without relying on the lossy split above.
+    rows.push({ pid: Number(entry), argv, rawCmdline: raw });
   }
   return rows;
 }
