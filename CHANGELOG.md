@@ -6,6 +6,35 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.85.1 — an agent was refused because of the subject it had worked on
+
+Hotfix. Resuming an agent failed with `runtime_auth_rejected` while its credentials were perfectly
+valid, blocking the maintainer mid-task.
+
+### Fixed
+
+- **Resume no longer rejects a launch because of what the transcript says** (`t-914be3`). The startup
+  classifier scans pane output for login failures. On resume the runtime replays its entire transcript
+  into the pane — 2,284 lines in the case that surfaced this — and that transcript contained
+  "Authentication required" seven times, because that agent had been researching runtime permissions
+  and auth. The agent was refused because of the subject it had worked on.
+
+  The defect was an asymmetry inside one function: **rejection scanned the whole buffer while readiness
+  scanned only the live tail**, and the three rejections ran first, so a perfectly rendered composer
+  immediately below was never consulted. A sentence from yesterday could fail a launch happening now.
+
+  The fix is the region, not the word list: removing one phrase would have left the same hole for the
+  other five. All three rejections — auth, model and config — now read the same live tail the ready
+  signal already read, in the generic classifier and in the Codex adapter, which had the same shape.
+
+  **It did not become fail-open.** A second test holds the other side: a recent, genuine auth refusal
+  is still rejected by both classifiers. Without that, this fix would have traded one defect for a
+  worse one — a resume that ignores a truly expired credential.
+
+  Declared limit: a runtime with no measured composer profile keeps scanning the whole buffer, and
+  keeps the old behavior. Same rule the composer region reader already follows — without a measured
+  ruler, nobody inherits someone else's.
+
 ## 0.85.0 — everything here was found by opening the product and using it
 
 No item in this release came off the board. Each one came from the maintainer opening Design Mode,
