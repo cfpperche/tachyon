@@ -65,7 +65,7 @@ describe("container-generated delegation behavior", () => {
     });
   }
 
-  it("request_human_approval records a child-authored approval request", () => {
+  it("request_human_approval records a child-authored approval request", async () => {
     const ws = root();
     // (1) requester identity is the Bridge-resolved caller, never self-declared: buildApprovalRequest
     // takes the resolved name as a positional argument — there is no `requester` tool param, and the
@@ -234,7 +234,7 @@ describe("container-generated delegation behavior", () => {
     expect(listPendingApprovalRequests(ws)).toHaveLength(0);
   });
 
-  it("buildApprovalRequest rejects empty child-authored fields — every field is load-bearing", () => {
+  it("buildApprovalRequest rejects empty child-authored fields — every field is load-bearing", async () => {
     expect(() =>
       buildApprovalRequest({
         requester: "child",
@@ -257,7 +257,7 @@ describe("container-generated delegation behavior", () => {
     ).toThrow(/proposed_action/);
   });
 
-  it("readApprovalRequest rejects a tampered payload — the on-disk record is tamper-evident", () => {
+  it("readApprovalRequest rejects a tampered payload — the on-disk record is tamper-evident", async () => {
     const ws = root();
     const request = sampleRequest();
     writeApprovalRequest(ws, request);
@@ -275,7 +275,7 @@ describe("container-generated delegation behavior", () => {
   // anchor: an AUTHENTICATED, caller-scoped read of the on-disk ground truth that a forged terminal line
   // cannot fake, because forging it would require being the real, connected Bridge client with that
   // caller identity, not just typing text into a pane.
-  it("readOwnApprovalRequest is the authenticated alternative to trusting the injected text — scoped to the caller's own request", () => {
+  it("readOwnApprovalRequest is the authenticated alternative to trusting the injected text — scoped to the caller's own request", async () => {
     const ws = root();
     const request = sampleRequest();
     writeApprovalRequest(ws, request);
@@ -341,7 +341,7 @@ describe("container-generated delegation behavior", () => {
     });
 
     let pinDone: string | undefined;
-    const result = cancelOwnApprovalRequest({
+    const result = await cancelOwnApprovalRequest({
       workspaceRoot: ws,
       id: request.id,
       requester: "child-agent",
@@ -363,7 +363,7 @@ describe("container-generated delegation behavior", () => {
     expect(listPendingApprovalRequests(ws)).toHaveLength(0);
 
     // idempotent retry
-    const again = cancelOwnApprovalRequest({
+    const again = await cancelOwnApprovalRequest({
       workspaceRoot: ws,
       id: request.id,
       requester: "child-agent",
@@ -375,14 +375,14 @@ describe("container-generated delegation behavior", () => {
     // other agent cannot cancel
     const other = sampleRequest({ id: "a-other1" });
     writeApprovalRequest(ws, other);
-    expect(() =>
+    await expect(
       cancelOwnApprovalRequest({
         workspaceRoot: ws,
         id: other.id,
         requester: "not-the-owner",
         reason: "steal",
       }),
-    ).toThrow(/does not belong to/);
+    ).rejects.toThrow(/does not belong to/);
 
     // host resolve refused after cancel
     await expect(
@@ -403,13 +403,13 @@ describe("container-generated delegation behavior", () => {
       decision: "denied",
       inject: async () => ({ receipt: "ok" }),
     });
-    expect(() =>
+    await expect(
       cancelOwnApprovalRequest({
         workspaceRoot: ws,
         id: r2.id,
         requester: "child-agent",
         reason: "too late",
       }),
-    ).toThrow(/already resolved/);
+    ).rejects.toThrow(/already resolved/);
   });
 });

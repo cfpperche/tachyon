@@ -633,7 +633,7 @@ export async function resolveApproval(input: {
   /** Host-side session ownership check. If the recorded session now belongs to someone else, refuse injection. */
   currentSessionOwner?: (session: string) => string | undefined | Promise<string | undefined>;
   /** Optional hook the host calls to complete the pin created at request time. */
-  completePin?: (pinId: string, decision: ApprovalDecision) => void;
+  completePin?: (pinId: string, decision: ApprovalDecision) => void | Promise<void>;
 }): Promise<{
   request: ApprovalRequest;
   injectedText: string;
@@ -689,7 +689,7 @@ export async function resolveApproval(input: {
   let pinError: string | undefined;
   if (updated.pinId && input.completePin) {
     try {
-      input.completePin(updated.pinId, input.decision);
+      await input.completePin(updated.pinId, input.decision);
     } catch (err) {
       // t-7a306a — best-effort, and no longer silent.
       //
@@ -719,15 +719,15 @@ export async function resolveApproval(input: {
  * never injects Approve text; never records Accept/Deny. Retry on an already-cancelled own request is
  * idempotent. Race with host resolve: the loser gets a structured conflict (already resolved/cancelled).
  */
-export function cancelOwnApprovalRequest(input: {
+export async function cancelOwnApprovalRequest(input: {
   workspaceRoot: string;
   id: string;
   requester: string;
   reason: string;
   now?: string;
   /** Best-effort pin completion when the request carried pinId. */
-  completePin?: (pinId: string) => void;
-}): { request: ApprovalRequest; alreadyCancelled: boolean } {
+  completePin?: (pinId: string) => void | Promise<void>;
+}): Promise<{ request: ApprovalRequest; alreadyCancelled: boolean }> {
   const reason = (input.reason ?? "").trim();
   if (reason.length === 0) throw new Error("cancel_human_approval requires a non-empty reason");
   if (reason.length > 2000) throw new Error("cancel_human_approval reason must be ≤ 2000 chars");
@@ -758,7 +758,7 @@ export function cancelOwnApprovalRequest(input: {
   });
   if (updated.pinId && input.completePin) {
     try {
-      input.completePin(updated.pinId);
+      await input.completePin(updated.pinId);
     } catch {
       // best-effort — cancel already stands
     }

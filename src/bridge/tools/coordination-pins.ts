@@ -30,8 +30,8 @@ export function registerPinTools(mcp: McpServer, deps: BridgeDeps): void {
         const author = authorActor.name;
         const input = normalizeCreatePinInput({ title, text, detail });
         const pin = input.detail
-          ? deps.pins.createRich(input.title, author ?? "agent", { doc: plainTextDoc(input.detail), attachments: [], tags })
-          : deps.pins.create(input.title, author ?? "agent", { tags });
+          ? await deps.pins.createRich(input.title, author ?? "agent", { doc: plainTextDoc(input.detail), attachments: [], tags })
+          : await deps.pins.create(input.title, author ?? "agent", { tags });
         deps.onPinsChanged?.();
         return ok(`pinned as ${pin.id}`);
       } catch (err) {
@@ -84,7 +84,7 @@ export function registerPinTools(mcp: McpServer, deps: BridgeDeps): void {
     },
     async ({ id, done }) => {
       try {
-        const pin = deps.pins.setDone(id, done);
+        const pin = await deps.pins.setDone(id, done);
         deps.onPinsChanged?.();
         return ok(`pin ${pin.id} ${done ? "completed" : "reopened"}`);
       } catch (err) {
@@ -106,7 +106,7 @@ export function registerPinTools(mcp: McpServer, deps: BridgeDeps): void {
     async ({ id, text, tags }) => {
       try {
         if (text === undefined && tags === undefined) throw new Error("update_pin requires text or tags");
-        const pin = deps.pins.update(id, { ...(text !== undefined ? { text } : {}), ...(tags !== undefined ? { tags } : {}) });
+        const pin = await deps.pins.update(id, { ...(text !== undefined ? { text } : {}), ...(tags !== undefined ? { tags } : {}) });
         deps.onPinsChanged?.();
         return ok(`pin ${pin.id} updated`);
       } catch (err) {
