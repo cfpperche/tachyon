@@ -155,6 +155,14 @@ export class BrowserSessionController {
       }
     });
 
+    // These options suppress UI only for the parent session created by this API call. The
+    // editor-browser adapter then starts the CDP-bearing child through DAP's startDebugging reverse
+    // request; VS Code 1.117 creates that child with only { parentSession }. `noDebug` inherits from
+    // the parent's configuration, but suppressDebugToolbar/statusbar/view do not, so the active
+    // child still shows the floating toolbar (t-414540). The extension API cannot change options on
+    // an existing session or supply options for that reverse request. The only current workaround,
+    // debug.toolBarLocation="hidden", is global and would also hide real debugging controls; do not
+    // mutate it here. Removing the child would remove the CDP session required by Design Mode.
     const launched = await vscode.debug.startDebugging(undefined, {
       type: "editor-browser",
       request: "launch",
