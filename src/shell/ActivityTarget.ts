@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ManagedAgentInputSource } from "../agents/agentInputService.js";
+import type { ManagedAgentInputReceipt, ManagedAgentInputSource } from "../agents/agentInputService.js";
 import { sendManagedAgentInput } from "../agents/agentInputService.js";
 import {
   projectActivityContext,
@@ -16,7 +16,7 @@ import {
 export interface WorkspaceActivityTarget extends WorkspacePresentationTarget {
   activityAttention(agent: string): WorkspaceAgentProjectionV1["attention"];
   activityContext(agent: string): Promise<ActivityContextProjectionV1>;
-  sendAgentInput(agent: string, text: string, submit: boolean): Promise<void>;
+  sendAgentInput(agent: string, text: string, submit: boolean): Promise<ManagedAgentInputReceipt>;
 }
 
 export type LegacyActivitySource = WorkspacePresentationTarget & ActivityContextSource & ManagedAgentInputSource;
@@ -29,7 +29,7 @@ export function legacyActivityTarget(source: LegacyActivitySource): WorkspaceAct
     folderName: source.folderName,
     activityAttention: (agent) => source.attentionOf(agent)?.state,
     activityContext: (agent) => projectActivityContext(source, agent),
-    sendAgentInput: async (agent, text, submit) => { await sendManagedAgentInput(source, agent, text, submit); },
+    sendAgentInput: (agent, text, submit) => sendManagedAgentInput(source, agent, text, submit),
   };
 }
 
@@ -54,6 +54,7 @@ export function workspaceActivityTarget(client: WorkspaceClient): WorkspaceActiv
       });
       if (result.status === "error") throw new Error(result.message);
       if (result.method !== "agent.input") throw new Error("agent input returned the wrong command result");
+      return result.receipt;
     },
   };
 }

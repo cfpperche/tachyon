@@ -40,7 +40,9 @@ describe("Workspace Activity target", () => {
           },
         });
       },
-      invoke: async (_operationId, command) => workspaceCommandSuccessV1(command),
+      invoke: async (_operationId, command) => command.method === "agent.input"
+        ? { schemaVersion: 1 as const, method: "agent.input" as const, status: "ok" as const, receipt: { status: "typed-unsubmitted" as const } }
+        : workspaceCommandSuccessV1(command),
     });
     const target = workspaceActivityTarget(fake);
 
@@ -50,7 +52,7 @@ describe("Workspace Activity target", () => {
       sharedCwd: true,
       targets: { items: [{ name: "reviewer", lifetime: "temporary" }] },
     });
-    await expect(target.sendAgentInput("reviewer", "review this", false)).resolves.toBeUndefined();
+    await expect(target.sendAgentInput("reviewer", "review this", false)).resolves.toEqual({ status: "typed-unsubmitted" });
     expect(fake.invocations).toHaveLength(1);
     expect(fake.invocations[0]).toMatchObject({
       operationId: expect.stringMatching(/^agent-input:[0-9a-f-]{36}$/),

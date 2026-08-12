@@ -115,6 +115,53 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
     expect(tailDmChat(root, 10).items).toHaveLength(2);
   });
 
+  it("does not bind a wait to a turn that was already working before delivery", async () => {
+    mgr.beginChatReplyWait("alice", "dm-turn-new", true);
+    mgr.readAgentAttention = async () => ({ state: "working", running: true });
+    await mgr.pollChatAgentState();
+    expect(mgr.chatWait).toMatchObject({ sawBusy: false, awaitPostDeliveryStart: true });
+
+    mgr.readAgentAttention = async () => ({ state: "idle", running: true });
+    await mgr.pollChatAgentState();
+    expect(mgr.chatWait).toMatchObject({ sawBusy: false, awaitPostDeliveryStart: false });
+
+    mgr.readAgentAttention = async () => ({ state: "working", running: true });
+    await mgr.pollChatAgentState();
+    expect(mgr.chatWait).toMatchObject({ sawBusy: true, awaitPostDeliveryStart: false });
+  });
+
+  it("persists an unconfirmed human send without presenting it as sent", async () => {
+    const pushed: Array<Record<string, unknown>> = [];
+    mgr.listRunningAgents = async () => ["alice"];
+    mgr.designAgent = "alice";
+    mgr.getWorkspace = () => ({
+      activity: {
+        sendAgentInput: async () => ({ status: "submit-unconfirmed", reason: "still-staged", attempts: 4 }),
+      },
+    });
+    mgr.session.cdp.pushDesignModeChat = async (payload: Record<string, unknown>) => { pushed.push(payload); };
+
+    await mgr.sendChatMessage("please review this");
+
+    const events = tailDmChat(root, 10).items;
+    expect(events[0]).toMatchObject({
+      kind: "message",
+      role: "user",
+      text: "please review this",
+      activeAgent: "alice",
+      delivery: "pending",
+    });
+    expect(events[1]).toMatchObject({
+      kind: "delivery",
+      status: "submit-unconfirmed",
+    });
+    expect(pushed).not.toContainEqual(expect.objectContaining({
+      type: "working",
+      phase: "sent",
+    }));
+    expect(mgr.chatWait).toBeNull();
+  });
+
   it("stores an edit reply as one structured event with a readable fallback", async () => {
     mgr.beginChatReplyWait("alice", "dm-turn-edit");
     const result = await mgr.ingestChatReply(
@@ -138,6 +185,6 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
       summary: "Increase button padding",
       files: ["src/button.css"],
     });
-    expect(event?.text).toContain("+padding: 8px");
+    expect(event && "text" in event ? event.text : "").toContain("+padding: 8px");
   });
 });

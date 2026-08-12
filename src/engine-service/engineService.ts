@@ -705,8 +705,8 @@ async function executeWorkspaceCommand(
         );
       }
     }
-    await sendManagedAgentInput(workspace, command.input.agent, command.input.text, command.input.submit);
-    return workspaceCommandSuccessV1(command);
+    const receipt = await sendManagedAgentInput(workspace, command.input.agent, command.input.text, command.input.submit);
+    return { schemaVersion: 1, method: "agent.input", status: "ok", receipt };
   }
   if (command.method === "extension.invoke") {
     const value = await executeExtensionCommand(

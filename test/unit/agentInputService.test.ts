@@ -4,11 +4,11 @@ import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
 
 describe("managed agent input service", () => {
   it("revalidates one live AI agent and sends the exact submit intent", async () => {
-    const sendKeys = vi.fn(async () => undefined);
-    const source = sourceWith([row("reviewer", { running: true })], sendKeys);
+    const sendSubmittedLine = vi.fn(async () => ({ status: "submitted" as const, reason: "composer-cleared" as const, attempts: 1 }));
+    const source = sourceWith([row("reviewer", { running: true })], sendSubmittedLine);
 
-    await expect(sendManagedAgentInput(source, "reviewer", "review this", false)).resolves.toBeUndefined();
-    expect(sendKeys).toHaveBeenCalledWith("tachyon-reviewer", "review this", false);
+    await expect(sendManagedAgentInput(source, "reviewer", "review this", true)).resolves.toMatchObject({ status: "submitted" });
+    expect(sendSubmittedLine).toHaveBeenCalledWith("tachyon-reviewer", "review this", { composer: undefined });
   });
 
   it("refuses terminal, stopped and stopping targets without touching tmux", async () => {
@@ -17,21 +17,21 @@ describe("managed agent input service", () => {
       row("stopped"),
       row("stopping", { running: true, stopping: true }),
     ]) {
-      const sendKeys = vi.fn(async () => undefined);
-      const source = sourceWith([target], sendKeys);
+      const sendSubmittedLine = vi.fn(async () => ({ status: "submitted" as const, reason: "no-stranded-line" as const, attempts: 1 }));
+      const source = sourceWith([target], sendSubmittedLine);
       await expect(sendManagedAgentInput(source, target.name, "context", true)).rejects.toThrow(/not (a managed AI agent|available for input)/);
-      expect(sendKeys).not.toHaveBeenCalled();
+      expect(sendSubmittedLine).not.toHaveBeenCalled();
     }
   });
 });
 
-function sourceWith(rows: ManagedEntryInfo[], sendKeys: (session: string, text: string, submit: boolean) => Promise<void>) {
+function sourceWith(rows: ManagedEntryInfo[], sendSubmittedLine: (session: string, text: string, options: { composer?: unknown }) => Promise<{ status: "submitted"; reason: "composer-cleared" | "no-stranded-line"; attempts: number }>) {
   return {
     manager: {
       list: async () => rows,
       session: (agent: string) => `tachyon-${agent}`,
     },
-    tmux: { sendKeys },
+    tmux: { sendKeys: async () => undefined, sendSubmittedLine },
   };
 }
 

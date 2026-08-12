@@ -369,7 +369,13 @@ export type WorkspaceCommandV1 = {
 export type WorkspaceCommandResultV1 =
   | {
       schemaVersion: 1;
-      method: Exclude<WorkspaceSimpleCommandMethodV1, "agent.stop">;
+      method: "agent.input";
+      status: "ok";
+      receipt: import("../agents/agentInputService.js").ManagedAgentInputReceipt;
+    }
+  | {
+      schemaVersion: 1;
+      method: Exclude<WorkspaceSimpleCommandMethodV1, "agent.stop" | "agent.input">;
       status: "ok";
     }
   | {
@@ -857,6 +863,14 @@ export function isWorkspaceCommandResultV1(value: unknown): value is WorkspaceCo
     return hasOnlyKeys(value, ["schemaVersion", "method", "status", "outcome"])
       && (value.outcome === "stopped" || value.outcome === "alive" || value.outcome === "unknown");
   }
+  if (value.status === "ok" && value.method === "agent.input") {
+    if (!hasOnlyKeys(value, ["schemaVersion", "method", "status", "receipt"]) || !isRecord(value.receipt)) return false;
+    if (value.receipt.status === "typed-unsubmitted") return hasOnlyKeys(value.receipt, ["status"]);
+    return (value.receipt.status === "submitted" || value.receipt.status === "submit-unconfirmed")
+      && hasOnlyKeys(value.receipt, ["status", "reason", "attempts"])
+      && ["composer-cleared", "no-stranded-line", "still-staged", "composer-diverged", "composer-unreadable", "capture-failed"].includes(String(value.receipt.reason))
+      && Number.isInteger(value.receipt.attempts) && Number(value.receipt.attempts) > 0;
+  }
   if (value.status === "ok") {
     return hasOnlyKeys(value, ["schemaVersion", "method", "status"])
       && value.method !== "studio.submit"
@@ -1177,7 +1191,7 @@ export function workspaceCommandSuccessV1(
   command: WorkspaceCommandV1,
   studioErrors: readonly string[] = [],
 ): WorkspaceCommandResultV1 {
-  if (command.method === "task.studio.apply" || command.method === "pin.studio.apply"
+  if (command.method === "agent.input" || command.method === "task.studio.apply" || command.method === "pin.studio.apply"
     || command.method === "handoff.ensure" || command.method === "handoff.distill"
     || command.method === "sidebar.mutate" || command.method === "extension.invoke"
     || command.method === "agent.stop") {

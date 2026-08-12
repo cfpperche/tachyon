@@ -36,7 +36,7 @@ function target(wsHash: string): WorkspaceActivityTarget {
     folderName: wsHash,
     activityAttention: () => undefined,
     activityContext: async () => ({ sharedCwd: false, targets: { items: [] } }) as never,
-    sendAgentInput: async () => {},
+    sendAgentInput: async () => ({ status: "typed-unsubmitted" }),
   };
 }
 
