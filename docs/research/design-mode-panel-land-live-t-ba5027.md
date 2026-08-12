@@ -1,77 +1,89 @@
 # Design Mode panel-land live remeasurement (`t-ba5027`)
 
-**Attempted:** 2026-08-12 · **Tree:** `60f7ec217d534c2473dfd1ae82abdd9e89b3edc3`
+**Measured:** 2026-08-12 · **EDH:** Tachyon 0.83.0 · **Final source tree:** recorded at delivery
 
 ## Verdict
 
-The production IDE Browser Bridge was still offline, so this attempt produced **zero panel-land
-observations**. No runtime is marked green from it. The original F3 gap remains open: a Bridge tool
-call reaching its handler is not evidence that the reply entered the current turn's chat JSONL and
-rendered in the panel.
+The headless Extension Development Host removed the original offline blocker. Two real runtimes —
+Codex 0.146.1 and Pi 0.80.10 — each listed and called `design_mode_chat_reply`; both calls carried a
+`turnId`, used no markers, appended exactly one nonce-bearing event to the Design Mode JSONL, and
+painted exactly one matching bubble in the live panel DOM.
 
-This is the task's declared blocked outcome, not a substitute headless result. The coordinator also
-reproduced the same refusal and asked the human to start **Tachyon: IDE Browser Bridge Start**, open
-the Integrated Browser, and enable Design Mode in the fleet VS Code window. The measurement cannot
-mint a production chat turn or inspect its panel while that host is absent.
+The remaining current-turn claim is **not green**. Design Mode v1 deliberately lists only running
+Saved Agents, while the no-`tachyon.yml`-edit fixture can create only Temporary agents. Therefore the
+panel refused to send a chat turn (`No running agents`), no host-minted `dm-turn-*` wait existed, and
+both accepted calls were orphan/no-wait replies. This proves runtime MCP → handler → JSONL → panel,
+but not that the same tool call resolves the outstanding current turn.
 
-## Exact live checks
+## Phase 1 — production host offline
 
-From the isolated worktree:
+The production status door returned the same refusal four times:
 
 ```text
 $ mcp__tachyon_bridge__ide_browser_status({})
 error: IDE browser bridge offline. In VS Code: Tachyon: IDE Browser Bridge Start (Dev Host / Extension Development).
 ```
 
-The check was repeated four times during the attempt, before and after coordinator escalation; all
-four returned the same refusal. Consequently there were **0 current Design Mode turns**, **0
-candidate agent replies in `.tachyon/design-mode-chat/chat.jsonl`**, and **0 panel messages** to bind
-to a turn.
+That phase had 0 current turns, 0 JSONL candidates, and 0 panel observations. It was recorded before
+the EDH route below removed the host-offline condition.
 
-The current installed binaries were present:
+## Phase 2 — live EDH runtime calls
 
-| Runtime | Installed version | Live turns sent | Tool calls observed in this attempt | Current-turn JSONL + panel land |
-|---------|-------------------|:---------------:|:-----------------------------------:|:-------------------------------:|
-| Claude | 2.1.228 | 0 | 0 | **?** bridge offline |
-| Codex | 0.146.1 | 0 | 0 | **?** bridge offline |
-| Grok | 1.0.0 (`3cd0d0cbce`, stable) | 0 | 0 | **?** bridge offline |
-| Pi | 0.80.10 | 0 | 0 | **?** bridge offline |
-| OpenCode | 1.18.15 | 0 | 0 | **?** bridge offline |
+Recipe (fixture `ide-browser-dogfood`, no `tachyon.yml` edits):
 
-Pi is **applicable**, not `—`: it is an active Tachyon agent runtime with Bridge MCP support, and
-Design Mode selects a running agent rather than branching on runtime family. Calling Pi
-not-applicable merely because no Pi agent was running would falsify the product path. Its row
-therefore remains `?` until a live Pi turn is measured. The same reasoning applies to OpenCode.
+```text
+TACHYON_ENGINE_CHANNEL=dev npm run build
+scripts/dev-host/cli.sh point --fixture ide-browser-dogfood
+node scripts/dev-host/headless-session.mjs up
+Tachyon: Open IDE Browser
+Tachyon: Design Mode On
+```
+
+The EDH Bridge was `http://127.0.0.1:42370/mcp`; its production IDE Browser host was
+`http://127.0.0.1:45657`. Temporary Codex and Pi agents were spawned through that Bridge, not by
+editing the fixture.
+
+| Runtime | Listed | Called | Sent `turnId` | Markers | JSONL nonce | DOM bubble | Pending current wait |
+|---------|:------:|:------:|:-------------:|:-------:|:-----------:|:----------:|:--------------------:|
+| Codex 0.146.1 | ✓ | ✓ | ✓ `dm-turn-f3live-no-wait-7f41a2` | ✗ | 1 | 1 | **✗** no wait |
+| Pi 0.80.10 | ✓ (`Tachyon 88 tools`) | ✓ | ✓ `dm-turn-f3live-no-wait-a89c31` | ✗ | 1 | 1 | **✗** no wait |
+
+Raw JSONL evidence:
+
+```json
+{"v":1,"at":"2026-08-12T01:58:44.522Z","kind":"message","role":"agent","agent":"f3codex","text":"F3LIVE-CODEX-7f41a2","activeAgent":"f3codex","source":"tool","lineNo":1}
+{"v":1,"at":"2026-08-12T02:00:53.078Z","kind":"message","role":"agent","agent":"f3codex","text":"F3LIVE-PI-a89c31","activeAgent":"f3codex","source":"tool","lineNo":2}
+```
+
+The live DOM query found one `.dm-chat-bubble` for each nonce. Durable advisory evidence
+`ev-2026-08-12T02:02:08.154Z-1` attaches the screenshot and structured counts.
+
+Pi is therefore no longer `?` for listing, calling, `turnId`, marker avoidance, or physical panel
+arrival. It is **partial (`~`) overall** because the outstanding-current-turn bind was unreachable
+under this fixture. The Pi orphan event inherited active speaker `f3codex`; that is expected from
+the no-wait fallback and must not be presented as a correctly bound Pi turn.
+
+## Exact remaining blocker
+
+`IdeBrowserBridgeManager.listRunningAgents()` filters `!r.temporary` before Design Mode may send.
+The fixture has `agents: {}` and its own README requires Agent Studio to create Saved Agents. That
+would mutate the mirrored `tachyon.yml`, explicitly forbidden by this task. Measured counts:
+
+- Bridge `list_agents`: 2 running Temporary runtimes (`f3codex`, `f3pi`).
+- Design Mode agent menu: 0 eligible agents, exact row `No running agents`.
+- Host-minted current turns: 0.
+- Runtime MCP calls reaching JSONL + DOM: 2 of 2.
 
 ## Changed fact: live schema now carries `turnId`
 
-The Bridge tool catalog visible to this Codex session declares:
+The Bridge tool catalog visible to Codex and Pi declares optional `turnId`, unlike the stale 0.62.0
+catalog measured on 2026-08-06. Both runtimes sent it and the host accepted it with no wait;
+outstanding-wait acceptance remains unmeasured.
 
-```ts
-design_mode_chat_reply(args: {
-  agent?: string;
-  edit?: { files: string[]; patch: string; summary: string };
-  text: string;
-  turnId?: string;
-})
-```
+## Reproduction plan once a Saved Agent is available
 
-That differs from the 2026-08-06 measurement, whose long-lived 0.62.0 Bridge omitted `turnId` from
-`tools/list`. It removes the catalog mismatch for this session, but it does **not** prove any model
-sends the value or that the host accepts it for the outstanding turn. Those remain per-runtime live
-observations.
-
-## Reproduction plan once the host is online
-
-For each runtime independently, use the production panel to send a unique nonce, record the minted
-`dm-turn-*` id from the delivered prompt, and require `design_mode_chat_reply({text, turnId})`. A pass
-requires all of the following for that same nonce and turn id:
-
-1. the runtime lists and calls `design_mode_chat_reply`;
-2. the call arguments include the prompt's current `turnId` and contain no pane markers;
-3. the agent event is appended after the matching user event in
-   `.tachyon/design-mode-chat/chat.jsonl`; and
-4. the same agent text is visible in the Design Mode panel.
-
-Measure Claude, Codex, Grok, Pi, and OpenCode separately; do not generalize from one runtime. Until
-that run exists, F1 must not delete the pane-marker fallback unconditionally.
+One Saved Agent is enough to close the generic current-wait path requested by the resumed task:
+send one unique nonce through the panel, capture its host-minted id from the delivered prompt, and
+require the same runtime's MCP call. A pass requires the matching user event before the agent event
+in JSONL and one matching DOM bubble. Until that run exists, F1 must not delete the pane-marker
+fallback unconditionally.

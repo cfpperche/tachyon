@@ -129,7 +129,7 @@ Avoid the word `ongoing` as a verification token — use a date, CLI version, te
 | 16 Auth-required detection | ✓ | ✓ | ~‖ | ✓ | ~ | **✗** |
 | 17 Temporary Agent (`spawn_agent`) | ✓ | ✓ | ✓ | ✓ | ✓ | **✗**# |
 | 18 Internal checklist telemetry | ~ | ~ | ~ | ~ | ✗ | **✗** / **~**¶ |
-| 19 Design Mode chat reply | ✓º | ✓º | **?** | ✓º | **?** | **?** |
+| 19 Design Mode chat reply | ✓º | ✓º | **?** | ✓º | **~**º | **?** |
 | 20 Auth status probe (pre-launch) | ~ᵃ | ~ᵃ | ✓ᵃ | ~ᵃ | **?** | **?** |
 | 21 Native login surface | ✓ᵇ | ✓ᵇ | **?** | ✓ᵇ | **?** | **?** |
 | 22 Write confinement / discovery root | ~ᶜ | ~ᶜ | **?** | ~ᶜ | **✗**ᶜ | **✗** |
@@ -167,7 +167,10 @@ and Grok 0.2.118 each **listed** Bridge `design_mode_chat_reply` and **called** 
 markers. Panel land **unmeasured** (IDE Browser Bridge offline on the host — every call failed
 closed with the offline error, proving MCP→handler only). Live Bridge `tools/list` omitted
 `turnId` even though source 0.62.0 declares it — Codex and Grok still sent `turnId` in args;
-Claude sent `{text}` only. Pi / OpenCode / Outros **?** unmeasured. Full matrix §3.1.3 and
+Claude sent `{text}` only. Pi was remeasured partially on 0.80.10 in `t-ba5027`: it listed and
+called the tool with `turnId`, used no markers, and landed one JSONL event + DOM bubble, but the
+fixture could not mint an outstanding current turn because Design Mode excludes Temporary agents;
+therefore Pi is `~`, not `✓`. OpenCode / Outros remain **?** unmeasured. Full matrix §3.1.3 and
 [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md).
 **F1 (delete marker fallback) is unblocked for tool-compliance on claude/codex/grok, not for
 unconditional marker deletion** — re-dogfood with IDE bridge up first.
@@ -448,20 +451,21 @@ Invocations (summary): Claude `claude -p … --mcp-config … --output-format st
 with private `GROK_HOME` Bridge MCP. Every call that reached the handler returned
 `IDE browser bridge offline` — MCP path live, panel append unproven.
 
-**Live remeasurement attempted 2026-08-12 (`t-ba5027`): blocked, no cells promoted.** The
-production `ide_browser_status` door returned `IDE browser bridge offline` four times, including
-after coordinator escalation, so there were **0 current turns, 0 JSONL candidates, and 0 panel
-messages** to bind. Installed versions at the attempt were Claude 2.1.228, Codex 0.146.1, Grok
-1.0.0, Pi 0.80.10, and OpenCode 1.18.15. Pi is applicable (Design Mode targets any running agent;
-it does not exclude Pi by runtime family), so its honest result remains `?`, not `—`. The live tool
-catalog now **does** expose optional `turnId`, unlike the stale 0.62.0 catalog measured above; model
-send and current-wait acceptance remain unmeasured. Commands, exact error, counts, and the restart
-plan: [`design-mode-panel-land-live-t-ba5027.md`](../research/design-mode-panel-land-live-t-ba5027.md).
+**Live remeasurement resumed 2026-08-12 (`t-ba5027`): runtime-to-panel partial, current wait still
+blocked.** The first attempt's production `ide_browser_status` door returned `IDE browser bridge
+offline` four times. A headless EDH then brought the production route online. Codex 0.146.1 and Pi
+0.80.10 each listed and called the MCP tool with `turnId`, used no markers, and produced **1 JSONL
+event + 1 live DOM bubble** for its unique nonce. Pi therefore moves from `?` to `~`. Neither call
+resolved a pending turn: Design Mode v1 excludes Temporary agents, the fixture declares no Saved
+Agents, and this task forbids the `tachyon.yml` mutation needed to create one. The menu measured 0
+eligible agents while Bridge measured 2 running Temporaries. Full commands, raw JSONL, DOM counts,
+and exact remaining step: [`design-mode-panel-land-live-t-ba5027.md`](../research/design-mode-panel-land-live-t-ba5027.md).
 
 **F1 verdict:** tool-call compliance is green for **claude / codex / grok** on the versions above
 (the 2026-08-04 “Codex listed tool, used markers” failure did **not** reproduce under the current
-prompt). Deleting the marker fallback is **not** green until someone re-dogfoods with the IDE
-Browser Bridge **up** (and optionally fills Pi). Do not remove markers from this task.
+prompt), and Pi now has partial live runtime-to-panel evidence. Deleting the marker fallback is
+**not** green until one Saved Agent resolves a host-minted outstanding turn through the same tool.
+Do not remove markers from this task.
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 
@@ -1003,7 +1007,7 @@ Document those in host-action / security docs; mention here only to avoid mis-sc
 
 | Date | Change |
 |------|--------|
-| 2026-08-12 | **Design Mode panel-land live remeasurement blocked honestly (`t-ba5027`):** the production IDE Browser Bridge remained offline across four `ide_browser_status` checks, so the run had 0 current turns, 0 JSONL candidates, and 0 panel messages; no runtime cell was promoted. The current catalog now exposes optional `turnId`, unlike the stale 0.62.0 catalog measured on 2026-08-06, but model send and host turn binding still require the live panel. Pi is applicable and remains `?`, not `—`. Evidence: [`design-mode-panel-land-live-t-ba5027.md`](../research/design-mode-panel-land-live-t-ba5027.md). |
+| 2026-08-12 | **Design Mode panel-land live remeasurement (`t-ba5027`):** after four production-host offline refusals, a headless EDH brought the production route online. Codex 0.146.1 and Pi 0.80.10 each listed/called `design_mode_chat_reply`, sent `turnId`, used no markers, and landed exactly 1 nonce-bearing JSONL event + 1 DOM bubble. Pi moves `?` → `~`. The calls were orphan/no-wait: Design Mode excludes Temporary agents and the empty fixture could not gain a Saved Agent without the task-forbidden `tachyon.yml` mutation, so current-turn resolution remains unmeasured and F1 remains blocked. Evidence: [`design-mode-panel-land-live-t-ba5027.md`](../research/design-mode-panel-land-live-t-ba5027.md). |
 | 2026-08-11 | **Row 22 added — write confinement / discovery root (`t-5313dc`).** The matrix had 21 dimensions and **none** of them asked whether a runtime can stop a tool call from writing outside a declared root, while three permanent documents were asserting that an agent is isolated to its worktree. `docs/project-guidance.md` called it one of "two product facts" and used it to justify why moving `main` is a human action; it is not a fact — an agent has a shell, and on 2026-07-30 one reached the primary checkout twice in a single session. That line now separates the real mechanism (the integrate door is record-only) from the convention (the agent is *instructed* to stay in its worktree), and `docs/tachyon-capability-matrix.md` says "Worktree isolada" means separate checkout and branch, **not** write confinement. Measured on the installed binaries — claude 2.1.227, codex-cli 0.146.1, grok 1.0.0, pi 0.80.10: Claude's OS sandbox covers `Bash` but not `Edit`/`Write`, and `bypassPermissions` skips the rules that do; Codex's `workspace-write` confines but admits `/tmp` and `$TMPDIR` by default; Grok's `--sandbox workspace` confines the whole process yet a **built-in** profile warns and continues when enforcement fails, so only a custom profile is a gate; Pi has no sandbox at all. Tachyon consumes none of the four, which caps every cell at `~` independent of the holes. Discovery root is `✗` across the board — each runtime pins its own CWD→repo-root convention with no portable replacement, which makes the codex `.agents/skills` collision (`t-f842f0`) structural rather than a bug, and agent-plugins.org does not close it (it standardizes the package format and explicitly leaves discovery, installation and permissions to each client). Measurement: [`runtime-write-discovery-isolation-t5313dc.md`](../research/runtime-write-discovery-isolation-t5313dc.md). No product code changed. |
 | 2026-08-07 | **Claude graceful stop actually stops claude again, and the recorded cause was wrong (`t-ab2682`):** every graceful stop of a claude agent fell through to Kill forced — the owner's most-used runtime, losing the runtime's own clean shutdown each time. `t-9d76b1` had read the empty composer left behind and concluded the slash-command menu ate the Enter; a fixed gap before the Enter was the proposed fix. Re-measured on 2.1.224 through the production door, the Enter is never eaten: `/exit` was typed onto a composer that still held a staged line — the spawn brief, still being delivered — so it joined THAT line and the Enter submitted the pair to the model **as a prompt** (`── END BEFORE FINISHING ──/exit`, answered in prose). The composer looks empty afterwards *because* the Enter landed. The proposed fix was measured before it was chosen and rejected: with a free composer the back-to-back pair exits 0 in **13 of 13** runs at a 6-13ms gap (3 of 3 of them mid-turn), while a fixed **600ms** gap against a staged brief still left 3 of 4 alive — the old rate. Occupancy, not the gap, predicts the outcome. `AgentManager.sendStopText` replaces the blind `sendKeys(text, true)`: it types only into a composer that reads provably free (Ctrl-C, the profile's own clear step, is re-asked while it is not), and presses Enter only while the composer provably holds exactly that text — so a stop can no longer submit someone else's draft, and never sends a blind Enter. A composer that never frees is left alone and the stop surfaces as `stop-failed`, which is true. The defect was in the DELIVERY MECHANISM, not the claude profile: `stopGracefully` is the single executor for the UI, the Bridge and the engine service, and claude is simply the only profile with a text step. `node scripts/dogfood/run.mjs stop-exit-codes claude`: **0 in 8 of 8** runs, versus 3 of 4 left alive before. Evidence: `test/unit/agentManager.test.ts` (three new assertions, each confirmed red against the blind delivery) plus the dogfood runs. |
 | 2026-08-07 | **Row 21 closed for claude/codex/grok: a refused launch now carries the login (`t-2656d7`, SDD 495 first slice).** The condition was never mis-detected — `HarnessManager` has always thrown the complete sentence, ending in `run grok login first`. It was destroyed by presentation: an action-less `notify` takes the `setStatusBarMessage(…, 8_000)` branch in `src/workspace/notify.ts`, which clips to one status-bar cell and erases itself, so the owner read `no credentials at /home/gc`, concluded Grok was unsupported, and asked when the product would enable it. A non-empty actions array is the entire difference, and the mid-run auth hold had been proving that for weeks with `[{ label: "Open" }]`. `HarnessUnavailableError` now carries typed `AuthRequiredEvidence` (previously it had **zero handlers outside its own file**, which is why every caller could only flatten it to a string); `AgentManager` gained an `onAuthRequired` port fired where the harness is materialized — the one place sidebar ▶, restart, resume, autostart, crash-restart, pipeline nodes and Bridge `spawn_agent` all converge; and `Workspace` presents it through the same `host.notify(message, level, actions)` channel the mid-run hold uses, in the same `describeAuthRequired` words. The autostart path, which was **worse** than the owner's case (the instruction was dropped entirely into an aggregate count, not merely truncated), now names `N waiting for a runtime login (…)` as its own outcome. `Log in` runs `RUNTIME_LOGIN[runtime].command` in a governed pane keyed by RUNTIME — so a second refused agent joins the live login instead of racing a second device flow for one account — against the real config home. Nothing auto-starts: after the pane exits the human is offered an explicit `Retry` (SDD 495 Q3, decided by the owner **against** his own live case, which wanted the automatic start). Row 20 unchanged — no pre-launch probe in this slice (Q1). Evidence: `test/unit/authRequiredLaunchNotice.test.ts` (the branch invariant across every refusable runtime, proven red by deleting the `Retry` action), `test/unit/launchAuthRefusalSurface.test.ts` (a real `Workspace` driven through `manager.spawn`, proven red by unwiring the port), `test/unit/harnessAuthRefusalEvidence.test.ts` (per-runtime throw sites, and a non-credential harness failure that must NOT claim to be a login). |
