@@ -1,7 +1,7 @@
 /**
  * t-f22211 — Claude Code's native memory, measured rather than declared.
  *
- * The first consumer of `nativeMemory.ts` / `nativeMemoryVerifier.ts` (t-56daa1). Its job is to say
+ * The first consumer of `nativeMemory.ts` (t-56daa1). Its job is to say
  * which axes Claude Code 2.1.220 can be held to WITHOUT billing anyone, and to be explicit about the
  * ones it cannot — because "we could not check" is the answer the whole lane exists to make visible.
  *
@@ -38,8 +38,7 @@
  * So those four axes stay `declared`, and by `resolveMemoryPolicy`'s rules that keeps canonical
  * policy at `disabled` and `runtime-managed` BLOCKED — which is exactly the task's stated default.
  * Promoting them needs one explicitly authorized minimal model call, which this module refuses to
- * make on its own: `claudeMemoryVerificationPlan` reports what such a run would cost and prove, and
- * `verifyNativeMemory` returns `needs-authorization` until a human grants it.
+ * make on its own: `claudeMemoryVerificationPlan` reports what such a run would cost and prove.
  */
 import path from "node:path";
 import type { RuntimeNativeMemoryCapabilityV1 } from "../nativeMemory.js";

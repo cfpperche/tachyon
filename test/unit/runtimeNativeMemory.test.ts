@@ -46,7 +46,7 @@ function fullyVerified(over: Partial<RuntimeNativeMemoryCapabilityV1> = {}): Run
     mutation: { modes: ["agent-tool"] },
     storage: { owner: "runtime", scope: "repository", privateHomeBound: true, aliasesWorktrees: false },
     lifecycle: { fresh: "retain", restart: "retain", resume: "retain", fork: "reset" },
-    sources: [{ kind: "behavioral-test", ref: "test/unit/runtimeNativeMemoryVerifier.test.ts" }],
+    sources: [{ kind: "behavioral-test", ref: "test/unit/runtimeNativeMemory.test.ts" }],
     ...over,
   };
 }
