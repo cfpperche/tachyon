@@ -1,4 +1,4 @@
-import type { FormState, QuickAddChip } from "../formLogic.js";
+import type { AgentFormState, QuickAddChip } from "../formLogic.js";
 import type {
   AgentOwnershipViewV1,
   AgentProfileStudioMutationV1,
@@ -40,11 +40,9 @@ import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../../runtime/attestedRunt
  *
  * Validation is NOT client-side/live here — same precedent as TaskStudioAdapter.validate() (spec 350 T1):
  * `AgentStudioAdapter.validate()` returns `NO_VALIDATION_ERRORS` and `save()`'s
- * `Workspace.studioSubmit` call (formLogic's `validateForm` + `YamlConfigEditor.upsertAgent`) is the single
- * authoritative check, same as before this migration.
+ * Canonical saves go through the profile mutation boundary. The legacy projection is read-only.
  *
- * This studio only ever creates/edits `kind: "agent"` entries — `FormState.kind` is always `"agent"`, so the schedule/runbook
- * fields formLogic's shared FormState type carries along are always left at their blank defaults.
+ * This studio only ever creates/edits `kind: "agent"` entries through its own `AgentFormState`.
  */
 
 /**
@@ -533,12 +531,12 @@ export interface AgentStudioCanonicalContext {
   capabilities: NonNullable<AgentProfileStudioSnapshotV1["editable"]["capabilities"]>;
 }
 
-export type AgentStudioFields = FormState & { canonical?: AgentStudioCanonicalContext };
-export type AgentStudioPatch = FormState | (AgentProfileStudioMutationV1 & Partial<Omit<FormState, "kind">>);
+export type AgentStudioFields = AgentFormState & { canonical?: AgentStudioCanonicalContext };
+export type AgentStudioPatch = AgentFormState | (AgentProfileStudioMutationV1 & Partial<Omit<AgentFormState, "kind">>);
 
 /** A blank agent-kind FormState.
  *  (attention on by default, no worktree). */
-export function blankAgentFields(): FormState {
+export function blankAgentFields(): AgentFormState {
   return {
     name: "",
     cmd: "",

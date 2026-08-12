@@ -361,7 +361,7 @@ describe("persistent engine protocol", () => {
     // Neutral defaults, not the Studio's UI prefills: an omitted schedule must fail domain
     // validation rather than save one nobody asked for, and an omitted kind fails closed.
     expect(canonical).toMatchObject({ schedTiming: "every", schedEvery: "", schedAt: "", schedAction: "run", schedTarget: "", worktree: false });
-    expect(canonicalWorkspaceStudioFormV1({}).kind).toBe("agent");
+    expect(canonicalWorkspaceStudioFormV1({}).kind).toBe("");
     expect(canonicalWorkspaceStudioFormV1(undefined).name).toBe("");
 
     // Unknown keys are dropped; a present-but-wrong-typed field is drift, not an omission, so it
@@ -391,6 +391,14 @@ describe("persistent engine protocol", () => {
     expect(isWorkspaceCommandV1({ schemaVersion: 1, method: "studio.submit", input: { state: studioForm() } })).toBe(true);
     // ...and the canonicalizer drops them, so a client on THIS build cannot produce that payload.
     expect("harness" in canonicalWorkspaceStudioFormV1(legacy)).toBe(false);
+  });
+
+  it("REFUSES the retired agent arm at the versioned Studio wire boundary (SDD 496 slice 5)", () => {
+    expect(isWorkspaceCommandV1({
+      schemaVersion: 1,
+      method: "studio.submit",
+      input: { state: { ...studioForm(), kind: "agent" } },
+    })).toBe(false);
   });
 
   it("accepts only exact Board reads and idempotency-keyed mutations", () => {

@@ -6,9 +6,11 @@ import {
   toggleFlag,
   suggestName,
   validateForm,
+  validateTerminalForm,
   blockingErrors,
   toEntry,
-  fromDef,
+  toTerminalEntry,
+  fromTerminalDef,
   fromRunbookDef,
   fromScheduleDef,
   parseSteps,
@@ -22,15 +24,15 @@ import { upsertAgent } from "../../src/config/YamlConfigEditor.js";
 
 const BASE: FormState = {
   name: "revisor",
-  cmd: "claude",
-  kind: "agent",
+  cmd: "npm run dev",
+  kind: "terminal",
   instructions: "",
   watch: "",
   steps: "",
   cwd: "",
   autostart: false,
   restartOnCrash: false,
-  attention: true,
+  attention: false,
   worktree: false,
   branch: "",
   worktreeSetup: "",
@@ -89,116 +91,37 @@ describe("formLogic", () => {
     expect(suggestName("claude", ["claude", "claude-2"])).toBe("claude-3");
   });
 
-  it("validateForm: stable issue codes, uniqueness honors edit mode, note is non-blocking", () => {
-    expect(validateForm({ ...BASE, name: "1bad" }, []).map((i) => i.code)).toContain("name-invalid");
-    expect(validateForm({ ...BASE, cmd: " " }, []).map((i) => i.code)).toContain("cmd-required");
-    expect(validateForm(BASE, ["revisor"]).map((i) => i.code)).toContain("name-taken");
-    expect(validateForm(BASE, ["revisor"], "revisor")).toEqual([]); // editing itself
-
-    const noted = validateForm({ ...BASE, cmd: "bash", kind: "terminal", attention: false, instructions: "hi" }, []);
-    expect(noted.map((i) => i.code)).toContain("instructions-not-deliverable");
-    expect(blockingErrors(noted)).toEqual([]);
+  it("validateTerminalForm owns terminal validation and honors edit-mode uniqueness", () => {
+    expect(validateTerminalForm({ ...BASE, name: "1bad" }, []).map((i) => i.code)).toContain("name-invalid");
+    expect(validateTerminalForm({ ...BASE, cmd: " " }, []).map((i) => i.code)).toContain("cmd-required");
+    expect(validateTerminalForm(BASE, ["revisor"]).map((i) => i.code)).toContain("name-taken");
+    expect(validateTerminalForm(BASE, ["revisor"], "revisor")).toEqual([]);
   });
 
-  it("toEntry writes only non-default fields (clean ymls)", () => {
-    expect(toEntry(BASE)).toEqual({ cmd: "claude" }); // agent inferred, attention default, nothing else
-    expect(
-      toEntry({ ...BASE, kind: "terminal", attention: false, autostart: true, restartOnCrash: true, cwd: "app" }),
-    ).toEqual({
-      cmd: "claude",
-      kind: "terminal", // differs from inference
+  it("toTerminalEntry writes only terminal fields and round-trips a full definition", () => {
+    const entry = toTerminalEntry({
+      ...BASE,
+      watch: " src/** , package.json , ",
+      cwd: "app",
+      autostart: true,
+      restartOnCrash: true,
+      attention: true,
+      instructions: "ignored",
+      worktree: true,
+      branch: "ignored",
+      worktreeSetup: "ignored",
+    });
+    expect(entry).toEqual({
+      cmd: "npm run dev",
+      watch: ["src/**", "package.json"],
       cwd: "app",
       autostart: true,
       restart: "on-crash",
+      attention: true,
     });
-    // instructions persists for agent kind
-    expect(toEntry({ ...BASE, instructions: "be brief" })).toEqual({ cmd: "claude", instructions: "be brief" });
-    // attention written only when it differs from the kind default
-    expect(toEntry({ ...BASE, attention: false })).toEqual({ cmd: "claude", attention: false });
-  });
-
-  it("kind-conditional fields: watch only for terminals, instructions only for agents", () => {
-    // terminal: watch parsed (1 glob -> string, n globs -> list); instructions dropped
-    expect(
-      toEntry({ ...BASE, name: "dev", cmd: "npm run dev", kind: "terminal", attention: false, watch: "package.json", instructions: "ignored" }),
-    ).toEqual({ cmd: "npm run dev", watch: "package.json" });
-    expect(
-      toEntry({ ...BASE, name: "dev", cmd: "npm run dev", kind: "terminal", attention: false, watch: " src/** , package.json , " }),
-    ).toEqual({ cmd: "npm run dev", watch: ["src/**", "package.json"] });
-    // agent: watch ignored even if filled
-    expect(toEntry({ ...BASE, watch: "src/**" })).toEqual({ cmd: "claude" });
-  });
-
-  it("toEntry persists worktree / branch / worktreeSetup (spec 210)", () => {
-    expect(toEntry({ ...BASE, worktree: true, branch: "feature/x", worktreeSetup: "pnpm i\ncp a b" })).toMatchObject({
-      worktree: true,
-      branch: "feature/x",
-      worktreeSetup: ["pnpm i", "cp a b"],
-    });
-    expect(toEntry({ ...BASE, worktree: true, worktreeSetup: "pnpm i" }).worktreeSetup).toBe("pnpm i"); // single → string
-    expect(toEntry({ ...BASE }).worktree).toBeUndefined(); // off by default, clean yml
-    // round-trips from a declared worktree agent
-    const { config } = parseConfig("agents:\n  rev:\n    cmd: claude\n    worktree: true\n    branch: feat/x\n    worktreeSetup:\n      - pnpm i\n");
-    expect(toEntry(fromDef("rev", config!.agents.rev))).toMatchObject({ worktree: true, branch: "feat/x", worktreeSetup: "pnpm i" });
-  });
-
-  // spec 358 phase 2 — Agent Studio no longer creates the deprecated isolate config tier
-  describe("deprecated transcript isolation (Studio)", () => {
-    it("toEntry never writes isolate: transcript", () => {
-      expect(toEntry({ ...BASE, isolate: true })).toEqual({ cmd: "claude" });
-      expect(toEntry({ ...BASE, cmd: "codex", isolate: true }).isolate).toBeUndefined();
-    });
-    it("fromDef loads legacy isolate without round-tripping it back to tachyon.yml", () => {
-      const { config, warnings } = parseConfig("agents:\n  rev:\n    cmd: claude\n    isolate: transcript\n");
-      expect(warnings[0]).toContain("is deprecated");
-      const state = fromDef("rev", config!.agents.rev);
-      expect(state.isolate).toBe(false);
-      expect(toEntry(state)).toEqual({ cmd: "claude" });
-    });
-  });
-
-  // t-aa06a8 — the isolated-harness AUTHORING door is gone. The form section rendered under
-  // `showHarness && !canonical` and `canonical` is true for every agent Agent Studio can load, the
-  // canonical profile schema has no `harness` key, and `Workspace.studioSubmit` refuses `kind:
-  // "agent"` outright — so the fields had no reader, no destination and no writer. These guards keep
-  // the WRITER dead: `toEntry` is the one function that turned form state into a `harness:` block.
-  //
-  // Both cases were watched RED against the pre-change `formLogic.ts` (restored from git into the
-  // worktree for one run): `toEntry` emitted the block for the forced state, and `fromDef` returned
-  // `harness: true`. A case built on `BASE` alone would have been green on both trees — `BASE` never
-  // set the toggle — which is why the write case forces the field on rather than trusting the type.
-  describe("isolated harness authoring is retired (t-aa06a8)", () => {
-    it("toEntry never writes a harness block, even for a stale form state that still carries one", () => {
-      // The cast is the point: an older client (or an older persisted patch) can still hand us these
-      // keys. `FormState` no longer declares them, and `toEntry` must drop them rather than write.
-      const stale = { harness: true, harnessInherit: "none", harnessMcp: "tavily:\n  command: npx" };
-      for (const cmd of ["claude", "codex", "opencode", "grok", "hermes"]) {
-        expect(toEntry({ ...BASE, cmd, ...stale } as FormState)).not.toHaveProperty("harness");
-      }
-    });
-
-    it("fromDef does not resurrect a declared harness into the form", () => {
-      // loadConfig still PARSES this block (the legacy inline reader is untouched, and HarnessManager
-      // consumes what it produces) — the form simply no longer carries it in either direction.
-      const { config } = parseConfig(
-        "agents:\n  researcher:\n    cmd: claude\n    harness:\n      inherit: none\n      mcp:\n        tavily:\n          command: npx\n      rules: [\"r.md\"]\n",
-      );
-      expect((config!.agents.researcher as any).harness).toMatchObject({ inherit: "none" });
-      const state = fromDef("researcher", config!.agents.researcher);
-      expect(state).not.toHaveProperty("harness");
-      expect(toEntry(state)).not.toHaveProperty("harness");
-    });
-  });
-
-  it("fromDef round-trips through toEntry for a full definition", () => {
-    const { config } = parseConfig(
-      "agents:\n  rev:\n    cmd: claude\n    instructions: review prs\n    cwd: app\n    autostart: true\n    restart: on-crash\n",
-    );
-    const state = fromDef("rev", config!.agents.rev);
-    expect(state).toMatchObject({ name: "rev", cmd: "claude", instructions: "review prs", autostart: true, restartOnCrash: true });
-    expect(toEntry(state)).toEqual({
-      cmd: "claude",
-      instructions: "review prs",
+    const { config } = parseConfig("terminals:\n  dev:\n    cmd: npm run dev\n    cwd: app\n    autostart: true\n    restart: on-crash\n");
+    expect(toTerminalEntry(fromTerminalDef("dev", config!.agents.dev))).toEqual({
+      cmd: "npm run dev",
       cwd: "app",
       autostart: true,
       restart: "on-crash",

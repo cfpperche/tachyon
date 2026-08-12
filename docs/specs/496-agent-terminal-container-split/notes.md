@@ -47,9 +47,17 @@ kind, and four comment lines. The classification of the remaining 76 is the tabl
   measurement changed about the task* rather than buried, because a reader of `t-91564a` will
   otherwise expect a different deliverable.
 
-## Deviations
+## Decisions and deviations during delivery
 
-_None yet — nothing has been implemented._
+- **2026-08-08 — owner/maintainer decision executed by slice 3:** terminal declarations use the flat
+  `.tachyon/terminals/<name>.yml` location; legacy `terminals:` blocks remain warned-and-loaded.
+- **2026-08-08 — slice 2 point-of-use correction:** two planned dispatch rows actually narrow
+  `ManagedWorktreeKind = agent | change`, so they remain legitimate. The delivered count is 26
+  converted rows, not 28; task `t-01a75e` records the audit and green gate.
+- **2026-08-12 — slice 5:** `StudioKind` and the versioned Studio wire both lost `agent`;
+  `validateTerminalForm` and `toTerminalEntry` now own the Terminal Studio path. The attested-runtime
+  command refusal remains. Visual QA passed at 880 and 360; evidence
+  `ev-2026-08-12T23:40:12.270Z-13`.
 
 ## Tradeoffs
 

@@ -122,7 +122,11 @@ export const ENGINE_BUNDLE_SCHEMA_VERSION = 1 as const;
 // `studio.submit` still carrying them, and a protocol-6 engine refuses one without them. The break
 // is real even though the fields were only ever meaningful for `kind: agent`, whose submit arm is
 // already retired — a protocol-6 CLIENT canonicalizes them onto every terminal/command submit too.
-export const ENGINE_SHELL_PROTOCOL = 7 as const;
+//
+// SDD 496 slice 5 — 7 → 8 because `WorkspaceStudioFormV1.kind` drops `agent`. Agent Studio has its
+// own profile mutation protocol; accepting the retired arm here would reintroduce it through an
+// external client even though the browser form can no longer produce it.
+export const ENGINE_SHELL_PROTOCOL = 8 as const;
 export type EngineReleaseChannel = "stable" | "dev";
 
 export interface EngineProtocolRangeV1 {
@@ -269,11 +273,11 @@ export type WorkspaceSimpleCommandMethodV1 = Exclude<
   "studio.submit" | "task.studio.apply" | "pin.studio.apply" | "handoff.ensure" | "handoff.distill" | "sidebar.mutate" | "extension.invoke"
 >;
 
-/** Exact versioned wire shape of the five config-backed Studio forms. */
+/** Exact versioned wire shape of the four config-backed Studio forms. */
 export interface WorkspaceStudioFormV1 {
   name: string;
   cmd: string;
-  kind: "agent" | "terminal" | "command" | "runbook" | "schedule";
+  kind: "terminal" | "command" | "runbook" | "schedule";
   instructions: string;
   watch: string;
   steps: string;
@@ -1367,14 +1371,14 @@ const STUDIO_FORM_KEYS = [
  *
  * The defaults are deliberately NOT the Studio's UI prefills (which pick `1h` / `09:00`): a submit
  * that omits its schedule must fail domain validation, never save a schedule nobody asked for. For
- * the same reason an omitted `kind` reads as `agent`, whose submit path is retired and fails closed.
+ * An omitted `kind` remains invalid: there is no safe form arm to infer at a persistence boundary.
  */
 export function canonicalWorkspaceStudioFormV1(state: unknown): WorkspaceStudioFormV1 {
   const source: Record<string, unknown> = isRecord(state) ? state : {};
   const canonical: Record<string, unknown> = {};
   for (const key of STUDIO_FORM_STRING_KEYS) canonical[key] = source[key] ?? "";
   for (const key of STUDIO_FORM_BOOLEAN_KEYS) canonical[key] = source[key] ?? false;
-  canonical.kind = source.kind ?? "agent";
+  canonical.kind = source.kind ?? "";
   canonical.schedTiming = source.schedTiming ?? "every";
   canonical.schedAction = source.schedAction ?? "run";
   return canonical as unknown as WorkspaceStudioFormV1;
@@ -1391,7 +1395,7 @@ function isWorkspaceStudioSubmitInputV1(value: Record<string, unknown>): boolean
   if (!hasOnlyKeys(state, STUDIO_FORM_KEYS)) return false;
   if (STUDIO_FORM_STRING_KEYS.some((key) => typeof state[key] !== "string" || (state[key] as string).length > 32_768)) return false;
   if (STUDIO_FORM_BOOLEAN_KEYS.some((key) => typeof state[key] !== "boolean")) return false;
-  return ["agent", "terminal", "command", "runbook", "schedule"].includes(state.kind as string)
+  return ["terminal", "command", "runbook", "schedule"].includes(state.kind as string)
     && (state.schedTiming === "every" || state.schedTiming === "at")
     && (state.schedAction === "run" || state.schedAction === "spawn");
 }

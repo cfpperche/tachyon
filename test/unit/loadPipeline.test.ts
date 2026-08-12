@@ -296,7 +296,7 @@ describe("an inline node declares its kind through `done` (t-c003e1)", () => {
 });
 
 describe("suggestKindForCommand stays an authoring suggestion (t-c003e1)", () => {
-  it("no entity-creating path calls it — only the authoring surfaces and M6's declared default", () => {
+  it("no entity-creating path calls it — only M6's declared default", () => {
     // Guarded over source because the property is "who may call this", which no runtime assertion can
     // see: a call added back inside a spawn door would look perfectly correct locally.
     const callers = sourceFiles(path.join(SRC)).filter((file) => {
@@ -308,8 +308,6 @@ describe("suggestKindForCommand stays an authoring suggestion (t-c003e1)", () =>
     expect(callers).toEqual([
       // M6 — the declared `agents:` default a human sees in their own tachyon.yml, deliberately visible.
       "config/loadConfig.ts",
-      // Authoring: the Studio form's pre-selection, which the human then confirms or overrides.
-      "webview/formLogic.ts",
     ]);
   });
 });

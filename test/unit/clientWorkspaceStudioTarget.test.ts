@@ -210,13 +210,9 @@ describe("ClientWorkspaceStudioTarget", () => {
     const fake = new FakeWorkspaceClient({
       identity,
       snapshot: projectionSnapshot(identity),
-      // Stands in for the engine's Workspace.studioSubmit: the retired inline-agent path.
       invoke: async (_operationId, command) => {
         if (command.method !== "studio.submit") throw new Error("unexpected command");
-        return workspaceCommandSuccessV1(
-          command,
-          command.input.state.kind === "agent" ? ["inline agent editing is retired"] : [],
-        );
+        return workspaceCommandSuccessV1(command, []);
       },
     });
     const target = new ClientWorkspaceStudioTarget(fake, {
@@ -226,12 +222,12 @@ describe("ClientWorkspaceStudioTarget", () => {
 
     // Exactly what `tachyon._upsertAgent` is handed by the editor-host suite: a form carrying only
     // the fields the scenario sets. Before t-8247ec this never left the shell.
-    const partial = { name: "studio-rev", cmd: "claude --permission-mode plan", kind: "agent", instructions: "review" };
-    await expect(target.studioSubmit({ state: partial as never })).resolves.toEqual(["inline agent editing is retired"]);
+    const partial = { name: "dev", cmd: "npm run dev", kind: "terminal" };
+    await expect(target.studioSubmit({ state: partial as never })).resolves.toBeUndefined();
     await expect(target.studioSubmit({ state: { name: "release", kind: "runbook", steps: "hello" } as never })).resolves.toBeUndefined();
     expect(fake.invocations[0]?.command).toMatchObject({
       method: "studio.submit",
-      input: { state: { name: "studio-rev", kind: "agent", schedTiming: "every", schedAction: "run", catchUp: false } },
+      input: { state: { name: "dev", kind: "terminal", schedTiming: "every", schedAction: "run", catchUp: false } },
     });
   });
 

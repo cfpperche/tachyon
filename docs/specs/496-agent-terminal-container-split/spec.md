@@ -2,7 +2,11 @@
 
 _Created 2026-08-07._
 
-**Status:** draft
+**Status:** shipped
+**Closure:** Five independently gated slices shipped the typed collection accessors, converted 26
+real agent/terminal dispatch sites (and reclassified two `agent | change` worktree sites), moved
+terminal declarations to `.tachyon/terminals/<name>.yml`, split the parsers, and gave Terminal Studio
+its own validator/serializer. Slice 5 visual evidence is attached as `ev-2026-08-12T23:40:12.270Z-13`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -53,41 +57,41 @@ not be a second pass over them.
 
 _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bullets for static facts. If every box can be ticked, the spec is delivered. Each criterion should be verifiable without re-reading the plan._
 
-- [ ] **Scenario: a consumer that wants agents is handed agents**
+- [x] **Scenario: a consumer that wants agents is handed agents**
   - **Given** a workspace declaring both agents and terminals
   - **When** a consumer that acts only on AI agents (the attention sweep, the delegation monitors,
     the handoff distiller, the runtime-ops snapshot) asks the roster for its input
   - **Then** it receives a collection whose element type is the Agent arm, and it contains no
     `kind === "agent"` filter of its own.
-- [ ] **Scenario: a terminal named where an agent is required is still refused BY NAME**
+- [x] **Scenario: a terminal named where an agent is required is still refused BY NAME**
   - **Given** a declared terminal `dev`
   - **When** a caller passes `dev` to a door that requires an agent (`continue-task` destination,
     `agentInputService`, handoff distillation)
   - **Then** the refusal still says *that name is a terminal*, not *that name does not exist* — the
     split must not degrade a precise refusal into a lookup miss.
-- [ ] **Scenario: a terminal is declared outside `tachyon.yml`**
+- [x] **Scenario: a terminal is declared outside `tachyon.yml`**
   - **Given** a workspace with no `terminals:` block in `tachyon.yml`
   - **When** a terminal is created through Terminal Studio and the workspace is reloaded
   - **Then** the terminal is in the roster, its declaration lives under its own directory, and
     `tachyon.yml` was not written.
-- [ ] **Scenario: a legacy `terminals:` block still loads**
+- [x] **Scenario: a legacy `terminals:` block still loads**
   - **Given** an existing `tachyon.yml` that still carries a `terminals:` block
   - **When** the workspace loads
   - **Then** the terminals load, a warning names the new location, and the config is not refused
     (the `t-48dd8d` rule: warn, do not block).
-- [ ] Every kind test in the § *Branch classification* table of `plan.md` is resolved as the table
+- [x] Every kind test in the § *Branch classification* table of `plan.md` is resolved as the table
       says: the `dispatch` rows are gone, the `dead` rows are gone, and the `legitimate` rows are
       still there, each with the reason the table gives written where it stands.
-- [ ] `parseAgentEntry`'s `forceTerminal` parameter no longer exists: agent projection and terminal
+- [x] `parseAgentEntry`'s `forceTerminal` parameter no longer exists: agent projection and terminal
       declaration are parsed by two functions that share only the `ManagedEntryBase` fields.
-- [ ] No agent-only key is refused at runtime by name in the terminal parser. A terminal
+- [x] No agent-only key is refused at runtime by name in the terminal parser. A terminal
       declaration file has no place to put `soul`, `instructions`, `selfEvolution`, `role`,
       `worktree`, `branch`, `worktreeSetup`, `verify`, `harness`, `isolate` or `subagents`; each is
       an unknown key with a message naming Agent Studio.
-- [ ] `TachyonConfig.agents` still exists, still holds both arms, and none of its 77 read sites in
+- [x] `TachyonConfig.agents` still exists, still holds both arms, and none of its 77 read sites in
       `src/` changed. Splitting or renaming it is proposed in `plan.md` § *Compatibility cost* and
       is explicitly **not** performed here.
-- [ ] Each slice in `plan.md` § *Slices* landed as its own commit on a tree its own
+- [x] Each slice in `plan.md` § *Slices* landed as its own commit on a tree its own
       `npm run verify:full:quiet` recorded green.
 
 ## Non-goals
@@ -106,6 +110,10 @@ _Observable outcomes. Given/When/Then scenarios for behavior; plain checkbox bul
 - Any release, tag, or Marketplace action.
 
 ## Open questions
+
+Questions 1–2 were resolved by slice 3: declarations are flat files at
+`.tachyon/terminals/<name>.yml`, and legacy blocks remain warned-and-loaded. Questions 3–5 remain
+explicit non-goals/follow-up design choices and do not block this closure.
 
 Each of these is the owner's, and each is answerable in one sentence. Nothing below was left open
 because it was hard to measure — each is a preference the code cannot supply.
