@@ -6,9 +6,9 @@
  * life of the session (src/bridge/tools/ide-browser.ts:8-11). Companion already taught the pattern:
  * list tools always; fail closed at call time with bridge_offline.
  *
- * Envelope source (assert observed text, not an invented one):
- * F3 runtime matrix t-dd46a4 with IDE Browser Bridge OFFLINE — every CLI call failed closed with:
- *   error: IDE browser bridge offline. In VS Code: Tachyon: IDE Browser Bridge Start (Dev Host / Extension Development).
+ * The F3 runtime matrix t-dd46a4 established the shared offline envelope across every CLI.
+ * t-7a4c36 updates only its guidance: agents can edit the opt-in or report extension inactivity,
+ * but cannot execute a VS Code palette command themselves.
  * Streams: docs/research/evidence-t-dd46a4-f3/claude4-stdout.jsonl (tool_result),
  *          codex2-stdout.jsonl (item.completed content[0].text),
  *          grok-chat-tool-calls.jsonl (Failed to call …: error: IDE browser…).
@@ -22,13 +22,13 @@ import {
   isIdeBrowserBridgeAvailable,
 } from "../../src/ide-browser/client.js";
 
-/** Exact MCP tool-result text observed on F3 (claude/codex/grok) with the bridge offline. */
-const F3_OFFLINE_TOOL_RESULT =
-  "error: IDE browser bridge offline. In VS Code: Tachyon: IDE Browser Bridge Start (Dev Host / Extension Development).";
+/** Exact MCP tool-result text returned to every runtime when the bridge is offline. */
+const OFFLINE_TOOL_RESULT =
+  "error: IDE browser bridge offline. Ensure settings.ideBrowser.enabled is true in tachyon.yml and the Tachyon extension is active for this workspace.";
 
 /** Client-layer message (without the tool `error: ` prefix) from ideBrowserRequest when no instance. */
 const CLIENT_OFFLINE_ERROR =
-  "IDE browser bridge offline. In VS Code: Tachyon: IDE Browser Bridge Start (Dev Host / Extension Development).";
+  "IDE browser bridge offline. Ensure settings.ideBrowser.enabled is true in tachyon.yml and the Tachyon extension is active for this workspace.";
 
 const IDE_BROWSER_TOOL_NAMES = [
   "ide_browser_status",
@@ -102,7 +102,7 @@ describe("t-3cab05 — ide_browser tools always-register + offline fail-closed",
 
     const res = await handler!({ text: "matrix probe alpha ok", turnId: "dm-turn-f3matrix01" });
     expect(res.isError).toBe(true);
-    expect(res.content[0]?.text).toBe(F3_OFFLINE_TOOL_RESULT);
+    expect(res.content[0]?.text).toBe(OFFLINE_TOOL_RESULT);
   });
 
   it("forwards a structured edit through the existing bound reply door", async () => {
@@ -139,10 +139,10 @@ describe("t-3cab05 — ide_browser tools always-register + offline fail-closed",
     expect(handler).toBeDefined();
     const res = await handler!({});
     expect(res.isError).toBe(true);
-    expect(res.content[0]?.text).toBe(F3_OFFLINE_TOOL_RESULT);
+    expect(res.content[0]?.text).toBe(OFFLINE_TOOL_RESULT);
   });
 
-  it("client offline envelope carries bridge_offline code and the actionable message F3 saw", async () => {
+  it("client offline envelope carries bridge_offline code and actionable agent guidance", async () => {
     const env = await clientIdeBrowserRequest(
       "/tmp/tachyon-no-such-workspace-ide-browser-offlineenv",
       "/status",
@@ -153,7 +153,8 @@ describe("t-3cab05 — ide_browser tools always-register + offline fail-closed",
     if (env.ok) throw new Error("expected the offline envelope to be a failure");
     expect(env.code).toBe("bridge_offline");
     expect(env.error).toBe(CLIENT_OFFLINE_ERROR);
-    // Tool layer prefixes with `error: ` via fail() — that concatenation is what F3 streams captured.
-    expect(`error: ${env.error}`).toBe(F3_OFFLINE_TOOL_RESULT);
+    expect(env.error).not.toContain("IDE Browser Bridge Start");
+    // Tool layer prefixes with `error: ` via fail(), preserving the shared envelope shape F3 proved.
+    expect(`error: ${env.error}`).toBe(OFFLINE_TOOL_RESULT);
   });
 });
