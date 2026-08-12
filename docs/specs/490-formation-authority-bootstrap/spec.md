@@ -77,9 +77,9 @@ Deriving the vector from `agent.yml` at load or at save is out of scope by prior
 delivered**. A file that authorizes itself undoes that from the inside, silently. If this spec wants
 that shortcut, it must amend 427 explicitly and say why.
 
-The review confirmed there is no competing claim on moment zero: the Evolution and selected-memory
-publishers both require an already-active vector (`evolutionTransactions.ts:59-69`,
-`memoryTransactions.ts:51-61`), so neither is an alternative bootstrap path.
+The review confirmed there is no competing claim on moment zero: the selected-memory publisher
+required an already-active vector and is no longer in the tree (t-56ced4 removed
+`memoryTransactions.ts` with its store), so it is not an alternative bootstrap path.
 
 ## Acceptance criteria
 
