@@ -148,7 +148,7 @@ describe("preview route table", () => {
     // No page-frame link, so no `pageFrame` flag: Plugins scrolls as a document, like the inspector.
     expect(r.cssLinks.some((href) => href.endsWith("/page-frame.css"))).toBe(false);
     expect(r.pageFrame).toBeUndefined();
-    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "runtime-gap", "source-changed", "update-available"]);
+    expect(Object.keys(r.fixtures).sort()).toEqual(["default", "empty", "mcp-apply", "runtime-gap", "source-changed", "update-available"]);
     const msg = r.makeMessage(r.fixtures.default.vm) as { type: string; vm?: { installed?: unknown[] } };
     expect(msg.type).toBe("plugins");
     expect(msg.vm?.installed?.length).toBeGreaterThan(0);
