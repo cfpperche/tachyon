@@ -39,6 +39,9 @@ export interface CallerSnapshot {
   readonly kind: CallerKind;
   /** set only for kind "agent" — the resolved agent name. */
   readonly name?: string;
+  /** Per-spawn credential freshness. Runtime lifecycle events require `live`; ordinary Bridge
+   * calls continue accepting a superseded credential during the existing rebind grace window. */
+  readonly credentialState?: "live" | "superseded";
 }
 
 export type RegistryFailureReason = "token_unknown" | "token_expired" | "token_workspace_mismatch" | "token_revoked";
@@ -244,7 +247,11 @@ export class CallerIdentityRegistry {
       inScope.expiresAt = now + DEFAULT_TTL_MS;
     }
     // superseded: accepted until its grace expiresAt (not slid — remint already set the window)
-    return { ok: true, snapshot: { kind: "agent", name: inScope.name } };
+    const snapshot: CallerSnapshot = { kind: "agent", name: inScope.name };
+    // Keep the pre-existing public snapshot shape stable for logs/receipts while making credential
+    // freshness available to the one lifecycle ingest that needs it.
+    Object.defineProperty(snapshot, "credentialState", { value: inScope.state, enumerable: false });
+    return { ok: true, snapshot };
   }
 
   /** Garbage-collects entries past their idle deadline (bounded memory — a housekeeping pass, not a

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("container-generated delegation behavior", () => {
-  it("exposes exactly the 81 tools", () => {
+  it("exposes exactly the 82 tools", () => {
     const bridgeTest = readFileSync(join(process.cwd(), "test/unit/bridge.test.ts"), "utf8");
 
     // t-e88c8a stage 1 — the canonical inventory in bridge.test.ts is the subject; the count moved
@@ -16,8 +16,9 @@ describe("container-generated delegation behavior", () => {
     // (spec 493, the durable read door onto .tachyon/doorbells.jsonl); 78 → 79 when t-1926ce added
     // read-only orphan process reporting for deleted managed worktrees; 79 → 80 when SDD 494 Part 4
     // added reconcile_roster, the read door onto which owners disagree about a Saved Agent;
-    // 80 → 81 when t-77c95c added the dry-run-first reconcile_landed sweep.
-    expect(bridgeTest).toContain('it("exposes exactly the 81 canonical tools');
+    // 80 → 81 when t-77c95c added the dry-run-first reconcile_landed sweep; 81 → 82 when
+    // t-6b3a0d added authenticated native runtime lifecycle ingest.
+    expect(bridgeTest).toContain('it("exposes exactly the 82 canonical tools');
     expect(bridgeTest).toMatch(/\[\s*[\s\S]*"write_tachyon_config",/);
   });
 });

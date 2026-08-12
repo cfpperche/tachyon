@@ -1445,7 +1445,7 @@ describe("HarnessManager materialize (fs)", () => {
     expect(fs.existsSync(home)).toBe(false);
   });
 
-  it("t-53e5f2: real Grok homes receive ownership, optional handoff, and never silent persistence", () => {
+  it("t-53e5f2/t-6b3a0d: real Grok homes receive ownership and native Stop attention without silent persistence", () => {
     const realGrokHome = path.join(path.dirname(ws), "real-grok-lifecycle");
     fs.mkdirSync(realGrokHome, { recursive: true });
     fs.writeFileSync(path.join(realGrokHome, "auth.json"), '{"token":"GROK"}');
@@ -1458,7 +1458,8 @@ describe("HarnessManager materialize (fs)", () => {
     expect(temporaryStart).toContain("session-owners.jsonl");
     expect(temporaryStart).not.toContain("HANDOFF.md");
     expect(temporaryStart).not.toContain("continuity");
-    expect(fs.existsSync(path.join(temporaryHome, "hooks", "stop.json"))).toBe(false);
+    expect(fs.readFileSync(path.join(temporaryHome, "hooks", "stop.json"), "utf8")).toContain("runtime-status-publish.cjs");
+    expect(fs.readFileSync(path.join(temporaryHome, "hooks", "stop.json"), "utf8")).not.toContain("persistence-stop-record.cjs");
 
     for (const agent of ["declared", "canonical"]) {
       const home = mgr.materializeBridgeMcpGrok(agent, bridge, ws, { lifecycle: { handoffPath: handoff } });
@@ -1466,7 +1467,8 @@ describe("HarnessManager materialize (fs)", () => {
       expect(start).toContain("session-owners.jsonl");
       expect(start).toContain("HANDOFF.md");
       expect(start).not.toContain("continuity");
-      expect(fs.existsSync(path.join(home, "hooks", "stop.json"))).toBe(false);
+      expect(fs.readFileSync(path.join(home, "hooks", "stop.json"), "utf8")).toContain("runtime-status-publish.cjs");
+      expect(fs.readFileSync(path.join(home, "hooks", "stop.json"), "utf8")).not.toContain("persistence-stop-record.cjs");
     }
   });
 
@@ -2070,12 +2072,18 @@ describe("HarnessManager materialize (fs)", () => {
   it("spec 303: materializeCodexSessionStartHookConfig returns a codex hook override and writes shared scripts", () => {
     const mgr = new HarnessManager(ws, realHome, PROC, path.join(realHome, ".claude.json"));
     const config = mgr.materializeCodexSessionStartHookConfig("codex-x", path.join(ws, ".tachyon", "HANDOFF.md"));
-    expect(config).toContain("hooks.SessionStart=");
-    expect(config).toContain("session-owner-record.cjs");
-    expect(config).toContain("handoff-pointer.cjs");
-    expect(config).toContain("$TACHYON_AGENT_NAME");
+    expect(config).toEqual(expect.any(Array));
+    const [start, stop] = config as string[];
+    expect(start).toContain("hooks.SessionStart=");
+    expect(start).toContain("session-owner-record.cjs");
+    expect(start).toContain("handoff-pointer.cjs");
+    expect(start).toContain("$TACHYON_AGENT_NAME");
+    expect(stop).toContain("hooks.Stop=");
+    expect(stop).toContain("runtime-status-publish.cjs");
+    expect(stop).not.toContain("persistence-stop-record.cjs");
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "session-owner-record.cjs"))).toBe(true);
     expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "handoff-pointer.cjs"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".tachyon", "activity", "runtime-status-publish.cjs"))).toBe(true);
   });
 
   it("spec 312: materializeCodexSessionStartHookConfig can add continuity and Stop persistence hooks", () => {

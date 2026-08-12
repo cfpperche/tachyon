@@ -240,6 +240,17 @@ export class AttentionMonitor {
     return this.toAttention(agent, snap);
   }
 
+  /** Native lifecycle edge from the current authenticated runtime process. Pane/CPU polling remains
+   * the watchdog and fallback; this only removes its silence delay from a runtime-asserted stop. */
+  publishRuntimeStatus(agent: string, event: "stopped"): boolean {
+    const snap = this.snaps.get(agent);
+    if (!snap || event !== "stopped") return false;
+    snap.stalled = false;
+    snap.stallNotified = false;
+    this.transition(agent, snap, "idle", this.io.now());
+    return true;
+  }
+
   private toAttention(agent: string, snap: Snapshot): AgentAttention {
     return {
       state: snap.state,

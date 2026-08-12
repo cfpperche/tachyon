@@ -106,6 +106,10 @@ export function persistenceStopRecorderPath(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "persistence-stop-record.cjs");
 }
 
+export function runtimeStatusPublisherPath(workspaceRoot: string): string {
+  return path.join(workspaceRoot, ".tachyon", "activity", "runtime-status-publish.cjs");
+}
+
 /** Append-only health/cursor ledger for persistence Stop hooks. It is machine-local activity state. */
 export function persistenceStopFile(workspaceRoot: string): string {
   return path.join(workspaceRoot, ".tachyon", "activity", "persistence-stop.jsonl");
@@ -462,6 +466,7 @@ export function buildOwnershipSettings(
      */
     projectedHooks?: Record<string, OwnershipHookGroup[]>;
   } = {},
+  runtimeStatus?: { publisherPath: string; runtime: "claude" | "grok" },
 ): {
   hooks: { SessionStart: OwnershipHookGroup[]; Stop?: OwnershipHookGroup[]; [event: string]: OwnershipHookGroup[] | undefined };
   skipDangerousModePermissionPrompt?: boolean;
@@ -481,8 +486,15 @@ export function buildOwnershipSettings(
   } = { hooks: { SessionStart: [{ matcher: "startup|resume|clear|compact", hooks }] } };
   if (opts.skipDangerousModePermissionPrompt) settings.skipDangerousModePermissionPrompt = true;
   if (opts.statusLine) settings.statusLine = { ...opts.statusLine };
+  const stopHooks: OwnershipHookGroup["hooks"] = [];
   if (persistence) {
-    settings.hooks.Stop = [{ hooks: [{ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)} ${q(persistence.failureFile)}` }] }];
+    stopHooks.push({ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)} ${q(persistence.failureFile)}` });
+  }
+  if (runtimeStatus) {
+    stopHooks.push({ type: "command", command: `node ${q(runtimeStatus.publisherPath)} ${q(runtimeStatus.runtime)}` });
+  }
+  if (stopHooks.length > 0) {
+    settings.hooks.Stop = [{ hooks: stopHooks }];
   }
   // t-09edf2 — projected gate hooks land on their OWN events; SessionStart/Stop are Tachyon's lifecycle
   // channel and are never merged into, so a policy change can neither displace nor duplicate ownership.
@@ -508,6 +520,7 @@ export function buildCodexSessionStartHookConfig(
    * `--dangerously-bypass-hook-trust`). Reaches a delegated worktree, which has no `.codex/hooks.json`.
    */
   projectedHooks?: Record<string, OwnershipHookGroup[]>,
+  runtimeStatusPublisher?: string,
 ): string | string[] {
   const ownershipHooks = [
     `{type="command",command=${tomlString(`node ${q(recorderPath)} "$TACHYON_AGENT_NAME" ${q(ownersFile)}${persistence ? ` ${q(persistence.failureFile)}` : ""}`)},statusMessage="Recording Tachyon session ownership"}`,
@@ -529,8 +542,11 @@ export function buildCodexSessionStartHookConfig(
   }
   const start = `hooks.SessionStart=[${startEntries.join(",")}]`;
   const projected = renderCodexProjectedHookConfig(projectedHooks);
-  if (!persistence) return projected.length > 0 ? [start, ...projected] : start;
-  const stop = `hooks.Stop=[{hooks=[{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)} ${q(persistence.failureFile)}`)},statusMessage="Recording Tachyon persistence stop"}]}]`;
+  const stopHooks: string[] = [];
+  if (persistence) stopHooks.push(`{type="command",command=${tomlString(`node ${q(persistence.stopRecorderPath)} "$TACHYON_AGENT_NAME" ${q(persistence.stopFile)} ${q(persistence.failureFile)}`)},statusMessage="Recording Tachyon persistence stop"}`);
+  if (runtimeStatusPublisher) stopHooks.push(`{type="command",command=${tomlString(`node ${q(runtimeStatusPublisher)} codex`)},statusMessage="Publishing Tachyon runtime status"}`);
+  if (stopHooks.length === 0) return projected.length > 0 ? [start, ...projected] : start;
+  const stop = `hooks.Stop=[{hooks=[${stopHooks.join(",")}]}]`;
   return [start, stop, ...projected];
 }
 
@@ -734,4 +750,25 @@ process.stdin.on("end", () => {
     /* best-effort: never block the runtime on hook bookkeeping */
   }
 });
+`;
+
+/** Best-effort MCP client used by Tachyon-owned native lifecycle hooks. Authentication and agent
+ * identity come from the current spawn's environment; the Bridge rejects superseded credentials. */
+export const RUNTIME_STATUS_PUBLISHER_SOURCE = `// Tachyon runtime status publisher (t-6b3a0d) — materialized; do not edit.
+const url = process.env.TACHYON_AGENT_BRIDGE_URL || "";
+const token = process.env.TACHYON_AGENT_BRIDGE_TOKEN || "";
+const runtime = process.argv[2] || "";
+const baseHeaders = { "content-type": "application/json", "accept": "application/json, text/event-stream", "authorization": "Bearer " + token };
+async function post(body, sessionId) {
+  const headers = sessionId ? { ...baseHeaders, "mcp-session-id": sessionId } : baseHeaders;
+  return fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(2000) });
+}
+(async () => {
+  if (!url || !token || !["claude", "codex", "grok"].includes(runtime)) return;
+  const init = await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "tachyon-runtime-hook", version: "1" } } });
+  const sessionId = init.headers.get("mcp-session-id") || "";
+  if (!init.ok || !sessionId) return;
+  await post({ jsonrpc: "2.0", method: "notifications/initialized" }, sessionId);
+  await post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "runtime_status_publish", arguments: { event: "stopped", runtime } } }, sessionId);
+})().catch(() => {});
 `;
