@@ -56,6 +56,21 @@ export function setMcpServer(runtime: Runtime, configText: string | undefined, s
   throw new Error(`setMcpServer: runtime '${runtime}' has no plugin MCP codec`);
 }
 
+/** Write an already-rendered lockfile `removal` back into the runtime config (apply uses the same bytes unapply will match). */
+export function setMcpFromRemoval(runtime: Runtime, configText: string | undefined, name: string, removal: unknown): string {
+  if (runtime === "claude") {
+    if (typeof removal !== "object" || removal === null || Array.isArray(removal)) {
+      throw new Error(`setMcpFromRemoval: claude removal for '${name}' is not an object`);
+    }
+    return setClaudeMcpServer(configText, name, removal as Record<string, unknown>);
+  }
+  if (runtime === "codex") {
+    if (typeof removal !== "string") throw new Error(`setMcpFromRemoval: codex removal for '${name}' is not a block string`);
+    return setCodexMcpServer(configText, name, removal);
+  }
+  throw new Error(`setMcpFromRemoval: runtime '${runtime}' has no plugin MCP codec`);
+}
+
 /** Remove a server by name from the runtime's MCP config text. */
 export function removeMcpServerText(runtime: Runtime, configText: string | undefined, name: string): string {
   if (runtime === "claude") return removeClaudeMcpServer(configText, name);

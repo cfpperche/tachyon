@@ -14,6 +14,8 @@ import {
   applyRemove,
   previewUpdate,
   applyUpdate,
+  applyContribution,
+  unapplyContribution,
   resolveEffectiveUpdateSpec,
   planSkillTargets,
   runtimeSupportsSkills,
@@ -21,6 +23,7 @@ import {
   runtimeSupportsMcp,
   type InstallProvenance,
 } from "../../src/plugins/engine.js";
+import { AppliedStateStore } from "../../src/plugins/appliedState.js";
 import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "../../src/plugins/adapters/claude.js";
 import { renderCodexMcpBlock } from "../../src/plugins/adapters/codex.js";
 import { loadMcpPayload, type McpServer } from "../../src/plugins/mcp.js";
@@ -418,31 +421,58 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     return dir;
   };
 
-  it("installs a server into claude .mcp.json + codex config.toml and records lockfile targets; remove un-merges", async () => {
+  it("install records mcp-server lockfile targets but does NOT write the runtime config (Phase C)", async () => {
     const dir = mcpPlugin();
     const ws = makeWorkspace(["claude", "codex"]);
     const r = await install(dir, ws);
     expect(r.installed).toBe(true);
+    expect(fs.existsSync(MCPJSON(ws))).toBe(false);
+    expect(fs.existsSync(TOML(ws))).toBe(false);
+    const lock = readJ(LOCK(ws)).plugins["mcp-pl"];
+    expect(lock.targets.filter((t: { kind: string }) => t.kind === "mcp-server")).toHaveLength(2);
+    expect(new AppliedStateStore(ws).isApplied("mcp-pl", { kind: "mcp", name: "db" })).toBe(false);
+  });
+
+  it("apply writes the server into claude + codex; unapply / remove un-merges only that server", async () => {
+    const dir = mcpPlugin();
+    const ws = makeWorkspace(["claude", "codex"]);
+    await install(dir, ws);
+    const ap = applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws);
+    expect(ap).toEqual({ applied: true, errors: [] });
     expect(readJ(MCPJSON(ws)).mcpServers.db).toEqual({ command: "npx", args: ["-y", "@scope/db"], env: { DB_URL: "${DB_URL}" } });
     expect(fs.readFileSync(TOML(ws), "utf8")).toContain("[mcp_servers.db]");
     expect(fs.readFileSync(TOML(ws), "utf8")).toContain('env_vars = ["DB_URL"]');
-    const lock = readJ(LOCK(ws)).plugins["mcp-pl"];
-    expect(lock.targets.filter((t: { kind: string }) => t.kind === "mcp-server")).toHaveLength(2);
+    expect(new AppliedStateStore(ws).isApplied("mcp-pl", { kind: "mcp", name: "db" })).toBe(true);
 
+    const un = unapplyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws);
+    expect(un).toEqual({ unapplied: true, orphans: 0, errors: [] });
+    expect(fs.existsSync(MCPJSON(ws))).toBe(false);
+    expect(fs.existsSync(TOML(ws))).toBe(false);
+    expect(new AppliedStateStore(ws).isApplied("mcp-pl", { kind: "mcp", name: "db" })).toBe(false);
+
+    applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws);
     const rm = await applyRemove("mcp-pl", ws);
     expect(rm.removed).toBe(true);
-    expect(fs.existsSync(MCPJSON(ws))).toBe(false); // only server → file removed
-    expect(fs.existsSync(TOML(ws))).toBe(false); // only block → config.toml husk removed too
+    expect(fs.existsSync(MCPJSON(ws))).toBe(false);
+    expect(fs.existsSync(TOML(ws))).toBe(false);
+    expect(new AppliedStateStore(ws).isApplied("mcp-pl", { kind: "mcp", name: "db" })).toBe(false);
   });
 
-  it("preserves a pre-existing USER server across install + remove (claude)", async () => {
+  it("preserves a pre-existing USER server across install + apply + unapply + remove (claude)", async () => {
     const ws = makeWorkspace(["claude"]);
     fs.writeFileSync(MCPJSON(ws), JSON.stringify({ mcpServers: { playwright: { command: "npx" } } }));
     await install(mcpPlugin([STDIO], ["claude"]), ws);
     expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" });
+    expect(readJ(MCPJSON(ws)).mcpServers.db).toBeUndefined(); // install does not expand the tool surface
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws).applied).toBe(true);
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" });
     expect(readJ(MCPJSON(ws)).mcpServers.db).toBeDefined();
+    expect(unapplyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws).unapplied).toBe(true);
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" });
+    expect(readJ(MCPJSON(ws)).mcpServers.db).toBeUndefined();
+    applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws);
     await applyRemove("mcp-pl", ws);
-    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" }); // user server survives
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" });
     expect(readJ(MCPJSON(ws)).mcpServers.db).toBeUndefined();
   });
 
@@ -467,37 +497,42 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
 
     const r = await install(dir, ws);
     expect(r.installed).toBe(true);
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx", args: ["-y", "@playwright/mcp@latest"] });
+    expect(readJ(MCPJSON(ws)).mcpServers["local-srv"]).toBeUndefined();
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "local-srv" }, ws).applied).toBe(true);
     const root = path.join(ws, ".tachyon/plugins/mcp-pl");
     const entry = readJ(MCPJSON(ws)).mcpServers["local-srv"];
     // MUST be absolute substituted paths — never the literal placeholder (the red proof of t-b6180e)
     expect(entry.command).toBe(`${root}/servers/srv`);
     expect(entry.args).toEqual([`--config`, `${root}/config.json`]);
     expect(JSON.stringify(entry)).not.toContain("${PLUGIN_ROOT}");
-    // human server intact after install
+    // human server intact after apply
     expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx", args: ["-y", "@playwright/mcp@latest"] });
     // lockfile removal identity is the SUBSTITUTED form (so content-aware un-merge matches)
     const lockTarget = readJ(LOCK(ws)).plugins["mcp-pl"].targets.find((t: { kind: string }) => t.kind === "mcp-server");
     expect(lockTarget.removal).toEqual(entry);
 
-    // human edits OUR server in place → un-merge must orphan it, never clobber
+    // human edits OUR server in place → un-apply must orphan it, never clobber
     const j = readJ(MCPJSON(ws));
     j.mcpServers["local-srv"].command = "/user/edited/srv";
     fs.writeFileSync(MCPJSON(ws), JSON.stringify(j));
-    const rmOrphan = await applyRemove("mcp-pl", ws);
-    expect(rmOrphan.removed).toBe(true);
-    expect(rmOrphan.orphans).toBe(1);
+    const unOrphan = unapplyContribution("mcp-pl", { kind: "mcp", name: "local-srv" }, ws);
+    expect(unOrphan.unapplied).toBe(true);
+    expect(unOrphan.orphans).toBe(1);
     expect(readJ(MCPJSON(ws)).mcpServers["local-srv"].command).toBe("/user/edited/srv");
     expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx", args: ["-y", "@playwright/mcp@latest"] });
 
-    // reinstall + clean un-merge removes only ours; human playwright remains
+    // reinstall + apply + clean un-apply removes only ours; human playwright remains
     j.mcpServers["local-srv"] = undefined;
     delete j.mcpServers["local-srv"];
     fs.writeFileSync(MCPJSON(ws), JSON.stringify(j));
+    await applyRemove("mcp-pl", ws);
     await install(dir, ws);
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "local-srv" }, ws).applied).toBe(true);
     expect(readJ(MCPJSON(ws)).mcpServers["local-srv"].command).toBe(`${root}/servers/srv`);
-    const rm = await applyRemove("mcp-pl", ws);
-    expect(rm.removed).toBe(true);
-    expect(rm.orphans).toBe(0);
+    const un = unapplyContribution("mcp-pl", { kind: "mcp", name: "local-srv" }, ws);
+    expect(un.unapplied).toBe(true);
+    expect(un.orphans).toBe(0);
     expect(readJ(MCPJSON(ws)).mcpServers["local-srv"]).toBeUndefined();
     expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx", args: ["-y", "@playwright/mcp@latest"] });
   });
@@ -515,29 +550,43 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     const kept = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpDecisions: { "claude db": "keep" }, mcpConfirmed: true });
     expect(kept.installed).toBe(false); // nothing else to install (mcp-only plugin, server kept)
     expect(readJ(MCPJSON(ws)).mcpServers.db).toEqual({ command: "USER-OWN" });
-    // replace → overwritten + recorded
+    // replace → recorded in the lockfile, still not written until apply
     const rep = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { mcpDecisions: { "claude db": "replace" }, mcpConfirmed: true });
     expect(rep.installed).toBe(true);
+    expect(readJ(MCPJSON(ws)).mcpServers.db.command).toBe("USER-OWN");
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws).errors[0]).toMatch(/collides/);
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws, { replace: true }).applied).toBe(true);
     expect(readJ(MCPJSON(ws)).mcpServers.db.command).toBe("npx");
   });
 
-  it("content-aware remove: a user-edited server is left as an orphan, never clobbered", async () => {
+  it("content-aware unapply/remove: a user-edited server is left as an orphan, never clobbered", async () => {
     const ws = makeWorkspace(["claude"]);
     await install(mcpPlugin([STDIO], ["claude"]), ws);
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws).applied).toBe(true);
     // user edits our server in place
     const j = readJ(MCPJSON(ws));
     j.mcpServers.db.command = "user-changed";
     fs.writeFileSync(MCPJSON(ws), JSON.stringify(j));
+    const un = unapplyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws);
+    expect(un.unapplied).toBe(true);
+    expect(un.orphans).toBe(1);
+    expect(readJ(MCPJSON(ws)).mcpServers.db.command).toBe("user-changed"); // preserved
+    // re-apply (replace) then remove while edited → uninstall also orphans
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws, { replace: true }).applied).toBe(true);
+    j.mcpServers.db.command = "user-changed-again";
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify(j));
     const rm = await applyRemove("mcp-pl", ws);
     expect(rm.removed).toBe(true);
     expect(rm.orphans).toBe(1);
-    expect(readJ(MCPJSON(ws)).mcpServers.db.command).toBe("user-changed"); // preserved
+    expect(readJ(MCPJSON(ws)).mcpServers.db.command).toBe("user-changed-again");
   });
 
-  it("update stale-cleanup: a server dropped by the new version is un-merged", async () => {
+  it("update stale-cleanup: a previously-applied server dropped by the new version is un-merged", async () => {
     const ws = makeWorkspace(["claude"]);
     const v1 = mcpPlugin([STDIO, { name: "extra", transport: "stdio", command: "node" }], ["claude"]);
     await install(v1, ws);
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws).applied).toBe(true);
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "extra" }, ws).applied).toBe(true);
     expect(readJ(MCPJSON(ws)).mcpServers.extra).toBeDefined();
     // v2 of the SAME plugin drops 'extra'
     fs.writeFileSync(path.join(v1, "tachyon-plugin.json"), JSON.stringify({ name: "mcp-pl", version: "2.0.0", description: "v2", runtimes: ["claude"] }));
@@ -545,7 +594,7 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     const upd = await applyUpdate(loadPlugin(v1).plugin!, ws, { mcpConfirmed: true });
     expect(upd.updated).toBe(true);
     expect(readJ(MCPJSON(ws)).mcpServers.db).toBeDefined();
-    expect(readJ(MCPJSON(ws)).mcpServers.extra).toBeUndefined(); // stale server cleaned up
+    expect(readJ(MCPJSON(ws)).mcpServers.extra).toBeUndefined(); // stale applied server cleaned up
   });
 
   it("a corrupted mcp-server lockfile target (wrong file) is fail-closed at remove", async () => {
@@ -554,6 +603,7 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     const lock = readJ(LOCK(ws));
     lock.plugins["mcp-pl"].targets.find((t: { kind: string }) => t.kind === "mcp-server").file = "package.json";
     fs.writeFileSync(LOCK(ws), JSON.stringify(lock));
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws).errors[0]).toMatch(/not a valid MCP config target/);
     expect((await applyRemove("mcp-pl", ws)).errors[0]).toMatch(/not a valid MCP config target/);
   });
 
@@ -599,15 +649,37 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     fs.mkdirSync(path.join(ws, ".codex"), { recursive: true });
     fs.writeFileSync(TOML(ws), 'model = "gpt-5-codex"\n\n[mcp_servers.github]\nurl = "https://g"\n');
     await install(mcpPlugin([STDIO], ["codex"]), ws);
+    expect(fs.readFileSync(TOML(ws), "utf8")).toContain('model = "gpt-5-codex"');
+    expect(fs.readFileSync(TOML(ws), "utf8")).not.toContain("[mcp_servers.db]");
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws).applied).toBe(true);
     let toml = fs.readFileSync(TOML(ws), "utf8");
     expect(toml).toContain('model = "gpt-5-codex"');
     expect(toml).toContain("[mcp_servers.db]");
-    const rm = await applyRemove("mcp-pl", ws);
+    const un = unapplyContribution("mcp-pl", { kind: "mcp", name: "db" }, ws);
     toml = fs.readFileSync(TOML(ws), "utf8");
     expect(toml).toContain('model = "gpt-5-codex"'); // user setting preserved
     expect(toml).toContain("[mcp_servers.github]"); // user server preserved
     expect(toml).not.toContain("[mcp_servers.db]"); // ours un-merged
+    expect(un.orphans).toBe(0);
+  });
+
+  it("apply refuses skill/hook (Phase C owns mcp only) and an unknown server name", async () => {
+    const ws = makeWorkspace(["claude"]);
+    await install(mcpPlugin([STDIO], ["claude"]), ws);
+    expect(applyContribution("mcp-pl", { kind: "skill", name: "x" }, ws).errors[0]).toMatch(/Phase C/);
+    expect(unapplyContribution("mcp-pl", { kind: "hook", name: "PreToolUse" }, ws).errors[0]).toMatch(/Phase C/);
+    expect(applyContribution("mcp-pl", { kind: "mcp", name: "no-such" }, ws).errors[0]).toMatch(/no mcp-server named/);
+  });
+
+  it("uninstall of a never-applied MCP plugin does not count orphans or touch a human server", async () => {
+    const ws = makeWorkspace(["claude"]);
+    fs.writeFileSync(MCPJSON(ws), JSON.stringify({ mcpServers: { playwright: { command: "npx" } } }));
+    await install(mcpPlugin([STDIO], ["claude"]), ws);
+    const rm = await applyRemove("mcp-pl", ws);
+    expect(rm.removed).toBe(true);
     expect(rm.orphans).toBe(0);
+    expect(readJ(MCPJSON(ws)).mcpServers.playwright).toEqual({ command: "npx" });
+    expect(readJ(MCPJSON(ws)).mcpServers.db).toBeUndefined();
   });
 });
 

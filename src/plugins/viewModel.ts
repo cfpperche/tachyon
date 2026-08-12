@@ -74,6 +74,15 @@ export interface InstalledPluginVM {
    *  set. Distinct from a `RuntimePill` with `present:false`: that is DRIFT (installed here, files deleted); this
    *  is a runtime the install never covered. Drives the card's coverage notice. */
   uncoveredRuntimes?: Runtime[];
+  /** SDD 486 Phase C — MCP servers this plugin ships, with whether each is currently applied. Absent when the
+   *  plugin ships none. Installed-not-applied is a first-class row, never omitted as if the server were absent. */
+  mcpServers?: McpContributionVM[];
+}
+
+/** One MCP server a plugin ships, and whether the human has applied it to this workspace. */
+export interface McpContributionVM {
+  name: string;
+  applied: boolean;
 }
 
 /** spec 287 — one external (system) tool on an installed card: present/missing + whether Tachyon can offer the
@@ -102,6 +111,9 @@ export interface PluginsViewModel {
   parseError?: string;
   /** true when there is no lockfile or it records zero plugins (cold state). */
   empty: boolean;
+  /** SDD 486 Phase C — applied-state unreadable. Distinct from a lockfile parseError: the install list
+   *  is still trustworthy, but apply/unapply must not run (we cannot tell which MCP servers are live). */
+  appliedError?: string;
 }
 
 /**
@@ -138,6 +150,11 @@ export interface BuildPluginsInput {
    *  from `.tachyon/plugins/<name>/tachyon-plugin.json`. Omit a plugin ⇒ no coverage gap is computed for it: an
    *  unreadable manifest is absence of evidence, and inventing "not installed for grok" from it would be a lie. */
   declared?: Record<string, Runtime[]>;
+  /** SDD 486 Phase C — per-plugin (keyed by name) the MCP servers the lockfile recorded, with applied-state.
+   *  Omit a plugin ⇒ the card shows no MCP row. */
+  mcpStatuses?: Record<string, McpContributionVM[]>;
+  /** applied-state read failure — surfaced as a banner; apply/unapply stay disabled. */
+  appliedError?: string;
 }
 
 /** Map an injected update-check to the card's status struct. */
@@ -223,7 +240,7 @@ function uncoveredRuntimes(lock: PluginLock, present: ReadonlySet<Runtime>, decl
   return SUPPORTED_RUNTIMES.filter((rt) => declaredSet.has(rt) && present.has(rt) && !installed.has(rt));
 }
 
-function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined): InstalledPluginVM {
+function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined, mcpServers: McpContributionVM[] | undefined): InstalledPluginVM {
   const status = statusFrom(check);
   const uncovered = uncoveredRuntimes(lock, present, declared);
   return {
@@ -238,6 +255,7 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
     ...(lock.docsUrl ? { docsUrl: lock.docsUrl } : {}),
     ...(externalTools && externalTools.length > 0 ? { externalTools } : {}),
     ...(uncovered.length > 0 ? { uncoveredRuntimes: uncovered } : {}),
+    ...(mcpServers && mcpServers.length > 0 ? { mcpServers } : {}),
   };
 }
 
@@ -271,6 +289,25 @@ export function buildExternalStatuses(plugins: Iterable<PluginLock>, resolve: (r
   return out;
 }
 
+/** SDD 486 Phase C — lockfile mcp-server refs + applied-state → per-plugin rows. A plugin with no
+ *  mcp-server targets is omitted (no empty row). Names are unique per plugin (one row, many runtimes). */
+export function buildMcpStatuses(plugins: Iterable<PluginLock>, isApplied: (plugin: string, name: string) => boolean): Record<string, McpContributionVM[]> {
+  const out: Record<string, McpContributionVM[]> = {};
+  for (const p of plugins) {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    for (const t of p.targets) {
+      if (t.kind !== "mcp-server" || typeof t.ref !== "string" || seen.has(t.ref)) continue;
+      seen.add(t.ref);
+      names.push(t.ref);
+    }
+    if (names.length === 0) continue;
+    names.sort();
+    out[p.name] = names.map((name) => ({ name, applied: isApplied(p.name, name) }));
+  }
+  return out;
+}
+
 /**
  * Build the Plugins View model. Pure: lockfile text + present runtimes + injected update-checks → render model.
  * A corrupt lockfile yields a `parseError` (banner, no list) rather than throwing.
@@ -284,7 +321,7 @@ export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewMode
   }
 
   if (input.lockfileText === undefined) {
-    return { present, installed: [], empty: true };
+    return { present, installed: [], empty: true, ...(input.appliedError ? { appliedError: input.appliedError } : {}) };
   }
 
   const { lockfile, errors } = parseLockfile(input.lockfileText);
@@ -294,10 +331,11 @@ export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewMode
 
   const checks = input.updateChecks ?? {};
   const externals = input.externalStatuses ?? {};
+  const mcp = input.mcpStatuses ?? {};
   const installed = Object.values(lockfile.plugins)
-    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name]))
+    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name], mcp[lock.name]))
     // locale-independent, stable order (plugin names are ASCII kebab by manifest contract; don't depend on locale).
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
-  return { present, installed, empty: installed.length === 0 };
+  return { present, installed, empty: installed.length === 0, ...(input.appliedError ? { appliedError: input.appliedError } : {}) };
 }

@@ -31,6 +31,16 @@ describe("plugins installed-list controls", () => {
     expect(filterInstalledPlugins(rows, "edited").map((p) => p.name)).toEqual(["local-tool"]);
   });
 
+  it("Phase C — filters by MCP server name and applied / not-applied text", () => {
+    const rows = [
+      plugin("mcp-pl", { mcpServers: [{ name: "db-tools", applied: false }, { name: "remote-api", applied: true }] }),
+      plugin("sdd"),
+    ];
+    expect(filterInstalledPlugins(rows, "db-tools").map((p) => p.name)).toEqual(["mcp-pl"]);
+    expect(filterInstalledPlugins(rows, "not applied").map((p) => p.name)).toEqual(["mcp-pl"]);
+    expect(filterInstalledPlugins(rows, "sdd").map((p) => p.name)).toEqual(["sdd"]);
+  });
+
   it("sorts without mutating the source list", () => {
     const rows = [plugin("zebra", { version: "0.1.0" }), plugin("alpha", { version: "3.0.0" }), plugin("mango", { version: "1.2.0" })];
     const before = rows.map((p) => p.name);

@@ -58,6 +58,20 @@ no longer renders.
       here, not just true — a toggle that reads "off" while the hook still fires is the one outcome
       worse than having no toggle.
 
+### Phase C — `mcp-server` enters apply/unapply (t-7f52f6)
+
+- [x] C1. Measure whether each runtime re-reads MCP config mid-session (same discipline as A1b). Live
+      reread was not completed on this host (`claude -p` not logged in); `claude mcp list` discovered
+      a project `.mcp.json` server as Pending approval. Card copy stays conservative. Recorded in
+      `notes.md`.
+- [x] C2. Spell `mcp:<kebab>` in `AppliedStateStore` (same file, not a second store). `view` stays
+      unspellable.
+- [x] C3. `applyContribution` / `unapplyContribution` for `mcp`. Install records lockfile targets
+      but does not write the runtime config. Un-merge uses lockfile `removal` (content-match). Human
+      edits in the same file survive. Uninstall calls `forgetPlugin`.
+- [x] C4. Plugins card distinguishes installed-not-applied from absent. Apply/Un-apply on the card.
+      Un-apply does not claim "disarmed".
+
 ### Phase B — the delegated toolkit reads the payload
 
 - [ ] B1. `AgentManager`'s delegated toolkit captures from `.tachyon/plugins/<plugin>/`, not from

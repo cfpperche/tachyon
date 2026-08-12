@@ -1,5 +1,5 @@
 import { useMemo, useState } from "preact/hooks";
-import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, PluginAction } from "../../plugins/viewModel";
+import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, PluginAction, McpContributionVM } from "../../plugins/viewModel";
 import type { Runtime } from "../../plugins/manifest";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { ConfirmPayload } from "./messages";
@@ -40,6 +40,9 @@ export interface PluginsDispatch {
   openConfig(name: string): void;
   /** spec 270 — open the plugin's docs URL externally (Docs button). */
   openDocs(name: string): void;
+  /** SDD 486 Phase C — apply or un-apply one MCP server the plugin ships. */
+  applyMcp(pluginName: string, server: string): void;
+  unapplyMcp(pluginName: string, server: string): void;
 }
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -106,7 +109,7 @@ function CoverageNotice({ p }: { p: InstalledPluginVM }) {
   );
 }
 
-function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch }) {
+function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: PluginsDispatch; mcpLocked?: boolean }) {
   const badge = statusBadge(p.status);
   const run = (a: PluginAction) => {
     // reapply uses the same host update path (previewUpdateOp) — only the label/consent framing differs.
@@ -173,6 +176,35 @@ function Card({ p, dispatch }: { p: InstalledPluginVM; dispatch: PluginsDispatch
           ))}
         </div>
       )}
+      {p.mcpServers && p.mcpServers.length > 0 && (
+        <McpContributionList plugin={p.name} servers={p.mcpServers} dispatch={dispatch} locked={mcpLocked === true} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * SDD 486 Phase C — installed MCP servers. The state the model introduces is installed-but-not-applied:
+ * a row that omitted an unapplied server would hide a plugin contribution the human installed.
+ * Un-apply cannot promise a live session drops the tools. A1b already showed Codex/Grok freeze
+ * their hook set at start; MCP is the same class of startup-loaded config. Live mid-session MCP
+ * reread was not completed on this host (claude -p: not logged in). The label stays conservative.
+ */
+function McpContributionList({ plugin, servers, dispatch, locked }: { plugin: string; servers: McpContributionVM[]; dispatch: PluginsDispatch; locked: boolean }) {
+  return (
+    <div class="pext pmcp">
+      {servers.map((s) => (
+        <div key={s.name} class="ext-row">
+          <span class="ev">{s.name}</span>{" "}
+          {s.applied
+            ? <Badge tone="ok"><Icon name="check" /> applied</Badge>
+            : <Badge tone="warn"><Icon name="circle-slash" /> installed · not applied</Badge>}
+          {!locked && (s.applied
+            ? <Button style="margin-left:6px" onClick={() => dispatch.unapplyMcp(plugin, s.name)}>Un-apply</Button>
+            : <Button style="margin-left:6px" onClick={() => dispatch.applyMcp(plugin, s.name)}>Apply</Button>)}
+          {s.applied && <span class="ds-dim" style="font-size:11px;margin-left:6px">Restart a running session to drop the tools</span>}
+        </div>
+      ))}
     </div>
   );
 }
@@ -423,7 +455,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
 
           {vm.mcp && vm.mcp.length > 0 && (
             <div class="sec">
-              <h3>MCP servers — these become tools the agent can invoke</h3>
+              <h3>MCP servers this plugin ships — they stay inert until you apply them</h3>
               {vm.mcp.map((s) => (
                 <div key={s.name} class="cmd">
                   <span class="ev">{s.runtimes.join(", ")}</span> <b>{s.name}</b> <span class="ds-dim">({s.transport})</span> {s.detail}
@@ -451,7 +483,7 @@ function ConsentDrawer({ vm, dispatch }: { vm: ConsentVM; dispatch: PluginsDispa
           {vm.requiresMcpConfirm && (
             <label class="ackline">
               <input type="checkbox" checked={mcpAck} onChange={(e) => setMcpAck((e.target as HTMLInputElement).checked)} />
-              <span><Icon name="warning" /> I understand these <b>MCP servers</b> become tools the agent can run on its own (local processes / network calls){anyMcpReplace ? ", and Replace permanently overwrites my existing server" : ""}.</span>
+              <span><Icon name="warning" /> I understand this plugin <b>ships MCP servers</b> I can later apply as tools the agent can run (local processes / network calls){anyMcpReplace ? ", and Replace records my existing server as the one apply will overwrite" : ""}.</span>
             </label>
           )}
 
@@ -655,8 +687,11 @@ export function App({ vm, consent, busy, dispatch }: { vm?: PluginsViewModel; co
           </div>
         ) : (
           <div class="list">
+            {vm.appliedError && (
+              <div class="ds-banner"><Icon name="error" /> Applied-state is unreadable — MCP apply/un-apply is disabled. {vm.appliedError}</div>
+            )}
             {visibleInstalled.length > 0
-              ? visibleInstalled.map((p) => <Card key={p.name} p={p} dispatch={dispatch} />)
+              ? visibleInstalled.map((p) => <Card key={p.name} p={p} dispatch={dispatch} mcpLocked={!!vm.appliedError} />)
               : (
                 <div class="ds-empty filtered-empty">
                   <div class="ds-big">No installed plugins match.</div>

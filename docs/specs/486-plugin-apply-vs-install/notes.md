@@ -196,3 +196,55 @@ _Questions surfaced during the build with no answer yet. Owner or path to resolu
   this: apply-time reconciliation, or a prune at update. Neither is written yet.
 - **Un-apply while a hook is MID-EXECUTION is safe on all three runtimes, but the reverse is untested.**
   No measurement covers un-applying a SKILL while that skill is executing.
+
+## Phase C — mcp-server apply/unapply (t-7f52f6, 2026-08-12)
+
+### Measurement — does a runtime re-read MCP config mid-session?
+
+_Attempted 2026-08-12 by `mcpapply`. Same discipline as A1b: a live session, a real config change, a
+tool result as proof. The live half did not complete on this host._
+
+| Runtime | Plugin MCP path | Live mid-session reread | What was measured |
+|---|---|---|---|
+| claude 2.1.228 | `.mcp.json` | **not completed** | `claude -p --mcp-config` failed `Not logged in`. `claude mcp list` in the scratch repo **did** discover `probe-token` from `.mcp.json`, as `⏸ Pending approval`. That is a second gate Tachyon cannot open, the same class as Codex hook Review / Grok folder trust. |
+| codex 0.146.1 | `.codex/config.toml` `[mcp_servers.*]` | **not completed** | No live session this pass. A1b already showed this runtime freezes its *hook* set at session start; MCP is the same class of startup-loaded config. |
+| grok 1.0.3 | **none** | n/a | `ADAPTERS.grok.mcpRel` is null. Plugin MCP never lands in Grok. |
+
+Scratch residue: `/tmp/mcp-probe-server.js`, `/tmp/mcp-reread-mSrZ` (git init + `.mcp.json`). No writes to `~/.claude`, `~/.codex`, or `~/.grok`.
+
+**Consequence for the card:** an un-apply switch must not read "disarmed". The conservative label is
+"Restart a running session to drop the tools". A later pass that completes the live reread can
+narrow that per runtime, the way A5 must for hooks.
+
+### Design decisions
+
+- **Same store, new kind.** `ContributionKind` grew `"mcp"`. Id `mcp:<kebab>`. No second file. `view`
+  stays unspellable.
+- **Install records, apply writes.** `buildInstallTargets` still records `mcp-server` targets (so
+  apply has the lockfile `removal` identity). `activateInstall` writes a server only when the store
+  already says it is applied (an update of a live server). First install leaves `.mcp.json` /
+  `config.toml` untouched.
+- **Un-merge is the hook form.** `unapplyContribution` / uninstall use `mcpRepEquals(current,
+  target.removal)` then `removeMcpServerText`. A human-edited same-name entry is an orphan. A
+  never-applied absent entry is not an orphan.
+- **Collision at apply, not a silent overwrite.** Apply refuses a same-name occupant that is not our
+  recorded removal unless `{ replace: true }`. Install-time Keep/Replace still decides whether the
+  lockfile records the target at all.
+- **`forgetPlugin` on uninstall.** Re-install must not find MCP servers already marked applied
+  (`t-17d885`).
+- **Update prunes dropped applied servers.** A version that stops shipping `extra` un-merges it (if
+  applied) and `markUnapplied`s it.
+
+### Deviations
+
+- Phase A A3/A4 are still unchecked. Phase C does **not** stop install from materializing skills or
+  hooks. Only MCP writes moved behind apply, so a break is attributable.
+- Live MCP mid-session reread was not completed (no logged-in `claude -p` on this host). The UI
+  uses the conservative restart label rather than inventing a live-disarm claim.
+
+### Open questions left for later
+
+- Complete the live MCP reread on claude and codex (same method as A1b). Owner: whoever next
+  touches the card copy.
+- Whether apply should surface the runtime's own MCP approval gate (claude `Pending approval`).
+  Same shape as A5's hook-gate question.
