@@ -89,17 +89,18 @@ describe("session work record", () => {
     expect(rendered).toContain("Wait for an explicit assignment.");
   });
 
-  it("states worktree isolation with its path and branch", () => {
+  it("states the separate checkout with its path and branch without promising write confinement", () => {
     const rendered = renderSessionWorkRecord(record({ isolation: worktree }));
 
-    expect(rendered).toContain("Isolation: git worktree /wt/agent on branch tachyon/change/t-5bfb72.");
+    expect(rendered).toContain("Checkout: separate git worktree /wt/agent on branch tachyon/change/t-5bfb72.");
+    expect(rendered).toContain("not a write-confinement boundary");
     expect(rendered).toContain("Do not edit, commit to, or push the primary checkout");
   });
 
   it("says outright that a shared checkout authorizes nothing — the measured main-mutation case", () => {
     const rendered = renderSessionWorkRecord(record({ isolation: shared }));
 
-    expect(rendered).toContain("Isolation: none on record — this session runs in the shared checkout /repo.");
+    expect(rendered).toContain("Checkout: shared — this session runs in /repo.");
     expect(rendered).toContain("nothing here authorizes committing to the trunk");
     expect(rendered).toContain("do not assume an earlier conversation already granted that");
   });

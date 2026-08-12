@@ -120,7 +120,7 @@ describe("runtime profiles (spec 358 phase 1)", () => {
     expect(profile?.isolation.notes).toContain("t-e2ebe3");
     expect(profile?.composer).toMatchObject({ tailLines: 8, source: "assumed", verified: false });
     expect(profile?.composer?.occupiedLine.test("❯ human draft")).toBe(true);
-    // private-home → verified isolation INDEPENDENT of cwd (no isolated worktree required, ungated delegation)
+    // private-home → verified isolation INDEPENDENT of cwd (no separate worktree required, ungated delegation)
     expect(hasVerifiedTranscriptIsolation(profile!.isolation)).toBe(true);
     expect(hasVerifiedTranscriptIsolation(profile!.isolation, { isolatedWorktree: true })).toBe(true);
     expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).not.toThrow();

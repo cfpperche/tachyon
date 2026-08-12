@@ -104,7 +104,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
       // t-4071e4: the receipt records WHICH checkout was authorized. The commit deletes the proposal,
       // so without this the durable record could not answer whether the human let this agent into
       // their working tree.
-      workspace: "isolated worktree",
+      workspace: "separate worktree",
     });
     // ONE canonical transaction carrying both subjects.
     expect(p.calls).toEqual([

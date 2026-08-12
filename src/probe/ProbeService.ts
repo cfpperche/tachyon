@@ -34,7 +34,7 @@ export interface ProbeRequest {
   budgetUsd?: number;
   /** the calling agent (D8 lineage/authorization). */
   caller?: string;
-  /** a write-capable probe gets an isolated worktree (OQ4); the read-only default does not. */
+  /** a write-capable probe gets a separate worktree (OQ4); the read-only default does not. This is checkout separation, not a write sandbox. */
   write?: boolean;
 }
 

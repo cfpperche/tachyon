@@ -56,7 +56,7 @@ export function agentStanzaSection(text: string | undefined, name: string): Sect
  * from — so a caller that includes one does not get a warning, it gets a failed save.
  *
  * t-b54ead added the worktree keys. They reached here from the Terminal Studio, which
- * offered a "Git worktree isolation" section for a year: the fields were mirrored from Agent Studio
+ * offered a "Separate git checkout + branch" section for a year: the fields were mirrored from Agent Studio
  * in `aa99c066` when its footer-void LAYOUT fix was ported, and the parser's refusals only arrived
  * later (SDD 478 M6). The form no longer offers them; this closes the same hole for every OTHER
  * writer of a terminal entry, which is the half a form fix cannot reach.

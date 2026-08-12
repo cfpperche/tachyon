@@ -19,7 +19,7 @@ import { TERMINAL_STRIPPED_AGENT_KEYS } from "../../src/config/YamlConfigEditor"
  * read as "absent" when it is merely closed.
  *
  * Watched fail on the pre-fix tree at both widths: `controlIds` held tsh-branch / tsh-setup / tsh-verify
- * and `headings` held "Git worktree isolation".
+ * and `headings` held "Separate git checkout + branch".
  */
 
 let browser: Browser;
@@ -70,7 +70,7 @@ describe("t-b54ead — Terminal Studio offers no control for an agent-only key",
         });
 
         expect(read.controlCount, "the fixture did not mount a populated form").toBeGreaterThan(0);
-        expect(read.headings).not.toContain("Git worktree isolation");
+        expect(read.headings).not.toContain("Separate git checkout + branch");
         const haystack = [...read.controlIds, ...read.labels, ...read.headings].join(" | ").toLowerCase();
         for (const key of TERMINAL_STRIPPED_AGENT_KEYS) {
           // `kind` is implied by the studio and never a control; the rest must not appear at all.

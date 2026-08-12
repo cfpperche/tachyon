@@ -15,7 +15,7 @@ export interface IsolationProfile extends RuntimeProfileSection {
 }
 
 export interface TranscriptIsolationContext {
-  /** True when the spawn is known to run in an isolated git worktree. */
+  /** True when the spawn is known to run in a separate git worktree. */
   isolatedWorktree?: boolean;
   /** True when the runtime lineage parent is present on this spawn. */
   parented?: boolean;
@@ -461,7 +461,7 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "t-e2ebe3: opencode is XDG-compliant (measured 2026-07-08, opencode 1.17.15). Tachyon spawns an " +
         "opencode harness agent with per-agent XDG_CONFIG/DATA/STATE_HOME redirection (independent of cwd, " +
         "like claude/codex) so an OPencode agent gets its own config/auth/state namespace — and can be delegated " +
-        "UNGATED (no isolated worktree required, unlike the prior project-scoped rating in t-6a5dae).",
+        "UNGATED (no separate worktree required, unlike the prior project-scoped rating in t-6a5dae).",
     },
     composer: {
       tailLines: 8,
@@ -633,7 +633,7 @@ export function hasVerifiedTranscriptIsolation(isolation: IsolationProfile, cont
  * RULING (t-ef19a1): a tachyon.yml-declared agent's author already has full extension trust — a
  * different tier than a Temporary delegated spawn — so a declared opencode agent with no `harness:`
  * block is INTENTIONALLY allowed to run without isolation. It is, however, a footgun: without
- * `harness: {}` (or an isolated worktree) it shares the global `~/.local/share` opencode
+ * `harness: {}` (or a separate worktree) it shares the global `~/.local/share` opencode
  * config/auth/session state with every other non-isolated opencode agent. This never changes the
  * allow/refuse decision — it only produces the one-line warning text to surface at spawn time.
  */

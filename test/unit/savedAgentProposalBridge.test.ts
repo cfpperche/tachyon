@@ -253,7 +253,7 @@ describe("t-3bde32 — the grant Studio writes is the grant the Bridge door read
   });
 });
 
-describe("t-4071e4 — isolated worktree in the proposal contract", () => {
+describe("t-4071e4 — separate worktree in the proposal contract", () => {
   it("defaults to ISOLATED, carries an explicit false, and refuses location fields by name", async () => {
     const root = workspace();
     profile(root, "claude-runtime", { proposeSavedAgent: true });

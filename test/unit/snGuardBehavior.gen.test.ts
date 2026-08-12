@@ -12,7 +12,7 @@ import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
 /** t-ef19a1 — RULING: the trust asymmetry is INTENTIONAL (a tachyon.yml author already has full
  *  extension trust; a declared opencode agent with no `harness:` is allowed to run without isolation,
  *  same as before). This is an anti-footgun WARNING only — it never changes the allow/refuse decision.
- *  A declared opencode agent with neither a harness block nor an isolated worktree shares the global
+ *  A declared opencode agent with neither a harness block nor a separate worktree shares the global
  *  ~/.local/share opencode config/auth/session state with every other non-isolated opencode agent, so
  *  Tachyon warns once at spawn time via the same host.notify("warn") channel used elsewhere. */
 describe("container-generated delegation behavior", () => {
@@ -41,7 +41,7 @@ describe("container-generated delegation behavior", () => {
     return { newSessionArgs, tmux: new TmuxService(exec) };
   }
 
-  it("a declared opencode agent without harness or worktree isolation emits a one-line footgun warning", async () => {
+  it("a declared opencode agent without harness or a separate worktree emits a one-line footgun warning", async () => {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-snguard-"));
     dirs.push(ws);
     const { config, errors } = parseConfig(
@@ -73,7 +73,7 @@ describe("container-generated delegation behavior", () => {
       resolveSpawnCwd: async (ctx) => (asAgent(ctx.def)?.worktree ? { cwd: rec.path, worktree: rec } : null),
     });
 
-    // 1. Declared opencode, no harness, no worktree isolation → exactly one footgun warning.
+    // 1. Declared opencode, no harness, no separate worktree → exactly one footgun warning.
     await manager.spawn("oc");
     expect(notifications).toHaveLength(1);
     expect(notifications[0].level).toBe("warn");
@@ -85,7 +85,7 @@ describe("container-generated delegation behavior", () => {
     await manager.spawn("ocHarness");
     expect(notifications).toHaveLength(1);
 
-    // 3. Same shape but spawned into an isolated worktree → no additional warning.
+    // 3. Same shape but spawned into a separate worktree → no additional warning.
     await manager.spawn("ocWorktree");
     expect(notifications).toHaveLength(1);
 

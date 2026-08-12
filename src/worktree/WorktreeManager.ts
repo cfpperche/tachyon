@@ -1,8 +1,8 @@
 /**
- * Per-agent git worktree isolation (spec 210 / C1). Each opt-in agent runs in its
- * own worktree on its own branch, so parallel agents never clobber each other's
- * files. A worktree is a pure git mechanism — runtime- and kind-agnostic; this only
- * changes the cwd a tmux session is born in.
+ * Per-agent git worktree checkout (spec 210 / C1). Each opt-in agent runs in its
+ * own worktree on its own branch. A worktree is a pure git mechanism — runtime-
+ * and kind-agnostic; this only changes the cwd a tmux session is born in. It is
+ * not a filesystem boundary and does not confine the agent's writes.
  *
  * Mirrors src/resume/: the PURE resolvers (path/branch resolution, git-arg builders,
  * the branch-state→action decision, the reuse-validation predicate) live here as
@@ -1249,7 +1249,7 @@ export interface WorktreeSpawnCtx {
   worktree?: boolean;
   branch?: string;
   worktreeSetup?: string[];
-  /** lineage parent — a sub-agent inherits the parent's cwd unless it explicitly opts into worktree isolation */
+  /** lineage parent — a sub-agent inherits the parent's cwd unless it explicitly opts into a separate worktree */
   parent?: string;
   /**
    * spec 484 — Temporary (MCP-spawned) rather than declared in `tachyon.yml`.
@@ -1471,7 +1471,7 @@ export async function resolveWorktreeCwd(
       // write. Fail closed, and say which unavailability caused it.
       if (ctx.parent) {
         throw new WorktreeUnavailableError(
-          `'${ctx.name}' asked for an isolated worktree under parent '${ctx.parent}' and cannot have one — ${err.message}`,
+          `'${ctx.name}' asked for a separate worktree under parent '${ctx.parent}' and cannot have one — ${err.message}`,
           err.reason,
         );
       }
@@ -1483,7 +1483,7 @@ export async function resolveWorktreeCwd(
     const recoveryPath = deps.priorRecord?.path ?? deps.manager.pathForAgent(ctx.name);
     const primary = err instanceof Error ? err : new Error(String(err));
     throw new WorktreeUnavailableError(
-      `isolated worktree inspection failed for '${ctx.name}'; recovery checkout: ${recoveryPath}: ${primary.message}`,
+      `separate worktree inspection failed for '${ctx.name}'; recovery checkout: ${recoveryPath}: ${primary.message}`,
       "recovery-preserved",
     );
   }

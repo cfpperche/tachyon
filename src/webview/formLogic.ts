@@ -247,7 +247,7 @@ export function toEntry(state: FormState): Record<string, unknown> {
   // t-26ba8f — the same statement of the default `upsertAgent` reads to decide what an OMITTED
   // `attention:` key means, so the writer can merge a preserved silenceSec/patterns back onto it.
   if (state.attention !== defaultAttentionEnabled(state.kind)) entry.attention = state.attention;
-  // spec 210 — worktree isolation (agent or terminal kind)
+  // spec 210 — separate worktree checkout (agent or terminal kind)
   if (state.worktree) entry.worktree = true;
   if (state.branch.trim().length > 0) entry.branch = state.branch.trim();
   const setup = parseSteps(state.worktreeSetup);

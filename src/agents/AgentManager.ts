@@ -539,7 +539,7 @@ export interface SpawnOptions {
   /** open + focus the editor terminal on spawn (default true). The Bridge passes false
    *  so an agent spawning a child doesn't yank the human's focus off the parent (F3). */
   reveal?: boolean;
-  /** spec 210 — opt this Temporary spawn into git-worktree isolation, including parented spawns. */
+  /** spec 210 — opt this Temporary spawn into a separate git checkout + branch, including parented spawns. */
   worktree?: boolean;
   /** spec 230 — extra env merged into this Temporary spawn (e.g. a pipeline node's TACHYON_RUN_ID/NODE_ID/NODE_NONCE). Agent-declared env still wins on conflict via the spawn merge order. */
   env?: Record<string, string>;
@@ -706,7 +706,7 @@ export interface AgentManagerOptions {
    *  value used as HarnessManager's credential source so capture/resume never assume a different account. */
   defaultClaudeConfigHome?: string;
   /**
-   * spec 210 — resolve the cwd a session is born in (worktree isolation). Given the spawn
+   * spec 210 — resolve the cwd a session is born in (separate worktree checkout). Given the spawn
    * context, returns the cwd + an optional worktree record to persist, or null to use the
    * default (workspace root / def.cwd). Owned by Workspace (it has the WorktreeManager,
    * lineage, and the setup runner). Awaited by the async spawn/restart — never the UI thread.
@@ -2520,7 +2520,7 @@ export class AgentManager {
           ...base,
           kind: "agent",
           instructions: opts.instructions,
-          // spec 210 — MCP top-level spawn may opt into worktree isolation (uses the default
+          // spec 210 — MCP top-level spawn may opt into a separate worktree (uses the default
           // branch tachyon/<name>; ignored for a sub-agent, which inherits the parent's cwd).
           worktree: opts.worktree,
         }
@@ -2569,7 +2569,7 @@ export class AgentManager {
     if (liveCount >= max) throw new MaxAgentsError(max);
 
     let cwd = resolveCwd(this.opts.workspaceRoot, def.cwd);
-    // spec 210 — worktree isolation: Workspace resolves the cwd (its own worktree for a
+    // spec 210 — separate worktree checkout: Workspace resolves the cwd (its own worktree for a
     // top-level opt-in agent, the parent's cwd for a sub-agent, the root on any git
     // problem). Awaited here (off the UI thread); null = keep the default cwd.
     let worktree: WorktreeRecord | undefined;
@@ -2629,7 +2629,7 @@ export class AgentManager {
       if (worktree) {
         if (path.resolve(worktree.path) !== path.resolve(requested)) {
           throw new Error(
-            `spawn_agent cwd '${requested}' conflicts with worktree isolation at ${worktree.path}; omit cwd or match the worktree path`,
+            `spawn_agent cwd '${requested}' conflicts with the separate worktree at ${worktree.path}; omit cwd or match the worktree path`,
           );
         }
       } else {
@@ -2724,7 +2724,7 @@ export class AgentManager {
     }
     const isolatedWorktree = !!worktree;
     // t-ef19a1 — anti-footgun only, never a trust/allow change: a tachyon.yml-declared opencode
-    // agent with no harness/worktree isolation is intentionally allowed (its author already has
+    // agent with no harness/separate worktree is intentionally allowed (its author already has
     // full extension trust), but it shares the global ~/.local/share opencode state, so warn once
     // at spawn time. A Temporary opencode instance is unaffected — it auto-gets isolate:"transcript" above.
     if (!temporary) {

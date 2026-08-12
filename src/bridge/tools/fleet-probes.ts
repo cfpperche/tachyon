@@ -41,7 +41,7 @@ export function registerProbeTools(mcp: McpServer, deps: BridgeDeps): void {
           model: z.string().optional(),
           timeoutSec: z.number().int().min(1).max(600).optional(),
           budgetUsd: z.number().positive().finite().optional(), // reject NaN/Infinity (codex review #43)
-          write: z.boolean().default(false).describe("a write-capable probe runs in an isolated worktree; default read-only"),
+          write: z.boolean().default(false).describe("a write-capable probe runs in a separate worktree (not a write sandbox); default read-only"),
           wait: z.enum(["sync", "async"]).default("sync"),
           caller: z.string().optional().describe("your agent name (lineage/authorization) — it's the value of your $TACHYON_AGENT_NAME env var; never guess it"),
         },

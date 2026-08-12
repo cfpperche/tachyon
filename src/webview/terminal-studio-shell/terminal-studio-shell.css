@@ -10,7 +10,7 @@
 .tsh-check-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--ds-2); font-size: var(--ds-small); }
 .tsh-check-grid label { display: flex; align-items: center; gap: var(--ds-2); min-width: 0; }
 .hint { color: var(--ds-muted); font-size: var(--ds-small); }
-/* t-b54ead — the `details`/`.check` rules that lived here dressed the "Git worktree isolation" section,
+/* t-b54ead — the `details`/`.check` rules that lived here dressed the "Separate git checkout + branch" section,
    which is gone: those four keys are agent-only and the loader refuses them under `terminals:`. */
 
 @media (max-width: 720px) {

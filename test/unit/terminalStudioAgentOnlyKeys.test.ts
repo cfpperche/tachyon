@@ -8,7 +8,7 @@ import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/dom
 /**
  * t-b54ead — the Terminal Studio must never again offer a key the loader refuses for a terminal.
  *
- * The defect this closes: the form carried a "Git worktree isolation" section (worktree, branch,
+ * The defect this closes: the form carried a "Separate git checkout + branch" section (worktree, branch,
  * setup commands, verify gate) since `aa99c066`, mirrored from Agent Studio together with its
  * footer-void layout fix. SDD 478 M6 later taught `parseAgentEntry` to refuse all four under
  * `terminals:`, and nobody re-read the form. What a human got was not a silent drop — t-48dd8d's
@@ -124,7 +124,7 @@ describe("t-b54ead — a terminal entry the Studio writes carries no agent-only 
     const src = readFileSync("src/webview/terminal-studio-shell/App.tsx", "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
-    expect(src).not.toContain("Git worktree isolation");
+    expect(src).not.toContain("Separate git checkout + branch");
     for (const key of TERMINAL_STRIPPED_AGENT_KEYS) {
       expect(src, `App.tsx writes '${key}', which the loader refuses for a terminal`).not.toContain(`set("${key}"`);
       expect(src, `App.tsx reads fields.${key}, which the loader refuses for a terminal`).not.toContain(`fields.${key}`);

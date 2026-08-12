@@ -8,7 +8,7 @@ describe("container-generated delegation behavior", () => {
       source: "measured",
       verified: true,
     });
-    // The gated-only restriction is REMOVED: a parented opencode spawn delegates WITHOUT an isolated worktree.
+    // The gated-only restriction is REMOVED: a parented opencode spawn delegates WITHOUT a separate worktree.
     expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper" })).not.toThrow();
     expect(() => assertVerifiedTranscriptIsolation("opencode", { name: "helper", isolatedWorktree: true })).not.toThrow();
   });

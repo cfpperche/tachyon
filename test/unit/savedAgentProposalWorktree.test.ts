@@ -52,7 +52,7 @@ function reloaded(profile: ReturnType<typeof createdProfile>) {
 }
 
 describe("t-4071e4 — a proposed Saved Agent is isolated by default, end to end", () => {
-  it("persists the isolated worktree when the proposal says nothing at all", () => {
+  it("persists the separate worktree when the proposal says nothing at all", () => {
     const profile = createdProfile();
 
     expect(proposedWorktreeEnabled(spec())).toBe(DEFAULT_NEW_AGENT_WORKTREE_ENABLED);

@@ -171,7 +171,7 @@ export interface AgentEntry extends ManagedEntryBase {
   environment?: ManagedEnvironmentValues & { secrets?: AgentSecretEnvironment };
   /** role prompt, delivered as a positional arg on spawn for CLIs that accept one */
   instructions?: string;
-  /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
+  /** spec 210 — run this agent in a separate git worktree+branch (opt-in, off by default; not a write boundary) */
   worktree?: boolean;
   /** per-agent literal branch name (overrides the global template); authoritatively validated via git check-ref-format at worktree-create */
   branch?: string;
@@ -521,7 +521,7 @@ export interface TachyonConfig {
       branch?: string;
       revealInWorkspace?: boolean;
       shareDependencies?: boolean;
-      /** Gitignored directories in the primary checkout to symlink into every isolated worktree. */
+      /** Gitignored directories in the primary checkout to symlink into every separate worktree. */
       sharedDirectories?: string[];
     };
     /** spec 383 — explicit project-owned onboarding documents, transported verbatim by Tachyon. */

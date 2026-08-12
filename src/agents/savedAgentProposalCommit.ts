@@ -74,7 +74,7 @@ export interface SavedAgentProposalReceipt {
    * into my working tree?" without reopening the profile — and answers it for a proposal file that the
    * commit has already deleted.
    */
-  workspace?: "isolated worktree" | "shared checkout";
+  workspace?: "separate worktree" | "shared checkout";
   /**
    * t-5498a6 — the skills the human ticked that were authorized and selected for the new agent, and
    * the ones that were refused with why. Refusals are recorded rather than thrown: the agent's
@@ -276,7 +276,7 @@ export async function approveSavedAgentProposal(input: {
       ...(refusedSkills.length > 0 ? { refusedSkills } : {}),
       ...((proposal.spec.ownership ?? "proposer") === "proposer" ? { owner: proposal.proposer } : {}),
       created: "enabled; not started",
-      workspace: proposedWorktreeEnabled(proposal.spec) ? "isolated worktree" : "shared checkout",
+      workspace: proposedWorktreeEnabled(proposal.spec) ? "separate worktree" : "shared checkout",
     };
     writeReceipt(input.workspaceRoot, receipt);
     // The proposal is consumed only after the receipt says so. Deleting first would lose the record of
