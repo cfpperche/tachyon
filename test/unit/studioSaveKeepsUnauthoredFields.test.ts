@@ -111,7 +111,7 @@ describe("t-26ba8f — a Studio save keeps the fields the form does not author",
     // Defaults, not the neighbour's tuning: preservation reads the entry being REPLACED, never a
     // sibling. (`fresh` inherits attention: true from the form state, which is what the human sees.)
     expect(loaded(saved, "fresh").attention).toEqual({ enabled: true, silenceSec: 8, patterns: [] });
-    expect(loaded(saved, "fresh").env).toBeUndefined();
+    expect(loaded(saved, "fresh").environment).toBeUndefined();
   });
 });
 

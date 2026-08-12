@@ -20,6 +20,7 @@ import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type Projected
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
 import type { WithheldCapability } from "./withheldCapability.js";
 import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
+import type { AgentProfileV1 } from "./agentProfileSchema.js";
 
 export interface AttentionDef {
   enabled: boolean;
@@ -139,10 +140,17 @@ const OPENCODE_CONFIG_ENV_VAR = "OPENCODE_CONFIG";
  * command, a working dir, an environment, a start policy, a watch set and a restart policy.
  * Attention is shared too — pane-watching is runtime-agnostic (SDD 478 § Invariant matrix).
  */
+export interface ManagedEnvironmentValues {
+  values?: Record<string, string>;
+}
+
+export type AgentSecretEnvironment = NonNullable<NonNullable<AgentProfileV1["environment"]>["secrets"]>;
+
 export interface ManagedEntryBase {
   cmd: string;
   cwd?: string;
-  env?: Record<string, string>;
+  /** Non-secret configuration shared by Agents and Terminals. */
+  environment?: ManagedEnvironmentValues;
   autostart: boolean;
   watch: string[];
   attention: AttentionDef;
@@ -159,6 +167,8 @@ export interface ManagedEntryBase {
  */
 export interface AgentEntry extends ManagedEntryBase {
   kind: "agent";
+  /** Opaque, host-custodied references. Values are resolved only at the launch authority boundary. */
+  environment?: ManagedEnvironmentValues & { secrets?: AgentSecretEnvironment };
   /** role prompt, delivered as a positional arg on spawn for CLIs that accept one */
   instructions?: string;
   /** spec 210 — run this agent in its own git worktree+branch (opt-in, off by default) */
@@ -1052,10 +1062,10 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     if (!isPlainObject(def.env) || Object.values(def.env).some((v) => typeof v !== "string")) {
       discarded.push(`${section}.${name}.env: must be a mapping of string -> string`);
     } else {
-      agent.env = def.env as Record<string, string>;
+      agent.environment = { values: def.env as Record<string, string> };
       if (binaryOf(agent.cmd) === "pi") {
         for (const owned of ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"]) {
-          if (owned in agent.env) {
+          if (owned in agent.environment.values!) {
             discarded.push(`${section}.${name}.env: remove '${owned}' — Tachyon owns Pi's private runtime and session homes`);
           }
         }
@@ -1150,7 +1160,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     }
   }
   if (def.harness !== undefined) {
-    const harness = parseHarness(section, name, def.harness, agent.cmd, agent.env, forceTerminal || agent.kind === "terminal", discarded);
+    const harness = parseHarness(section, name, def.harness, agent.cmd, agent.environment?.values, forceTerminal || agent.kind === "terminal", discarded);
     if (harness && agentEntry) agentEntry.harness = harness;
   }
   if (def.isolate !== undefined) {
@@ -1164,7 +1174,7 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
       discarded.push(agentOnlyKeyRefusal(section, name, "isolate", "this entry is a terminal — it has no transcript"));
     } else if (binaryOf(agent.cmd) !== "claude" && binaryOf(agent.cmd) !== "codex") {
       discarded.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(agent.cmd) || agent.cmd}')`);
-    } else if (agent.env?.[binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
+    } else if (agent.environment?.values?.[binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
       const ownedEnv = binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
       discarded.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for this deprecated legacy mode`);
     } else {

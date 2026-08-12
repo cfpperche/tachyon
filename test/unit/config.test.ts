@@ -39,7 +39,7 @@ describe("parseConfig", () => {
     expect(config?.agents.claude.watch).toEqual([]);
     expect(config?.agents.dev.autostart).toBe(false);
     expect(config?.agents.dev.watch).toEqual(["src/**/*.ts"]);
-    expect(config?.agents.dev.env).toEqual({ PORT: "3000" });
+    expect(config?.agents.dev.environment?.values).toEqual({ PORT: "3000" });
     expect((config as unknown as { layouts?: unknown }).layouts).toBeUndefined(); // spec 234 — layouts: tolerated but not parsed
     expect(config?.settings.maxAgents).toBe(4);
   });
@@ -954,4 +954,3 @@ describe("removed agent identity config", () => {
     expect(result.config?.agents.a).toBeDefined();
   });
 });
-
