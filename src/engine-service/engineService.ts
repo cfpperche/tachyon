@@ -9,6 +9,7 @@ import {
   startAgentWithActivity,
 } from "../activity/ActivityLogManager.js";
 import { readLinuxProcessIdentity } from "../runtime/processIdentity.js";
+import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
 import { EDITOR_HUMAN_ACTOR, ENGINE_CONTROL_VALIDATION_ACTOR } from "../validations/types.js";
 import { wakeValidationClosedAuthors } from "../validations/validationCloseNotify.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
@@ -613,14 +614,15 @@ async function executeWorkspaceCommand(
     // t-c6c4ad — durable close first (never undone). Best-effort FIXED inject into author/assignee
     // live sessions mirrors approval resolve; offline agents re-read the closed validation on resume.
     // Inbox + legacy Validations UI both route through this single command, so the wake fires once.
+    // t-b805b5 — same inject port as approval resolution (t-d79534): deliverNotice, not bare submit.
     await wakeValidationClosedAuthors({
       validation: closed,
       outcome: command.input.outcome,
       listEntries: () => workspace.manager.list(),
-      inject: async (session, text) => {
-        await workspace.tmux.sendSubmittedLine(session, text);
-        return { receipt: `tmux:${session}` };
-      },
+      inject: approvalResolutionPorts({
+        listEntries: () => workspace.manager.list(),
+        deliverNotice: (agent, line) => workspace.deliverNotice(agent, line),
+      }).inject,
     });
     return workspaceCommandSuccessV1(command);
   }
