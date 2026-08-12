@@ -14,11 +14,10 @@
  *  - repository identity can intentionally alias clones and worktrees (Grok does);
  *  - a plugin can inject persistent context where the core runtime has no memory feature at all.
  *
- * So evidence is per axis, and `verified` has exactly one source: a behavioral observation from
- * `nativeMemoryVerifier.ts`. Nothing in this module can mint it from configuration bytes — the
- * registry below is authored at `declared`/`unsupported` on purpose, and the per-runtime tasks
- * (t-f22211, t-c46aad, t-c46c35, t-b5d28c, t-b4a557) are what promote an axis by running the
- * verifier against an exact version.
+ * So evidence is per axis, and `verified` has exactly one source: a behavioral observation recorded
+ * against an exact runtime version and cited as a `behavioral-test` source. Nothing in this module
+ * can mint it from configuration bytes. Per-runtime measurements promote an axis by recording what
+ * they actually watched.
  *
  * NOT WIRED INTO CANONICAL READINESS BY THIS TASK, deliberately. `resolveMemoryPolicy` implements the
  * research's fail-closed semantics faithfully, which means that TODAY — with nothing verified — it
