@@ -185,7 +185,8 @@ export const window = {
     __terminalCloseListeners.add(listener);
     return { dispose: () => __terminalCloseListeners.delete(listener) };
   },
-  createStatusBarItem: () => ({ show: () => {}, dispose: () => {} }),
+  createStatusBarItem: () => ({ show: () => {}, hide: () => {}, dispose: () => {} }),
+  onDidChangeActiveColorTheme: () => ({ dispose: () => {} }),
   createOutputChannel: (name: string) => {
     const channel = {
       name,
@@ -357,6 +358,16 @@ export enum ViewColumn {
 export enum StatusBarAlignment {
   Left = 1,
   Right = 2,
+}
+
+export enum ExtensionMode {
+  Production = 1,
+  Development = 2,
+  Test = 3,
+}
+
+export class ThemeColor {
+  constructor(public id: string) {}
 }
 
 export class RelativePattern {

@@ -111,7 +111,7 @@ function createClusterItem(
 export function registerIdeBrowserBridge(
   context: vscode.ExtensionContext,
   options: IdeBrowserBridgeRegisterOptions = {},
-): void {
+): Promise<void> {
   registerOptions = options;
   extensionContext = context;
   log = vscode.window.createOutputChannel("Tachyon IDE Browser");
@@ -215,6 +215,10 @@ export function registerIdeBrowserBridge(
       `[ide-browser] ready — status cluster "${BAR_GROUP_NAME}" (globe@${BROWSER_BAR_PRIORITY} + inspect@${DESIGN_BAR_PRIORITY}; gate=settings.ideBrowser.enabled)`,
     );
   }
+
+  // Opt-in means the agent-facing host is available as soon as the extension is active.
+  // This binds loopback + publishes discovery only; Chromium/CDP remain lazy in navigate().
+  return startEnabledBridge("activation");
 }
 
 /** Workspace home URL (tachyon.yml settings.ideBrowser.homeUrl). */
@@ -236,8 +240,8 @@ async function requireEnabled(op: string): Promise<boolean> {
 }
 
 /**
- * When the gate turns off, stop a running bridge so tools fail closed as offline rather than
- * serving a surface the human opted out of. When it turns on, only show the bars (no auto-boot).
+ * Reconcile the live gate: disabling tears down the host; enabling brings up the agent-facing host
+ * without opening a browser tab (Chromium/CDP remain lazy until navigation).
  */
 async function applyGateAfterConfigChange(): Promise<void> {
   const active = managerForActiveWorkspace();
@@ -251,8 +255,23 @@ async function applyGateAfterConfigChange(): Promise<void> {
         `[ide-browser] stop after disable failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  } else if (featureEnabled()) {
+    await startEnabledBridge("configuration change");
   }
   paintBars();
+}
+
+async function startEnabledBridge(trigger: string): Promise<void> {
+  if (!featureEnabled()) return;
+  try {
+    const st = await ensureStarted();
+    log?.appendLine(`[ide-browser] host ready on ${trigger} — ${st.endpoint}`);
+    paintBars();
+  } catch (err) {
+    log?.appendLine(
+      `[ide-browser] host start on ${trigger} failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 async function showStatus(): Promise<void> {
