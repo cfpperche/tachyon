@@ -15,6 +15,12 @@
  * `route.frame`) and points the sized iframe at `surface.html` with the SAME query string. Everything
  * else — stylesheets, the real bundle, the ready handshake, the fixture — happens inside that frame, in
  * `preview.ts`, exactly as before.
+ *
+ * t-4a477f — the catalog door is the other half. `buildCatalog` emits view+fixture URLs with no
+ * `?width=`, because one entry is photographed at 880 and at 360. When that query is omitted, the
+ * shell passes the OUTER window's width into the iframe (clamped to `route.frame.w`) so a visual-qa
+ * capture that only shrinks the browser still gets a 360 iframe viewport. Explicit `?width=` still
+ * wins and is not clamped — that is the puppeteer / t-b24282 door above.
  */
 
 import { ROUTES } from "./routes";
@@ -29,6 +35,16 @@ function positiveInt(raw: string | null): number | undefined {
   return raw !== null && Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+/** Window width the photo will actually show. Prefer clientWidth so a shell scrollbar cannot
+ *  shrink the available box after we size the iframe to it (resize-loop). */
+function availableWidth(): number {
+  return document.documentElement.clientWidth || window.innerWidth;
+}
+
+function resolvedWidth(asked: number | undefined, routeFrameW: number): number {
+  return asked ?? Math.min(routeFrameW, availableWidth());
+}
+
 function mount(): void {
   const iframe = document.getElementById("frame") as HTMLIFrameElement | null;
   if (!iframe) return;
@@ -37,13 +53,19 @@ function mount(): void {
   const params = new URLSearchParams(location.search);
   const route = ROUTES[params.get("view") || "sidebar"];
   const frame = route?.frame ?? UNKNOWN_VIEW_FRAME;
-  const w = positiveInt(params.get("width")) ?? frame.w;
+  const askedWidth = positiveInt(params.get("width"));
   const h = positiveInt(params.get("height")) ?? frame.h;
 
-  // content-box sizing (the default) — `style.width` is the iframe's viewport width, and the shell's own
-  // `border-right` stays outside it. `preview.ts` re-checks this from inside and fails loud on a mismatch.
-  iframe.style.width = `${w}px`;
-  iframe.style.height = `${h}px`;
+  const applyWidth = (): void => {
+    // content-box sizing (the default) — `style.width` is the iframe's viewport width, and the shell's own
+    // `border-right` stays outside it. `preview.ts` re-checks an explicit `?width=` from inside and fails
+    // loud on a mismatch. An omitted width is inferred here and is not written into the surface URL, so
+    // a later outer-window resize can move the iframe without a frameDefect false fail.
+    iframe.style.width = `${resolvedWidth(askedWidth, frame.w)}px`;
+    iframe.style.height = `${h}px`;
+  };
+  applyWidth();
+  if (askedWidth === undefined) window.addEventListener("resize", applyWidth);
 
   // spec 281 — the "it really rendered this view+fixture" markers live on the SURFACE's body (that is the
   // document that resolved them). Mirror them onto the shell's body so a caller inspecting the top-level

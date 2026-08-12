@@ -529,7 +529,10 @@ export interface CatalogEntry {
   aliases?: string[];
 }
 
-/** Generate the flat catalog: one entry per (view × fixture). `base` is the harness index URL. */
+/** Generate the flat catalog: one entry per (view × fixture). `base` is the harness index URL.
+ *  URLs stay view+fixture only — no `?width=`. Width is per capture (880 and 360 share one
+ *  entry); the shell passes the outer window when the query is omitted (t-4a477f). Baking
+ *  `route.frame.w` into the URL would lock every 360 shot to the wide frame. */
 export function buildCatalog(base = "/scripts/webview-preview/index.html"): CatalogEntry[] {
   const out: CatalogEntry[] = [];
   for (const [view, route] of Object.entries(ROUTES)) {
