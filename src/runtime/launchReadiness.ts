@@ -113,17 +113,18 @@ export class GenericLaunchReadiness implements RuntimeLaunchReadinessAdapter {
   constructor(private readonly composer?: { tailLines: number; promptLine?: RegExp; frameLine?: RegExp; readyLine?: RegExp }) {}
 
   classify(output: string): Exclude<RuntimeLaunchReadiness, { state: "pending" }> | undefined {
-    if (/\b(?:unauthorized|authentication (?:failed|required)|not logged in|api key (?:is )?(?:invalid|missing)|access denied)\b/i.test(output)) {
+    const lines = this.composer ? output.split(/\r?\n/).slice(-this.composer.tailLines) : [];
+    const liveOutput = this.composer ? lines.join("\n") : output;
+    if (/\b(?:unauthorized|authentication (?:failed|required)|not logged in|api key (?:is )?(?:invalid|missing)|access denied)\b/i.test(liveOutput)) {
       return { state: "rejected", code: "runtime_auth_rejected" };
     }
-    if (MODEL_REJECTED_RE.test(output)) {
+    if (MODEL_REJECTED_RE.test(liveOutput)) {
       return { state: "rejected", code: "runtime_model_rejected" };
     }
-    if (/\b(?:invalid (?:configuration|config)|configuration (?:error|failed)|failed to (?:load|parse) (?:configuration|config))\b/i.test(output)) {
+    if (/\b(?:invalid (?:configuration|config)|configuration (?:error|failed)|failed to (?:load|parse) (?:configuration|config))\b/i.test(liveOutput)) {
       return { state: "rejected", code: "runtime_config_rejected" };
     }
     if (this.composer) {
-      const lines = output.split(/\r?\n/).slice(-this.composer.tailLines);
       if (this.composer.frameLine) {
         const frameIndexes = lines.flatMap((line, index) => this.composer!.frameLine!.test(line) ? [index] : []);
         const bottom = frameIndexes.at(-1);

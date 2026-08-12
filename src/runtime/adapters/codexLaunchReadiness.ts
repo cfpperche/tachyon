@@ -56,24 +56,25 @@ export function matchCodexBootstrapInput(output: string, text: string, submit: b
 /** Classifies stable Codex terminal affordances only; it never retains pane text. */
 export class CodexLaunchReadiness implements RuntimeLaunchReadinessAdapter {
   classify(output: string) {
+    const lines = output.split(/\r?\n/).slice(-8);
+    const liveOutput = lines.join("\n");
     // Rejection wins if a stale ready prompt remains visible above the terminal error.
-    if (/\b(?:unauthorized|authentication (?:failed|required)|not logged in|api key (?:is )?(?:invalid|missing)|access denied)\b/i.test(output)) {
+    if (/\b(?:unauthorized|authentication (?:failed|required)|not logged in|api key (?:is )?(?:invalid|missing)|access denied)\b/i.test(liveOutput)) {
       return { state: "rejected" as const, code: "runtime_auth_rejected" as const };
     }
-    if (MODEL_REJECTED_RE.test(output)) {
+    if (MODEL_REJECTED_RE.test(liveOutput)) {
       return { state: "rejected" as const, code: "runtime_model_rejected" as const };
     }
-    if (/\b(?:invalid (?:configuration|config)|configuration (?:error|failed)|failed to (?:load|parse) (?:configuration|config))\b/i.test(output)) {
+    if (/\b(?:invalid (?:configuration|config)|configuration (?:error|failed)|failed to (?:load|parse) (?:configuration|config))\b/i.test(liveOutput)) {
       return { state: "rejected" as const, code: "runtime_config_rejected" as const };
     }
-    if (/(?:^|\n)\s*(?:›|>)?\s*(?:Ask anything|Type a message)\b/i.test(output)) return { state: "ready" as const };
+    if (/(?:^|\n)\s*(?:›|>)?\s*(?:Ask anything|Type a message)\b/i.test(liveOutput)) return { state: "ready" as const };
 
     // Codex rotates the composer placeholder (for example "Implement {feature}"), so the
     // placeholder text itself is not a stable readiness affordance. The prompt glyph plus
     // the status footer emitted immediately below it is stable across startup, resume, and
     // an active turn. Requiring both avoids treating an old transcript line beginning with
     // `›` as proof that the current runtime finished booting.
-    const lines = output.split(/\r?\n/);
     for (let i = lines.length - 1; i >= 0; i -= 1) {
       if (!/^\s*(?:›|>)\s+\S/.test(lines[i] ?? "")) continue;
       const footerWindow = lines.slice(i + 1, i + 8).join("\n");

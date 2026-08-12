@@ -8,6 +8,37 @@ import { GenericLaunchReadiness, LaunchReadiness } from "../../src/runtime/launc
 import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
 
 describe("CodexLaunchReadiness", () => {
+  it("t-914be3: ignores replayed startup refusals when a live composer is in the tail", () => {
+    const replayed = [
+      "Authentication required while documenting a runtime",
+      "The selected model is not supported in an old transcript",
+      "Configuration error was the subject of prior work",
+    ];
+    const generic = new GenericLaunchReadiness({ tailLines: 8, promptLine: /^>\s?.*$/ });
+    expect(generic.classify([...replayed, ...Array(7).fill("replayed context"), "> "].join("\n"))).toEqual({ state: "ready" });
+
+    const codex = new CodexLaunchReadiness();
+    expect(codex.classify([
+      ...replayed,
+      ...Array(6).fill("replayed context"),
+      "› Implement {feature}",
+      "gpt-5.6-sol · Context 0% used",
+    ].join("\n"))).toEqual({ state: "ready" });
+  });
+
+  it("t-914be3: still rejects a recent authentication refusal", () => {
+    const generic = new GenericLaunchReadiness({ tailLines: 8, promptLine: /^>\s?.*$/ });
+    expect(generic.classify("starting\nAuthentication required")).toEqual({
+      state: "rejected",
+      code: "runtime_auth_rejected",
+    });
+
+    expect(new CodexLaunchReadiness().classify("starting\nAuthentication required")).toEqual({
+      state: "rejected",
+      code: "runtime_auth_rejected",
+    });
+  });
+
   it("rejects an unclassified runtime that exits during the bounded window", async () => {
     let now = 0;
     const readiness = new LaunchReadiness({ windowMs: 100, pollMs: 10, now: () => now, sleep: async (ms) => { now += ms; } });
