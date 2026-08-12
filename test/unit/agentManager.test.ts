@@ -7119,7 +7119,7 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
   });
 
   it("records the explicit parent for a Saved non-adapter instance", async () => {
-    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: sh\n");
+    const { manager, ledger } = harness("agents:\n  boss:\n    cmd: claude\nterminals:\n  child:\n    cmd: sh\n");
     await manager.spawn("child", { parent: "boss" });
     expect(manager.parentOf("child")).toBe("boss");
     expect((await manager.list()).find((entry) => entry.name === "child")?.parent).toBe("boss");
@@ -7143,7 +7143,7 @@ describe("AgentManager — Temporary persistence (spec 211)", () => {
   });
 
   it("does not carry a stopped instance's parent into a reused top-level name", async () => {
-    const { manager } = harness("agents:\n  boss:\n    cmd: claude\n  child:\n    cmd: sh\n");
+    const { manager } = harness("agents:\n  boss:\n    cmd: claude\nterminals:\n  child:\n    cmd: sh\n");
     await manager.spawn("child", { parent: "boss" });
     await manager.kill("child");
 
@@ -8280,7 +8280,7 @@ describe("AgentManager — durable pane transcripts (t-6a6a00)", () => {
   describe("refused agents", () => {
     function withRefused(refused: Record<string, string>) {
       const { tmux } = fakeTmux();
-      const config = configOf("agents:\n  healthy:\n    cmd: sh\n");
+      const config = configOf("terminals:\n  healthy:\n    cmd: sh\n");
       return new AgentManager({
         tmux,
         wsHash: HASH,

@@ -61,13 +61,13 @@ and `YamlConfigEditor.ts`.
 
 ### Slice 4 — split the parser (after slice 3)
 
-- [ ] `parseAgentEntry` → `parseAgentProjection` (kind always agent) + `parseTerminalDeclaration`
+- [x] `parseAgentEntry` → `parseAgentProjection` (kind always agent) + `parseTerminalDeclaration`
       (kind always terminal), sharing only the `ManagedEntryBase` fields.
-- [ ] Delete `forceTerminal` and its 8 branches (`loadConfig.ts:1003, 1074, 1088, 1097, 1106, 1164,
+- [x] Delete `forceTerminal` and its 8 branches (`loadConfig.ts:1003, 1074, 1088, 1097, 1106, 1164,
       1174, 1187`).
-- [ ] The 11 agent-only keys become unknown keys in the terminal parser, and the unknown-key message
+- [x] The 11 agent-only keys become unknown keys in the terminal parser, and the unknown-key message
       keeps the `MOVE_TO_AN_AGENT` text (`:977`) — the diagnostic SDD 478 M6 bought is not given back.
-- [ ] Attention default per parser (agent on, terminal off), not a branch.
+- [x] Attention default per parser (agent on, terminal off), not a branch.
 
 ### Slice 5 — split the Studio form serializer
 
@@ -91,8 +91,8 @@ _Acceptance checks tied to `spec.md`. Each should map to a checklist item there.
 - [ ] A legacy `terminals:` block loads with a warning and is not refused (spec criterion 4).
 - [ ] Every row of the § *Branch classification* table resolved as the table says: 28 dispatch gone,
       20 dead gone, 28 legitimate still present with their reason written where they stand.
-- [ ] `forceTerminal` no longer exists.
-- [ ] No agent-only key is refused at runtime by name in the terminal parser.
+- [x] `forceTerminal` no longer exists.
+- [x] No agent-only key is refused at runtime by name in the terminal parser.
 - [ ] `TachyonConfig.agents` unchanged, and its 77 `src/` read sites unchanged.
 - [ ] Each slice landed on a tree its own `npm run verify:full:quiet` recorded green.
 

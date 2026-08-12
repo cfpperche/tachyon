@@ -148,7 +148,7 @@ describe("parseConfig", () => {
 
   it("spec 352 — validates terminal, multi-owner, self, direct-cycle, and deep-tree refs as hard errors", () => {
     const cases: Array<[string, string]> = [
-      ["agents:\n  owner:\n    cmd: claude\n    subagents: [dev]\n  dev:\n    cmd: npm run dev\n    kind: terminal\n", "agents.owner.subagents: 'dev' resolves to a terminal"],
+      ["agents:\n  owner:\n    cmd: claude\n    subagents: [dev]\nterminals:\n  dev:\n    cmd: npm run dev\n", "agents.owner.subagents: 'dev' resolves to a terminal"],
       ["agents:\n  a:\n    cmd: claude\n    subagents: [child]\n  b:\n    cmd: codex\n    subagents: [child]\n  child:\n    cmd: claude\n", "agents.b.subagents: 'child' is already declared as a subagent of 'a'"],
       ["agents:\n  a:\n    cmd: claude\n    subagents: [a]\n", "agents.a.subagents: 'a' cannot reference itself"],
       ["agents:\n  a:\n    cmd: claude\n    subagents: [b]\n  b:\n    cmd: codex\n    subagents: [a]\n", "agents.a.subagents: 'b' creates a direct ownership cycle with 'a'"],
@@ -194,9 +194,11 @@ describe("parseConfig", () => {
     expect(warnings.some((w) => w.includes("reviewer"))).toBe(true);
   });
 
-  it("spec 352 — rejects subagents on terminal entries and malformed lists before semantic validation", () => {
-    expect(parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    subagents: [a]\n`).warnings.some((e) => e.includes("'subagents' applies only to agents"))).toBe(true);
-    expect(parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    subagents: [a]\n`).warnings.some((e) => e.includes("'subagents' applies only to agents"))).toBe(true);
+  it("spec 352 — terminal subagents are unknown and malformed agent lists are validated", () => {
+    const direct = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    subagents: [a]\n`);
+    expect(direct.config?.agents.dev.kind).toBe("agent");
+    expect(direct.warnings.some((warning) => warning.includes("unknown key 'kind'"))).toBe(false);
+    expect(parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n    subagents: [a]\n`).warnings.some((e) => e.includes("unknown key 'subagents'"))).toBe(true);
     expect(parseConfig(`agents:\n  a:\n    cmd: claude\n    subagents: ghost\n`).warnings.some((e) => e.includes("subagents: must be a non-empty list"))).toBe(true);
   });
 
@@ -422,10 +424,9 @@ describe("parseConfig", () => {
     expect(config?.agents.dev.kind).toBe("terminal");
   });
 
-  it("rejects kind / instructions inside terminals: (kind implied, no AI) — single clear error, no 'unknown key' dup", () => {
+  it("reports agent-only fields inside terminals as unknown keys with migration guidance", () => {
     const k = parseConfig(`terminals:\n  dev:\n    cmd: x\n    kind: agent\n`).warnings;
-    expect(k.some((e) => e.includes("remove 'kind'"))).toBe(true);
-    expect(k.some((e) => e.includes("unknown key 'kind'"))).toBe(false); // #4 review fix: not double-reported
+    expect(k.some((e) => e.includes("unknown key 'kind'") && e.includes("Agent Studio"))).toBe(true);
     expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    instructions: hi\n`).warnings[0]).toContain("instructions");
     expect(parseConfig(`terminals:\n  dev:\n    cmd: x\n    nope: 1\n`).warnings[0]).toContain("unknown key 'nope'");
   });
@@ -442,10 +443,10 @@ describe("parseConfig", () => {
     expect(parseConfig(`agents: {}\n`).config?.agents).toEqual({});
   });
 
-  it("backward compatible: a terminal declared the old way (agents: + kind: terminal) is identical", () => {
-    const viaTerminals = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n`).config?.agents.dev;
-    const viaAgents = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n`).config?.agents.dev;
-    expect(viaTerminals).toEqual(viaAgents);
+  it("an agent projection stays an agent even when a direct parser caller supplies kind: terminal", () => {
+    const parsed = parseConfig(`agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n`);
+    expect(parsed.config?.agents.dev.kind).toBe("agent");
+    expect(parsed.warnings).toEqual([]);
   });
 
   it("warns and ignores removed role and anchor keys while preserving bridgeGuidance", () => {
@@ -580,7 +581,7 @@ describe("parseConfig", () => {
     });
     it("rejects terminals", () => {
       const { warnings } = parseConfig("terminals:\n  sh:\n    cmd: claude\n    isolate: transcript\n");
-      expect(warnings.some((e) => /'isolate' applies only to agents/.test(e))).toBe(true);
+      expect(warnings.some((e) => /unknown key 'isolate'/.test(e) && e.includes("Agent Studio"))).toBe(true);
     });
     it("rejects a user-set env.CLAUDE_CONFIG_DIR (Tachyon owns the home)", () => {
       const { warnings } = parseConfig("agents:\n  r:\n    cmd: claude\n    isolate: transcript\n    env:\n      CLAUDE_CONFIG_DIR: /tmp/x\n");
@@ -811,7 +812,7 @@ describe("parseConfig", () => {
     });
 
     it("rejects harness on a terminal entry", () => {
-      expect(parseConfig(`terminals:\n  t:\n    cmd: claude\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("applies only to agents"))).toBe(true);
+      expect(parseConfig(`terminals:\n  t:\n    cmd: claude\n    harness:\n      mcp:\n        s:\n          command: x\n`).warnings.some((e) => e.includes("unknown key 'harness'") && e.includes("Agent Studio"))).toBe(true);
     });
 
     it("rejects a cmd that already owns the harness plumbing (H4)", () => {

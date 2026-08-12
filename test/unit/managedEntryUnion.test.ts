@@ -86,12 +86,10 @@ describe("ManagedEntry union — agent-only capabilities are unrepresentable on 
     }
   });
 
-  it("keeps refusing the agent-only keys the parser already refused", () => {
-    // `harness`, `instructions`, `isolate` and `subagents` were
-    // already refused for a terminal imperatively; the union does not weaken those diagnostics.
+  it("reports agent-only terminal keys through the unknown-key diagnostic", () => {
     const { warnings } = parseConfig(
       "terminals:\n  dev:\n    cmd: npm run dev\n    harness: {}\n",
     );
-    expect(warnings.some((error) => error.includes("'harness' applies only to agents"))).toBe(true);
+    expect(warnings.some((error) => error.includes("unknown key 'harness'") && error.includes("Agent Studio"))).toBe(true);
   });
 });
