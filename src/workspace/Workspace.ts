@@ -4476,7 +4476,13 @@ export class Workspace {
     const cur = this.currentActivitySeq(agent);
     if (malformed) {
       const nowm = Date.now();
-      await this.tmux.sendKeys(session, `[Tachyon] Your continuity brief is malformed (bad frontmatter) — fix or delete .tachyon/continuity/${agent}.md, then set_continuity. Recent activity is preserved in the durable log.`, true);
+      const receipt = await this.tmux.sendSubmittedLine(session, `[Tachyon] Your continuity brief is malformed (bad frontmatter) — fix or delete .tachyon/continuity/${agent}.md, then set_continuity. Recent activity is preserved in the durable log.`, {
+        composer: composerProfileFor(this.manager.defOf(agent)?.cmd),
+      });
+      if (receipt.status === "submit-unconfirmed") {
+        this.host.notify(this.t("continuity nudge for '{0}' was typed but submission could not be confirmed", agent), "warn");
+        return;
+      }
       this.continuityState.markNudged(agent, new Date(nowm).toISOString(), cur);
       this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent)); // re-baseline; do NOT markRestored (unresolved)
       return;
@@ -4496,7 +4502,13 @@ export class Workspace {
     const seq = typeof brief?.meta.source_activity_seq === "number" ? brief.meta.source_activity_seq : undefined;
     const lag = cur !== undefined && seq !== undefined ? Math.max(0, cur - seq) : undefined;
     const text = injectionText({ agent, reason: decision.reason, lag, staleLag: Workspace.CONTINUITY_STALE_LAG, briefStatus: brief?.meta.status });
-    await this.tmux.sendKeys(session, text, true);
+    const receipt = await this.tmux.sendSubmittedLine(session, text, {
+      composer: composerProfileFor(this.manager.defOf(agent)?.cmd),
+    });
+    if (receipt.status === "submit-unconfirmed") {
+      this.host.notify(this.t("continuity nudge for '{0}' was typed but submission could not be confirmed", agent), "warn");
+      return;
+    }
     // codex fix #1 — advance the session-change baseline at the restore point so the NEXT bump is detected.
     this.continuityState.markRestored(agent, cur);
     this.continuityState.setLastSeenTransitions(agent, this.writerTransitions(agent));

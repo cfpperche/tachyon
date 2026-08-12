@@ -1,5 +1,5 @@
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -375,6 +375,29 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     await ws.injectContinuity("claude", "manual", { origin: "ui" });
     expect(sent.filter((s) => s.includes("malformed")).length).toBe(1);
     expect(ws.continuityState.read("claude").lastNudgeSeq).toBe(30);
+  });
+
+  it("t-ff34db O: a lost continuity Enter stays unconfirmed instead of marking the brief restored", async () => {
+    const { ws, root } = await makeWs();
+    ws.continuityStore.write("claude", "# Current Goal\nship the fix", { sourceActivitySeq: 0 });
+    appendActivity(root, "claude", 30);
+    ws.continuityState.markDiscontinuity("claude", 30);
+    const tmux = (ws as unknown as { tmux: TmuxService }).tmux;
+    const submit = vi.spyOn(tmux, "sendSubmittedLine").mockResolvedValue({
+      status: "submit-unconfirmed",
+      reason: "still-staged",
+      attempts: 4,
+    });
+
+    await ws.injectContinuity("claude", "manual", { origin: "ui" });
+
+    expect(submit).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining("Continuity available"),
+      expect.objectContaining({ composer: expect.any(Object) }),
+    );
+    expect(ws.continuityState.read("claude").discontinuitySinceRestore).toBe(true);
+    expect(ws.continuityState.read("claude").lastNudgeSeq).toBeUndefined();
   });
 
   it("continuityBadge: missing → fresh after a write", async () => {
