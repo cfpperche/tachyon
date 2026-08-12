@@ -6265,8 +6265,14 @@ export class Workspace {
       if (!running.includes(def.spawn)) {
         await this.manager.spawn(def.spawn, def.instructions ? { taskBrief: def.instructions } : undefined);
       } else if (def.instructions) {
-        // already up — deliver the prompt to its terminal
-        await this.tmux.sendKeys(this.manager.session(def.spawn), def.instructions, true);
+        // The schedule definition is durable; this pane write is only its wake-up. Keep the receipt
+        // honest so a lost Enter is visible instead of reporting the scheduled work as submitted.
+        const receipt = await this.tmux.sendSubmittedLine(this.manager.session(def.spawn), def.instructions, {
+          composer: composerProfileFor(this.manager.defOf(def.spawn)?.cmd),
+        });
+        if (receipt.status === "submit-unconfirmed") {
+          this.host.notify(this.t("schedule '{0}' instructions were typed but submission could not be confirmed", name), "warn");
+        }
       }
       this.refreshAgentsViews();
     }
