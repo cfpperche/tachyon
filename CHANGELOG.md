@@ -6,6 +6,17 @@ Marketplace release notes.
 
 ## Unreleased
 
+### Internal
+
+- **IDE Browser child-session death is now classified, not guessed as "tab closed?"** (`t-1c8195`).
+  The owner's globo.com tab kept painted Design Mode chrome after CDP died. Production logs from that
+  incident (same Extension Host, three launches, three deaths) discard extension reload and our own
+  reset path. On Dev Host 1.128, toolbar Stop and closing the tab both tear down parent+child and
+  destroy the page — no orphan. globo.com also opens a forest of extra `pwa-editor-browser` sessions
+  under the CDP child (input for `t-849f52`). The log now records actor/trigger and, 150ms later,
+  whether the parent survived. No auto-reconnect (duplicate chrome). Cleaning the orphaned inject
+  without CDP would need a page-side heartbeat; that is a remaining choice, not built here.
+
 ## 0.85.1 — an agent was refused because of the subject it had worked on
 
 Hotfix. Resuming an agent failed with `runtime_auth_rejected` while its credentials were perfectly

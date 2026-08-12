@@ -194,6 +194,7 @@ export function registerIdeBrowserBridge(
 
   context.subscriptions.push({
     dispose: () => {
+      log?.appendLine("[ide-browser] extension subscription dispose — stopping manager");
       void manager?.stop();
       manager = null;
       extensionContext = null;
