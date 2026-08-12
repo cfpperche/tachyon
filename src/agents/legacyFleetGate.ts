@@ -29,6 +29,27 @@ import { legacyFallbackUsed, type InstancePolicySource } from "./agentInstancePo
  * It never kills anything. A gate that cleaned up after itself would be making the very decision it
  * exists to escalate — and "activation killed my running fleet" is a worse outcome than any refusal.
  * It only reports, and names the governed action.
+ *
+ * ## What a refusal does NOT shut down (t-613361, measured 2026-08-12)
+ *
+ * "Cannot activate this workspace" is fail-closed for **fleet interpretation** only: it blocks the
+ * post-gate half of `Workspace.start()` (rehydrate / resume / autostart / GC of agent state that
+ * this build would otherwise re-read). It is **not** a workspace-wide freeze and is **not** coupled
+ * to Bridge lifecycle.
+ *
+ * Paths that stay independent of this gate (by construction, not by accident):
+ *
+ *  - **Bridge** — started in `Workspace._create` via `startBridgeListener` before `start()` runs.
+ *    A refusal is an early `return` from `start()` with a notify; nothing calls `stopBridge` or
+ *    `bridge.dispose` on that path. Read and write MCP tools remain registered against live
+ *    stores (tasks, journal, pins, continuity, …) with no activation check.
+ *  - **Engine + Control** — `engineService` requires a bound Bridge after `workspace.start()` and
+ *    continues whether or not the gate returned early; Control and the shell attach to that engine.
+ *  - **Scheduler / config watches** — also armed in `_create`, not behind the gate.
+ *
+ * So: activation refused + Bridge answering (including accepting writes) is the designed partial
+ * mode of this cut. If a future product decision wants writes sealed during a refusal, that is a
+ * new policy on the Bridge tool path — not something this gate currently claims to do.
  */
 export type LegacyOffenderKind = "ledger-row" | "roster-entry" | "live-agent-session";
 
