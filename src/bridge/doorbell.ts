@@ -11,6 +11,9 @@ export interface DoorbellEvent {
   from: string;
   to: string;
   at: string;
+  /** Caller-minted retry identity. The sender reuses it after an ambiguous transport failure so the
+   *  Bridge can acknowledge the first durable append without ringing or delivering twice. */
+  deliveryId?: string;
   /** spec 493 — the notify_agent summary, carried alongside the witness so a busy recipient can read
    *  it back later instead of depending on having been idle at the moment it flushed to the pane. */
   summary?: string;
@@ -72,6 +75,16 @@ export function readDoorbellTrailEvents(workspaceRoot: string): DoorbellTrailEve
 
 export function readDoorbellEvents(workspaceRoot: string): DoorbellEvent[] {
   return readDoorbellTrailEvents(workspaceRoot).filter((event): event is DoorbellEvent => !("event" in event));
+}
+
+/** Find a caller-minted delivery identity in the durable log. Scoped by authenticated sender so one
+ * agent cannot suppress another agent's notice by guessing its key. */
+export function findDoorbellDelivery(
+  workspaceRoot: string,
+  from: string,
+  deliveryId: string,
+): DoorbellEvent | undefined {
+  return readDoorbellEvents(workspaceRoot).find((event) => event.from === from && event.deliveryId === deliveryId);
 }
 
 /**

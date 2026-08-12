@@ -5,7 +5,7 @@ import { readPaneTranscript } from "../../agents/paneTranscript.js";
 import { composerProfileFor } from "../../runtime/composerRegion.js";
 import { isEvidencedWorking } from "../../prompts/injectFlow.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "../notifyAgent.js";
-import { appendDoorbellEvent, readDoorbellEventsFor, READ_NOTICES_MAX } from "../doorbell.js";
+import { appendDoorbellEvent, findDoorbellDelivery, readDoorbellEventsFor, READ_NOTICES_MAX } from "../doorbell.js";
 import { redactSecrets } from "../redact.js";
 import { type BridgeDeps, AGENT_NAME, deliverNoticeFallback, fail, lifecycleScopeGuard, limitText, managedEntry, ok, resolveDeclaredActor } from "./shared.js";
 
@@ -221,6 +221,11 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
             + "delivered line and stored with the notice, so the recipient can open it from Attention/Activity "
             + "instead of reading your pane.",
         ),
+        deliveryId: z.string().min(1).max(128).optional().describe(
+          "caller-minted stable identity for this logical notice. Generate it BEFORE the first call and reuse the "
+            + "same value after a timeout or closed socket. The Bridge then returns the first durable receipt "
+            + "without appending or delivering the notice twice. A reused id with different content is refused.",
+        ),
         // t-bec361 — this used to say, unconditionally, that the name is "self-declared, NOT verified by
         // the Bridge (auth is one shared token; the Bridge cannot tell callers apart)". That describes ONE
         // configuration (settings.auth: false, where there is no bearer to resolve at all); with auth on —
@@ -235,7 +240,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         ),
       },
     },
-    async ({ to, summary, agent, pointer }) => {
+    async ({ to, summary, agent, pointer, deliveryId }) => {
       try {
         // spec 351 — resolved caller wins for the sender identity (closes t-d7b3a9's "a reviewer
         // self-naming 'codex'" damage: the "From" line is now the AUTHENTICATED sender, not self-declared).
@@ -243,6 +248,19 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         if (!senderActor.ok) return fail(new Error(senderActor.message));
         agent = senderActor.name ?? agent;
         if (to === agent) return fail(new Error("cannot notify_agent yourself — self-notify is rejected"));
+        // t-3cccef — the runtime can lose the HTTP response after this handler committed its effect.
+        // A caller-generated identity closes that ambiguity: its retry observes the durable append and
+        // never re-enters the pane-delivery path. Check before current target liveness so a retry still
+        // converges when the recipient was dismissed after accepting the first call.
+        if (deliveryId) {
+          const prior = findDoorbellDelivery(deps.workspaceRoot, agent, deliveryId);
+          if (prior) {
+            if (prior.to !== to || prior.summary !== summary || prior.pointer !== pointer) {
+              return fail(new Error(`deliveryId '${deliveryId}' was already used for different notify_agent content`));
+            }
+            return ok(`notice '${deliveryId}' was already durably accepted at ${prior.at} (receipt: already-accepted)`);
+          }
+        }
         if (deps.manager.kindOf(to) !== "agent") {
           return fail(new Error(`'${to}' is not an agent — notify_agent targets running agents only, not terminals`));
         }
@@ -256,7 +274,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         } catch (err) {
           // A resolved agent that reached notify_agent is still witnessed when the hangable
           // preflight itself fails (for example, tmux timing out while checking the session).
-          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer });
+          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer, deliveryId });
           throw err;
         }
         if (!sessionAlive) {
@@ -264,7 +282,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
           // wants the ring when static checks pass and only hangable preflight fails. Ghost targets
           // are not kind:agent in our roster unless declared — keep prior path for unknown names:
           // only append when we would have reached the hangable preflight with a resolved agent.
-          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer });
+          appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer, deliveryId });
           return fail(new Error(`agent '${to}' is not running`));
         }
         if (!(await deps.manager.isReady(to))) {
@@ -280,7 +298,7 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
         // spec 493 — carry the content, not just from/to/at: this witness record is now also the
         // durable read door (`read_notices`), so a recipient that never opens the one drain window
         // (the working→idle attention edge) can still read what rang for it afterward.
-        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer });
+        appendDoorbellEvent(deps.workspaceRoot, { from: agent, to, at: new Date().toISOString(), summary, pointer, deliveryId });
         if (!prepareAgentSummary(summary)) {
           return fail(new Error("summary must not be empty after sanitizing"));
         }

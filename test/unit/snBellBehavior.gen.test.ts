@@ -98,4 +98,40 @@ describe("container-generated delegation behavior", () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({ from: "claude", to: "recipient" });
   });
+
+  it("notify_agent retry identity acknowledges the first durable append without ringing or delivering twice", async () => {
+    const workspaceRoot = tmpRoot();
+    const delivered: Array<{ to: string; line: string }> = [];
+    const notifyAgent = wireNotifyAgent({
+      workspaceRoot,
+      manager: {
+        kindOf: () => "agent",
+        session: (name: string) => `session-${name}`,
+        isReady: async () => true,
+      } as unknown as BridgeDeps["manager"],
+      tmux: { hasSession: async () => true } as unknown as BridgeDeps["tmux"],
+      deliverNotice: async (to: string, line: string) => {
+        delivered.push({ to, line });
+        return { status: "queued" as const };
+      },
+    });
+
+    const args = { to: "recipient", summary: "done", pointer: "t-3cccef", agent: "claude", deliveryId: "call-7" };
+    const first = await notifyAgent(args);
+    const retry = await notifyAgent(args);
+
+    expect(first.isError).toBeFalsy();
+    expect(retry.isError).toBeFalsy();
+    expect(JSON.stringify(retry.content)).toContain("receipt: already-accepted");
+    expect(delivered).toHaveLength(1);
+    expect(readDoorbellEvents(workspaceRoot)).toEqual([
+      expect.objectContaining({ from: "claude", to: "recipient", deliveryId: "call-7" }),
+    ]);
+
+    const conflictingRetry = await notifyAgent({ ...args, summary: "different effect" });
+    expect(conflictingRetry.isError).toBe(true);
+    expect(JSON.stringify(conflictingRetry.content)).toContain("already used for different");
+    expect(delivered).toHaveLength(1);
+    expect(readDoorbellEvents(workspaceRoot)).toHaveLength(1);
+  });
 });
