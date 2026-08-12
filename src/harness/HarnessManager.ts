@@ -1697,15 +1697,48 @@ export class HarnessManager {
    *
    * So the purge is unconditional and runs BEFORE the decision to re-materialize, exactly as Claude's
    * sweep has always done. `entries` names what THIS runtime's grant path writes into the private home
-   * and nothing else — `apagar demais é pior que apagar de menos`: codex projects its skill tree into
-   * the launch project's `.agents/skills`, shared with the plugin installer, and pi's resource
+   * and nothing else — `apagar demais é pior que apagar de menos`. Codex's skill tree is not in the
+   * private home: it is projected into the launch project's `.agents/skills`. When that project is a
+   * worktree the tree is ours and `purgeOwnedCodexLaunchSkillTree` removes it; when it is the
+   * workspace root it belongs to the plugin installer and is not swept from here. Pi's resource
    * generations are content-addressed, inert without the `--skill` args a revoked profile no longer
-   * receives, and may still be open in a live process. Neither is swept from here.
+   * receives, and may still be open in a live process.
    */
   private purgeProfileCapabilityProjection(home: string, entries: readonly string[] = []): void {
     for (const entry of [...entries, PROFILE_CAPABILITY_ROOT]) {
       fs.rmSync(path.join(home, entry), { recursive: true, force: true });
     }
+  }
+
+  /**
+   * t-f842f0 — empty is a selection for the Codex launch skill tree THIS grant path writes.
+   *
+   * Codex 0.146.1 discovers repository skills from `<cwd>/.agents/skills` and offers no replacement
+   * root (`[skills] paths` adds none). The plugin installer uses that same relative path at the
+   * workspace root (`engine.ts` codex `skillsRel`, lockfile `skill-dir` targets). Those two writers
+   * are distinguishable by ROOT, not by entry: a granted skill and a plugin skill share the name,
+   * and neither writes an on-disk owner mark inside the skill dir. So the predicate is the root.
+   *
+   * `cwd === workspaceRoot` → the installer's directory. Do not touch it (t-94d49a already refuses
+   * a grant there). `cwd` anywhere else → this is the tree `replaceCapturedSkillTree` wrote into
+   * the agent's worktree; empty selection removes it. A missing tree is a no-op. A symlink or
+   * non-directory is the same fail-closed shape as the grant path — never follow a leftover
+   * retired worktree link into the workspace roster (t-62f599).
+   */
+  private purgeOwnedCodexLaunchSkillTree(agent: string, cwd?: string): void {
+    const launchRoot = path.resolve(cwd ?? this.workspaceRoot);
+    if (launchRoot === path.resolve(this.workspaceRoot)) return;
+    const target = path.join(launchRoot, ".agents", "skills");
+    try {
+      const stat = fs.lstatSync(target);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) {
+        throw new HarnessUnavailableError(agent, `profile skill projection target must be a real directory: ${target}`);
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    fs.rmSync(target, { recursive: true, force: true });
   }
 
   private writeProfileCapabilityManifest(agent: string, home: string, projection: ResolvedAgentCapabilityProjection): void {
@@ -2382,6 +2415,15 @@ export class HarnessManager {
     if (adapter.runtime === "claude") {
       this.purgeProfileCapabilityProjection(home, ["skills"]);
     }
+    // t-f842f0 — same door, different tree. Codex skills are not in the private home; they live
+    // under the launch cwd. Every Codex route (canonical, isolate:transcript, harness) crosses
+    // here, so a revoked profile cannot miss the sweep the way t-987347 missed grok.
+    // Manifest first: a leftover file/symlink at the launch tree fails closed, and that throw
+    // must not leave an attestable selection (SDD 428 publishes the manifest last).
+    if (adapter.runtime === "codex") {
+      this.purgeProfileCapabilityProjection(home);
+      this.purgeOwnedCodexLaunchSkillTree(agent, cwd);
+    }
 
     if (h.xdg) {
       // spec t-e2ebe3 — opencode XDG layout: three subdirs under the home + auth COPY (mode 600) under the
@@ -2613,8 +2655,8 @@ export class HarnessManager {
     // is keyed by NAME — which is the t-f842f0 collision itself, since a granted skill and a plugin
     // skill share the name. So that launch would hand the agent the ENTIRE ambient roster under a
     // profile that granted none of it — the inheritance t-62f599 withdrew the worktree skill
-    // projection to stop. Composition with a per-entry owner is t-f842f0; refusing is what this
-    // measurement supports today.
+    // projection to stop. The shared-directory half of t-f842f0 stays refused: no discovery-root
+    // override exists, and unapply-by-name would delete the plugin install of the same name.
     if (capabilities && path.resolve(cwd ?? this.workspaceRoot) === path.resolve(this.workspaceRoot)) {
       const collision = path.join(path.resolve(this.workspaceRoot), ".agents", "skills");
       throw new HarnessUnavailableError(
@@ -2625,9 +2667,9 @@ export class HarnessManager {
     }
     const home = this.materializeHome(agent, adapter, cwd);
     // t-987347 — unconditional, because the guard this replaced (`if (capabilities)`) named the one
-    // case a revocation never reaches. Codex's skill tree is NOT swept with it: it is projected into
-    // the launch project's `.agents/skills`, a directory the plugin installer also owns, so removing
-    // it here would delete plugin installs belonging to every other agent in the workspace.
+    // case a revocation never reaches. The private-home half (manifest) is swept here. The launch
+    // skill tree is swept earlier in `materializeHome` when — and only when — this agent owns it
+    // (t-f842f0). The workspace-root roster is the plugin installer's and is never named here.
     this.purgeProfileCapabilityProjection(home);
     const configPath = path.join(home, "config.toml");
     const values: Array<[string, string | undefined]> = [
