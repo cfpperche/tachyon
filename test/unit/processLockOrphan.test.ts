@@ -50,7 +50,7 @@ afterEach(() => {
 });
 
 describe("processLock", () => {
-  it("refuses while the holder is alive and names the lock", () => {
+  it("refuses while the holder is alive and names the lock", async () => {
     const lock = path.join(tempRoot(), "thing.lock");
     const held = acquireProcessLock(lock, ALIVE);
     try {
@@ -62,7 +62,7 @@ describe("processLock", () => {
     expect(fs.existsSync(lock)).toBe(false);
   });
 
-  it("steals a lock whose holder pid is gone", () => {
+  it("steals a lock whose holder pid is gone", async () => {
     const lock = path.join(tempRoot(), "thing.lock");
     fs.writeFileSync(lock, "424242\n");
     const held = acquireProcessLock(lock, DEAD);
@@ -76,7 +76,7 @@ describe("processLock", () => {
    * matches a dead holder's makes the wedge permanent again. The timestamp is what stops the worst
    * case, so it is asserted against a holder that IS alive.
    */
-  it("steals a holder older than maxHoldMs even though its pid answers", () => {
+  it("steals a holder older than maxHoldMs even though its pid answers", async () => {
     const lock = path.join(tempRoot(), "thing.lock");
     fs.writeFileSync(lock, "424242\n");
     age(lock, 60_000);
@@ -103,7 +103,7 @@ describe("processLock", () => {
    * The lock this replaces was a DIRECTORY. An orphan left by an older window must be recoverable, or
    * the migration itself is the permanent wedge it was written to remove.
    */
-  it("recovers a legacy mkdir lock directory left at the same path", () => {
+  it("recovers a legacy mkdir lock directory left at the same path", async () => {
     const lock = path.join(tempRoot(), "thing.lock");
     fs.mkdirSync(lock);
     age(lock, 60_000);
@@ -112,7 +112,7 @@ describe("processLock", () => {
     held.release();
   });
 
-  it("times out naming the lock when the holder stays alive", () => {
+  it("times out naming the lock when the holder stays alive", async () => {
     const lock = path.join(tempRoot(), "thing.lock");
     const held = acquireProcessLock(lock, ALIVE);
     try {
@@ -454,7 +454,7 @@ describe("a killed lock owner does not wedge the next writer (t-7843d0)", () => 
     expect(fs.existsSync(store.lockPath)).toBe(true);
 
     const started = Date.now();
-    const pin = store.create("after the crash", "human");
+    const pin = await store.create("after the crash", "human");
     expect(Date.now() - started).toBeLessThan(2_000);
     expect(store.list().map((p) => p.id)).toEqual([pin.id]);
     expect(fs.existsSync(store.lockPath)).toBe(false);
@@ -494,6 +494,33 @@ describe("a killed lock owner does not wedge the next writer (t-7843d0)", () => 
     // It really did wait for the other process...
     expect(Date.now() - started).toBeGreaterThan(200);
     // ...without freezing the host while it did.
+    expect(ticks).toBeGreaterThanOrEqual(5);
+  }, 60_000);
+
+  it("pins: waiting for a live holder keeps the event loop running", async () => {
+    const workspaceRoot = path.join(scratch, "ws-pins-live");
+    fs.mkdirSync(workspaceRoot, { recursive: true });
+    await holder(`
+      import { withProcessLock } from ${srcUrl("src/locks/processLock.ts")};
+      import { PinStore } from ${srcUrl("src/pins/PinStore.ts")};
+      const store = new PinStore(process.argv[2]!);
+      const holdMs = Number(process.argv[3]!);
+      await withProcessLock(store.lockPath, async () => {
+        process.stdout.write("held\\n");
+        await new Promise((resolve) => setTimeout(resolve, holdMs));
+      }, { timeoutMs: 5_000 });
+    `, [workspaceRoot, "800"]);
+
+    const store = new PinStore(workspaceRoot);
+    let ticks = 0;
+    const timer = setInterval(() => { ticks += 1; }, 20);
+    const started = Date.now();
+    try {
+      await store.create("queued behind another window", "human");
+    } finally {
+      clearInterval(timer);
+    }
+    expect(Date.now() - started).toBeGreaterThan(200);
     expect(ticks).toBeGreaterThanOrEqual(5);
   }, 60_000);
 });

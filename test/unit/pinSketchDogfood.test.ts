@@ -74,7 +74,7 @@ function persistedText(root: string): string {
 }
 
 describe("Pin Studio Excalidraw headless dogfood", () => {
-  it("covers blank sketch, annotate, edit, cancel, remove, get_pin shape, and persisted payload hygiene", () => {
+  it("covers blank sketch, annotate, edit, cancel, remove, get_pin shape, and persisted payload hygiene", async () => {
     const root = mkroot();
     const pins = new PinStore(root);
     const artifacts = new PinAttachmentStore(root);
@@ -85,7 +85,7 @@ describe("Pin Studio Excalidraw headless dogfood", () => {
       source: "blank",
       now: "2026-06-24T00:00:00.000Z",
     });
-    const blankPin = pins.createRich("blank sketch dogfood", "human", {
+    const blankPin = await pins.createRich("blank sketch dogfood", "human", {
       doc: sketchDoc(blank.id),
       attachments: [blank],
       now: "2026-06-24T00:00:00.000Z",
@@ -111,7 +111,7 @@ describe("Pin Studio Excalidraw headless dogfood", () => {
       baseImageAttachmentId: image.id,
       now: "2026-06-24T00:02:00.000Z",
     });
-    const annotationPin = pins.createRich("annotated screenshot dogfood", "human", {
+    const annotationPin = await pins.createRich("annotated screenshot dogfood", "human", {
       doc: {
         type: "doc",
         content: [
@@ -140,7 +140,7 @@ describe("Pin Studio Excalidraw headless dogfood", () => {
     expect(edited.updatedAt).toBe("2026-06-24T00:03:00.000Z");
     expect(edited.previewBlobRef).not.toBe(annotated.previewBlobRef);
 
-    pins.saveDetail(annotationPin.id, { text: "annotated screenshot dogfood", doc: sketchDoc(edited.id), attachments: [image, edited], now: "2026-06-24T00:03:00.000Z" });
+    await pins.saveDetail(annotationPin.id, { text: "annotated screenshot dogfood", doc: sketchDoc(edited.id), attachments: [image, edited], now: "2026-06-24T00:03:00.000Z" });
     expect(pins.list().find((pin) => pin.id === annotationPin.id)).toMatchObject({ detail: true, attachmentCount: 1 });
     const beforeCancel = fs.readFileSync(pins.detailPath(annotationPin.id), "utf8");
     sceneWithText("cancelled edit that is never stored");
@@ -161,7 +161,7 @@ describe("Pin Studio Excalidraw headless dogfood", () => {
     expect(attachmentsForSave(sketchDoc(edited.id), [imageVm, sketchVm]).map((att) => att.id)).toEqual([image.id, edited.id]);
     expect(attachmentsUsedByDoc(emptyDoc(), [imageVm, sketchVm])).toEqual([]);
 
-    pins.saveDetail(annotationPin.id, { text: "annotated screenshot dogfood", doc: emptyDoc(), attachments: [], now: "2026-06-24T00:04:00.000Z" });
+    await pins.saveDetail(annotationPin.id, { text: "annotated screenshot dogfood", doc: emptyDoc(), attachments: [], now: "2026-06-24T00:04:00.000Z" });
     expect(pins.readDetail(annotationPin.id)).toMatchObject({ summary: { attachmentCount: 0 }, attachments: [] });
 
     expect(persistedText(root)).not.toMatch(/data:image|;base64,|blob:|vscode-webview|\/home\/|\/mnt\//);

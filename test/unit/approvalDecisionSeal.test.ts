@@ -74,7 +74,7 @@ function forgedResolution(id: string): Record<string, unknown> {
 }
 
 describe("t-65e80b — the approval DECISION carries its own seal", () => {
-  it("refuses a record whose status/resolution were edited straight into the JSON", () => {
+  it("refuses a record whose status/resolution were edited straight into the JSON", async () => {
     const root = workspace();
     writeApprovalRequest(root, pending("a-ccc333"));
     expect(readApprovalRequest(root, "a-ccc333").status).toBe("pending");
@@ -114,10 +114,10 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
     expect(() => readApprovalRequest(root, "a-eee555")).toThrow(/decision seal/);
   });
 
-  it("seals a requester's cancellation the same way", () => {
+  it("seals a requester's cancellation the same way", async () => {
     const root = workspace();
     writeApprovalRequest(root, pending("a-fff666"));
-    const cancelled = cancelOwnApprovalRequest({
+    const cancelled = await cancelOwnApprovalRequest({
       workspaceRoot: root,
       id: "a-fff666",
       requester: "child-agent",
@@ -133,7 +133,7 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
     expect(() => readApprovalRequest(root, "a-fff666")).toThrow(/decision seal/);
   });
 
-  it("binds the seal to its own record — a valid seal cannot be lifted off another one", () => {
+  it("binds the seal to its own record — a valid seal cannot be lifted off another one", async () => {
     const root = workspace();
     writeApprovalRequest(root, pending("a-aaa111"));
     writeApprovalRequest(root, pending("a-bbb222"));
@@ -149,7 +149,7 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
     expect(() => readApprovalRequest(root, "a-aaa111")).toThrow(/decision seal/);
   });
 
-  it("refuses a seal version it cannot check, instead of reading it as pre-seal history", () => {
+  it("refuses a seal version it cannot check, instead of reading it as pre-seal history", async () => {
     const root = workspace();
     writeApprovalRequest(root, pending("a-999999"));
     editOnDisk(root, "a-999999", (raw) => {
@@ -175,7 +175,7 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
       return rest as unknown as Record<string, unknown>;
     }
 
-    it("stay readable and are never reported as tampered", () => {
+    it("stay readable and are never reported as tampered", async () => {
       const root = workspace();
       const historicalWitnessBytes =
         '{"kind":"requested","id":"a-011111","requester":"child-agent","session":"tachyon-child-agent","at":"2026-08-05T00:00:00.000Z","payloadHash":"c63c185a29fe339244deb958f3490d29e8486282f0282e6a6f60e7071ebf15bb"}\n';
@@ -231,7 +231,7 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
       expect(() => readApprovalRequest(root, "a-033333")).toThrow(/decision seal/);
     });
 
-    it("refuses a post-seal record whose two seal fields were stripped (t-f85a02)", () => {
+    it("refuses a post-seal record whose two seal fields were stripped (t-f85a02)", async () => {
       const root = workspace();
       const request = pending("a-044444");
       recordApprovalRequest(root, request);
@@ -258,7 +258,7 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
     });
   });
 
-  it("does not let a broken decision seal retire the request from the human's queue", () => {
+  it("does not let a broken decision seal retire the request from the human's queue", async () => {
     const root = workspace();
     writeApprovalRequest(root, pending("a-055555"));
     editOnDisk(root, "a-055555", (raw) => {
@@ -276,7 +276,7 @@ describe("t-65e80b — the approval DECISION carries its own seal", () => {
     expect(items[0].warning).toMatch(/decision seal/);
   });
 
-  it("keeps the seal a statement about bytes: recomputing it over the same decision is stable", () => {
+  it("keeps the seal a statement about bytes: recomputing it over the same decision is stable", async () => {
     const root = workspace();
     const request = pending("a-066666");
     writeApprovalRequest(root, request);

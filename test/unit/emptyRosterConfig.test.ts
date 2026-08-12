@@ -137,7 +137,7 @@ describe("t-f67185 empty roster workspace", () => {
       expect(fleet.configError).toBeUndefined();
       // App.tsx Agents tab: empty agents + no configError → "(no agents)".
 
-      const pin = ws.pinStore.create("empty-roster pin", "rostervazio");
+      const pin = await ws.pinStore.create("empty-roster pin", "rostervazio");
       expect(ws.pinStore.list().some((p) => p.id === pin.id)).toBe(true);
 
       const task = await ws.taskStore.create({ title: "empty-roster board task", author: "rostervazio" });
@@ -151,7 +151,7 @@ describe("t-f67185 empty roster workspace", () => {
   // and the difference from a genuinely empty roster is now the diagnostic rather than the outcome.
   // Discarding is safe here in the only direction that matters — the entries it could not read are
   // ABSENT, never half-built, so nothing is spawnable that the file did not successfully declare.
-  it("discards a malformed agents block and keeps the rest of the file", () => {
+  it("discards a malformed agents block and keeps the rest of the file", async () => {
     const { config, errors, warnings } = parseConfig('agents: "olá"\ncommands:\n  build:\n    cmd: x\n');
     expect(errors).toEqual([]);
     expect(config?.agents).toEqual({});

@@ -57,6 +57,29 @@ sendManagedAgentInput → tmux sendKeys → agent pane
 
 Path **(3)** is intentional and matches how Tachyon already wakes agents from the shell. It is **not** a bug that it skips MCP. Reviewers must not ratify a diagram that only shows (1).
 
+### Accepted residual: draft check is not a compare-and-send
+
+Design Mode Send protects an existing human draft, but it cannot promise that no draft is ever
+clobbered. The concrete path is:
+
+1. the human clicks Send; the IDE Browser Host calls `activity.sendAgentInput(..., submit=true)`;
+2. engine `agent.input` reads the target pane with `probeComposerOccupied` and refuses when it sees a
+   non-empty composer;
+3. `sendManagedAgentInput` revalidates agent liveness, then tmux writes and submits with `sendKeys`.
+
+The residual race is between steps 2 and 3. If the terminal user starts typing after the probe reads
+an empty composer but before tmux writes, the Design Mode prompt and the new human text can share one
+composer and be submitted together; the human draft is no longer preserved as a separate unsent
+message. Conversely, a draft already visible to the probe is refused before Design Mode records the
+chat event or consumes its attached selection.
+
+This window was accepted in `t-348c9a`: moving from the cached attention snapshot to a fresh
+delivery-time probe removed the multi-second stale-read failure, while tmux exposes no atomic
+compare-and-send (CAS) over composer contents. The same transport limit is recorded for
+`notify_agent` in [`docs/runtimes/parity.md`](../../runtimes/parity.md). Closing it would require a
+different delivery protocol (for example, hold-and-retry around a stronger pane authority), not a
+claim that the current probe is atomic. Treat this as a known boundary, not an unimplemented promise.
+
 ## Two hosts — keep the process split
 
 | Layer | Preferred name | Owns | Does not own |

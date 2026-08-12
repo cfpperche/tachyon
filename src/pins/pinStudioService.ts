@@ -19,11 +19,11 @@ export interface PinStudioAttachmentServiceResult {
   overSoftLimit: boolean;
 }
 
-export function savePinStudio(
+export async function savePinStudio(
   pinStore: PinStore,
   pinId: string | undefined,
   patch: PinStudioPatchV1,
-): PinStudioSaveServiceResult {
+): Promise<PinStudioSaveServiceResult> {
   try {
     const title = patch.title.trim();
     const rich = !isEmptyPinDoc(patch.doc) || patch.attachments.length > 0;
@@ -37,11 +37,11 @@ export function savePinStudio(
     }
     const pin = pinId && !staged
       ? rich
-        ? pinStore.saveDetail(pinId, { text: title, tags: patch.tags, doc: patch.doc, attachments: patch.attachments })
-        : pinStore.clearDetail(pinId, title, new Date().toISOString(), patch.tags)
+        ? await pinStore.saveDetail(pinId, { text: title, tags: patch.tags, doc: patch.doc, attachments: patch.attachments })
+        : await pinStore.clearDetail(pinId, title, new Date().toISOString(), patch.tags)
       : rich
-        ? pinStore.createRich(title, "human", { id: pinId, tags: patch.tags, doc: patch.doc, attachments: patch.attachments })
-        : pinStore.create(title, "human", { id: pinId, tags: patch.tags });
+        ? await pinStore.createRich(title, "human", { id: pinId, tags: patch.tags, doc: patch.doc, attachments: patch.attachments })
+        : await pinStore.create(title, "human", { id: pinId, tags: patch.tags });
     return { status: "ok", pinId: pin.id };
   } catch (error) {
     return { status: "error", code: "SAVE_FAILED", message: errorMessage(error) };
