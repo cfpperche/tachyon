@@ -155,6 +155,14 @@ Living dogfood for `design_mode_chat_reply` tool-call reliability (blocks confid
 - **Defect noted:** Selection card covers Design Mode chat transcript when both open (reply present in DOM, not visible until card closed). Filed as separate bug task; not fixed in F8.
 - **visual-qa skill:** not used for capture path (web-only skill; this surface is EDH + CDP inject). Judgment still recorded under Visual QA Evidence/Verdict for `/sdd close`.
 
+## t-330a51 — Selection card vs chat transcript (`2026-08-12`)
+
+- **Defect (measured, not guessed):** both defaults share the right edge. Card `top:16px; right:16px; 360×min(70vh,560)`. Chat `right:12px; bottom:40px; 360×min(420,100vh-56)`. Vertical overlap whenever viewport **height < ~1036px** — every typical EDH editor-browser, not a small-viewport-only bug. Fail-before at 880×660: card covered the landed agent bubble (`elementFromPoint` hit `#tachyon-dm-card`).
+- **Fix:** `data-both-open` on the inject root when both panels are open. Undragged card parks just left of the chat slot (`right: min(12 + chatWidth + 8, clamp-on-screen)`). Chat z-index stays above the card. User drag/resize still writes inline `left/top` via `mountFloatingPanel` and wins.
+- **Threshold after the fix:** side-by-side with no geometric overlap at viewport **width ≥ 748px**. Below that the card is clamped on-screen and the panels still intersect; stack order keeps the transcript hit-testable. 360×660 is that fallback (chat on top, reply readable).
+- **Evidence:** `evidence/t-330a51-before.png` / `t-330a51-after.png` (880×660, same page, both panels open). 360 pair: `t-330a51-before-360.png` / `t-330a51-after-360.png`.
+- **Not done:** did not merge the two surfaces; did not touch `manager.ts` or delivery.
+
 ## Ratify log
 
 - 2026-08-04 — Product lean agreed in conversation: Design Mode viable as Tachyon product slice;
