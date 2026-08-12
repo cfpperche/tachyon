@@ -63,4 +63,4 @@ and tool namespaces are not interchangeable.
 
 - Contract: [`spec.md`](./spec.md)
 - Architecture and accepted boundaries: [`architecture-fit.md`](./architecture-fit.md)
-- agent-browser operating contract: [`.agents/skills/agent-browser/SKILL.md`](../../../.agents/skills/agent-browser/SKILL.md)
+- Plugin design and operating boundary: [`SDD 267`](../267-plugin-agent-browser/spec.md)
