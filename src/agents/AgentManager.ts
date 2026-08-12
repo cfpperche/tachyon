@@ -905,7 +905,7 @@ function temporaryDefinitionFrom(def: NonNullable<SessionRecord["def"]>, worktre
   return {
     cmd: def.cmd,
     instructions: def.instructions,
-    ...(def.env ? { env: def.env } : {}), // spec 225 — a forked sibling's inherited env survives reload
+    ...(def.env ? { environment: { values: def.env } } : {}), // spec 225 — a forked sibling's inherited env survives reload
     autostart: false,
     watch: [],
     attention: { enabled: true, silenceSec: 8, patterns: [] },
@@ -915,6 +915,11 @@ function temporaryDefinitionFrom(def: NonNullable<SessionRecord["def"]>, worktre
     // restart reuses it instead of falling back to the root.
     worktree: !!worktree,
   };
+}
+
+/** The launchable, non-secret half of a managed entry's environment boundary. */
+function environmentValues(def: AgentDef | null | undefined): Record<string, string> | undefined {
+  return def?.environment?.values;
 }
 
 export function applyNativeLaneSuppressionCommand(cmd: string): { cmd: string; applied: boolean } {
@@ -2762,7 +2767,7 @@ export class AgentManager {
       await this.assertLaunchPreflight(
         name,
         def.cmd,
-        { ...extraEnv, ...def.env, ...(opts?.env ?? {}), ...(preparedRuntimeHarness?.env ?? {}) },
+        { ...extraEnv, ...environmentValues(def), ...(opts?.env ?? {}), ...(preparedRuntimeHarness?.env ?? {}) },
         temporary && !!asAgent(def),
         cwd,
       );
@@ -2777,7 +2782,7 @@ export class AgentManager {
       def,
       cwd,
       effectiveCmd,
-      { ...extraEnv, ...def.env, ...(opts?.env ?? {}), ...tokenEnv, TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(def, effectiveInstructions) },
+      { ...extraEnv, ...environmentValues(def), ...(opts?.env ?? {}), ...tokenEnv, TACHYON_AGENT_NAME: name, ...this.hermesBriefEnv(def, effectiveInstructions) },
       preparedRuntimeHarness,
     );
     this.applyDelegatedOpencodeHarnessPermission(def, spawnBuild.env, delegatedOpencode);
@@ -4427,7 +4432,7 @@ export class AgentManager {
     await this.assertLaunchPreflight(
       name,
       def.cmd,
-      { ...this.opts.getExtraEnv?.(), ...def.env, ...(restartHarness?.env ?? {}) },
+      { ...this.opts.getExtraEnv?.(), ...environmentValues(def), ...(restartHarness?.env ?? {}) },
       this.isTemporary(name),
       cwd,
     );
@@ -4488,7 +4493,7 @@ export class AgentManager {
       this.effectiveCmd(name, def, restartInstructions, !!(this.lineage.get(name) || this.delegators.get(name))),
       {
         ...this.opts.getExtraEnv?.(),
-        ...def.env,
+        ...environmentValues(def),
         TACHYON_AGENT_NAME: name,
         ...this.hermesBriefEnv(def, restartInstructions),
       },
@@ -4880,7 +4885,7 @@ export class AgentManager {
     await this.assertLaunchPreflight(
       name,
       cmd,
-      { ...this.opts.getExtraEnv?.(), ...resumeDef?.env, ...(resumeHarness?.env ?? {}), ...persistedResumeHomeEnv },
+      { ...this.opts.getExtraEnv?.(), ...environmentValues(resumeDef), ...(resumeHarness?.env ?? {}), ...persistedResumeHomeEnv },
       isTemporaryInstance(record),
       cwd,
     );
@@ -4898,7 +4903,7 @@ export class AgentManager {
         id,
       ),
       // Mint last so resumeDef.env cannot clobber TACHYON_AGENT_BRIDGE_TOKEN.
-      { ...this.opts.getExtraEnv?.(), ...resumeDef?.env, ...this.opts.mintAgentToken?.(name), TACHYON_AGENT_NAME: name },
+      { ...this.opts.getExtraEnv?.(), ...environmentValues(resumeDef), ...this.opts.mintAgentToken?.(name), TACHYON_AGENT_NAME: name },
       resumeHarness,
     );
     this.applyDelegatedOpencodeHarnessPermission(resumeDef, resumeBuild.env, resumeDelegatedOpencode);
@@ -5071,7 +5076,7 @@ export class AgentManager {
       ...(sourceTranscriptPath ? { sourceTranscriptPath } : {}),
       ...(rec.worktree ? { sourceWorktree: rec.worktree } : {}),
       ...(rec.def?.instructions ? { instructions: rec.def.instructions } : {}),
-      ...(this.definitionOf(name)?.env ? { env: this.definitionOf(name)!.env } : {}),
+      ...(environmentValues(this.definitionOf(name)) ? { env: environmentValues(this.definitionOf(name)) } : {}),
     };
   }
 

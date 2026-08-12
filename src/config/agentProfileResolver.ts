@@ -1214,7 +1214,7 @@ function withheldFromDiagnostic(
 }
 
 function legacyDefinition(definition: AgentEntry, runtime: { adapterId: string; executableId: string }): NormalizedAgentDefinition {
-  const legacyEnvironmentNames = Object.keys(definition.env ?? {}).sort(compareText);
+  const legacyEnvironmentNames = Object.keys(definition.environment?.values ?? {}).sort(compareText);
   return {
     runtime: {
       adapter: runtime.adapterId,

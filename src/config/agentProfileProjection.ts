@@ -749,8 +749,11 @@ function projectDefinition(
   if (!isAttestedRuntime(definition.runtime.adapter) || definition.runtime.executable !== definition.runtime.adapter || definition.runtime.args?.length) {
     errors.push("profile/projection: unsupported runtime projection");
   }
+  // The in-memory boundary can carry opaque references, but a runnable projection still refuses
+  // them until the existing host/provider authority has a resolver. Silently launching without a
+  // declared credential would be worse than the old flattened representation.
   if (definition.environment?.secrets && Object.keys(definition.environment.secrets).length > 0) {
-    errors.push("profile/projection: secret injection belongs to a later slice");
+    errors.push("profile/projection: secret references have no configured host/provider resolver");
   }
   errors.push(...validateAgentNativeConfigPolicy(definition.runtime.adapter, definition.nativeConfig));
   if (definition.prompt?.memory) {
@@ -804,7 +807,7 @@ function projectDefinition(
     kind: "agent",
   };
   if (definition.workspace?.cwd) projected.cwd = definition.workspace.cwd;
-  if (definition.environment?.values) projected.env = { ...definition.environment.values };
+  if (definition.environment?.values) projected.environment = { values: { ...definition.environment.values } };
   if (definition.workspace?.worktree?.enabled !== undefined) projected.worktree = definition.workspace.worktree.enabled;
   if (definition.workspace?.worktree?.branch) projected.branch = definition.workspace.worktree.branch;
   // t-afc86e — the setup field this projection used to refuse. `errors.length > 0` returned above, so

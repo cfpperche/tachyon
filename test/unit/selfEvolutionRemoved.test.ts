@@ -51,7 +51,7 @@ describe("t-8ea8e0 — self-evolution is not a capability this product has", () 
     // `subagents` are offered above and normalized away — they are accepted syntax, not stored
     // state — which is exactly why this asserts what the parser KEEPS, not what it was handed.)
     expect(Object.keys(agent!).sort()).toEqual([
-      "attention", "autostart", "branch", "cmd", "cwd", "env",
+      "attention", "autostart", "branch", "cmd", "cwd", "environment",
       "instructions", "kind", "restart", "watch", "worktree", "worktreeSetup",
     ]);
 
