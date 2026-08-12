@@ -23,17 +23,17 @@ describe("PinStore rich details", () => {
     attachments = new PinAttachmentStore(root);
   });
 
-  it("returns summary-only detail for legacy pins without creating detail files", () => {
-    const pin = store.create("legacy", "claude");
+  it("returns summary-only detail for legacy pins without creating detail files", async () => {
+    const pin = await store.create("legacy", "claude");
     const got = store.readDetail(pin.id);
     expect(got).toMatchObject({ detail: false, doc: null, attachments: [] });
     expect(got.summary).toMatchObject({ id: pin.id, text: "legacy", detail: false });
     expect(fs.existsSync(store.detailPath(pin.id))).toBe(false);
   });
 
-  it("creates and reads rich details with resolved attachment availability", () => {
+  it("creates and reads rich details with resolved attachment availability", async () => {
     const att = attachments.putImage({ data: Buffer.from("img"), mediaType: "image/png", name: "img.png", source: "paste", now: "2026-06-24T00:01:00.000Z" });
-    const pin = store.createRich(" rich title ", "human", { doc: doc(), attachments: [att], now: "2026-06-24T00:02:00.000Z" });
+    const pin = await store.createRich(" rich title ", "human", { doc: doc(), attachments: [att], now: "2026-06-24T00:02:00.000Z" });
     expect(pin).toMatchObject({ text: "rich title", detail: true, attachmentCount: 1, updatedAt: "2026-06-24T00:02:00.000Z" });
     const got = store.readDetail(pin.id);
     expect(got.detail).toBe(true);
@@ -43,8 +43,8 @@ describe("PinStore rich details", () => {
     expect(raw.schemaVersion).toBe(2);
   });
 
-  it("reads schemaVersion 1 details without rewriting them", () => {
-    const pin = store.create("legacy rich", "human");
+  it("reads schemaVersion 1 details without rewriting them", async () => {
+    const pin = await store.create("legacy rich", "human");
     const att = attachments.putImage({ data: Buffer.from("legacy-img"), mediaType: "image/png", source: "paste" });
     fs.mkdirSync(store.pinDetailsDir, { recursive: true });
     const legacy = `${JSON.stringify({ schemaVersion: 1, pinId: pin.id, doc: doc("legacy"), attachments: [att] }, null, 2)}\n`;
@@ -56,14 +56,14 @@ describe("PinStore rich details", () => {
     expect(fs.readFileSync(store.detailPath(pin.id), "utf8")).toBe(legacy);
   });
 
-  it("reads schemaVersion 2 sketch details with independent scene and preview availability", () => {
+  it("reads schemaVersion 2 sketch details with independent scene and preview availability", async () => {
     const sketch = attachments.putExcalidraw({
       sceneJson: JSON.stringify({ type: "excalidraw", elements: [], appState: {}, files: {} }),
       previewData: Buffer.from("preview"),
       source: "blank",
       now: "2026-06-24T00:02:00.000Z",
     });
-    const pin = store.createRich("sketch", "human", {
+    const pin = await store.createRich("sketch", "human", {
       doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: sketch.id } }] },
       attachments: [sketch],
       now: "2026-06-24T00:03:00.000Z",
@@ -80,7 +80,7 @@ describe("PinStore rich details", () => {
     });
   });
 
-  it("counts annotated sketches as one sidebar visual while retaining the base image dependency", () => {
+  it("counts annotated sketches as one sidebar visual while retaining the base image dependency", async () => {
     const image = attachments.putImage({
       data: Buffer.from("base screenshot"),
       mediaType: "image/png",
@@ -95,7 +95,7 @@ describe("PinStore rich details", () => {
       baseImageAttachmentId: image.id,
       now: "2026-06-24T00:02:00.000Z",
     });
-    const pin = store.createRich("annotation", "human", {
+    const pin = await store.createRich("annotation", "human", {
       doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: sketch.id } }] },
       attachments: [image, sketch],
       now: "2026-06-24T00:03:00.000Z",
@@ -108,39 +108,39 @@ describe("PinStore rich details", () => {
     expect(detail.attachments.map((att) => att.id)).toEqual([image.id, sketch.id]);
   });
 
-  it("saves rich detail while preserving identity fields and done state", () => {
-    const pin = store.create("plain", "human", { tags: ["bug"] });
-    store.setDone(pin.id, true);
+  it("saves rich detail while preserving identity fields and done state", async () => {
+    const pin = await store.create("plain", "human", { tags: ["bug"] });
+    await store.setDone(pin.id, true);
     const before = store.list()[0];
-    const saved = store.saveDetail(pin.id, { text: "new title", tags: ["docs"], doc: doc("new"), attachments: [], now: "2026-06-24T00:03:00.000Z" });
+    const saved = await store.saveDetail(pin.id, { text: "new title", tags: ["docs"], doc: doc("new"), attachments: [], now: "2026-06-24T00:03:00.000Z" });
     expect(saved).toMatchObject({ id: before.id, by: before.by, createdAt: before.createdAt, done: true, text: "new title", tags: ["docs"], detail: true, attachmentCount: 0 });
     expect(saved.updatedAt).toBe("2026-06-24T00:03:00.000Z");
     expect(store.readDetail(pin.id).doc).toEqual(doc("new"));
   });
 
-  it("keeps tags on rich create/read and can retag when clearing rich detail", () => {
-    const pin = store.createRich("rich tagged", "human", { tags: ["UI"], doc: doc(), attachments: [], now: "2026-06-24T00:01:00.000Z" });
+  it("keeps tags on rich create/read and can retag when clearing rich detail", async () => {
+    const pin = await store.createRich("rich tagged", "human", { tags: ["UI"], doc: doc(), attachments: [], now: "2026-06-24T00:01:00.000Z" });
     expect(pin.tags).toEqual(["ui"]);
     expect(store.readDetail(pin.id).summary.tags).toEqual(["ui"]);
 
-    const cleared = store.clearDetail(pin.id, "plain again", "2026-06-24T00:02:00.000Z", ["handoff"]);
+    const cleared = await store.clearDetail(pin.id, "plain again", "2026-06-24T00:02:00.000Z", ["handoff"]);
     expect(cleared).toMatchObject({ text: "plain again", tags: ["handoff"] });
     expect("detail" in cleared).toBe(false);
     expect(fs.existsSync(store.detailPath(pin.id))).toBe(false);
   });
 
-  it("reports missing blobs as unavailable without failing the rich detail read", () => {
+  it("reports missing blobs as unavailable without failing the rich detail read", async () => {
     const att = attachments.putImage({ data: Buffer.from("gone"), mediaType: "image/webp", source: "drop" });
-    const pin = store.createRich("missing", "human", { doc: doc(), attachments: [att] });
+    const pin = await store.createRich("missing", "human", { doc: doc(), attachments: [att] });
     fs.rmSync(attachments.blobPath(att.blobRef), { force: true });
     expect(store.readDetail(pin.id).attachments[0]).toMatchObject({ available: false, path: `.tachyon/pins/blobs/${att.blobRef}` });
   });
 
-  it("removes a rich pin detail without deleting a shared content-addressed blob", () => {
+  it("removes a rich pin detail without deleting a shared content-addressed blob", async () => {
     const att = attachments.putImage({ data: Buffer.from("shared"), mediaType: "image/gif", source: "import" });
-    const a = store.createRich("a", "human", { doc: doc("a"), attachments: [att] });
-    const b = store.createRich("b", "human", { doc: doc("b"), attachments: [att] });
-    store.remove(a.id);
+    const a = await store.createRich("a", "human", { doc: doc("a"), attachments: [att] });
+    const b = await store.createRich("b", "human", { doc: doc("b"), attachments: [att] });
+    await store.remove(a.id);
     expect(fs.existsSync(store.detailPath(a.id))).toBe(false);
     expect(fs.existsSync(attachments.blobPath(att.blobRef))).toBe(true);
     const resolved = store.readDetail(b.id).attachments[0];
@@ -148,9 +148,9 @@ describe("PinStore rich details", () => {
     if (resolved.kind === "image") expect(resolved.available).toBe(true);
   });
 
-  it("keeps error behavior precise for unknown ids and corrupt details", () => {
+  it("keeps error behavior precise for unknown ids and corrupt details", async () => {
     expect(() => store.readDetail("p-000000")).toThrow("unknown pin");
-    const pin = store.createRich("bad", "human", { doc: doc(), attachments: [] });
+    const pin = await store.createRich("bad", "human", { doc: doc(), attachments: [] });
     fs.writeFileSync(store.detailPath(pin.id), "{bad", "utf8");
     expect(() => store.readDetail(pin.id)).toThrow("not valid JSON");
   });

@@ -38,38 +38,38 @@ function pin(id: string, done = false): Pin {
 }
 
 describe("domainActions", () => {
-  it("toggles an existing pin and emits one pins refresh", () => {
+  it("toggles an existing pin and emits one pins refresh", async () => {
     const ws = fakeWorkspace([pin("p-1")]);
     const changed: ViewKind[] = [];
 
-    expect(domainActions.togglePinDone(ws, "p-1", true, { onChanged: (v) => changed.push(v) })).toBe(true);
+    expect(await domainActions.togglePinDone(ws, "p-1", true, { onChanged: (v) => changed.push(v) })).toBe(true);
 
     expect(ws.pinStore.list()[0]?.done).toBe(true);
     expect(changed).toEqual(["pins"]);
   });
 
-  it("deletes only the targeted pin and preserves sibling order", () => {
+  it("deletes only the targeted pin and preserves sibling order", async () => {
     const ws = fakeWorkspace([pin("p-delete"), pin("p-keep-1"), pin("p-keep-2")]);
     const changed: ViewKind[] = [];
 
-    expect(domainActions.deletePin(ws, "p-delete", { onChanged: (v) => changed.push(v) })).toBe(true);
+    expect(await domainActions.deletePin(ws, "p-delete", { onChanged: (v) => changed.push(v) })).toBe(true);
 
     expect(ws.pinStore.list().map((p) => p.id)).toEqual(["p-keep-1", "p-keep-2"]);
     expect(changed).toEqual(["pins"]);
   });
 
-  it("treats stale pin actions as quiet no-ops", () => {
+  it("treats stale pin actions as quiet no-ops", async () => {
     const ws = fakeWorkspace([pin("p-keep")]);
     const changed: ViewKind[] = [];
 
-    expect(domainActions.togglePinDone(ws, "p-missing", true, { onChanged: (v) => changed.push(v) })).toBe(false);
-    expect(domainActions.deletePin(ws, "p-missing", { onChanged: (v) => changed.push(v) })).toBe(false);
+    expect(await domainActions.togglePinDone(ws, "p-missing", true, { onChanged: (v) => changed.push(v) })).toBe(false);
+    expect(await domainActions.deletePin(ws, "p-missing", { onChanged: (v) => changed.push(v) })).toBe(false);
 
     expect(ws.pinStore.list().map((p) => p.id)).toEqual(["p-keep"]);
     expect(changed).toEqual([]);
   });
 
-  it("delegates schedule and proposal mutations to the workspace contract", () => {
+  it("delegates schedule and proposal mutations to the workspace contract", async () => {
     const ws = fakeWorkspace();
 
     const deps = { onChanged: () => {} };
@@ -89,7 +89,7 @@ describe("domainActions", () => {
     ]);
   });
 
-  it("routes matching VS Code command handlers through the persistent sidebar mutation contract", () => {
+  it("routes matching VS Code command handlers through the persistent sidebar mutation contract", async () => {
     const source = fs.readFileSync("src/extension.ts", "utf8");
 
     for (const [command, action] of [

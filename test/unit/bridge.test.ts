@@ -546,7 +546,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   });
 
   it("get_pin returns rich local detail or summary-only legacy shape without binary payloads", async () => {
-    const legacy = pins.create("legacy detail", "claude");
+    const legacy = await pins.create("legacy detail", "claude");
     const legacyResult = await client.callTool({ name: "get_pin", arguments: { id: legacy.id } });
     const legacyParsed = JSON.parse((legacyResult.content as Array<{ text: string }>)[0].text);
     expect(legacyParsed).toMatchObject({ detail: false, doc: null, attachments: [] });
@@ -554,7 +554,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     const blobs = new PinAttachmentStore(pinsRoot);
     const att = blobs.putImage({ data: Buffer.from("bridge-image"), mediaType: "image/png", source: "paste", name: "bridge.png" });
-    const rich = pins.createRich("rich detail", "human", { doc: { type: "doc", content: [] }, attachments: [att], now: "2026-06-24T00:00:00.000Z" });
+    const rich = await pins.createRich("rich detail", "human", { doc: { type: "doc", content: [] }, attachments: [att], now: "2026-06-24T00:00:00.000Z" });
     const richResult = await client.callTool({ name: "get_pin", arguments: { id: rich.id } });
     const raw = (richResult.content as Array<{ text: string }>)[0].text;
     expect(raw).not.toMatch(/base64|data:image/);
@@ -568,7 +568,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       previewData: Buffer.from("preview"),
       source: "blank",
     });
-    const withSketch = pins.createRich("sketch detail", "human", {
+    const withSketch = await pins.createRich("sketch detail", "human", {
       doc: { type: "doc", content: [{ type: "tachyonSketch", attrs: { attachmentId: sketch.id } }] },
       attachments: [sketch],
       now: "2026-06-24T00:01:00.000Z",
@@ -869,8 +869,8 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     const task = await tasks.create({ title: "Reconcile live continuity", author: "human" });
     await tasks.update(task.id, { status: "triaged", assignee: "claude" });
     await tasks.update(task.id, { status: "active" });
-    const pin = pins.create("Review continuity contract", "claude");
-    pins.create("Another agent's reminder", "codex");
+    const pin = await pins.create("Review continuity contract", "claude");
+    await pins.create("Another agent's reminder", "codex");
     activitySeq = 108;
 
     await client.callTool({
@@ -888,7 +888,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 
     activitySeq = 7;
     await tasks.update(task.id, { status: "done" });
-    pins.setDone(pin.id, true);
+    await pins.setDone(pin.id, true);
   });
 
   it("set_continuity does not store or accumulate derived open work from a full read response", async () => {
@@ -2055,7 +2055,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
 });
 
 describe("stable Bridge port", () => {
-  it("derivePort is deterministic and in range", () => {
+  it("derivePort is deterministic and in range", async () => {
     const a = derivePort("e5d08dd8");
     expect(a).toBe(derivePort("e5d08dd8"));
     expect(a).toBeGreaterThanOrEqual(DERIVED_PORT_BASE);

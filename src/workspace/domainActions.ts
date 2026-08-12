@@ -5,8 +5,8 @@ export type DomainChanged = (view: ViewKind) => void;
 export interface DomainActionSource {
   pinStore: {
     list(): Array<{ id: string }>;
-    setDone(id: string, done: boolean): unknown;
-    remove(id: string): unknown;
+    setDone(id: string, done: boolean): Promise<unknown>;
+    remove(id: string): Promise<unknown>;
   };
   toggleSchedulePause(name: string): unknown;
   deleteScheduleEntry(name: string): unknown;
@@ -33,16 +33,16 @@ function pinExists(ws: DomainActionSource, pinId: string): boolean {
   return ws.pinStore.list().some((p) => p.id === pinId);
 }
 
-export function togglePinDone(ws: DomainActionSource, pinId: string, done: boolean, deps: DomainActionDeps): boolean {
+export async function togglePinDone(ws: DomainActionSource, pinId: string, done: boolean, deps: DomainActionDeps): Promise<boolean> {
   if (!pinExists(ws, pinId)) return false;
-  ws.pinStore.setDone(pinId, done);
+  await ws.pinStore.setDone(pinId, done);
   deps.onChanged("pins");
   return true;
 }
 
-export function deletePin(ws: DomainActionSource, pinId: string, deps: DomainActionDeps): boolean {
+export async function deletePin(ws: DomainActionSource, pinId: string, deps: DomainActionDeps): Promise<boolean> {
   if (!pinExists(ws, pinId)) return false;
-  ws.pinStore.remove(pinId);
+  await ws.pinStore.remove(pinId);
   deps.onChanged("pins");
   return true;
 }

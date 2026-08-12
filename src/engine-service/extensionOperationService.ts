@@ -268,8 +268,8 @@ export async function executeExtensionCommand(
       await workspace.manager.spawn(command.agent, command.options);
       return json({ spawned: true });
     case "pin.create": {
-      let pin = workspace.pinStore.create(command.text, command.by);
-      if (command.done) pin = workspace.pinStore.setDone(pin.id, true);
+      let pin = await workspace.pinStore.create(command.text, command.by);
+      if (command.done) pin = await workspace.pinStore.setDone(pin.id, true);
       onViewsChanged("pins");
       return json(pin);
     }
@@ -311,7 +311,7 @@ export async function executeExtensionCommand(
         }),
         // Left as it was: this path lets a failing pin completion surface. See t-a77fe6 — the two
         // callers disagree about that and the disagreement is reported, not silently settled here.
-        completePin: (pinId) => workspace.pinStore.setDone(pinId, true),
+        completePin: async (pinId) => { await workspace.pinStore.setDone(pinId, true); },
       });
       // Drop Attention-stack notice cards + Companion SSE (ledger resolve alone does not dismiss UI).
       workspace.afterApprovalResolved(command.id);

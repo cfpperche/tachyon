@@ -51,8 +51,8 @@ export async function applySidebarMutation(
     onChanged("agents");
     return { action: input.action, id: input.id, changed: true };
   }
-  const changed = input.action === "pin.toggle" ? togglePinDone(source, input.id, input.done, deps)
-    : input.action === "pin.delete" ? deletePin(source, input.id, deps)
+  const changed = input.action === "pin.toggle" ? await togglePinDone(source, input.id, input.done, deps)
+    : input.action === "pin.delete" ? await deletePin(source, input.id, deps)
       : input.action === "schedule.toggle-pause" ? toggleSchedulePause(source, input.id, deps)
         : input.action === "schedule.delete" ? deleteSchedule(source, input.id, deps)
           : input.action === "proposal.approve" ? approveProposal(source, input.id, deps)
