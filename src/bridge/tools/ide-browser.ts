@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { IDE_BROWSER_ROUTES } from "../../ide-browser/protocol.js";
+import { IDE_BROWSER_EVAL_MAX_CHARS, IDE_BROWSER_ROUTES } from "../../ide-browser/protocol.js";
 import { type BridgeDeps, fail, ok } from "./shared.js";
 
 export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void {
@@ -109,7 +109,7 @@ export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void 
           "Evaluate JavaScript in the Integrated Browser page (DevTools-equivalent). " +
           "Examples: document.querySelector('h1').style.color='red'.",
         inputSchema: {
-          expression: z.string().min(1).max(50_000).describe(
+          expression: z.string().min(1).max(IDE_BROWSER_EVAL_MAX_CHARS).describe(
             "JS expression/statement to evaluate in the page context",
           ),
         },

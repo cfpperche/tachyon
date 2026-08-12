@@ -2238,7 +2238,8 @@ async function unapplyGitHookContribution(pluginName: string, ref: ContributionR
  * lockfile targets; MCP and hooks use their adapter-owned removal identity, while a skill copies the
  * installed payload directory. The applied record is marked only after every target is written. */
 export function applyContribution(pluginName: string, ref: { kind: "git-hook"; name: string }, workspaceRoot: string, opts?: { replace?: boolean; git?: GitRun }): Promise<ApplyContributionResult>;
-export function applyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts?: { replace?: boolean; git?: GitRun }): ApplyContributionResult;
+export function applyContribution(pluginName: string, ref: ContributionRef & { kind: Exclude<ContributionRef["kind"], "git-hook"> }, workspaceRoot: string, opts?: { replace?: boolean; git?: GitRun }): ApplyContributionResult;
+export function applyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts?: { replace?: boolean; git?: GitRun }): ApplyContributionResult | Promise<ApplyContributionResult>;
 export function applyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { replace?: boolean; git?: GitRun } = {}): ApplyContributionResult | Promise<ApplyContributionResult> {
   if (ref.kind === "git-hook") return applyGitHookContribution(pluginName, ref, workspaceRoot, opts.git ?? defaultGitRun);
   if (ref.kind === "skill") return applySkillContribution(pluginName, ref, workspaceRoot, opts);
@@ -2296,7 +2297,8 @@ export function applyContribution(pluginName: string, ref: ContributionRef, work
  * a human-edited same-name server is left in place and counted as an orphan. The payload stays.
  */
 export function unapplyContribution(pluginName: string, ref: { kind: "git-hook"; name: string }, workspaceRoot: string, opts?: { git?: GitRun }): Promise<UnapplyContributionResult>;
-export function unapplyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts?: { git?: GitRun }): UnapplyContributionResult;
+export function unapplyContribution(pluginName: string, ref: ContributionRef & { kind: Exclude<ContributionRef["kind"], "git-hook"> }, workspaceRoot: string, opts?: { git?: GitRun }): UnapplyContributionResult;
+export function unapplyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts?: { git?: GitRun }): UnapplyContributionResult | Promise<UnapplyContributionResult>;
 export function unapplyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { git?: GitRun } = {}): UnapplyContributionResult | Promise<UnapplyContributionResult> {
   if (ref.kind === "git-hook") return unapplyGitHookContribution(pluginName, ref, workspaceRoot, opts.git ?? defaultGitRun);
   if (ref.kind === "skill") return unapplySkillContribution(pluginName, ref, workspaceRoot);

@@ -46,6 +46,24 @@ export function normalizeIdeBrowserHomeUrl(raw: string | undefined | null): stri
 }
 
 /**
+ * Normalize an explicit command/tool navigation target using the home URL policy, but report
+ * rejection instead of silently claiming that the requested target opened as about:blank.
+ * Bare hosts intentionally keep the home policy (`localhost:3000` → HTTPS).
+ */
+export function normalizeIdeBrowserNavigationUrl(raw: string): string {
+  const target = String(raw).trim();
+  const normalized = normalizeIdeBrowserHomeUrl(target);
+  if (normalized !== IDE_BROWSER_HOME_URL_FALLBACK || target === IDE_BROWSER_HOME_URL_FALLBACK) {
+    return normalized;
+  }
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(target)?.[1]?.toLowerCase();
+  if (scheme) {
+    throw new Error(`IDE Browser navigation scheme '${scheme}:' is not allowed`);
+  }
+  throw new Error("IDE Browser navigation URL is invalid");
+}
+
+/**
  * Resolve home URL from live workspace config, else parse tachyon.yml on disk.
  */
 export function resolveIdeBrowserHomeUrl(opts: {

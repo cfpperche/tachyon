@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, expectTypeOf, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -22,8 +22,10 @@ import {
   planMcpTargets,
   runtimeSupportsMcp,
   type InstallProvenance,
+  type ApplyContributionResult,
+  type UnapplyContributionResult,
 } from "../../src/plugins/engine.js";
-import { AppliedStateStore } from "../../src/plugins/appliedState.js";
+import { AppliedStateStore, type ContributionRef } from "../../src/plugins/appliedState.js";
 import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "../../src/plugins/adapters/claude.js";
 import { renderCodexMcpBlock } from "../../src/plugins/adapters/codex.js";
 import { loadMcpPayload, type McpServer } from "../../src/plugins/mcp.js";
@@ -33,6 +35,13 @@ import { planProjectedPluginHooks, readHookProjectionCandidates } from "../../sr
 import { HarnessManager } from "../../src/harness/HarnessManager.js";
 
 const dirs: string[] = [];
+
+function contributionReturnTypeContract(ref: ContributionRef): void {
+  expectTypeOf(applyContribution("plugin", ref, "/workspace")).toEqualTypeOf<ApplyContributionResult | Promise<ApplyContributionResult>>();
+  expectTypeOf(unapplyContribution("plugin", ref, "/workspace")).toEqualTypeOf<UnapplyContributionResult | Promise<UnapplyContributionResult>>();
+}
+void contributionReturnTypeContract;
+
 afterEach(() => {
   for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true });
 });

@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
 import { IdeBrowserCdpSession, isBrowserDebugSession } from "./cdpSession.js";
+import { normalizeIdeBrowserNavigationUrl } from "./homeUrl.js";
 
 export type BrowserSessionLog = { appendLine: (line: string) => void };
 
@@ -195,9 +196,10 @@ export class BrowserSessionController {
 
   /** Open/ensure browser and navigate. */
   async navigate(url: string): Promise<string> {
-    return this.withCdpRecovery(url, async () => {
-      await this.ensureBrowser(url);
-      await this.cdp.navigate(url);
+    const target = normalizeIdeBrowserNavigationUrl(url);
+    return this.withCdpRecovery(target, async () => {
+      await this.ensureBrowser(target);
+      await this.cdp.navigate(target);
       return this.cdp.url;
     });
   }

@@ -77,6 +77,17 @@ describe("ide-browser HTTP protocol (t-47503a)", () => {
     });
   });
 
+  it("enforces the MCP eval expression ceiling at the HTTP decode door", () => {
+    expect(decodeIdeBrowserHttpRequest("POST", "/eval", { expression: "x".repeat(50_000) })).toMatchObject({
+      ok: true,
+    });
+    expect(decodeIdeBrowserHttpRequest("POST", "/eval", { expression: "x".repeat(50_001) })).toEqual({
+      ok: false,
+      status: 400,
+      error: "expression must be at most 50000 characters",
+    });
+  });
+
   it("decodes chat-reply including optional agent/turnId/edit", () => {
     const decoded = decodeIdeBrowserHttpRequest("POST", "/design-mode/chat-reply", {
       text: "hello",
