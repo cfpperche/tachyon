@@ -359,42 +359,49 @@ export class IdeBrowserBridgeManager {
   }
 
   /**
-   * Running agents only (saved roster, not Temporary/terminals).
+   * Running runtime agents only (Saved and Temporary; terminals excluded).
    * Design Mode v1 is single-agent: human chats with one live peer.
    */
   private async listRunningAgents(): Promise<string[]> {
     const ws = this.getWorkspace?.();
-    if (!ws) return [];
-    try {
-      const listed = await ws.extension.query({ action: "agents.list" });
-      const rows = Array.isArray(listed)
-        ? listed as Array<{
-          name?: string;
-          kind?: string;
-          temporary?: boolean;
-          running?: boolean;
-          dead?: boolean;
-        }>
-        : [];
-      return rows
-        .filter(
-          (r) =>
-            r.name
-            && (r.kind === undefined || r.kind === "agent")
-            && !r.temporary
-            && !!r.running
-            && !r.dead,
-        )
-        .map((r) => r.name!)
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b));
-    } catch {
-      return [];
-    }
+    if (!ws) throw new Error("Tachyon workspace is not connected");
+    const listed = await ws.extension.query({ action: "agents.list" });
+    const rows = Array.isArray(listed)
+      ? listed as Array<{
+        name?: string;
+        kind?: string;
+        running?: boolean;
+        dead?: boolean;
+      }>
+      : [];
+    return rows
+      .filter(
+        (r) =>
+          r.name
+          && (r.kind === undefined || r.kind === "agent")
+          && !!r.running
+          && !r.dead,
+      )
+      .map((r) => r.name!)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
   }
 
   private async pushAgentsToPage(): Promise<void> {
-    const agents = await this.listRunningAgents();
+    let agents: string[] = [];
+    let emptyReason: string | undefined;
+    if (this.cdp.connectionState !== "connected") {
+      emptyReason = "Design Mode is disconnected from this page — reopen the IDE Browser.";
+    } else {
+      try {
+        agents = await this.listRunningAgents();
+        if (!agents.length) emptyReason = "No agents are running.";
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        emptyReason = `Could not load running agents: ${reason}`;
+        this.log.appendLine(`[design-mode] agent list failed: ${reason}`);
+      }
+    }
     if (agents.length && !agents.includes(this.designAgent)) {
       this.designAgent = agents[0]!;
     }
@@ -402,6 +409,7 @@ export class IdeBrowserBridgeManager {
       type: "agents",
       agents,
       active: this.designAgent,
+      ...(emptyReason ? { emptyReason } : {}),
     });
   }
 
