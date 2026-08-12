@@ -6,6 +6,98 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.83.0 — a freeze you could feel, a refusal that hid its own answer, and 295 lines nothing could reach
+
+Four of the nine items this round shipped no code at all. Three questions were closed by measuring them
+and finding nothing to fix, and one deletion stopped at the door because the evidence that would justify
+it does not exist yet. That is the shape of the round, and it is deliberate.
+
+### Fixed
+
+- **Saving a pin no longer freezes the window** (`t-17df02`). The pin store took its cross-process lock
+  with a *synchronous* wait — `Atomics.wait`, which stops the extension host thread outright. With a
+  second window or a Dev Host beside the first, saving a pin froze the UI until the other process let
+  go. The seven mutations now await the asynchronous lock that already existed in the codebase; reads
+  never took the lock and stay synchronous.
+
+  **The test is the delivery.** It spawns a real second process that holds the pin lock for 800ms,
+  starts a 20ms interval in the waiting process, and then saves a pin — asserting both halves: that it
+  genuinely waited, and that the timer kept firing. Under the old code the tick count is zero. The
+  comment calling the synchronous wait "a known cost" was corrected in the same commit; leaving it would
+  have been the next written promise the code does not keep.
+
+- **A refusal leads with the action instead of burying it** (`t-94273f`). Launch failures were ordered
+  product prefix, subsystem prefix, long absolute path, action last — so a fixed-width notification band
+  spent its budget on the path and clipped the fix. Lived, not theorised: the maintainer read
+  `no credentials at /home/gc`, concluded Grok was unsupported, and asked when it would be enabled. The
+  answer, `run grok login first`, was past the clip.
+
+  Seven notification-bound refusal sites were measured; three messages serving four of them were
+  reordered, and the tests assert that the action's index precedes the path's — an assertion on
+  *containment* would pass with the order reversed.
+
+  **The three credential sites were deliberately left alone.** Their defect was never word order: a
+  notice with no actions falls into VS Code's status-bar branch, one cell wide and erased after eight
+  seconds. Giving it a button was the fix, and that already shipped. Reordering them now would edit
+  something that no longer hurts.
+
+### Internal
+
+- **295 lines that nothing could reach are gone** (`t-83723d`, `t-aec8a0`). `dogfoodBootstrap.ts` (195
+  lines) sat in the production shell path with zero importers, its own header noting it was never
+  registered — dev scaffolding in `src/webview/` that invites the next reader to wire it up. And a
+  dev-host repro scenario drove `Control → Fleet`, a route that has not existed since the section list
+  went empty, clicking a test id that no longer appears anywhere in the tree.
+
+  The deletion broke a paragraph in `docs/runbooks/dev-host.md` that taught readers to copy that
+  scenario as a template. That was fixed in the same commit rather than deferred: a reference broken
+  *by* a deletion is part of the deletion.
+
+- **The IDE browser bridge manager is three pieces with a boundary** (`t-47503a`). 1180 lines carrying
+  eight measured responsibilities became a loopback HTTP host, a browser/CDP session controller, and a
+  Design Mode adapter, with the engine↔host protocol given real types — a route table, request and
+  response shapes, and one shared decoder. The public surface is unchanged and the historical error
+  strings are identical.
+
+  Reading it surfaced two facts for the multi-root work (`t-849f52`), recorded rather than fixed:
+  `launchBrowser` accepts the first browser child with a matching parent session and carries no
+  correlation id, and `resetBrowserSession` stops any debug session whose name contains "Tachyon" —
+  including one another manager owns.
+
+### Documentation
+
+- **Which browser product, when** (`t-26232e`). Tachyon has three and they are not interchangeable: the
+  Integrated Browser with Design Mode for a page the human and agent share inside VS Code, the Companion
+  for the human's own signed-in tabs, and the agent-browser plugin for headless work the agent owns
+  alone. One page: when to use each, when not to, what must be running, the tool namespace per product,
+  what fails closed, and cleanup.
+
+- **A race on Design Mode send is recorded as an accepted boundary** (`t-a7d951`). Between the probe that
+  reads the composer and the tmux write there is a window with no compare-and-send, so a draft typed
+  inside it can be submitted together with the prompt. This was chosen — the alternative was the
+  multi-second stale read it replaced — and closing it needs a different transport, not a claim that the
+  probe is atomic. Written down so it is not "fixed" later by someone who does not know it was a
+  decision.
+
+### Measured and closed without code
+
+- **No test in the tree is a time bomb** (`t-ab17f8`). Thirty test files carry literal dates (the task
+  said 21; the count was wrong). Twenty-nine are safe by construction — the frozen date is *injected*
+  into the code under test as its clock, so the result never changes. The one genuine bomb, a fixture
+  aging against the real clock, had already been fixed. Nothing to change.
+
+- **Crash-loop on resume cannot happen as configured** (`t-7525c6`). Auto-restart is gated on a per-agent
+  `restart: on-crash` policy that defaults to `never`, and no agent sets it — so the path that would
+  resume a session into the crash that killed it is unreachable here. Not "has not happened yet":
+  cannot, today. The existing backoff and give-up guard bounds it for anyone who arms the policy.
+
+- **Deprecating the Design Mode pane markers stopped at its own precondition** (`t-45b266`). The spec
+  requires the runtime matrix to be green first. It is half green: three runtimes are proven to *call*
+  the reply tool, and none is proven to have the reply *arrive* — the panel-land column is unmeasured
+  because the bridge was offline when it was taken, and two runtimes were never measured at all.
+  Deleting the fallback on that evidence could leave a runtime with no working voice, and the headless
+  test would not catch it, because it measures the call and not the arrival. No lines were changed.
+
 ## 0.82.0 — the last two places where VS Code's chrome stood in for ours
 
 The maintainer's rule is that Tachyon builds its own pickers. Two sites resisted for measured reasons,
