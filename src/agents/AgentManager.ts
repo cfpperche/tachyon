@@ -4959,7 +4959,12 @@ export class AgentManager {
       delegator: this.delegators.get(name),
       parent: this.lineage.get(name),
     });
-    await this.opts.tmux.sendKeys(session, `${primer}\n\n${beforeFinishing}`, true);
+    const receipt = await this.opts.tmux.sendSubmittedLine(session, `${primer}\n\n${beforeFinishing}`, {
+      composer: composerProfileFor(cmd),
+    });
+    if (receipt.status === "submit-unconfirmed") {
+      this.opts.notify?.(`resume primer for '${name}' was typed but submission could not be confirmed`, "warn");
+    }
   }
 
   /** All names that already exist anywhere (config / ledger / Temporary memory / live tmux) — for fork-name uniqueness. */
