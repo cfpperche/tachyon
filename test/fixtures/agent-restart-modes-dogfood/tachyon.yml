@@ -8,13 +8,6 @@
 settings:
   maxAgents: 8
 
-terminals:
-  # The restart matrix also covers terminals, which ARE declarable here.
-  shell:
-    cmd: sh
-    autostart: false
-    restart: on-crash
-
 commands:
   hello:
     cmd: "echo agent-restart-modes-dogfood-ok"

@@ -1,0 +1,4 @@
+cmd: sh
+autostart: true
+restart: on-crash
+attention: false

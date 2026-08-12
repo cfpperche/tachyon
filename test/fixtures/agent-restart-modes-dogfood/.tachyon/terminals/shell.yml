@@ -1,0 +1,3 @@
+cmd: sh
+autostart: false
+restart: on-crash

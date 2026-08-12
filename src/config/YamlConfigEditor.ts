@@ -36,8 +36,12 @@ function mapOf(doc: ReturnType<typeof parseDocument>, section: Section): YAMLMap
 /** Which block currently holds `name` — for edits/deletes/renames that must act in place. */
 function sectionOf(doc: ReturnType<typeof parseDocument>, name: string): Section | undefined {
   if (doc.hasIn(["agents", name])) return "agents";
-  if (doc.hasIn(["terminals", name])) return "terminals";
   return undefined;
+}
+
+/** Retired text-writer compatibility for direct library callers; no production terminal door uses it. */
+function legacyManagedSectionOf(doc: ReturnType<typeof parseDocument>, name: string): Section | undefined {
+  return sectionOf(doc, name) ?? (doc.hasIn(["terminals", name]) ? "terminals" : undefined);
 }
 
 /**
@@ -211,7 +215,7 @@ export function upsertAgent(
   // An EDIT acts in the entry's CURRENT block; a CREATE uses the caller-selected section.
   let target: Section = section;
   if (replaceName !== undefined) {
-    const cur = sectionOf(doc, replaceName);
+    const cur = legacyManagedSectionOf(doc, replaceName);
     if (!cur) throw new Error(`agent '${replaceName}' does not exist`);
     target = cur;
   }
@@ -222,10 +226,10 @@ export function upsertAgent(
 
   if (replaceName !== undefined && replaceName !== name) {
     // form-driven rename: the new name must be free in BOTH blocks; drop the old key.
-    if (sectionOf(doc, name)) throw new Error(`agent '${name}' already exists`);
+    if (legacyManagedSectionOf(doc, name)) throw new Error(`agent '${name}' already exists`);
     doc.deleteIn([target, replaceName]);
     // spec 234 — layout-ref update removed (layouts feature retired).
-  } else if (replaceName === undefined && sectionOf(doc, name)) {
+  } else if (replaceName === undefined && legacyManagedSectionOf(doc, name)) {
     throw new Error(`agent '${name}' already exists`);
   }
 
@@ -482,9 +486,9 @@ function entryLineIn(text: string, section: string, name: string): number | unde
 export function cloneAgent(text: string, source: string, newName: string): EditResult {
   assertValidName(newName);
   const doc = load(text);
-  const section = sectionOf(doc, source); // clone within the source's block (a terminal clones to a terminal)
+  const section = legacyManagedSectionOf(doc, source); // retired compatibility seam
   if (!section) throw new Error(`agent '${source}' does not exist`);
-  if (sectionOf(doc, newName)) throw new Error(`agent '${newName}' already exists`);
+  if (legacyManagedSectionOf(doc, newName)) throw new Error(`agent '${newName}' already exists`);
   // Values are copied faithfully; comments inside the cloned block are not.
   const node = doc.getIn([section, source], true);
   const plain = (node as { toJSON?: () => unknown }).toJSON?.() ?? node;
@@ -494,7 +498,7 @@ export function cloneAgent(text: string, source: string, newName: string): EditR
 
 export function deleteAgent(text: string, name: string): EditResult {
   const doc = load(text);
-  const section = sectionOf(doc, name);
+  const section = legacyManagedSectionOf(doc, name);
   if (!section) throw new Error(`agent '${name}' does not exist`);
   // t-ae221c — the "you cannot delete the last one" guard is gone, and it had to be.
   //
@@ -516,9 +520,9 @@ export function deleteAgent(text: string, name: string): EditResult {
 export function renameAgent(text: string, oldName: string, newName: string): EditResult {
   assertValidName(newName);
   const doc = load(text);
-  const section = sectionOf(doc, oldName);
+  const section = legacyManagedSectionOf(doc, oldName);
   if (!section) throw new Error(`agent '${oldName}' does not exist`);
-  if (sectionOf(doc, newName)) throw new Error(`agent '${newName}' already exists`);
+  if (legacyManagedSectionOf(doc, newName)) throw new Error(`agent '${newName}' already exists`);
 
   const node = doc.getIn([section, oldName], true);
   const plain = (node as { toJSON?: () => unknown }).toJSON?.() ?? node;
@@ -535,7 +539,7 @@ export function renameAgent(text: string, oldName: string, newName: string): Edi
 /** 0-based line of an agent/terminal's entry — lets "Edit" open tachyon.yml at the right place. */
 export function agentEntryLine(text: string, name: string): number | undefined {
   const doc = load(text);
-  const section = sectionOf(doc, name);
+  const section = legacyManagedSectionOf(doc, name);
   const node = section
     ? mapOf(doc, section)?.items.find(
         (pair) => String((pair.key as { toJSON?: () => unknown }).toJSON?.() ?? pair.key) === name,

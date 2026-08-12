@@ -4,6 +4,7 @@ import type { WorkspaceProfileDefaults } from "./agentProfileResolver.js";
 import type { AgentProfileAuthorityRecord } from "./agentProfileAuthority.js";
 import { agentRosterDirectoryWarning, scanAgentRosterDirectory } from "./agentRosterDirectory.js";
 import { projectCanonicalAgentProfile } from "./agentProfileProjection.js";
+import { LEGACY_TERMINALS_BLOCK_WARNING, scanTerminalDeclarations } from "./terminalDeclarations.js";
 
 export type AgentConfigSource =
   | { mode: "terminal"; source: string }
@@ -133,6 +134,8 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   // not a second error channel; see the field docs on ProfileAwareParseResult.
   const profileErrors: string[] = [];
   const profileWarnings: string[] = roster.nonMembers.map(agentRosterDirectoryWarning);
+  const terminalRoster = scanTerminalDeclarations(input.workspaceRoot);
+  profileWarnings.push(...terminalRoster.warnings);
   const profileSources: Record<string, AgentConfigSource> = {};
   const projected = new Map<string, AgentEntry>();
   // t-0ad300 — the refused names, kept so they can still be rendered as refused. Recorded here and
@@ -190,6 +193,16 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   // projected roster takes its place. A refused agent is simply never written back, which is what
   // keeps it out of `config.agents` while `agentSources` still remembers its name (t-0ad300).
   profileWarnings.unshift(...replaceAgentsBlock(doc, []));
+  const legacyTerminals = doc.get("terminals", true);
+  if (legacyTerminals !== undefined && legacyTerminals !== null) {
+    profileWarnings.push(LEGACY_TERMINALS_BLOCK_WARNING);
+  }
+  for (const [terminalName, definition] of Object.entries(terminalRoster.declarations)) {
+    if (doc.hasIn(["terminals", terminalName])) {
+      profileWarnings.push(`terminals.${terminalName}: legacy declaration ignored because .tachyon/terminals/${terminalName}.yml exists`);
+    }
+    doc.setIn(["terminals", terminalName], definition);
+  }
   for (const [agentName, definition] of projected) {
     const {
       profileCapabilities: _profileCapabilities,
@@ -226,7 +239,9 @@ export function loadProfileAwareConfig(input: LoadProfileAwareConfigInput): Prof
   for (const name of Object.keys(parsed.config.agents)) {
     agentSources[name] = profileSources[name] ?? {
       mode: "terminal",
-      source: `tachyon.yml#terminals.${name}`,
+      source: terminalRoster.declarations[name] !== undefined
+        ? `.tachyon/terminals/${name}.yml`
+        : `tachyon.yml#terminals.${name}`,
     };
   }
   // t-0ad300 — the refused entries go in LAST and never overwrite a projected one. A name cannot be

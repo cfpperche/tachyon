@@ -15,9 +15,3 @@ settings:
     allowedHosts:
       - the-internet.herokuapp.com
       - "*.herokuapp.com"
-
-terminals:
-  # Placeholder so the roster is non-empty before any agent exists. Not part of the scenario.
-  shell:
-    cmd: sh
-    autostart: false

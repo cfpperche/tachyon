@@ -8,12 +8,3 @@
 settings:
   maxAgents: 4
   agentMemoryMax: 256M
-
-terminals:
-  # SDD 478 M7 — `memtest` was a shell wearing an agent's clothes. It is a process, so it is a
-  # terminal; the memory scope it exercises is the same one either way.
-  memtest:
-    # outer systemd-run wrap adds another sh -c; keep this one layer of shell only
-    cmd: sh -c "echo memtest-started; exec sleep 3600"
-    autostart: false
-    attention: false

@@ -1347,7 +1347,7 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
    * in-process, and a helper called directly would prove nothing about this door — so the door runs
    * for real and one of its two writes refuses.
    */
-  const interruptedAt = (ws: Workspace, method: "forgetAgent" | "mutateConfig"): Workspace =>
+  const interruptedAt = (ws: Workspace, method: "forgetAgent" | "deleteTerminalDeclaration"): Workspace =>
     new Proxy(ws, {
       get(target, property, receiver) {
         if (property === method) return () => { throw new Error(`interrupted at ${String(property)}`); };
@@ -1456,7 +1456,7 @@ describe("t-af4a5f — declared-terminal roster-row removal actor x trigger", ()
   it("A5 Tachyon, interruption x the roster-row write, which must be the LAST one", async () => {
     const { ws, root } = await terminalWithFootprint();
     try {
-      await expect(runDoor(interruptedAt(ws, "mutateConfig"), deleteCommand)).rejects.toThrow("interrupted at mutateConfig");
+      await expect(runDoor(interruptedAt(ws, "deleteTerminalDeclaration"), deleteCommand)).rejects.toThrow("interrupted at deleteTerminalDeclaration");
       // The residue this leaves is not residue: a declared terminal with the footprint of one that
       // has never been launched. Nothing on disk needs a door, and the sweep has nothing to report.
       expect(ws.config?.agents.b?.kind).toBe("terminal");
@@ -1880,7 +1880,9 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const auditLines = fs.readFileSync(path.join(storage, "host-actions", "audit.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     expect(auditLines).toHaveLength(1);
     expect(auditLines[0].payload).toMatchObject({ kind: "outcome", actionId: "act-reload-recover", state: "reattached_verified" });
-    expect(host.notices).toEqual([]);
+    expect(host.notices.map((notice) => notice.message)).toContain(
+      "tachyon.yml: terminals: in tachyon.yml is legacy and continues to load; new declarations live at .tachyon/terminals/<name>.yml.",
+    );
     ws.dispose();
   });
 

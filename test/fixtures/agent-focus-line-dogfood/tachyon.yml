@@ -8,12 +8,6 @@
 settings:
   maxAgents: 8
 
-terminals:
-  # Placeholder so the roster is non-empty before any agent exists. Not part of the scenario.
-  shell:
-    cmd: sh
-    autostart: false
-
 commands:
   hello:
     cmd: "echo agent-focus-line-dogfood-ok"

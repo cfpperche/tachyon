@@ -1,0 +1,3 @@
+cmd: sh
+autostart: true
+watch: trigger.txt

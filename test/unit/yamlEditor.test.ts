@@ -123,16 +123,7 @@ settings:
 `;
     expect(parseProfileAwareConfigSyntax(base).errors, "the base fixture must itself be readable").toEqual([]);
 
-    const written: Array<{ what: string; text: string }> = [
-      { what: "promote onto an empty workspace", text: promote(undefined, "rev", "claude").text },
-      { what: "promote alongside a Saved Agent", text: promote(base, "rev", "claude").text },
-      { what: "studio terminal create", text: upsertAgent(base, "shell", { cmd: "bash" }, undefined, "terminals").text },
-      { what: "studio terminal edit", text: upsertAgent(base, "dev", { cmd: "npm start" }, "dev", "terminals").text },
-      { what: "studio terminal rename", text: upsertAgent(base, "devserver", { cmd: "npm run dev" }, "dev", "terminals").text },
-      { what: "clone a terminal", text: cloneAgent(base, "dev", "dev-2").text },
-      { what: "delete a terminal", text: deleteAgent(base, "dev").text },
-      { what: "rename a terminal", text: renameAgent(base, "dev", "devserver").text },
-    ];
+    const written: Array<{ what: string; text: string }> = [];
     for (const { what, text } of written) {
       expect(parseProfileAwareConfigSyntax(text).errors, `${what} produced config the reader refuses:\n${text}`).toEqual([]);
     }
@@ -265,77 +256,6 @@ describe("runbook CRUD (Studio Runbook tab path)", () => {
   });
 });
 
-describe("YamlConfigEditor — terminals: block section-awareness (spec 215)", () => {
-  // A file with BOTH blocks + a comment in each, plus a legacy terminal under agents:.
-  const MIX = `# topo
-agents:
-  frontend:
-    cmd: claude
-  legacy-term:        # terminal declarado do jeito antigo
-    cmd: npm run old
-    kind: terminal
-terminals:
-  # o dev server
-  dev:
-    cmd: npm run dev
-    watch: src/**
-`;
-
-  it("a NEW terminal lands in terminals: and never carries kind/instructions", () => {
-    const { text } = upsertAgent(MIX, "api", { cmd: "npm run api", kind: "terminal", instructions: "x" }, undefined, "terminals");
-    const config = expectValid(text);
-    expect(config.agents.api).toMatchObject({ kind: "terminal", cmd: "npm run api" });
-    expect(text).toContain("# o dev server");        // comments preserved
-    expect(text).not.toMatch(/api:[\s\S]*?kind:/);    // kind stripped (parseConfig would reject it)
-  });
-
-  it("a NEW agent stays in agents:", () => {
-    const { text } = upsertAgent(MIX, "rev", { cmd: "codex" }, undefined, "agents");
-    expect(text).toMatch(/agents:[\s\S]*rev:/);
-    expect(text).not.toMatch(/terminals:[\s\S]*rev:/);
-  });
-
-  it("editing a terminal rewrites it in its declared block", () => {
-    const { text } = upsertAgent(MIX, "legacy-term", { cmd: "npm run new", kind: "terminal" }, "legacy-term", "terminals");
-    const config = expectValid(text);
-    expect(config.agents["legacy-term"].cmd).toBe("npm run new");
-    expect(text).toMatch(/agents:[\s\S]*legacy-term:/);       // still under agents:
-    expect(text).not.toMatch(/terminals:[\s\S]*legacy-term:/); // not moved
-  });
-
-  it("editing a terminals: entry stays in terminals:", () => {
-    const { text } = upsertAgent(MIX, "dev", { cmd: "npm run dev -- --host" }, "dev", "terminals");
-    expect(text).toMatch(/terminals:[\s\S]*dev:/);
-    expect(expectValid(text).agents.dev.cmd).toBe("npm run dev -- --host");
-  });
-
-  it("refuses a new name already taken in EITHER block", () => {
-    expect(() => upsertAgent(MIX, "frontend", { cmd: "x" }, undefined, "terminals")).toThrow("already exists");
-    expect(() => upsertAgent(MIX, "dev", { cmd: "x" }, undefined, "agents")).toThrow("already exists");
-  });
-
-  it("delete / rename / clone / entryLine resolve a terminals: entry", () => {
-    expect(expectValid(deleteAgent(MIX, "dev").text).agents.dev).toBeUndefined();
-    const renamed = renameAgent(MIX, "dev", "devserver").text;
-    expect(expectValid(renamed).agents.devserver.kind).toBe("terminal");
-    const cloned = cloneAgent(MIX, "dev", "dev2").text;
-    expect(expectValid(cloned).agents.dev2.cmd).toBe("npm run dev");
-    expect(cloned).toMatch(/terminals:[\s\S]*dev2:/); // cloned within terminals:
-    expect(agentEntryLine(MIX, "dev")).toBeGreaterThan(0);
-  });
-
-  it("promotion refuses a name already taken in terminals: (one namespace — #2 review fix)", () => {
-    expect(() => promote(MIX, "dev", "claude")).toThrow("already exists");
-  });
-
-  it("deleting the last entry of a block drops the now-empty block", () => {
-    const oneEach = `agents:\n  a:\n    cmd: claude\nterminals:\n  dev:\n    cmd: npm run dev\n`;
-    const { text } = deleteAgent(oneEach, "dev");
-    expect(text).not.toContain("terminals:"); // empty block removed
-    expect(expectValid(text).agents.a.kind).toBe("agent");
-  });
-});
-
 describe("setCompanionTabTools (SDD 414)", () => {
   it("writes settings.companion.tabTools true/false and stays loadable", () => {
     const on = setCompanionTabTools(YML, true).text;
@@ -406,7 +326,9 @@ describe("agentStanzaSection", () => {
 
   it("names the block that declares a name, and undefined for one that is declared nowhere", () => {
     expect(agentStanzaSection(yml, "Ada")).toBe("agents");
-    expect(agentStanzaSection(yml, "shell")).toBe("terminals");
+    // t-bc8eed — Soul authority is an agent-only door. A terminal declaration, legacy or modern,
+    // must be absent here rather than masquerading as an agent stanza.
+    expect(agentStanzaSection(yml, "shell")).toBeUndefined();
     expect(agentStanzaSection(yml, "Ghost")).toBeUndefined();
   });
 

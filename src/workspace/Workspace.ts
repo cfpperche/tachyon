@@ -106,7 +106,14 @@ import {
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
 import { makeConfigDiscards, type ConfigDiscards } from "../config/configDiscards.js";
-import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule, renameAgent as renameAgentInYml } from "../config/YamlConfigEditor.js";
+import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
+import {
+  cloneTerminalDeclaration,
+  deleteLegacyTerminalDeclaration,
+  deleteTerminalDeclaration,
+  renameTerminalDeclaration,
+  upsertTerminalDeclaration,
+} from "../config/terminalDeclarations.js";
 import { AgentManager, ResumeUnavailableError, WatchController, newlyDeclaredAutostart, type ManagedEntryInfo, type RestartSessionMode } from "../agents/AgentManager.js";
 import { SurfacePreservation } from "./surfacePreservation.js";
 import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../config/agentWorkspaceCommandWrite.js";
@@ -6867,6 +6874,25 @@ export class Workspace {
       }
     }
     const entry = toEntry(submit.state);
+    if (kind === "terminal") {
+      try {
+        upsertTerminalDeclaration(this.workspaceRoot, submit.state.name, entry, submit.editingName);
+        if (!this.reloadConfig()) throw new Error("terminal declaration did not reload");
+        this.deps.onViewsChanged("agents");
+      } catch (err) {
+        return [err instanceof Error ? err.message : String(err)];
+      }
+      const autostarted = submit.editingName === undefined && !!this.config?.agents[submit.state.name]?.autostart;
+      if (autostarted) {
+        void this.manager.spawn(submit.state.name).then(() => this.refreshAgentsViews()).catch((err) => {
+          this.host.notify(`${err instanceof Error ? err.message : String(err)}`, "error");
+        });
+      }
+      this.host.notify(autostarted
+        ? this.t("'{0}' saved & started (autostart)", submit.state.name)
+        : this.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name));
+      return undefined;
+    }
     const isScheduleOrCommandOrRunbook = kind === "command" || kind === "runbook" || kind === "schedule";
     const doUpsert = (text: string | undefined) =>
       kind === "command"
@@ -6903,7 +6929,7 @@ export class Workspace {
     // is retired), so the terminal arm is the only managed entry that reaches here. The old
     // `!isScheduleOrCommandOrRunbook` said this by negating three unrelated studio kinds, and would
     // have silently swept in a sixth studio kind the day one was added.
-    const isManagedEntry = kind === "terminal";
+    const isManagedEntry = false;
     const autostarted = isManagedEntry && submit.editingName === undefined && !!this.config?.agents[submit.state.name]?.autostart;
     if (autostarted) {
       void this.manager.spawn(submit.state.name).then(() => this.refreshAgentsViews()).catch((err) => {
@@ -7009,7 +7035,14 @@ export class Workspace {
     await this.manager.rename(oldName, newName);
     const wasDeclared = this.config?.agents[oldName] !== undefined;
     if (wasDeclared) {
-      if (!this.mutateConfig((text) => renameAgentInYml(text ?? "", oldName, newName))) {
+      let renamed = false;
+      try {
+        renameTerminalDeclaration(this.workspaceRoot, oldName, newName);
+        renamed = this.reloadConfig();
+      } catch {
+        renamed = false;
+      }
+      if (!renamed) {
         // yml refused after the session moved — move it back so tree and config agree.
         await this.manager.rename(newName, oldName);
         if (wasOpen) this.terminals.open(oldName, this.manager.session(oldName));
@@ -7027,8 +7060,13 @@ export class Workspace {
       } catch (rollbackError) {
         rollbackFailures.push(rollbackError);
       }
-      if (wasDeclared && !this.mutateConfig((text) => renameAgentInYml(text ?? "", newName, oldName))) {
-        rollbackFailures.push(new Error("tachyon.yml rollback was refused"));
+      if (wasDeclared) {
+        try {
+          renameTerminalDeclaration(this.workspaceRoot, newName, oldName);
+          if (!this.reloadConfig()) rollbackFailures.push(new Error("terminal declaration rollback was refused"));
+        } catch (rollbackError) {
+          rollbackFailures.push(rollbackError);
+        }
       }
       if (wasOpen && managerRolledBack) {
         try {
@@ -7057,6 +7095,24 @@ export class Workspace {
     }
     if (wasOpen) this.terminals.open(newName, this.manager.session(newName));
     this.refreshAgentsViews();
+  }
+
+  cloneTerminalDeclaration(source: string, newName: string): boolean {
+    if (this.config?.agents[newName] !== undefined) throw new Error(`agent '${newName}' already exists`);
+    cloneTerminalDeclaration(this.workspaceRoot, source, newName);
+    return this.reloadConfig();
+  }
+
+  deleteTerminalDeclaration(name: string): boolean {
+    const file = path.join(this.workspaceRoot, ".tachyon", "terminals", `${name}.yml`);
+    if (!fs.existsSync(file)) return this.mutateConfig((text) => deleteLegacyTerminalDeclaration(text ?? "", name));
+    deleteTerminalDeclaration(this.workspaceRoot, name);
+    return this.reloadConfig();
+  }
+
+  promoteTerminalDeclaration(name: string, cmd: string): boolean {
+    upsertTerminalDeclaration(this.workspaceRoot, name, { cmd, kind: "terminal" });
+    return this.reloadConfig();
   }
 
   openCommandPane(name: string): void {
