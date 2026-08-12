@@ -535,6 +535,12 @@
             "name": "remote-api",
             "applied": true
           }
+        ],
+        "skills": [
+          { "name": "browser-automation", "applied": false }
+        ],
+        "hooks": [
+          { "name": "PreToolUse", "applied": true }
         ]
       },
       {

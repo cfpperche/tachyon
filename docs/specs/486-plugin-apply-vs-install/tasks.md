@@ -38,19 +38,19 @@ no longer renders.
       repo; the exceptions are re-opened by name). Its own store, not a field on `plugins.lock.json`:
       that file records what was FETCHED, and its `integrity.payload` deliberately drifts once a human
       edits (spec 270). One file must not answer two questions with two lifetimes.
-- [ ] A3. `install` writes the payload and materializes NOTHING — no skill directory AND no hook entry.
+- [x] A3. `install` writes the payload and materializes NOTHING — no skill directory AND no hook entry.
       Materialization moves behind `apply(plugin, contribution)`, fanning out to every runtime the
       plugin declares. Keyed by contribution, not by plugin: a plugin shipping a skill and a hook has
       two independently applicable things, because they carry different risk and the human may well
       want one without the other.
-- [ ] A4. `unapply(plugin, contribution)` removes exactly what `apply` wrote and leaves the payload
+- [x] A4. `unapply(plugin, contribution)` removes exactly what `apply` wrote and leaves the payload
       alone, so re-applying needs no refetch. **Two removals, not one.** A `skill-dir` is a directory:
       the lockfile's `targets` name the path per runtime, so it is a lookup and a delete. A
       `settings-hook` is an entry inside a file the human ALSO edits: removal must go through
       `MaterializedTarget.removal` — the adapter-owned identity that exists for exactly this
       ("content-based un-merge that survives", `lockfile.ts:36`) — and a human's own edits to that file
       must survive. Prove the second with a test that edits the settings file by hand first.
-- [ ] A5. Per-contribution apply/un-apply control on the Plugins app. The state the model introduces
+- [x] A5. Per-contribution apply/un-apply control on the Plugins app. The state the model introduces
       has no representation today: **installed but not applied**. A card that renders it as absent
       would hide a plugin the human installed — that is the visual failure to design against. And a
       hook needs more than a skill does: code that will run on the next matching event must not look
@@ -85,12 +85,12 @@ no longer renders.
 
 _Each maps to a checkbox in `spec.md` § Acceptance criteria._
 
-- [ ] Installing a plugin materializes nothing in any runtime's project directory — no skill dir and
+- [x] Installing a plugin materializes nothing in any runtime's project directory — no skill dir and
       no hook entry (A3)
-- [ ] Applying one contribution materializes exactly that one, into every runtime the plugin declares,
+- [x] Applying one contribution materializes exactly that one, into every runtime the plugin declares,
       leaving the plugin's other contributions unapplied (A3)
-- [ ] Un-applying removes the materialization from every runtime dir and leaves the payload (A4)
-- [ ] Un-applying a HOOK from a settings file the human edited by hand removes Tachyon's entry and
+- [x] Un-applying removes the materialization from every runtime dir and leaves the payload (A4)
+- [x] Un-applying a HOOK from a settings file the human edited by hand removes Tachyon's entry and
       leaves the human's edits intact (A4)
 - [ ] A Temporary agent gets its own worktree and receives the parent's skills filtered by runtime,
       with any shortfall named (B1 — the filter and the naming already exist; prove they survive)
@@ -126,8 +126,8 @@ browser viewport AND `?width=` set together — `plugins.css` carries a `@media 
 that a frame-only resize never fires (`t-b24282`), and D2's own pass proved the trap is live on this
 exact screen.
 
-- [ ] Evidence:
-- [ ] Verdict:
+- [x] Evidence: `.vqa/visual-qa/plugins-phaseA-880.png`, `.vqa/visual-qa/plugins-phaseA-360.png` (Tachyon evidence `ev-2026-08-12T21:04:46.412Z-6`).
+- [x] Verdict: pass — installed-not-applied and armed states remain distinct and controls wrap cleanly at both widths.
 
 ## Cookbook
 

@@ -1299,10 +1299,28 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   const { plugin, workspaceRoot, fresh, skillsToWrite, mcpToWrite, priorSkillDests, priorMcpTargets, gitState, gitGeneration, git } = ctx;
   const partial = (what: string, e: unknown) => `partial install: payload + lockfile recorded, but ${what} failed (${e instanceof Error ? e.message : String(e)}) — run remove '${plugin.manifest.name}' to clean up, then retry`;
 
-  // 3) settings LAST among the recorded runtimes (activates the hooks).
+  let appliedRefs: ContributionRef[];
+  try {
+    appliedRefs = new AppliedStateStore(workspaceRoot).appliedFor(plugin.manifest.name);
+  } catch (e) {
+    return partial("reading applied-state", e);
+  }
+  const appliedSkills = new Set(appliedRefs.filter((r) => r.kind === "skill").map((r) => r.name));
+  const appliedHooks = new Set(appliedRefs.filter((r) => r.kind === "hook").map((r) => r.name));
+
+  // 3) Hooks are recorded at install, but only applied events are materialized. Starting from the
+  // full preview merge and content-unmerging every disabled event also updates an already-applied
+  // hook without ever arming its installed-but-disabled neighbours.
   for (const step of fresh.steps) {
     try {
-      writeSettings(path.join(workspaceRoot, step.settingsRel), step.after);
+      let settings = step.after;
+      for (const [event, groups] of Object.entries(step.owned)) {
+        if (appliedHooks.has(event)) continue;
+        const removed = removeHooks(settings, { [event]: groups });
+        if (!removed.settings) return partial(`preparing ${step.settingsRel}`, removed.errors.join("; "));
+        settings = removed.settings;
+      }
+      writeSettings(path.join(workspaceRoot, step.settingsRel), settings);
     } catch (e) {
       return partial(`writing ${step.settingsRel}`, e);
     }
@@ -1310,7 +1328,7 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
 
   // 4) skills — copy each consented skill from the committed payload. A Replace (or our own prior) dest is wiped
   // first; a CLEAN dest that has APPEARED since preview fails closed (never wipe a new occupant).
-  for (const st of skillsToWrite) {
+  for (const st of skillsToWrite.filter((s) => appliedSkills.has(s.skill))) {
     const destAbs = path.join(workspaceRoot, st.destRel);
     const srcAbs = path.join(workspaceRoot, st.srcRel);
     if (!st.replace && !priorSkillDests.has(st.destRel) && fs.existsSync(destAbs)) {
@@ -1326,9 +1344,9 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   }
 
   // 5) update cleanup — delete skill-dirs THIS plugin owned before but the new version no longer ships.
-  const newSkillDests = new Set(skillsToWrite.map((s) => s.destRel));
+  const newSkillDests = new Set(skillsToWrite.filter((s) => appliedSkills.has(s.skill)).map((s) => s.destRel));
   for (const old of priorSkillDests) {
-    if (!newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
+    if (appliedSkills.has(path.posix.basename(old)) && !newSkillDests.has(old)) fs.rmSync(path.join(workspaceRoot, old), { recursive: true, force: true });
   }
 
   // 6) MCP servers — SDD 486 Phase C: install records lockfile targets but does NOT write the runtime
@@ -1337,14 +1355,7 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   // server the new version no longer ships, and never clobbers a human-edited entry.
   const pluginRoot = pluginPayloadAbs(workspaceRoot, plugin.manifest.name);
   const mcpBefore = new Map(fresh.mcpConfigBefore.map((c) => [c.destRel, c.text]));
-  let appliedMcp: Set<string>;
-  try {
-    appliedMcp = new Set(
-      new AppliedStateStore(workspaceRoot).appliedFor(plugin.manifest.name).filter((r) => r.kind === "mcp").map((r) => r.name),
-    );
-  } catch (e) {
-    return partial("reading applied-state", e);
-  }
+  const appliedMcp = new Set(appliedRefs.filter((r) => r.kind === "mcp").map((r) => r.name));
   const priorMcpRuntimes = priorMcpTargets.map((t) => t.runtime).filter((rt): rt is Runtime => rt !== undefined);
   const mcpRuntimes = new Set<Runtime>([...mcpToWrite.map((m) => m.runtime), ...priorMcpRuntimes]);
   for (const rt of mcpRuntimes) {
@@ -1376,6 +1387,10 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   for (const name of appliedMcp) {
     if (!stillShipped.has(name)) store.markUnapplied(plugin.manifest.name, { kind: "mcp", name });
   }
+  const shippedSkills = new Set(skillsToWrite.map((s) => s.skill));
+  for (const name of appliedSkills) if (!shippedSkills.has(name)) store.markUnapplied(plugin.manifest.name, { kind: "skill", name });
+  const shippedHooks = new Set(fresh.steps.flatMap((s) => Object.keys(s.owned)));
+  for (const name of appliedHooks) if (!shippedHooks.has(name)) store.markUnapplied(plugin.manifest.name, { kind: "hook", name });
 
   // 7) git-hooks LAST — under the repo lock, write leaves + publish the snapshot + dispatcher, then claim hooksPath.
   if (fresh.gitHookTargets.length > 0 && gitState) {
@@ -1527,7 +1542,9 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
   // write) because the dirs are created during activation (settings/skills/mcp writes below); the payload copy
   // above only touched `.tachyon/…`, which is never tracked. Any plan-affecting drift since preview was already
   // rejected by the fingerprint guard, so this LIVE-state stat is the authoritative did-not-pre-exist set.
-  const createdAncestors = computeCreatedAncestors(workspaceRoot, [...fresh.steps.map((s) => s.settingsRel), ...skillsToWrite.map((s) => s.destRel), ...mcpToWrite.map((m) => m.destRel)]);
+  // Runtime materializations are now created by applyContribution, not install. Do not claim
+  // ancestors that this install did not create.
+  const createdAncestors: string[] = [];
 
   // 2) lockfile (uninstall identity). 3) settings LAST (activates the hooks). The lockfile records ALL
   // runtimes BEFORE any settings write, so if a later settings write fails the partial state is removable
@@ -1931,11 +1948,15 @@ function planRemove(pluginName: string, workspaceRoot: string): { lockfile?: Loc
     }
   }
 
+  let appliedHooks: Set<string>;
+  try { appliedHooks = new Set(new AppliedStateStore(workspaceRoot).appliedFor(pluginName).filter((r) => r.kind === "hook").map((r) => r.name)); }
+  catch (e) { return { lockfile: lockRead.lockfile, lock, steps: [], errors: [e instanceof Error ? e.message : String(e)] }; }
   const steps: RemoveStep[] = [];
   for (const rt of lock.runtimes) {
     const spec = ADAPTERS[rt];
     const prior = priorOwned(lock, rt, spec.settingsRel);
     if (prior.errors.length > 0) return { lockfile: lockRead.lockfile, lock, steps: [], errors: prior.errors };
+    prior.owned = Object.fromEntries(Object.entries(prior.owned).filter(([event]) => appliedHooks.has(event)));
     if (Object.keys(prior.owned).length === 0) continue;
     const read = readSettings(path.join(workspaceRoot, spec.settingsRel));
     if (!read.settings) return { lockfile: lockRead.lockfile, lock, steps: [], errors: read.errors };
@@ -2133,7 +2154,7 @@ function removeProvisionedTools(removedLock: PluginLock, lockfileAfter: Lockfile
   }
 }
 
-// ── apply / unapply (SDD 486 Phase C — mcp-server) ──────────────────────────
+// ── apply / unapply (SDD 486 — skill-dir, settings-hook, mcp-server) ────────
 
 export interface ApplyContributionResult {
   applied: boolean;
@@ -2155,14 +2176,22 @@ function mcpTargetsFor(lock: PluginLock, name: string): MaterializedTarget[] {
   return mcpTargetsOf(lock).filter((t) => t.ref === name);
 }
 
-/**
- * Apply one contribution. Phase C implements `mcp` only — a skill/hook ref is refused so this door
- * cannot silently become a third un-merge path. Writes every recorded mcp-server target for that
- * name (one per runtime) using the lockfile `removal` identity, then marks the store.
- */
+function skillTargetsFor(lock: PluginLock, name: string): MaterializedTarget[] {
+  return lock.targets.filter((t) => t.kind === "skill-dir" && path.posix.basename(t.file) === name);
+}
+
+function hookTargetsFor(lock: PluginLock, name: string): MaterializedTarget[] {
+  return lock.targets.filter((t) => t.kind === "settings-hook" && t.ref === name);
+}
+
+/** Apply one contribution through the shared SDD 486 seam. Each kind resolves only its recorded
+ * lockfile targets; MCP and hooks use their adapter-owned removal identity, while a skill copies the
+ * installed payload directory. The applied record is marked only after every target is written. */
 export function applyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { replace?: boolean } = {}): ApplyContributionResult {
+  if (ref.kind === "skill") return applySkillContribution(pluginName, ref, workspaceRoot, opts);
+  if (ref.kind === "hook") return applyHookContribution(pluginName, ref, workspaceRoot);
   const name = mcpRefOf(ref);
-  if (!name) return { applied: false, errors: [`applyContribution: kind '${ref.kind}' is not implemented here (Phase C owns mcp only)`] };
+  if (!name) return { applied: false, errors: [`applyContribution: unsupported kind '${ref.kind}'`] };
 
   const lockRead = readLockfile(workspaceRoot);
   if (!lockRead.lockfile) return { applied: false, errors: lockRead.errors };
@@ -2214,8 +2243,10 @@ export function applyContribution(pluginName: string, ref: ContributionRef, work
  * a human-edited same-name server is left in place and counted as an orphan. The payload stays.
  */
 export function unapplyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string): UnapplyContributionResult {
+  if (ref.kind === "skill") return unapplySkillContribution(pluginName, ref, workspaceRoot);
+  if (ref.kind === "hook") return unapplyHookContribution(pluginName, ref, workspaceRoot);
   const name = mcpRefOf(ref);
-  if (!name) return { unapplied: false, orphans: 0, errors: [`unapplyContribution: kind '${ref.kind}' is not implemented here (Phase C owns mcp only)`] };
+  if (!name) return { unapplied: false, orphans: 0, errors: [`unapplyContribution: unsupported kind '${ref.kind}'`] };
 
   const lockRead = readLockfile(workspaceRoot);
   if (!lockRead.lockfile) return { unapplied: false, orphans: 0, errors: lockRead.errors };
@@ -2257,6 +2288,120 @@ export function unapplyContribution(pluginName: string, ref: ContributionRef, wo
     return { unapplied: false, orphans: 0, errors: [e instanceof AppliedStateError ? e.message : e instanceof Error ? e.message : String(e)] };
   }
   return { unapplied: true, orphans, errors: [] };
+}
+
+function installedLock(pluginName: string, workspaceRoot: string): { lock?: PluginLock; errors: string[] } {
+  const rd = readLockfile(workspaceRoot);
+  if (!rd.lockfile) return { errors: rd.errors };
+  const lock = rd.lockfile.plugins[pluginName];
+  return lock ? { lock, errors: [] } : { errors: [`plugin '${pluginName}' is not installed`] };
+}
+
+function recordCreatedAncestors(pluginName: string, workspaceRoot: string, created: string[]): void {
+  if (created.length === 0) return;
+  const rd = readLockfile(workspaceRoot);
+  const lock = rd.lockfile?.plugins[pluginName];
+  if (!rd.lockfile || !lock) throw new Error(rd.errors[0] ?? `plugin '${pluginName}' is not installed`);
+  lock.createdAncestors = [...new Set([...(lock.createdAncestors ?? []), ...created])].sort();
+  writeLockfile(workspaceRoot, rd.lockfile);
+}
+
+function applySkillContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { replace?: boolean }): ApplyContributionResult {
+  const found = installedLock(pluginName, workspaceRoot);
+  if (!found.lock) return { applied: false, errors: found.errors };
+  const targets = skillTargetsFor(found.lock, ref.name);
+  if (targets.length === 0) return { applied: false, errors: [`plugin '${pluginName}' has no skill named '${ref.name}'`] };
+  for (const t of targets) if (!t.runtime || !validSkillDest(t.runtime, t.file)) return { applied: false, errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path`] };
+  const src = path.join(pluginPayloadAbs(workspaceRoot, pluginName), SKILLS_DIR, ref.name);
+  if (!fs.existsSync(src)) return { applied: false, errors: [`installed payload has no skill directory '${ref.name}'`] };
+  for (const t of targets) if (fs.existsSync(path.join(workspaceRoot, t.file)) && opts.replace !== true) return { applied: false, errors: [`skill '${ref.name}' collides with an existing skill at ${t.file}`] };
+  const created = computeCreatedAncestors(workspaceRoot, targets.map((t) => t.file));
+  try {
+    for (const t of targets) {
+      const dest = path.join(workspaceRoot, t.file);
+      fs.rmSync(dest, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.cpSync(src, dest, { recursive: true, dereference: false });
+    }
+    new AppliedStateStore(workspaceRoot).markApplied(pluginName, ref);
+    recordCreatedAncestors(pluginName, workspaceRoot, created);
+    return { applied: true, errors: [] };
+  } catch (e) {
+    return { applied: false, errors: [e instanceof Error ? e.message : String(e)] };
+  }
+}
+
+function unapplySkillContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string): UnapplyContributionResult {
+  const found = installedLock(pluginName, workspaceRoot);
+  if (!found.lock) return { unapplied: false, orphans: 0, errors: found.errors };
+  const targets = skillTargetsFor(found.lock, ref.name);
+  if (targets.length === 0) return { unapplied: false, orphans: 0, errors: [`plugin '${pluginName}' has no skill named '${ref.name}'`] };
+  for (const t of targets) if (!t.runtime || !validSkillDest(t.runtime, t.file)) return { unapplied: false, orphans: 0, errors: [`lockfile: skill-dir target '${t.file}' (${t.runtime}) is not a valid skills path`] };
+  try {
+    for (const t of targets) fs.rmSync(path.join(workspaceRoot, t.file), { recursive: true, force: true });
+    new AppliedStateStore(workspaceRoot).markUnapplied(pluginName, ref);
+    return { unapplied: true, orphans: 0, errors: [] };
+  } catch (e) {
+    return { unapplied: false, orphans: 0, errors: [e instanceof Error ? e.message : String(e)] };
+  }
+}
+
+function validatedHookTargets(lock: PluginLock, name: string): { targets?: Array<MaterializedTarget & { runtime: Runtime }>; error?: string } {
+  const targets = hookTargetsFor(lock, name);
+  if (targets.length === 0) return { error: `plugin '${lock.name}' has no hook named '${name}'` };
+  for (const t of targets) {
+    if (!t.runtime || t.file !== ADAPTERS[t.runtime].settingsRel) return { error: `lockfile: settings-hook target '${t.file}' (${t.runtime}) is not a valid settings path` };
+    const parsed = parseOwnedHooks({ [name]: t.removal });
+    if (!parsed.owned?.[name]) return { error: `lockfile: settings-hook '${name}' (${t.runtime}) has invalid removal identity` };
+  }
+  return { targets: targets as Array<MaterializedTarget & { runtime: Runtime }> };
+}
+
+function applyHookContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string): ApplyContributionResult {
+  const found = installedLock(pluginName, workspaceRoot);
+  if (!found.lock) return { applied: false, errors: found.errors };
+  const checked = validatedHookTargets(found.lock, ref.name);
+  if (!checked.targets) return { applied: false, errors: [checked.error as string] };
+  const created = computeCreatedAncestors(workspaceRoot, checked.targets.map((t) => t.file));
+  try {
+    for (const t of checked.targets) {
+      const file = path.join(workspaceRoot, t.file);
+      const rd = readSettings(file);
+      if (!rd.settings) return { applied: false, errors: rd.errors };
+      const owned = { [ref.name]: t.removal } as OwnedHooks;
+      const merged = mergeHooks(rd.settings, owned, pluginPayloadAbs(workspaceRoot, pluginName), owned);
+      if (!merged.settings) return { applied: false, errors: merged.errors };
+      writeSettings(file, merged.settings);
+    }
+    new AppliedStateStore(workspaceRoot).markApplied(pluginName, ref);
+    recordCreatedAncestors(pluginName, workspaceRoot, created);
+    return { applied: true, errors: [] };
+  } catch (e) {
+    return { applied: false, errors: [e instanceof Error ? e.message : String(e)] };
+  }
+}
+
+function unapplyHookContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string): UnapplyContributionResult {
+  const found = installedLock(pluginName, workspaceRoot);
+  if (!found.lock) return { unapplied: false, orphans: 0, errors: found.errors };
+  const checked = validatedHookTargets(found.lock, ref.name);
+  if (!checked.targets) return { unapplied: false, orphans: 0, errors: [checked.error as string] };
+  let orphans = 0;
+  try {
+    for (const t of checked.targets) {
+      const file = path.join(workspaceRoot, t.file);
+      const rd = readSettings(file);
+      if (!rd.settings) return { unapplied: false, orphans: 0, errors: rd.errors };
+      const removed = removeHooks(rd.settings, { [ref.name]: t.removal } as OwnedHooks);
+      if (!removed.settings) return { unapplied: false, orphans: 0, errors: removed.errors };
+      orphans += (removed.expected ?? 0) - (removed.removed ?? 0);
+      writeSettings(file, removed.settings);
+    }
+    new AppliedStateStore(workspaceRoot).markUnapplied(pluginName, ref);
+    return { unapplied: true, orphans, errors: [] };
+  } catch (e) {
+    return { unapplied: false, orphans: 0, errors: [e instanceof Error ? e.message : String(e)] };
+  }
 }
 
 // ── update (3-way: baseline vs current vs new) ──────────────────────────────

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "preact/hooks";
-import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, PluginAction, McpContributionVM } from "../../plugins/viewModel";
+import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, PluginAction, McpContributionVM, ContributionVM } from "../../plugins/viewModel";
 import type { Runtime } from "../../plugins/manifest";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { ConfirmPayload } from "./messages";
@@ -43,6 +43,8 @@ export interface PluginsDispatch {
   /** SDD 486 Phase C — apply or un-apply one MCP server the plugin ships. */
   applyMcp(pluginName: string, server: string): void;
   unapplyMcp(pluginName: string, server: string): void;
+  applyContribution(pluginName: string, kind: "skill" | "hook", name: string): void;
+  unapplyContribution(pluginName: string, kind: "skill" | "hook", name: string): void;
 }
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -179,8 +181,23 @@ function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: Plug
       {p.mcpServers && p.mcpServers.length > 0 && (
         <McpContributionList plugin={p.name} servers={p.mcpServers} dispatch={dispatch} locked={mcpLocked === true} />
       )}
+      {p.skills && <ContributionList plugin={p.name} kind="skill" items={p.skills} dispatch={dispatch} locked={mcpLocked === true} />}
+      {p.hooks && <ContributionList plugin={p.name} kind="hook" items={p.hooks} dispatch={dispatch} locked={mcpLocked === true} />}
     </div>
   );
+}
+
+function ContributionList({ plugin, kind, items, dispatch, locked }: { plugin: string; kind: "skill" | "hook"; items: ContributionVM[]; dispatch: PluginsDispatch; locked: boolean }) {
+  return <div class="pext pmcp">
+    {items.map((item) => <div key={item.name} class="ext-row">
+      <span class="ev">{kind} · {item.name}</span>{" "}
+      {item.applied ? <Badge tone="ok"><Icon name="check" /> applied</Badge> : <Badge tone="warn"><Icon name="circle-slash" /> installed · not applied</Badge>}
+      {!locked && (item.applied
+        ? <Button style="margin-left:6px" onClick={() => dispatch.unapplyContribution(plugin, kind, item.name)}>Un-apply</Button>
+        : <Button style="margin-left:6px" onClick={() => dispatch.applyContribution(plugin, kind, item.name)}>Apply</Button>)}
+      {kind === "hook" && item.applied && <span class="ds-dim" style="font-size:11px;margin-left:6px">Restart a running session to disarm</span>}
+    </div>)}
+  </div>;
 }
 
 /**

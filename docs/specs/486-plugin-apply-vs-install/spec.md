@@ -120,28 +120,28 @@ done twice.
 
 ## Acceptance criteria
 
-- [ ] **Scenario: installing materializes nothing**
+- [x] **Scenario: installing materializes nothing**
   - **Given** a workspace with no plugins applied
   - **When** a human installs a plugin that ships skills AND hooks
   - **Then** the payload exists under `.tachyon/plugins/<plugin>/`, **no** runtime project directory
     gained a skill — not `.claude/skills`, not `.agents/skills`, not `.grok/skills` — and **no**
     runtime settings file gained a hook entry
-- [ ] **Scenario: applying is a separate, per-contribution act**
+- [x] **Scenario: applying is a separate, per-contribution act**
   - **Given** an installed plugin shipping several skills and at least one hook
   - **When** the human applies ONE of them to the workspace
   - **Then** exactly that contribution is materialized, into every runtime the plugin declares support
     for, and the others remain installed-but-unapplied
-- [ ] **Scenario: un-applying does not uninstall**
+- [x] **Scenario: un-applying does not uninstall**
   - **Given** a contribution applied to the workspace
   - **When** the human un-applies it
   - **Then** the materialization is removed from every runtime dir, the payload stays installed, and
     re-applying needs no refetch
-- [ ] **Scenario: un-applying a hook un-merges rather than overwrites**
+- [x] **Scenario: un-applying a hook un-merges rather than overwrites**
   - **Given** an applied hook whose runtime settings file the human has ALSO edited by hand
   - **When** the human un-applies that hook
   - **Then** Tachyon's entry is removed by the lockfile's adapter-owned removal identity and the
     human's own edits to that file survive untouched
-- [ ] **Scenario: an armed hook is visible as armed**
+- [x] **Scenario: an armed hook is visible as armed**
   - **Given** a plugin installed with a hook not applied, and a second with its hook applied
   - **When** the human looks at the Plugins app
   - **Then** the two are distinguishable without opening a file — code that will run on the next

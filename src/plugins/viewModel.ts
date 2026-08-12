@@ -77,6 +77,8 @@ export interface InstalledPluginVM {
   /** SDD 486 Phase C — MCP servers this plugin ships, with whether each is currently applied. Absent when the
    *  plugin ships none. Installed-not-applied is a first-class row, never omitted as if the server were absent. */
   mcpServers?: McpContributionVM[];
+  skills?: ContributionVM[];
+  hooks?: ContributionVM[];
 }
 
 /** One MCP server a plugin ships, and whether the human has applied it to this workspace. */
@@ -84,6 +86,7 @@ export interface McpContributionVM {
   name: string;
   applied: boolean;
 }
+export interface ContributionVM { name: string; applied: boolean; }
 
 /** spec 287 — one external (system) tool on an installed card: present/missing + whether Tachyon can offer the
  *  consent-gated assisted install (a PM command is declared for some PM) vs manual-only. */
@@ -153,6 +156,8 @@ export interface BuildPluginsInput {
   /** SDD 486 Phase C — per-plugin (keyed by name) the MCP servers the lockfile recorded, with applied-state.
    *  Omit a plugin ⇒ the card shows no MCP row. */
   mcpStatuses?: Record<string, McpContributionVM[]>;
+  skillStatuses?: Record<string, ContributionVM[]>;
+  hookStatuses?: Record<string, ContributionVM[]>;
   /** applied-state read failure — surfaced as a banner; apply/unapply stay disabled. */
   appliedError?: string;
 }
@@ -240,7 +245,7 @@ function uncoveredRuntimes(lock: PluginLock, present: ReadonlySet<Runtime>, decl
   return SUPPORTED_RUNTIMES.filter((rt) => declaredSet.has(rt) && present.has(rt) && !installed.has(rt));
 }
 
-function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined, mcpServers: McpContributionVM[] | undefined): InstalledPluginVM {
+function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined, mcpServers: McpContributionVM[] | undefined, skills?: ContributionVM[], hooks?: ContributionVM[]): InstalledPluginVM {
   const status = statusFrom(check);
   const uncovered = uncoveredRuntimes(lock, present, declared);
   return {
@@ -256,6 +261,8 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
     ...(externalTools && externalTools.length > 0 ? { externalTools } : {}),
     ...(uncovered.length > 0 ? { uncoveredRuntimes: uncovered } : {}),
     ...(mcpServers && mcpServers.length > 0 ? { mcpServers } : {}),
+    ...(skills && skills.length > 0 ? { skills } : {}),
+    ...(hooks && hooks.length > 0 ? { hooks } : {}),
   };
 }
 
@@ -308,6 +315,15 @@ export function buildMcpStatuses(plugins: Iterable<PluginLock>, isApplied: (plug
   return out;
 }
 
+export function buildContributionStatuses(plugins: Iterable<PluginLock>, targetKind: "skill-dir" | "settings-hook", isApplied: (plugin: string, name: string) => boolean): Record<string, ContributionVM[]> {
+  const out: Record<string, ContributionVM[]> = {};
+  for (const p of plugins) {
+    const names = [...new Set(p.targets.filter((t) => t.kind === targetKind).map((t) => targetKind === "skill-dir" ? t.file.split("/").pop() : t.ref).filter((x): x is string => !!x))].sort();
+    if (names.length > 0) out[p.name] = names.map((name) => ({ name, applied: isApplied(p.name, name) }));
+  }
+  return out;
+}
+
 /**
  * Build the Plugins View model. Pure: lockfile text + present runtimes + injected update-checks → render model.
  * A corrupt lockfile yields a `parseError` (banner, no list) rather than throwing.
@@ -332,8 +348,10 @@ export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewMode
   const checks = input.updateChecks ?? {};
   const externals = input.externalStatuses ?? {};
   const mcp = input.mcpStatuses ?? {};
+  const skills = input.skillStatuses ?? {};
+  const hooks = input.hookStatuses ?? {};
   const installed = Object.values(lockfile.plugins)
-    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name], mcp[lock.name]))
+    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name], mcp[lock.name], skills[lock.name], hooks[lock.name]))
     // locale-independent, stable order (plugin names are ASCII kebab by manifest contract; don't depend on locale).
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 

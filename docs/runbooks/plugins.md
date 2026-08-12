@@ -42,8 +42,11 @@ Two consequences worth stating, because both cost time when learned the hard way
   each plugin carries its own `version` in `tachyon-plugin.json`. `sdd` going `1.8.0 → 1.9.0`
   produced repository tag `v2.4.0`.
 
-An installed plugin is materialized at `.tachyon/plugins/<name>/`, and each runtime gets its own
-target — `.claude/skills/<name>`, `.agents/skills/<name>`, `.grok/skills/<name>`.
+Installing materializes only the payload at `.tachyon/plugins/<name>/`. Runtime contributions are a
+separate, per-contribution choice in the **Plugins** panel: apply a skill or hook there before using
+it. Applying a skill fans it out to the plugin's recorded runtime targets —
+`.claude/skills/<name>`, `.agents/skills/<name>`, `.grok/skills/<name>` — and **Un-apply** removes
+those copies without uninstalling the payload.
 
 ## Update an existing plugin
 
@@ -100,8 +103,9 @@ touching security or project state. Copy its shape.
 
 - `runtimes` is a verifiable promise: declare only what you tested. A runtime declared and not
   delivered is worse than one left out.
-- A **skill** ships as `skills/<name>/SKILL.md` (+ `scripts/`, `templates/`) and the installer
-  projects it into each runtime's directory. That is `sdd`'s shape.
+- A **skill** ships as `skills/<name>/SKILL.md` (+ `scripts/`, `templates/`). Install keeps it in the
+  plugin payload; the human applies it from the installed plugin's card to project it into each
+  recorded runtime directory. That is `sdd`'s shape.
 - **Hooks, git-hooks and tools** ship through per-runtime `blocks`. That is `secrets-guard`'s shape.
 - Run `./scripts/validate-manifests.sh` before committing; it is the same command the gate runs.
 

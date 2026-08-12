@@ -39,7 +39,7 @@ import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence,
 import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type ProvisionProgress } from "../plugins/toolProvisionRun.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReqLock } from "../plugins/lockfile.js";
-import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
+import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, buildContributionStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
 import { AppliedStateError, AppliedStateStore } from "../plugins/appliedState.js";
 import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";
 
@@ -113,6 +113,8 @@ interface InboundMsg {
   pluginName?: string;
   /** SDD 486 Phase C — MCP server name for applyMcp / unapplyMcp. */
   server?: string;
+  contributionKind?: "skill" | "hook";
+  contributionName?: string;
 }
 
 function trueActions(input: Record<string, boolean>): Record<string, true> {
@@ -378,6 +380,12 @@ export class PluginsPanelManager {
         return;
       case "unapplyMcp":
         if (m.pluginName && m.server) await this.guard(io, () => this.unapplyMcpOp(ws, m.pluginName as string, m.server as string, io));
+        return;
+      case "applyContribution":
+        if (m.pluginName && m.contributionKind && m.contributionName) await this.guard(io, () => this.applyContributionOp(ws, m.pluginName as string, m.contributionKind as "skill" | "hook", m.contributionName as string, io));
+        return;
+      case "unapplyContribution":
+        if (m.pluginName && m.contributionKind && m.contributionName) await this.guard(io, () => this.unapplyContributionOp(ws, m.pluginName as string, m.contributionKind as "skill" | "hook", m.contributionName as string, io));
         return;
     }
   }
@@ -796,6 +804,8 @@ export class PluginsPanelManager {
       externalStatuses: this.externalStatuses(ws),
       declared: this.declaredRuntimes(ws),
       mcpStatuses: applied.store ? this.mcpStatuses(ws, applied.store) : undefined,
+      skillStatuses: applied.store ? this.contributionStatuses(ws, applied.store, "skill") : undefined,
+      hookStatuses: applied.store ? this.contributionStatuses(ws, applied.store, "hook") : undefined,
       ...(applied.error ? { appliedError: applied.error } : {}),
     });
   }
@@ -815,6 +825,29 @@ export class PluginsPanelManager {
     const lock = this.lockfile(ws);
     if (!lock) return {};
     return buildMcpStatuses(Object.values(lock.plugins), (plugin, name) => store.isApplied(plugin, { kind: "mcp", name }));
+  }
+
+  private contributionStatuses(ws: WorkspaceGitPresentationTarget, store: AppliedStateStore, kind: "skill" | "hook"): Record<string, { name: string; applied: boolean }[]> {
+    const lock = this.lockfile(ws);
+    if (!lock) return {};
+    return buildContributionStatuses(Object.values(lock.plugins), kind === "skill" ? "skill-dir" : "settings-hook", (plugin, name) => store.isApplied(plugin, { kind, name }));
+  }
+
+  private async applyContributionOp(ws: WorkspaceGitPresentationTarget, pluginName: string, kind: "skill" | "hook", name: string, io: PanelIO): Promise<void> {
+    io.postBusy(`Applying ${kind} ${name}…`);
+    const r = applyContribution(pluginName, { kind, name }, ws.workspaceRoot);
+    if (!r.applied) { io.postResult(false, r.errors[0] ?? `Could not apply '${name}'.`); return; }
+    this.onPluginsChanged(); io.post();
+    io.postResult(true, `Applied ${kind} '${name}'.${kind === "hook" ? " Restart a running session for the change to take effect." : ""}`);
+  }
+
+  private async unapplyContributionOp(ws: WorkspaceGitPresentationTarget, pluginName: string, kind: "skill" | "hook", name: string, io: PanelIO): Promise<void> {
+    io.postBusy(`Un-applying ${kind} ${name}…`);
+    const r = unapplyContribution(pluginName, { kind, name }, ws.workspaceRoot);
+    if (!r.unapplied) { io.postResult(false, r.errors[0] ?? `Could not un-apply '${name}'.`); return; }
+    this.onPluginsChanged(); io.post();
+    const orphan = r.orphans > 0 ? " A human-edited copy was left in place." : "";
+    io.postResult(true, `Un-applied ${kind} '${name}'.${orphan}${kind === "hook" ? " Restart a running session to disarm it." : ""}`);
   }
 
   private async applyMcpOp(ws: WorkspaceGitPresentationTarget, pluginName: string, server: string, io: PanelIO): Promise<void> {

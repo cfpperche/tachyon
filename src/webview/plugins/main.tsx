@@ -117,6 +117,8 @@ function PluginsRoot() {
         post({ type: "installExternal", externalTool, ...(pluginName ? { pluginName } : {}) }),
       applyMcp: (pluginName: string, server: string) => post({ type: "applyMcp", pluginName, server }),
       unapplyMcp: (pluginName: string, server: string) => post({ type: "unapplyMcp", pluginName, server }),
+      applyContribution: (pluginName, kind, name) => post({ type: "applyContribution", pluginName, contributionKind: kind, contributionName: name }),
+      unapplyContribution: (pluginName, kind, name) => post({ type: "unapplyContribution", pluginName, contributionKind: kind, contributionName: name }),
     }),
     [toastApi],
   );

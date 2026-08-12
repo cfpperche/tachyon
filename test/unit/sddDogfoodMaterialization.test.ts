@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { applyInstall, loadPlugin, previewInstall } from "../../src/plugins/engine.js";
+import { applyContribution, applyInstall, loadPlugin, previewInstall } from "../../src/plugins/engine.js";
 
 describe("spec 301 SDD dogfood materialization", () => {
   it("materializes the dogfood helper and contract docs into claude and codex skill dirs", async () => {
@@ -26,6 +26,7 @@ describe("spec 301 SDD dogfood materialization", () => {
 
       const installed = await applyInstall(loaded.plugin!, preview, ws, targets);
       expect(installed.installed).toBe(true);
+      expect(applyContribution("sdd", { kind: "skill", name: "sdd" }, ws).applied).toBe(true);
 
       const sourceHelper = fs.readFileSync(path.join(pluginDir, "skills/sdd/scripts/sdd-dogfood.sh"), "utf8");
       const claudeHelper = fs.readFileSync(path.join(ws, ".claude/skills/sdd/scripts/sdd-dogfood.sh"), "utf8");

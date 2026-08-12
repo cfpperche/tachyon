@@ -119,7 +119,12 @@ const LOCK = (ws: string) => path.join(ws, ".tachyon/plugins.lock.json");
 const install = async (pluginDir: string, ws: string) => {
   const { plugin } = loadPlugin(pluginDir);
   // mcpConfirmed:true — the test helper stands in for the drawer's MCP acknowledgement (OQ5 engine gate).
-  return applyInstall(plugin!, previewInstall(plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { mcpConfirmed: true });
+  const result = await applyInstall(plugin!, previewInstall(plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { mcpConfirmed: true });
+  if (result.installed) {
+    for (const skill of plugin!.skills) applyContribution(plugin!.manifest.name, { kind: "skill", name: skill.name }, ws, { replace: true });
+    for (const event of new Set(Object.values(plugin!.blocks).flatMap((block) => Object.keys(block ?? {})))) applyContribution(plugin!.manifest.name, { kind: "hook", name: event }, ws);
+  }
+  return result;
 };
 
 describe("loadPlugin — skills discovery (spec 251)", () => {
@@ -663,11 +668,11 @@ describe("MCP install / remove I/O (spec 254 Step 4)", () => {
     expect(un.orphans).toBe(0);
   });
 
-  it("apply refuses skill/hook (Phase C owns mcp only) and an unknown server name", async () => {
+  it("apply reports absent skill/hook contributions and an unknown server name", async () => {
     const ws = makeWorkspace(["claude"]);
     await install(mcpPlugin([STDIO], ["claude"]), ws);
-    expect(applyContribution("mcp-pl", { kind: "skill", name: "x" }, ws).errors[0]).toMatch(/Phase C/);
-    expect(unapplyContribution("mcp-pl", { kind: "hook", name: "PreToolUse" }, ws).errors[0]).toMatch(/Phase C/);
+    expect(applyContribution("mcp-pl", { kind: "skill", name: "x" }, ws).errors[0]).toMatch(/no skill named/);
+    expect(unapplyContribution("mcp-pl", { kind: "hook", name: "PreToolUse" }, ws).errors[0]).toMatch(/no hook named/);
     expect(applyContribution("mcp-pl", { kind: "mcp", name: "no-such" }, ws).errors[0]).toMatch(/no mcp-server named/);
   });
 
@@ -688,7 +693,14 @@ describe("skill install / remove I/O (spec 251 Step 3)", () => {
   const installWith = async (pluginDir: string, ws: string, decisions: Record<string, "keep" | "replace"> = {}) => {
     const { plugin } = loadPlugin(pluginDir);
     const preview = previewInstall(plugin!, ws, detectRuntimes(ws));
-    return applyInstall(plugin!, preview, ws, detectRuntimes(ws), { skillDecisions: decisions });
+    const result = await applyInstall(plugin!, preview, ws, detectRuntimes(ws), { skillDecisions: decisions });
+    if (result.installed) for (const skill of plugin!.skills) {
+      const targets = preview.skillTargets.filter((t) => t.skill === skill.name);
+      if (targets.some((t) => t.collision && decisions[t.destRel] === "keep")) continue;
+      applyContribution(plugin!.manifest.name, { kind: "skill", name: skill.name }, ws, { replace: targets.some((t) => decisions[t.destRel] === "replace") });
+    }
+    if (result.installed) for (const event of new Set(Object.values(plugin!.blocks).flatMap((block) => Object.keys(block ?? {})))) applyContribution(plugin!.manifest.name, { kind: "hook", name: event }, ws);
+    return result;
   };
 
   it("materializes a skill into each present runtime's skills dir + records skill-dir targets", async () => {
@@ -1260,8 +1272,8 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     expect(res.errors).toEqual([]);
     expect(res.installed).toBe(true);
     expect(res.runtimes.sort()).toEqual(["claude", "codex"]);
-    expect(fs.existsSync(path.join(ws, ".claude", "settings.json"))).toBe(true);
-    expect(fs.existsSync(path.join(ws, ".codex", "hooks.json"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude", "settings.json"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".codex", "hooks.json"))).toBe(false);
   });
 
   it("REINSTALL repairs an old two-runtime lock by adding the newly declared Grok target", async () => {
@@ -1277,10 +1289,10 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     const result = await applyInstall(plugin!, previewInstall(plugin!, ws, reinstallTargets), ws, reinstallTargets, { mcpConfirmed: true });
     expect(result.installed).toBe(true);
     expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude", "codex", "grok"]);
-    expect(fs.existsSync(path.join(ws, ".grok/hooks/tachyon-plugins.json"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".grok/hooks/tachyon-plugins.json"))).toBe(false);
   });
 
-  it("records the runtime ancestor dirs it CREATED in a fresh workspace (spec 263 task 4)", async () => {
+  it("records no runtime ancestors before a contribution is applied", async () => {
     const ws = tmp("tachyon-ws-"); // genuinely fresh
     const pdir = makePlugin({ runtimes: ["claude", "codex"] });
     addSkill(pdir, "deploy");
@@ -1288,11 +1300,10 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     const target = new Set(["claude", "codex"] as const);
     expect((await applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true })).installed).toBe(true);
     const lock = readJson(LOCK(ws)).plugins[plugin!.manifest.name];
-    // claude: .claude (settings) + .claude/skills (skill dest); codex: .codex (hooks) + .agents + .agents/skills.
-    expect(new Set(lock.createdAncestors)).toEqual(new Set([".claude", ".claude/skills", ".codex", ".agents", ".agents/skills"]));
+    expect(lock.createdAncestors).toBeUndefined();
   });
 
-  it("does NOT record an ancestor that already existed — only what it created (spec 263 task 4)", async () => {
+  it("records no ancestors when install materializes nothing", async () => {
     const ws = makeWorkspace(["claude"]); // .claude pre-exists; .codex/.agents do not
     const pdir = makePlugin({ runtimes: ["claude", "codex"] });
     addSkill(pdir, "deploy");
@@ -1300,8 +1311,7 @@ describe("previewInstall — declared-runtime targeting (spec 263)", () => {
     const target = new Set(["claude", "codex"] as const);
     await applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
     const lock = readJson(LOCK(ws)).plugins[plugin!.manifest.name];
-    expect(lock.createdAncestors).not.toContain(".claude"); // pre-existed → not ours to remove
-    expect(new Set(lock.createdAncestors)).toEqual(new Set([".claude/skills", ".codex", ".agents", ".agents/skills"]));
+    expect(lock.createdAncestors).toBeUndefined();
   });
 
   it("omits createdAncestors entirely when every runtime dir already exists (spec 263 task 4)", async () => {
@@ -1331,7 +1341,9 @@ describe("uninstall — created-ancestor cleanup (spec 263 task 6)", () => {
     addSkill(pdir, "deploy");
     const { plugin } = loadPlugin(pdir);
     const target = new Set(["claude", "codex"] as const);
-    return applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
+    const result = await applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
+    if (result.installed) { applyContribution("sdd", { kind: "skill", name: "deploy" }, ws); applyContribution("sdd", { kind: "hook", name: "PreToolUse" }, ws); }
+    return result;
   };
 
   it("rmdir's exactly the runtime dirs the install created, deepest-first", async () => {
@@ -1381,11 +1393,10 @@ describe("uninstall — created-ancestor cleanup (spec 263 task 6)", () => {
     const { plugin } = loadPlugin(pdir);
     const target = new Set(["claude", "codex"] as const);
     const res = await applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target, { mcpConfirmed: true });
-    expect(res.installed).toBe(false);
-    expect(res.errors[0]).toMatch(/partial install/);
+    expect(res.installed).toBe(true);
     // the lockfile was written BEFORE activation → it records the plugin + createdAncestors for a clean uninstall.
     const lock = readJson(LOCK(ws)).plugins.sdd;
-    expect(new Set(lock.createdAncestors)).toEqual(new Set([".claude", ".claude/skills", ".codex", ".agents/skills"]));
+    expect(lock.createdAncestors).toBeUndefined();
     // `remove` cleans up exactly what got created, never the user's pre-existing .agents file.
     expect((await applyRemove("sdd", ws)).removed).toBe(true);
     expect(fs.existsSync(path.join(ws, ".claude"))).toBe(false);
@@ -1584,6 +1595,7 @@ describe("update (3-way: baseline vs current vs new)", () => {
     const v1 = loadPlugin(makePlugin({ runtimes: ["claude", "codex"] })).plugin!;
     const target = new Set(["claude", "codex"] as const);
     await applyInstall(v1, previewInstall(v1, ws, target), ws, target, { mcpConfirmed: true });
+    expect(applyContribution("sdd", { kind: "hook", name: "PreToolUse" }, ws).applied).toBe(true);
     // v2 declares ONLY claude → updating would silently drop codex; must error instead.
     const v2 = loadPlugin(makePlugin({ version: "2.0.0", runtimes: ["claude"] })).plugin!;
     expect((await previewUpdate(v2, ws)).errors[0]).toMatch(/no longer supports runtime\(s\) codex/);
@@ -1603,7 +1615,9 @@ describe("update (3-way: baseline vs current vs new)", () => {
     // an update must KEEP targeting claude only, not wire codex just because its dir exists on disk.
     const v2 = loadPlugin(makePlugin({ version: "2.0.0", runtimes: ["claude", "codex"], command: V2 })).plugin!;
     expect((await previewUpdate(v2, ws)).install!.targetRuntimes).toEqual(["claude"]);
-    expect((await applyUpdate(v2, ws)).updated).toBe(true);
+    expect(applyContribution("sdd", { kind: "hook", name: "PreToolUse" }, ws).applied).toBe(true);
+    const dbgUpdate = await applyUpdate(v2, ws);
+    expect(dbgUpdate.updated).toBe(true);
     expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude"]);
     expect(fs.existsSync(path.join(ws, ".codex/hooks.json"))).toBe(false); // still not wired
   });
@@ -1739,6 +1753,58 @@ describe("update (3-way: baseline vs current vs new)", () => {
   });
 });
 
+describe("SDD 486 Phase A — install / apply / unapply", () => {
+  it("install records skills and hooks but materializes neither", async () => {
+    const dir = makePlugin({ runtimes: ["claude", "codex"] }); addSkill(dir, "helper");
+    const ws = makeWorkspace(["claude", "codex"]);
+    const { plugin } = loadPlugin(dir); const target = detectRuntimes(ws);
+    expect((await applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target)).installed).toBe(true);
+    expect(fs.existsSync(SETTINGS(ws))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".codex/hooks.json"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/helper"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".agents/skills/helper"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".tachyon/plugins/sdd/skills/helper/SKILL.md"))).toBe(true);
+  });
+
+  it("applies and un-applies exactly one skill across every recorded runtime while keeping payload", async () => {
+    const dir = makePlugin({ runtimes: ["claude", "codex"] }); addSkill(dir, "helper"); addSkill(dir, "other");
+    const ws = makeWorkspace(["claude", "codex"]); const { plugin } = loadPlugin(dir); const target = detectRuntimes(ws);
+    await applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target);
+    expect(applyContribution("sdd", { kind: "skill", name: "helper" }, ws).applied).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/helper/SKILL.md"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".agents/skills/helper/SKILL.md"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/other"))).toBe(false);
+    expect(unapplyContribution("sdd", { kind: "skill", name: "helper" }, ws).unapplied).toBe(true);
+    expect(fs.existsSync(path.join(ws, ".claude/skills/helper"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".agents/skills/helper"))).toBe(false);
+    expect(fs.existsSync(path.join(ws, ".tachyon/plugins/sdd/skills/helper/SKILL.md"))).toBe(true);
+  });
+
+  it("hook unapply removes Tachyon content, preserves human edits, and explicit apply is clean at previewUpdate", async () => {
+    const dir = makePlugin(); const ws = makeWorkspace(); const { plugin } = loadPlugin(dir); const target = detectRuntimes(ws);
+    await applyInstall(plugin!, previewInstall(plugin!, ws, target), ws, target);
+    expect(applyContribution("sdd", { kind: "hook", name: "PreToolUse" }, ws).applied).toBe(true);
+    const v2 = loadPlugin(makePlugin({ version: "2.0.0" })).plugin!;
+    expect((await previewUpdate(v2, ws)).conflicts).toEqual([]);
+    const settings = readJson(SETTINGS(ws)); settings.model = "human-choice"; fs.writeFileSync(SETTINGS(ws), JSON.stringify(settings));
+    const un = unapplyContribution("sdd", { kind: "hook", name: "PreToolUse" }, ws);
+    expect(un).toMatchObject({ unapplied: true, orphans: 0 });
+    expect(readJson(SETTINGS(ws))).toEqual({ model: "human-choice" });
+    expect(fs.existsSync(path.join(ws, ".tachyon/plugins/sdd/claude/gate.sh"))).toBe(true);
+  });
+
+  it("updating a never-applied skill does not delete a human directory at its recorded path", async () => {
+    const ws = makeWorkspace(); const v1dir = makeSkillsOnlyPlugin("sk", ["claude"]); addSkill(v1dir, "old");
+    const v1 = loadPlugin(v1dir).plugin!; const target = detectRuntimes(ws);
+    await applyInstall(v1, previewInstall(v1, ws, target), ws, target);
+    const human = path.join(ws, ".claude/skills/old"); fs.mkdirSync(human, { recursive: true }); fs.writeFileSync(path.join(human, "mine.txt"), "human");
+    const v2dir = makeSkillsOnlyPlugin("sk", ["claude"]); addSkill(v2dir, "new");
+    const manifest = readJson(path.join(v2dir, "tachyon-plugin.json")); manifest.version = "2.0.0"; fs.writeFileSync(path.join(v2dir, "tachyon-plugin.json"), JSON.stringify(manifest));
+    expect((await applyUpdate(loadPlugin(v2dir).plugin!, ws)).updated).toBe(true);
+    expect(fs.readFileSync(path.join(human, "mine.txt"), "utf8")).toBe("human");
+  });
+});
+
 // ── spec 266 — effective-update-spec resolution (latest semver tag) ──
 describe("resolveEffectiveUpdateSpec (spec 266)", () => {
   const lsTags = (names: string[]) => async (args: string[]) =>
@@ -1807,6 +1873,7 @@ describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-t
 
     const res = await applyInstall(loaded.plugin!, previewInstall(loaded.plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: loaded.provenance });
     expect(res.installed).toBe(true);
+    expect(applyContribution("remote-sdd", { kind: "hook", name: "PreToolUse" }, ws).applied).toBe(true);
     expect(readJson(SETTINGS(ws)).hooks.PreToolUse[0].hooks[0].command).toContain("gate.sh");
     // provenance is pinned in the lockfile (byte-reproducible re-hydrate)
     const lock = readJson(LOCK(ws)).plugins["remote-sdd"];
@@ -1845,6 +1912,7 @@ describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-t
     const v1 = await loadPluginFromSource("github:o/mono@v1.0.0", git, { cacheRoot });
     expect(v1.errors).toEqual([]);
     await applyInstall(v1.plugin!, previewInstall(v1.plugin!, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: v1.provenance });
+    expect(applyContribution("mono", { kind: "hook", name: "PreToolUse" }, ws).applied).toBe(true);
     expect(readJson(LOCK(ws)).plugins["mono"].version).toBe("1.0.0");
 
     // the effective update spec resolves to the higher tag…
@@ -1899,6 +1967,7 @@ describe("t-4e5f11 freshness oracle (version primary + payload when equal)", () 
     const ws = makeWorkspace();
     const p = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V1 })).plugin!;
     await applyInstall(p, previewInstall(p, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: prov(HASH_A), mcpConfirmed: true });
+    expect(applyContribution("sdd", { kind: "hook", name: "PreToolUse" }, ws).applied).toBe(true);
     const p2 = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V1 })).plugin!;
     const preview = await previewUpdate(p2, ws, undefined, { payloadHash: HASH_A });
     expect(preview).toMatchObject({ found: true, upToDate: true, isDowngrade: false, fromVersion: "1.0.0", toVersion: "1.0.0" });
@@ -1910,6 +1979,7 @@ describe("t-4e5f11 freshness oracle (version primary + payload when equal)", () 
     const ws = makeWorkspace();
     const p = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V1 })).plugin!;
     await applyInstall(p, previewInstall(p, ws, detectRuntimes(ws)), ws, detectRuntimes(ws), { provenance: prov(HASH_A), mcpConfirmed: true });
+    expect(applyContribution("sdd", { kind: "hook", name: "PreToolUse" }, ws).applied).toBe(true);
     const p2 = loadPlugin(makePlugin({ version: "1.0.0", command: CMD_V2 })).plugin!;
     const preview = await previewUpdate(p2, ws, undefined, { payloadHash: HASH_B });
     expect(preview.upToDate).toBe(false);
@@ -2031,6 +2101,7 @@ describe("install-over-installed widens coverage (t-fb216a)", () => {
     // 1) first install: only the two runtimes the workspace had
     const narrow = new Set(["claude", "codex"] as const);
     await applyInstall(plugin!, previewInstall(plugin!, ws, narrow as never), ws, narrow as never, { mcpConfirmed: true });
+    expect(applyContribution("sdd", { kind: "hook", name: "PreToolUse" }, ws).applied).toBe(true);
     expect(readJson(LOCK(ws)).plugins.sdd.runtimes).toEqual(["claude", "codex"]);
     const claudeBefore = JSON.stringify(readJson(SETTINGS(ws)));
 
