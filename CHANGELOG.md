@@ -6,8 +6,99 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.86.0 — installing a plugin stops arming it, and secrets stop travelling with config
+
+The theme of this release is **the product no longer claims a state it does not sustain**. Installing
+a plugin used to materialize its skills, hooks, MCP servers and git hooks in one step; now install
+records and an explicit apply arms. A cloned agent used to carry its parent's credentials. Three
+surfaces promised write isolation that no runtime delivers. Each of those was a written promise the
+code did not keep, and each is now either kept or withdrawn in writing.
+
+### Added
+
+- **Explicit apply/unapply for every plugin contribution** (`t-f30f34`, `t-7f52f6`, `t-e85e0e`,
+  SDD 486). Install records the payload and the exact removal identity, and materializes nothing.
+  Applying is a separate, per-contribution decision, and the Plugins app models "installed, not
+  applied" as its own state with a restart notice for an armed hook. This matters most for the two
+  loudest kinds: an MCP server is a set of tools the agent can call, and a git hook runs on every
+  commit for everyone. Unapply removes only what Tachyon wrote — human-authored content in the same
+  file survives, which is covered by a dedicated test rather than a promise.
+- **Attention reads native stop hooks on the runtimes that have them** (`t-6b3a0d`, `t-3fd30a`).
+  Claude `Stop`, Codex `stopped` and Grok `Stop` now move attention state through the same managed
+  lifecycle channel the persistence recorder already uses — deliberately not a second Stop hook,
+  because on Codex a second `-c hooks.Stop=` silently replaces the first. Screen reading stays as
+  the fallback: a wedged agent emits no `Stop`, and lifecycle still wins over any published status.
+  Six runtimes were measured; the three without a Tachyon-managed channel were left out rather than
+  fitted with a copy of Claude's shape.
+- **Retry-safe Bridge delivery** (`t-3cccef`). `notify_agent` accepts an optional `deliveryId`
+  minted before the first attempt; a retry consults the durable record, answers `already-accepted`
+  and does not deliver twice. Reusing an id with different content is refused, so the id cannot
+  smuggle a new message under an old receipt. Measured after two `notify_agent` calls were lost and
+  an `update_task` executed but lost only its response — indistinguishable from the caller's side,
+  which is why both reactions were to repeat.
+
+### Changed
+
+- **Secrets no longer live in the same box as configuration** (`t-2ec981`). `environment.secrets` is
+  its own shape, separate from `environment.values`, and cloning an agent no longer carries the
+  parent's credentials along with its settings.
+- **Terminals are declaration files, not a block in `tachyon.yml`** (`t-bc8eed`, SDD 496).
+  A terminal now lives at `.tachyon/terminals/<name>.yml`, mirroring the layout agents already used.
+  A legacy `terminals:` block still loads, with a warning naming the new location — it warns, it
+  never refuses. Fifteen fixture workspaces were migrated in the same commit.
+- **The IDE Browser applies one navigation policy, not two** (`t-c294e8`, `t-427fae`). The agent's
+  `navigate` now follows the same scheme policy as the configured home URL, but reports a refusal by
+  name instead of silently landing on `about:blank` — asking for `about:blank` and falling back to it
+  are no longer the same answer. The HTTP `/eval` route inherits the 50,000-character ceiling the MCP
+  tool already had, from one shared constant.
+- **At most three pending schedule proposals per agent** (`t-e5ecec`), matching the ceiling its
+  sibling surface already enforced.
+
+### Fixed
+
+- **`dev-host point` refuses to rematerialize the mirror under a live Dev Host window** (`t-7ee246`).
+  Measured with real state loss: an EDH was open with agents created through Agent Studio, `point`
+  rewrote the disposable workspace, and a live process was left writing to a file already marked
+  `(deleted)`. `point` was already fail-closed for a headless session and destructive for a human
+  window. The liveness signal is the owning VS Code/Electron process carrying this pointer's exact
+  workspace and extension-development arguments, so a crash cannot leave a stale lock. `--force`
+  overrides deliberately. Unreadable pointer metadata now refuses rather than guesses; absent
+  metadata still passes, because an unarmed pointer has nothing to destroy.
+- **Codex skill revocation reaches the tree it wrote** (`t-f842f0`). Sweeping was previously skipped
+  entirely because Codex projects skills into `<cwd>/.agents/skills`, a directory the plugin
+  installer also owns. Ownership was measured at the point of use: outside the workspace root the
+  tree belongs to this grant path and an empty selection now purges it; at the root it belongs to the
+  installer and is never swept, with the inability to revoke recorded rather than ignored. A symlink
+  in place of the directory is refused, not followed.
+- **Visual QA at 360px now photographs a 360px viewport** (`t-4a477f`). All 117 catalog URLs omit
+  `?width=`, so the preview iframe stayed at the route's frame while only the outer window shrank —
+  every narrow catalog shot was a crop of the wide layout, and a genuinely broken narrow layout would
+  have passed just as easily. The shell now sizes the iframe to the outer window, clamped to the
+  route frame, so wide captures are unchanged and no existing evidence is invalidated. An explicit
+  `?width=` still wins.
+- **The IDE Browser recognizes its own session** (`t-849f52`) through a launch id stamped into the
+  debug configuration, replacing name matching on the string "Tachyon".
+
+### Removed
+
+- **Three surfaces stopped promising write isolation no runtime delivers** (`t-5313dc`). The claim was
+  measured false and withdrawn in the UI text rather than quietly softened. The follow-up measurement
+  (`t-e5441a`) found that only Codex and Grok can express the narrow boundary at all, so detection
+  and reporting is the only honest cross-runtime statement; prevention, if it ships, must name its
+  runtime and refuse the others instead of silently falling back.
+- **`verifyNativeMemory`** (`t-74b75a`), whose owner existed and had already delivered through
+  another door.
+
 ### Internal
 
+- `parseAgentEntry` is now two parsers and `forceTerminal` is gone with its eight branches, six of
+  which were already unreachable in production (`t-8e6011`, SDD 496). The `MOVE_TO_AN_AGENT`
+  diagnostic survives as the unknown-key message, because it names which block the entry lives in —
+  the whole cost of the `t-9418ac` incident was three increments discovering exactly that.
+- `applyContribution`/`unapplyContribution` no longer declare a synchronous return for the git-hook
+  path, which returns a Promise (`t-e472a9`).
+- Design Mode security review across `eval`, token, Trusted Types and click (`t-2136b6`): no measured
+  path returns page content as evaluated JavaScript.
 - **IDE Browser child-session death is now classified, not guessed as "tab closed?"** (`t-1c8195`).
   The owner's globo.com tab kept painted Design Mode chrome after CDP died. Production logs from that
   incident (same Extension Host, three launches, three deaths) discard extension reload and our own
