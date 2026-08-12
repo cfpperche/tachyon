@@ -351,6 +351,20 @@ export function buildDesignModeInjectExpression(
         font-family: var(--ds-mono, ui-monospace, monospace);
         font-size: var(--ds-small, 12px);
       }
+      /*
+       * t-330a51 — when both panels are open, park the undragged card just left of
+       * the chat slot. Inline left/top from mountFloatingPanel (user drag/resize)
+       * still win. Side-by-side fits at viewport width >= 748px; below that the
+       * card is clamped on-screen and chat stacks above so the transcript stays
+       * hit-testable.
+       */
+      #tachyon-dm-root[data-both-open="1"] #tachyon-dm-card {
+        right: min(
+          calc(12px + min(360px, calc(100vw - 24px)) + 8px),
+          calc(100vw - 16px - min(360px, calc(100vw - 32px)))
+        );
+        z-index: 2147483646;
+      }
       #tachyon-dm-card header.dm-chrome {
         padding: 12px 14px;
         border-bottom: var(--ds-border-width, 1px) solid var(--ds-border, rgba(128,128,128,0.35));
@@ -667,6 +681,9 @@ export function buildDesignModeInjectExpression(
         box-shadow: 0 8px 28px rgba(0,0,0,0.4);
         font-family: var(--ds-mono, ui-sans-serif, system-ui, sans-serif);
         font-size: 12px;
+      }
+      #tachyon-dm-root[data-both-open="1"] #tachyon-dm-chat {
+        z-index: 2147483647;
       }
       .dm-chat-hd {
         padding: 8px 10px;
@@ -1078,10 +1095,15 @@ export function buildDesignModeInjectExpression(
     chatItems = Array.from(map.values()).sort((a, b) => (a.lineNo || 0) - (b.lineNo || 0));
     rebuildChatWindow({ stickBottom: mode !== 'before' });
   };
+  const syncBothOpen = () => {
+    const cardOpen = !!(card && card.getAttribute('data-open') === '1');
+    root.setAttribute('data-both-open', cardOpen && chatOpen ? '1' : '0');
+  };
   const setChatOpen = (on) => {
     chatOpen = !!on;
     if (chatPanel) chatPanel.setAttribute('data-open', chatOpen ? '1' : '0');
     if (chatBtn) chatBtn.setAttribute('aria-pressed', chatOpen ? 'true' : 'false');
+    syncBothOpen();
     if (chatOpen) {
       try { if (typeof chatPanelApi !== 'undefined' && chatPanelApi) chatPanelApi.ensureLayout(); } catch (e) {}
       // Single open message — host hydrates tail + agents (no concurrent posts that can race).
@@ -1404,10 +1426,12 @@ export function buildDesignModeInjectExpression(
 
   const hideCard = () => {
     card.setAttribute('data-open', '0');
+    syncBothOpen();
   };
 
   const showCard = () => {
     card.setAttribute('data-open', '1');
+    syncBothOpen();
     if (cardPanelApi) cardPanelApi.ensureLayout();
   };
 

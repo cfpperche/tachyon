@@ -121,6 +121,15 @@ describe("buildDesignModeInjectExpression", () => {
     expect(src).toContain("dm-resizing");
   });
 
+  it("offsets the undragged Selection card when chat is also open (t-330a51)", () => {
+    expect(src).toContain("data-both-open");
+    expect(src).toContain("syncBothOpen");
+    // Card parks left of the chat slot; chat stays the topmost panel if they still intersect.
+    expect(src).toMatch(/\[data-both-open="1"\] #tachyon-dm-card/);
+    expect(src).toMatch(/\[data-both-open="1"\] #tachyon-dm-chat/);
+    expect(src).toMatch(/#tachyon-dm-root\[data-both-open="1"\] #tachyon-dm-card[\s\S]*?right:\s*min\(/);
+  });
+
   it("picker toggle arms/disarms and hides card when off", () => {
     expect(src).toContain("setPickMode");
     expect(src).toContain("hideCard");
