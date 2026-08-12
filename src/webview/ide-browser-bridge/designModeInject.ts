@@ -1064,8 +1064,17 @@ export function buildDesignModeInjectExpression(
     }
   };
   const mergeChatItems = (incoming, mode) => {
-    const map = new Map(chatItems.map((e) => [eventKey(e), e]));
-    for (const ev of incoming) map.set(eventKey(ev), ev);
+    const combined = [...chatItems, ...incoming].sort((a, b) => (a.lineNo || 0) - (b.lineNo || 0));
+    const map = new Map();
+    for (const ev of combined) {
+      if (ev && ev.kind === 'delivery') {
+        const key = String(ev.messageLineNo || '');
+        const message = map.get(key);
+        if (message) map.set(key, { ...message, delivery: ev.status, deliveryReason: ev.reason });
+        continue;
+      }
+      map.set(eventKey(ev), ev);
+    }
     chatItems = Array.from(map.values()).sort((a, b) => (a.lineNo || 0) - (b.lineNo || 0));
     rebuildChatWindow({ stickBottom: mode !== 'before' });
   };

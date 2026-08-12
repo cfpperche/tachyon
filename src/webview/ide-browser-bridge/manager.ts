@@ -539,16 +539,34 @@ export class IdeBrowserBridgeManager {
       pickContext,
       turnId,
     });
-    try {
-      // Submit first — engine agent.input probes composer (t-348c9a). Only then record chat UI.
-      await ws.activity.sendAgentInput(targetAgent, prompt, true);
-      const userEv = await appendDmChatEvent(this.workspaceRoot, {
+    const userEv = await appendDmChatEvent(this.workspaceRoot, {
         kind: "message",
         role: "user",
         text: displayText,
         activeAgent: targetAgent,
+        delivery: "pending",
+    });
+    try {
+      const attentionAtDelivery = await this.readAgentAttention(targetAgent);
+      const receipt = await ws.activity.sendAgentInput(targetAgent, prompt, true);
+      const deliveryStatus = receipt.status === "submitted" ? "submitted" : "submit-unconfirmed";
+      const deliveryReason = "reason" in receipt ? receipt.reason : receipt.status;
+      await appendDmChatEvent(this.workspaceRoot, {
+        kind: "delivery",
+        messageLineNo: userEv.lineNo,
+        status: deliveryStatus,
+        reason: deliveryReason,
+        activeAgent: targetAgent,
       });
-      await this.cdp.pushDesignModeChat({ type: "message", event: userEv });
+      await this.cdp.pushDesignModeChat({ type: "message", event: { ...userEv, delivery: deliveryStatus } });
+      if (receipt.status !== "submitted") {
+        await this.pushTyping(false, targetAgent);
+        await this.cdp.pushDesignModeChat({
+          type: "error",
+          text: `Delivery to ${targetAgent} was not confirmed (${deliveryReason}). The message remains saved in Design Mode chat.`,
+        });
+        return;
+      }
       await this.pushTyping(true, targetAgent, "sent");
       this.log.appendLine(
         `[design-mode] chat → ${targetAgent} turn=${turnId}${pick ? " +selection" : ""}: ${text.slice(0, 80)}`,
@@ -558,7 +576,11 @@ export class IdeBrowserBridgeManager {
         this.lastPick = null;
         await this.cdp.pushDesignModeChat({ type: "selection", clear: true, consumed: true });
       }
-      this.beginChatReplyWait(targetAgent, turnId);
+      const alreadyBusy = attentionAtDelivery.running
+        && (attentionAtDelivery.state === "working"
+          || attentionAtDelivery.state === "throttled"
+          || attentionAtDelivery.state === "needs-input");
+      this.beginChatReplyWait(targetAgent, turnId, alreadyBusy);
     } catch (err) {
       this.clearChatReplyWait();
       const msg = err instanceof Error ? err.message : String(err);
@@ -649,9 +671,9 @@ export class IdeBrowserBridgeManager {
     });
   }
 
-  private beginChatReplyWait(agent: string, turnId: string): void {
+  private beginChatReplyWait(agent: string, turnId: string, alreadyBusyAtDelivery = false): void {
     this.clearChatReplyWait();
-    this.chatWait = { turnId, agent, sawBusy: false };
+    this.chatWait = { turnId, agent, sawBusy: false, awaitPostDeliveryStart: alreadyBusyAtDelivery };
     // Poll real agent attention — never assume "stopped" while still working.
     this.chatPollTimer = setInterval(() => {
       void this.pollChatAgentState();
@@ -685,6 +707,14 @@ export class IdeBrowserBridgeManager {
     // Wait may have been cleared or superseded while we awaited attention.
     if (!this.chatWait || this.chatWait.turnId !== turnId) return;
     const busy = running && (state === "working" || state === "throttled" || state === "needs-input");
+
+    // A turn that was already busy when delivery happened cannot be this prompt's turn. Observe its
+    // end, then require a later non-busy -> busy edge before an idle edge can end this wait.
+    if (this.chatWait.awaitPostDeliveryStart) {
+      if (!busy) this.chatWait.awaitPostDeliveryStart = false;
+      await this.pushTyping(true, agent, "sent");
+      return;
+    }
 
     if (busy) {
       this.chatWait.sawBusy = true;

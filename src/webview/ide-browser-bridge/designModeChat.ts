@@ -47,6 +47,17 @@ export type DmChatEvent =
     role: "user";
     text: string;
     activeAgent: string;
+    delivery?: "pending";
+    lineNo: number;
+  }
+  | {
+    v: 1;
+    at: string;
+    kind: "delivery";
+    messageLineNo: number;
+    status: "submitted" | "submit-unconfirmed";
+    reason: string;
+    activeAgent: string;
     lineNo: number;
   }
   | {
@@ -232,6 +243,15 @@ export type DmChatEventInput =
     kind: "message";
     role: "user";
     text: string;
+    activeAgent: string;
+    delivery?: "pending";
+    at?: string;
+  }
+  | {
+    kind: "delivery";
+    messageLineNo: number;
+    status: "submitted" | "submit-unconfirmed";
+    reason: string;
     activeAgent: string;
     at?: string;
   }
