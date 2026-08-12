@@ -266,10 +266,19 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     const attempt = await m.ensure({ agent: "missing-locked", branch: "tachyon/missing-locked", quarantineForLaunch: true });
     fs.rmSync(attempt.record.path, { recursive: true, force: true });
 
-    await expect(resolveWorktreeCwd(
-      { name: "missing-locked", worktree: true, branch: "tachyon/missing-locked", isRestart: false },
-      { manager: m, settings: { worktree: { base } }, resolveParent: async () => ({ known: false }), runSetup: async () => {}, notify: () => {} },
-    )).rejects.toMatchObject({ reason: "recovery-preserved" });
+    let refusal: Error | undefined;
+    try {
+      await resolveWorktreeCwd(
+        { name: "missing-locked", worktree: true, branch: "tachyon/missing-locked", isRestart: false },
+        { manager: m, settings: { worktree: { base } }, resolveParent: async () => ({ known: false }), runSetup: async () => {}, notify: () => {} },
+      );
+    } catch (error) {
+      refusal = error as Error;
+    }
+    expect(refusal).toMatchObject({ reason: "recovery-preserved" });
+    expect(refusal!.message.indexOf("Control → Worktrees")).toBeLessThan(
+      refusal!.message.indexOf(attempt.record.path),
+    );
   });
 
   it("reconciles a persisted pipeline owner before allowing its pre-node run to resume", async () => {
@@ -277,7 +286,16 @@ describe("WorktreeManager — git side (real git, tmp repo)", () => {
     const attempt = await m.ensure({ agent: "pipeline-reload", branch: "tachyon/pipeline-reload", quarantineForLaunch: true });
     expect(git(["worktree", "list", "--porcelain"], repo)).toMatch(/worktree .*pipeline-reload[\s\S]*\nlocked(?: .*)?(?:\n|$)/);
 
-    await expect(m.completePersistedPreparation(attempt.record)).rejects.toThrow(/requires explicit recovery/);
+    let lockedRefusal: Error | undefined;
+    try {
+      await m.completePersistedPreparation(attempt.record);
+    } catch (error) {
+      lockedRefusal = error as Error;
+    }
+    expect(lockedRefusal).toBeDefined();
+    expect(lockedRefusal!.message.indexOf("Control → Worktrees")).toBeLessThan(
+      lockedRefusal!.message.indexOf(attempt.record.path),
+    );
     // Simulate the distinct crash window after the normal finalizer unlocked but before the run's
     // ready=true write. That already-unlocked, unchanged checkout can be reconciled automatically.
     await m.completePreparation(attempt.record);
