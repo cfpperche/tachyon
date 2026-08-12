@@ -108,6 +108,15 @@ function candidatePids(tmuxTmpdir: string): Array<{ pid: number; ppid: number; s
   return found;
 }
 
+function processIsRunning(pid: number): boolean {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+    return stat.slice(stat.lastIndexOf(") ") + 2).split(" ")[0] !== "Z";
+  } catch {
+    return false;
+  }
+}
+
 describe("t-8f48da — what may be swept, and what may never be", () => {
   it("accepts a fixture directory and refuses every shape that could contain the fleet's socket", () => {
     const fixture = makeSocketTemp("tachyon-reap-root-");
@@ -197,7 +206,7 @@ describe("t-8f48da — what may be swept, and what may never be", () => {
         // The child outlives its server by tens of milliseconds, so the observation can miss. Missing
         // it makes the assertion vacuous, never red — retry until the state is actually in hand, and
         // let the expectation below prove it was.
-        for (let attempt = 0; attempt < 5 && !observed; attempt++) {
+        for (let attempt = 0; attempt < 20 && !observed; attempt++) {
           const name = privateSocketName(`orphan-${attempt}`);
           started.push(name);
           startServer(name, tmuxTmpdir);
@@ -214,14 +223,17 @@ describe("t-8f48da — what may be swept, and what may never be", () => {
           // Contained by construction: a pid this test started, in a socket directory it created.
           process.kill(server.pid, "SIGKILL");
           child = forked.pid;
-          if (!fs.existsSync(`/proc/${child}`)) continue; // it beat us to exiting; try again
-          observed = true;
+          if (!processIsRunning(child)) continue; // it beat us to exiting; try again
+          const reported = tmuxServersUnder([fixture]).map((s) => s.pid);
+          const aliveAfter = processIsRunning(child);
+          if (!aliveAfter) continue; // it exited during the scan; try again
+          // …and it really was still running while we said that.
+          expect(aliveAfter, "the child was alive for the scan above").toBe(true);
           expect(
-            tmuxServersUnder([fixture]).map((s) => s.pid),
+            reported,
             "the orphaned fork child is not a server, and its own server is gone",
           ).toEqual([]);
-          // …and it really was still running while we said that.
-          expect(fs.existsSync(`/proc/${child}`), "the child was alive for the scan above").toBe(true);
+          observed = true;
         }
         expect(observed, "the orphaned-child state was reproduced").toBe(true);
       } finally {
