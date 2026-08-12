@@ -1,6 +1,5 @@
 import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
-import { mapStudioSubmitResult } from "./studioSubmit.js";
-import { FLAG_SUGGESTIONS, fromDef, quickAddChips } from "./formLogic.js";
+import { FLAG_SUGGESTIONS, fromAgentDef, quickAddChips } from "./formLogic.js";
 import { asAgent } from "../config/loadConfig.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
 import {
@@ -73,7 +72,7 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
         return { status: "error", error: error instanceof Error ? error.message : String(error) };
       }
     }
-    return { status: "ok", entity: { name: entityId, storage: "legacy", fields: fromDef(entityId, def), ...reference } };
+    return { status: "ok", entity: { name: entityId, storage: "legacy", fields: fromAgentDef(entityId, def), ...reference } };
   }
 
   validate(_fields: AgentStudioFields): StudioValidationResult {
@@ -92,11 +91,14 @@ export class AgentStudioAdapter implements StudioHostAdapter<AgentStudioEntity, 
         },
       );
     }
-    return mapStudioSubmitResult(
-      this.ws.studioSubmit({ state: patch, editingName: entityId }),
-      "validation/agent-save-failed",
-      entityId === undefined ? patch.name : undefined,
-    );
+    return {
+      status: "error",
+      error: {
+        code: "validation/agent-save-failed",
+        message: "inline agent editing is retired — create or edit the canonical agent in Agent Studio",
+        source: "validation",
+      },
+    };
   }
 
 }

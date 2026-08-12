@@ -27,8 +27,6 @@ const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 import { Terminals } from "../../src/presentation/Terminals.js";
 import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPresentation.js";
 import { harnessHome, harnessRoot } from "../../src/harness/HarnessManager.js";
-import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
-import type { FormState } from "../../src/webview/formLogic.js";
 import { parse as parseYaml, stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
 import type { AgentProfileStudioMutationV1 } from "../../src/config/agentProfileStudio.js";
@@ -1717,15 +1715,6 @@ it("refuses the bare canonical forget while a tmux binding exists, and plans the
   } finally {
     ws.dispose();
   }
-});
-
-it("directs legacy Agent Studio submissions to canonical Agent Studio", async () => {
-  const { ws } = await makeWorkspace();
-  const invalid = { ...blankAgentFields(), name: "invalid", cmd: "codex" } as unknown as FormState;
-  expect(ws.studioSubmit({ state: invalid })).toEqual([
-    "inline agent editing is retired — create or edit the canonical agent in Agent Studio",
-  ]);
-  ws.dispose();
 });
 
 /** Flushes the best-effort async poke chain (`tmux.hasSession(...).then(...)`) that `pokeParentOnDeath`

@@ -27,7 +27,7 @@ export interface StudioDeps {
  *  persisted key (rather than reading an id back from persistence) is safe ONLY because
  *  `Workspace.studioSubmit` (workspace/Workspace.ts) writes it VERBATIM as the YAML block key
  *  (`upsertCommand`/`upsertAgent`/etc. take `submit.state.name` directly, no normalization) and
- *  rejects — via `validateForm`'s blocking errors, returned as the `errors` array below — before this
+ *  rejects — via the kind-specific form validator, returned as the `errors` array below — before this
  *  ever reaches the "ok" branch. If a future persistence path ever normalizes/slugifies a submitted
  *  name, this assumption breaks and `newEntityId` must come from that path's own return value instead. */
 export function mapStudioSubmitResult(

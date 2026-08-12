@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { TERMINAL_STRIPPED_AGENT_KEYS, upsertAgent } from "../../src/config/YamlConfigEditor.js";
-import { toEntry, type FormState } from "../../src/webview/formLogic.js";
+import { toTerminalEntry, type FormState } from "../../src/webview/formLogic.js";
 import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/domain.js";
 
 /**
@@ -18,7 +18,7 @@ import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/dom
  * Two lists could drift apart here, so neither is written twice: the refusal list is MEASURED by
  * running the real parser over a real `terminals:` entry, and the writer's strip list is imported
  * from the writer. The invariant is asserted end-to-end through the production chain the Terminal
- * Studio actually uses — `toEntry` → `upsertAgent(…, "terminals")` → `parseConfig` — which is the
+ * Studio actually uses — `toTerminalEntry` → declaration writer → `parseConfig` — which is the
  * door `Workspace.studioSubmit` walks through. Watched fail on the pre-fix tree: the maximal-form
  * case produced four discards and a yml carrying all four keys.
  *
@@ -89,7 +89,7 @@ describe("t-b54ead — a terminal entry the Studio writes carries no agent-only 
   });
 
   it("saving a maximal terminal form produces a config the loader discards nothing from", () => {
-    const created = upsertAgent(undefined, "dev", toEntry(MAXIMAL_TERMINAL_FORM), undefined, "terminals");
+    const created = upsertAgent(undefined, "dev", toTerminalEntry(MAXIMAL_TERMINAL_FORM), undefined, "terminals");
     const parsed = parseConfig(created.text);
     expect(parsed.errors).toEqual([]);
     // The whole point: the write path cannot emit a key the read path throws away.
@@ -111,7 +111,7 @@ describe("t-b54ead — a terminal entry the Studio writes carries no agent-only 
     expect(before.config?.agents.dev).toMatchObject({ cmd: "npm run dev", kind: "terminal" });
 
     const reopened = { ...blankTerminalFields(), name: "dev", cmd: "npm run dev" };
-    const rewritten = upsertAgent(existing, "dev", toEntry(reopened), "dev", "terminals");
+    const rewritten = upsertAgent(existing, "dev", toTerminalEntry(reopened), "dev", "terminals");
     expect(parseConfig(rewritten.text).discarded).toEqual([]);
     expect(rewritten.text).not.toContain("worktree");
     expect(rewritten.text).toContain("api:");

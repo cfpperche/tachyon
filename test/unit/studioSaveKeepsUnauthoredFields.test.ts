@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig, type AgentDef } from "../../src/config/loadConfig.js";
 import { upsertAgent } from "../../src/config/YamlConfigEditor.js";
-import { fromDef, toEntry, type FormState } from "../../src/webview/formLogic.js";
+import { fromTerminalDef, toTerminalEntry, type FormState } from "../../src/webview/formLogic.js";
 import schema from "../../src/config/tachyon.schema.json";
 import { canonicalAgentFields, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
 import {
@@ -35,7 +35,7 @@ import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfil
  * exactly those. Rendering `silenceSec`/`patterns` in the form is a different job and not this one.
  */
 
-/** The production chain a Terminal Studio edit walks: load → form → `toEntry` → `upsertAgent`.
+/** The production chain a Terminal Studio edit walks: load → form → `toTerminalEntry` → declaration writer.
  *  Spelled once, mirroring `Workspace.studioSubmit` (it always passes `"terminals"` and the edited
  *  name), so these tests exercise the real door rather than a lookalike. */
 function studioSave(text: string, name: string, edit: (state: FormState) => FormState = (s) => s): string {
@@ -43,8 +43,8 @@ function studioSave(text: string, name: string, edit: (state: FormState) => Form
   expect(before.errors).toEqual([]);
   const def = before.config?.agents[name];
   expect(def, `'${name}' must load before it can be re-saved`).toBeDefined();
-  const state = edit(fromDef(name, def as AgentDef));
-  return upsertAgent(text, state.name, toEntry(state), name, "terminals").text;
+  const state = edit(fromTerminalDef(name, def as AgentDef));
+  return upsertAgent(text, state.name, toTerminalEntry(state), name, "terminals").text;
 }
 
 function loaded(text: string, name: string): AgentDef {
@@ -95,8 +95,8 @@ describe("t-26ba8f — a Studio save keeps the fields the form does not author",
     // `upsertAgent` with a new name drops the old key and writes a new one. The prior node has to be
     // read BEFORE that delete, or the rename door loses exactly what the edit door keeps.
     const before = parseConfig(HAND_WRITTEN);
-    const state = { ...fromDef("dev", before.config?.agents.dev as AgentDef), name: "dev-server" };
-    const saved = upsertAgent(HAND_WRITTEN, state.name, toEntry(state), "dev", "terminals").text;
+    const state = { ...fromTerminalDef("dev", before.config?.agents.dev as AgentDef), name: "dev-server" };
+    const saved = upsertAgent(HAND_WRITTEN, state.name, toTerminalEntry(state), "dev", "terminals").text;
     expect(loaded(saved, "dev-server").attention).toEqual({
       enabled: true,
       silenceSec: 30,
@@ -106,8 +106,8 @@ describe("t-26ba8f — a Studio save keeps the fields the form does not author",
   });
 
   it("preserves nothing on a CREATE — a new entry has no prior node to read", () => {
-    const state: FormState = { ...fromDef("dev", parseConfig(HAND_WRITTEN).config?.agents.dev as AgentDef), name: "fresh" };
-    const saved = upsertAgent(HAND_WRITTEN, "fresh", toEntry(state), undefined, "terminals").text;
+    const state: FormState = { ...fromTerminalDef("dev", parseConfig(HAND_WRITTEN).config?.agents.dev as AgentDef), name: "fresh" };
+    const saved = upsertAgent(HAND_WRITTEN, "fresh", toTerminalEntry(state), undefined, "terminals").text;
     // Defaults, not the neighbour's tuning: preservation reads the entry being REPLACED, never a
     // sibling. (`fresh` inherits attention: true from the form state, which is what the human sees.)
     expect(loaded(saved, "fresh").attention).toEqual({ enabled: true, silenceSec: 8, patterns: [] });

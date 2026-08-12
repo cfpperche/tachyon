@@ -400,22 +400,14 @@ describe("AgentStudioAdapter — save", () => {
     expect(result).toEqual({ status: "conflict", error: { code: "agent-profile/revision-conflict", message: "This profile changed. Reload before saving again." } });
   });
 
-  it("delegates to Workspace.studioSubmit (WRAPS toEntry/upsertAgent — no parallel write path)", async () => {
+  it("refuses the retired legacy writer inside Agent Studio without reaching the terminal submit path", async () => {
     const { ws, submits } = fakeWorkspace({ submitResult: undefined });
     const adapter = new AgentStudioAdapter(ws);
     const patch = { ...blankAgentFields(), name: "frontend", cmd: "claude" };
     const result = adapter.save(undefined, patch);
     expect(result).not.toBeInstanceOf(Promise);
-    expect(await result).toEqual({ status: "ok", entityId: "frontend" });
-    expect(submits).toEqual([{ state: patch, editingName: undefined }]);
-  });
-
-  it("passes entityId through as editingName so an edit-mode save targets the right entry", () => {
-    const { ws, submits } = fakeWorkspace({ submitResult: undefined });
-    const adapter = new AgentStudioAdapter(ws);
-    const patch = { ...blankAgentFields(), name: "frontend", cmd: "claude --model opus" };
-    adapter.save("frontend", patch);
-    expect(submits[0]?.editingName).toBe("frontend");
+    expect(await result).toMatchObject({ status: "error", error: { source: "validation" } });
+    expect(submits).toEqual([]);
   });
 
   describe("SDD 471/472 — permission authorizations", () => {
@@ -547,13 +539,13 @@ describe("AgentStudioAdapter — save", () => {
     });
   });
 
-  it("surfaces a studioSubmit failure as a blocking validation-source error, not a silent no-op", async () => {
+  it("keeps the retired legacy save fail-closed even if the old submit seam would accept it", async () => {
     const { ws } = fakeWorkspace({ submitResult: ["name 'frontend' already exists"] });
     const adapter = new AgentStudioAdapter(ws);
     const result = await adapter.save(undefined, { ...blankAgentFields(), name: "frontend", cmd: "claude" });
     expect(result.status).toBe("error");
     if (result.status !== "error") throw new Error("unreachable");
     expect(result.error.source).toBe("validation");
-    expect(result.error.message).toContain("already exists");
+    expect(result.error.message).toContain("inline agent editing is retired");
   });
 });

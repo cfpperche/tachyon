@@ -1,8 +1,8 @@
-import { asAgent, defaultAttentionEnabled, suggestKindForCommand, instructionsDeliverable, parseEvery, parseAt, resolveBinary, type AgentDef, type EntryKind, type ScheduleDef } from "../config/loadConfig.js";
+import { asAgent, parseEvery, parseAt, resolveBinary, type AgentDef, type ScheduleDef } from "../config/loadConfig.js";
 import { isAttestedRuntime } from "../runtime/attestedRuntimes.js";
 
 /**
- * Pure logic behind the Agent Studio form — everything testable lives here;
+ * Pure logic shared by the config-backed Studio forms — everything testable lives here;
  * the webview HTML is a thin rendering of this model.
  */
 
@@ -111,13 +111,12 @@ export function suggestName(base: string, taken: string[]): string {
   }
 }
 
-/** What the Studio can produce: an agents: entry (agent/terminal), a commands: entry, or a runbooks: entry. */
-export type StudioKind = EntryKind | "command" | "runbook" | "schedule";
+/** What the shared config-backed Studios can produce. Agent Studio owns a separate profile contract. */
+export type StudioKind = "terminal" | "command" | "runbook" | "schedule";
 
-export interface FormState {
+interface SharedFormState {
   name: string;
   cmd: string;
-  kind: StudioKind;
   instructions: string;
   /** comma-separated globs (terminal kind) — parsed into the watch list */
   watch: string;
@@ -127,7 +126,7 @@ export interface FormState {
   autostart: boolean;
   restartOnCrash: boolean;
   attention: boolean;
-  /** spec 210 — run this agent/terminal in its own git worktree + branch */
+  /** Legacy shared-shape field; Terminal Studio leaves it false and never serializes it. */
   worktree: boolean;
   /** per-agent literal branch (blank = global template / tachyon/<name>) */
   branch: string;
@@ -142,6 +141,15 @@ export interface FormState {
   schedAction: "run" | "spawn";
   schedTarget: string; // command/runbook name (run) or agent name (spawn)
   catchUp: boolean;
+}
+
+export interface FormState extends SharedFormState {
+  kind: StudioKind;
+}
+
+/** Legacy Agent Studio projection. Agent authoring has its own persistence path and serializer. */
+export interface AgentFormState extends SharedFormState {
+  kind: "agent";
 }
 
 /** "src/**, package.json" -> ["src/**", "package.json"] */
@@ -166,7 +174,6 @@ export interface FormIssue {
     | "name-taken"
     | "cmd-required"
     | "steps-required"
-    | "instructions-not-deliverable"
     | "timing-invalid"
     | "target-required"
     | "terminal-cmd-is-attested-runtime";
@@ -174,13 +181,29 @@ export interface FormIssue {
   param?: string;
 }
 
-export function validateForm(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
+function validateName(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
   const issues: FormIssue[] = [];
   if (!NAME_RE.test(state.name)) {
     issues.push({ code: "name-invalid", blocking: true });
   } else if (takenNames.includes(state.name) && state.name !== editingName) {
     issues.push({ code: "name-taken", blocking: true, param: state.name });
   }
+  return issues;
+}
+
+export function validateTerminalForm(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
+  const issues = validateName(state, takenNames, editingName);
+  if (state.cmd.trim().length === 0) issues.push({ code: "cmd-required", blocking: true });
+  // SDD 478 M6 — this validates the command, not a shared agent/terminal kind. An attested LLM
+  // runtime belongs in Agent Studio and must not be saved as a generic terminal process.
+  if (isAttestedRuntime(resolveBinary(state.cmd))) {
+    issues.push({ code: "terminal-cmd-is-attested-runtime", blocking: true, param: resolveBinary(state.cmd) });
+  }
+  return issues;
+}
+
+export function validateForm(state: FormState, takenNames: string[], editingName?: string): FormIssue[] {
+  const issues = validateName(state, takenNames, editingName);
   if (state.kind === "runbook") {
     // a runbook is name + steps; cmd doesn't apply
     if (parseSteps(state.steps).length === 0) issues.push({ code: "steps-required", blocking: true });
@@ -194,15 +217,6 @@ export function validateForm(state: FormState, takenNames: string[], editingName
     return issues;
   }
   if (state.cmd.trim().length === 0) issues.push({ code: "cmd-required", blocking: true });
-  // SDD 478 M6 — a Terminal is a generic process. An attested LLM runtime is an Agent, so Terminal
-  // Studio refuses it here rather than creating a terminal that will silently be denied every agent
-  // capability the runtime exists for. The refusal names the door to use instead.
-  if (state.kind === "terminal" && isAttestedRuntime(resolveBinary(state.cmd))) {
-    issues.push({ code: "terminal-cmd-is-attested-runtime", blocking: true, param: resolveBinary(state.cmd) });
-  }
-  if (state.instructions.trim().length > 0 && !instructionsDeliverable(state.cmd)) {
-    issues.push({ code: "instructions-not-deliverable", blocking: false });
-  }
   return issues;
 }
 
@@ -230,29 +244,21 @@ export function toEntry(state: FormState): Record<string, unknown> {
   }
   if (state.kind === "runbook") return { steps: parseSteps(state.steps) };
   const entry: Record<string, unknown> = { cmd: state.cmd.trim() };
-  if (state.kind === "command") {
-    // commands: entries carry only cmd/cwd — lifecycle fields don't apply to one-shots
-    if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
-    return entry;
-  }
-  const inferred = suggestKindForCommand(state.cmd);
-  if (state.kind !== inferred) entry.kind = state.kind;
-  if (state.kind === "agent" && state.instructions.trim().length > 0) entry.instructions = state.instructions.trim();
-  const watch = state.kind === "terminal" ? parseWatch(state.watch) : [];
+  if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
+  return entry;
+}
+
+/** The declaration written by Terminal Studio. Terminal-only fields need no kind dispatch here. */
+export function toTerminalEntry(state: FormState): Record<string, unknown> {
+  const entry: Record<string, unknown> = { cmd: state.cmd.trim() };
+  const watch = parseWatch(state.watch);
   if (watch.length === 1) entry.watch = watch[0];
   else if (watch.length > 1) entry.watch = watch;
   if (state.cwd.trim().length > 0) entry.cwd = state.cwd.trim();
   if (state.autostart) entry.autostart = true;
   if (state.restartOnCrash) entry.restart = "on-crash";
-  // t-26ba8f — the same statement of the default `upsertAgent` reads to decide what an OMITTED
-  // `attention:` key means, so the writer can merge a preserved silenceSec/patterns back onto it.
-  if (state.attention !== defaultAttentionEnabled(state.kind)) entry.attention = state.attention;
-  // spec 210 — separate worktree checkout (agent or terminal kind)
-  if (state.worktree) entry.worktree = true;
-  if (state.branch.trim().length > 0) entry.branch = state.branch.trim();
-  const setup = parseSteps(state.worktreeSetup);
-  if (setup.length === 1) entry.worktreeSetup = setup[0];
-  else if (setup.length > 1) entry.worktreeSetup = setup;
+  // Terminal attention defaults off. The declaration only needs a key when the human enables it.
+  if (state.attention) entry.attention = true;
   return entry;
 }
 
@@ -334,15 +340,34 @@ export function fromRunbookDef(name: string, def: { steps: string[] }): FormStat
   };
 }
 
-/** Pre-fills the form from an existing definition (edit mode). */
-/** SDD 478 — the studio edits an entry of either kind, so every agent-only field is read through
- *  the Agent arm and falls back to the blank default for a terminal. */
-export function fromDef(name: string, entry: AgentDef): FormState {
+/** Pre-fills Terminal Studio from an existing terminal declaration. */
+export function fromTerminalDef(name: string, entry: AgentDef): FormState {
+  return {
+    name,
+    cmd: entry.cmd,
+    kind: "terminal",
+    instructions: "",
+    watch: entry.watch.join(", "),
+    steps: "",
+    cwd: entry.cwd ?? "",
+    autostart: entry.autostart,
+    restartOnCrash: entry.restart === "on-crash",
+    attention: entry.attention.enabled,
+    worktree: false,
+    branch: "",
+    worktreeSetup: "",
+    ...SCHED_DEFAULTS,
+    isolate: false,
+  };
+}
+
+/** Read-only projection for legacy Agent Studio entries; canonical saves use profile mutations. */
+export function fromAgentDef(name: string, entry: AgentDef): AgentFormState {
   const def = asAgent(entry);
   return {
     name,
     cmd: entry.cmd,
-    kind: entry.kind,
+    kind: "agent",
     instructions: def?.instructions ?? "",
     watch: entry.watch.join(", "),
     steps: "",

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
-import { validateForm, type FormState } from "../../src/webview/formLogic.js";
+import { validateTerminalForm, type FormState } from "../../src/webview/formLogic.js";
 import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/domain.js";
 import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
 
@@ -85,7 +85,7 @@ describe("door: Terminal Studio commit", () => {
   it.each(["claude", "codex", "grok", "pi", "npx claude", "/usr/local/bin/codex"])(
     "refuses the attested runtime command %s",
     (cmd) => {
-      const issue = validateForm(terminalForm(cmd), []).find((i) => i.code === "terminal-cmd-is-attested-runtime");
+      const issue = validateTerminalForm(terminalForm(cmd), []).find((i) => i.code === "terminal-cmd-is-attested-runtime");
       expect(issue, `${cmd} must be refused by Terminal Studio`).toBeDefined();
       expect(issue?.blocking).toBe(true);
     },
@@ -93,7 +93,7 @@ describe("door: Terminal Studio commit", () => {
 
   it("accepts a generic command", () => {
     for (const cmd of ["npm run dev", "bash", "cargo run", "python main.py"]) {
-      expect(validateForm(terminalForm(cmd), []).some((i) => i.code === "terminal-cmd-is-attested-runtime")).toBe(false);
+      expect(validateTerminalForm(terminalForm(cmd), []).some((i) => i.code === "terminal-cmd-is-attested-runtime")).toBe(false);
     }
   });
 
@@ -101,7 +101,7 @@ describe("door: Terminal Studio commit", () => {
     // `opencode`/`gemini` are resumable but unattested (SDD 478 M1): Agent Studio cannot mint a
     // canonical profile for them, so sending an author there would be a dead end.
     for (const cmd of ["opencode", "gemini", "qwen"]) {
-      expect(validateForm(terminalForm(cmd), []).some((i) => i.code === "terminal-cmd-is-attested-runtime")).toBe(false);
+      expect(validateTerminalForm(terminalForm(cmd), []).some((i) => i.code === "terminal-cmd-is-attested-runtime")).toBe(false);
     }
   });
 });

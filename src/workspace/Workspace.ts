@@ -106,7 +106,7 @@ import {
   lkgSpawnRefusalMessage,
 } from "../config/configFailure.js";
 import { makeConfigDiscards, type ConfigDiscards } from "../config/configDiscards.js";
-import { upsertAgent, upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
+import { upsertCommand, upsertRunbook, upsertSchedule, deleteSchedule } from "../config/YamlConfigEditor.js";
 import {
   cloneTerminalDeclaration,
   deleteLegacyTerminalDeclaration,
@@ -264,7 +264,7 @@ import {
   type TerminalPresentation,
 } from "./TerminalPresentation.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
-import { validateForm, blockingErrors, toEntry } from "../webview/formLogic.js";
+import { validateForm, validateTerminalForm, blockingErrors, toEntry, toTerminalEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
 import { composerProfileFor } from "../runtime/composerRegion.js";
@@ -446,8 +446,6 @@ const issueMessage = (issue: { code: string; param?: string }, t: Translate): st
       return t("command: required");
     case "steps-required":
       return t("steps: at least one step is required");
-    case "instructions-not-deliverable":
-      return t("note: this CLI doesn't accept a startup prompt — instructions will be saved but not auto-delivered");
     case "terminal-cmd-is-attested-runtime":
       return t(
         "command: '{0}' is an LLM runtime Tachyon attests — create it as an agent in Agent Studio; terminals are for generic processes",
@@ -6854,26 +6852,17 @@ export class Workspace {
     return source?.mode === "profile" ? source.effectiveSha256 : undefined;
   }
 
-  /** Agent Studio submit pipeline — webview form and the internal test seam. */
+  /** Config-backed Studio submit pipeline — webview forms and the internal test seam. */
   studioSubmit = (submit: StudioSubmit): string[] | undefined => {
     const kind = submit.state.kind;
-    if (kind === "agent") {
-      return [this.t("inline agent editing is retired — create or edit the canonical agent in Agent Studio")];
-    }
     const takenMap =
       kind === "command" ? this.config?.commands : kind === "runbook" ? this.config?.runbooks : kind === "schedule" ? this.config?.schedules : this.config?.agents;
-    const errors = blockingErrors(validateForm(submit.state, Object.keys(takenMap ?? {}), submit.editingName));
+    const issues = kind === "terminal"
+      ? validateTerminalForm(submit.state, Object.keys(takenMap ?? {}), submit.editingName)
+      : validateForm(submit.state, Object.keys(takenMap ?? {}), submit.editingName);
+    const errors = blockingErrors(issues);
     if (errors.length > 0) return errors.map((e) => issueMessage(e, this.t));
-    // spec 215 — an entry's kind decides its block; you can't flip agent↔terminal by editing
-    // (the Studio also locks the tabs in edit mode). Reject rather than silently write the wrong
-    // block (review fix: editing a terminals: entry on the Agent tab used to stay a terminal).
-    if (kind === "terminal" && submit.editingName) {
-      const existingKind = this.config?.agents[submit.editingName]?.kind;
-      if (existingKind && existingKind !== kind) {
-        return [this.t("can't change '{0}' between agent and terminal by editing — delete it and recreate", submit.editingName)];
-      }
-    }
-    const entry = toEntry(submit.state);
+    const entry = kind === "terminal" ? toTerminalEntry(submit.state) : toEntry(submit.state);
     if (kind === "terminal") {
       try {
         upsertTerminalDeclaration(this.workspaceRoot, submit.state.name, entry, submit.editingName);
@@ -6899,9 +6888,7 @@ export class Workspace {
         ? upsertCommand(text, submit.state.name, entry, submit.editingName)
         : kind === "runbook"
           ? upsertRunbook(text, submit.state.name, entry as { steps: string[] }, submit.editingName)
-          : kind === "schedule"
-            ? upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined)
-            : upsertAgent(text, submit.state.name, entry, submit.editingName, "terminals");
+          : upsertSchedule(text, submit.state.name, entry, submit.editingName !== undefined);
     // codex 228-review B1 — validate the resulting FULL config BEFORE persisting. The harness form is
     // intentionally shallow (loadConfig is authoritative for ${VAR}-env / server shape), so a
     // structurally-valid-YAML-but-invalid harness must not silently break the whole tachyon.yml. Surface
@@ -6922,30 +6909,12 @@ export class Workspace {
     );
     if (!ok) return [this.t("could not write tachyon.yml — see the notification")];
     if (kind === "schedule") this.scheduler.activate(); // anchor a freshly-created schedule
-    // F2 (dogfood): a freshly-CREATED agent declared autostart:true should start now —
-    // not only on the next workspace open. Targeted to the create path (editingName
-    // undefined) so editing the yml never auto-(re)starts an intentionally-stopped agent.
-    // SDD 478 M5 — say which arm this is. `kind === "agent"` returned above (inline agent editing
-    // is retired), so the terminal arm is the only managed entry that reaches here. The old
-    // `!isScheduleOrCommandOrRunbook` said this by negating three unrelated studio kinds, and would
-    // have silently swept in a sixth studio kind the day one was added.
-    const isManagedEntry = false;
-    const autostarted = isManagedEntry && submit.editingName === undefined && !!this.config?.agents[submit.state.name]?.autostart;
-    if (autostarted) {
-      void this.manager.spawn(submit.state.name).then(() => this.refreshAgentsViews()).catch((err) => {
-        this.host.notify(`${err instanceof Error ? err.message : String(err)}`, "error");
-      });
-    }
     this.host.notify(
       kind === "command"
         ? this.t("command '{0}' saved — ▶ in the sidebar (or run_command) runs it", submit.state.name)
         : kind === "runbook"
           ? this.t("runbook '{0}' saved — ▶ in the sidebar (or run_runbook) runs it", submit.state.name)
-          : kind === "schedule"
-            ? this.t("schedule '{0}' saved — it's now active", submit.state.name)
-            : autostarted
-              ? this.t("'{0}' saved & started (autostart)", submit.state.name)
-              : this.t("'{0}' saved — ▶ in the sidebar starts it", submit.state.name),
+          : this.t("schedule '{0}' saved — it's now active", submit.state.name),
     );
     return undefined;
   };

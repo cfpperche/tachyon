@@ -9,11 +9,11 @@ import {
 import { agentProfileSchemaV1 } from "../../src/config/agentProfileSchema.js";
 import { canonicalAgentFields, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
 import { savedAgentCreateMutation } from "../../src/agents/savedAgentProposal.js";
-import { toEntry, type FormState } from "../../src/webview/formLogic.js";
+import { toTerminalEntry, type FormState } from "../../src/webview/formLogic.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
 import { upsertAgent } from "../../src/config/YamlConfigEditor.js";
-import { blankAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
+import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/domain.js";
 
 /**
  * t-bd14d8 — `watch` is a Terminal capability. This suite measures the AUTHORING half: no Agent door
@@ -138,7 +138,7 @@ describe("t-bd14d8 — a profile that already has one still loads", () => {
 
 describe("t-bd14d8 — the Terminal side is untouched", () => {
   const terminalForm = (): FormState => ({
-    ...(blankAgentFields() as FormState),
+    ...blankTerminalFields(),
     name: "dev",
     cmd: "npm run dev",
     kind: "terminal",
@@ -146,7 +146,7 @@ describe("t-bd14d8 — the Terminal side is untouched", () => {
   });
 
   it("a terminal form still writes its watch, and the loader still reads it", () => {
-    const entry = toEntry(terminalForm());
+    const entry = toTerminalEntry(terminalForm());
     expect(entry).toMatchObject({ watch: ["src/**", "package.json"] });
     const yaml = upsertAgent("terminals: {}\n", "dev", entry, undefined, "terminals").text;
     const parsed = parseConfig(yaml);
