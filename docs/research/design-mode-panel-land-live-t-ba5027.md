@@ -9,11 +9,11 @@ Codex 0.146.1 and Pi 0.80.10 — each listed and called `design_mode_chat_reply`
 `turnId`, used no markers, appended exactly one nonce-bearing event to the Design Mode JSONL, and
 painted exactly one matching bubble in the live panel DOM.
 
-The remaining current-turn claim is **not green**. Design Mode v1 deliberately lists only running
-Saved Agents, while the no-`tachyon.yml`-edit fixture can create only Temporary agents. Therefore the
-panel refused to send a chat turn (`No running agents`), no host-minted `dm-turn-*` wait existed, and
-both accepted calls were orphan/no-wait replies. This proves runtime MCP → handler → JSONL → panel,
-but not that the same tool call resolves the outstanding current turn.
+The generic current-turn seam is now **green for Claude only**. Later on 2026-08-12, the production
+workspace issued a turn to a live Saved Claude agent, recorded the outstanding `dm-turn-*`, and
+accepted the agent's `design_mode_chat_reply` for that exact turn into the chat JSONL. This does not
+promote Codex, Grok, Pi, or OpenCode by analogy: the earlier Codex and Pi calls remain orphan/no-wait
+measurements, Grok has only the earlier offline headless half, and OpenCode remains unmeasured.
 
 ## Phase 1 — production host offline
 
@@ -63,16 +63,32 @@ arrival. It is **partial (`~`) overall** because the outstanding-current-turn bi
 under this fixture. The Pi orphan event inherited active speaker `f3codex`; that is expected from
 the no-wait fallback and must not be presented as a correctly bound Pi turn.
 
-## Exact remaining blocker
+## Refuted blocker and exact remaining matrix gap
 
-`IdeBrowserBridgeManager.listRunningAgents()` filters `!r.temporary` before Design Mode may send.
-The fixture has `agents: {}` and its own README requires Agent Studio to create Saved Agents. That
-would mutate the mirrored `tachyon.yml`, explicitly forbidden by this task. Measured counts:
+The initial report attributed the empty Design Mode menu to
+`IdeBrowserBridgeManager.listRunningAgents()` filtering `!r.temporary`, and therefore concluded that
+the fixture needed a Saved Agent. `t-a4060b` refuted that explanation at the production query door:
+`agents.list` rows expose `lifetime`, not a boolean `temporary`, so `!r.temporary` was true for both
+Temporary and Saved agents. The menu's empty result was an indistinguishable failure, not proof of
+an eligibility rule. Preserve the earlier observed counts as measurements, but not their old cause:
 
 - Bridge `list_agents`: 2 running Temporary runtimes (`f3codex`, `f3pi`).
 - Design Mode agent menu: 0 eligible agents, exact row `No running agents`.
-- Host-minted current turns: 0.
+- Host-minted current turns in that EDH run: 0.
 - Runtime MCP calls reaching JSONL + DOM: 2 of 2.
+
+The later production event closes the missing current-wait chain for Claude:
+
+| JSONL line | Time | Evidence |
+|:----------:|------|----------|
+| 2 | 12:48:33 | user selection message, active agent `claude` |
+| 3 | 12:48:43 | host names pending turn `dm-turn-4fe022b5-58bd-46b5-9d48-44a72c57a477` after Claude finished without a reply |
+| 4 | 12:50:08 | agent message for `claude`, `source:"tool"`, produced by `design_mode_chat_reply` with that turn id |
+
+This promotes Claude's §3.1.3 `Sent turnId` and `Panel land` cells to `✓`. The exact remaining F3
+gap is runtime-specific pending-turn resolution for Codex, Grok, and Pi, plus the still-unmeasured
+OpenCode row. Under `t-45b266`'s explicit “after runtime matrix (F3) is green” criterion, F1 therefore
+remains blocked even though the generic host-wait mechanism now has one live end-to-end proof.
 
 ## Changed fact: live schema now carries `turnId`
 
@@ -80,10 +96,12 @@ The Bridge tool catalog visible to Codex and Pi declares optional `turnId`, unli
 catalog measured on 2026-08-06. Both runtimes sent it and the host accepted it with no wait;
 outstanding-wait acceptance remains unmeasured.
 
-## Reproduction plan once a Saved Agent is available
+## Reproduction plan for each remaining runtime
 
-One Saved Agent is enough to close the generic current-wait path requested by the resumed task:
-send one unique nonce through the panel, capture its host-minted id from the delivered prompt, and
-require the same runtime's MCP call. A pass requires the matching user event before the agent event
-in JSONL and one matching DOM bubble. Until that run exists, F1 must not delete the pane-marker
+For Codex, Grok, and Pi, send one unique nonce through the panel while that runtime is active,
+capture the host-minted id from the delivered prompt, and require that same runtime's MCP call.
+A pass requires the matching user event and outstanding-turn record before the tool-sourced agent
+event in JSONL, plus one matching DOM bubble. Measure the same chain for OpenCode, including its
+currently unknown listing/call/marker cells. Until those runtime rows are green (or explicitly made
+non-applicable by a separately justified product decision), F1 must not delete the pane-marker
 fallback unconditionally.
