@@ -36,7 +36,7 @@ _Generated from `plan.md` on 2026-08-04. Work top-to-bottom. Check boxes as task
 
 - [x] Fixture `test/fixtures/ide-browser-dogfood` clean (no pre-created agents unless scenario needs them)
 - [x] Human dogfood: pick → chat attach → agent received selection (2026-08-04, notes.md)
-- [ ] Record Evidence screenshots under `docs/specs/488-ide-browser-design-mode/evidence/` (optional for merge review)
+- [x] Record Evidence screenshots under `docs/specs/488-ide-browser-design-mode/evidence/` (optional for merge review) — t-7f994f 2026-08-12
 - [x] Runtime matrix F3: Grok / Claude / Codex — tool listed? tool called? (`t-dd46a4` 2026-08-06; panel land still open — IDE bridge offline; Pi unmeasured)
 - [x] README fixture steps updated (`test/fixtures/ide-browser-dogfood/README.md`)
 - [ ] Maintainer ratify open questions Q1–Q5 + **architecture-fit.md** (two bridges keep vs rewrite)
@@ -63,7 +63,7 @@ _Start only after P2 green or explicit maintainer pull-forward. Prefer split SDD
 - [ ] **F5** Pick → structured edit quality
 - [ ] **F6** Security review (eval, token, Trusted Types, click)
 - [x] **F7** `cookbook.md` via sdd-cookbook (operator: which browser product when) — t-26232e
-- [ ] **F8** Visual QA pack for `/sdd close`
+- [x] **F8** Visual QA pack for `/sdd close` — t-7f994f 2026-08-12
 - [ ] **F9** Multi-root / multi-window instance edge cases
 - [ ] **F10** Maintainer decision: merge feature branch → `main` (checklist, not automatic)
 
@@ -89,10 +89,13 @@ _Acceptance checks tied to `spec.md`._
 
 ## Visual QA
 
-_UI work — capture when dogfooding P2._
+_UI work — capture when dogfooding P2. F8 / t-7f994f 2026-08-12._
 
-- [ ] Evidence: (add paths under `docs/specs/488-ide-browser-design-mode/evidence/` when screenshots land)
-- [ ] Verdict:
+- [x] Evidence: `docs/specs/488-ide-browser-design-mode/evidence/design-mode-toolbar.png`
+- [x] Evidence: `docs/specs/488-ide-browser-design-mode/evidence/pick-attach.png`
+- [x] Evidence: `docs/specs/488-ide-browser-design-mode/evidence/chat-reply.png`
+- [x] Evidence: `docs/specs/488-ide-browser-design-mode/evidence/status-bar-cluster.png`
+- [x] Verdict: **concern** (pack complete; one layout defect filed, no UI fix in this pass). Real Extension Development Host captures on worktree `60f7ec21` via `headless-session` + fixture `ide-browser-dogfood` after t-47503a manager split. **Toolbar:** floating footer bar with agent selector (`grok` label), chat, picker (armed), viewport presets — readable, theme-token chrome. **Pick attach:** Selection card shows tag/id/text/styles/HTML; chat chip `Attached: <h1> hero` + "Attached to chat — type your ask there" — matches unified-channel intent. **Chat reply:** agent bubble lands in panel via production `/design-mode/chat-reply` host route (same door as `design_mode_chat_reply`); attributed to `grok`. **Status bar cluster:** adjacent globe + inspect icons (shared "Tachyon IDE" group); inspect uses warning/yellow background when Design Mode ON — exclusive priority band holds. **Issues found (not fixed here):** (1) with pick card + chat both open, the Selection panel covers the chat transcript so a landed reply is hidden until the card is closed — follow-up task. (2) fixture has empty agent roster yet toolbar/status still show agent label `grok` (default label, not a live agent). (3) first open briefly showed browser "Paused due to Notification" until first-use tips dismissed. **visual-qa skill:** web-only; Design Mode is VS Code shell + CDP inject — captured through Dev Host exploratory session instead. **Bytes added:** ~510 KiB PNG pack.
 
 ## Cookbook
 
