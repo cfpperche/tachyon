@@ -16,24 +16,154 @@ import { IdeBrowserCdpSession, isBrowserDebugSession } from "./cdpSession.js";
 
 export type BrowserSessionLog = { appendLine: (line: string) => void };
 
+/** Discriminators for who ended a tracked editor-browser session (t-1c8195). */
+export type IdeBrowserSessionEndInput = {
+  endedId: string;
+  endedName: string;
+  endedType: string;
+  endedParentId: string | undefined;
+  trackedChildId: string | null;
+  trackedParentId: string | null;
+  resetInFlight: boolean;
+  resetReason: string | null;
+  activeId: string | undefined;
+  activeName: string | undefined;
+  lastTransportEvent: string | null;
+};
+
+export type IdeBrowserSessionEndClassification = {
+  tracked: "child" | "parent" | "none";
+  actor: "controller-reset" | "external";
+  trigger:
+    | "controller-reset"
+    | "child-ended-parent-active"
+    | "child-ended-parent-unknown"
+    | "parent-ended"
+    | "untracked";
+};
+
+/**
+ * Classify a debug-session termination. The VS Code event has no reason code;
+ * parent-still-active vs our own reset is what distinguishes tab-close from
+ * child-only Stop (the floating toolbar acts on the child, t-414540).
+ */
+export function classifyIdeBrowserSessionEnd(
+  input: IdeBrowserSessionEndInput,
+): IdeBrowserSessionEndClassification {
+  const tracked =
+    input.endedId === input.trackedChildId
+      ? "child"
+      : input.endedId === input.trackedParentId
+        ? "parent"
+        : "none";
+  if (input.resetInFlight) {
+    return { tracked, actor: "controller-reset", trigger: "controller-reset" };
+  }
+  if (tracked === "parent") {
+    return { tracked, actor: "external", trigger: "parent-ended" };
+  }
+  if (tracked === "child") {
+    if (input.activeId && input.activeId === input.trackedParentId) {
+      return { tracked, actor: "external", trigger: "child-ended-parent-active" };
+    }
+    return { tracked, actor: "external", trigger: "child-ended-parent-unknown" };
+  }
+  return { tracked, actor: "external", trigger: "untracked" };
+}
+
 export class BrowserSessionController {
   readonly cdp = new IdeBrowserCdpSession();
   private launching: Promise<void> | null = null;
   private sessionEndSub: vscode.Disposable | null = null;
+  private sessionStartSub: vscode.Disposable | null = null;
   private readonly log: BrowserSessionLog;
   private onSessionEnded: (() => void) | null = null;
+  private trackedChildId: string | null = null;
+  private trackedParentId: string | null = null;
+  private resetInFlight = false;
+  private resetReason: string | null = null;
+  private orphanCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(log: BrowserSessionLog) {
     this.log = log;
-    // When the user closes the Integrated Browser tab, the debug session ends —
-    // drop stale CDP so the next open relaunches cleanly.
-    this.sessionEndSub = vscode.debug.onDidTerminateDebugSession((session) => {
-      if (this.cdp.session && this.cdp.session.id === session.id) {
-        this.log.appendLine("[ide-browser] debug session ended (tab closed?) — resetting CDP");
-        this.cdp.dispose();
-        this.onSessionEnded?.();
+    this.sessionStartSub = vscode.debug.onDidStartDebugSession((session) => {
+      if (!isBrowserDebugSession(session)) return;
+      this.log.appendLine(
+        `[ide-browser] debug session started id=${session.id} name=${JSON.stringify(session.name)} type=${session.type} parent=${session.parentSession?.id ?? "none"}`,
+      );
+      if (
+        this.trackedParentId
+        && session.parentSession?.id === this.trackedParentId
+        && session.id !== this.trackedChildId
+      ) {
+        this.log.appendLine(
+          `[ide-browser] replacement child under tracked parent parent=${this.trackedParentId} new=${session.id} (not auto-attached)`,
+        );
       }
     });
+    this.sessionEndSub = vscode.debug.onDidTerminateDebugSession((session) => {
+      this.onDebugSessionEnded(session);
+    });
+  }
+
+  private onDebugSessionEnded(session: vscode.DebugSession): void {
+    const active = vscode.debug.activeDebugSession;
+    const classified = classifyIdeBrowserSessionEnd({
+      endedId: session.id,
+      endedName: session.name,
+      endedType: session.type,
+      endedParentId: session.parentSession?.id,
+      trackedChildId: this.trackedChildId,
+      trackedParentId: this.trackedParentId,
+      resetInFlight: this.resetInFlight,
+      resetReason: this.resetReason,
+      activeId: active?.id,
+      activeName: active?.name,
+      lastTransportEvent: this.cdp.lastTransportEvent,
+    });
+    const ours =
+      (this.cdp.session && this.cdp.session.id === session.id)
+      || session.id === this.trackedChildId
+      || session.id === this.trackedParentId;
+    if (!ours && classified.trigger === "untracked") return;
+    this.log.appendLine(
+      `[ide-browser] debug session ended actor=${classified.actor} trigger=${classified.trigger}`
+        + ` tracked=${classified.tracked}`
+        + ` session=${session.id} name=${JSON.stringify(session.name)} type=${session.type}`
+        + ` parent=${session.parentSession?.id ?? "none"}`
+        + ` active=${active?.id ?? "none"}`
+        + ` resetReason=${this.resetReason ?? "none"}`
+        + ` lastCdp=${this.cdp.lastTransportEvent ?? "none"}`,
+    );
+    if (session.id === this.trackedChildId || (this.cdp.session && this.cdp.session.id === session.id)) {
+      this.cdp.dispose();
+      this.trackedChildId = null;
+      if (!this.resetInFlight) this.onSessionEnded?.();
+      // VS Code still reports the dying session as activeDebugSession (measured 1.128).
+      // Parent-still-alive after a beat is the orphan discriminator: Stop/tab-close
+      // also end the parent and destroy the page; a child-only death leaves chrome painted.
+      if (this.trackedParentId && !this.resetInFlight) {
+        this.scheduleOrphanCheck(this.trackedParentId);
+      }
+    }
+    if (session.id === this.trackedParentId) {
+      this.trackedParentId = null;
+    }
+  }
+
+  private scheduleOrphanCheck(parentId: string): void {
+    if (this.orphanCheckTimer) {
+      clearTimeout(this.orphanCheckTimer);
+      this.orphanCheckTimer = null;
+    }
+    this.orphanCheckTimer = setTimeout(() => {
+      this.orphanCheckTimer = null;
+      if (this.trackedParentId === parentId) {
+        this.log.appendLine(
+          `[ide-browser] child ended and parent survived parent=${parentId} — injected Design Mode chrome cannot be removed without CDP`,
+        );
+      }
+    }, 150);
   }
 
   setOnSessionEnded(fn: (() => void) | null): void {
@@ -56,7 +186,7 @@ export class BrowserSessionController {
       this.log.appendLine(
         `[ide-browser] CDP dead (${err instanceof Error ? err.message : String(err)}) — recovering → ${warmUrl}`,
       );
-      await this.resetBrowserSession();
+      await this.resetBrowserSession("cdp-recovery");
       await this.ensureBrowser(warmUrl);
       return await fn();
     }
@@ -72,7 +202,12 @@ export class BrowserSessionController {
   }
 
   /** Stop debug session + dispose CDP (HTTP bridge stays up when called from manager). */
-  async resetBrowserSession(): Promise<void> {
+  async resetBrowserSession(reason = "unspecified"): Promise<void> {
+    this.resetInFlight = true;
+    this.resetReason = reason;
+    this.log.appendLine(
+      `[ide-browser] resetBrowserSession reason=${reason} child=${this.trackedChildId ?? "none"} parent=${this.trackedParentId ?? "none"}`,
+    );
     const session = this.cdp.session;
     this.cdp.dispose();
     if (session) {
@@ -103,7 +238,14 @@ export class BrowserSessionController {
         }
       }
     }
+    this.trackedChildId = null;
+    this.trackedParentId = null;
+    if (this.orphanCheckTimer) {
+      clearTimeout(this.orphanCheckTimer);
+      this.orphanCheckTimer = null;
+    }
     this.onSessionEnded?.();
+    this.resetInFlight = false;
   }
 
   async ensureBrowser(initialUrl?: string): Promise<void> {
@@ -112,7 +254,7 @@ export class BrowserSessionController {
         return;
       }
       this.log.appendLine("[ide-browser] CDP marked connected but dead — relaunching");
-      await this.resetBrowserSession();
+      await this.resetBrowserSession("ensure-dead");
     }
     if (this.launching) {
       try {
@@ -123,7 +265,7 @@ export class BrowserSessionController {
       // After concurrent launch, re-check liveness.
       if (this.cdp.isLive && (await this.cdp.probeAlive())) return;
       if (this.cdp.connectionState === "connected") {
-        await this.resetBrowserSession();
+        await this.resetBrowserSession("ensure-stale");
       }
     }
     this.launching = this.launchBrowser(initialUrl || "about:blank");
@@ -194,11 +336,21 @@ export class BrowserSessionController {
     if (!child) {
       throw new Error("Timed out waiting for editor-browser child debug session (CDP).");
     }
+    this.trackedChildId = child.id;
+    this.trackedParentId = child.parentSession?.id ?? null;
     await this.cdp.connectToDebugSession(child, (m) => this.log.appendLine(`[ide-browser] ${m}`));
-    this.log.appendLine("[ide-browser] CDP connected");
+    this.log.appendLine(
+      `[ide-browser] CDP connected child=${child.id} parent=${this.trackedParentId ?? "none"}`,
+    );
   }
 
   dispose(): void {
+    if (this.orphanCheckTimer) {
+      clearTimeout(this.orphanCheckTimer);
+      this.orphanCheckTimer = null;
+    }
+    this.sessionStartSub?.dispose();
+    this.sessionStartSub = null;
     this.sessionEndSub?.dispose();
     this.sessionEndSub = null;
     this.cdp.dispose();

@@ -163,6 +163,31 @@ Living dogfood for `design_mode_chat_reply` tool-call reliability (blocks confid
 - **Evidence:** `evidence/t-330a51-before.png` / `t-330a51-after.png` (880×660, same page, both panels open). 360 pair: `t-330a51-before-360.png` / `t-330a51-after-360.png`.
 - **Not done:** did not merge the two surfaces; did not touch `manager.ts` or delivery.
 
+## t-1c8195 — what ends the CDP child and leaves inject painted (`2026-08-12`)
+
+Actor × trigger matrix, measured before any reconnect/cleanup work.
+
+**Owner incident (VS Code 1.117, exthost3 PID 1125100, same host 12:20–14:32):**
+`/home/goat/.vscode-server/data/logs/20260812T094001/exthost3/output_logging_20260812T122021/3-Tachyon IDE Browser.log`.
+Three launches, three child deaths. Two while Design Mode was on (`reattach Target.* failed (Connection is closed)` then `debug session ended (tab closed?)`). One immediately after `opened about:blank` with DM off. Same shape in exthost1 and exthost6. Host HTTP stayed up; page on globo.com still showed painted card/chat (`t-a4060b`).
+
+**Discarded as this incident's trigger:**
+- Extension / VSIX reload — deaths are intra-host; PID 1125100 only later exited at 14:32 (`received terminate message from renderer`).
+- Our `resetBrowserSession` / `manager.stop` — that path `dispose()`s CDP first, so the terminate handler would not log. Owner's line requires `cdp.session` still set.
+- Presence-watch as a required cause — death also happens with Design Mode off (no reattach).
+- Tab close, toolbar Stop, and Disconnect **on EDH 1.128** — all three end child then parent and **destroy the page**. No orphan. Signatures are indistinguishable at the terminate event (`active` is still the dying session; VS Code has not updated `activeDebugSession` yet).
+- Idle Design Mode, `example.com`, address-bar nav to `example.org`, globo.com homepage for 30s, article-link click — child stayed `cdp=connected` on 1.128.
+
+**Measured live (EDH 1.128, fixture `ide-browser-dogfood`, Xvfb `:97`):**
+- Opening the browser creates parent + CDP child (`pwa-editor-browser`). Child is `activeDebugSession` and draws the floating debug toolbar (`t-414540`).
+- globo.com then spawns a **forest** of further `pwa-editor-browser` sessions (ads, blobs, safeframes) as children/grandchildren of our CDP child. Input for `t-849f52` (first-child-with-parent adoption); not implemented here.
+- 1.128 couples the editor tab to the debug family: Stop and Ctrl+W both teardown parent+child and drop the frame. The owner's 1.117 orphan (child dead, globo.com tab still painted) was **not reproducible** on 1.128.
+- Once CDP is gone we cannot remove inject. Auto-reconnect is not implemented (duplicate-chrome risk). Remaining choice: a page-side heartbeat that self-removes chrome when the host stops answering — propose, do not build until OK.
+
+**Product change in this pass:** classify terminate (`controller-reset` vs `external` / `child-ended-*` / `parent-ended`), log session start family, and after 150ms log `child ended and parent survived` when only the child died (the orphan discriminator). No auto-reattach. `manager.ts` untouched.
+
+**Evidence:** `evidence/t-1c8195-design-on.png`, `t-1c8195-after-stop.png`, `t-1c8195-globo-forest.png`, `t-1c8195-after-tab-close.png`.
+
 ## Ratify log
 
 - 2026-08-04 — Product lean agreed in conversation: Design Mode viable as Tachyon product slice;

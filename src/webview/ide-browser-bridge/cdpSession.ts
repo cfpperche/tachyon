@@ -59,6 +59,9 @@ export class IdeBrowserCdpSession {
   private reinjectTimer: ReturnType<typeof setTimeout> | null = null;
   private reinjectInFlight = false;
 
+  /** Last transport-level event — used to classify session death (t-1c8195). */
+  lastTransportEvent: string | null = null;
+
   get connectionState(): "disconnected" | "connecting" | "connected" {
     return this.state;
   }
@@ -321,6 +324,7 @@ export class IdeBrowserCdpSession {
         }
       });
       ws.on("close", () => {
+        this.lastTransportEvent = "ws-close";
         this.state = "disconnected";
         for (const [, p] of this.pending) p.reject(new Error("CDP WebSocket closed"));
         this.pending.clear();
@@ -380,6 +384,7 @@ export class IdeBrowserCdpSession {
       }
       if (page.url) this.lastUrl = page.url;
     } catch (err) {
+      this.lastTransportEvent = "reattach-closed";
       log(`reattach Target.* failed (continuing): ${err}`);
     }
     try {
@@ -839,6 +844,7 @@ export class IdeBrowserCdpSession {
     this.debugSession = null;
     this.lastUrl = "";
     this.state = "disconnected";
+    this.lastTransportEvent = this.lastTransportEvent ?? "cdp-disposed";
   }
 }
 
