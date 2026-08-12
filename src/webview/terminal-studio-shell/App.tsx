@@ -22,7 +22,7 @@ import type { TerminalStudioEntity, TerminalStudioFields, TerminalStudioHostMess
  *
  * t-b54ead — there is deliberately NO "Separate git checkout + branch" section here, and re-adding one is a
  * regression rather than a feature. `worktree`, `branch`, and `worktreeSetup` are agent-only by
- * consumption, so `parseAgentEntry` refuses all three under `terminals:` — and `Workspace.mutateConfig`
+ * consumption, so `parseTerminalDeclaration` reports all three under `terminals:` — and `Workspace.mutateConfig`
  * refuses to write a config the loader would discard from, which made Save fail with a message pointing
  * at Agent Studio. The section arrived on 2026-07-06 (`aa99c066`) by mirroring Agent Studio's footer-void
  * LAYOUT fix (t-a1ba6c) and taking its fields along; the parser refusals landed later, in SDD 478 M6.

@@ -738,12 +738,7 @@ const HARNESS_KEYS = ["inherit", "mcp", "hooks", "rules", "instructions", "skill
  * config home it asked for would hand it the workspace's own MCP servers and credentials.
  * `cmd`/`env` are the agent's, for the H4 ownership checks.
  */
-function parseHarness(section: "agents" | "terminals", name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, isTerminal: boolean, discarded: string[]): HarnessDef | undefined {
-  if (isTerminal) {
-    // Prefixed with the REAL section — this used to say `agents.<name>` even for a terminals: entry.
-    discarded.push(agentOnlyKeyRefusal(section, name, "harness", "this entry is a terminal — it has no runtime harness"));
-    return undefined;
-  }
+function parseHarness(name: string, raw: unknown, cmd: string, env: Record<string, string> | undefined, discarded: string[]): HarnessDef | undefined {
   const binary = binaryOf(cmd);
   // Harnessable CLIs with a private-home materializer. Pi uses its dedicated resource materializer
   // rather than the generic MCP-oriented ResumeAdapter harness shape (spec 406).
@@ -1004,12 +999,7 @@ function parseHarness(section: "agents" | "terminals", name: string, raw: unknow
   return harness;
 }
 
-/**
- * spec 215 — parse one agent/terminal entry's fields, shared by the `agents:` and `terminals:`
- * blocks so they never drift. For `terminals:` the kind is forced to `terminal`, and a `kind:` or
- * `instructions:` key is rejected (kind is implied; instructions need an AI). Error prefixes use
- * the real section so messages stay accurate. Returns the def, or null when `cmd` is missing.
- */
+/** Fields genuinely shared by canonical agent projections and terminal declarations. */
 const ISOLATE_TRANSCRIPT_DEPRECATION = "isolate: transcript is deprecated — codex is private-home by default; use harness:{} for a private claude config home";
 
 /**
@@ -1023,49 +1013,36 @@ const ISOLATE_TRANSCRIPT_DEPRECATION = "isolate: transcript is deprecated — co
  */
 const MOVE_TO_AN_AGENT = "create it as an agent in Agent Studio (an agents: entry is a canonical profile pointer), or drop the key to keep this a terminal";
 
-function agentOnlyKeyRefusal(section: "agents" | "terminals", name: string, key: string, why: string): string {
-  return `${section}.${name}: '${key}' applies only to agents (${why}) — ${MOVE_TO_AN_AGENT}`;
-}
-
-function parseAgentEntry(section: "agents" | "terminals", name: string, def: Record<string, unknown>, discarded: string[], warnings: string[]): AgentDef | null {
-  const forceTerminal = section === "terminals";
+function parseManagedEntryBase(
+  section: "agents" | "terminals",
+  name: string,
+  def: Record<string, unknown>,
+  attentionEnabled: boolean,
+  discarded: string[],
+): ManagedEntryBase | null {
   if (typeof def.cmd !== "string" || def.cmd.trim().length === 0) {
     discarded.push(`${section}.${name}.cmd: required non-empty string`);
     return null;
   }
-  const agent: AgentDef = {
+  const entry: ManagedEntryBase = {
     cmd: def.cmd,
     autostart: false,
     watch: [],
-    attention: { enabled: true, silenceSec: ATTENTION_DEFAULT_SILENCE_SEC, patterns: [] },
+    attention: { enabled: attentionEnabled, silenceSec: ATTENTION_DEFAULT_SILENCE_SEC, patterns: [] },
     restart: "never",
-    kind: forceTerminal ? "terminal" : suggestKindForCommand(def.cmd),
   };
-  if (forceTerminal) {
-    if (def.kind !== undefined) discarded.push(`terminals.${name}: remove 'kind' — entries under terminals: are always terminals`);
-    if (def.instructions !== undefined) discarded.push(agentOnlyKeyRefusal(section, name, "instructions", "a terminal receives no brief"));
-  } else if (def.kind !== undefined) {
-    if (def.kind !== "agent" && def.kind !== "terminal") discarded.push(`agents.${name}.kind: must be 'agent' or 'terminal'`);
-    else agent.kind = def.kind;
-  }
-  // SDD 478 M2 — the kind is settled above and does not change below, so this is the entry's single
-  // narrowing: every agent-only key is written through it, and a terminal has nowhere to put one.
-  // Where the parser already REFUSES a key for a terminal it keeps doing so; the twelve keys that
-  // were merely unread on a terminal are now dropped instead of stored. Turning those drops into
-  // refusals that name the block to move to is M6.
-  const agentEntry = asAgent(agent);
   if (def.cwd !== undefined) {
     if (typeof def.cwd !== "string") discarded.push(`${section}.${name}.cwd: must be a string`);
-    else agent.cwd = def.cwd;
+    else entry.cwd = def.cwd;
   }
   if (def.env !== undefined) {
     if (!isPlainObject(def.env) || Object.values(def.env).some((v) => typeof v !== "string")) {
       discarded.push(`${section}.${name}.env: must be a mapping of string -> string`);
     } else {
-      agent.environment = { values: def.env as Record<string, string> };
-      if (binaryOf(agent.cmd) === "pi") {
+      entry.environment = { values: def.env as Record<string, string> };
+      if (binaryOf(entry.cmd) === "pi") {
         for (const owned of ["PI_CODING_AGENT_DIR", "PI_CODING_AGENT_SESSION_DIR"]) {
-          if (owned in agent.environment.values!) {
+          if (owned in entry.environment.values!) {
             discarded.push(`${section}.${name}.env: remove '${owned}' — Tachyon owns Pi's private runtime and session homes`);
           }
         }
@@ -1074,38 +1051,38 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
   }
   if (def.autostart !== undefined) {
     if (typeof def.autostart !== "boolean") discarded.push(`${section}.${name}.autostart: must be a boolean`);
-    else agent.autostart = def.autostart;
+    else entry.autostart = def.autostart;
   }
   if (def.watch !== undefined) {
     const globs = typeof def.watch === "string" ? [def.watch] : def.watch;
     if (!Array.isArray(globs) || globs.length === 0 || globs.some((g) => typeof g !== "string" || g.length === 0)) {
       discarded.push(`${section}.${name}.watch: must be a non-empty glob string or list of globs`);
     } else {
-      agent.watch = globs as string[];
+      entry.watch = globs as string[];
     }
   }
   if (def.attention !== undefined) {
     if (typeof def.attention === "boolean") {
-      agent.attention.enabled = def.attention;
+      entry.attention.enabled = def.attention;
     } else if (isPlainObject(def.attention)) {
-      agent.attention.enabled = true;
+      entry.attention.enabled = true;
       const att = def.attention;
       if (att.enabled !== undefined) {
         if (typeof att.enabled !== "boolean") discarded.push(`${section}.${name}.attention.enabled: must be a boolean`);
-        else agent.attention.enabled = att.enabled;
+        else entry.attention.enabled = att.enabled;
       }
       if (att.silenceSec !== undefined) {
         if (typeof att.silenceSec !== "number" || !Number.isInteger(att.silenceSec) || att.silenceSec < 1) {
           discarded.push(`${section}.${name}.attention.silenceSec: must be an integer >= 1`);
         } else {
-          agent.attention.silenceSec = att.silenceSec;
+          entry.attention.silenceSec = att.silenceSec;
         }
       }
       if (att.patterns !== undefined) {
         if (!Array.isArray(att.patterns) || att.patterns.some((p) => typeof p !== "string" || p.length === 0)) {
           discarded.push(`${section}.${name}.attention.patterns: must be a list of non-empty regex strings`);
         } else {
-          agent.attention.patterns = att.patterns as string[];
+          entry.attention.patterns = att.patterns as string[];
         }
       }
       for (const key of Object.keys(att)) {
@@ -1116,52 +1093,47 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     } else {
       discarded.push(`${section}.${name}.attention: must be a boolean or a mapping`);
     }
-  } else {
-    // No `attention:` key — the entry's kind decides, through the one statement of that rule.
-    agent.attention.enabled = defaultAttentionEnabled(agent.kind);
-  }
-  if (!forceTerminal && def.instructions !== undefined) {
-    if (typeof def.instructions !== "string") {
-      discarded.push(`agents.${name}.instructions: must be a string`);
-    } else if (agentEntry && def.instructions.trim().length > 0) {
-      agentEntry.instructions = def.instructions;
-    }
   }
   if (def.restart !== undefined) {
     if (def.restart !== "never" && def.restart !== "on-crash") {
       discarded.push(`${section}.${name}.restart: must be 'never' or 'on-crash'`);
     } else {
-      agent.restart = def.restart;
+      entry.restart = def.restart;
     }
   }
+  return entry;
+}
+
+function parseAgentProjection(name: string, def: Record<string, unknown>, discarded: string[], warnings: string[]): AgentEntry | null {
+  const base = parseManagedEntryBase("agents", name, def, true, discarded);
+  if (!base) return null;
+  const entry: AgentEntry = { ...base, kind: "agent" };
+  if (def.instructions !== undefined) {
+    if (typeof def.instructions !== "string") discarded.push(`agents.${name}.instructions: must be a string`);
+    else if (def.instructions.trim().length > 0) entry.instructions = def.instructions;
+  }
   if (def.worktree !== undefined) {
-    if (typeof def.worktree !== "boolean") discarded.push(`${section}.${name}.worktree: must be a boolean`);
-    else if (agentEntry) agentEntry.worktree = def.worktree;
-    else discarded.push(agentOnlyKeyRefusal(section, name, "worktree", "this entry is a terminal — it gets no git worktree"));
+    if (typeof def.worktree !== "boolean") discarded.push(`agents.${name}.worktree: must be a boolean`);
+    else entry.worktree = def.worktree;
   }
   if (def.branch !== undefined) {
     if (typeof def.branch !== "string") {
-      discarded.push(`${section}.${name}.branch: must be a string`);
+      discarded.push(`agents.${name}.branch: must be a string`);
     } else {
       const bad = validateBranchLiteral(def.branch);
-      if (bad) discarded.push(`${section}.${name}.branch: ${bad}`);
-      else if (agentEntry) agentEntry.branch = def.branch;
-      else discarded.push(agentOnlyKeyRefusal(section, name, "branch", "this entry is a terminal — it gets no worktree branch"));
+      if (bad) discarded.push(`agents.${name}.branch: ${bad}`);
+      else entry.branch = def.branch;
     }
   }
   if (def.worktreeSetup !== undefined) {
     const list = typeof def.worktreeSetup === "string" ? [def.worktreeSetup] : def.worktreeSetup;
     if (!Array.isArray(list) || list.length === 0 || list.some((c) => typeof c !== "string" || c.trim().length === 0)) {
-      discarded.push(`${section}.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
-    } else if (agentEntry) {
-      agentEntry.worktreeSetup = list as string[];
-    } else {
-      discarded.push(agentOnlyKeyRefusal(section, name, "worktreeSetup", "this entry is a terminal — it gets no worktree to set up"));
-    }
+      discarded.push(`agents.${name}.worktreeSetup: must be a non-empty command string or list of non-empty command strings`);
+    } else entry.worktreeSetup = list as string[];
   }
   if (def.harness !== undefined) {
-    const harness = parseHarness(section, name, def.harness, agent.cmd, agent.environment?.values, forceTerminal || agent.kind === "terminal", discarded);
-    if (harness && agentEntry) agentEntry.harness = harness;
+    const harness = parseHarness(name, def.harness, entry.cmd, entry.environment?.values, discarded);
+    if (harness) entry.harness = harness;
   }
   if (def.isolate !== undefined) {
     // spec 358 phase 2 — read-compat only. New configs should use the two-axis model:
@@ -1169,34 +1141,42 @@ function parseAgentEntry(section: "agents" | "terminals", name: string, def: Rec
     // config/MCP/rules/skills/hooks boundary. Existing `isolate: transcript` must keep loading until maintainers
     // migrate their local secondaries.
     if (def.isolate !== "transcript") {
-      discarded.push(`${section}.${name}.isolate: deprecated; the only legacy-compatible value is 'transcript'`);
-    } else if (forceTerminal || agent.kind === "terminal") {
-      discarded.push(agentOnlyKeyRefusal(section, name, "isolate", "this entry is a terminal — it has no transcript"));
-    } else if (binaryOf(agent.cmd) !== "claude" && binaryOf(agent.cmd) !== "codex") {
-      discarded.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(agent.cmd) || agent.cmd}')`);
-    } else if (agent.environment?.values?.[binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
-      const ownedEnv = binaryOf(agent.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
+      discarded.push(`agents.${name}.isolate: deprecated; the only legacy-compatible value is 'transcript'`);
+    } else if (binaryOf(entry.cmd) !== "claude" && binaryOf(entry.cmd) !== "codex") {
+      discarded.push(`agents.${name}.isolate: deprecated legacy mode is only compatible with claude/codex agents (got '${binaryOf(entry.cmd) || entry.cmd}')`);
+    } else if (entry.environment?.values?.[binaryOf(entry.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR"] !== undefined) {
+      const ownedEnv = binaryOf(entry.cmd) === "codex" ? "CODEX_HOME" : "CLAUDE_CONFIG_DIR";
       discarded.push(`agents.${name}.isolate: remove 'env.${ownedEnv}' — Tachyon owns the config home for this deprecated legacy mode`);
     } else {
       warnings.push(`agents.${name}: ${ISOLATE_TRANSCRIPT_DEPRECATION}`);
-      agent.isolate = "transcript";
+      entry.isolate = "transcript";
     }
   }
   if (def.subagents !== undefined) {
-    if (forceTerminal || agent.kind === "terminal") {
-      discarded.push(agentOnlyKeyRefusal(section, name, "subagents", "this entry is a terminal — ownership can only target agents"));
-    } else if (!Array.isArray(def.subagents) || def.subagents.length === 0 || def.subagents.some((s) => typeof s !== "string" || s.trim().length === 0)) {
+    if (!Array.isArray(def.subagents) || def.subagents.length === 0 || def.subagents.some((s) => typeof s !== "string" || s.trim().length === 0)) {
       discarded.push(`agents.${name}.subagents: must be a non-empty list of agent names`);
     } else {
-      agent.subagents = (def.subagents as string[]).map((s) => s.trim());
+      entry.subagents = (def.subagents as string[]).map((s) => s.trim());
     }
   }
-  // kind/instructions are recognized keys (rejected above for terminals:) so they don't also trip
-  // the generic "unknown key" error — only genuinely-unrecognized keys do.
   for (const key of Object.keys(def)) {
-    if (!(KNOWN_AGENT_ENTRY_KEYS as readonly string[]).includes(key)) discarded.push(`${section}.${name}: unknown key '${key}'`);
+    if (!(KNOWN_AGENT_ENTRY_KEYS as readonly string[]).includes(key)) discarded.push(`agents.${name}: unknown key '${key}'`);
   }
-  return agent;
+  return entry;
+}
+
+const KNOWN_TERMINAL_DECLARATION_KEYS = ["cmd", "cwd", "env", "autostart", "watch", "attention", "restart"] as const;
+
+function parseTerminalDeclaration(name: string, def: Record<string, unknown>, discarded: string[]): TerminalEntry | null {
+  const base = parseManagedEntryBase("terminals", name, def, false, discarded);
+  if (!base) return null;
+  const entry: TerminalEntry = { ...base, kind: "terminal" };
+  for (const key of Object.keys(def)) {
+    if (!(KNOWN_TERMINAL_DECLARATION_KEYS as readonly string[]).includes(key)) {
+      discarded.push(`terminals.${name}: unknown key '${key}' — ${MOVE_TO_AN_AGENT}`);
+    }
+  }
+  return entry;
 }
 
 /**
@@ -1325,7 +1305,7 @@ export function parseConfig(yamlText: string): ParseResult {
         discarded.push(`agents.${name}: must be a mapping with at least 'cmd'`);
         continue;
       }
-      const agent = parseAgentEntry("agents", name, def, discarded, warnings);
+      const agent = parseAgentProjection(name, def, discarded, warnings);
       if (agent) agents[name] = agent;
     }
   }
@@ -1354,7 +1334,7 @@ export function parseConfig(yamlText: string): ParseResult {
           );
           continue;
         }
-        const terminal = parseAgentEntry("terminals", name, def, discarded, warnings);
+        const terminal = parseTerminalDeclaration(name, def, discarded);
         if (terminal) agents[name] = terminal;
       }
     }

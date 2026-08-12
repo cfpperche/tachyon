@@ -55,7 +55,7 @@ export function agentStanzaSection(text: string | undefined, name: string): Sect
 }
 
 /**
- * Keys this writer removes from a `terminals:` entry, because `parseAgentEntry` refuses every one of
+ * Keys this writer removes from a `terminals:` entry, because `parseTerminalDeclaration` reports every one of
  * them for a terminal and `Workspace.mutateConfig` refuses to WRITE a file the loader would discard
  * from — so a caller that includes one does not get a warning, it gets a failed save.
  *
@@ -92,7 +92,7 @@ function sanitizeForSection(section: Section, entry: Record<string, unknown>): R
  * `mutateConfig` will not persist because the loader would discard from it.
  *
  * `env` is here because it is what the measurement found next to `attention` — accepted by
- * `parseAgentEntry` for both sections, rendered by no Studio, and replaced away by the same
+ * both declaration parsers, rendered by no Studio, and replaced away by the same
  * `doc.setIn`. `test/unit/studioSaveKeepsUnauthoredFields.test.ts` is what keeps this list honest: it
  * probes every schema-declared entry key against the real parser and fails if an accepted one is
  * neither authored by the form nor listed here.
@@ -119,13 +119,8 @@ function plainRecordOf(node: unknown): Record<string, unknown> | undefined {
  * The kind the entry being written will load as — from the block and the DECLARED `kind:`, never
  * inferred from the command.
  *
- * `parseAgentEntry` does fall back to `suggestKindForCommand` for an `agents:` entry with no `kind:`,
- * and this deliberately does not follow it there: t-c003e1 forbids that inference wherever the result
- * is persisted, because a later edit to `KNOWN_AI_CLIS` would then silently reclassify an entry
- * already on disk — here, by flipping the attention default of a mapping this writer is about to
- * write. The gap is unreachable in production anyway: `loadProfileAwareConfig` deletes the legacy
- * `agents:` block before parsing (`replaceAgentsBlock`), so no inline `agents:` entry can be loaded
- * into a Studio and come back through this door.
+ * Agent projections are always agents and terminal declarations are always terminals. This writer
+ * uses the same section boundary when deciding what an omitted attention key means.
  */
 function kindOfEntry(section: Section, entry: Record<string, unknown>): EntryKind {
   return section === "terminals" || entry.kind === "terminal" ? "terminal" : "agent";

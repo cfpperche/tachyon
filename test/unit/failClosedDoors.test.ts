@@ -26,10 +26,10 @@ const AGENT_ONLY_KEYS: ReadonlyArray<[key: string, yaml: string]> = [
 ];
 
 describe("door: terminals: in tachyon.yml", () => {
-  it.each(AGENT_ONLY_KEYS)("refuses '%s' and names where the entry belongs", (key, yaml) => {
+  it.each(AGENT_ONLY_KEYS)("reports '%s' as an unknown terminal key and names where the entry belongs", (key, yaml) => {
     const { warnings } = parseConfig(`terminals:\n  dev:\n    cmd: npm run dev\n${yaml}`);
-    const refusal = warnings.find((error) => error.includes(`'${key}' applies only to agents`));
-    expect(refusal, `'${key}' must be refused for a terminal`).toBeDefined();
+    const refusal = warnings.find((error) => error.includes(`unknown key '${key}'`));
+    expect(refusal, `'${key}' must be unknown for a terminal`).toBeDefined();
     expect(refusal).toContain("terminals.dev");
     expect(refusal).toContain("Agent Studio");
   });
@@ -42,11 +42,10 @@ describe("door: terminals: in tachyon.yml", () => {
     for (const warning of warnings) expect(warning).not.toContain("with kind: agent");
   });
 
-  it("refuses the same keys under agents: when the entry declares kind: terminal", () => {
-    const { warnings } = parseConfig("agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    worktree: true\n");
-    const refusal = warnings.find((error) => error.includes("'worktree' applies only to agents"));
-    expect(refusal).toContain("agents.dev");
-    expect(refusal).toContain("Agent Studio");
+  it("does not let direct parseConfig callers turn an agent projection into a terminal", () => {
+    const { config, warnings } = parseConfig("agents:\n  dev:\n    cmd: npm run dev\n    kind: terminal\n    worktree: true\n");
+    expect(config?.agents.dev).toMatchObject({ kind: "agent", worktree: true });
+    expect(warnings).toEqual([]);
   });
 
   it("still accepts a generic process with the keys a terminal really has", () => {

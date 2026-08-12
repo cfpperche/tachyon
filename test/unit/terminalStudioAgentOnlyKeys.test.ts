@@ -10,7 +10,7 @@ import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/dom
  *
  * The defect this closes: the form carried a "Separate git checkout + branch" section (worktree, branch,
  * setup commands, verify gate) since `aa99c066`, mirrored from Agent Studio together with its
- * footer-void layout fix. SDD 478 M6 later taught `parseAgentEntry` to refuse all four under
+ * footer-void layout fix. SDD 478 M6 later taught the shared parser to refuse all four under
  * `terminals:`, and nobody re-read the form. What a human got was not a silent drop — t-48dd8d's
  * `mutateConfig` refuses to WRITE a file the loader would discard from — but a Save that FAILED,
  * with a message telling them to go create an agent instead.
