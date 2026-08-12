@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, type UpdateCheck } from "../../src/plugins/viewModel.js";
+import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, buildContributionStatuses, type UpdateCheck } from "../../src/plugins/viewModel.js";
 import type { PluginLock } from "../../src/plugins/lockfile.js";
 import { serializeLockfile } from "../../src/plugins/lockfile.js";
 import type { Runtime } from "../../src/plugins/manifest.js";
@@ -317,6 +317,19 @@ describe("buildMcpStatuses — Phase C card rows", () => {
 
   it("omits a plugin that ships no mcp-server targets", () => {
     expect(buildMcpStatuses([{ name: "sdd", version: "1.0.0", runtimes: ["claude"], targets: [] } as PluginLock], () => true)).toEqual({});
+  });
+});
+
+describe("buildContributionStatuses — SDD 486 Phase A card rows", () => {
+  it("dedupes skill and hook targets across runtimes and keeps installed-not-applied visible", () => {
+    const lock = { name: "sdd", version: "1.0.0", runtimes: ["claude", "codex"], targets: [
+      { runtime: "claude", kind: "skill-dir", file: ".claude/skills/helper" },
+      { runtime: "codex", kind: "skill-dir", file: ".agents/skills/helper" },
+      { runtime: "claude", kind: "settings-hook", file: ".claude/settings.json", ref: "PreToolUse", removal: [] },
+      { runtime: "codex", kind: "settings-hook", file: ".codex/hooks.json", ref: "PreToolUse", removal: [] },
+    ] } as PluginLock;
+    expect(buildContributionStatuses([lock], "skill-dir", () => false).sdd).toEqual([{ name: "helper", applied: false }]);
+    expect(buildContributionStatuses([lock], "settings-hook", (_plugin, name) => name === "PreToolUse").sdd).toEqual([{ name: "PreToolUse", applied: true }]);
   });
 });
 

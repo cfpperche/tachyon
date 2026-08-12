@@ -248,3 +248,12 @@ narrow that per runtime, the way A5 must for hooks.
   touches the card copy.
 - Whether apply should surface the runtime's own MCP approval gate (claude `Pending approval`).
   Same shape as A5's hook-gate question.
+## Phase A completion — 2026-08-12
+
+- `install` now records `skill-dir` and `settings-hook` targets but materializes neither; the Phase C `applyContribution` / `unapplyContribution` seam is the single apply door for all three contribution kinds.
+- Skill apply copies the installed payload to every recorded runtime target. Hook apply uses the lockfile's adapter-rendered removal identity; unapply performs content-based un-merge, so unrelated human settings survive.
+- Legacy tests that called `applyInstall` and then asserted a runtime file existed were converted only where A3 deliberately invalidated that premise. One update failure was initially read as a removal-identity divergence; inspection showed the settings file was absent because that test never explicitly applied the hook. A dedicated apply → `previewUpdate` test now proves an unchanged applied hook is not classified as edited.
+- The first full gate found one more instance in `sddDogfoodMaterialization.test.ts`; it now explicitly applies `skill:sdd` before checking the two runtime copies.
+- A post-gate documentation audit found `docs/runbooks/plugins.md` still teaching install-as-projection. It now names install and apply as separate steps and points the operator to the actionable per-contribution controls.
+- Plugins UI now shows installed/applied state and per-contribution controls for skills and hooks. Armed hooks carry conservative restart copy.
+- Visual QA passed at 880 and 360: evidence `ev-2026-08-12T21:04:46.412Z-6`.

@@ -102,7 +102,7 @@ export function confirmMessage(payload: ConfirmPayload): ConfirmActionMessage {
 export type PluginsActionType =
   | "ready" | "refresh" | "poll" | "checkUpdates" | "checkPluginUpdate" | "install" | "update" | "reinstall" | "remove"
   | "reselect" | "repair" | "rehydrate" | "confirm" | "cancel" | "openConfig" | "openDocs" | "installExternal"
-  | "applyMcp" | "unapplyMcp";
+  | "applyMcp" | "unapplyMcp" | "applyContribution" | "unapplyContribution";
 
 /** t-d23f93 — the result-toast shape (moved from the retired standalone bootstrap main.tsx). */
 export interface Toast { ok: boolean; message: string; }
