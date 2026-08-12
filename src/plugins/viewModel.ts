@@ -79,6 +79,7 @@ export interface InstalledPluginVM {
   mcpServers?: McpContributionVM[];
   skills?: ContributionVM[];
   hooks?: ContributionVM[];
+  gitHooks?: ContributionVM[];
 }
 
 /** One MCP server a plugin ships, and whether the human has applied it to this workspace. */
@@ -158,6 +159,7 @@ export interface BuildPluginsInput {
   mcpStatuses?: Record<string, McpContributionVM[]>;
   skillStatuses?: Record<string, ContributionVM[]>;
   hookStatuses?: Record<string, ContributionVM[]>;
+  gitHookStatuses?: Record<string, ContributionVM[]>;
   /** applied-state read failure — surfaced as a banner; apply/unapply stay disabled. */
   appliedError?: string;
 }
@@ -245,7 +247,7 @@ function uncoveredRuntimes(lock: PluginLock, present: ReadonlySet<Runtime>, decl
   return SUPPORTED_RUNTIMES.filter((rt) => declaredSet.has(rt) && present.has(rt) && !installed.has(rt));
 }
 
-function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined, mcpServers: McpContributionVM[] | undefined, skills?: ContributionVM[], hooks?: ContributionVM[]): InstalledPluginVM {
+function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: Runtime[] | undefined, check: UpdateCheck | undefined, externalTools: ExternalToolVM[] | undefined, declared: Runtime[] | undefined, mcpServers: McpContributionVM[] | undefined, skills?: ContributionVM[], hooks?: ContributionVM[], gitHooks?: ContributionVM[]): InstalledPluginVM {
   const status = statusFrom(check);
   const uncovered = uncoveredRuntimes(lock, present, declared);
   return {
@@ -263,6 +265,7 @@ function toInstalledVM(lock: PluginLock, present: ReadonlySet<Runtime>, intact: 
     ...(mcpServers && mcpServers.length > 0 ? { mcpServers } : {}),
     ...(skills && skills.length > 0 ? { skills } : {}),
     ...(hooks && hooks.length > 0 ? { hooks } : {}),
+    ...(gitHooks && gitHooks.length > 0 ? { gitHooks } : {}),
   };
 }
 
@@ -350,8 +353,9 @@ export function buildPluginsViewModel(input: BuildPluginsInput): PluginsViewMode
   const mcp = input.mcpStatuses ?? {};
   const skills = input.skillStatuses ?? {};
   const hooks = input.hookStatuses ?? {};
+  const gitHooks = input.gitHookStatuses ?? {};
   const installed = Object.values(lockfile.plugins)
-    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name], mcp[lock.name], skills[lock.name], hooks[lock.name]))
+    .map((lock) => toInstalledVM(lock, input.present, input.intact?.[lock.name], checks[lock.name], externals[lock.name], input.declared?.[lock.name], mcp[lock.name], skills[lock.name], hooks[lock.name], gitHooks[lock.name]))
     // locale-independent, stable order (plugin names are ASCII kebab by manifest contract; don't depend on locale).
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 

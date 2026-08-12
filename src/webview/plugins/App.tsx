@@ -43,8 +43,8 @@ export interface PluginsDispatch {
   /** SDD 486 Phase C — apply or un-apply one MCP server the plugin ships. */
   applyMcp(pluginName: string, server: string): void;
   unapplyMcp(pluginName: string, server: string): void;
-  applyContribution(pluginName: string, kind: "skill" | "hook", name: string): void;
-  unapplyContribution(pluginName: string, kind: "skill" | "hook", name: string): void;
+  applyContribution(pluginName: string, kind: "skill" | "hook" | "git-hook", name: string): void;
+  unapplyContribution(pluginName: string, kind: "skill" | "hook" | "git-hook", name: string): void;
 }
 
 const Icon = ({ name }: { name: string }) => <span class={`codicon codicon-${name}`} aria-hidden="true" />;
@@ -183,11 +183,12 @@ function Card({ p, dispatch, mcpLocked }: { p: InstalledPluginVM; dispatch: Plug
       )}
       {p.skills && <ContributionList plugin={p.name} kind="skill" items={p.skills} dispatch={dispatch} locked={mcpLocked === true} />}
       {p.hooks && <ContributionList plugin={p.name} kind="hook" items={p.hooks} dispatch={dispatch} locked={mcpLocked === true} />}
+      {p.gitHooks && <ContributionList plugin={p.name} kind="git-hook" items={p.gitHooks} dispatch={dispatch} locked={mcpLocked === true} />}
     </div>
   );
 }
 
-function ContributionList({ plugin, kind, items, dispatch, locked }: { plugin: string; kind: "skill" | "hook"; items: ContributionVM[]; dispatch: PluginsDispatch; locked: boolean }) {
+function ContributionList({ plugin, kind, items, dispatch, locked }: { plugin: string; kind: "skill" | "hook" | "git-hook"; items: ContributionVM[]; dispatch: PluginsDispatch; locked: boolean }) {
   return <div class="pext pmcp">
     {items.map((item) => <div key={item.name} class="ext-row">
       <span class="ev">{kind} · {item.name}</span>{" "}

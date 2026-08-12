@@ -31,6 +31,7 @@ const SKILL: ContributionRef = { kind: "skill", name: "pdf-processing" };
 const OTHER_SKILL: ContributionRef = { kind: "skill", name: "code-review" };
 const HOOK: ContributionRef = { kind: "hook", name: "PreToolUse" };
 const MCP: ContributionRef = { kind: "mcp", name: "db-tools" };
+const GIT_HOOK: ContributionRef = { kind: "git-hook", name: "pre-commit" };
 
 let ws: string;
 beforeEach(() => { ws = fs.mkdtempSync(path.join(os.tmpdir(), "applied-state-")); });
@@ -44,13 +45,15 @@ const writeRaw = (text: string): void => {
 };
 
 describe("contribution identity", () => {
-  it("round-trips a skill, a hook and an mcp id", () => {
+  it("round-trips every supported contribution id", () => {
     expect(contributionId(SKILL)).toBe("skill:pdf-processing");
     expect(contributionId(HOOK)).toBe("hook:PreToolUse");
     expect(contributionId(MCP)).toBe("mcp:db-tools");
+    expect(contributionId(GIT_HOOK)).toBe("git-hook:pre-commit");
     expect(parseContributionId("skill:pdf-processing")).toEqual(SKILL);
     expect(parseContributionId("hook:PreToolUse")).toEqual(HOOK);
     expect(parseContributionId("mcp:db-tools")).toEqual(MCP);
+    expect(parseContributionId("git-hook:pre-commit")).toEqual(GIT_HOOK);
   });
 
   it("refuses a kind this record does not own, and a name that is not valid for its kind", () => {

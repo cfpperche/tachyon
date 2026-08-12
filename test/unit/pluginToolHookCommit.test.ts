@@ -6,7 +6,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import * as esbuild from "esbuild";
-import { loadPlugin, previewInstall, applyInstall } from "../../src/plugins/engine.js";
+import { loadPlugin, previewInstall, applyInstall, applyContribution } from "../../src/plugins/engine.js";
 import { gatherGitHookState } from "../../src/plugins/gitHookState.js";
 import { gatherToolPlan } from "../../src/plugins/toolPlan.js";
 import { resolveHostPlatform } from "../../src/plugins/toolPlatform.js";
@@ -86,7 +86,9 @@ describe.skipIf(!gitOk() || !kp || !HOST_KEY)("CAPSTONE — provisioned tool dri
     const gitState = await gatherGitHookState(ws, plugin!.gitHooks.map((g) => g.event));
     const toolPlan = await gatherToolPlan(plugin!);
     const preview = previewInstall(plugin!, ws, target, gitState, toolPlan);
-    return applyInstall(plugin!, preview, ws, target, { gitHookConfirmed: true, toolConfirmed: true, launcherBundlePath: bundle, toolTlsCa: kp!.cert });
+    const result = await applyInstall(plugin!, preview, ws, target, { gitHookConfirmed: true, toolConfirmed: true, launcherBundlePath: bundle, toolTlsCa: kp!.cert });
+    if (result.installed) await applyContribution(plugin!.manifest.name, { kind: "git-hook", name: "pre-commit" }, ws);
+    return result;
   }
 
   function stageAndCommit(ws: string, fileContent: string): boolean {

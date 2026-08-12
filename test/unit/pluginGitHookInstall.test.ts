@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { loadPlugin, previewInstall, applyInstall, applyRemove, repairGitHooks, reconcileGitHookHarness } from "../../src/plugins/engine.js";
+import { loadPlugin, previewInstall, applyInstall, applyRemove, applyContribution, repairGitHooks, reconcileGitHookHarness } from "../../src/plugins/engine.js";
 import { gatherGitHookState } from "../../src/plugins/gitHookState.js";
 import {
   GitHookStore,
@@ -44,10 +44,12 @@ async function installGitHook(ws: string, pluginDir: string) {
   const target = new Set(plugin!.manifest.runtimes);
   const gitState = await gatherGitHookState(ws, plugin!.gitHooks.map((g) => g.event));
   const preview = previewInstall(plugin!, ws, target, gitState);
-  return applyInstall(plugin!, preview, ws, target, { mcpConfirmed: true, gitHookConfirmed: true });
+  const result = await applyInstall(plugin!, preview, ws, target, { mcpConfirmed: true, gitHookConfirmed: true });
+  if (result.installed) for (const hook of plugin!.gitHooks) await applyContribution(plugin!.manifest.name, { kind: "git-hook", name: hook.event }, ws);
+  return result;
 }
 
-describe.skipIf(!gitOk())("git-hook install materialization (spec 264 task 7)", () => {
+describe.skipIf(!gitOk())("git-hook apply materialization (spec 264 task 7)", () => {
   it("claims core.hooksPath, writes the leaf+snapshot+dispatcher, ownership, and records the lockfile", async () => {
     const ws = makeRepo();
     const res = await installGitHook(ws, makeGitHookPlugin("sdd"));

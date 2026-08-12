@@ -1287,6 +1287,7 @@ interface ActivateCtx {
   mcpToWrite: McpPlanItem[];
   priorSkillDests: Set<string>;
   priorMcpTargets: MaterializedTarget[];
+  priorGitHooks: GitHookLock[];
   gitState: GitHookState | undefined;
   gitGeneration: number;
   git: GitRun;
@@ -1296,7 +1297,7 @@ interface ActivateCtx {
  *  → merge MCP servers (6) → git-hooks LAST (7). Every write is removable (the lockfile already records it), so
  *  a mid-activation failure returns a "partial install … run remove" error string the caller surfaces. */
 async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
-  const { plugin, workspaceRoot, fresh, skillsToWrite, mcpToWrite, priorSkillDests, priorMcpTargets, gitState, gitGeneration, git } = ctx;
+  const { plugin, workspaceRoot, fresh, skillsToWrite, mcpToWrite, priorSkillDests, priorMcpTargets, priorGitHooks, gitState, gitGeneration, git } = ctx;
   const partial = (what: string, e: unknown) => `partial install: payload + lockfile recorded, but ${what} failed (${e instanceof Error ? e.message : String(e)}) — run remove '${plugin.manifest.name}' to clean up, then retry`;
 
   let appliedRefs: ContributionRef[];
@@ -1307,6 +1308,7 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   }
   const appliedSkills = new Set(appliedRefs.filter((r) => r.kind === "skill").map((r) => r.name));
   const appliedHooks = new Set(appliedRefs.filter((r) => r.kind === "hook").map((r) => r.name));
+  const appliedGitHooks = new Set(appliedRefs.filter((r) => r.kind === "git-hook").map((r) => r.name));
 
   // 3) Hooks are recorded at install, but only applied events are materialized. Starting from the
   // full preview merge and content-unmerging every disabled event also updates an already-applied
@@ -1391,10 +1393,18 @@ async function activateInstall(ctx: ActivateCtx): Promise<string | undefined> {
   for (const name of appliedSkills) if (!shippedSkills.has(name)) store.markUnapplied(plugin.manifest.name, { kind: "skill", name });
   const shippedHooks = new Set(fresh.steps.flatMap((s) => Object.keys(s.owned)));
   for (const name of appliedHooks) if (!shippedHooks.has(name)) store.markUnapplied(plugin.manifest.name, { kind: "hook", name });
+  const shippedGitHooks = new Set(fresh.gitHookTargets.map((g) => g.event));
+  const droppedGitHooks = new Set(priorGitHooks.map((g) => g.event).filter((event) => appliedGitHooks.has(event) && !shippedGitHooks.has(event)));
+  if (droppedGitHooks.size > 0) {
+    try { await removeGitHooks({ name: plugin.manifest.name, version: plugin.manifest.version, runtimes: [], targets: [], gitHooks: priorGitHooks }, workspaceRoot, git, droppedGitHooks); }
+    catch (e) { return partial("dropping stale git-hooks", e); }
+    for (const name of droppedGitHooks) store.markUnapplied(plugin.manifest.name, { kind: "git-hook", name });
+  }
 
-  // 7) git-hooks LAST — under the repo lock, write leaves + publish the snapshot + dispatcher, then claim hooksPath.
-  if (fresh.gitHookTargets.length > 0 && gitState) {
-    const err = await materializeGitHooks(plugin, workspaceRoot, gitState, gitGeneration, git);
+  // 7) git-hooks LAST — install only records them; an update refreshes events already present in applied-state.
+  if (fresh.gitHookTargets.some((g) => appliedGitHooks.has(g.event)) && gitState) {
+    const selected = { ...plugin, gitHooks: plugin.gitHooks.filter((g) => appliedGitHooks.has(g.event)) };
+    const err = await materializeGitHooks(selected, workspaceRoot, gitState, gitGeneration, git);
     if (err) return `partial install: payload + lockfile recorded, but git-hook activation failed (${err}) — run remove '${plugin.manifest.name}' to clean up, then retry`;
   }
   return undefined;
@@ -1430,6 +1440,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
 
   // PHASE 2 — validate prior targets + resolve the consented Keep/Replace decisions + build the materialized set.
   const priorTargets = lockfile.plugins[plugin.manifest.name]?.targets ?? [];
+  const priorGitHooks = lockfile.plugins[plugin.manifest.name]?.gitHooks ?? [];
   const priorErr = validatePriorTargets(plugin.manifest.name, priorTargets);
   if (priorErr) return { installed: false, runtimes: [], errors: [priorErr] };
   // the skill-dirs THIS plugin already owns (validated above) — authorize wiping our prior copy + drop stale dirs.
@@ -1594,6 +1605,7 @@ export async function applyInstall(plugin: LoadedPlugin, preview: InstallPreview
     mcpToWrite,
     priorSkillDests,
     priorMcpTargets: priorTargets.filter((t) => t.kind === "mcp-server"),
+    priorGitHooks,
     gitState,
     gitGeneration,
     git,
@@ -1613,12 +1625,13 @@ async function materializeGitHooks(plugin: LoadedPlugin, workspaceRoot: string, 
   let release: (() => void) | undefined;
   try {
     release = await store.acquireLock();
+    const replacingEvents = new Set(plugin.gitHooks.map((g) => g.event));
     // seed the new event set from the current snapshot (other plugins' leaves), dropping THIS plugin's prior
     // leaves (re-install/update replaces them). When not owned, start fresh.
     const events: Record<string, EventEntry> = {};
     const current = owns ? safeReadSnapshot(store) : undefined;
     if (current) for (const [ev, entry] of Object.entries(current.events)) {
-      events[ev] = { priorHook: entry.priorHook, leaves: entry.leaves.filter((l) => l.pluginId !== plugin.manifest.name) };
+      events[ev] = { priorHook: entry.priorHook, leaves: entry.leaves.filter((l) => l.pluginId !== plugin.manifest.name || !replacingEvents.has(ev)) };
     }
     const pid = plugin.manifest.name;
     for (const g of plugin.gitHooks) {
@@ -1774,7 +1787,7 @@ export async function reconcileGitHookHarness(workspaceRoot: string): Promise<Gi
 /** spec 264 — un-register a plugin's git-hook leaves under the repo lock. When zero leaves remain across ALL
  *  events AND Tachyon still owns `core.hooksPath`, restore the recorded prior value (or unset) and tear down the
  *  managed dir; otherwise re-publish the snapshot (bumped generation) + dispatchers with the remaining leaves. */
-async function removeGitHooks(lock: PluginLock, workspaceRoot: string, git: GitRun): Promise<void> {
+async function removeGitHooks(lock: PluginLock, workspaceRoot: string, git: GitRun, onlyEvents?: ReadonlySet<string>): Promise<void> {
   if (!lock.gitHooks || lock.gitHooks.length === 0) return;
   const store = new GitHookStore(workspaceRoot);
   const repo = new GitRepo(workspaceRoot, git);
@@ -1786,12 +1799,12 @@ async function removeGitHooks(lock: PluginLock, workspaceRoot: string, git: GitR
     const pid = lock.name;
     const events: Record<string, EventEntry> = {};
     for (const [ev, entry] of Object.entries(snapshot.events)) {
-      events[ev] = { priorHook: entry.priorHook, leaves: entry.leaves.filter((l) => l.pluginId !== pid) };
+      events[ev] = { priorHook: entry.priorHook, leaves: entry.leaves.filter((l) => l.pluginId !== pid || (onlyEvents !== undefined && !onlyEvents.has(ev))) };
     }
     // prune this plugin's leaf files no longer referenced by ANY remaining event.
     const stillReferenced = new Set<string>();
     for (const e of Object.values(events)) for (const l of e.leaves) stillReferenced.add(l.contentHash);
-    for (const gh of lock.gitHooks) if (!stillReferenced.has(gh.leafContentHash)) store.pruneLeaf(gh.leafContentHash);
+    for (const gh of lock.gitHooks) if ((!onlyEvents || onlyEvents.has(gh.event)) && !stillReferenced.has(gh.leafContentHash)) store.pruneLeaf(gh.leafContentHash);
 
     const leafRefs = Object.values(events).reduce((n, e) => n + e.leaves.length, 0);
     const ownership = store.readOwnership();
@@ -2184,10 +2197,50 @@ function hookTargetsFor(lock: PluginLock, name: string): MaterializedTarget[] {
   return lock.targets.filter((t) => t.kind === "settings-hook" && t.ref === name);
 }
 
+async function applyGitHookContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, git: GitRun): Promise<ApplyContributionResult> {
+  const lockRead = readLockfile(workspaceRoot);
+  if (!lockRead.lockfile) return { applied: false, errors: lockRead.errors };
+  const lock = lockRead.lockfile.plugins[pluginName];
+  if (!lock) return { applied: false, errors: [`plugin '${pluginName}' is not installed`] };
+  if (!(lock.gitHooks ?? []).some((g) => g.event === ref.name)) return { applied: false, errors: [`plugin '${pluginName}' has no git-hook named '${ref.name}'`] };
+
+  const loaded = loadPlugin(path.join(workspaceRoot, PAYLOAD_ROOT, pluginName));
+  if (!loaded.plugin) return { applied: false, errors: loaded.errors };
+  const hook = loaded.plugin.gitHooks.find((g) => g.event === ref.name);
+  if (!hook) return { applied: false, errors: [`installed payload for '${pluginName}' has no git-hook named '${ref.name}'`] };
+  const gitState = await gatherGitHookState(workspaceRoot, [ref.name], git);
+  if (!gitState.isRepo) return { applied: false, errors: ["git-hook: not a git repository"] };
+  if (gitState.worktreeConfig) return { applied: false, errors: ["git-hook: extensions.worktreeConfig is enabled — Tachyon refuses to manage git hooks here"] };
+  const generation = (gitState.ownership?.generation ?? 0) + 1;
+  const err = await materializeGitHooks({ ...loaded.plugin, gitHooks: [hook] }, workspaceRoot, gitState, generation, git);
+  if (err) return { applied: false, errors: [err] };
+  try { new AppliedStateStore(workspaceRoot).markApplied(pluginName, ref); }
+  catch (e) { return { applied: false, errors: [e instanceof Error ? e.message : String(e)] }; }
+  return { applied: true, errors: [] };
+}
+
+async function unapplyGitHookContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, git: GitRun): Promise<UnapplyContributionResult> {
+  const lockRead = readLockfile(workspaceRoot);
+  if (!lockRead.lockfile) return { unapplied: false, orphans: 0, errors: lockRead.errors };
+  const lock = lockRead.lockfile.plugins[pluginName];
+  if (!lock) return { unapplied: false, orphans: 0, errors: [`plugin '${pluginName}' is not installed`] };
+  if (!(lock.gitHooks ?? []).some((g) => g.event === ref.name)) return { unapplied: false, orphans: 0, errors: [`plugin '${pluginName}' has no git-hook named '${ref.name}'`] };
+  try {
+    await removeGitHooks(lock, workspaceRoot, git, new Set([ref.name]));
+    new AppliedStateStore(workspaceRoot).markUnapplied(pluginName, ref);
+  } catch (e) {
+    return { unapplied: false, orphans: 0, errors: [e instanceof Error ? e.message : String(e)] };
+  }
+  return { unapplied: true, orphans: 0, errors: [] };
+}
+
 /** Apply one contribution through the shared SDD 486 seam. Each kind resolves only its recorded
  * lockfile targets; MCP and hooks use their adapter-owned removal identity, while a skill copies the
  * installed payload directory. The applied record is marked only after every target is written. */
-export function applyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { replace?: boolean } = {}): ApplyContributionResult {
+export function applyContribution(pluginName: string, ref: { kind: "git-hook"; name: string }, workspaceRoot: string, opts?: { replace?: boolean; git?: GitRun }): Promise<ApplyContributionResult>;
+export function applyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts?: { replace?: boolean; git?: GitRun }): ApplyContributionResult;
+export function applyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { replace?: boolean; git?: GitRun } = {}): ApplyContributionResult | Promise<ApplyContributionResult> {
+  if (ref.kind === "git-hook") return applyGitHookContribution(pluginName, ref, workspaceRoot, opts.git ?? defaultGitRun);
   if (ref.kind === "skill") return applySkillContribution(pluginName, ref, workspaceRoot, opts);
   if (ref.kind === "hook") return applyHookContribution(pluginName, ref, workspaceRoot);
   const name = mcpRefOf(ref);
@@ -2242,7 +2295,10 @@ export function applyContribution(pluginName: string, ref: ContributionRef, work
  * Un-apply one contribution. Removes only the lockfile `removal` identity from each runtime config —
  * a human-edited same-name server is left in place and counted as an orphan. The payload stays.
  */
-export function unapplyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string): UnapplyContributionResult {
+export function unapplyContribution(pluginName: string, ref: { kind: "git-hook"; name: string }, workspaceRoot: string, opts?: { git?: GitRun }): Promise<UnapplyContributionResult>;
+export function unapplyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts?: { git?: GitRun }): UnapplyContributionResult;
+export function unapplyContribution(pluginName: string, ref: ContributionRef, workspaceRoot: string, opts: { git?: GitRun } = {}): UnapplyContributionResult | Promise<UnapplyContributionResult> {
+  if (ref.kind === "git-hook") return unapplyGitHookContribution(pluginName, ref, workspaceRoot, opts.git ?? defaultGitRun);
   if (ref.kind === "skill") return unapplySkillContribution(pluginName, ref, workspaceRoot);
   if (ref.kind === "hook") return unapplyHookContribution(pluginName, ref, workspaceRoot);
   const name = mcpRefOf(ref);

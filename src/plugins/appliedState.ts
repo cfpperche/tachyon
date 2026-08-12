@@ -56,7 +56,7 @@ const MCP_NAME_RE = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
  * so an id naming one fails to parse rather than being recorded as a fact nothing can honour.
  * `mcp` is Phase C (t-7f52f6): same store as skills/hooks, not a second file.
  */
-export type ContributionKind = "skill" | "hook" | "mcp";
+export type ContributionKind = "skill" | "hook" | "mcp" | "git-hook";
 
 /**
  * One independently applicable thing a plugin ships. Runtime-agnostic ON PURPOSE: `apply` fans out to
@@ -76,7 +76,7 @@ export interface ContributionRef {
 
 export class AppliedStateError extends Error {}
 
-/** The stable string identity used as the on-disk key: `skill:<name>` / `hook:<Event>` / `mcp:<name>`. */
+/** The stable string identity used as the on-disk key, including `git-hook:<event>`. */
 export function contributionId(ref: ContributionRef): string {
   return `${ref.kind}:${ref.name}`;
 }
@@ -91,6 +91,7 @@ export function parseContributionId(id: unknown): ContributionRef | null {
   if (kind === "skill") return SKILL_NAME_RE.test(name) ? { kind: "skill", name } : null;
   if (kind === "hook") return HOOK_EVENT_RE.test(name) ? { kind: "hook", name } : null;
   if (kind === "mcp") return MCP_NAME_RE.test(name) ? { kind: "mcp", name } : null;
+  if (kind === "git-hook") return /^[a-z][a-z0-9-]*$/.test(name) ? { kind: "git-hook", name } : null;
   return null;
 }
 
@@ -164,7 +165,7 @@ export function parseAppliedState(rawJson: string): AppliedStateParseResult {
     raw.forEach((id, i) => {
       const ref = parseContributionId(id);
       if (!ref) {
-        errors.push(`applied.plugins.${name}[${i}]: '${String(id)}' is not a contribution id (skill:<kebab> | hook:<Event> | mcp:<kebab>)`);
+        errors.push(`applied.plugins.${name}[${i}]: '${String(id)}' is not a contribution id (skill:<kebab> | hook:<Event> | mcp:<kebab> | git-hook:<event>)`);
         return;
       }
       seen.add(contributionId(ref));

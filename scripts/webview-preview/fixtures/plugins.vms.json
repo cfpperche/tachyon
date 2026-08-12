@@ -541,6 +541,9 @@
         ],
         "hooks": [
           { "name": "PreToolUse", "applied": true }
+        ],
+        "gitHooks": [
+          { "name": "pre-commit", "applied": false }
         ]
       },
       {
