@@ -271,6 +271,9 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
       occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
+      // t-ba5357 — Claude wraps a too-wide draft into rows indented by exactly two spaces and
+      // carrying no glyph. Measured on Claude Code 2.1.228 in a real 220-column pane.
+      continuationLine: /^ {2}\S/,
       // t-6ffa13 — a submitted message echoed into the transcript paints its glyph with a background
       // (measured: \x1b[38;5;239m\x1b[48;5;237m❯ ). The live composer never carries one, in any state.
       ansiHistoryEchoStyle: "prompt-background",
@@ -287,7 +290,9 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         "(\\x1b[39m❯\\u00a0\\x1b[2mTry \"fix typecheck errors\"\\x1b[0m) while a typed draft carries no dim at all " +
         "(\\x1b[39m❯\\u00a0integre em main e verifique o tree — the incident's own text, typed). Same rule Codex already " +
         "uses. The separator after '❯' is U+00A0 in BOTH cases, so it discriminates nothing; the dim styling is the only " +
-        "signal, and without an escaped capture the detector stays conservative and still refuses.",
+        "signal, and without an escaped capture the detector stays conservative and still refuses. " +
+        "t-ba5357 measured Claude Code 2.1.228 wrapping a bracket-pasted single logical line in a real " +
+        "220-column pane: continuation rows begin with exactly two spaces and no prompt glyph.",
     },
     activity: {
       tailLines: 3,
@@ -464,7 +469,12 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
       source: "assumed",
       verified: false,
-      notes: "t-f45313: conservative composer guard for pane-injection safety; exact prompt shape still needs runtime measurement.",
+      notes:
+        "t-f45313: conservative composer guard for pane-injection safety; exact prompt shape still needs runtime measurement. " +
+        "t-ba5357 measured OpenCode 1.18.15 in a real 220-column tmux pane through production's " +
+        "bracketed-paste gesture: a long single logical line renders only as `[Pasted ~1 lines]`, with " +
+        "none of the staged bytes visible. No continuationLine is declared because a wrap regex cannot " +
+        "make the unchanged reader recover or confirm opaque content.",
     },
     gracefulStop: {
       steps: [{ type: "sendKey", key: "C-d" }],
@@ -515,7 +525,11 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
         + " ansiEmptyContentStyle stays undeclared. Grok DOES echo the submitted prompt into its transcript"
         + " with the same glyph, but the box is pinned to the bottom and findComposerRegion scans upward, so"
         + " the echo can never win. NOT measured: the mid-turn render, which needs a live model call —"
-        + " attention-composer-unverified is retained for exactly that gap.",
+        + " attention-composer-unverified is retained for exactly that gap. t-ba5357 measured grok 1.0.3"
+        + " wrapping a bracket-pasted single logical line in a real 220-column pane: continuation rows"
+        + " retain the left border and begin `  │   `. No continuationLine is declared: the shared reader"
+        + " preserves that border on a row without a prompt glyph, so a regex alone cannot reconstruct the"
+        + " staged text, and changing the reader is outside t-ba5357.",
     },
     gracefulStop: GROK_GRACEFUL_STOP,
     canonicalLimitations: ["permission-policy-partial", "attention-composer-unverified"],
@@ -550,9 +564,16 @@ export const RUNTIME_PROFILES: Partial<Record<ResumeRuntime, RuntimeProfile>> = 
       tailLines: 8,
       promptLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?.*$/,
       occupiedLine: /^\s*(?:[│┃]\s*)?(?:❯|>|›)\s?\S.*$/,
-      source: "assumed",
-      verified: false,
-      notes: "Conservative peer-shaped composer guard; Hermes TUI prompt not measured yet.",
+      // t-ba5357 — Hermes renders wrapped rows at column zero. Exclude its full-width horizontal
+      // frame so the consecutive continuation run terminates at the bottom of the composer.
+      continuationLine: /^(?!─+$)\S/,
+      source: "measured",
+      verified: true,
+      verifiedAt: "2026-08-12",
+      notes:
+        "t-ba5357 measured Hermes Agent 0.18.2 (2026.7.7.2), upstream 2a25d53e, in a real 220-column " +
+        "tmux pane driven by production's bracketed-paste gesture. Wrapped continuation rows start at " +
+        "column zero with no glyph; the full-width U+2500 row below is composer furniture and excluded.",
     },
     gracefulStop: {
       steps: [

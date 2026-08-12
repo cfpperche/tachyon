@@ -444,9 +444,10 @@ describe("t-a53dd9 — the human-draft signal, per runtime", () => {
     grok: { source: "measured", verified: true },
     // framed editor between the final two rules (SDD 403)
     pi: { source: "measured", verified: true },
-    // peer-shaped guards, never measured against the real TUI
+    // OpenCode 1.18.15 exposes only an opaque paste token, so no continuation rule is declarable
     opencode: { source: "assumed", verified: false },
-    hermes: { source: "assumed", verified: false },
+    // live 0.18.2 pane: prompt plus column-zero continuation rows (t-ba5357)
+    hermes: { source: "measured", verified: true },
     // NO SIGNAL AT ALL. These runtimes resume but declare no composer region, so nothing can be read
     // from their panes and delivery to them is as unguarded as it was before this task. Named here
     // rather than left to be discovered by an owner losing a message.
