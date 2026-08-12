@@ -3194,7 +3194,7 @@ export class Workspace {
         // t-7a306a — no local swallow. `resolveApproval` owns the best-effort policy for BOTH channels
         // and now reports the failure instead of discarding it; catching here first would put this
         // channel back to silence while the other one speaks.
-        completePin: (pinId) => this.pinStore.setDone(pinId, true),
+        completePin: async (pinId) => { await this.pinStore.setDone(pinId, true); },
       });
       this.afterApprovalResolved(result.request.id);
       return {

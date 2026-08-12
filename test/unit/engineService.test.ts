@@ -199,7 +199,7 @@ describe("daemon engine service", () => {
       now: "2026-07-14T12:00:00.000Z",
     });
     const seedPinStore = new PinStore(workspaceRoot);
-    const seedPin = seedPinStore.create("remote Pin Studio", "human", { tags: ["ui"] });
+    const seedPin = await seedPinStore.create("remote Pin Studio", "human", { tags: ["ui"] });
     const socketPath = path.join(runtimeRoot, "engine.sock");
     const worker = bundledDaemonFixture("daemonEngineServiceWorker.ts");
     const child = spawn(process.execPath, [worker, workspaceRoot, storageRoot, mediaRoot, socketPath], {

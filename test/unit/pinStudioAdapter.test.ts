@@ -53,7 +53,7 @@ describe("PinStudioAdapter — load", () => {
 
   it("loads an existing pin's title/tags", async () => {
     const ws = fakeWorkspace();
-    const pin = ws.pinStore.create("old", "human", { tags: ["bug"] });
+    const pin = await ws.pinStore.create("old", "human", { tags: ["bug"] });
     const adapter = new PinStudioAdapter(legacyPinStudioTarget(ws));
     const result = await adapter.load(pin.id);
     expect(result.status).toBe("ok");
@@ -89,7 +89,7 @@ describe("PinStudioAdapter — save", () => {
 
   it("updates title/tags on an existing pin", async () => {
     const ws = fakeWorkspace();
-    const pin = ws.pinStore.create("old", "human", { tags: ["bug"] });
+    const pin = await ws.pinStore.create("old", "human", { tags: ["bug"] });
     const adapter = new PinStudioAdapter(legacyPinStudioTarget(ws));
     const result = await adapter.save(pin.id, baseFields({
       title: "old",
@@ -102,7 +102,7 @@ describe("PinStudioAdapter — save", () => {
 });
 
 describe("PinStudioAdapter — validate/concurrency/dirty hooks", () => {
-  it("requires a non-blank title", () => {
+  it("requires a non-blank title", async () => {
     const ws = fakeWorkspace();
     const adapter = new PinStudioAdapter(legacyPinStudioTarget(ws));
     expect(adapter.validate(baseFields({ title: "" })).blocking).toHaveLength(1);
@@ -110,14 +110,14 @@ describe("PinStudioAdapter — validate/concurrency/dirty hooks", () => {
     expect(adapter.validate(baseFields({ title: "ok" })).blocking).toHaveLength(0);
   });
 
-  it("inherits Task Studio's CAS concurrency and allows patch restore", () => {
+  it("inherits Task Studio's CAS concurrency and allows patch restore", async () => {
     const ws = fakeWorkspace();
     const adapter = new PinStudioAdapter(legacyPinStudioTarget(ws));
     expect(adapter.concurrency).toEqual({ kind: "cas" });
     expect(adapter.allowPatchRestore).toBe(true);
   });
 
-  it("computePinDirty/serializePinPatch/canDiscardPinFields agree on dirty vs clean fields", () => {
+  it("computePinDirty/serializePinPatch/canDiscardPinFields agree on dirty vs clean fields", async () => {
     const clean = baseFields();
     // computePinDirty(undefined, ...) is unconditionally false — "no entity loaded yet" is never
     // itself a dirty state (a brand-new blank draft with nothing typed shouldn't warn on close).

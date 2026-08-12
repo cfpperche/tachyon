@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { withProcessLockSync } from "../locks/processLock.js";
+import { withProcessLock } from "../locks/processLock.js";
 import { PinAttachmentStore, type PinAttachment, type ResolvedPinAttachment } from "./PinAttachmentStore.js";
 import type { TiptapJSON } from "./types.js";
 
@@ -111,11 +111,11 @@ export class PinStore {
     return pins.map(normalizePinRecord);
   }
 
-  create(text: string, by: string, opts: { tags?: string[]; now?: string; id?: string } = {}): Pin {
+  async create(text: string, by: string, opts: { tags?: string[]; now?: string; id?: string } = {}): Promise<Pin> {
     const t = text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
     let pin!: Pin;
-    this.mutatePins((pins) => {
+    await this.mutatePins((pins) => {
       pin = {
         id: opts.id ?? this.generateAvailableId(pins),
         text: t,
@@ -138,9 +138,9 @@ export class PinStore {
     throw new Error(`failed to generate a unique pin id after ${PinStore.generatedIdAttempts} attempts`);
   }
 
-  setDone(id: string, done: boolean): Pin {
+  async setDone(id: string, done: boolean): Promise<Pin> {
     let updated: Pin | undefined;
-    this.mutatePins((pins) => {
+    await this.mutatePins((pins) => {
       const pin = pins.find((p) => p.id === id);
       if (!pin) throw new Error(`unknown pin '${id}'`);
       pin.done = done;
@@ -153,11 +153,11 @@ export class PinStore {
   }
 
   /** Edits a pin's text/tags in place; preserves id/by/createdAt/done (F4). */
-  update(id: string, input: string | UpdatePinInput): Pin {
+  async update(id: string, input: string | UpdatePinInput): Promise<Pin> {
     const patch = typeof input === "string" ? { text: input } : input;
     if (patch.text === undefined && patch.tags === undefined) throw new Error("pin update requires text or tags");
     let updated: Pin | undefined;
-    this.mutatePins((pins) => {
+    await this.mutatePins((pins) => {
       const pin = pins.find((p) => p.id === id);
       if (!pin) throw new Error(`unknown pin '${id}'`);
       if (patch.text !== undefined) {
@@ -175,15 +175,15 @@ export class PinStore {
     return pin;
   }
 
-  remove(id: string): void {
-    this.mutatePins((pins) => {
+  async remove(id: string): Promise<void> {
+    await this.mutatePins((pins) => {
       if (!pins.some((p) => p.id === id)) throw new Error(`unknown pin '${id}'`);
       return pins.filter((p) => p.id !== id);
     });
     try { fs.rmSync(this.detailPath(id), { force: true }); } catch { /* best-effort local detail cleanup */ }
   }
 
-  createRich(text: string, by: string, detail: Omit<SavePinDetailInput, "text"> & { id?: string }): Pin {
+  async createRich(text: string, by: string, detail: Omit<SavePinDetailInput, "text"> & { id?: string }): Promise<Pin> {
     const t = text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
     const now = detail.now ?? new Date().toISOString();
@@ -198,7 +198,7 @@ export class PinStore {
       attachmentCount: directVisualAttachmentCount(detail.doc, detail.attachments ?? []),
     };
     applyTags(pin, detail.tags);
-    this.mutatePins((pins) => {
+    await this.mutatePins((pins) => {
       if (pins.some((candidate) => candidate.id === pin.id)) throw new Error(`pin '${pin.id}' already exists`);
       this.writeDetailFile({ schemaVersion: 2, pinId: pin.id, doc: detail.doc, attachments: detail.attachments ?? [] });
       return [...pins, pin];
@@ -206,11 +206,11 @@ export class PinStore {
     return pin;
   }
 
-  saveDetail(id: string, input: SavePinDetailInput): Pin {
+  async saveDetail(id: string, input: SavePinDetailInput): Promise<Pin> {
     const t = input.text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
     let updated: Pin | undefined;
-    this.mutatePins((pins) => {
+    await this.mutatePins((pins) => {
       const pin = pins.find((p) => p.id === id);
       if (!pin) throw new Error(`unknown pin '${id}'`);
       this.writeDetailFile({ schemaVersion: 2, pinId: id, doc: input.doc, attachments: input.attachments ?? [] });
@@ -227,11 +227,11 @@ export class PinStore {
     return pin;
   }
 
-  clearDetail(id: string, text: string, now = new Date().toISOString(), tags?: string[]): Pin {
+  async clearDetail(id: string, text: string, now = new Date().toISOString(), tags?: string[]): Promise<Pin> {
     const t = text.trim();
     if (t.length === 0) throw new Error("pin text must be non-empty");
     let updated: Pin | undefined;
-    this.mutatePins((pins) => {
+    await this.mutatePins((pins) => {
       const pin = pins.find((p) => p.id === id);
       if (!pin) throw new Error(`unknown pin '${id}'`);
       pin.text = t;
@@ -284,18 +284,14 @@ export class PinStore {
   /**
    * Serialize the read-modify-write across processes (a second window, a Dev Host beside the host).
    *
-   * The wait is SYNCHRONOUS and that is a known cost, registered rather than hidden (t-7843d0): this
-   * class's whole API is synchronous and its largest consumer is `src/bridge/tools.ts`, so making it
-   * async is a separate change with a much wider blast radius. Within one extension host these calls
-   * cannot contend at all — the thread that would wait is the thread that would release.
-   *
-   * Uses the shared `withProcessLockSync` (t-b457ce reconvergence after t-099847's temporary
-   * pin-local lock). Deliberately omits `maxHoldMs`: a lost pin is worse than waiting out a live
-   * holder until `lockTimeoutMs`. Dead-pid orphan recovery stays on; age-steal stays off.
+   * Uses the shared asynchronous `withProcessLock`, so waiting behind a live owner in another
+   * extension host does not block this host's event loop. Deliberately omits `maxHoldMs`: losing a
+   * pin is worse than waiting out a live holder until `lockTimeoutMs`. Dead-pid orphan recovery stays
+   * on; age-steal stays off.
    */
-  private mutatePins(update: (pins: Pin[]) => Pin[]): void {
+  private async mutatePins(update: (pins: Pin[]) => Pin[]): Promise<void> {
     fs.mkdirSync(this.dir, { recursive: true });
-    withProcessLockSync(this.lockPath, () => {
+    await withProcessLock(this.lockPath, () => {
       this.write(update(this.readPins()));
     }, {
       timeoutMs: PinStore.lockTimeoutMs,

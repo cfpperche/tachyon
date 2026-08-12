@@ -676,7 +676,7 @@ async function executeWorkspaceCommand(
     const payload = parsePinStudioStagedPayloadV1(command.input.action, bytes);
     if (command.input.action === "save") {
       if (!("patch" in payload)) throw new Error("Pin Studio save payload has the wrong shape");
-      const saved = savePinStudio(workspace.pinStore, command.input.pinId, payload.patch);
+      const saved = await savePinStudio(workspace.pinStore, command.input.pinId, payload.patch);
       if (saved.status === "error") throw new Error(saved.message);
       if (saved.status === "conflict") throw new Error(saved.message);
       onViewsChanged("pins");

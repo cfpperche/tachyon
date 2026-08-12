@@ -192,14 +192,14 @@ export function registerApprovalTools(mcp: McpServer, deps: BridgeDeps): void {
             new Error("cancel_human_approval requires an agent-authenticated caller (spec 351); legacy/external/human callers cannot cancel"),
           );
         }
-        const result = cancelOwnApprovalRequest({
+        const result = await cancelOwnApprovalRequest({
           workspaceRoot: deps.workspaceRoot,
           id,
           requester: caller.name,
           reason,
-          completePin: (pinId) => {
+          completePin: async (pinId) => {
             try {
-              deps.pins.setDone(pinId, true);
+              await deps.pins.setDone(pinId, true);
             } catch {
               // best-effort
             }

@@ -20,14 +20,14 @@ afterEach(() => {
 });
 
 describe("t-c021fe — staged Pin document creation", () => {
-  it("persists the pre-minted identity on first save and creates no second entity", () => {
+  it("persists the pre-minted identity on first save and creates no second entity", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "pin-staged-"));
     roots.push(root);
     const store = new PinStore(root);
     const id = mintPinId();
 
     expect(store.list()).toEqual([]);
-    expect(savePinStudio(store, id, patch)).toEqual({ status: "ok", pinId: id });
+    expect(await savePinStudio(store, id, patch)).toEqual({ status: "ok", pinId: id });
     expect(store.list().map((pin) => pin.id)).toEqual([id]);
   });
 });

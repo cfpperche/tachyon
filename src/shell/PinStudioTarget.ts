@@ -73,7 +73,7 @@ export function legacyPinStudioTarget(source: LegacyPinStudioSource): WorkspaceP
     savePinStudio: async (pinId, rawPatch) => {
       const payload = validatePayload("save", { schemaVersion: 1, patch: rawPatch });
       if (!("patch" in payload)) throw new Error("Pin Studio save payload has the wrong shape");
-      return serviceSaveResult(savePinStudio(source.pinStore, pinId, payload.patch));
+      return serviceSaveResult(await savePinStudio(source.pinStore, pinId, payload.patch));
     },
     putPinStudioImage: async (input) => {
       const payload = imagePayload(input);
@@ -239,7 +239,7 @@ function validatePayload(action: PinStudioApplyActionV1, value: unknown): PinStu
   return parsePinStudioStagedPayloadV1(action, Buffer.from(JSON.stringify(value), "utf8"));
 }
 
-function serviceSaveResult(result: ReturnType<typeof savePinStudio>): StudioSaveResult {
+function serviceSaveResult(result: Awaited<ReturnType<typeof savePinStudio>>): StudioSaveResult {
   if (result.status === "ok") return { status: "ok" };
   if (result.status === "conflict") {
     return { status: "conflict", error: { code: "pin/conflict", message: result.message } };
