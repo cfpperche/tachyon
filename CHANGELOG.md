@@ -6,6 +6,102 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.84.0 — a message that vanished, a panel that said it had been sent, and the one delivery ladder that already worked
+
+The maintainer sent a Design Mode message to an agent to see whether it arrived. It did not. It sat in
+the composer, unsubmitted, and would have stayed there forever — and the panel reported it as sent. He
+was not looking for a defect; he was testing the feature the previous release had just measured.
+
+Everything below came out of that one send.
+
+### Fixed
+
+- **A Design Mode message that does not arrive is no longer reported as sent** (`t-a48926`). The engine
+  path behind Design Mode, handoff distill and `agent.input` called the blind primitive: paste the text,
+  send a bare Enter, capture nothing, return nothing. If that Enter was swallowed — which is what
+  happens when the target is mid-turn — the text stayed staged in the composer and no one knew.
+
+  Two ordering facts made it worse. The chat event was written *after* the send, so a lost Enter still
+  produced a "sent" row. And a staged draft is the exact condition that makes Tachyon refuse every
+  *later* delivery to that agent, so one failed send could quietly deafen the recipient.
+
+  The path now carries a receipt: the measured composer profile on submit, an explicit
+  `typed-unsubmitted` status for deliberate staging, the chat row written *first* as pending, and — when
+  the receipt is not `submitted` — no typing indicator, no reply wait, and a panel line that says both
+  halves: *delivery was not confirmed*, and *the message is still saved*.
+
+- **The reply wait no longer watches a turn that started before the message existed** (`t-b09d9c`).
+  Measured from the chat log: the send at 12:48:33, the verdict "finished the turn without a chat reply"
+  at 12:48:43. Ten seconds — during which the agent was finishing a turn that had begun twenty seconds
+  *before* the message was sent. The host bound its wait to "the next turn ending" and watched the wrong
+  one end.
+
+  It now reads attention at the instant of delivery; if a turn was already running, that turn must end
+  before any later busy→idle edge can close the wait. The mirror of `t-4c82fa`: require the evidence,
+  not the label. The timeout was deliberately left alone — ten seconds was never the problem.
+
+- **Three more content submits stopped sending blind Enters** (`t-ff34db`). The continuity nudge, a
+  schedule's `instructions` when the agent is already up, and the resume primer. Their payloads were
+  already durable elsewhere, so what was at risk was the *waking*, not the information — but a blind
+  Enter also leaves text in the composer, which is what deafens an agent.
+
+  The real fix was not swapping the call. In both continuity paths the code now returns **before**
+  marking the agent nudged or restored when the receipt is unconfirmed. Recording "already delivered" for
+  something that never left would have traded a silent loss for a loss filed as a success.
+
+- **Two call sites joined the standard instead of inventing a third** (`t-b805b5`, `t-2c2384`). The
+  validation-close wake injected with a bare submit while its twin — approval resolution — had been
+  queue-aware for weeks; it now reuses that twin's port literally. And the Agent Pane's freeform submit
+  omitted the composer profile, falling back to a heuristic that cannot see a wrapped draft, so a long
+  human message was reported as delivered while still staged.
+
+- **Four runtimes measured for how their composer wraps** (`t-ba5357`). Without a measured rule the
+  region reader reads a long draft in half and classifies it as delivered — and that wrong
+  classification is what previously *disabled the retry loop* built for exactly this failure. The
+  threshold is `pane_width − 4`; Tachyon panes are 220 columns and 92% of measured notices exceed it.
+
+  Claude and Hermes now have declared continuation rules, from real 220-column pane captures. Grok and
+  OpenCode were measured and deliberately **not** declared: Grok's continuation rows keep the left
+  border, which the current reader preserves, so a regex alone cannot recover the text; and OpenCode's
+  pane shows only `[Pasted ~1 lines]` — the bytes never appear at all. That second one is not "not yet
+  measured", it is not observable through the pane, so *unconfirmed* is the permanent ceiling there.
+
+### Internal
+
+- **The delivery inventory that made all of the above one decision instead of eight** (`t-a5b186`).
+  Twenty-one paths write into an agent pane; each was read at the call site and recorded with its
+  primitive, whether the payload is durable, whether a retry exists, what receipt the caller sees, and
+  who pays when it fails. Three primitives were doing the same job at three qualities, and the best one
+  had existed since an unrelated fix without ever being generalized.
+
+  The chosen standard invents nothing: it is the ladder `notify_agent` already runs — persist, knock,
+  honest receipt, and the payload survives a failed knock. It deliberately keeps human messages *out* of
+  the agent notice log (different origins; mixing them would pollute what agents pull), and it answers
+  the unmeasured-runtime case explicitly: the ladder still applies, `submit-unconfirmed` is the honest
+  ceiling, and nothing shows a green check it has not earned.
+
+- **The activation refusal is fail-closed for fleet interpretation, not for the workspace** (`t-613361`).
+  A question from July, never measured: when activation is refused, the Bridge keeps answering and keeps
+  accepting writes. It is deliberate, and the proof is structural rather than empirical — the Bridge
+  listener starts in `_create`, before `start()` runs, and the refusal is an early return with a notify
+  that touches no teardown path. Now written where the next person will ask.
+
+### Documentation
+
+- **Design Mode panel-land is proven for two runtimes end to end** (`t-ba5027`). The August 6th matrix
+  measured with the browser bridge offline, so it only ever proved MCP→handler. Codex and Pi each listed
+  and called the reply tool with a turn id, used no markers, and produced exactly one chat-log event and
+  one live panel bubble for a unique nonce. Pi moves from unmeasured to partial.
+
+  The last link — a reply resolving an *outstanding* turn — was closed by the maintainer's own test send,
+  the same one that exposed everything above.
+
+- **Visual evidence pack for the Design Mode spec** (`t-7f994f`), captured in a real Extension
+  Development Host. Verdict recorded as *concern*, not pass: with the selection card and the chat both
+  open, the card covers the transcript, so a reply that has landed is invisible until the card is closed.
+  Filed separately (`t-330a51`) — a delivery that arrives and cannot be seen is, to the human,
+  indistinguishable from one that never came.
+
 ## 0.83.0 — a freeze you could feel, a refusal that hid its own answer, and 295 lines nothing could reach
 
 Four of the nine items this round shipped no code at all. Three questions were closed by measuring them
