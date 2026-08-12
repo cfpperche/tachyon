@@ -19,7 +19,15 @@ export type AgentPaneTmux = {
   sendKeys(session: string, text: string, submit: boolean): Promise<unknown>;
 };
 
-/** Resolve the composer profile for a freeform pane submit — cmd preferred, runtime name as fallback. */
+/**
+ * Resolve the composer profile for a freeform pane submit — cmd preferred, runtime name as fallback.
+ *
+ * Why the `?? composerProfileFor(runtime)` arm is SAFE (a wrong profile is worse than none):
+ * `composerProfileFor` only returns a measured profile when `runtimeOf` recognizes the token as a
+ * known runtime binary; anything else is `undefined` and degrades to the legacy heuristic — it
+ * never invents frame/continuation rules. The runtime arm is the same table lookup as cmd with a
+ * bare identity token (e.g. `"claude"`); it cannot synthesize a shape for an unknown name.
+ */
 export function agentPaneComposerProfile(
   cmd: string | null | undefined,
   runtime?: string | null,
