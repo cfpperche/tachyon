@@ -28,7 +28,7 @@ const FIXTURES = path.resolve(__dirname, "../fixtures/codex-composer");
 const read = (name: string): string => fs.readFileSync(path.join(FIXTURES, name), "utf8").replace(/\s+$/, "");
 
 const codex = runtimeProfile("codex")!.composer!;
-const claude = runtimeProfile("claude")!.composer!;
+const opencode = runtimeProfile("opencode")!.composer!;
 
 const incidentPane = read("incident-wrapped-staged.pane.txt");
 const incidentLine = composeBoundedAgentNotice("claude", "grokauth", read("incident-summary.txt"), "t-5dcf47");
@@ -89,10 +89,10 @@ describe("Codex composer wrap — measured on codex-cli 0.146.1 (t-7a297f)", () 
   });
 
   it("does not leak the Codex rule into a runtime that has not been measured", () => {
-    // Claude declares no `continuationLine`, so it must keep the first-row-only reading it had —
+    // OpenCode declares no `continuationLine`, so it must keep the first-row-only reading it had —
     // a wrap rule is per-runtime and measured, never inherited by shape similarity.
-    expect(claude.continuationLine).toBeUndefined();
-    const seen = composerText(wrappedPane, claude);
+    expect(opencode.continuationLine).toBeUndefined();
+    const seen = composerText(wrappedPane, opencode);
     expect(seen).not.toBe(wrappedText);
     expect(wrappedText.startsWith(seen!)).toBe(true);
   });
