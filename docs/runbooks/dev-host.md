@@ -351,7 +351,9 @@ the owning main process carries this pointer's exact workspace and `--extensionD
 arguments. If it is still alive, `point` refuses before rematerializing the disposable mirror and
 tells you to close that EDH window. After a normal exit or crash the process is gone, so no stale
 marker can lock the command. `point --force …` is the explicit escape hatch when overwriting a live
-window is intentional; its mirror state will be discarded.
+window is intentional; its mirror state will be discarded. A checkout with no pointer metadata is
+the normal first-point case and remains allowed; existing unreadable or incomplete metadata refuses
+because the owning window cannot be identified safely, with the same `--force` escape hatch.
 
 ### Crossing `Developer: Reload Window` (restore verification)
 

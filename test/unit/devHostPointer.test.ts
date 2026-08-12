@@ -304,6 +304,47 @@ describe("dev-host pointer", () => {
     expect(() => arm({ processTable: liveProcessTable, force: true })).not.toThrow();
   });
 
+  it("t-7ee246 review: recognizes exact paths with spaces in Electron's rewritten cmdline blob", () => {
+    arm();
+    const pointerRoot = pathsOf(repo).root;
+    const metaFile = path.join(pointerRoot, "meta.json");
+    const meta = JSON.parse(fs.readFileSync(metaFile, "utf8"));
+    meta.workspaceArg = "/tmp/fixture with spaces/workspace";
+    meta.extensionLink = "/tmp/worktree with spaces/.tachyon/dev-host/extension";
+    fs.writeFileSync(metaFile, JSON.stringify(meta));
+    const rawCmdline = [
+      "/opt/vscode/code",
+      meta.workspaceArg,
+      `--extensionDevelopmentPath=${meta.extensionLink}`,
+    ].join(" ") + "\0";
+
+    expect(() => assertDevHostWindowIdle(pointerRoot, {
+      processTable: () => [{
+        pid: 4343,
+        // This is the lossy legacy tokenization documented by edh-process.mjs.
+        argv: rawCmdline.slice(0, -1).split(/\s+/),
+        rawCmdline,
+      }],
+    })).toThrow(/live Dev Host window.*pid=4343/i);
+  });
+
+  it("t-7ee246 review: existing unreadable metadata fails closed and names --force", () => {
+    arm();
+    const pointerRoot = pathsOf(repo).root;
+    fs.writeFileSync(path.join(pointerRoot, "meta.json"), "{broken");
+    expect(() => assertDevHostWindowIdle(pointerRoot, { processTable: () => [] })).toThrow(
+      /cannot safely identify.*point --force/i,
+    );
+    expect(() => assertDevHostWindowIdle(pointerRoot, { force: true, processTable: () => [] })).not.toThrow();
+  });
+
+  it("t-7ee246 review: absent metadata stays fail-open for a checkout's first point", () => {
+    const pointerRoot = pathsOf(repo).root;
+    expect(fs.existsSync(path.join(pointerRoot, "meta.json"))).toBe(false);
+    expect(() => assertDevHostWindowIdle(pointerRoot, { processTable: () => [] })).not.toThrow();
+    expect(() => arm({ processTable: () => [] })).not.toThrow();
+  });
+
   it("links node_modules from primary when worktree lacks them", () => {
     const wtNm = path.join(worktree, "node_modules");
     expect(fs.existsSync(wtNm)).toBe(false);

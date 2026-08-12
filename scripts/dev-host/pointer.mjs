@@ -1146,21 +1146,40 @@ export function assertDevHostWindowIdle(pointerRoot, opts = {}) {
   if (!fs.existsSync(metaFile)) return;
   let meta;
   try { meta = JSON.parse(fs.readFileSync(metaFile, "utf8")); }
-  catch { return; }
+  catch {
+    throw new Error(
+      `${SELF}: existing pointer metadata is unreadable, so point cannot safely identify a live Dev Host window; `
+      + `repair/remove the pointer or use point --force to intentionally overwrite it.`,
+    );
+  }
   const workspaceArg = typeof meta.workspaceArg === "string" ? meta.workspaceArg : meta.workspaceLink;
   const extensionLink = meta.extensionLink;
-  if (typeof workspaceArg !== "string" || typeof extensionLink !== "string") return;
+  if (typeof workspaceArg !== "string" || typeof extensionLink !== "string") {
+    throw new Error(
+      `${SELF}: existing pointer metadata is incomplete, so point cannot safely identify a live Dev Host window; `
+      + `repair/remove the pointer or use point --force to intentionally overwrite it.`,
+    );
+  }
   const extensionArg = `--extensionDevelopmentPath=${extensionLink}`;
   const processTable = opts.processTable ?? readProcessTable;
   const owner = processTable().find((proc) =>
-    proc.argv.includes(workspaceArg)
-    && proc.argv.includes(extensionArg)
+    processHasExactArg(proc, workspaceArg)
+    && processHasExactArg(proc, extensionArg)
     && !proc.argv.some((arg) => arg.startsWith("--type=")));
   if (!owner) return;
   throw new Error(
     `${SELF}: live Dev Host window owns this pointer (pid=${owner.pid}); point would replace its disposable workspace mirror. `
     + `Close that EDH window and run point again, or use point --force to intentionally overwrite it.`,
   );
+}
+
+function processHasExactArg(proc, expected) {
+  if (proc.argv.includes(expected)) return true;
+  if (typeof proc.rawCmdline !== "string") return false;
+  const nulParts = proc.rawCmdline.split("\0").filter(Boolean);
+  if (nulParts.length !== 1) return nulParts.includes(expected);
+  const escaped = expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`).test(nulParts[0]);
 }
 
 /**

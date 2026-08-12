@@ -26,7 +26,7 @@ export interface DevHostPointOptions {
   /** Explicitly permit rematerializing a mirror still owned by a live F5 EDH. */
   force?: boolean;
   /** Test seam for the process-backed live-window guard. */
-  processTable?: () => Array<{ pid: number; argv: string[] }>;
+  processTable?: () => Array<{ pid: number; argv: string[]; rawCmdline?: string }>;
 }
 
 export interface DevHostFixtureNewOptions {
@@ -116,7 +116,7 @@ export function assertWorktreeLooksValid(worktreeAbs: string): string;
 export function assertWorkspaceDir(workspaceAbs: string): string;
 export function assertDevHostWindowIdle(
   pointerRoot: string,
-  opts?: { force?: boolean; processTable?: () => Array<{ pid: number; argv: string[] }> },
+  opts?: { force?: boolean; processTable?: () => Array<{ pid: number; argv: string[]; rawCmdline?: string }> },
 ): void;
 export function materializeWorkspaceMirror(mirrorDir: string, fixtureAbs: string): string;
 
