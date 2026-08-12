@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
-import { openPreview } from "./support/preview";
+import { openPreview, previewSurface } from "./support/preview";
 
 // t-b24282 — the harness's OWN width contract, measured through the door an operator actually uses.
 //
@@ -165,6 +165,100 @@ describe("t-b24282 — ?width= alone pins the surface viewport, not just a conta
     expect(message).toContain("frame width mismatch");
     expect(message).toContain("?width=360");
     expect(message).toContain("500px");
+    await page.close();
+  });
+});
+
+// t-4a477f — the catalog door is the other half of t-b24282. routes.json URLs carry view+fixture
+// and no `?width=`, because one entry is photographed at 880 and at 360. The visual-qa skill
+// then shrinks the OUTER window and screenshots that page. Before this, the iframe stayed at
+// route.frame (900 for Agent Studio) and the photo was a crop of the wide layout — the
+// isolationtruth 360 shot that invented t-cd554e. The shell must pass the photo's width into
+// the iframe when the catalog omitted it. Explicit `?width=` is still the puppeteer door above.
+describe("t-4a477f — catalog URL + outer viewport pins the iframe, not a crop of route.frame", () => {
+  let server: GateServer;
+  let browser: Browser;
+
+  beforeAll(async () => {
+    server = await startGateServer();
+    browser = await puppeteer.launch({ executablePath: resolveChromeExecutable(), headless: true });
+  });
+
+  afterAll(async () => {
+    await browser.close();
+    await server.close();
+  });
+
+  // The catalog URL the skill actually opens: no width query. Agent Studio dense-edit is the
+  // incident surface (ev-2026-08-12T19:58:40.615Z-2); its route.frame is 900 and its check
+  // grid collapses only when `@media (max-width: 720px)` sees a 360 iframe.
+  const catalogUrl = (origin: string) =>
+    `${origin}/scripts/webview-preview/index.html?view=agent-studio-shell&fixture=dense-edit`;
+
+  async function openCatalogAt(page: Page, width: number): Promise<Frame> {
+    await page.setViewport({ width, height: 1200 });
+    await page.goto(catalogUrl(server.origin), { waitUntil: "networkidle0" });
+    const surface = await previewSurface(page);
+    await surface.waitForSelector(".ash-check-grid", { visible: true });
+    return surface;
+  }
+
+  it("at an outer 360px window, the catalog URL's iframe viewport is 360 and the 720px rules fire", async () => {
+    const page = await browser.newPage();
+    const surface = await openCatalogAt(page, 360);
+
+    const probe = await surface.evaluate(() => {
+      const grid = document.querySelector(".ash-check-grid");
+      return {
+        innerWidth: window.innerWidth,
+        columns: grid ? getComputedStyle(grid).gridTemplateColumns : "",
+        matches: window.matchMedia("(max-width: 720px)").matches,
+      };
+    });
+
+    expect(probe.innerWidth, "catalog URL photographed at 360 must not keep route.frame (900)").toBe(360);
+    expect(probe.matches).toBe(true);
+    expect(probe.columns.split(" ").length).toBe(1);
+    await page.close();
+  });
+
+  it("at an outer 880px window, the same catalog URL stays the wide layout", async () => {
+    const page = await browser.newPage();
+    const surface = await openCatalogAt(page, 880);
+
+    const probe = await surface.evaluate(() => {
+      const grid = document.querySelector(".ash-check-grid");
+      return {
+        innerWidth: window.innerWidth,
+        columns: grid ? getComputedStyle(grid).gridTemplateColumns : "",
+        matches: window.matchMedia("(max-width: 720px)").matches,
+      };
+    });
+
+    expect(probe.innerWidth).toBe(880);
+    expect(probe.matches).toBe(false);
+    expect(probe.columns.split(" ").length).toBe(3);
+    await page.close();
+  });
+
+  it("resizing the outer window after a catalog load moves the iframe with it", async () => {
+    const page = await browser.newPage();
+    await openCatalogAt(page, 880);
+    await page.setViewport({ width: 360, height: 1200 });
+    await page.waitForFunction(
+      () => {
+        const frame = document.querySelector("iframe#frame") as HTMLIFrameElement | null;
+        return frame?.contentWindow?.innerWidth === 360;
+      },
+      { timeout: 5_000 },
+    );
+    const surface = await previewSurface(page);
+    const probe = await surface.evaluate(() => ({
+      innerWidth: window.innerWidth,
+      matches: window.matchMedia("(max-width: 720px)").matches,
+    }));
+    expect(probe.innerWidth).toBe(360);
+    expect(probe.matches).toBe(true);
     await page.close();
   });
 });

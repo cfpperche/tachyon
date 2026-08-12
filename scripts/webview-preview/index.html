@@ -9,13 +9,13 @@
 <link rel="stylesheet" href="/scripts/webview-preview/theme-dark.css">
 <style>
   html, body { background: var(--vscode-sideBar-background); margin: 0; }
-  /* t-b24282 — the frame is an IFRAME, not a div, and that is the whole measurement contract: an
-     iframe's content box IS a viewport, so one number (?width=, or the view's route.frame) moves the
-     box the surface lays out in AND the viewport its `@media` queries evaluate against. A sized div
-     moved only the first, which let a narrow screenshot show a layout the product never produces.
-     shell.js sets the size; the panel edge is drawn with a box-shadow rather than a border because a
-     shadow contributes no layout and no scrollable overflow — a border would make the shell 1px wider
-     than the frame and put a scrollbar on every capture taken at exactly the browser's width. -->
+  /* t-b24282 / t-4a477f — the frame is an IFRAME, not a div, and that is the whole measurement
+     contract: an iframe's content box IS a viewport. `?width=` moves both halves; when the catalog
+     omits it, the shell passes the outer window (clamped to route.frame) so a 360 photo is a 360
+     iframe, not a crop of the wide frame. A sized div moved only the box. shell.js sets the size;
+     the panel edge is a box-shadow rather than a border because a shadow contributes no layout and
+     no scrollable overflow — a border would make the shell 1px wider than the frame and put a
+     scrollbar on every capture taken at exactly the browser's width. -->
   #frame { display: block; width: 340px; height: 100vh; border: 0; box-shadow: 1px 0 0 var(--vscode-widget-border); }
   /* fail-loud: if shell.js never runs, this stays visible next to a blank frame */
   #shell-error { color: #f48771; padding: 16px; font: 12px monospace; }
