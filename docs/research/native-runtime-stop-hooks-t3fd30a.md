@@ -29,11 +29,34 @@ por novo prompt, mas não distingue sozinho uma caixa de permissão.
 | Runtime | Versão instalada | Fim do turno | Espera pelo humano | Evidência | Forma de recepção |
 |---|---:|---|---|---|---|
 | Claude Code | 2.1.228 | `Stop` (conclusão normal; `StopFailure` é a saída por erro) | `Stop` = espera pelo próximo prompt; `Notification(permission_prompt)` = permissão; `Notification(idle_prompt)` é aviso tardio, não a borda inicial | **Medido no Tachyon:** o recorder `Stop` já dispara; lista de eventos do adapter e settings materializado | Hook `command` por `--settings`; também suporta hook HTTP nativo, mas o canal já usado aqui é command |
-| Codex | 0.146.1 | `Stop` | `Stop` = espera pelo próximo prompt; evento específico de prompt de permissão: **?** | **Medido no Tachyon:** spec 315 e recorder em `-c hooks.Stop=...`; adapter aceita `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Notification`, `Stop` | Hook `command` por overrides `-c`; sujeito ao trust review, já tratado no lançamento canônico |
+| Codex | 0.146.1 | `stopped` | `stopped` = espera pelo próximo prompt; **`permission_request`** para prompt de permissão — corrigido 2026-08-12, ver nota abaixo | **Medido no binário instalado** (`@openai/codex-linux-x64`, `codex-cli 0.146.1`): a enumeração de eventos é `pre_tool_use permission_request post_tool_use pre_compact post_compact session_start session_end user_prompt_submit subagent_start subagent_stop stopped`. O binário também carrega `PermissionRequest hook denied approval` — o hook pode NEGAR, não só observar. Mais: spec 315 e recorder em `-c hooks.Stop=...` | Hook `command` por overrides `-c`; sujeito ao trust review, já tratado no lançamento canônico |
 | Grok | 1.0.3 (`1a29d5bc12`) | `Stop` somente em conclusão genuína; não em interrupção. `StopFailure` para erro | `Stop` = espera pelo próximo prompt; `Notification(permission_prompt)` = permissão; `Notification(idle_prompt)` é tardio | **Medido:** guia instalado `~/.grok/docs/user-guide/10-hooks.md` e materialização Tachyon | Hook `command` ou `http`; global/private-home é always-trusted |
 | Pi | 0.80.10 | `agent_settled` é a borda mais exata; `agent_end` termina um prompt, mas pode ser seguido por reentrada imediata; `turn_end` ocorre em cada resposta/model turn | `agent_settled` = loop realmente sem trabalho pendente e esperando; prompt/approval específico: **?** | **Medido:** tipos e `agent-session.js` instalados expõem `agent_settled`, `agent_end`, `turn_end`, `input`; documentação da extensão confirma a sequência | Extensão Pi (`pi.on(...)`), não hook shell declarativo; Tachyon já injeta uma extensão imutável para Bridge |
 | OpenCode | 1.18.16 | `session.idle` | `session.idle` = sessão sem execução e esperando; prompt/approval específico: **?** | **Medido parcialmente:** binário instalado e API oficial de plugins declara `session.idle`; o binário empacotado não oferece artefato legível para medir uma distinção de permissão | Plugin JavaScript recebe o event bus; não foi medido um hook command equivalente |
 | Hermes | 0.18.2 (`2026.7.7.2`, upstream `2a25d53e`) | `post_llm_call` após loop bem-sucedido; `on_session_end` ao fim de cada `run_conversation` e também na saída do CLI | Espera exata por novo prompt: **?**; approval específico: **?** | **Medido:** checkout instalado e documentação de plugins; `post_llm_call` não cobre turnos falhos e `on_session_end` mistura fim de chamada com saída | Plugin Python (`register_hook`); não há hoje projeção Tachyon desse plugin no harness |
+
+### Correção de 2026-08-12 — o `?` do Codex era buraco de medição, não limitação
+
+A primeira versão desta tabela deu **`?`** para o evento de permissão do Codex, e eu (claude) repeti
+esse `?` para o dono como se fosse conclusão — respondi que "no codex o pedido de permissão continua
+dependendo de leitura de tela". Ele recusou a resposta com a razão certa: **antes de afirmar, medir;
+um registro não é um fato, e as coisas mudam.**
+
+Medido no ato, no binário instalado, sem inferir de runtime vizinho:
+
+    pre_tool_use  permission_request  post_tool_use  pre_compact  post_compact
+    session_start  session_end  user_prompt_submit  subagent_start  subagent_stop  stopped
+
+`permission_request` existe. E a string `PermissionRequest hook denied approval` no mesmo binário
+mostra que o hook participa da DECISÃO, não só da observação.
+
+Fica registrado como refutação em vez de edição silenciosa, porque a lição vale mais que a célula: um
+`?` herdado tem o mesmo peso visual de um fato quando alguém o cita numa conversa, e foi assim que
+uma medição ausente virou uma afirmação minha.
+
+Consequência para o desenho: dos três runtimes que já têm canal de hook gerenciado pelo Tachyon,
+**os três cobrem as duas bordas** — fim de turno e pedido de permissão. A leitura de tela não precisa
+seguir responsável por prompt de permissão em nenhum deles.
 
 Conclusão de cobertura: há uma borda utilizável em todos os seis runtimes instalados, mas somente
 Claude, Codex e Grok já têm um **canal de hook gerenciado pelo Tachyon**. Pi tem a melhor borda
