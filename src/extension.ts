@@ -4225,8 +4225,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   // Thimo-style Integrated Browser bridge (HTTP + editor-browser CDP) → Bridge ide_browser_* tools.
-  // Fixture ide-browser-dogfood: agents claude/codex/grok only (no auto-boot, no shell-as-agent).
-  registerIdeBrowserBridge(context, {
+  // Fixture ide-browser-dogfood: agents claude/codex/grok only (host auto-starts on opt-in;
+  // browser/CDP stay lazy; no shell-as-agent).
+  await registerIdeBrowserBridge(context, {
     getWorkspace: () =>
       (controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined)
       ?? workspaces()[0],

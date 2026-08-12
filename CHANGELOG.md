@@ -6,6 +6,76 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.85.0 — everything here was found by opening the product and using it
+
+No item in this release came off the board. Each one came from the maintainer opening Design Mode,
+trying something ordinary, and hitting a wall — an agent list that was empty while three agents ran, a
+panel covering the reply it had just received, a bridge that would not start on its own, a debug
+toolbar over the page. Two of them also corrected things this project had recorded as true.
+
+### Fixed
+
+- **"No running agents" now says which of three things it means** (`t-a4060b`). The Design Mode agent
+  picker reported an empty roster while three agents were live and one was eligible by every rule. The
+  list-building function ended in `catch { return []; }`, so *no eligible agent*, *the query failed*,
+  and *there is no connection to the page* all collapsed into one sentence — and the right action
+  differs in each case. An empty list reads as an answer, not an error.
+
+  The host now distinguishes them: a disconnected page says to reopen the IDE Browser, a failed query
+  reports its reason and logs it, and genuinely empty says so. A missing workspace now throws into the
+  second case instead of disguising itself as the first.
+
+  **And the filter that everyone blamed was reading a field that does not exist.** The exclusion tested
+  `!row.temporary`; production rows carry `lifetime`, and there is no `temporary` boolean on them. The
+  condition was always true — the filter had never excluded anything. Two separate investigations read
+  that code, believed it, and built conclusions on it, including a line in the runtime parity matrix
+  claiming Design Mode excludes Temporary agents. That line is now corrected in place, recorded as
+  disproved rather than quietly deleted, so the next reader does not repeat the walk. Behavior is
+  unchanged: removing a clause that never fired changes nobody's eligibility, and whether Design Mode
+  *should* exclude Temporary agents is a product decision, not a bug fix.
+
+- **The Selection card no longer covers the chat transcript** (`t-330a51`). With both panels open the
+  card sat on top of the conversation, so a reply that had already arrived stayed invisible until the
+  card was closed. Before/after captures at two viewports are in the spec's evidence directory.
+
+  This was priority one for a reason that is not cosmetic: a reply that *arrives and cannot be seen* is,
+  to the person looking, identical to one that never came — and 0.84.0 had just taught the panel to
+  print "delivery was not confirmed" when a send fails. That warning is worthless if it is born behind
+  the card.
+
+- **`settings.ideBrowser.enabled: true` now means the bridge is up** (`t-7a4c36`). It used to mean only
+  that a command existed. A human could click the globe in the status bar, which lazy-starts — which is
+  why the palette command is literally titled *(advanced)*. An agent had no door at all: it called, got
+  `bridge offline`, and was told to run a palette command it cannot run. That cost a full round of work
+  in one day, with one task reporting offline four times while another brought the same host up by
+  itself an hour later.
+
+  The host now starts with the extension when the workspace opted in. Measured before shipping: median
+  **10.06 ms**, p95 10.82 ms over 30 runs, and 20.32 ms for two windows on one root (they coexist on
+  distinct ports). A workspace that did not opt in binds nothing. Only the loopback host starts —
+  Chromium and CDP stay lazy until something navigates — and a failed bind is logged rather than thrown,
+  because an optional feature must not break activation.
+
+  The offline message now names a condition the caller can check instead of an action it cannot take.
+  Turning the setting on with the window already open also reconciles for real now, rather than only
+  repainting the status bar icons.
+
+### Internal
+
+- **The debug toolbar over the Integrated Browser is a VS Code limitation, proven in its source**
+  (`t-414540`). Tachyon already passes all four suppression options when it starts the browser, and the
+  toolbar appears anyway. Measured live: two `pwa-editor-browser` sessions exist; the child owns both
+  the toolbar and the CDP connection Design Mode depends on. Reading VS Code 1.117's source at the
+  pinned commit shows why — the DAP reverse request creates that child with only `{ parentSession }`,
+  and while `noDebug` is inherited from the parent's configuration, the three UI suppression flags are
+  not. The extension API cannot set options on an existing session or supply them for that request.
+
+  Removing the child would remove the CDP session, so there is no fix inside Tachyon. The only lever is
+  the global `debug.toolBarLocation` setting, which would also hide real debugging controls — the
+  product does not mutate a human's global settings to hide its own side effect. Eight lines of comment
+  now sit beside the four flags that do not suffice, because the obvious and wrong next fix is to add a
+  fifth.
+
 ## 0.84.0 — a message that vanished, a panel that said it had been sent, and the one delivery ladder that already worked
 
 The maintainer sent a Design Mode message to an agent to see whether it arrived. It did not. It sat in
