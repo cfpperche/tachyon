@@ -9,19 +9,20 @@ O Orca acumula anotações ligadas a elementos, forma um único prompt Markdown,
 um agente no momento do **Send** e entrega o texto no terminal daquele agente. Não há conversa,
 arquivo de protocolo nem chamada direta a provedor nessa passagem.
 
-Para o Tachyon, porém, copiar literalmente a implantação do Orca seria desfazer demais do híbrido D.
-A proposta concreta é:
+Para o Tachyon, a correção não é manter a página magra: **UI na página é a forma requerida**. O
+defeito anterior era uma aplicação inteira escrita como template string manual de 1.657 linhas, não
+o fato de ela executar no browser. A proposta concreta é:
 
 1. **matar a aba/chat do Design Mode**;
-2. manter na página somente pick, popover curto, badges e uma bandeja resumida;
-3. ao apertar **Send**, abrir um Quick Pick do VS Code com os agentes vivos e entregar o lote pela
-   escada TUI que já existe;
-4. manter a captura PNG de cada pick como anexo do lote, não como “mensagem no chat”;
-5. mover os quatro presets de viewport para um Quick Pick no item de status do Design Mode;
-6. fazer markup sobre uma captura em um editor webview temporário e enviar/copiar o PNG composto.
+2. substituir o inject manual por uma **aplicação Preact de página**, construída pelo `esbuild.mjs`
+   como bundle IIFE autocontido e injetada por CDP;
+3. pôr nessa aplicação picker, popover, badges, bandeja, seletor de agente, captura, presets e markup;
+4. ao apertar **Send**, entregar o lote ao terminal do agente selecionado pela escada TUI existente;
+5. manter a captura PNG de cada pick como preview/anexo da anotação, não como mensagem de chat;
+6. deixar do webview atual somente código reutilizável migrado ao overlay; o `DesignModePanel` morre.
 
-Isso preserva a experiência “marque na página, envie ao terminal escolhido” sem recriar conversa,
-sem Chromium embarcado e sem inventar canal de entrega.
+Isso entrega literalmente “marque na página, envie ao terminal escolhido” sem recriar conversa, sem
+Chromium embarcado e sem inventar canal de entrega.
 
 ## Fonte do Orca e reprodução
 
@@ -113,14 +114,14 @@ o caminho ao TUI (`markup-clipboard-delivery.ts:5-18`). Não se envia JSON vetor
 
 | função | Orca | Tachyon hoje | decisão |
 |---|---|---|---|
-| hover/pick | runtime injetado de 794 linhas | inject fino de **30 linhas**, hit-test, outline e captura (`src/webview/ide-browser-bridge/designModeInject.ts:1-30`) | reusar; não trocar |
+| hover/pick | runtime injetado de 794 linhas | inject manual de **30 linhas**, hit-test, outline e captura (`src/webview/ide-browser-bridge/designModeInject.ts:1-30`) | portar a lógica para componentes/hooks do bundle |
 | PNG do elemento | annotations descartam imagem | `writePickScreenshot` grava crop e o caminho entra no prompt (`src/webview/ide-browser-bridge/manager.ts:342-384`; `pick.ts:190-192`) | preservar e ligar à anotação |
-| anotação acumulável | até 20 por aba, popover + badges + tray | existe apenas `lastPick`/selection anexada ao chat | falta store de lote + UI mínima |
-| destino | humano escolhe agente vivo no Send | Design Mode fixa `designAgent`, mas a entrega TUI já existe | trocar a escolha para Send; reusar entrega |
+| anotação acumulável | até 20 por aba, popover + badges + tray | existe apenas `lastPick`/selection anexada ao chat | falta store de lote + UI no overlay |
+| destino | humano escolhe agente vivo no Send | Design Mode fixa `designAgent`, mas a entrega TUI já existe | seletor fica no overlay; Send reusa entrega |
 | entrega | prompt Markdown → PTY | `agent.input` chega a `sendSubmittedLine` com perfil de composer (`src/engine-service/extensionOperationService.ts:78,340-342`; `src/agents/agentInputService.ts:15-41`) | nenhuma nova porta |
 | proteção TUI | elegibilidade e entrega pós-ready | escada t-a5b186 + recusa de draft + recibo | reusar integralmente |
-| markup | overlay do renderer sobre screenshot; PNG clipboard | screenshot CDP e webviews já existem, mas não editor de markup | falta editor temporário sobre PNG |
-| viewport | chrome do browser | quatro presets já estão no webview, e CDP aplica métricas (`src/webview/design-mode/App.tsx:9-13,39-43`; `cdpSession.ts:142-186`) | preservar backend; mover entrada |
+| markup | overlay do renderer sobre screenshot; PNG clipboard | screenshot CDP existe, mas não editor de markup | implementar canvas no bundle de página; saída PNG |
+| viewport | chrome do browser | quatro presets já estão no webview, e CDP aplica métricas (`src/webview/design-mode/App.tsx:9-13,39-43`; `cdpSession.ts:142-186`) | preservar backend; mover os quatro controles ao overlay |
 | conversa | não participa das annotations | aba Preact com histórico/composer/reply | retirar da função e depois apagar o contrato de reply específico |
 
 ## A conta honesta da superfície de página
@@ -135,31 +136,75 @@ HTTP/MCP, click codificado, inject/re-inject, push de chat e probes/fila; depois
 (`docs/specs/488-ide-browser-design-mode/notes.md:220-226`). Contando HTTP e MCP como as duas entradas
 que a F6 separou, há hoje **cinco** famílias que chegam a `Runtime.evaluate`.
 
-### O preço de copiar o Orca
+### O que o número de linhas diz — e o que não diz
 
-Uma cópia literal recolocaria **965 linhas** de runtime de página só para pick + badges (e ainda
-precisaria implementar popover/tray no realm da página, porque o React externo do Orca não cabe por
-cima do editor-browser). Isso multiplica a superfície atual por **32,2×** (965 / 30), antes da UI de
-anotação. É uma conta ruim.
+Uma cópia literal das duas strings do Orca recolocaria **965 linhas** de runtime de página só para
+pick + badges, **32,2×** as 30 linhas atuais. Mas esse multiplicador não é argumento para negar UI na
+página. Ele mede fonte manual injetada, não complexidade de um artefato compilado. O número que
+importa para a decisão é: 1.657 linhas antigas eram um programa escondido numa string TypeScript;
+1.470 delas eram chrome sem fronteiras de componente. Um bundle Preact de tamanho semelhante é
+testável como componentes antes de virar artefato e não tem a mesma dívida estrutural.
 
-### O preço do híbrido proposto
+### O preço do overlay compilado proposto
 
-O híbrido mantém o extrator atual e acrescenta apenas:
+O overlay novo reúne:
 
 - modelo serializável de annotations no host;
-- no inject: popover curto, badges e tray resumido;
+- app Preact de página: picker, popover, badges, tray, agentes, preview PNG, presets e markup;
 - eventos page→host `annotation.add/delete/send`, pelo binding/fila existente;
 - um push host→page para restaurar o lote depois de re-inject/navigation.
 
-Não há implementação ainda, portanto não finjo uma contagem exata. O contrato deve ter um teto de
-**300 linhas totais no `designModeInject.ts`**: no máximo +270 sobre as 30 atuais, **3,2× menor** que
-os 965 do par Orca e **5,5× menor** que o corpo antigo de 1.657. Se popover + badges + tray não couberem
-nesse teto, o tray sai da página e vira Quick Pick; não se aumenta silenciosamente o inject.
+Não há implementação, portanto não existe contagem honesta do bundle final. **Não deve haver teto de
+linhas de UI injetada.** O ratchet correto é estrutural: `designModeInject.ts` deixa de conter markup,
+CSS ou aplicação manual; ele somente lê o artefato gerado e chama seu `mount(config)`. Tamanho do
+bundle deve ser medido em bytes no build/metafile e acompanhado como custo de carregamento, não usado
+como substituto de arquitetura.
 
 Em eval, a proposta reutiliza inject/re-inject e binding/fila e acrescenta **uma** família
-host→page, `__tachyonDmAnnotationsSync(JSON)`, para restauração. Resultado: volta de cinco para
-**seis famílias**, mas não reabre chat push nem texto de agente na página. Badge totalmente local
-evitaria essa porta, porém perderia navegação/re-inject; é a economia errada.
+host→page, `__tachyonDmOverlay.sync(JSON)`, para estado/restore. Resultado: volta de cinco para
+**seis famílias**, mas não reabre chat push nem texto de agente na página. Presets e Send saem pelo
+binding existente; respostas do host (roster, estado, recibo, PNG) voltam pela única porta de sync.
+
+## Como o bundle é construído e injetado
+
+O repositório já compila Preact para browser. `esbuild.mjs:228-243` define a base browser (`platform:
+browser`, JSX automático/Preact, target ES2020) e `:295-319` monta os apps webview. O overlay deve
+reusar essa base, mas **não** entrar no grafo ESM com chunks dos webviews: uma página arbitrária não
+consegue buscar `dist/webview/chunks/*`, e CDP precisa de um artefato autocontido.
+
+Desenho do build:
+
+1. novo entrypoint `src/webview/design-mode-overlay/main.tsx`, com `App`, hooks, protocolo tipado e
+   estilos de overlay;
+2. novo target em `esbuild.mjs`, derivado da base Preact, `bundle: true`, `platform: "browser"`,
+   `format: "iife"`, `splitting: false`, `minify` igual aos builds existentes, saída única
+   `dist/webview/design-mode-overlay.js`;
+3. um loader do target importa `overlay.css` como módulo de texto; o mount põe esse texto em
+   `style.textContent` dentro do ShadowRoot. Assim CSS entra no próprio artefato sem `<link>`,
+   `innerHTML` ou chunk relativo que a página precise resolver;
+4. o target entra em `targets` (`esbuild.mjs:560-565`), no typecheck browser e no fechamento do VSIX;
+   o metafile registra bytes do artefato para a conta de custo;
+5. testes importam `App`/reducers/protocolo diretamente; preview harness monta o mesmo App a 880 e
+   360. O IIFE recebe apenas um smoke de install/cleanup, não testes por grep de string.
+
+Desenho do runtime:
+
+1. a extensão lê e cacheia `dist/webview/design-mode-overlay.js` a partir de `extensionUri`; falha
+   fechado se o artefato não existe — nunca recompila em runtime;
+2. `setDesignMode(true)` continua habilitando Page/Runtime e registrando o binding antes do install
+   (`src/webview/ide-browser-bridge/cdpSession.ts:529-575`);
+3. uma única `Runtime.evaluate` executa o IIFE e chama
+   `globalThis.__tachyonDmOverlay.mount({bindingName, theme, initialState})`; configuração e estado
+   entram por `JSON.stringify`, nunca por concatenação de texto da página;
+4. mount cria um host com ShadowRoot, instala Preact e devolve versão/capabilities. Re-inject primeiro
+   chama `unmount`, depois executa o mesmo artefato e sincroniza estado;
+5. presença testa `__tachyonDmOverlay.version`, não um seletor visual; cleanup remove listeners,
+   observers, RAFs, shadow host e globals;
+6. navegação, reload e reconnect passam pela mesma porta de install + sync já usada pelo ciclo CDP.
+
+O bundle continua sendo JavaScript avaliado por CDP — isso é inevitável para UI dentro da página —,
+mas deixa de ser JavaScript **autorado como string** dentro do host. Fonte, build, artefato e install
+viram quatro objetos auditáveis.
 
 ## Desenho concreto
 
@@ -168,9 +213,11 @@ evitaria essa porta, porém perderia navegação/re-inject; é a economia errada
 1. O status item ativa Design Mode e arma o picker fino.
 2. Hover continua mostrando outline/rótulo; click captura DOM + crop PNG via CDP.
 3. Um popover na página pede texto e intenção Change/Question. Add grava no host, recebe índice e
-   mostra badge. O tray da página lista só número, rótulo curto, comentário e delete.
-4. Send posta apenas `{action:'annotation.send'}`. O host abre Quick Pick com agentes vivos/aptos.
-5. Escolhido o destino, o host monta **um** prompt Markdown com todas as anotações e caminhos PNG,
+   mostra badge. O tray da página lista número, preview, rótulo, comentário e delete.
+4. O tray contém o seletor dos agentes vivos/aptos. A página não decide elegibilidade: o host envia
+   o roster e valida novamente o id escolhido no momento do Send.
+5. Send posta `{action:'annotation.send', targetAgent}`. O host monta **um** prompt Markdown com todas
+   as anotações e caminhos PNG,
    passa pela mesma proteção de draft/atenção/perfil de composer e `sendSubmittedLine`, e só então
    limpa o lote mediante recibo confirmado.
 
@@ -181,45 +228,49 @@ conversa paralela.
 
 ### Destino da captura que hoje aparece no chat
 
-A captura **não morre** com o chat. `writePickScreenshot` continua sendo a fonte. O popover/tray pode
-mostrar um thumbnail host-served, mas o valor durável é o caminho do PNG no item da anotação. O
+A captura **não morre** com o chat. `writePickScreenshot` continua sendo a fonte. O popover/tray do
+overlay mostra o thumbnail; o host fornece os bytes/URL segura pela porta de sync, e o valor durável
+é o caminho do PNG no item da anotação. O
 formatador inclui `Screenshot: <path>` por item no lote entregue. Isso conserva exatamente a função
 que landou em `t-49ef22` — contexto visual do elemento — sem transformar o lote em mensagens.
 
 ### Destino dos quatro presets de viewport
 
 O backend CDP e os quatro valores Phone 375×812, Tablet 768×1024, Desktop 1280×800 e Reset ficam.
-A UI sai da aba de chat: click secundário/command no item “Design Mode” abre Quick Pick “Viewport”
-com os quatro presets e mostra o ativo no status/tooltip. Não devem voltar ao inject: viewport é
-controle do browser/host, não propriedade da página. Assim o trabalho de `t-0807b2` é preservado em
-vez de descartado.
+A UI sai da aba de chat e **desce para a toolbar do overlay** com os mesmos quatro botões e estado
+ativo. O clique manda `{action:'viewport.set', preset}` ao host; só o host chama
+`cdpSession.setResponsivePreset`, e o sync devolve sucesso/erro + preset efetivo. Assim o trabalho de
+`t-0807b2` é preservado inteiro: mesmos valores, mesmo backend CDP, nova morada na página.
 
-### Markup sem inflar a página
+### Markup no overlay
 
-O botão Markup captura o viewport por CDP e abre um editor webview temporário com canvas. O humano
-desenha vetores localmente; Copy/Send rasteriza para PNG. Copy mantém a semântica Orca; Send usa o
-mesmo Quick Pick de agente e a mesma escada TUI, com o caminho do PNG. Desenhar diretamente sobre a
-página exigiria outro canvas/listeners no inject e empurraria a conta para perto do Orca; não vale a
-superfície só para preservar a ilusão de página viva sobre uma imagem que, no Orca, já é congelada.
+O botão Markup captura o viewport por CDP e o próprio bundle troca para um canvas sobre a imagem
+congelada. Os shapes ficam vetoriais enquanto editáveis; Copy/Send pede ao host que persista o PNG
+composto. Copy mantém a semântica Orca; Send usa o agente selecionado e a mesma escada TUI, com o
+caminho do PNG. Isso pode aumentar o bundle, e está correto: é componente testável, não uma string
+manual. O canvas nunca precisa observar ou reescrever DOM da aplicação inspecionada.
 
 ## O que morre, o que não se reconstrói
 
-Morre a aba de chat do Design Mode: histórico, composer, espera de reply e a obrigação de o agente
-chamar `design_mode_chat_reply`. Não se cria uma barra lateral substituta. Antes de apagar, o
-formatador de lote, o seletor de destino, o thumbnail do pick e a entrada dos presets precisam estar
-ativos; caso contrário seria remoção de função, não mudança de forma.
+Morre a aba de chat do Design Mode: `DesignModePanel`, histórico, composer, espera de reply e a
+obrigação de o agente chamar `design_mode_chat_reply`. Não se cria uma barra lateral substituta.
+`src/webview/design-mode/App.tsx` não sobrevive como segundo app: componentes úteis de agent selector,
+selection preview e viewport são movidos ao novo entrypoint; depois o entry `design-mode` sai de
+`WEBVIEW_APP_VIEWS` (`esbuild.mjs:308`) e de `WEBVIEW_APPS` (`src/webview/webviewApps.ts:95`). O host
+mantém somente controller/store/protocolo do overlay, não um webview visual.
 
-Continuam: Integrated Browser do VS Code via CDP, inject fino, crop PNG, ferramentas `ide_browser_*`,
-presets CDP e a entrega TUI existente. Não entra Chromium embarcado, protocolo novo, arquivo de
-conversa ou segundo mecanismo de submit.
+Continuam: Integrated Browser do VS Code via CDP, crop PNG, ferramentas `ide_browser_*`, presets CDP
+e a entrega TUI existente. O inject fino é absorvido pelo bundle Preact; não fica como segunda
+implementação. Não entra Chromium embarcado, arquivo de conversa ou segundo mecanismo de submit.
 
 ## Limites e verificações exigidas numa eventual implementação
 
 - Dois widths para a UI in-page: 880 e 360; badges e tray não podem bloquear a página inteira.
-- Fail-before do teto de 300 linhas e da ausência de chat/composer/reply no inject.
+- Fail-before estrutural: o host não contém markup/CSS de overlay, o artefato é IIFE autocontido sem
+  imports/chunks, e não existe `DesignModePanel`/chat/composer/reply após o cutover.
+- Registrar bytes minificados do bundle e portas de eval; não usar linhas como veto de UI.
 - Testes pelos gatilhos humano create/add/delete/send; navigation/reload/reconnect; scroll/resize;
   re-render com seletor reencontrado e alvo perdido.
 - Entrega precisa cobrir destino vivo, destino que ficou stale, composer ocupado, recibo não
   confirmado e agente novo; limpar annotations apenas no recibo confirmado.
-- Gate visual deve mostrar também o Quick Pick de presets e o preview PNG fora do chat.
-
+- Gate visual deve mostrar seletor de agente, quatro presets e preview PNG dentro do overlay.
