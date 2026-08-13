@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { allowedTransitions, TaskStore } from "../../src/tasks/TaskStore.js";
+import { taskAssigneeWakeFor } from "../../src/tasks/taskNotificationPolicy.js";
 import { TASK_STATUSES } from "../../src/tasks/types.js";
 
 let root: string;
@@ -279,6 +280,22 @@ describe("TaskStore", () => {
       .resolves.toMatchObject({ status: "done" });
     await Promise.resolve();
     expect(asyncFailure.get(task.id).status).toBe("done");
+  });
+
+  it("reconciling delivered work emits no assignment wake (t-964eef)", async () => {
+    const wakes: unknown[] = [];
+    const observed = new TaskStore(root, {
+      onMutation: (event) => { wakes.push(taskAssigneeWakeFor(event)); },
+    });
+    const task = await observed.create({ title: "already delivered", author: "human" });
+    await observed.update(task.id, { status: "triaged" });
+    wakes.length = 0;
+
+    const reconciled = await observed.reconcile(task.id, { status: "done", evidence: "commit abc1234" });
+
+    expect(reconciled).toMatchObject({ status: "done" });
+    expect(reconciled.assignee).toBeUndefined();
+    expect(wakes).toEqual([undefined]);
   });
 
   // t-370286 — a prematurely-triaged task can be returned for re-evaluation; the move unscopes it.

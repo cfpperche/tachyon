@@ -217,6 +217,8 @@ function projectTaskView(view: TaskView): TaskView {
       ...(view.task.kind !== undefined ? { kind: view.task.kind } : {}),
       author: view.task.author,
       ...(view.task.assignee !== undefined ? { assignee: view.task.assignee } : {}),
+      ...(view.task.currentAssignee !== undefined ? { currentAssignee: view.task.currentAssignee } : {}),
+      ...(view.task.lastDeliverer !== undefined ? { lastDeliverer: view.task.lastDeliverer } : {}),
       ...(view.task.awaitingHuman !== undefined ? { awaitingHuman: view.task.awaitingHuman } : {}),
       createdAt: view.task.createdAt,
       updatedAt: view.task.updatedAt,
@@ -245,7 +247,7 @@ function parseTaskView(value: unknown): TaskView {
 function parseTask(value: unknown): Task {
   const input = record(value, "Board task");
   const expected = ["id", "title", "status", "author", "createdAt", "updatedAt"];
-  for (const key of ["body", "priority", "rank", "kind", "assignee", "awaitingHuman"]) {
+  for (const key of ["body", "priority", "rank", "kind", "assignee", "currentAssignee", "lastDeliverer", "awaitingHuman"]) {
     if (input[key] !== undefined) expected.push(key);
   }
   assertOnlyKeys(input, expected, "Board task");
@@ -268,6 +270,8 @@ function parseTask(value: unknown): Task {
   if (input.rank !== undefined) task.rank = persistedText(input.rank, "task rank");
   if (input.kind !== undefined) task.kind = persistedText(input.kind, "task kind");
   if (input.assignee !== undefined) task.assignee = persistedText(input.assignee, "task assignee");
+  if (input.currentAssignee !== undefined) task.currentAssignee = persistedText(input.currentAssignee, "task currentAssignee");
+  if (input.lastDeliverer !== undefined) task.lastDeliverer = persistedText(input.lastDeliverer, "task lastDeliverer");
   if (input.awaitingHuman !== undefined) task.awaitingHuman = parseAwaitingHuman(input.awaitingHuman);
   return task;
 }
