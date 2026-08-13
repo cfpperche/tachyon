@@ -524,7 +524,11 @@ Gemini and Qwen are structurally outside the tool path, not merely unmeasured:
 the Design Mode selector currently offers every running non-terminal agent without a runtime
 capability gate. F1 must choose separately between retaining a per-runtime marker fallback and
 capability-gating the selector; `t-727d9c` records both choices but deliberately does not decide
-between them.
+between them. **Recommendation: capability-gate the selector.** F1 is released to delete the marker
+fallback for Claude, Codex, Grok, Pi, OpenCode, and Hermes; it is not released as a generic deletion
+while Gemini and Qwen remain selectable. Hiding agents that cannot receive or return a Design Mode
+turn fixes the existing false affordance and lets F1 remove the marker machinery completely;
+retaining a per-runtime fallback would preserve that false affordance and permanent legacy code.
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 
