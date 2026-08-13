@@ -42,5 +42,3 @@ export const USER_BROWSER_TOOL_NAMES = [
   "user_browser_list_frames",
   "user_browser_dialog",
 ] as const;
-
-export const CANONICAL_BRIDGE_TOOL_COUNT = 80;
