@@ -36,8 +36,12 @@ Design Mode's chat moved out of the page.
   always being taken and its path already travelled in the agent's prompt; it simply was never shown.
   Undoing an edit — the other half of that task — is deliberately still out: it needs a written
   transaction contract first (what exactly is undone, whole patch or per file, and what happens when
-  the file changed since). **Not proven live:** the headless Dev Host could not inject the picker, so
-  this shipped on catalog visual QA. If pointing at an element does not show its image, it regressed.
+  the file changed since). This shipped on catalog visual QA because the headless Dev Host could not
+  inject the picker at the time. **Proven live shortly after release** (`t-d2e196`): a real pick in a
+  working headless Dev Host shows the element image in the chat at 220×90. That Dev Host failure was
+  transient and does not reproduce; the cause is unknown, and is recorded as unknown rather than
+  guessed — the suspected culprit (`DISABLE_AUTOUPDATER`, added hours earlier) was A/B tested on one
+  tree and refuted, with a real pick succeeding both with and without it.
 - **`retask_agent`** (`t-a8b630`, SDD 502) hands one triaged board task to an already-live Temporary
   agent: it claims the task and pushes a freshly projected WORK ON RECORD into the existing
   conversation. No restart, no touched checkout. Until now the only ways to change what a live agent
