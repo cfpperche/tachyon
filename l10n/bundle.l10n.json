@@ -1,4 +1,5 @@
 {
+  "Saved Agent '{0}' has no agent.yml": "Saved Agent '{0}' has no agent.yml",
   "Upgrade anyway": "Upgrade anyway",
   "Tachyon could not verify whether agents are working. Upgrading the engine may interrupt an in-flight turn.": "Tachyon could not verify whether agents are working. Upgrading the engine may interrupt an in-flight turn.",
   "Upgrading the Tachyon engine will interrupt in-flight work for: {0}": "Upgrading the Tachyon engine will interrupt in-flight work for: {0}",

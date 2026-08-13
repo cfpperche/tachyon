@@ -1,4 +1,5 @@
 {
+  "Saved Agent '{0}' has no agent.yml": "O Agente Salvo '{0}' não tem agent.yml",
   "Upgrade anyway": "Atualizar mesmo assim",
   "Tachyon could not verify whether agents are working. Upgrading the engine may interrupt an in-flight turn.": "O Tachyon não conseguiu verificar se há agentes trabalhando. Atualizar o engine pode interromper um turno em andamento.",
   "Upgrading the Tachyon engine will interrupt in-flight work for: {0}": "Atualizar o engine do Tachyon interromperá o trabalho em andamento de: {0}",
