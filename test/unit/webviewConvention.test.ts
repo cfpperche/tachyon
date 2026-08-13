@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
-import { SHELL_DESIGN_SYSTEM_STYLESHEET, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
+import { SHELL_BASE_STYLESHEETS, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
 import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
 
@@ -184,7 +184,10 @@ function ownStylesheets(view: string): Array<{ file: string; css: string }> {
   return out;
 }
 
-const cssNamesIn = (block: string): string[] => [...block.matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
+const cssNamesIn = (block: string): string[] => {
+  const explicit = [...block.matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
+  return block.includes("SHELL_BASE_STYLESHEETS") ? [...SHELL_BASE_STYLESHEETS, ...explicit] : explicit;
+};
 
 interface ShellCallOptions {
   chunk: string;
@@ -284,8 +287,9 @@ function sharedMountModules(): string[] {
 function observedExtensionPoints(s: WebviewSurface): Map<ShellExtensionPoint, string> {
   const found = new Map<ShellExtensionPoint, string>();
   const linked = linkedStylesheets(s);
-  if (!linked.includes(SHELL_DESIGN_SYSTEM_STYLESHEET)) {
-    found.set("base-style", `${s.hostFile} links [${linked.join(", ")}] — no ${SHELL_DESIGN_SYSTEM_STYLESHEET}`);
+  const missingBase = SHELL_BASE_STYLESHEETS.filter((stylesheet) => !linked.includes(stylesheet));
+  if (missingBase.length > 0) {
+    found.set("base-style", `${s.hostFile} links [${linked.join(", ")}] — missing shared baseline [${missingBase.join(", ")}]`);
   }
   for (const { file, css } of ownStylesheets(s.view)) {
     const chrome = cssSelectors(css).find((sel) => sel.split(",").some((part) => /^\s*(html|body)\b/.test(part)));

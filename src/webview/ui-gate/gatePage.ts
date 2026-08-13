@@ -1,4 +1,4 @@
-import { renderWebviewShell } from "../shared/shell";
+import { renderWebviewShell, SHELL_BASE_STYLESHEETS } from "../shared/shell";
 
 // spec 342 — the ui-gate page HTML, factored out of the browser-test HTTP server so a PLAIN unit test
 // (test/unit/cssOrderSnapshot.test.ts) can assert the stylesheet order without launching a browser. The
@@ -9,8 +9,7 @@ export function renderGatePage(cspSource: string): string {
     cspSource,
     title: "Tachyon UI Gate",
     styles: [
-      `${cspSource}/dist/webview/codicon.css`,
-      `${cspSource}/dist/webview/design-system.css`,
+      ...SHELL_BASE_STYLESHEETS.map((stylesheet) => `${cspSource}/dist/webview/${stylesheet}`),
       `${cspSource}/dist/webview/vscode-theme.css`,
       `${cspSource}/dist/webview/ui-gate.tailwind.css`,
     ],

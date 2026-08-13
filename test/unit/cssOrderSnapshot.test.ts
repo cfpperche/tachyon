@@ -12,6 +12,7 @@ describe("webview shell CSS order (ui-gate surface)", () => {
     expect(hrefs).toEqual([
       "http://localhost:5199/dist/webview/codicon.css",
       "http://localhost:5199/dist/webview/design-system.css",
+      "http://localhost:5199/dist/webview/quick-picker.css",
       "http://localhost:5199/dist/webview/vscode-theme.css",
       "http://localhost:5199/dist/webview/ui-gate.tailwind.css",
     ]);
