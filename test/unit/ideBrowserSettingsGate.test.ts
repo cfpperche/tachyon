@@ -11,16 +11,7 @@ import {
   IDE_BROWSER_FIRST_USE_TIPS,
   isIdeBrowserEnabled,
 } from "../../src/ide-browser/settings.js";
-
-const IDE_BROWSER_TOOL_NAMES = [
-  "ide_browser_status",
-  "ide_browser_navigate",
-  "ide_browser_screenshot",
-  "ide_browser_snapshot",
-  "ide_browser_eval",
-  "ide_browser_click",
-  "ide_browser_url",
-] as const;
+import { IDE_BROWSER_TOOL_NAMES } from "../helpers/bridgeConditionalToolNames.js";
 
 type ToolResult = { content: Array<{ type?: string; text: string }>; isError?: boolean };
 type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResult>;
@@ -60,9 +51,7 @@ describe("t-48ff4a — disabled fails at call time; tools still register", () =>
         error: IDE_BROWSER_DISABLED_ERROR,
       }),
     });
-    for (const name of IDE_BROWSER_TOOL_NAMES) {
-      expect(mcp.handlers.has(name), `expected ${name} registered while disabled`).toBe(true);
-    }
+    expect([...mcp.handlers.keys()].sort()).toEqual([...IDE_BROWSER_TOOL_NAMES].sort());
   });
 
   it("call-time disabled envelope is actionable and distinct from offline", async () => {

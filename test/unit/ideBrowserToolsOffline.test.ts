@@ -21,6 +21,7 @@ import {
   ideBrowserRequest as clientIdeBrowserRequest,
   isIdeBrowserBridgeAvailable,
 } from "../../src/ide-browser/client.js";
+import { IDE_BROWSER_TOOL_NAMES } from "../helpers/bridgeConditionalToolNames.js";
 
 /** Exact MCP tool-result text returned to every runtime when the bridge is offline. */
 const OFFLINE_TOOL_RESULT =
@@ -29,16 +30,6 @@ const OFFLINE_TOOL_RESULT =
 /** Client-layer message (without the tool `error: ` prefix) from ideBrowserRequest when no instance. */
 const CLIENT_OFFLINE_ERROR =
   "IDE browser bridge offline. Ensure settings.ideBrowser.enabled is true in tachyon.yml and the Tachyon extension is active for this workspace.";
-
-const IDE_BROWSER_TOOL_NAMES = [
-  "ide_browser_status",
-  "ide_browser_navigate",
-  "ide_browser_screenshot",
-  "ide_browser_snapshot",
-  "ide_browser_eval",
-  "ide_browser_click",
-  "ide_browser_url",
-] as const;
 
 type ToolResult = { content: Array<{ type?: string; text: string }>; isError?: boolean };
 type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResult>;
@@ -66,16 +57,12 @@ describe("t-3cab05 — ide_browser tools always-register + offline fail-closed",
       ideBrowserRequest: async () => ({ ok: false, code: "bridge_offline", error: CLIENT_OFFLINE_ERROR }),
     });
 
-    for (const name of IDE_BROWSER_TOOL_NAMES) {
-      expect(mcp.handlers.has(name), `expected ${name} to be registered offline`).toBe(true);
-    }
+    expect([...mcp.handlers.keys()].sort()).toEqual([...IDE_BROWSER_TOOL_NAMES].sort());
   });
 
   it("does not register tools when ideBrowserRequest is absent (and the legacy gate is off)", () => {
     const mcp = wire({});
-    for (const name of IDE_BROWSER_TOOL_NAMES) {
-      expect(mcp.handlers.has(name), `expected ${name} omitted without wiring`).toBe(false);
-    }
+    expect([...mcp.handlers.keys()]).toEqual([]);
   });
 
   it("isIdeBrowserBridgeAvailable is a status probe, not a registration gate", () => {
