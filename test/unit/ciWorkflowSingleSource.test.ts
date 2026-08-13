@@ -60,6 +60,6 @@ describe("CI workflow delegates verification to verify:full (t-dcd8eb)", () => {
     // to be a deliberate, reviewed decision rather than a silent narrowing of what a push is checked for.
     // The same holds for ADDING one — t-62cc44 added `check:source-diffable`, and updating this line is
     // how that addition gets reviewed rather than arriving on its own.
-    expect([...STATIC_GATES].sort()).toEqual(["check:engine-boundary", "check:source-diffable", "typecheck"]);
+    expect([...STATIC_GATES].sort()).toEqual(["check:engine-boundary", "check:source-diffable", "check:webview-tokens", "typecheck"]);
   });
 });

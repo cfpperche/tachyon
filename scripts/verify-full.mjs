@@ -56,8 +56,12 @@ export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH |
  * template literal joining ids for a `Set` key — each cost a whole run plus a lock wait. Moving it
  * ahead of the compile IS the change; the rule itself is unchanged and still lives in one place,
  * `scripts/check-source-diffable.mjs`, which the test imports rather than restates.
+ *
+ * t-c8e2bd — `check:webview-tokens` is the same shape (a text scan, no compile) so it sits next,
+ * still in front of `check:engine-boundary` and `typecheck`. The rule lives in
+ * `scripts/check-webview-tokens.mjs`; the test imports it rather than restating it.
  */
-export const STATIC_GATES = ["check:source-diffable", "check:engine-boundary", "typecheck"];
+export const STATIC_GATES = ["check:source-diffable", "check:webview-tokens", "check:engine-boundary", "typecheck"];
 
 function gitOutput(args, cwd = process.cwd()) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();

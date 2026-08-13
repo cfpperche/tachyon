@@ -55,6 +55,7 @@
   --ds-duration-2: 200ms;
   --ds-ease: cubic-bezier(0.2, 0, 0, 1);
   --ds-z-popover: 20;
+  --ds-z-dialog:  40;
   --ds-z-toast:   50;
   --ds-z-overlay: 60;
   /* product toast stack (t-963b66) — bottom-center, above section chrome */
