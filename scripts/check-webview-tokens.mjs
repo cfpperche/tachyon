@@ -97,11 +97,6 @@ export const HEX_EXCEPTIONS = Object.freeze([
     reason: "QR/image plate background so a dark-on-dark code does not vanish; no --ds inverted-plate token yet — add one to the DS rather than keep extending this.",
   },
   {
-    file: "src/webview/ide-browser-bridge/designModeInject.ts",
-    values: ["#007fd4"],
-    reason: "Focus-color fallback when the host has not yet pushed --ds-focus into the injected overlay.",
-  },
-  {
     file: "src/webview/ide-browser-bridge/themeTokens.ts",
     values: [
       "#006ab1", "#0078d4", "#007fd4", "#0090f1", "#026ec1", "#0e639c", "#1177bb",
