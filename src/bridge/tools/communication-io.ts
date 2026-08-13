@@ -314,6 +314,9 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
           ? await deps.deliverNotice(to, line, deps.authoredNoticeMetadata?.(agent))
           : await deliverNoticeFallback(deps, session, line, to);
         const suffix = result.dropped ? ` (${result.dropped} older notice${result.dropped === 1 ? "" : "s"} dropped)` : "";
+        // t-44ae02 — depth + oldest age are the only numbers a still-working sender can see.
+        // The receipt is the channel; do not write into their pane mid-turn.
+        const queueHint = formatQueuedReceiptHint(result);
         // t-8d190f — never report a delivery that was not observed. The doorbell stays actionable:
         // the sender is told the line is staged unsent and how to check, rather than being told it
         // landed and finding out later that the recipient never took a turn.
@@ -330,12 +333,12 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
           // never arrives and nothing anywhere says so.
           return ok(
             result.heldFor === "human-draft"
-              ? `queued '${to}': a human is typing in that pane — the notice is held (receipt: held-human-draft) and delivered when the draft clears, or it expires and the loss is reported to the human${suffix}`
+              ? `queued '${to}'${queueHint}: a human is typing in that pane — the notice is held (receipt: held-human-draft) and delivered when the draft clears, or it expires and the loss is reported to the human${suffix}`
               // spec 493 — this used to promise only "for idle delivery", which is exactly the promise
               // that doesn't hold for a coordinator that rarely goes idle (t-167b5c: ten of ten arrived
               // after the recipient had already acted on the fact some other way). The summary is now
               // durably recorded regardless of whether the pane flush ever lands.
-              : `queued '${to}' for idle delivery${suffix} — durably recorded; '${to}' can read it with read_notices even if the pane delivery never lands or lands late`,
+              : `queued '${to}' for idle delivery${queueHint}${suffix} — durably recorded; '${to}' can read it with read_notices even if the pane delivery never lands or lands late`,
           );
         }
         return ok(`notified '${to}'${suffix}`);
@@ -387,4 +390,23 @@ export function registerCommunicationIoTools(mcp: McpServer, deps: BridgeDeps): 
       }
     },
   );
+}
+
+/** t-44ae02 — mid-turn sender hint: how deep the wait already is, and how old the oldest item is. */
+function formatQueuedReceiptHint(
+  result: { queued?: number; oldestCreatedAt?: number },
+  now = Date.now(),
+): string {
+  const parts: string[] = [];
+  if (typeof result.queued === "number") parts.push(`depth ${result.queued}`);
+  if (typeof result.oldestCreatedAt === "number") {
+    parts.push(`oldest ${formatQueuedReceiptAge(now - result.oldestCreatedAt)}`);
+  }
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
+function formatQueuedReceiptAge(ageMs: number): string {
+  const ms = Math.max(0, ageMs);
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  return `${Math.round(ms / 60_000)}m`;
 }

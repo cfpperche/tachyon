@@ -14,12 +14,25 @@ describe("NoticeQueue", () => {
     expect(q.dequeue("b")?.line).toBe("other");
   });
 
+  // t-44ae02 — the queued receipt can name oldest age only if enqueue reports it.
+  it("reports the oldest createdAt across later enqueues", () => {
+    let now = 1_000;
+    const q = new NoticeQueue({ now: () => now });
+    expect(q.enqueue("a", "first")).toEqual({ queued: 1, dropped: 0, oldestCreatedAt: 1_000 });
+    now = 5_000;
+    expect(q.enqueue("a", "second")).toEqual({ queued: 2, dropped: 0, oldestCreatedAt: 1_000 });
+  });
+
   it("drops the oldest notice when item 21 exceeds the per-target bound", () => {
-    const q = new NoticeQueue();
+    let now = 0;
+    const q = new NoticeQueue({ now: () => now });
     for (let item = 1; item <= 20; item += 1) {
+      now = item * 1000;
       expect(q.enqueue("a", `item ${item}`).dropped).toBe(0);
     }
-    expect(q.enqueue("a", "item 21")).toEqual({ queued: 20, dropped: 1 });
+    now = 21_000;
+    // item 1 (createdAt 1000) was dropped; the receipt's oldest is now item 2.
+    expect(q.enqueue("a", "item 21")).toEqual({ queued: 20, dropped: 1, oldestCreatedAt: 2000 });
     expect(q.dequeue("a")?.line).toBe("item 2");
     for (let item = 3; item <= 21; item += 1) expect(q.dequeue("a")?.line).toBe(`item ${item}`);
   });
