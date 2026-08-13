@@ -4,9 +4,28 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
-## Unreleased
+## 0.89.0 — annotate the page and send it straight to an agent, and Activity stops arriving in batches
+
+Design Mode stops needing a chat of its own. You pick an element in the browser, write what you want
+changed, and send the whole batch to a running agent's terminal — no separate conversation to keep in
+sync. The other half of the release is latency and reachability: the Activity feed was arriving 1.3
+seconds late in two-second clumps, and a live agent could stop answering entirely.
 
 ### Added
+
+- **Send a batch of annotations straight to an agent's terminal** (`t-0a8f7a`). The page tray now
+  carries a picker of running agents. Send composes one Markdown document — `## Design Feedback:
+  <url>`, then per annotation the intent, selector, comment, bounds and `Screenshot: <path>` — and
+  submits it through the same terminal path Tachyon already uses. No second conversation, no second
+  submit mechanism.
+
+  **The batch is cleared only after a confirmed receipt.** Every other outcome keeps your annotations
+  and says what happened: a destination that died between listing and clicking, a terminal holding a
+  human draft, or a submit whose completion could not be observed. The page never decides eligibility
+  either — the host owns the roster and re-validates the chosen agent at the moment of the click.
+
+  The screenshot is context, not a requirement: the host captures one crop per annotation and carries
+  the **path**, never base64. If capture fails the annotation still sends as text.
 
 - **Design Mode annotations live on the page** (`t-86e341`). Picking an element now opens a popover
   anchored to it: free text plus an intent, Change or Question. Adding stores the annotation on the
@@ -77,8 +96,10 @@ Marketplace release notes.
   tab. A ratchet keeps the injection wrapper under 400 characters (it measures 196), so UI can grow
   in the bundle and not back into the string.
 
-  **Still true in this build:** the Design Mode chat tab is still there. Removing it is a later slice
-  of the same migration, and it only happens after the page can send a batch on its own.
+  **Still true in this build:** the Design Mode chat tab is still there, and so are its viewport
+  presets and its copy of the pick screenshot. The page can now send on its own, so removing the tab
+  is the next slice rather than a distant one — but until it happens both surfaces exist and the tab
+  remains the only place with the responsive presets.
 
 - **Clicking a link with Design Mode on no longer kills the overlay** (`t-03afe7`). The status bar
   kept saying ON while the overlay was gone — the product asserting a state it was not holding. The
