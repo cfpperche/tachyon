@@ -67,7 +67,7 @@ import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle 
 import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
 import { AgentProfileRefusal, type AgentProfileRefusalCode } from "../config/agentProfileRefusal.js";
 import { composeAgentPrompt } from "./promptLayers.js";
-import type { SessionLaunchKind, SessionWorkRecord } from "./sessionWorkRecord.js";
+import { renderSessionWorkRecord, type SessionLaunchKind, type SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
 import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { FormationLifecyclePort } from "./formation/lifecycleConsumer.js";
@@ -1993,6 +1993,24 @@ export class AgentManager {
       assignment,
       ...(stale.length > 0 ? { staleContractReferences: stale } : {}),
     };
+  }
+
+  /**
+   * t-a8b630 — reproject the live board into an existing Temporary conversation. This is deliberately
+   * read-only with respect to process, ledger and checkout: the Bridge owns the board claim and safe
+   * delivery, while this method owns the same projection used by spawn/restart.
+   */
+  async liveRetaskWorkRecord(name: string): Promise<string> {
+    if (!this.isTemporary(name)) throw new Error(`retask_agent requires a Temporary agent; '${name}' is not Temporary`);
+    if (this.kindOf(name) !== "agent") throw new Error(`retask_agent requires an agent; '${name}' is not an agent`);
+    if (!(await this.isProcessAlive(name))) throw new Error(`retask_agent requires a live agent; '${name}' is not running`);
+    const def = this.definitionOf(name);
+    if (!def) throw new Error(`retask_agent cannot read the stored definition for '${name}'`);
+    const durable = this.opts.ledger?.get(name);
+    const cwd = path.resolve(durable?.cwd ?? resolveCwd(this.opts.workspaceRoot, def.cwd));
+    const record = this.sessionWorkRecordFor(name, def, durable?.worktree, cwd, undefined, "retask");
+    if (!record) throw new Error(`retask_agent cannot deliver a WORK ON RECORD to '${name}'`);
+    return renderSessionWorkRecord(record);
   }
 
   private projectGuidanceFor(def: AgentDef): RenderedProjectGuidanceBundle | undefined {

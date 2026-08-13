@@ -58,7 +58,7 @@ export interface SessionWorkRecord {
 }
 
 /** Which launch handed this record to the session. */
-export type SessionLaunchKind = "spawn" | "restart";
+export type SessionLaunchKind = "spawn" | "restart" | "retask";
 
 /** Fixed delimiters — same design rule as the primer: agents recognize the section, never parse prose. */
 export const SESSION_RECORD_OPEN = "── SESSION RESTART: WORK ON RECORD ──";
@@ -72,6 +72,8 @@ export const SESSION_RECORD_CLOSE = "── END SESSION RESTART ──";
  */
 export const SPAWN_RECORD_OPEN = "── SESSION SPAWN: WORK ON RECORD ──";
 export const SPAWN_RECORD_CLOSE = "── END SESSION SPAWN ──";
+export const RETASK_RECORD_OPEN = "── SESSION RETASK: WORK ON RECORD ──";
+export const RETASK_RECORD_CLOSE = "── END SESSION RETASK ──";
 
 /** Ids shown in the bounded startup-brief header before it collapses to a count. */
 export const MAX_HEADER_TASK_IDS = 3;
@@ -170,18 +172,21 @@ export function renderSessionWorkRecord(record: SessionWorkRecord): string {
   }
   const launch: SessionLaunchKind = record.launch ?? "restart";
   return [
-    launch === "spawn" ? SPAWN_RECORD_OPEN : SESSION_RECORD_OPEN,
+    launch === "spawn" ? SPAWN_RECORD_OPEN : launch === "retask" ? RETASK_RECORD_OPEN : SESSION_RECORD_OPEN,
     launch === "spawn"
       // A spawn lost no conversation, so it must not be told it did. What it shares with a restart is
       // the part that matters: nothing below is inferred, and the board is the authority.
       ? "This session is NEW. Nothing below came from an earlier conversation — every line is durable" +
         " record, read from the board at the moment you were launched."
-      : "This session was restarted with a NEW conversation. The previous one is not available to you," +
-        " and nothing below came from it — every line is durable record.",
+      : launch === "retask"
+        ? "This live session was retasked WITHOUT restarting it. Your conversation, checkout and branch are unchanged;" +
+          " every work fact below was reread from durable record now."
+        : "This session was restarted with a NEW conversation. The previous one is not available to you," +
+          " and nothing below came from it — every line is durable record.",
     ...isolationLines(record.isolation),
     ...assignmentLines(record.assignment, launch, record.hasTaskBrief === true),
     ...staleContractLines(record.staleContractReferences, launch),
-    launch === "spawn" ? SPAWN_RECORD_CLOSE : SESSION_RECORD_CLOSE,
+    launch === "spawn" ? SPAWN_RECORD_CLOSE : launch === "retask" ? RETASK_RECORD_CLOSE : SESSION_RECORD_CLOSE,
   ].join("\n");
 }
 
