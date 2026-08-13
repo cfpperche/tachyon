@@ -16,6 +16,17 @@ import { normalizeIdeBrowserNavigationUrl } from "./homeUrl.js";
 
 export type BrowserSessionLog = { appendLine: (line: string) => void };
 
+/** Match the adapter-resolved parent session to this controller's private launch. */
+export function isCorrelatedBrowserParentSession(
+  session: vscode.DebugSession,
+  launchId: string,
+): boolean {
+  return (
+    isBrowserDebugSession(session)
+    && session.configuration.tachyonIdeBrowserLaunchId === launchId
+  );
+}
+
 /** Discriminators for who ended a tracked editor-browser session (t-1c8195). */
 export type IdeBrowserSessionEndInput = {
   endedId: string;
@@ -290,10 +301,7 @@ export class BrowserSessionController {
     });
     const timeout = setTimeout(() => childResolve(null), 20_000);
     const sub = vscode.debug.onDidStartDebugSession((session) => {
-      if (
-        session.type === "editor-browser"
-        && session.configuration.tachyonIdeBrowserLaunchId === launchId
-      ) {
+      if (isCorrelatedBrowserParentSession(session, launchId)) {
         launchedParent = session;
         this.trackedParentId = session.id;
         this.trackedParentSession = session;
