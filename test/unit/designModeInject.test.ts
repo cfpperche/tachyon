@@ -1,22 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { buildDesignModeInjectExpression } from "../../src/webview/ide-browser-bridge/designModeInject.js";
+import { buildDesignModeInjectExpression, themeDesignModeOverlayBundle } from "../../src/webview/ide-browser-bridge/designModeInject.js";
 import { fallbackDsTokens, formatDmThemeCssBlock, mapVscodeVarsToDs } from "../../src/webview/ide-browser-bridge/themeTokens.js";
 
 describe("buildDesignModeInjectExpression — compiled page app boundary", () => {
   it("ratchets the page expression to a thin wrapper", () => {
-    const bundle = "window.__tachyonDmOverlay={mount:(options)=>options}";
-    const expression = buildDesignModeInjectExpression(bundle, { bindingName: "binding", themeVars: fallbackDsTokens(), restorePickMode: false });
+    const bundle = themeDesignModeOverlayBundle('const theme="__TACHYON_DM_THEME_CSS__";window.__tachyonDmOverlay={mount:(options)=>options}', fallbackDsTokens());
+    const expression = buildDesignModeInjectExpression(bundle, { bindingName: "binding", restorePickMode: false });
     expect(expression.length - bundle.length).toBeLessThan(400);
   });
 
   it("executes the artifact and passes typed install configuration", () => {
     const expression = buildDesignModeInjectExpression(
       "window.__tachyonDmOverlay={mount:(options)=>options}",
-      { bindingName: "binding'with-quote", themeVars: mapVscodeVarsToDs({ "--vscode-focusBorder": "#123456" }), restorePickMode: false },
+      { bindingName: "binding'with-quote", restorePickMode: false },
     );
     const window = { __tachyonDmCleanup: () => undefined } as unknown as Window;
     const result = Function("window", `return ${expression}`)(window) as Record<string, unknown>;
-    expect(result).toEqual({ bindingName: "binding'with-quote", focusColor: "#123456", restorePickMode: false });
+    expect(result).toEqual({ bindingName: "binding'with-quote", restorePickMode: false });
+  });
+
+  it("builds the bundle's single shadow stylesheet from all resolved tokens", () => {
+    const themed = themeDesignModeOverlayBundle('const theme="__TACHYON_DM_THEME_CSS__"', mapVscodeVarsToDs({ "--vscode-focusBorder": "#123456" }));
+    expect(themed).toContain("--ds-focus: #123456");
+    expect(themed).not.toContain("__TACHYON_DM_THEME_CSS__");
   });
 });
 
