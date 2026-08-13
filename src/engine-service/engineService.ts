@@ -387,7 +387,7 @@ export async function startDaemonEngineService(
     const runningWorkspace = workspace;
     activityLog = new ActivityLogManager(
       () => [runningWorkspace],
-      2_000,
+      500,
       3_000,
       (_workspaceHash, agent, count) => host.onActivityAppended(agent, count),
     );

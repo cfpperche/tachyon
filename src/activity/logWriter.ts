@@ -27,12 +27,12 @@ import type { NormalizedEvent } from "./types.js";
  *  everything appended is logged. Consistent with "lineage starts now". */
 const MAX_BACKFILL_RECORDS = 4000;
 
-/** Polls to wait before emitting a STANDALONE lifecycle marker (only for actions that validly keep the same
- *  uuid, i.e. a seamless resume). At ~2s/poll this is a few seconds. */
-const LIFECYCLE_GRACE_POLLS = 3;
-/** Backstop: drop a still-unconsumed pending action after this many polls so it can never label a much-later
+/** Time to wait before emitting a STANDALONE lifecycle marker (only for actions that validly keep the same
+ *  uuid, i.e. a seamless resume). Independent of the writer's polling cadence. */
+const LIFECYCLE_GRACE_MS = 6_000;
+/** Backstop: drop a still-unconsumed pending action after this long so it can never label a much-later
  *  unrelated session change. The normal path consumes it on the uuid change. */
-const LIFECYCLE_EXPIRY_POLLS = 30;
+const LIFECYCLE_EXPIRY_MS = 60_000;
 /** Actions that keep the SAME session uuid (so they need a standalone marker when no uuid change comes).
  *  restart/start/fork all rotate the uuid → they are labeled ON the change and never emitted standalone. */
 const STANDALONE_OK = new Set<string>(["resumed"]);
@@ -63,12 +63,13 @@ export class ActivityLogWriter {
   private loaded = false;
   // A Tachyon lifecycle action awaiting a boundary. `ready` is false while the action is still in-flight (set
   // BEFORE the await, armed AFTER) so a poll during the await can't act on it prematurely.
-  private pendingLifecycle?: { action: string; ready: boolean; polls: number };
+  private pendingLifecycle?: { action: string; ready: boolean; readyAtMs?: number };
 
   constructor(
     private readonly dir: string,
     agent: string,
     private readonly now: () => string = () => new Date().toISOString(),
+    private readonly nowMs: () => number = () => Date.now(),
   ) {
     this.log = new ActivityLog(dir, agent);
     this.statePath = path.join(dir, `${agentLogId(agent)}.state.json`); // same collision-proof id as the log file
@@ -83,12 +84,15 @@ export class ActivityLogWriter {
    *  label over a same-tick "rotation-follow" decision; skip the overwrite rather than clobber it. */
   noteLifecycle(action: string, ready = false): void {
     if (action === "rotation-follow" && this.pendingLifecycle && !this.pendingLifecycle.ready) return;
-    this.pendingLifecycle = { action, ready, polls: 0 };
+    this.pendingLifecycle = { action, ready, ...(ready ? { readyAtMs: this.nowMs() } : {}) };
   }
 
   /** Mark the pending lifecycle action as settled (called after the async action succeeds). */
   arm(): void {
-    if (this.pendingLifecycle) this.pendingLifecycle.ready = true;
+    if (this.pendingLifecycle && !this.pendingLifecycle.ready) {
+      this.pendingLifecycle.ready = true;
+      this.pendingLifecycle.readyAtMs = this.nowMs();
+    }
   }
 
   /** Drop a pending lifecycle action (the action failed). */
@@ -103,7 +107,7 @@ export class ActivityLogWriter {
       // gap — no session / gone / shared-cwd ambiguous; never guess. Age a ready pending so it can't linger
       // across the gap and later mislabel an unrelated change.
       const p = this.pendingLifecycle;
-      if (p?.ready && ++p.polls >= LIFECYCLE_EXPIRY_POLLS) this.pendingLifecycle = undefined;
+      if (p?.ready && this.lifecycleAgeMs(p) >= LIFECYCLE_EXPIRY_MS) this.pendingLifecycle = undefined;
       return 0;
     }
     if (cur.runtime === "opencode") {
@@ -160,11 +164,11 @@ export class ActivityLogWriter {
     } else if (lc) {
       // No uuid change. A resume that kept the same session needs a standalone marker; uuid-rotating actions
       // (restart/start/fork) are only ever labeled ON the change — they just wait (with an expiry backstop).
-      lc.polls++;
-      if (STANDALONE_OK.has(lc.action) && lc.polls >= LIFECYCLE_GRACE_POLLS) {
+      const ageMs = this.lifecycleAgeMs(lc);
+      if (STANDALONE_OK.has(lc.action) && ageMs >= LIFECYCLE_GRACE_MS) {
         if (this.state.active) appended += this.emitBoundary(cur, this.state.active, cur.sessionId, lc.action);
         this.pendingLifecycle = undefined;
-      } else if (lc.polls >= LIFECYCLE_EXPIRY_POLLS) {
+      } else if (ageMs >= LIFECYCLE_EXPIRY_MS) {
         this.pendingLifecycle = undefined; // backstop: never linger forever
       }
     }
@@ -191,6 +195,10 @@ export class ActivityLogWriter {
     }
     this.save();
     return appended;
+  }
+
+  private lifecycleAgeMs(pending: { readyAtMs?: number }): number {
+    return pending.readyAtMs === undefined ? 0 : this.nowMs() - pending.readyAtMs;
   }
 
   /** Normalize a batch of complete transcript lines and append each source record's renderable events. */

@@ -49,7 +49,7 @@ export class ActivityLogManager {
 
   constructor(
     private readonly getWorkspaces: () => Workspace[],
-    private readonly tickMs = 2000,
+    private readonly tickMs = 500,
     private readonly resolveEveryMs = 3000,
     private readonly onAppended?: (workspaceHash: string, agent: string, count: number) => void,
     private readonly now: () => number = () => Date.now(),
@@ -121,7 +121,7 @@ export class ActivityLogManager {
           live.add(key);
           let entry = this.writers.get(key);
           if (!entry) {
-            entry = { writer: new ActivityLogWriter(dir, name), resolvedAt: 0 };
+            entry = { writer: new ActivityLogWriter(dir, name, undefined, this.now), resolvedAt: 0 };
             this.writers.set(key, entry);
             const note = this.pendingNotes.get(key); // a lifecycle action that arrived before this writer existed (fork)
             if (note) { entry.writer.noteLifecycle(note, true); this.pendingNotes.delete(key); } // born READY — its action already returned
