@@ -48,6 +48,15 @@ describe("Board wire projection", () => {
       awaitingHuman: { reason: "Need installed dogfood", since: "2026-07-14T12:01:30.000Z", kind: "dogfood" },
       now: "2026-07-14T12:01:30.000Z",
     });
+    const delivered = await taskStore.create({
+      id: "t-789abc",
+      title: "Delivered board task",
+      author: "human",
+      now: "2026-07-14T12:01:31.000Z",
+    });
+    await taskStore.update(delivered.id, { status: "triaged", assignee: "reviewer", now: "2026-07-14T12:01:32.000Z" });
+    await taskStore.update(delivered.id, { status: "active", now: "2026-07-14T12:01:33.000Z" });
+    await taskStore.update(delivered.id, { status: "done", now: "2026-07-14T12:01:34.000Z" });
     const open = await validationStore.create({ title: "Human check", author: "human", executor: "human", now: "2026-07-14T12:02:00.000Z" });
     const closed = await validationStore.create({ title: "Old check", author: "human", now: "2026-07-14T12:03:00.000Z" });
     await validationStore.closeRound(closed.id, { actor: EDITOR_HUMAN_ACTOR, outcome: "passed", result_note: "done", now: "2026-07-14T12:04:00.000Z" });
@@ -63,7 +72,14 @@ describe("Board wire projection", () => {
     const projected = projectBoard(source);
     const restored = restoreBoardSnapshot(projected);
 
-    expect(projected.views[0]?.task).toMatchObject({ id: task.id, body: "searchable body", assignee: "codex", awaitingHuman: { kind: "dogfood" } });
+    expect(projected.views[0]?.task).toMatchObject({
+      id: task.id,
+      body: "searchable body",
+      assignee: "codex",
+      currentAssignee: "codex",
+      awaitingHuman: { kind: "dogfood" },
+    });
+    expect(projected.views.find((view) => view.task.id === delivered.id)?.task.lastDeliverer).toBe("reviewer");
     expect(projected.views[0]?.task).not.toHaveProperty("artifact_refs");
     expect(projected.views[0]?.task).not.toHaveProperty("deps");
     expect(projected.chips.find((chip) => chip.agent === "codex")?.next).toEqual({ taskId: task.id });
