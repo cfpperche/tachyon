@@ -22,6 +22,10 @@ import path from "node:path";
 export function devHostEnv(slotRoot) {
   return {
     TACHYON_DEV_HOST: "1",
+    // t-9eb7ef — Claude's native updater honors the redirected XDG_DATA_HOME for its version
+    // binary, but still rewrites the owner's global ~/.local/bin/claude launcher. Keep updates off
+    // only for runtimes born inside an EDH; the owner's normal shell is deliberately untouched.
+    DISABLE_AUTOUPDATER: "1",
     TACHYON_DEV_HOST_ENGINE_RUNTIME: path.join(slotRoot, "runtime"),
     TACHYON_DEV_HOST_PROFILE_HOME: path.join(slotRoot, "profile-home"),
     XDG_CACHE_HOME: path.join(slotRoot, "cache"),
