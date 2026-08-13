@@ -33,6 +33,7 @@ describe("PluginSurfaceHost lifecycle (spec 349 hardening)", () => {
     const panel = __createdPanels[0];
     expect(panel.disposed).toBe(false);
     expect(panel.webview.html).toContain('data-shell-surface="tachyonPluginSurface"');
+    expect(panel.webview.html).toContain("/dist/webview/quick-picker.css");
     expect(panel.webview.posted.some((m) => isProjection(m))).toBe(true);
 
     const projection = panel.webview.posted.find(isProjection) as {
