@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import {
   BrowserSessionController,
   classifyIdeBrowserSessionEnd,
+  isCorrelatedBrowserParentSession,
 } from "../../src/webview/ide-browser-bridge/browserSession.js";
 import { IdeBrowserCdpSession } from "../../src/webview/ide-browser-bridge/cdpSession.js";
 
@@ -103,6 +104,16 @@ describe("classifyIdeBrowserSessionEnd (t-1c8195)", () => {
       actor: "external",
       trigger: "untracked",
     });
+  });
+});
+
+describe("IDE Browser parent correlation (t-54b9c3)", () => {
+  it("accepts the resolved pwa-editor-browser type with the matching launch id", () => {
+    const parent = session({ id: "parent", type: "pwa-editor-browser" });
+    parent.configuration.tachyonIdeBrowserLaunchId = "launch-1";
+
+    expect(isCorrelatedBrowserParentSession(parent, "launch-1")).toBe(true);
+    expect(isCorrelatedBrowserParentSession(parent, "another-manager-launch")).toBe(false);
   });
 });
 
