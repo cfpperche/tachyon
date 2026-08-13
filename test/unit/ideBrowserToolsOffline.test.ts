@@ -2,8 +2,8 @@
  * t-3cab05 / SDD 488 Phase 0 — pin always-register + offline fail-closed for ide_browser_*.
  *
  * Why this exists: MCP sessions freeze the tool catalog at connect. Gating registration on a live
- * instance file meant agents spawned before Design Mode never saw design_mode_chat_reply for the
- * life of the session (src/bridge/tools/ide-browser.ts:8-11). Companion already taught the pattern:
+ * instance-file gating meant agents spawned before the browser started never saw its tools for the
+ * life of the session. Companion already taught the pattern:
  * list tools always; fail closed at call time with bridge_offline.
  *
  * The F3 runtime matrix t-dd46a4 established the shared offline envelope across every CLI.
@@ -38,7 +38,6 @@ const IDE_BROWSER_TOOL_NAMES = [
   "ide_browser_eval",
   "ide_browser_click",
   "ide_browser_url",
-  "design_mode_chat_reply",
 ] as const;
 
 type ToolResult = { content: Array<{ type?: string; text: string }>; isError?: boolean };
@@ -87,46 +86,7 @@ describe("t-3cab05 — ide_browser tools always-register + offline fail-closed",
     const mcp = wire({
       ideBrowserRequest: (route, body) => clientIdeBrowserRequest(syntheticRoot, route, body),
     });
-    expect(mcp.handlers.has("design_mode_chat_reply")).toBe(true);
     expect(mcp.handlers.has("ide_browser_status")).toBe(true);
-  });
-
-  it("offline design_mode_chat_reply returns the F3-observed error envelope (not missing tool)", async () => {
-    const syntheticRoot = "/tmp/tachyon-no-such-workspace-ide-browser-offlineenv";
-    const mcp = wire({
-      ideBrowserRequest: (route, body) => clientIdeBrowserRequest(syntheticRoot, route, body),
-    });
-
-    const handler = mcp.handlers.get("design_mode_chat_reply");
-    expect(handler, "tool must be registered so offline is a call error, not a missing tool").toBeDefined();
-
-    const res = await handler!({ text: "matrix probe alpha ok", turnId: "dm-turn-f3matrix01" });
-    expect(res.isError).toBe(true);
-    expect(res.content[0]?.text).toBe(OFFLINE_TOOL_RESULT);
-  });
-
-  it("forwards a structured edit through the existing bound reply door", async () => {
-    const requests: Array<{ route: string; body?: Record<string, unknown> }> = [];
-    const mcp = wire({
-      ideBrowserRequest: async (route, body) => {
-        requests.push({ route, body });
-        return { ok: true, data: { accepted: true } };
-      },
-    });
-
-    const handler = mcp.handlers.get("design_mode_chat_reply");
-    const edit = {
-      summary: "Increase button padding",
-      files: ["src/button.css"],
-      patch: "diff --git a/src/button.css b/src/button.css\n@@ -1 +1 @@\n-padding: 4px\n+padding: 8px",
-    };
-    const res = await handler!({ text: "Done.", turnId: "dm-turn-edit", edit });
-
-    expect(res.isError).not.toBe(true);
-    expect(requests).toEqual([{
-      route: "/design-mode/chat-reply",
-      body: { text: "Done.", turnId: "dm-turn-edit", edit },
-    }]);
   });
 
   it("offline ide_browser_status returns the same F3-observed envelope", async () => {

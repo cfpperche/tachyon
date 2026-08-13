@@ -72,7 +72,6 @@ interface WebviewSurfaceBase {
 export type WebviewSurface = WebviewSurfaceBase & WebviewPosture;
 
 export const WEBVIEW_SURFACES: WebviewSurface[] = [
-  { viewId: "tachyonDesignMode", view: "design-mode", hostFile: "src/webview/DesignModePanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // t-6e2952 — the Control launcher is NOT a surface: it is a TAB inside the sidebar webview
   // (src/webview/sidebar/App.tsx), so it has no viewType, no bundle and no host file of its own. The
   // first delivery registered it as a separate WebviewView ("tachyonControlLauncher") and it rendered

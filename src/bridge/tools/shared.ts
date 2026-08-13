@@ -299,7 +299,7 @@ export interface BridgeDeps {
   /**
    * @deprecated Prefer always-register when `ideBrowserRequest` is wired.
    * Kept for tests that gate registration without a request fn. Live engines
-   * register ide_browser_* / design_mode_chat_reply whenever `ideBrowserRequest`
+   * register ide_browser_* whenever `ideBrowserRequest`
    * is present; offline calls fail with bridge_offline (companion-style).
    */
   ideBrowserToolsEnabled?: () => boolean;

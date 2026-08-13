@@ -1,17 +1,5 @@
 [
   {
-    "view": "design-mode",
-    "fixture": "default",
-    "url": "/scripts/webview-preview/index.html?view=design-mode&fixture=default",
-    "frame": {
-      "w": 880,
-      "h": 760
-    },
-    "tags": [
-      "synthetic-edge"
-    ]
-  },
-  {
     "view": "sidebar",
     "fixture": "default",
     "url": "/scripts/webview-preview/index.html?view=sidebar&fixture=default",

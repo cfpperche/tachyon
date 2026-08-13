@@ -452,7 +452,7 @@
             "enabled": {
               "type": "boolean",
               "default": false,
-              "description": "When true, show Integrated Browser status-bar controls and allow the bridge to start. When false (default), hide the human surface and fail ide_browser_* / design_mode_chat_reply at call time with a clear disabled error. Tools always remain registered on the Bridge when the engine wires them (MCP catalogs freeze at connect)."
+              "description": "When true, show Integrated Browser status-bar controls and allow the bridge to start. When false (default), hide the human surface and fail ide_browser_* at call time with a clear disabled error. Tools always remain registered on the Bridge when the engine wires them (MCP catalogs freeze at connect)."
             },
             "homeUrl": {
               "type": "string",

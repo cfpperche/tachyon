@@ -22,10 +22,20 @@ export type DesignModeAnnotation = Capture & {
   intent: Intent;
   comment: string;
   screenshotPath?: string;
+  screenshotPreview?: string;
 };
 
 export type DesignModeAgentState = { agents: string[]; active?: string; emptyReason?: string };
 export type DesignModeSendState = { status: "idle" | "sending" | "sent" | "error"; text?: string };
+export type DesignModeViewportPreset = "phone" | "tablet" | "desktop" | "reset";
+export type DesignModeViewportState = { preset: DesignModeViewportPreset; status: "idle" | "setting" | "success" | "error"; text?: string };
+
+const VIEWPORT_PRESETS: Array<{ preset: DesignModeViewportPreset; label: string }> = [
+  { preset: "phone", label: "Phone 375×812" },
+  { preset: "tablet", label: "Tablet 768×1024" },
+  { preset: "desktop", label: "Desktop 1280×800" },
+  { preset: "reset", label: "Reset" },
+];
 
 function selectorFor(el: Element): string {
   const escape = (value: string) => CSS.escape(value);
@@ -76,6 +86,7 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
   const [agentState, setAgentState] = useState<DesignModeAgentState>({ agents: [] });
   const [targetAgent, setTargetAgent] = useState("");
   const [sendState, setSendState] = useState<DesignModeSendState>({ status: "idle" });
+  const [viewportState, setViewportState] = useState<DesignModeViewportState>({ preset: "reset", status: "idle" });
 
   const post = (value: unknown) => {
     const raw = JSON.stringify(value);
@@ -95,9 +106,11 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
       return next.agents.length;
     };
     window.__tachyonDmApplySendState = (next) => { setSendState(next); return next.status; };
+    window.__tachyonDmApplyViewportState = (next) => { setViewportState(next); return next.preset; };
     post({ __annotation: "sync" });
     post({ __annotation: "agents" });
-    return () => { delete window.__tachyonDmApplyAnnotationState; delete window.__tachyonDmApplyAgentState; delete window.__tachyonDmApplySendState; };
+    post({ action: "viewport.sync" });
+    return () => { delete window.__tachyonDmApplyAnnotationState; delete window.__tachyonDmApplyAgentState; delete window.__tachyonDmApplySendState; delete window.__tachyonDmApplyViewportState; };
   }, [bindingName]);
 
   useEffect(() => {
@@ -152,6 +165,7 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
 
   const add = () => { if (!draft || !comment.trim()) return; post({ __annotation: "add", intent, comment: comment.trim(), capture: draft.capture }); setDraft(null); setComment(""); };
   const send = () => { if (!targetAgent || sendState.status === "sending") return; setSendState({ status: "sending" }); post({ action: "annotation.send", targetAgent }); };
+  const setViewport = (preset: DesignModeViewportPreset) => { setViewportState((current) => ({ ...current, status: "setting", text: undefined })); post({ action: "viewport.set", preset }); };
 
   return <div data-tachyon-dm-overlay>
     <div ref={outline} id="tachyon-dm-root" aria-hidden="true" style={{ position: "fixed", display: "none", pointerEvents: "none", zIndex: 2_147_483_646, border: `2px solid ${focusColor}`, boxSizing: "border-box", borderRadius: "2px" }} />
@@ -164,11 +178,15 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "8px" }}><button type="button" onClick={() => setDraft(null)} style={{ color: "#ddd", background: "transparent", border: 0, cursor: "pointer" }}>Cancel</button><button data-testid="annotation-add" type="button" disabled={!comment.trim()} onClick={add} style={{ color: "white", background: comment.trim() ? focusColor : "#555", border: 0, borderRadius: "5px", padding: "6px 12px", cursor: comment.trim() ? "pointer" : "default" }}>Add</button></div>
     </section>}
     {annotations.map((annotation) => positions[annotation.index] && <span data-tachyon-dm-overlay data-testid={`annotation-badge-${annotation.index}`} title={`Annotation ${annotation.index}`} style={{ position: "fixed", zIndex: 2_147_483_646, left: `${positions[annotation.index]!.left}px`, top: `${positions[annotation.index]!.top}px`, width: "22px", height: "22px", borderRadius: "50%", color: "white", background: focusColor, border: "2px solid white", boxShadow: "0 2px 7px rgba(0,0,0,.35)", font: "bold 12px/18px sans-serif", textAlign: "center", pointerEvents: "none", boxSizing: "border-box" }}>{annotation.index}</span>)}
-    {annotations.length > 0 && <aside data-tachyon-dm-overlay data-testid="annotation-tray" aria-label="Annotations" style={{ ...panel, right: "8px", bottom: "8px", width: "min(380px, calc(100vw - 16px))", maxHeight: "min(45vh, 360px)", overflow: "auto" }}>
+    <nav data-tachyon-dm-overlay data-testid="viewport-toolbar" aria-label="Viewport presets" style={{ ...panel, left: "8px", bottom: "8px", display: "flex", flexWrap: "wrap", gap: "4px", maxWidth: "calc(100vw - 16px)", padding: "6px" }}>
+      {VIEWPORT_PRESETS.map(({ preset, label }) => <button type="button" data-testid={`viewport-${preset}`} aria-pressed={viewportState.preset === preset} disabled={viewportState.status === "setting"} onClick={() => setViewport(preset)} style={{ color: "#fff", background: viewportState.preset === preset ? focusColor : "#303136", border: "1px solid #686a70", borderRadius: "5px", padding: "5px 8px", cursor: "pointer", font: "inherit" }}>{label}</button>)}
+      {viewportState.status === "error" && <span role="status" style={{ color: "#fca5a5", alignSelf: "center" }}>{viewportState.text}</span>}
+    </nav>
+    {annotations.length > 0 && <aside data-tachyon-dm-overlay data-testid="annotation-tray" aria-label="Annotations" style={{ ...panel, right: "8px", bottom: "110px", width: "min(380px, calc(100vw - 16px))", maxHeight: "min(45vh, 360px)", overflow: "auto" }}>
       <header style={{ padding: "10px 12px", borderBottom: "1px solid #45464a", display: "flex", justifyContent: "space-between" }}><strong>Annotations</strong><span style={{ color: "#aaa" }}>{annotations.length}</span></header>
       {annotations.map((annotation) => <article data-testid={`annotation-row-${annotation.index}`} style={{ display: "grid", gridTemplateColumns: "28px minmax(0,1fr) 28px", gap: "8px", padding: "10px 12px", borderBottom: "1px solid #3b3c40" }}>
         <span style={{ width: "24px", height: "24px", borderRadius: "50%", background: focusColor, color: "white", textAlign: "center", fontWeight: 700, lineHeight: "24px" }}>{annotation.index}</span>
-        <div style={{ minWidth: 0 }}><div style={{ display: "flex", alignItems: "center", gap: "6px" }}><code style={{ color: "#d0d0d0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{annotation.target.tag.toLowerCase()}{annotation.target.id ? `#${annotation.target.id}` : ""}</code><small style={{ color: annotation.intent === "question" ? "#c4b5fd" : "#7dd3fc", textTransform: "capitalize" }}>{annotation.intent}</small></div><div style={{ color: "#aaa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{annotation.target.text || annotation.target.selector}</div><div style={{ marginTop: "3px", overflowWrap: "anywhere" }}>{annotation.comment}</div>{positions[annotation.index] === null && <div role="status" style={{ color: "#fbbf24", marginTop: "4px" }}>Target not found</div>}</div>
+        <div style={{ minWidth: 0 }}><div style={{ display: "flex", alignItems: "center", gap: "6px" }}><code style={{ color: "#d0d0d0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{annotation.target.tag.toLowerCase()}{annotation.target.id ? `#${annotation.target.id}` : ""}</code><small style={{ color: annotation.intent === "question" ? "#c4b5fd" : "#7dd3fc", textTransform: "capitalize" }}>{annotation.intent}</small></div>{annotation.screenshotPreview && <img data-testid={`annotation-preview-${annotation.index}`} src={annotation.screenshotPreview} alt={`Screenshot preview for annotation ${annotation.index}`} style={{ display: "block", width: "100%", maxHeight: "112px", margin: "6px 0", objectFit: "contain", objectPosition: "left center", borderRadius: "4px", background: "#111" }} />}<div style={{ color: "#aaa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{annotation.target.text || annotation.target.selector}</div><div style={{ marginTop: "3px", overflowWrap: "anywhere" }}>{annotation.comment}</div>{positions[annotation.index] === null && <div role="status" style={{ color: "#fbbf24", marginTop: "4px" }}>Target not found</div>}</div>
         <button type="button" aria-label={`Delete annotation ${annotation.index}`} onClick={() => post({ __annotation: "delete", index: annotation.index })} style={{ alignSelf: "start", color: "#ccc", background: "transparent", border: 0, fontSize: "18px", cursor: "pointer" }}>×</button>
       </article>)}
       <footer style={{ padding: "10px 12px", display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: "8px", alignItems: "center" }}>
@@ -176,7 +194,7 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
           {!agentState.agents.length && <option value="">No agent available</option>}
           {agentState.agents.map((agent) => <option value={agent}>{agent}</option>)}
         </select>
-        <button type="button" aria-label="Refresh agents" onClick={() => post({ __annotation: "agents" })} disabled={sendState.status === "sending"} style={{ color: "#ddd", background: "transparent", border: "1px solid #686a70", borderRadius: "5px", padding: "6px 8px", cursor: "pointer" }}>↻</button>
+        <button type="button" aria-label="Clear annotations" onClick={() => post({ action: "annotation.clear" })} disabled={sendState.status === "sending"} style={{ color: "#ddd", background: "transparent", border: "1px solid #686a70", borderRadius: "5px", padding: "6px 8px", cursor: "pointer" }}>Clear</button>
         <button data-testid="annotation-send" type="button" disabled={!targetAgent || sendState.status === "sending"} onClick={send} style={{ color: "white", background: targetAgent ? focusColor : "#555", border: 0, borderRadius: "5px", padding: "7px 14px", cursor: targetAgent ? "pointer" : "default" }}>{sendState.status === "sending" ? "Sending…" : "Send"}</button>
         {(sendState.text || agentState.emptyReason) && <div role="status" style={{ gridColumn: "1 / -1", color: sendState.status === "error" ? "#fca5a5" : "#bbb", overflowWrap: "anywhere" }}>{sendState.text || agentState.emptyReason}</div>}
       </footer>
@@ -191,5 +209,6 @@ declare global {
     __tachyonDmApplyAnnotationState?: (annotations: DesignModeAnnotation[]) => number;
     __tachyonDmApplyAgentState?: (state: DesignModeAgentState) => number;
     __tachyonDmApplySendState?: (state: DesignModeSendState) => string;
+    __tachyonDmApplyViewportState?: (state: DesignModeViewportState) => DesignModeViewportPreset;
   }
 }

@@ -20,7 +20,6 @@ const IDE_BROWSER_TOOL_NAMES = [
   "ide_browser_eval",
   "ide_browser_click",
   "ide_browser_url",
-  "design_mode_chat_reply",
 ] as const;
 
 type ToolResult = { content: Array<{ type?: string; text: string }>; isError?: boolean };

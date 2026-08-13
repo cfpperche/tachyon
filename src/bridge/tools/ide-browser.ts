@@ -7,8 +7,7 @@ export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void 
 
   // Prototype: VS Code Integrated Browser via shell HTTP+CDP bridge (thimo-style).
   // Always register when the engine wires `ideBrowserRequest` (or tests enable the gate).
-  // Do NOT gate on "instance file is live right now" — MCP sessions freeze the tool catalog
-  // at connect, and agents spawned before Design Mode would never see design_mode_chat_reply.
+  // Do NOT gate on "instance file is live right now" — MCP sessions freeze the tool catalog.
   // Offline calls fail closed via bridge_offline from the client (companion-style).
   // t-7aef5a — disambiguate from user_browser_* (Companion) and agent-browser plugin tools.
   // t-47503a — routes come from IDE_BROWSER_ROUTES (shared client/server contract).
@@ -163,67 +162,5 @@ export function registerIdeBrowserTools(mcp: McpServer, deps: BridgeDeps): void 
       },
     );
 
-    mcp.registerTool(
-      "design_mode_chat_reply",
-      {
-        description:
-          IDE_BROWSER_SCOPE +
-          "Post a plain-language reply into the Design Mode chat panel. " +
-          "Required when the human messaged you from Design Mode — the panel only updates via this tool. " +
-          "Pass turnId from the Design Mode prompt so the reply binds to that send (not a later one). " +
-          "Plain answer only: no tool narration, no JSON dumps, no terminal-only reply.",
-        inputSchema: {
-          text: z.string().min(1).max(12_000).describe("Plain answer for the human chat panel"),
-          turnId: z
-            .string()
-            .min(1)
-            .max(120)
-            .optional()
-            .describe(
-              "Host turn id from the Design Mode prompt (Turn id: dm-turn-…). Required while a chat wait is outstanding so a late reply cannot clear another turn",
-            ),
-          agent: z
-            .string()
-            .min(1)
-            .max(120)
-            .optional()
-            .describe("Ignored if it does not match the bound turn agent / Design Mode active agent; speaker defaults to that agent"),
-          edit: z
-            .object({
-              summary: z.string().min(1).max(1000).describe("Short description of the completed edit"),
-              files: z
-                .array(z.string().min(1).max(500))
-                .min(1)
-                .max(40)
-                .describe("Workspace-relative files represented by the patch"),
-              patch: z
-                .string()
-                .min(1)
-                .max(60_000)
-                .describe("Exact final unified diff, including diff --git headers"),
-            })
-            .optional()
-            .describe("Structured edit result; persisted by the host as a durable chat event"),
-        },
-      },
-      async ({ text, agent, turnId, edit }) => {
-        try {
-          // Prefer authenticated caller name when available (ignore spoofed speaker).
-          const callerName =
-            deps.caller?.kind === "agent" && deps.caller.name ? deps.caller.name : undefined;
-          const speaker = callerName ?? agent;
-          const result = await ideReq(IDE_BROWSER_ROUTES.chatReply, {
-            text,
-            ...(speaker ? { agent: speaker } : {}),
-            ...(turnId ? { turnId } : {}),
-            ...(edit ? { edit } : {}),
-          });
-          if (!result.ok) return fail(new Error(result.error || "design_mode_chat_reply failed"));
-          return ok(JSON.stringify(result.data, null, 2));
-        } catch (err) {
-          return fail(err);
-        }
-      },
-    );
   }
 }

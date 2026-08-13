@@ -139,4 +139,25 @@ describe("Design Mode host annotation batch", () => {
     expect(manager.designAnnotations[1]).toMatchObject({ comment: "Text still matters" });
     expect(manager.designAnnotations[1].screenshotPath).toBeUndefined();
   });
+
+  it("serves preview bytes through sync and removes the PNG on Clear", async () => {
+    manager.session.cdp.screenshotPngBase64 = vi.fn(async () => Buffer.from("png-preview").toString("base64"));
+    await manager.handleDesignPickRaw(JSON.stringify({ __annotation: "add", intent: "change", comment: "Preview", capture: { target: { selector: "#one", tag: "BUTTON", bounds: { x: 1, y: 2, width: 30, height: 20 } } } }));
+    const file = manager.designAnnotations[0].screenshotPath as string;
+    expect(fs.existsSync(file)).toBe(true);
+    expect(evaluateInPage).toHaveBeenLastCalledWith(expect.stringContaining("data:image/png;base64,"));
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "annotation.clear" }));
+    expect(manager.designAnnotations).toEqual([]);
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it("keeps only the host as viewport backend and syncs the effective preset or error", async () => {
+    manager.session.cdp.setResponsivePreset = vi.fn(async () => undefined);
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "viewport.set", preset: "phone" }));
+    expect(manager.session.cdp.setResponsivePreset).toHaveBeenCalledWith("phone", expect.any(Function));
+    expect(evaluateInPage).toHaveBeenLastCalledWith(expect.stringContaining('"preset":"phone","status":"success"'));
+    manager.session.cdp.setResponsivePreset = vi.fn(async () => { throw new Error("CDP refused"); });
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "viewport.set", preset: "tablet" }));
+    expect(evaluateInPage).toHaveBeenLastCalledWith(expect.stringContaining('"preset":"phone","status":"error","text":"CDP refused"'));
+  });
 });

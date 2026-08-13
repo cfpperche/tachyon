@@ -59,17 +59,9 @@ export const IDE_BROWSER_ROUTES = {
   snapshot: "/snapshot",
   url: "/url",
   click: "/click",
-  chatReply: "/design-mode/chat-reply",
 } as const;
 
 export type IdeBrowserRoutePath = (typeof IDE_BROWSER_ROUTES)[keyof typeof IDE_BROWSER_ROUTES];
-
-/** Optional structured edit attachment on design_mode_chat_reply. */
-export type IdeBrowserChatReplyEdit = {
-  summary: string;
-  files: string[];
-  patch: string;
-};
 
 /** Request body types per route (void for GET / empty body). */
 export type IdeBrowserRouteRequest = {
@@ -80,12 +72,6 @@ export type IdeBrowserRouteRequest = {
   [IDE_BROWSER_ROUTES.snapshot]: void;
   [IDE_BROWSER_ROUTES.url]: void;
   [IDE_BROWSER_ROUTES.click]: { selector: string };
-  [IDE_BROWSER_ROUTES.chatReply]: {
-    text: string;
-    agent?: string;
-    turnId?: string;
-    edit?: IdeBrowserChatReplyEdit;
-  };
 };
 
 /** Success `data` payload per route (envelope wraps this). */
@@ -97,7 +83,6 @@ export type IdeBrowserRouteResponse = {
   [IDE_BROWSER_ROUTES.snapshot]: { text: string; url: string };
   [IDE_BROWSER_ROUTES.url]: { url: string };
   [IDE_BROWSER_ROUTES.click]: { clicked: string };
-  [IDE_BROWSER_ROUTES.chatReply]: { event: unknown };
 };
 
 export type IdeBrowserHttpMethod = "GET" | "POST";
@@ -123,7 +108,6 @@ export const IDE_BROWSER_ROUTE_TABLE: {
   [IDE_BROWSER_ROUTES.snapshot]: { method: "GET", path: IDE_BROWSER_ROUTES.snapshot, hasBody: false },
   [IDE_BROWSER_ROUTES.url]: { method: "GET", path: IDE_BROWSER_ROUTES.url, hasBody: false },
   [IDE_BROWSER_ROUTES.click]: { method: "POST", path: IDE_BROWSER_ROUTES.click, hasBody: true },
-  [IDE_BROWSER_ROUTES.chatReply]: { method: "POST", path: IDE_BROWSER_ROUTES.chatReply, hasBody: true },
 };
 
 export type IdeBrowserDecodedRequest =
@@ -134,17 +118,12 @@ export type IdeBrowserDecodedRequest =
   | { ok: true; path: typeof IDE_BROWSER_ROUTES.snapshot; body: void }
   | { ok: true; path: typeof IDE_BROWSER_ROUTES.url; body: void }
   | { ok: true; path: typeof IDE_BROWSER_ROUTES.click; body: IdeBrowserRouteRequest[typeof IDE_BROWSER_ROUTES.click] }
-  | { ok: true; path: typeof IDE_BROWSER_ROUTES.chatReply; body: IdeBrowserRouteRequest[typeof IDE_BROWSER_ROUTES.chatReply] }
   | { ok: false; status: 400 | 404; error: string };
 
 function asRecord(body: unknown): Record<string, unknown> {
   return body && typeof body === "object" && !Array.isArray(body)
     ? body as Record<string, unknown>
     : {};
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
 }
 
 /**
@@ -196,27 +175,6 @@ export function decodeIdeBrowserHttpRequest(
       const selector = typeof raw.selector === "string" ? raw.selector : "";
       if (!selector) return { ok: false, status: 400, error: "selector required" };
       return { ok: true, path: match.path, body: { selector } };
-    }
-
-    case IDE_BROWSER_ROUTES.chatReply: {
-      const text = typeof raw.text === "string" ? raw.text : "";
-      const agent = optionalString(raw.agent);
-      const turnId = optionalString(raw.turnId);
-      // Same gate as the pre-split host: object-ish `edit` is passed through; field
-      // validation (summary/files/patch) lives in ingestChatReply — not here.
-      const edit = raw.edit && typeof raw.edit === "object"
-        ? raw.edit as IdeBrowserChatReplyEdit
-        : undefined;
-      return {
-        ok: true,
-        path: match.path,
-        body: {
-          text,
-          ...(agent !== undefined ? { agent } : {}),
-          ...(turnId !== undefined ? { turnId } : {}),
-          ...(edit ? { edit } : {}),
-        },
-      };
     }
 
     default: {
