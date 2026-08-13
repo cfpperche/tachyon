@@ -280,7 +280,7 @@ describe("sidebar action matrix (spec 237)", () => {
   });
   it("capability gates: fork/promote/worktree", () => {
     expect(actionsFor(A({ status: "running", forkable: true }))).toContain("fork");
-    expect(actionsFor(A({ status: "stopped", adhoc: true }))).toContain("promote");
+    expect(actionsFor(A({ status: "stopped", adhoc: true, kind: "terminal" }))).toContain("promote");
     expect(actionsFor(A({ status: "running", adhoc: true }))).toContain("remove");
     expect(actionsFor(A({ status: "stopped", adhoc: true, canDismiss: true }))).toContain("remove");
     expect(actionsFor(A({ status: "running", worktree: "b" }))).toEqual(expect.arrayContaining(["reviewWorktree", "createPr"]));
@@ -328,11 +328,30 @@ describe("sidebar action matrix (spec 237)", () => {
   });
   it("ad-hoc agent rows omit declared-only edit actions", () => {
     const actions = actionsFor(A({ status: "running", adhoc: true }));
-    expect(actions).toEqual(expect.arrayContaining(["promote", "remove"]));
+    expect(actions).toContain("remove");
+    expect(actions).not.toContain("promote");
     expect(actions).not.toContain("edit");
     expect(actions).not.toContain("editYaml");
     expect(actions).not.toContain("clone");
-    expect(moreActions(A({ status: "running", adhoc: true }))).toEqual(expect.arrayContaining(["promote", "remove"]));
+    expect(moreActions(A({ status: "running", adhoc: true }))).toContain("remove");
+    expect(moreActions(A({ status: "running", adhoc: true }))).not.toContain("promote");
+  });
+
+  /**
+   * t-7b7701 — promote writes a terminal declaration. The door refuses any other kind, so
+   * offering it on a Temporary agent (a fork) was a button that could only fail. A declared
+   * terminal is already saved. The label names what the door does, not tachyon.yml.
+   */
+  it("t-7b7701 — promote is offered only for a Temporary terminal, never for an agent", () => {
+    expect(actionsFor(A({ status: "stopped", adhoc: true }))).not.toContain("promote");
+    expect(actionsFor(A({ status: "running", adhoc: true }))).not.toContain("promote");
+    expect(actionsFor(A({ status: "stopped", adhoc: true, kind: "terminal" }))).toContain("promote");
+    expect(actionsFor(A({ status: "running", adhoc: true, kind: "terminal" }))).toContain("promote");
+    expect(actionsFor(A({ status: "stopped", kind: "terminal" }))).not.toContain("promote");
+    expect(moreActions(A({ status: "stopped", adhoc: true, kind: "terminal" }))).toContain("promote");
+    expect(primaryActions(A({ status: "stopped", adhoc: true, kind: "terminal" }))).not.toContain("promote");
+    expect(ACTION_META.promote.label).toBe("Save as terminal declaration");
+    expect(ACTION_META.promote.label).not.toMatch(/tachyon\.yml/);
   });
 
   /**
