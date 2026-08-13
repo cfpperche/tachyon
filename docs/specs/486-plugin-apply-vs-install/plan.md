@@ -22,17 +22,17 @@ Two properties decide whether this phase is right, and both are testable: an un-
 not resurrect on reload (the record is durable, not derived), and un-applying must not disturb the
 payload (re-applying needs no refetch).
 
-### Phase B — the delegated toolkit reads the payload, not the workspace
+### Phase B — zero-applied delegation, corrected after `t-53e485`
 
-`AgentManager.ts:1238` already filters plugin targets by the child's runtime — measured, it is
-`candidate.kind === "skill-dir" && candidate.runtime === runtime`, over the four runtimes the toolkit
-admits (claude, codex, grok, pi). What it captures FROM is `target.file`, the workspace
-materialization. After Phase A that path is usually absent, so the source moves to the installed
-payload under `.tachyon/plugins/<plugin>/`.
+Re-measurement on 2026-08-13 invalidated this plan's original source change. SDD 487 and `t-53e485`
+made the parent's resolved, digest-pinned capability projection the sole delegation source. Neither
+`target.file` nor `.tachyon/plugins/<plugin>/` participates. That is an authority boundary: installed
+workspace plugins are not grants the parent can give away.
 
-This is a source change, not a behaviour change: the runtime filter, the per-name withholding on
-capture failure (`t-b505b3` follow-up) and the digest-conflict refusal (`t-b0cfd4`) all stay exactly
-as they are. Delegation must work with **zero** skills applied — that is the phase's acceptance test.
+Phase B therefore adds proof, not a production source change. Its test creates an installed plugin
+with no applied-state ledger and no runtime materialization, then proves a Temporary child receives
+the parent's approved snapshot in its own worktree. A supported child runtime consumes the projection;
+an unmeasured runtime refuses rather than silently dropping a requested grant.
 
 ### Phases C and D moved to SDD 487
 
@@ -44,8 +44,8 @@ The inspector verification that was Phase D goes with them: proving "a canonical
 creatable because nothing was materialized" is worth doing once, after the model it depends on has
 settled.
 
-What remains here is Phases A and B, and B is not optional — once install materializes nothing, the
-delegated toolkit breaks unless its source moves to the payload.
+What remains here is Phases A and B. B is not optional as proof, but its original payload-source
+implementation is retired: reinstating it would reopen the authority leak closed by `t-53e485`.
 
 ## Key decisions
 
@@ -78,7 +78,7 @@ delegated toolkit breaks unless its source moves to the payload.
 | `src/plugins/engine.ts` | `install` writes payload only; materialization moves behind `apply`/`unapply` |
 | `src/plugins/paths.ts` | applied-record location, beside `PLUGIN_PAYLOAD_ROOT` (added by `t-09be02`) |
 | *(new)* applied-state store | durable per-workspace record of (plugin, skill) → applied |
-| `src/agents/AgentManager.ts` | delegated toolkit captures from the payload, not `target.file` |
+| `src/agents/AgentManager.ts` | no Phase B change: `t-53e485` already made the parent's pinned grant the sole source |
 | `src/webview/plugins/App.tsx` | per-skill apply/un-apply control |
 | `src/config/agentProfileProjection.ts` | comment only — why the subtraction now matters less |
 

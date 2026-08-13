@@ -257,3 +257,21 @@ narrow that per runtime, the way A5 must for hooks.
 - A post-gate documentation audit found `docs/runbooks/plugins.md` still teaching install-as-projection. It now names install and apply as separate steps and points the operator to the actionable per-contribution controls.
 - Plugins UI now shows installed/applied state and per-contribution controls for skills and hooks. Armed hooks carry conservative restart copy.
 - Visual QA passed at 880 and 360: evidence `ev-2026-08-12T21:04:46.412Z-6`.
+
+## Phase B re-measurement — 2026-08-13
+
+- The implementation premise in B1 was stale. `AgentManager.delegableToolkit` now returns only the
+  parent's resolved `profileCapabilities`; `t-53e485` removed both lockfile `target.file` and installed
+  plugin payloads as delegation sources after measuring an authority leak (children received eleven
+  workspace-installed skills while their parents held three or zero).
+- B1 is retired rather than implemented. Capturing `.tachyon/plugins/<plugin>/` would re-open the same
+  leak: installation is workspace state, not a grant the parent owns.
+- The required B2 test was written against the exact state the workspace cannot exercise accidentally:
+  plugin payload and lockfile present, `.tachyon/plugins-applied.json` absent, and no `.claude/skills`
+  or `.agents/skills` materialization. It was **green on its first run**. Per the phase contract, that
+  means the newer product was already correct; no production change followed.
+- The same test proves the Temporary child has its own persisted worktree/cwd and that a Claude
+  parent's pinned snapshot projects to the supported Codex runtime. Existing coverage proves an
+  unmeasured Pi projection refuses rather than silently losing the grant.
+- The canonical Grok lifecycle test now creates an installed payload with no applied ledger or
+  `.grok/skills` materialization before spawning. Creation remains green and uses its private home.

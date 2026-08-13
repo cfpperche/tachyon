@@ -2,7 +2,8 @@
 
 _Created 2026-08-03._
 
-**Status:** draft
+**Status:** shipped
+**Closure:** Phase A/C shipped install-vs-apply for skills, hooks and MCP; Phase B was re-measured after `t-53e485`, retired its unsafe payload-capture instruction, and proved zero-applied Temporary delegation plus canonical Grok creation in `test/unit/agentManager.test.ts`.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -75,8 +76,9 @@ directory. None of the four enters a runtime's ambient scope, which is the only 
 
 The maintainer's rule for delegation is unchanged and rides on top: a **Temporary agent always gets
 its own worktree**, and therefore its own cwd, and inherits the skills its **parent** can see,
-filtered to those its own runtime supports. That is the existing delegated toolkit (`t-b505b3`); this
-spec changes where it reads FROM, not what it does.
+filtered to those its own runtime supports. That is the existing delegated toolkit (`t-b505b3`).
+The later `t-53e485` ruling established that “its parent can see” means the parent's resolved,
+digest-pinned grant — never the workspace's installed or applied plugin set.
 
 **Done** means: installing a plugin materializes nothing; a human applies and un-applies skills per
 workspace without touching the install; a Saved Agent's skills are chosen for it; a Temporary agent
@@ -110,9 +112,10 @@ third level moves out, and the maintainer's objection is the reason: *"vamos faz
 remover codigo? se for nao faz sentido"*.
 
 What stays here is what survives 487 untouched, because it is about the **workspace**, not about
-agents: installing stops materializing, and a human applies or un-applies per skill. The delegated
-toolkit's source change stays too — not by choice but by force: once install materializes nothing,
-the toolkit breaks unless it reads the payload instead.
+agents: installing stops materializing, and a human applies or un-applies per skill. A 2026-08-13
+re-measurement corrected the delegated-toolkit premise: `t-53e485` made the parent's resolved,
+digest-pinned grant the sole source. Reading installed payloads would let workspace installation
+become agent authority again, so that source change is explicitly retired.
 
 What leaves: Grok joining the skill-grant enum (`t-84c678`) and a Saved Agent's skill selection.
 Both belong to the unified capability model, and building them against today's split would be work
@@ -146,20 +149,20 @@ done twice.
   - **When** the human looks at the Plugins app
   - **Then** the two are distinguishable without opening a file — code that will run on the next
     matching event is never indistinguishable from code that will not
-- [ ] **Scenario: a Temporary agent inherits its parent's, filtered by runtime**
+- [x] **Scenario: a Temporary agent inherits its parent's, filtered by runtime**
   - **Given** a parent agent that can see a set of skills
   - **When** it spawns a Temporary child
   - **Then** the child gets its own worktree and cwd, and receives the parent's skills minus any its
     own runtime does not support — the shortfall named, never silent
-- [ ] **Scenario: a canonical Grok agent is creatable with plugins installed**
+- [x] **Scenario: a canonical Grok agent is creatable with plugins installed**
   - **Given** plugins installed and nothing applied
   - **When** a human creates a canonical Grok agent
   - **Then** it is created, and the ambient inspector has nothing to forgive because nothing was
     materialized
-- [ ] Applying and un-applying are recorded durably, so a reload does not resurrect an un-applied
+- [x] Applying and un-applying are recorded durably, so a reload does not resurrect an un-applied
       skill and a fresh clone does not silently apply one
-- [ ] The delegated toolkit reads from the installed payload, not from a workspace materialization —
-      so delegation works with zero skills applied
+- [x] The delegated toolkit reads the parent's resolved, digest-pinned grant, not workspace install
+      or applied state — so delegation works with zero skills applied without granting installed plugins
 
 ## Non-goals
 
@@ -236,4 +239,4 @@ done twice.
   toolkit admits (claude, codex, grok, pi). The shortfall IS reported: capture failure withholds the
   one skill BY NAME through `notifyDelegatedToolkitCondition` rather than failing the delegation
   (`t-b505b3` follow-up), and a digest conflict refuses rather than refreshing (`t-b0cfd4`). Nothing
-  to build; Phase B only moves what it reads FROM.
+  to build; Phase B only proves the resolved parent grant crosses with zero workspace skills applied.
