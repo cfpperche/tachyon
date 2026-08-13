@@ -173,7 +173,7 @@ export class IdeBrowserBridgeManager {
   async initialDesignModeUi(): Promise<void> {
     await this.pushAgentsToPage();
     await this.hydrateChatTail();
-    if (this.lastPick) await this.pushDesignModeUi({ type: "selection", attached: true, summary: `<${this.lastPick.tag.toLowerCase()}> ${this.lastPick.selectorHint}`.trim(), tag: this.lastPick.tag, selectorHint: this.lastPick.selectorHint, text: this.lastPick.text.slice(0, 80) });
+    if (this.lastPick) await this.pushDesignModeUi({ type: "selection", attached: true, summary: `<${this.lastPick.tag.toLowerCase()}> ${this.lastPick.selectorHint}`.trim(), tag: this.lastPick.tag, selectorHint: this.lastPick.selectorHint, text: this.lastPick.text.slice(0, 80), screenshotPath: this.lastPick.screenshotPath });
   }
 
   async handleDesignModeWebviewMessage(message: DesignModeWebviewMessage): Promise<void> {
@@ -370,6 +370,7 @@ export class IdeBrowserBridgeManager {
         tag: pick.tag,
         selectorHint: pick.selectorHint,
         text: pick.text.slice(0, 80),
+        screenshotPath,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

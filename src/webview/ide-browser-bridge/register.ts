@@ -402,7 +402,7 @@ async function ensureManager(): Promise<IdeBrowserBridgeManager> {
     manager = new IdeBrowserBridgeManager(root, log);
     if (!extensionContext) throw new Error("IDE Browser extension context is unavailable");
     designModePanel?.dispose();
-    designModePanel = new DesignModePanel(extensionContext.extensionUri, manager);
+    designModePanel = new DesignModePanel(extensionContext.extensionUri, root, manager);
     manager.setWorkspaceResolver(() => owner);
     manager.setDesignModeChangedHandler(() => {
       paintBars();
