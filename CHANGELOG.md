@@ -6,7 +6,42 @@ Marketplace release notes.
 
 ## Unreleased
 
+### Added
+
+- **Design Mode annotations live on the page** (`t-86e341`). Picking an element now opens a popover
+  anchored to it: free text plus an intent, Change or Question. Adding stores the annotation on the
+  host, which owns the numbering, and a numbered badge appears on the element. A tray on the page
+  lists the batch — number, preview, element label, comment — with delete. No extra panel and no
+  extra chat; the whole surface is the injected overlay.
+
+  An annotation whose element disappears does **not** keep a badge pointing at nothing: the badge is
+  removed and its tray row reads "Target not found". That is proven by deleting the element from a
+  real Chrome page, not by simulating it. Sending the batch to an agent is the next slice.
+
 ### Fixed
+
+- **A live agent could stop being reachable, and every door refused at once** (`t-e169e4`, spec 503).
+  When a notice is queued for a busy agent, the drain types it at the next idle edge — but the
+  runtime can be mid-handback and never accept the submit. That outcome was already modelled: the
+  submission is reported unconfirmed and the queue keeps the item. What had no recovery path was the
+  consequence — Tachyon's own line now sat in the composer, so every later delivery classified it as
+  a **human draft** and refused. `notify_agent` held, `write_input` refused and pointed at
+  `notify_agent`, `retask_agent` only queued. The agent stayed alive, idle, and unreachable with its
+  own instruction sitting in its input box.
+
+  Recovery submits an already-staged line without retyping it, and a later notice is itself an escape
+  door. Ownership is decided by **byte-for-byte equality against the retained queue head**, not by
+  the text looking like Tachyon's — a prefix can be pasted by a human, whereas the queue is
+  out-of-band evidence. Unrelated human drafts are still held, and when the composer cannot be read
+  at all the check fails closed and the content stays human-owned.
+
+- **"Edit YAML" on a Saved Agent opens that agent's file** (`t-c29ca3`). It opened `tachyon.yml`,
+  which no longer holds agents — they live in `.tachyon/agents/<name>/agent.yml`. The command looked
+  for the agent inside the wrong file, did not find it, and opened the file anyway at line 0 with no
+  explanation. Its error handling covered the one case that never happens ("no `tachyon.yml` in this
+  workspace") while the real one passed in silence. A missing agent file is now named in the warning
+  and nothing is opened. Commands, runbooks and schedules were measured and are still `tachyon.yml`
+  by design; `Clone` never read it.
 
 - **The Activity feed stops arriving in two-second batches** (`t-1484bc`, measured in `t-7e157a`).
   The complaint was that Activity "doesn't feel alive". Timed live, native write → durable JSONL was
@@ -42,8 +77,8 @@ Marketplace release notes.
   tab. A ratchet keeps the injection wrapper under 400 characters (it measures 196), so UI can grow
   in the bundle and not back into the string.
 
-  **Still true in this build:** the Design Mode chat tab is still there and annotations do not exist
-  yet. Both are the next slices of the same migration.
+  **Still true in this build:** the Design Mode chat tab is still there. Removing it is a later slice
+  of the same migration, and it only happens after the page can send a batch on its own.
 
 - **Clicking a link with Design Mode on no longer kills the overlay** (`t-03afe7`). The status bar
   kept saying ON while the overlay was gone — the product asserting a state it was not holding. The
