@@ -10,7 +10,11 @@ the normal, closed path.
 covers TWO projected kinds, not one — `skill-dir` AND `settings-hook`. The maintainer asked whether hooks
 could be toggled like skills; the answer is yes, and the case is stronger, because a hook is code that RUNS
 rather than text a model may read. `mcp-server` is Phase C (`t-7f52f6`), `gitHooks` are a separate
-mechanism and a separate follow-up (`t-e85e0e`), and `view` is out by decision, contestable in `t-7ec4b2`.
+mechanism and a separate follow-up (`t-e85e0e`), and `view` is out by decision. That decision **was**
+contested, in `t-7ec4b2`, and it held on measurement rather than on the argument: of 15 installed plugins
+exactly **one** contributes a view, and that view declares `surface: "editor"` — a tab opened on demand,
+which occupies nothing until someone opens it. `VIEW_SURFACES` also admits `"sidebar"`, the surface that
+could populate the UI unbidden, and no plugin declares it. Reopen when one does.
 
 The hook half is not a copy of the skill half, and the tasks below say where they diverge: a skill is a
 DIRECTORY (un-apply is a delete), a hook is an entry MERGED into a settings file the human also edits
