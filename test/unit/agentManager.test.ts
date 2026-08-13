@@ -5057,7 +5057,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(newSessionArgs.at(-1)!.some((a) => a.startsWith("GROK_HOME="))).toBe(false);
     });
 
-    it("canonical Grok materializes its private home even when the Bridge is down", async () => {
+    it("SDD 486: canonical Grok is creatable with plugins installed and nothing applied", async () => {
       const materialized: string[] = [];
       const h = resumeHarness("agents:\n  grok:\n    cmd: grok\n", {
         materializeHarness: ({ name, def }) => {
@@ -5076,9 +5076,23 @@ describe("AgentManager — session resume (spec 209)", () => {
         canonicalSha256: "a".repeat(64),
         authorityRevision: "grok-r1",
       };
+      const payload = path.join(h.ws, ".tachyon", "plugins", "sdd", "skills", "sdd");
+      fs.mkdirSync(payload, { recursive: true });
+      fs.writeFileSync(path.join(payload, "SKILL.md"), "# installed payload, not applied\n");
+      fs.writeFileSync(path.join(h.ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
+        schemaVersion: 1,
+        plugins: {
+          sdd: {
+            name: "sdd", version: "1.0.0", runtimes: ["grok"],
+            targets: [{ runtime: "grok", kind: "skill-dir", file: ".grok/skills/sdd" }],
+          },
+        },
+      }));
 
       await h.manager.spawn("grok");
 
+      expect(fs.existsSync(path.join(h.ws, ".tachyon", "plugins-applied.json"))).toBe(false);
+      expect(fs.existsSync(path.join(h.ws, ".grok", "skills", "sdd"))).toBe(false);
       expect(materialized).toEqual(["grok:grok-r1"]);
       expect(envFromTmuxArgs(h.newSessionArgs.at(-1)!).GROK_HOME).toBe("/ws/.tachyon/bridge-mcp/grok.grok");
     });
@@ -5589,6 +5603,61 @@ describe("AgentManager — session resume (spec 209)", () => {
       expect(projections.get("plugin-child")).toBeUndefined();
       expect(projections.get("bare-child")).toBeUndefined();
       expect(fs.existsSync(path.join(skillDir, "SKILL.md"))).toBe(true);
+    });
+
+    it("SDD 486 B2: delegation uses the parent's grant with plugins installed and zero applied", async () => {
+      const worktree = {
+        path: path.join(os.tmpdir(), "tachyon-sdd486-child"),
+        branch: "tachyon/sdd486-child",
+        tachyonCreatedBranch: true,
+        baseRef: "base",
+        createdAt: "now",
+      };
+      const h = resumeHarness("agents:\n  claude:\n    cmd: claude\n", {
+        fileExists: () => true,
+        resolveSpawnCwd: async () => ({ cwd: worktree.path, worktree }),
+      });
+      const payload = path.join(h.ws, ".tachyon", "plugins", "sdd", "skills", "sdd");
+      fs.mkdirSync(payload, { recursive: true });
+      fs.writeFileSync(path.join(payload, "SKILL.md"), "# installed payload, not applied\n");
+      fs.writeFileSync(path.join(h.ws, ".tachyon", "plugins.lock.json"), JSON.stringify({
+        schemaVersion: 1,
+        plugins: {
+          sdd: {
+            name: "sdd", version: "1.0.0", runtimes: ["claude", "codex"],
+            targets: [
+              { runtime: "claude", kind: "skill-dir", file: ".claude/skills/sdd" },
+              { runtime: "codex", kind: "skill-dir", file: ".agents/skills/sdd" },
+            ],
+          },
+        },
+      }));
+      asAgent(h.manager.defOf("claude"))!.profileCapabilities = {
+        schemaVersion: 1, adapter: "claude", sha256: "a".repeat(64),
+        sources: [{ referenceId: "sdd", kind: "skill", scope: "project", owner: "plugin:sdd", path: ".tachyon/plugins/sdd/skills/sdd", sha256: "a".repeat(64) }],
+        skills: [{ name: "sdd", source: { source: "sdd", sourcePath: "/captured/sdd", type: "tree", sha256: "a".repeat(64), entries: [
+          { path: ".", type: "directory", mode: 0o755 },
+          { path: "SKILL.md", type: "file", mode: 0o644, bytes: Buffer.from("# parent's approved snapshot\n") },
+        ] } }],
+        mcp: {}, hooks: {}, pi: { extensions: [], prompts: [], themes: [], packages: [] },
+      };
+      const projections = new Map<string, ResolvedAgentCapabilityProjection | undefined>();
+      (h.manager as unknown as { opts: AgentManagerOptions }).opts.materializeHarness = ({ name, def }) => {
+        projections.set(name, asAgent(def)?.profileCapabilities);
+        return { home: path.join(h.ws, "homes", name), env: {}, args: [] };
+      };
+
+      await h.manager.spawn("child", { cmd: "codex", parent: "claude", reveal: false });
+
+      expect(fs.existsSync(path.join(h.ws, ".tachyon", "plugins-applied.json"))).toBe(false);
+      expect(fs.existsSync(path.join(h.ws, ".claude", "skills", "sdd"))).toBe(false);
+      expect(fs.existsSync(path.join(h.ws, ".agents", "skills", "sdd"))).toBe(false);
+      expect(h.ledger.get("child")?.cwd).toBe(worktree.path);
+      expect(h.ledger.get("child")?.worktree).toEqual(worktree);
+      expect(projections.get("child")?.adapter).toBe("codex");
+      expect(projections.get("child")?.skills.map((skill) => skill.name)).toEqual(["sdd"]);
+      expect(Buffer.from(projections.get("child")!.skills[0]!.source.entries.find((entry) => entry.path === "SKILL.md")!.bytes!).toString())
+        .toBe("# parent's approved snapshot\n");
     });
 
     it("t-53e485: a toolkit door that offers what the delegator does not hold is refused at the exit", async () => {

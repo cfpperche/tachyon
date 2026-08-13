@@ -2,8 +2,9 @@
 
 _Generated from `plan.md` on 2026-08-03. Work top-to-bottom. Check boxes as tasks complete. If a task reveals the plan is wrong, update `plan.md` before continuing._
 
-Two phases after the scope cut. A is the point; B is forced by A — once install
-materializes nothing, the delegated toolkit breaks unless its source moves.
+Two phases after the scope cut. A is the point. B was re-measured after SDD 487 and `t-53e485`:
+delegation no longer reads workspace plugin state at all, so zero applied contributions is already
+the normal, closed path.
 
 **Scope widened 2026-08-03, before ratification** (`spec.md` § "A plugin is not only skills"): Phase A
 covers TWO projected kinds, not one — `skill-dir` AND `settings-hook`. The maintainer asked whether hooks
@@ -72,14 +73,17 @@ no longer renders.
 - [x] C4. Plugins card distinguishes installed-not-applied from absent. Apply/Un-apply on the card.
       Un-apply does not claim "disarmed".
 
-### Phase B — the delegated toolkit reads the payload
+### Phase B — zero-applied delegation (re-measured after `t-53e485`)
 
-- [ ] B1. `AgentManager`'s delegated toolkit captures from `.tachyon/plugins/<plugin>/`, not from
-      `target.file`. Source change only: the runtime filter (`AgentManager.ts:1238`), the per-name
-      withholding on capture failure (`t-b505b3`) and the digest-conflict refusal (`t-b0cfd4`) all
-      stay exactly as they are — measured, not assumed.
-- [ ] B2. Delegation works with **zero** skills applied. That is the phase's whole test: today the
-      workspace materialization is the source, and after A it is usually absent.
+- [x] B1 retired. Re-measurement on 2026-08-13 found that `t-53e485` had already removed both
+      `target.file` and installed plugin payloads from the delegation path. The sole source is the
+      parent's resolved, digest-pinned grant. Reading `.tachyon/plugins/<plugin>/` here would reopen
+      the measured authority leak where children received the workspace's installed set rather than
+      what their parent held. This is a superseded implementation instruction, not missing work.
+- [x] B2. Delegation works with **zero** skills applied. The focused regression created an installed
+      payload and lockfile with no applied-state ledger and no runtime materialization; a Codex child
+      received the parent's approved snapshot in its own worktree. It was green on its first run,
+      which is the required outcome when the newer product is already correct.
 
 ## Verification
 
@@ -92,11 +96,11 @@ _Each maps to a checkbox in `spec.md` § Acceptance criteria._
 - [x] Un-applying removes the materialization from every runtime dir and leaves the payload (A4)
 - [x] Un-applying a HOOK from a settings file the human edited by hand removes Tachyon's entry and
       leaves the human's edits intact (A4)
-- [ ] A Temporary agent gets its own worktree and receives the parent's skills filtered by runtime,
-      with any shortfall named (B1 — the filter and the naming already exist; prove they survive)
-- [ ] A canonical Grok agent is creatable with plugins installed and nothing applied (A3)
-- [ ] Applied-state survives a reload: an un-applied skill does not resurrect (A2)
-- [ ] Delegation works with zero skills applied (B2)
+- [x] A Temporary agent gets its own worktree and receives the parent's skills filtered by runtime,
+      with any shortfall named (B2 plus the existing supported-runtime/refusal checks)
+- [x] A canonical Grok agent is creatable with plugins installed and nothing applied (A3)
+- [x] Applied-state survives a reload: an un-applied skill does not resurrect (A2)
+- [x] Delegation works with zero skills applied (B2)
 
 **Headless check:** `npm run verify:full:quiet`
 
@@ -131,8 +135,6 @@ exact screen.
 
 ## Cookbook
 
-**Cookbook:** yes
-<!-- Applying and un-applying a plugin skill is a new operator act with a fail-closed rule worth
-     stating once: an un-applied skill is not uninstalled, and a running agent may already hold it.
-     One page: when to apply, when to un-apply, what a Temporary child inherits, and what a reload
-     does. -->
+**Cookbook-Opt-Out:** the install/apply/un-apply operator lifecycle and fail-closed rules are already
+documented in `docs/runbooks/plugins.md`; duplicating that living runbook inside the closed spec would
+create two operator instructions for the same surface.
