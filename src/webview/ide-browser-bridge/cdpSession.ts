@@ -34,6 +34,7 @@ export type CdpProxyInfo = {
 const DESIGN_MODE_BINDING = "tachyonDesignModePick";
 
 export class IdeBrowserCdpSession {
+  constructor(private readonly designModeBundleSource: () => string = () => { throw new Error("Design Mode overlay bundle source is unavailable"); }) {}
   private ws: WsSocket | null = null;
   private nextId = 1;
   private pending = new Map<number, Pending>();
@@ -775,7 +776,7 @@ export class IdeBrowserCdpSession {
 
   private async injectDesignModeScript(opts?: { restorePickMode?: boolean }): Promise<void> {
     // Overlay chrome only (footer Picker + glass card). Theme tokens from host cache.
-    const expression = buildDesignModeInjectExpression({
+    const expression = buildDesignModeInjectExpression(this.designModeBundleSource(), {
       bindingName: DESIGN_MODE_BINDING,
       themeVars: getCachedDmThemeTokens(),
       restorePickMode: opts?.restorePickMode ?? this.designPickMode,

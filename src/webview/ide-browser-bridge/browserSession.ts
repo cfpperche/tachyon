@@ -83,7 +83,7 @@ export function classifyIdeBrowserSessionEnd(
 }
 
 export class BrowserSessionController {
-  readonly cdp = new IdeBrowserCdpSession();
+  readonly cdp: IdeBrowserCdpSession;
   private launching: Promise<void> | null = null;
   private sessionEndSub: vscode.Disposable | null = null;
   private sessionStartSub: vscode.Disposable | null = null;
@@ -96,8 +96,9 @@ export class BrowserSessionController {
   private resetReason: string | null = null;
   private orphanCheckTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(log: BrowserSessionLog) {
+  constructor(log: BrowserSessionLog, designModeBundleSource?: () => string) {
     this.log = log;
+    this.cdp = new IdeBrowserCdpSession(designModeBundleSource);
     this.sessionStartSub = vscode.debug.onDidStartDebugSession((session) => {
       if (!isBrowserDebugSession(session)) return;
       this.log.appendLine(

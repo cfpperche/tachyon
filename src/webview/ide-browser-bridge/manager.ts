@@ -38,6 +38,7 @@ import {
 import { BrowserSessionController } from "./browserSession.js";
 import { IdeBrowserHostServer } from "./hostServer.js";
 import type { DesignModeWebviewMessage } from "../design-mode/messages.js";
+import { loadDesignModeOverlayBundle } from "./designModeInject.js";
 
 export type DesignModeState = {
   on: boolean;
@@ -66,10 +67,11 @@ export class IdeBrowserBridgeManager {
   private chatIdleGraceTimer: ReturnType<typeof setTimeout> | null = null;
   private designModeUiSink: ((event: Record<string, unknown>) => void) | null = null;
 
-  constructor(workspaceRoot: string, log: vscode.OutputChannel) {
+  constructor(workspaceRoot: string, log: vscode.OutputChannel, extensionRoot?: string) {
     this.workspaceRoot = path.resolve(workspaceRoot);
     this.log = log;
-    this.session = new BrowserSessionController(log);
+    let overlayBundle: string | undefined;
+    this.session = new BrowserSessionController(log, extensionRoot ? () => overlayBundle ??= loadDesignModeOverlayBundle(extensionRoot) : undefined);
     this.session.setOnSessionEnded(() => {
       this.onDesignModeChanged?.(this.designMode);
     });
