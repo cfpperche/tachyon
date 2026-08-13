@@ -207,7 +207,7 @@ export class ActivityLogWriter {
     for (const line of lines) {
       const events = this.norm.push([line]).filter((e) => e.type !== "raw"); // log only RENDERABLE events (no raw bloat)
       if (events.length === 0) continue;
-      const recordId = events[0].recordId;
+      const recordId = originRecordId(events);
       appended += this.log.appendRecord(
         events,
         { runtime: cur.runtime, sessionId: cur.sessionId, sourcePath: cur.path, ...(recordId ? { recordId } : {}) },
@@ -285,6 +285,20 @@ function normalizerKey(cur: SessionLoc): string {
 
 function opencodeStorageRoot(cur: SessionLoc): string {
   return path.basename(cur.path) === `${cur.sessionId}.jsonl` ? path.dirname(cur.path) : cur.path;
+}
+
+/** Durable key for ONE source line. Grok `tool.started` events carry `recordId = call.id`; using
+ *  that as the origin key makes the matching `tool_result` look like a replay and appendRecord
+ *  drops it (t-08abf8). A child tool id is never the origin record's name. */
+function originRecordId(events: NormalizedEvent[]): string | undefined {
+  const first = events[0]?.recordId;
+  if (!first) return undefined;
+  for (const ev of events) {
+    if (ev.type !== "tool.started") continue;
+    const id = (ev.payload as { toolUseId?: string } | undefined)?.toolUseId;
+    if (id && id === first) return `origin:${first}`;
+  }
+  return first;
 }
 
 /** Image bytes to copy into the log's blob store, keyed by the render-side id (from `raw.source.data`). */
