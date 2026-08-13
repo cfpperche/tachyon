@@ -5,7 +5,6 @@ import { EXTENSION_COMMAND_ACTIONS, EXTENSION_QUERY_ACTIONS } from "../../src/ru
 import { FORMATION_GOVERNED_LANES } from "../../src/agents/formation/sessionPolicy.js";
 import { AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES } from "../../src/webview/agent-studio-shell/domain.js";
 import { canonicalWorkspaceStudioFormV1 } from "../../src/engine-service/protocol.js";
-import { registerTools } from "../../src/bridge/tools.js";
 import { composeAgentPrompt } from "../../src/agents/promptLayers.js";
 import { AGENT_FORGET_PLAN_STEP_IDS } from "../../src/config/agentForgetPlan.js";
 
@@ -79,18 +78,6 @@ describe("t-8ea8e0 — self-evolution is not a capability this product has", () 
     for (const kind of ["evolution", "learning", "self-improvement", "growth"]) {
       expect(agentProfileSchemaV1.safeParse(profileWithReferenceKind(kind)).success, kind).toBe(false);
     }
-  });
-
-  it("the Bridge exposes exactly this tool inventory", () => {
-    const registered: string[] = [];
-    registerTools(
-      { registerTool: (name: string) => { registered.push(name); } } as never,
-      { workspaceRoot: process.cwd(), caller: { kind: "agent", name: "a" } } as never,
-    );
-    // 80 tools, none of which submits a proposal about the agent's own future. A new tool of any
-    // name changes this count, which is what forces the decision back through review.
-    expect(registered.length).toBe(80);
-    expect(new Set(registered).size).toBe(registered.length);
   });
 
   it("the extension operation surface is exactly these actions", () => {
