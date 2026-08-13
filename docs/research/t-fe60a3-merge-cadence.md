@@ -79,6 +79,24 @@ Nos três eu escolhi landar mesmo assim. Nos três a justificativa foi overlap d
 que já estava na `main`. **Isso é um julgamento meu, não uma prova**, e é o resíduo honesto desta
 medição.
 
+### 3.0 O auditor já existe, e não é máquina nova
+
+Ao gatear este próprio commit, o `verify:full` imprimiu sozinho:
+
+```
+trunk audit: 1 of 4 trunk state(s) in origin/main..HEAD have NO green record,
+             1 of them merged content nothing has verified
+  976c9b79 [merge, new content] merge(t-33b5cd): dois testes de contagem saem …
+  advisory — nothing was blocked; `node scripts/verify-record.mjs audit` exits 1 on this
+```
+
+Ele apontou **exatamente** o merge que eu landei no julgamento de overlap zero, e o classificou certo:
+*merged content nothing has verified*. É advisory de propósito.
+
+Isso fecha a porta para a saída "construir um detector": o detector está construído, roda em todo
+gate, e a informação já chega. O que faltava era eu ler e decidir com ela, que é a disciplina desta
+task.
+
 ### 3.1 O caso limpo existe, e é barato
 
 Enquanto eu escrevia isto, a `authcount` entregou a `t-4e328b`. Ela gateou contra a ponta da `main` e
