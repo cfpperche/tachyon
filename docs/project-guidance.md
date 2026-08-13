@@ -118,8 +118,11 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   elsewhere), and the gate's `typecheck` — its first stage — is what catches that class. And landing a
   merge whose combined tree was never gated is a **judgment**, not a record: three of today's fifteen
   trunk states are exactly that. Trunk adherence is 80 % today against 60 % on 2026-08-09, which is
-  the number to watch. Do not answer this with new machinery: `t-fb7025` §7 already refused `affected`
-  tiers, partial-tree caching, and loosening the lock, each with its own measurement.
+  the number to watch — and you do not have to compute it: `verify:full` already prints a **trunk
+  audit** naming every state with no green record, flagging the ones that merged content nothing has
+  verified (`node scripts/verify-record.mjs audit` exits 1 on it). It is advisory on purpose. Read it.
+  Do not answer any of this with new machinery: the detector exists, and `t-fb7025` §7 already refused
+  `affected` tiers, partial-tree caching, and loosening the lock, each with its own measurement.
 - Moving `main` is a HUMAN action in the primary checkout, not the delivering agent's. **One product
   fact and one convention** put it there, and the difference matters: the integrate door is
   record-only — it proves containment and records the fact, and never runs a main-mutating Git
