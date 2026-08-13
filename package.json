@@ -921,6 +921,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "check:source-diffable": "node scripts/check-source-diffable.mjs",
+    "check:webview-tokens": "node scripts/check-webview-tokens.mjs",
     "hygiene:scan": "node scripts/code-hygiene/scan.mjs",
     "disk:vscode-test": "vite-node --script scripts/vscode-test-disk.ts",
     "plugin:validate": "node dist/plugin-validate.cjs",
