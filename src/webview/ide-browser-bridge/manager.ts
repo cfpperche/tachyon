@@ -177,6 +177,10 @@ export class IdeBrowserBridgeManager {
   }
 
   async handleDesignModeWebviewMessage(message: DesignModeWebviewMessage): Promise<void> {
+    if ("__layout" in message) {
+      await this.handleDesignPickRaw(JSON.stringify(message));
+      return;
+    }
     switch (message.type) {
       case "designMode.pickMode": this.cdp.setDesignPickMode(message.on); await this.cdp.setPagePickMode(message.on); return;
       case "designMode.agent": await this.handleAgentsLayout({ action: "set", agent: message.agent }); return;

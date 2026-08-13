@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { DesignModeEvent, DesignModeWebviewMessage } from "./messages.js";
+import type { DesignModeEvent, DesignModeWebviewMessage, ResponsivePreset } from "./messages.js";
 import { READY } from "./messages.js";
 declare const acquireVsCodeApi: undefined | (() => { postMessage(message: DesignModeWebviewMessage): void });
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
 const post = (message: DesignModeWebviewMessage) => vscode?.postMessage(message);
 type ChatEvent = { lineNo?: number; kind?: string; role?: string; agent?: string; text?: string; delivery?: string };
 type Selection = { summary: string; tag?: string; selectorHint?: string; text?: string };
+const VIEWPORTS: Array<{ preset: ResponsivePreset; label: string; size: string; icon: string }> = [
+  { preset: "phone", label: "Phone", size: "375 × 812", icon: "codicon-device-mobile" },
+  { preset: "tablet", label: "Tablet", size: "768 × 1024", icon: "codicon-device-tablet" },
+  { preset: "desktop", label: "Desktop", size: "1280 × 800", icon: "codicon-device-desktop" },
+  { preset: "reset", label: "Reset", size: "Native", icon: "codicon-discard" },
+];
 
 export function App() {
   const [events, setEvents] = useState<ChatEvent[]>([]), [agents, setAgents] = useState<string[]>([]);
   const [active, setActive] = useState("agent"), [emptyReason, setEmptyReason] = useState("");
-  const [selection, setSelection] = useState<Selection | null>(null), [pickMode, setPickMode] = useState(true);
+  const [selection, setSelection] = useState<Selection | null>(null), [pickMode, setPickMode] = useState(true), [viewport, setViewport] = useState<ResponsivePreset>("reset");
   const [working, setWorking] = useState(""), [error, setError] = useState(""), [hasMore, setHasMore] = useState(false), [draft, setDraft] = useState("");
   const scroll = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -30,8 +36,11 @@ export function App() {
   useEffect(() => { scroll.current?.scrollTo({ top: scroll.current.scrollHeight }); }, [events.length]);
   const oldest = useMemo(() => events.find((e) => typeof e.lineNo === "number")?.lineNo, [events]);
   const send = () => { const text = draft.trim(); if (text) { post({ type: "designMode.send", text }); setDraft(""); setError(""); } };
+  const chooseViewport = (preset: ResponsivePreset) => { setViewport(preset); post({ __layout: "responsive", preset }); };
+  const activeViewport = VIEWPORTS.find((item) => item.preset === viewport) ?? VIEWPORTS[3];
   return <main class="dm-app">
     <header class="dm-header"><div><div class="dm-eyebrow">Integrated Browser</div><h1>Design Mode</h1></div><label class="dm-picker"><input type="checkbox" checked={pickMode} onChange={(e) => { const on = e.currentTarget.checked; setPickMode(on); post({ type: "designMode.pickMode", on }); }} /> Pick elements</label></header>
+    <section class="dm-viewport" aria-label="Browser viewport"><div class="dm-viewport-heading"><span>Viewport</span><output aria-live="polite">Active: {activeViewport.label} · {activeViewport.size}</output></div><div class="dm-viewport-options">{VIEWPORTS.map((item) => <button key={item.preset} class={`ds-btn ds-btn-secondary${viewport === item.preset ? " is-active" : ""}`} aria-pressed={viewport === item.preset} title={`${item.label} · ${item.size}`} onClick={() => chooseViewport(item.preset)}><span class={`codicon ${item.icon}`} aria-hidden="true" /><span class="dm-viewport-label">{item.label}</span><span class="dm-viewport-size">{item.size}</span></button>)}</div></section>
     <section class="dm-agent-row" aria-label="Active agent"><span class="codicon codicon-hubot" aria-hidden="true" /><select class="ds-input" value={active} disabled={!agents.length} onChange={(e) => post({ type: "designMode.agent", agent: e.currentTarget.value })}>{!agents.length && <option>{active}</option>}{agents.map((agent) => <option value={agent}>{agent}</option>)}</select><button class="ds-btn ds-btn-secondary" onClick={() => post({ type: "designMode.openTerminal" })}>Open terminal</button></section>
     {emptyReason && <p class="dm-notice">{emptyReason}</p>}
     {selection && <aside class="dm-selection" aria-label="Attached selection"><div class="dm-selection-title"><span>Attached selection</span><button class="icon" aria-label="Clear selection" onClick={() => post({ type: "designMode.clearSelection" })}>×</button></div><code>{selection.summary}</code>{selection.text && <p>{selection.text}</p>}</aside>}
