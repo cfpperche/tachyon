@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assembleDesignModePick,
   DESIGN_MODE_HTML_MAX,
@@ -142,6 +142,8 @@ describe("formatDesignModePickForAgent", () => {
 });
 
 describe("Design Mode shell entry points (shipped source)", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("exposes Design Mode on IdeBrowserCdpSession", async () => {
     const { IdeBrowserCdpSession } = await import(
       "../../src/webview/ide-browser-bridge/cdpSession.js"
@@ -149,7 +151,62 @@ describe("Design Mode shell entry points (shipped source)", () => {
     const session = new IdeBrowserCdpSession();
     expect(typeof session.setDesignMode).toBe("function");
     expect(typeof session.setDesignModePickHandler).toBe("function");
+    expect(typeof session.setDesignModeInvalidatedHandler).toBe("function");
     expect(session.isDesignModeOn).toBe(false);
+  });
+
+  it("does not starve an armed re-inject when the presence watch reports missing chrome again", async () => {
+    vi.useFakeTimers();
+    const { IdeBrowserCdpSession } = await import(
+      "../../src/webview/ide-browser-bridge/cdpSession.js"
+    );
+    const session = new IdeBrowserCdpSession() as unknown as {
+      scheduleInternalReinject(log: (message: string) => void, reason: string): void;
+      reinstallAfterInternalNav(log: (message: string) => void, reason: string): Promise<void>;
+    };
+    const reinstall = vi.spyOn(session, "reinstallAfterInternalNav").mockResolvedValue();
+
+    session.scheduleInternalReinject(() => undefined, "presence-missing");
+    await vi.advanceTimersByTimeAsync(400);
+    session.scheduleInternalReinject(() => undefined, "presence-missing");
+    await vi.advanceTimersByTimeAsync(50);
+
+    expect(reinstall).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns Design Mode off and invalidates host state when re-inject attempts are exhausted", async () => {
+    vi.useFakeTimers();
+    const { IdeBrowserCdpSession } = await import(
+      "../../src/webview/ide-browser-bridge/cdpSession.js"
+    );
+    const session = new IdeBrowserCdpSession() as unknown as {
+      designModeOn: boolean;
+      state: "connected";
+      ws: { readyState: number };
+      reinstallAfterInternalNav(log: (message: string) => void, reason: string): Promise<void>;
+      reattachPageTarget(log: (message: string) => void): Promise<void>;
+      evaluate(expression: string): Promise<unknown>;
+      send(method: string, params: Record<string, unknown>): Promise<unknown>;
+      injectDesignModeScript(options: { restorePickMode: boolean }): Promise<void>;
+      setDesignModeInvalidatedHandler(handler: (() => void) | null): void;
+      readonly isDesignModeOn: boolean;
+    };
+    session.designModeOn = true;
+    session.state = "connected";
+    session.ws = { readyState: 1 };
+    vi.spyOn(session, "reattachPageTarget").mockResolvedValue();
+    vi.spyOn(session, "evaluate").mockResolvedValue("complete|body");
+    vi.spyOn(session, "send").mockResolvedValue({});
+    vi.spyOn(session, "injectDesignModeScript").mockRejectedValue(new Error("blocked"));
+    const invalidated = vi.fn();
+    session.setDesignModeInvalidatedHandler(invalidated);
+
+    const reinstall = session.reinstallAfterInternalNav(() => undefined, "test");
+    await vi.runAllTimersAsync();
+    await reinstall;
+
+    expect(session.isDesignModeOn).toBe(false);
+    expect(invalidated).toHaveBeenCalledTimes(1);
   });
 
   it("manager formats picks with the same shipped formatter", () => {
