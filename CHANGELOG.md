@@ -6,10 +6,50 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.87.0 — Design Mode's chat leaves your page, and answers through one door
+
+The Design Mode chat used to run inside the live document of the site you were inspecting. It does
+not any more: the page keeps the element picker and nothing else, while chat and the selection
+inspector became an editor tab. The reply path lost its fallback in the same release, so there is now
+exactly one way an agent answers.
+
+### Changed
+
+- **Chat and the selection inspector are a Preact webview, not page-injected UI** (`t-64edaf`,
+  SDD 488 hybrid D step 1). The injected script went from **1765 lines to 30** and now does pick only.
+  The panel opens as an editor tab beside the browser, so you click an element on the left and talk
+  about it on the right. Of the six `eval` doors the F6 security review mapped, the chat-push door
+  became unnecessary and was removed; five remain, and they are named in the task.
+- **`design_mode_chat_reply` is the only reply path** (`t-45b266`, SDD 488 F1). The pane-marker
+  fallback — the agent writing START/END into its terminal for Tachyon to scrape off the screen — is
+  gone from prompts, extractors, tests and docs. This was blocked for eight days on a distinction
+  worth keeping: a headless test proves the tool was CALLED, not that the answer ARRIVED in the panel.
+  Deleting the fallback on the first half alone could have left Design Mode with no working voice at
+  all, and a green suite would not have noticed. The live half was measured first (`t-727d9c`):
+  Claude, Codex and Grok each resolved a host-minted pending turn through the production door, with
+  turn ids recorded in `docs/runtimes/parity.md`. Pi, OpenCode and Hermes were measured too and are
+  green; Gemini and Qwen declare `bridge: null` and cannot call tools at all, which is recorded rather
+  than worked around.
+- **"Save to tachyon.yml" is now "Save as terminal declaration", and it stops appearing where it can
+  only fail** (`t-7b7701`). The action was offered on every ad-hoc row including forks, while the door
+  underneath refuses anything that is not a terminal — a button that failed 100% of the time on a
+  fork. It also named the wrong file: the writer moved to `.tachyon/terminals/<name>.yml` and three of
+  its four strings still said `tachyon.yml`. The refusal now tells you what to do instead — create a
+  Saved Agent in Agent Studio — and says plainly that the fork's session is not adopted.
+
 ## 0.86.1 — the IDE Browser could not open in 0.86.0
 
-Hotfix. Design Mode and the Integrated Browser were dead on arrival in 0.86.0: opening the browser
-timed out after 20 seconds with `Timed out waiting for editor-browser child debug session (CDP)`.
+Hotfix, and it also carried three changes that landed before it.
+
+Design Mode and the Integrated Browser were dead on arrival in 0.86.0: opening the browser timed out
+after 20 seconds with `Timed out waiting for editor-browser child debug session (CDP)`.
+
+### Changed
+
+- **SDD 496 is closed: agent and terminal no longer share a box at any level** (`t-34cae5` and the four
+  slices before it). Terminal Studio owns its own validator and serializer, and `StudioKind` lost the
+  `"agent"` member. Twelve branches of the shared form were removed, each with a written reason for
+  why it had existed — caller count answers "who calls this?", never "why does this exist?".
 
 ### Fixed
 
@@ -24,6 +64,21 @@ timed out after 20 seconds with `Timed out waiting for editor-browser child debu
   existed for is unchanged. No test exercises a real debug adapter, which is why a green suite shipped
   it; the new test hits the extracted predicate directly and that limit is stated rather than papered
   over.
+
+### Internal
+
+- **The gate stopped being a coin flip** (`t-f71795`). `tmuxReap.test.ts` failed 5 times in 10 runs on
+  a clean tree. It reproduces a race on purpose — kill a tmux server, catch the forked child still
+  alive — and it guarded that race once with a retry, then re-asserted the same fact three lines later
+  without one. Measuring liveness through `/proc/<pid>/stat` rather than directory existence also
+  stopped a zombie from counting as alive, so the test got stricter, not looser.
+- **The `processLock` dual-holder test moved out of the standard gate** (`t-9c01e5`). The residue it
+  provokes is real, was measured on 2026-08-05 (zero dual holders in 120 orphan recoveries; roughly
+  1 in 750 SIGKILLs under pathological stress) and was deliberately accepted then, with a revisit
+  trigger written down: a sustained rate in the field, not a red in a loaded gate. An accepted residue
+  with a provoking test in the standard gate turns every run into a coin flip. The scenario still
+  lives in `scripts/spikes/`, and the note left in its place carries the measurement, the trigger and
+  the exact commands, so nobody returns it to the gate thinking it was forgotten.
 
 ## 0.86.0 — installing a plugin stops arming it, and secrets stop travelling with config
 
