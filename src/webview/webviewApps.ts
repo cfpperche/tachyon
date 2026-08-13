@@ -92,6 +92,7 @@ export type WebviewAppEntry = WebviewAppBase & WebviewAppHost;
 const EAGER_BUDGET_BYTES = 350 * 1024;
 
 export const WEBVIEW_APPS: readonly WebviewAppEntry[] = [
+  { view: "design-mode", viewId: "tachyonDesignMode", host: "section", cardinality: "window", eagerBudgetBytes: 96 * 1024 },
   // SDD 485 C1–C3's proof surface. Dev-only, never contributed as a command, never opened by
   // `extension.ts` — the same status as spec 350's two studio fakes, and like them it buys NO exemption
   // from the Phase A conformance contract (it is a `conform` row in `WEBVIEW_SURFACES`). It exists so the

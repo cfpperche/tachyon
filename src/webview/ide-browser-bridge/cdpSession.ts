@@ -130,6 +130,11 @@ export class IdeBrowserCdpSession {
     this.designPickMode = on;
   }
 
+  async setPagePickMode(on: boolean): Promise<void> {
+    if (!this.isLive) return;
+    await this.evaluate(`typeof window.__tachyonDmSetPickMode === 'function' && window.__tachyonDmSetPickMode(${JSON.stringify(on)})`);
+  }
+
   get isPickModeOn(): boolean {
     return this.designPickMode;
   }
@@ -480,26 +485,15 @@ export class IdeBrowserCdpSession {
     return this.evaluate(expression);
   }
 
-  /** Push a Design Mode chat payload into the page (virtual list / working / agents). */
+  private designModeUiSink: ((payload: Record<string, unknown>) => void) | null = null;
+
+  setDesignModeUiSink(sink: ((payload: Record<string, unknown>) => void) | null): void {
+    this.designModeUiSink = sink;
+  }
+
+  /** Push Design Mode presentation state to the VS Code webview, never into the inspected page. */
   async pushDesignModeChat(payload: Record<string, unknown>): Promise<void> {
-    if (!this.isLive) return;
-    const json = JSON.stringify(payload);
-    // Retry briefly — re-inject may not have installed __tachyonDmChatPush yet.
-    for (let i = 0; i < 5; i++) {
-      const ok = await this.evaluateInPage(
-        `(() => {
-          try {
-            if (typeof window.__tachyonDmChatPush === 'function') {
-              window.__tachyonDmChatPush(${json});
-              return true;
-            }
-          } catch (e) {}
-          return false;
-        })()`,
-      );
-      if (ok === true) return;
-      await new Promise((r) => setTimeout(r, 80));
-    }
+    this.designModeUiSink?.(payload);
   }
 
   async screenshotPngBase64(clip?: {
@@ -663,7 +657,7 @@ export class IdeBrowserCdpSession {
           });
           await new Promise((r) => setTimeout(r, 40));
           const present = (await this.evaluate(
-            `!!document.getElementById('tachyon-dm-root') && !!document.getElementById('tachyon-dm-picker')`,
+            `!!document.getElementById('tachyon-dm-root')`,
           )) as boolean;
           if (present) {
             ok = true;
@@ -714,14 +708,14 @@ export class IdeBrowserCdpSession {
       let snap: { hasChrome?: boolean; href?: string } | null = null;
       try {
         snap = (await this.evaluate(`(() => ({
-          hasChrome: !!(document.getElementById('tachyon-dm-root') && document.getElementById('tachyon-dm-picker')),
+          hasChrome: !!document.getElementById('tachyon-dm-root'),
           href: location.href
         }))()`)) as { hasChrome?: boolean; href?: string };
       } catch {
         await this.reattachPageTarget(log);
         try {
           snap = (await this.evaluate(`(() => ({
-            hasChrome: !!(document.getElementById('tachyon-dm-root') && document.getElementById('tachyon-dm-picker')),
+            hasChrome: !!document.getElementById('tachyon-dm-root'),
             href: location.href
           }))()`)) as { hasChrome?: boolean; href?: string };
         } catch {

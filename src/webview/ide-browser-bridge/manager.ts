@@ -38,6 +38,7 @@ import {
 } from "./designModeChatTurn.js";
 import { BrowserSessionController } from "./browserSession.js";
 import { IdeBrowserHostServer } from "./hostServer.js";
+import type { DesignModeWebviewMessage } from "../design-mode/messages.js";
 
 export type DesignModeState = {
   on: boolean;
@@ -64,6 +65,7 @@ export class IdeBrowserBridgeManager {
   private chatReplyTimer: ReturnType<typeof setTimeout> | null = null;
   private chatPollTimer: ReturnType<typeof setInterval> | null = null;
   private chatIdleGraceTimer: ReturnType<typeof setTimeout> | null = null;
+  private designModeUiSink: ((event: Record<string, unknown>) => void) | null = null;
 
   constructor(workspaceRoot: string, log: vscode.OutputChannel) {
     this.workspaceRoot = path.resolve(workspaceRoot);
@@ -159,6 +161,33 @@ export class IdeBrowserBridgeManager {
   setDesignModeAgent(agent: string): void {
     const name = agent.trim();
     if (name) this.designAgent = name;
+  }
+
+  setDesignModeUiSink(sink: ((event: Record<string, unknown>) => void) | null): void {
+    this.designModeUiSink = sink;
+    this.cdp.setDesignModeUiSink(sink);
+  }
+
+  private async pushDesignModeUi(event: Record<string, unknown>): Promise<void> {
+    this.designModeUiSink?.(event);
+  }
+
+  async initialDesignModeUi(): Promise<void> {
+    await this.pushAgentsToPage();
+    await this.hydrateChatTail();
+    if (this.lastPick) await this.pushDesignModeUi({ type: "selection", attached: true, summary: `<${this.lastPick.tag.toLowerCase()}> ${this.lastPick.selectorHint}`.trim(), tag: this.lastPick.tag, selectorHint: this.lastPick.selectorHint, text: this.lastPick.text.slice(0, 80) });
+  }
+
+  async handleDesignModeWebviewMessage(message: DesignModeWebviewMessage): Promise<void> {
+    switch (message.type) {
+      case "designMode.pickMode": this.cdp.setDesignPickMode(message.on); await this.cdp.setPagePickMode(message.on); return;
+      case "designMode.agent": await this.handleAgentsLayout({ action: "set", agent: message.agent }); return;
+      case "designMode.loadBefore": await this.handleChatLayout({ action: "load", before: message.before }); return;
+      case "designMode.send": await this.sendChatMessage(message.text.trim()); return;
+      case "designMode.clearSelection": this.lastPick = null; await this.pushDesignModeUi({ type: "selection", clear: true }); return;
+      case "designMode.openTerminal": await this.handleChatLayout({ action: "openTerminal" }); return;
+      case "ready": return;
+    }
   }
 
   get designMode(): DesignModeState {
