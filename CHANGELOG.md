@@ -6,6 +6,23 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.87.1 — a Dev Host could delete `claude` from your machine
+
+Hotfix for anyone who runs the Extension Development Host, by F5 or headless.
+
+### Fixed
+
+- **A Dev Host no longer hijacks the global `claude` launcher** (`t-9eb7ef`). Claude's native updater
+  honours the redirected `XDG_DATA_HOME` for the version binary it downloads, but still rewrites the
+  literal `~/.local/bin/claude` symlink — which lives outside the sandbox. An agent running a headless
+  EDH updated inside its own worktree, the launcher was repointed at that ephemeral copy, and the
+  normal dev-host cleanup then deleted the tree and took the system's `claude` with it. Measured with
+  a live reproduction, not deduced. The fix scopes `DISABLE_AUTOUPDATER=1` to the dev-host
+  environment and both committed F5 launch configurations; your normal shell still updates.
+  **Known limit:** typing `claude update` by hand inside a Dev Host still repoints the launcher — the
+  updater ignores the flag for explicit user commands by design. Recovery is
+  `ln -sfn ~/.local/share/claude/versions/<version> ~/.local/bin/claude`.
+
 ## 0.87.0 — Design Mode's chat leaves your page, and answers through one door
 
 The Design Mode chat used to run inside the live document of the site you were inspecting. It does
