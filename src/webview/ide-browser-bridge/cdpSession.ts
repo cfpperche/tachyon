@@ -4,7 +4,7 @@
  */
 
 import * as vscode from "vscode";
-import { buildDesignModeInjectExpression } from "./designModeInject.js";
+import { buildDesignModeInjectExpression, themeDesignModeOverlayBundle } from "./designModeInject.js";
 import { getCachedDmThemeTokens } from "./themeTokens.js";
 
 /** Minimal WebSocket surface (avoid @types/ws; package is CJS). */
@@ -789,9 +789,9 @@ export class IdeBrowserCdpSession {
 
   private async injectDesignModeScript(opts?: { restorePickMode?: boolean }): Promise<void> {
     // Overlay chrome only (footer Picker + glass card). Theme tokens from host cache.
-    const expression = buildDesignModeInjectExpression(this.designModeBundleSource(), {
+    const themedBundle = themeDesignModeOverlayBundle(this.designModeBundleSource(), getCachedDmThemeTokens());
+    const expression = buildDesignModeInjectExpression(themedBundle, {
       bindingName: DESIGN_MODE_BINDING,
-      themeVars: getCachedDmThemeTokens(),
       restorePickMode: opts?.restorePickMode ?? this.designPickMode,
     });
     await this.evaluate(expression);
