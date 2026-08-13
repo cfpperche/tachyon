@@ -105,7 +105,7 @@ export const ROUTES: Record<string, Route> = {
     cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/design-mode.css"],
     frame: { w: 880, h: 760 },
     module: true,
-    fixtures: { default: { provenance: "synthetic-edge", vm: [{ type: "snapshot", agents: ["claude", "codex", "grok"], active: "claude", selection: { summary: "<button> .hero__primary", text: "Start building" }, items: [
+    fixtures: { default: { provenance: "synthetic-edge", vm: [{ type: "snapshot", agents: ["claude", "codex", "grok"], active: "claude", selection: { summary: "<button> .hero__primary", text: "Start building", screenshotUri: "/docs/specs/488-ide-browser-design-mode/evidence/pick-attach.png" }, items: [
         { lineNo: 1, kind: "message", role: "user", text: "[selection: <button> .hero__primary]\nMake this action clearer on narrow screens." },
         { lineNo: 2, kind: "message", role: "agent", agent: "claude", text: "I tightened the label and kept the action full-width below 480 px. The page is ready to review." },
       ] }] } },

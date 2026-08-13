@@ -1,7 +1,9 @@
+import path from "node:path";
 import * as vscode from "vscode";
 import { renderWebviewShell } from "./shared/shell.js";
 import type { DesignModeWebviewMessage } from "./design-mode/messages.js";
 import { designModeEvent, READY } from "./design-mode/messages.js";
+import { designModeEventWithScreenshot } from "./design-mode/screenshot.js";
 export interface DesignModePanelController {
   handleDesignModeWebviewMessage(message: DesignModeWebviewMessage): Promise<void>;
   initialDesignModeUi(): Promise<void>;
@@ -11,6 +13,7 @@ export class DesignModePanel {
   private panel: vscode.WebviewPanel | null = null;
   constructor(
     private readonly extensionUri: vscode.Uri,
+    private readonly workspaceRoot: string,
     private readonly controller: DesignModePanelController,
   ) {}
 
@@ -20,6 +23,7 @@ export class DesignModePanel {
       return;
     }
     const root = vscode.Uri.joinPath(this.extensionUri, "dist", "webview");
+    const pickRoot = path.join(this.workspaceRoot, ".tachyon", "ide-browser-picks");
     const title = vscode.l10n.t("Design Mode");
     const panel = vscode.window.createWebviewPanel(
       "tachyonDesignMode",
@@ -29,7 +33,7 @@ export class DesignModePanel {
         enableScripts: true,
         retainContextWhenHidden: true,
         enableFindWidget: true,
-        localResourceRoots: [root],
+        localResourceRoots: [root, vscode.Uri.file(pickRoot)],
       },
     );
     this.panel = panel;
@@ -44,7 +48,12 @@ export class DesignModePanel {
       surface: "tachyonDesignMode",
     });
     this.controller.setDesignModeUiSink((event) => {
-      void panel.webview.postMessage(designModeEvent(event));
+      const resolved = designModeEventWithScreenshot(
+        event,
+        pickRoot,
+        (file) => panel.webview.asWebviewUri(vscode.Uri.file(file)).toString(),
+      );
+      void panel.webview.postMessage(designModeEvent(resolved));
     });
     panel.webview.onDidReceiveMessage((raw: DesignModeWebviewMessage) => {
       if (raw?.type === READY) void this.controller.initialDesignModeUi();
