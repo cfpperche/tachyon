@@ -123,6 +123,20 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   verified (`node scripts/verify-record.mjs audit` exits 1 on it). It is advisory on purpose. Read it.
   Do not answer any of this with new machinery: the detector exists, and `t-fb7025` §7 already refused
   `affected` tiers, partial-tree caching, and loosening the lock, each with its own measurement.
+- **Read your mail before you spend a gate.** `notify_agent` delivers on the recipient's
+  working→idle edge, on purpose — writing into a live turn is what that rule prevents. The
+  consequence nobody designed is that a coordinator who stays busy never opens the window, so notices
+  arrive minutes late carrying a SHA that already moved. Measured 2026-08-13 (`t-747369`): of seven
+  notices, the three that landed promptly were queued while the recipient was idle and the four that
+  arrived 8–13 minutes late were queued while it worked. One of the late ones said a tree had already
+  gated green — **a full `verify:full` was spent re-proving it**.
+
+  The fix is not to relax the wait, and not to add machinery: the content was readable the entire
+  time. `read_notices` (spec 493) is a durable, self-only pull over `.tachyon/doorbells.jsonl` that
+  witnesses every doorbell regardless of whether the pane delivery landed. It was measured used
+  **three times across all surviving transcripts** (`t-7a297f`). So: during a long turn, and always
+  before spending something expensive — a gate, a release, a merge decision — pull it. Pass the
+  highest `at` you have seen as `since`; you own the cursor.
 - Moving `main` is a HUMAN action in the primary checkout, not the delivering agent's. **One product
   fact and one convention** put it there, and the difference matters: the integrate door is
   record-only — it proves containment and records the fact, and never runs a main-mutating Git
