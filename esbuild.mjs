@@ -242,6 +242,16 @@ const sidebar = {
   alias: preactCompat,
 };
 
+// t-1ca53b — page-realm Design Mode app: one self-contained artifact evaluated through CDP.
+const designModeOverlay = {
+  ...sidebar,
+  entryPoints: ["src/webview/design-mode-overlay/main.tsx"],
+  outfile: "dist/webview/design-mode-overlay.js",
+  splitting: false,
+  format: "iife",
+  sourcemap: false,
+};
+
 // t-6e2952 — the Control launcher has no bundle of its own: it is a tab inside the sidebar bundle above.
 
 // t-610705 (SDD 410 Phase C.2) — the standalone Activity bundle was retired: it's a Control
@@ -557,7 +567,7 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate];
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate];
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

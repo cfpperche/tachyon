@@ -22,6 +22,8 @@
     "src/webview/cockpit/**/*.tsx",
     "src/webview/sidebar/**/*.ts",
     "src/webview/sidebar/**/*.tsx",
+    "src/webview/design-mode-overlay/**/*.ts",
+    "src/webview/design-mode-overlay/**/*.tsx",
     "src/webview/activity/**/*.ts",
     "src/webview/activity/**/*.tsx",
     "src/webview/pin-studio/**/*.ts",
