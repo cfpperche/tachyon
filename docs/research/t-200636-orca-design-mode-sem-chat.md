@@ -11,7 +11,12 @@ arquivo de protocolo nem chamada direta a provedor nessa passagem.
 
 Para o Tachyon, a correção não é manter a página magra: **UI na página é a forma requerida**. O
 defeito anterior era uma aplicação inteira escrita como template string manual de 1.657 linhas, não
-o fato de ela executar no browser. A proposta concreta é:
+o fato de ela executar no browser. Há também uma restrição física que decide o desenho: o Orca pode
+pintar React na moldura Electron por cima do webview que ele controla; uma extensão VS Code não pode
+pintar um webview por cima do editor-browser nativo. Se o painel separado morre, a página é a única
+superfície disponível para popover, tray, badges, presets e markup. Logo nosso bundle de página pode
+ser maior que os 965 linhas de scripts do Orca, e isso está correto; manutenibilidade, build e portas
+de execução são as métricas úteis. A proposta concreta é:
 
 1. **matar a aba/chat do Design Mode**;
 2. substituir o inject manual por uma **aplicação Preact de página**, construída pelo `esbuild.mjs`
@@ -233,6 +238,20 @@ overlay mostra o thumbnail; o host fornece os bytes/URL segura pela porta de syn
 é o caminho do PNG no item da anotação. O
 formatador inclui `Screenshot: <path>` por item no lote entregue. Isso conserva exatamente a função
 que landou em `t-49ef22` — contexto visual do elemento — sem transformar o lote em mensagens.
+
+Essa é uma divergência deliberada do Orca. Ele descarta screenshots da anotação persistida para não
+guardar megabytes por seleção (`orca:src/renderer/src/components/browser-pane/BrowserPane.tsx:340-348`)
+e compensa com um payload textual muito mais rico: acessibilidade, caminhos, vizinhança, React/source,
+estilos e HTML (`orca:src/renderer/src/components/browser-pane/browser-annotation-output.ts:171-223`). O pick atual do Tachyon captura tag,
+id, classe, texto, HTML, bounds e 18 estilos (`src/webview/ide-browser-bridge/designModeInject.ts:4,21`),
+mas texto não preserva sobreposição, clipping, hierarquia visual, pseudo-elementos, canvas, imagens
+ou o aspecto exato no viewport. O PNG recém-landado cobre justamente essa lacuna e já viaja como
+**caminho**, não como base64 no composer.
+
+Mantê-lo não significa persistência sem limite: um lote conserva no máximo um crop delimitado por
+anotação, com orçamento de bytes/quantidade e limpeza junto do lote após entrega confirmada ou Clear.
+Se a captura falhar, a anotação textual continua válida. Assim a imagem é contexto visual
+complementar e degradável, não uma cópia acidental do chat nem requisito para Send.
 
 ### Destino dos quatro presets de viewport
 
