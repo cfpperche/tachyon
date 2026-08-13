@@ -6,6 +6,25 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.86.1 — the IDE Browser could not open in 0.86.0
+
+Hotfix. Design Mode and the Integrated Browser were dead on arrival in 0.86.0: opening the browser
+timed out after 20 seconds with `Timed out waiting for editor-browser child debug session (CDP)`.
+
+### Fixed
+
+- **IDE Browser attaches CDP again** (`t-54b9c3`). 0.86.0 replaced name matching on the debug session
+  (`name.includes("Tachyon")`, which could cross-stop another manager's session) with a private launch
+  id plus a type check — the right idea with the wrong type string. The launch config declares
+  `type: "editor-browser"`, the debug contributor's name; VS Code resolves that to the
+  `pwa-editor-browser` adapter, so the equality never held. The parent session was therefore never
+  recognized, the CDP-bearing child was never matched to it, and every open timed out. The check now
+  reuses `isBrowserDebugSession`, which already listed `pwa-editor-browser` first among the four types
+  it accepts, and keeps the launch id beside it so the cross-manager protection the original change
+  existed for is unchanged. No test exercises a real debug adapter, which is why a green suite shipped
+  it; the new test hits the extracted predicate directly and that limit is stated rather than papered
+  over.
+
 ## 0.86.0 — installing a plugin stops arming it, and secrets stop travelling with config
 
 The theme of this release is **the product no longer claims a state it does not sustain**. Installing
