@@ -509,6 +509,14 @@ shown in the table. OpenCode ran 1.18.16 on `opencode/big-pickle` after its conf
 failed refresh and its OpenCode Go account reported insufficient balance; model choice does not
 change the runtime's Bridge/tool path.
 
+After integrating `main` (which moved the chat UI from injected page chrome to the
+`tachyonDesignMode` editor webview), the combined tree `85b11dd1` was re-dogfooded through that new
+production surface. Codex resolved `dm-turn-4c47a89b-c694-485b-9dca-77651514354d` and Grok resolved
+the following host-issued turn: in each case the combined-tree JSONL recorded
+user → delivery → same-agent `source:"tool"`, and the new webview rendered exactly two matching
+`.dm-message` rows (human + agent). This revalidates the changed panel seam on the delivered tree;
+the runtime-specific tool/turn bindings for Pi, OpenCode, and Hermes are the live measurements above.
+
 **F1 is not released for unconditional marker deletion.** Every runtime that currently has Bridge
 wiring is green through the live pending-turn door: Claude, Codex, Grok, Pi, OpenCode, and Hermes.
 Gemini and Qwen are structurally outside the tool path, not merely unmeasured:
