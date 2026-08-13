@@ -1,3 +1,4 @@
 import { render } from "preact";
+import { ErrorBoundary } from "../shared/ErrorBoundary.js";
 import { App } from "./App.js";
-render(<App />, document.getElementById("root")!);
+render(<ErrorBoundary><App /></ErrorBoundary>, document.getElementById("root")!);
