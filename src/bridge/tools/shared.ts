@@ -53,6 +53,8 @@ export type NoticeDeliveryResult = {
   status: "notified" | "queued" | "submit-unconfirmed";
   dropped?: number;
   queued?: number;
+  /** t-44ae02 — createdAt of the oldest item still waiting for this target. Feeds the queued receipt. */
+  oldestCreatedAt?: number;
   /** Why confirmation failed, propagated from the tmux submit receipt. */
   submitReason?: string;
   /**

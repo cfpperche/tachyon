@@ -4304,7 +4304,13 @@ export class Workspace {
     // thing with a different ending (it clears when the human submits, or it expires and the human is
     // told). The false-positive cost this task names — a doorbell that dies leaving no trace — starts
     // with the sender not being able to tell those two apart.
-    return { status: "queued", queued: result.queued, dropped: result.dropped || undefined, heldFor };
+    return {
+      status: "queued",
+      queued: result.queued,
+      dropped: result.dropped || undefined,
+      oldestCreatedAt: result.oldestCreatedAt,
+      heldFor,
+    };
   }
 
   /**

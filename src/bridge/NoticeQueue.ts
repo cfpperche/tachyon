@@ -65,6 +65,8 @@ export interface NoticeQueueOptions {
 export interface EnqueueResult {
   queued: number;
   dropped: number;
+  /** t-44ae02 — createdAt of the oldest item still in this target's queue after the enqueue. */
+  oldestCreatedAt: number;
 }
 
 export class NoticeQueue {
@@ -94,7 +96,7 @@ export class NoticeQueue {
     if (existing) {
       if (metadata.sourceChild !== undefined) existing.sourceChild = metadata.sourceChild;
       if (metadata.sourceIncarnation !== undefined) existing.sourceIncarnation = metadata.sourceIncarnation;
-      return { queued: queue.length, dropped: 0 };
+      return { queued: queue.length, dropped: 0, oldestCreatedAt: queue[0]?.createdAt ?? this.now() };
     }
     queue.push({ target, line, createdAt: this.now(), ...metadata });
     let dropped = 0;
@@ -104,7 +106,7 @@ export class NoticeQueue {
     }
     if (queue.length > 0) this.queues.set(target, queue);
     else this.queues.delete(target);
-    return { queued: queue.length, dropped };
+    return { queued: queue.length, dropped, oldestCreatedAt: queue[0]?.createdAt ?? this.now() };
   }
 
   /**
