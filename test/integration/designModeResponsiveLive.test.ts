@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { IdeBrowserBridgeManager } from "../../src/webview/ide-browser-bridge/manager.js";
 
 // The browser suite owns this Chromium child and closes it below. Enter through the shipped
-// webview-message door, then read the real page viewport back over CDP.
+// page-overlay binding door, then read the real page viewport back over CDP.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ManagerHarness = any;
 
@@ -54,7 +54,7 @@ describe("Design Mode responsive presets in live Chromium (t-0807b2)", () => {
       ["tablet", 768, 1024],
       ["desktop", 1280, 800],
     ] as const) {
-      await manager.handleDesignModeWebviewMessage({ __layout: "responsive", preset });
+      await manager.handleDesignPickRaw(JSON.stringify({ action: "viewport.set", preset }));
       expect(await (preset === "desktop" ? readLayout() : readScreen())).toEqual({ width, height });
     }
   });

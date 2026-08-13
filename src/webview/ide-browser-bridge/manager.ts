@@ -432,7 +432,9 @@ export class IdeBrowserBridgeManager {
       const agents = await this.listRunningAgents();
       await this.pushAnnotationState("__tachyonDmApplyAgentState", { agents, active: agents.includes(this.designAgent) ? this.designAgent : agents[0], ...(!agents.length ? { emptyReason: "No agents are running." } : {}) });
     } catch (err) {
-      await this.pushAnnotationState("__tachyonDmApplyAgentState", { agents: [], emptyReason: `Could not load running agents: ${err instanceof Error ? err.message : String(err)}` });
+      const reason = err instanceof Error ? err.message : String(err);
+      this.log.appendLine(`[design-mode] agent list failed: ${reason}`);
+      await this.pushAnnotationState("__tachyonDmApplyAgentState", { agents: [], emptyReason: `Could not load running agents: ${reason}` });
     }
   }
 
