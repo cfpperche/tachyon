@@ -27,7 +27,7 @@
   "'{0}' restarted": "'{0}' reiniciado",
   "'{0}' restarted (watched file changed)": "'{0}' reiniciado (arquivo observado mudou)",
   "'{0}' saved & started (autostart)": "'{0}' salvo e iniciado (autostart)",
-  "'{0}' saved to tachyon.yml.": "'{0}' salvo no tachyon.yml.",
+  "'{0}' saved as a terminal declaration.": "'{0}' salvo como declaração de terminal.",
   "'{0}' saved — ▶ in the sidebar starts it": "'{0}' salvo — ▶ na sidebar inicia",
   "'{0}' worktree is gone ({1}) — nothing to verify": "o worktree de '{0}' não existe mais ({1}) — nada a verificar",
   "'{0}'s worktree path no longer exists": "O caminho do worktree de '{0}' não existe mais",

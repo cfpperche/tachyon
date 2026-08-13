@@ -127,7 +127,7 @@ export interface AgentVM {
    */
   kind: EntryKind;
   // capability flags (gate which actions a row offers — mirror of agentContextValue)
-  adhoc?: boolean; // MCP/forked, not declared in tachyon.yml → can be promoted
+  adhoc?: boolean; // Temporary (MCP/forked), not a declared profile — only a Temporary terminal can be saved as a declaration
   forkable?: boolean; // CAN be forked (running claude session) → offers the Fork action
   canDismiss?: boolean; // legacy capability bit: stopped Temporary postmortem row is removable without tachyon.yml edits
 }

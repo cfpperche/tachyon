@@ -430,3 +430,22 @@ describe("t-d06da3 — promotion does not orphan a checkout by omission", () => 
     await expect(promote(workspace, "helper")).rejects.not.toThrow(/only a terminal instance/);
   });
 });
+
+describe("t-7b7701 — promote kind refusal names the real door and the alternative", () => {
+  it("refuses an agent and says the fork session is not adopted", async () => {
+    const { writes, workspace } = promoteWorld({ kind: "agent" });
+
+    await expect(promote(workspace, "helper")).rejects.toThrow(/Saved Agent in Agent Studio/);
+    await expect(promote(workspace, "helper")).rejects.toThrow(/session is not adopted/);
+    await expect(promote(workspace, "helper")).rejects.toThrow(/terminal declaration/);
+    expect(writes).toEqual([]);
+  });
+
+  it("names the terminal-declaration destination when the name is already taken", async () => {
+    const { writes, workspace } = promoteWorld({ kind: "terminal" });
+    (workspace as { config: { agents: Record<string, unknown> } }).config.agents.helper = { cmd: "bash" };
+
+    await expect(promote(workspace, "helper")).rejects.toThrow(/already declared as a terminal declaration/);
+    expect(writes).toEqual([]);
+  });
+});
