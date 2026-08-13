@@ -26,10 +26,6 @@ export const DM_CHAT_LOCK_TIMEOUT_MS = 10_000;
  * append rather than after the caller has already failed.
  */
 export const DM_CHAT_MAX_HOLD_MS = 5_000;
-/** Markers must not appear on one prose line as "between START and END" — that extracted "and". */
-export const DM_CHAT_REPLY_START = "<<<DM_CHAT_REPLY>>>";
-export const DM_CHAT_REPLY_END = "<<<END_DM_CHAT_REPLY>>>";
-
 export type DmChatRole = "user" | "agent" | "system";
 
 export type DmChatEdit = {
@@ -68,7 +64,7 @@ export type DmChatEvent =
     agent: string;
     text: string;
     activeAgent: string;
-    source: "tool" | "markers" | "activity";
+    source: "tool";
     lineNo: number;
   }
   | {
@@ -85,7 +81,7 @@ export type DmChatEvent =
     files: string[];
     patch: string;
     activeAgent: string;
-    source: "tool" | "markers" | "activity";
+    source: "tool";
     lineNo: number;
   }
   | {
@@ -261,7 +257,7 @@ export type DmChatEventInput =
     agent: string;
     text: string;
     activeAgent: string;
-    source: "tool" | "markers" | "activity";
+    source: "tool";
     at?: string;
   }
   | ({
@@ -272,7 +268,7 @@ export type DmChatEventInput =
     /** Text fallback keeps the exact change visible before the Preact renderer lands. */
     text: string;
     activeAgent: string;
-    source: "tool" | "markers" | "activity";
+    source: "tool";
     at?: string;
   } & DmChatEdit)
   | {
@@ -378,26 +374,6 @@ export function loadDmChatBefore(
 }
 
 /**
- * Extract plain reply from text using markers.
- * Rejects junk matches from the host instruction itself (historically: the word "and"
- * between START and END on the same line of the prompt).
- */
-export function extractDmChatReplyMarkers(paneText: string): string | null {
-  const start = paneText.lastIndexOf(DM_CHAT_REPLY_START);
-  if (start < 0) return null;
-  const after = start + DM_CHAT_REPLY_START.length;
-  const end = paneText.indexOf(DM_CHAT_REPLY_END, after);
-  if (end < 0) return null;
-  const body = paneText.slice(after, end).trim();
-  if (!body) return null;
-  // Instruction residue: "between <<<START>>> and <<<END>>>"
-  if (/^(and|or|…|\.\.\.)$/i.test(body)) return null;
-  // Prefer real replies: more than a couple of filler words, or multi-line payload.
-  if (body.length < 3 && !body.includes("\n")) return null;
-  return body;
-}
-
-/**
  * Prompt for one Design Mode chat send — **the only agent-facing turn builder**.
  *
  * Does **not** paste the full JSONL history into the agent pane. Optional pick context
@@ -451,7 +427,6 @@ export function formatDmChatPrompt(input: {
     input.pickContext ? "" : null,
     `Human: ${input.text}`,
     "",
-    // Happy path is tool-only. Pane markers are not advertised — they taught agents to skip MCP.
     // turnId binds the reply to this send so late replies cannot resolve another wait (t-181925).
     `Required: answer ONLY via Bridge tool ${replyTool} with the plain answer.`,
     input.pickContext
@@ -461,7 +436,7 @@ export function formatDmChatPrompt(input: {
       ? `The turnId argument must be exactly "${turnId}" — a reply with a different or missing turn id will not update this chat turn.`
       : null,
     "Do not write the answer only in the terminal pane — the Design Mode chat panel updates only when that tool is called.",
-    "Do not wrap the answer in markers or dump tool JSON into the pane.",
+    "Do not dump tool JSON into the pane.",
   ];
   return lines.filter((l) => l !== null && l !== undefined).join("\n");
 }

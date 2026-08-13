@@ -32,9 +32,9 @@ multi-agent chat product or Companion/agent-browser territory.
      `design_mode_chat_reply`.  
    - Working state: poll attention (not fixed timeouts alone).
 
-5. **Deprecate markers after tool path is green**  
-   Keep extract of pane markers only as emergency fallback during dogfood; plan removal (F1) once
-   primary runtimes call the tool reliably.
+5. **Use one reply path after the live tool matrix is green**
+   F1 was completed by `t-45b266` after the live Claude/Codex/Grok matrix closed;
+   `design_mode_chat_reply` is the sole reply path.
 
 6. **Ship gate is dogfood, not feature completeness**  
    v1 green = pick + chat + tool reply on ≥1 primary runtime + offline tool still listed. Follow-ups
@@ -50,7 +50,7 @@ multi-agent chat product or Companion/agent-browser territory.
 |---|---|---|
 | **P0** | Contract + catalog reliability | Spec ratified; tools always listed; refresh on start/stop; unit tests green |
 | **P1** | Loop reliability | Pick → agent → `design_mode_chat_reply` lands; chat hydrate + attention working |
-| **P2** | Dogfood gate | Human checklist on fixture; multi-runtime notes; marker fallback demoted |
+| **P2** | Dogfood gate | Human checklist on fixture; multi-runtime notes; tool-only reply path proven live |
 | **P3** | Follow-ups (separate) | F2 group chat, F4 GA gate, F5 pick quality, F6 security, F7 cookbook — new tasks/SDDs |
 
 P0–P2 are **this SDD**. P3 is explicitly split.
@@ -76,7 +76,7 @@ P0–P2 are **this SDD**. P3 is explicitly split.
 |---|---|---|
 | Shell manager | `src/webview/ide-browser-bridge/manager.ts` | HTTP bridge, start/stop, chat routes, attention poll |
 | CDP / inject | `src/webview/ide-browser-bridge/cdpSession.ts`, `designModeInject.ts` | Design Mode overlay, chat UI inject, Trusted Types |
-| Chat store | `src/webview/ide-browser-bridge/designModeChat.ts` | JSONL append/tail, prompt format, marker extract |
+| Chat store | `src/webview/ide-browser-bridge/designModeChat.ts` | JSONL append/tail and tool-only prompt format |
 | Pick | `src/webview/ide-browser-bridge/pick.ts` | Pick payload + agent prompt assembly |
 | Commands / bars | `src/webview/ide-browser-bridge/register.ts` | Commands, status-bar cluster |
 | Engine client | `src/ide-browser/client.ts`, `protocol.js` | Discovery, sweep, `ideBrowserRequest` |
