@@ -1316,12 +1316,30 @@ export class TmuxService {
     text: string,
     options: { delayMs?: number; submitRetries?: number; composer?: ComposerRegionProfile } = {},
   ): Promise<SubmitReceipt> {
+    return this.submitComposerLine(name, text, options, true);
+  }
+
+  /** t-e169e4 — retry a line already observed in the composer; never paste a second copy. */
+  async sendStagedLine(
+    name: string,
+    text: string,
+    options: { delayMs?: number; submitRetries?: number; composer?: ComposerRegionProfile } = {},
+  ): Promise<SubmitReceipt> {
+    return this.submitComposerLine(name, text, options, false);
+  }
+
+  private async submitComposerLine(
+    name: string,
+    text: string,
+    options: { delayMs?: number; submitRetries?: number; composer?: ComposerRegionProfile },
+    typeLine: boolean,
+  ): Promise<SubmitReceipt> {
     const delayMs = options.delayMs ?? 180;
     const submitRetries = options.submitRetries ?? 3;
     const composer = options.composer;
-    // Typed EXACTLY once, before the loop. Every retry below sends a bare Enter and never text, so a
-    // retried submit cannot duplicate the line or concatenate itself onto whatever else is staged.
-    await this.sendKeys(name, text, false);
+    // Fresh delivery is typed EXACTLY once before the loop; staged recovery types nothing. Every
+    // retry below sends a bare Enter, so it cannot duplicate the line or concatenate a second copy.
+    if (typeLine) await this.sendKeys(name, text, false);
     if (delayMs > 0) await sleep(delayMs);
 
     let lastState: ComposerSubmissionState | "no-profile" = composer ? "unreadable" : "no-profile";

@@ -136,6 +136,19 @@ describe("t-8d190f — a submit is confirmed by the composer, not assumed", () =
     expect(s.enters()).toBeGreaterThan(1);
   });
 
+  it("t-e169e4: recovery submits an exact already-staged line without typing it again", async () => {
+    const s = claudeSession({ lostEnters: 1 });
+    const receipt = await new TmuxService(s.exec).sendStagedLine("s1", NOTICE, {
+      delayMs: 0,
+      submitRetries: 3,
+      composer: CLAUDE,
+    });
+
+    expect(receipt).toEqual({ status: "submitted", reason: "composer-cleared", attempts: 2 });
+    expect(s.typed()).toHaveLength(0);
+    expect(s.enters()).toBe(2);
+  });
+
   it("t-6ffa13: the runtime's echo of our own line is history, not a still-staged draft", async () => {
     // After acceptance the pane contains our exact text twice over — once as the transcript echo.
     // A pane-wide search would call that "still staged" and press Enter forever; scoping to the
