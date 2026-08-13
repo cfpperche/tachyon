@@ -4,6 +4,60 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.90.0 — the Design Mode tab is gone; the whole thing lives in the page
+
+0.89.0 gave the page everything it needed to work on its own. This release removes what it replaced.
+The separate Design Mode tab — its chat, its composer, its reply tool, its build entry — is deleted,
+along with about 2200 lines. Nothing takes its place: viewport presets and the pick preview moved
+down into the page toolbar, and no sidebar was invented to hold them.
+
+### Removed
+
+- **The Design Mode chat tab** (`t-e6f115`). `DesignModePanel`, the `design-mode` webview app, the
+  chat store and turn machinery, both build entries, and the `design_mode_chat_reply` Bridge tool are
+  gone. The four viewport presets keep the same values and the same CDP backend — only their home
+  changed, from the tab to the overlay's toolbar. The picked-element preview moved with them.
+
+  A note for whoever finds this later: `t-727d9c` proved `design_mode_chat_reply` working live across
+  six runtimes, and `t-45b266` waited eight days for that proof. Removing it contradicts neither. The
+  proof was that replies reached **the panel** — and the panel is what this release deletes.
+
+### Added
+
+- **Markup: draw on a frozen viewport** (`t-dd0bce`). The Markup button captures the viewport through
+  CDP and the overlay switches to a canvas over that still image. Shapes stay vector while you edit.
+  Copy persists the composed PNG and puts its path on the clipboard; Send routes it through the same
+  confirmed-receipt ladder annotations already use — there is no second delivery path.
+
+  The canvas never reads or rewrites the inspected page's DOM. That is the property that makes it
+  safe rather than an implementation detail, and it is what the test asserts. Budgets are explicit:
+  100 shapes, 250 KB of shape data, 2 MiB for the frozen viewport, 8 MiB for the batch. Copy keeps
+  exactly one replaceable PNG.
+
+  If the page navigates underneath, the markup survives — the vectors persist across re-injection and
+  the annotation carries the URL the viewport was frozen from, so the agent gets the right address
+  even if the tab has moved on.
+
+### Fixed
+
+- **A queued notice now tells the sender how deep the wait is** (`t-44ae02`). `notify_agent` waits for
+  the recipient's idle edge, so a busy recipient's queue can grow without the sender knowing. Measured
+  (`t-747369`): one agent sent four notices in 4.5 minutes while the first was still queued. The
+  receipt now reads `queued 'X' for idle delivery (depth 3, oldest 5m)`. The receipt is the only
+  channel that reaches a sender mid-turn — the alternative would be writing into their terminal
+  during a turn, which is exactly what the idle wait exists to prevent.
+
+### Internal
+
+- A cutover test asserted `readdirSync(...)` on a directory the same change deleted, so it passed only
+  where the empty directory happened to linger and went red on a clean checkout (`t-69f737`). It now
+  asserts the directory is gone. Found by an agent working on something else who measured the red on
+  clean `main` instead of retrying past it.
+- The 8–13 minute notice delays were measured and are **not** a defect (`t-747369`): the idle wait is
+  deliberate, and the content was readable the whole time through `read_notices`, a durable pull door
+  that had been used three times in every surviving transcript. Recorded as coordinator discipline —
+  pull before spending a gate — rather than answered with machinery.
+
 ## 0.89.0 — annotate the page and send it straight to an agent, and Activity stops arriving in batches
 
 Design Mode stops needing a chat of its own. You pick an element in the browser, write what you want
