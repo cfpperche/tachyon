@@ -2,7 +2,7 @@ import { render } from "preact";
 import { ErrorBoundary } from "../shared/ErrorBoundary.js";
 import { App, type DesignModeOverlayOptions } from "./App.js";
 
-const VERSION = 1;
+const VERSION = 2;
 let host: HTMLDivElement | null = null;
 
 function unmount(): boolean {
