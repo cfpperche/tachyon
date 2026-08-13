@@ -29,6 +29,9 @@ export type DesignModeAgentState = { agents: string[]; active?: string; emptyRea
 export type DesignModeSendState = { status: "idle" | "sending" | "sent" | "error"; text?: string };
 export type DesignModeViewportPreset = "phone" | "tablet" | "desktop" | "reset";
 export type DesignModeViewportState = { preset: DesignModeViewportPreset; status: "idle" | "setting" | "success" | "error"; text?: string };
+type MarkupPoint = { x: number; y: number };
+export type DesignModeMarkupShape = { kind: "pen"; points: MarkupPoint[] } | { kind: "rect"; from: MarkupPoint; to: MarkupPoint };
+export type DesignModeMarkupState = { frozen?: string; sourceUrl?: string; shapes: DesignModeMarkupShape[]; status?: "idle" | "capturing" | "copying" | "sending" | "copied" | "sent" | "error"; text?: string };
 
 const VIEWPORT_PRESETS: Array<{ preset: DesignModeViewportPreset; label: string }> = [
   { preset: "phone", label: "Phone 375×812" },
@@ -87,6 +90,9 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
   const [targetAgent, setTargetAgent] = useState("");
   const [sendState, setSendState] = useState<DesignModeSendState>({ status: "idle" });
   const [viewportState, setViewportState] = useState<DesignModeViewportState>({ preset: "reset", status: "idle" });
+  const [markup, setMarkup] = useState<DesignModeMarkupState>({ shapes: [] });
+  const [markupTool, setMarkupTool] = useState<"pen" | "rect">("pen");
+  const [drawing, setDrawing] = useState<DesignModeMarkupShape | null>(null);
 
   const post = (value: unknown) => {
     const raw = JSON.stringify(value);
@@ -107,10 +113,12 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
     };
     window.__tachyonDmApplySendState = (next) => { setSendState(next); return next.status; };
     window.__tachyonDmApplyViewportState = (next) => { setViewportState(next); return next.preset; };
+    window.__tachyonDmApplyMarkupState = (next) => { setMarkup(next); return next.status || "idle"; };
     post({ __annotation: "sync" });
     post({ __annotation: "agents" });
     post({ action: "viewport.sync" });
-    return () => { delete window.__tachyonDmApplyAnnotationState; delete window.__tachyonDmApplyAgentState; delete window.__tachyonDmApplySendState; delete window.__tachyonDmApplyViewportState; };
+    post({ action: "markup.sync" });
+    return () => { delete window.__tachyonDmApplyAnnotationState; delete window.__tachyonDmApplyAgentState; delete window.__tachyonDmApplySendState; delete window.__tachyonDmApplyViewportState; delete window.__tachyonDmApplyMarkupState; };
   }, [bindingName]);
 
   useEffect(() => {
@@ -166,8 +174,30 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
   const add = () => { if (!draft || !comment.trim()) return; post({ __annotation: "add", intent, comment: comment.trim(), capture: draft.capture }); setDraft(null); setComment(""); };
   const send = () => { if (!targetAgent || sendState.status === "sending") return; setSendState({ status: "sending" }); post({ action: "annotation.send", targetAgent }); };
   const setViewport = (preset: DesignModeViewportPreset) => { setViewportState((current) => ({ ...current, status: "setting", text: undefined })); post({ action: "viewport.set", preset }); };
+  const startMarkup = () => { setMarkup({ shapes: [], status: "capturing" }); requestAnimationFrame(() => requestAnimationFrame(() => post({ action: "markup.capture" }))); };
+  const markupPoint = (event: PointerEvent): MarkupPoint => { const box = (event.currentTarget as SVGElement).getBoundingClientRect(); return { x: Math.max(0, Math.min(1, (event.clientX - box.left) / box.width)), y: Math.max(0, Math.min(1, (event.clientY - box.top) / box.height)) }; };
+  const beginShape = (event: preact.JSX.TargetedPointerEvent<SVGSVGElement>) => { event.currentTarget.setPointerCapture(event.pointerId); const point = markupPoint(event); setDrawing(markupTool === "pen" ? { kind: "pen", points: [point] } : { kind: "rect", from: point, to: point }); };
+  const moveShape = (event: preact.JSX.TargetedPointerEvent<SVGSVGElement>) => { if (!drawing) return; const point = markupPoint(event); setDrawing(drawing.kind === "pen" ? { ...drawing, points: [...drawing.points, point].slice(-500) } : { ...drawing, to: point }); };
+  const finishShape = () => { if (!drawing) return; const shapes = [...markup.shapes, drawing].slice(-100); setDrawing(null); setMarkup((current) => ({ ...current, shapes })); post({ action: "markup.update", shapes }); };
+  const undoMarkup = () => { const shapes = markup.shapes.slice(0, -1); setMarkup((current) => ({ ...current, shapes })); post({ action: "markup.update", shapes }); };
+  const shapeNode = (shape: DesignModeMarkupShape, key: number | string) => shape.kind === "pen"
+    ? <polyline key={key} points={shape.points.map((point) => `${point.x * 1000},${point.y * 1000}`).join(" ")} fill="none" stroke="#ff3b30" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+    : <rect key={key} x={Math.min(shape.from.x, shape.to.x) * 1000} y={Math.min(shape.from.y, shape.to.y) * 1000} width={Math.abs(shape.to.x - shape.from.x) * 1000} height={Math.abs(shape.to.y - shape.from.y) * 1000} fill="none" stroke="#ff3b30" stroke-width="5" />;
+  const exportMarkup = async (intent: "copy" | "send") => {
+    if (!markup.frozen || !markup.shapes.length || (intent === "send" && !targetAgent)) return;
+    setMarkup((current) => ({ ...current, status: intent === "copy" ? "copying" : "sending", text: undefined }));
+    const image = new Image(); image.src = markup.frozen; await image.decode();
+    const canvas = document.createElement("canvas"); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d")!; context.drawImage(image, 0, 0);
+    context.strokeStyle = "#ff3b30"; context.lineWidth = Math.max(3, canvas.width / 200); context.lineCap = "round"; context.lineJoin = "round";
+    for (const shape of markup.shapes) { context.beginPath(); if (shape.kind === "pen") shape.points.forEach((point, index) => index ? context.lineTo(point.x * canvas.width, point.y * canvas.height) : context.moveTo(point.x * canvas.width, point.y * canvas.height)); else context.rect(shape.from.x * canvas.width, shape.from.y * canvas.height, (shape.to.x - shape.from.x) * canvas.width, (shape.to.y - shape.from.y) * canvas.height); context.stroke(); }
+    const dataUrl = canvas.toDataURL("image/png");
+    if (intent === "copy") try { const blob = await (await fetch(dataUrl)).blob(); await navigator.clipboard?.write([new ClipboardItem({ "image/png": blob })]); } catch { /* host copies the persisted path as fallback */ }
+    post({ action: "markup.export", intent, targetAgent, dataUrl, sourceUrl: markup.sourceUrl });
+  };
 
-  return <div data-tachyon-dm-overlay>
+  return <div data-tachyon-dm-overlay style={markup.status === "capturing" ? { display: "none" } : undefined}>
+    {markup.frozen && <style>{`[data-testid="annotation-tray"],[data-testid="viewport-toolbar"],[data-testid^="annotation-badge-"]{display:none!important}[data-testid="markup-editor"]{z-index:2147483647!important}`}</style>}
     <div ref={outline} id="tachyon-dm-root" aria-hidden="true" style={{ position: "fixed", display: "none", pointerEvents: "none", zIndex: 2_147_483_646, border: `2px solid ${focusColor}`, boxSizing: "border-box", borderRadius: "2px" }} />
     {draft && <section data-tachyon-dm-overlay data-testid="annotation-popover" aria-label="Add annotation" style={{ ...panel, left: `${draft.left}px`, top: `${Math.max(8, draft.top)}px`, width: "min(320px, calc(100vw - 16px))", padding: "12px" }}>
       <strong style={{ display: "block", marginBottom: "8px" }}>Annotate {draft.capture.target.tag.toLowerCase()}</strong>
@@ -181,7 +211,17 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
     <nav data-tachyon-dm-overlay data-testid="viewport-toolbar" aria-label="Viewport presets" style={{ ...panel, left: "8px", bottom: "8px", display: "flex", flexWrap: "wrap", gap: "4px", maxWidth: "calc(100vw - 16px)", padding: "6px" }}>
       {VIEWPORT_PRESETS.map(({ preset, label }) => <button type="button" data-testid={`viewport-${preset}`} aria-pressed={viewportState.preset === preset} disabled={viewportState.status === "setting"} onClick={() => setViewport(preset)} style={{ color: "#fff", background: viewportState.preset === preset ? focusColor : "#303136", border: "1px solid #686a70", borderRadius: "5px", padding: "5px 8px", cursor: "pointer", font: "inherit" }}>{label}</button>)}
       {viewportState.status === "error" && <span role="status" style={{ color: "#fca5a5", alignSelf: "center" }}>{viewportState.text}</span>}
+      <button data-testid="markup-start" type="button" onClick={startMarkup} style={{ color: "#fff", background: markup.frozen ? focusColor : "#303136", border: "1px solid #686a70", borderRadius: "5px", padding: "5px 8px", cursor: "pointer", font: "inherit" }}>Markup</button>
     </nav>
+    {markup.frozen && <section data-tachyon-dm-overlay data-testid="markup-editor" aria-label="Viewport markup editor" style={{ position: "fixed", inset: 0, zIndex: 2_147_483_645, background: "#111", display: "grid", placeItems: "center", pointerEvents: "auto" }}>
+      <img src={markup.frozen} alt="Frozen viewport" draggable={false} style={{ width: "100%", height: "100%", objectFit: "fill", userSelect: "none" }} />
+      <svg data-testid="markup-canvas" viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={beginShape} onPointerMove={moveShape} onPointerUp={finishShape} onPointerCancel={() => setDrawing(null)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", touchAction: "none", cursor: "crosshair" }}>{markup.shapes.map(shapeNode)}{drawing && shapeNode(drawing, "draft")}</svg>
+      <div data-tachyon-dm-overlay style={{ ...panel, left: "8px", top: "8px", padding: "7px", display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center", maxWidth: "calc(100vw - 16px)" }}>
+        <button data-testid="markup-pen" aria-pressed={markupTool === "pen"} onClick={() => setMarkupTool("pen")}>Pen</button><button data-testid="markup-rect" aria-pressed={markupTool === "rect"} onClick={() => setMarkupTool("rect")}>Rectangle</button><button data-testid="markup-undo" disabled={!markup.shapes.length} onClick={undoMarkup}>Undo</button><button data-testid="markup-copy" disabled={!markup.shapes.length} onClick={() => void exportMarkup("copy")}>Copy</button>
+        <select data-testid="markup-agent-select" aria-label="Send markup to agent" value={targetAgent} onChange={(event) => setTargetAgent(event.currentTarget.value)}>{agentState.agents.map((agent) => <option value={agent}>{agent}</option>)}</select><button data-testid="markup-send" disabled={!markup.shapes.length || !targetAgent} onClick={() => void exportMarkup("send")}>Send</button><button data-testid="markup-close" onClick={() => { setMarkup({ shapes: [] }); post({ action: "markup.clear" }); }}>Close</button>
+        {markup.text && <span role="status">{markup.text}</span>}
+      </div>
+    </section>}
     {annotations.length > 0 && <aside data-tachyon-dm-overlay data-testid="annotation-tray" aria-label="Annotations" style={{ ...panel, right: "8px", bottom: "110px", width: "min(380px, calc(100vw - 16px))", maxHeight: "min(45vh, 360px)", overflow: "auto" }}>
       <header style={{ padding: "10px 12px", borderBottom: "1px solid #45464a", display: "flex", justifyContent: "space-between" }}><strong>Annotations</strong><span style={{ color: "#aaa" }}>{annotations.length}</span></header>
       {annotations.map((annotation) => <article data-testid={`annotation-row-${annotation.index}`} style={{ display: "grid", gridTemplateColumns: "28px minmax(0,1fr) 28px", gap: "8px", padding: "10px 12px", borderBottom: "1px solid #3b3c40" }}>
@@ -210,5 +250,6 @@ declare global {
     __tachyonDmApplyAgentState?: (state: DesignModeAgentState) => number;
     __tachyonDmApplySendState?: (state: DesignModeSendState) => string;
     __tachyonDmApplyViewportState?: (state: DesignModeViewportState) => DesignModeViewportPreset;
+    __tachyonDmApplyMarkupState?: (state: DesignModeMarkupState) => string;
   }
 }

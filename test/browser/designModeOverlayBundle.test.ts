@@ -21,6 +21,7 @@ declare global {
     __tachyonDmApplyAgentState?: (state: { agents: string[]; active?: string }) => number;
     __tachyonDmApplySendState?: (state: { status: "idle" | "sending" | "sent" | "error"; text?: string }) => string;
     __tachyonDmApplyViewportState?: (state: { preset: "phone" | "tablet" | "desktop" | "reset"; status: "idle" | "setting" | "success" | "error"; text?: string }) => string;
+    __tachyonDmApplyMarkupState?: (state: { frozen?: string; sourceUrl?: string; shapes: unknown[]; status?: string; text?: string }) => string;
   }
 }
 
@@ -131,6 +132,49 @@ describe("Design Mode compiled IIFE", () => {
     }
   }, HANG_TIMEOUT_MS);
 
+  it("freezes the viewport, keeps vector shapes across reinjection, and exports Copy/Send without touching the page DOM", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setViewport({ width: 880, height: 600 });
+      await page.setContent(`<main id="application" style="height:1600px"><button id="live">Live application</button></main>`);
+      await page.evaluate((source) => { (0, eval)(source); }, bundle);
+      await page.evaluate(() => {
+        const frozen = document.createElement("canvas"); frozen.width = 880; frozen.height = 600;
+        const context = frozen.getContext("2d")!; context.fillStyle = "#15202b"; context.fillRect(0, 0, 880, 600); context.fillStyle = "white"; context.fillText("Frozen viewport", 30, 40);
+        let active = false; let markup = { frozen: frozen.toDataURL("image/png"), sourceUrl: "https://example.test/before", shapes: [] as unknown[] };
+        window.tachyonDesignModePick = (raw) => {
+          const request = JSON.parse(raw) as { action?: string; __annotation?: string; shapes?: unknown[] };
+          if (request.action === "markup.capture") { active = true; window.__tachyonDmApplyMarkupState?.(markup); }
+          if (request.action === "markup.sync" && active) window.__tachyonDmApplyMarkupState?.(markup);
+          if (request.action === "markup.update") markup = { ...markup, shapes: request.shapes || [] };
+          if (request.action === "markup.export") window.__tachyonDmApplyMarkupState?.({ ...markup, status: "copied", text: "persisted" });
+          if (request.__annotation === "agents") window.__tachyonDmApplyAgentState?.({ agents: ["ada"], active: "ada" });
+        };
+        window.__tachyonDmOverlay?.mount({ bindingName: "tachyonDesignModePick", focusColor: "#007fd4", restorePickMode: false });
+        window.__tachyonDmApplyAgentState?.({ agents: ["ada"], active: "ada" });
+      });
+      await page.click('[data-testid="markup-start"]');
+      await page.waitForSelector('[data-testid="markup-canvas"]');
+      const before = await page.$eval("#application", (node) => node.outerHTML);
+      const box = await (await page.$('[data-testid="markup-canvas"]'))!.boundingBox();
+      await page.mouse.move(box!.x + 40, box!.y + 50); await page.mouse.down(); await page.mouse.move(box!.x + 180, box!.y + 150, { steps: 5 }); await page.mouse.up();
+      expect(await page.$$eval('[data-testid="markup-canvas"] polyline', (nodes) => nodes.length)).toBe(1);
+      expect(await page.$eval("#application", (node) => node.outerHTML)).toBe(before);
+      await page.evaluate(() => scrollTo(0, 500));
+      await page.setViewport({ width: 360, height: 640 });
+      expect(await page.$$eval('[data-testid="markup-canvas"] polyline', (nodes) => nodes.length)).toBe(1);
+      await page.click('[data-testid="markup-copy"]');
+      await page.waitForFunction(() => window.__tachyonDmQueue?.some((raw) => JSON.parse(raw).action === "markup.export" && JSON.parse(raw).intent === "copy"));
+      await page.evaluate(() => { document.querySelector("#live")!.textContent = "Page navigated underneath"; window.__tachyonDmOverlay?.unmount(); });
+      await page.evaluate((source) => { (0, eval)(source); window.__tachyonDmOverlay?.mount({ bindingName: "tachyonDesignModePick", focusColor: "#007fd4", restorePickMode: false }); }, bundle);
+      await page.waitForSelector('[data-testid="markup-canvas"] polyline');
+      expect(await page.$eval("#live", (node) => node.textContent)).toBe("Page navigated underneath");
+      await page.click('[data-testid="markup-send"]');
+      await page.waitForFunction(() => window.__tachyonDmQueue?.some((raw) => JSON.parse(raw).action === "markup.export" && JSON.parse(raw).intent === "send"));
+      expect(await page.$$eval('[data-testid="markup-canvas"] polyline', (nodes) => nodes.length)).toBe(1);
+    } finally { await page.close(); }
+  }, HANG_TIMEOUT_MS);
+
   for (const width of [880, 360]) it(`shows agent selector, four presets, and PNG preview at ${width}px`, async () => {
     const page = await browser.newPage();
     try {
@@ -141,6 +185,11 @@ describe("Design Mode compiled IIFE", () => {
         window.tachyonDesignModePick = (raw) => {
           const request = JSON.parse(raw) as { action?: string; preset?: string };
           if (request.action === "viewport.set") window.__tachyonDmApplyViewportState?.({ preset: request.preset as "phone", status: "success" });
+          if (request.action === "markup.capture") {
+            const canvas = document.createElement("canvas"); canvas.width = innerWidth; canvas.height = innerHeight;
+            const context = canvas.getContext("2d")!; context.fillStyle = "#f4f1ea"; context.fillRect(0, 0, canvas.width, canvas.height); context.fillStyle = "#243447"; context.fillRect(0, 0, canvas.width, 64); context.fillStyle = "white"; context.font = "bold 22px sans-serif"; context.fillText("Frozen product viewport", 24, 40); context.fillStyle = "#445"; context.font = "16px sans-serif"; context.fillText("Draw feedback safely over this captured image", 24, 112);
+            window.__tachyonDmApplyMarkupState?.({ frozen: canvas.toDataURL("image/png"), sourceUrl: location.href, shapes: [] });
+          }
         };
         window.__tachyonDmOverlay?.mount({ bindingName: "tachyonDesignModePick", focusColor: "#007fd4", restorePickMode: false });
       });
@@ -150,7 +199,7 @@ describe("Design Mode compiled IIFE", () => {
         window.__tachyonDmApplyAnnotationState?.([{ index: 1, intent: "change", comment: "Preview this", screenshotPath: "/tmp/pick.png", screenshotPreview: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", page: { url: "https://example.test", title: "", viewport: { width: 1, height: 1 }, scroll: { x: 0, y: 0 }, dpr: 1, capturedAt: "now" }, target: { selector: "#cta", tag: "BUTTON", id: "cta", className: "", text: "Target", html: "", attributes: {}, accessibility: { role: "", label: "" }, bounds: { x: 0, y: 0, width: 1, height: 1 }, pageBounds: { x: 0, y: 0, width: 1, height: 1 }, styles: {} }, context: { parentText: "", previousText: "", nextText: "" } }]);
       });
       await page.waitForSelector('[data-testid="annotation-preview-1"]');
-      expect(await page.$$eval('[data-testid="viewport-toolbar"] button', (nodes) => nodes.map((node) => node.textContent))).toEqual(["Phone 375×812", "Tablet 768×1024", "Desktop 1280×800", "Reset"]);
+      expect(await page.$$eval('[data-testid="viewport-toolbar"] button:not([data-testid="markup-start"])', (nodes) => nodes.map((node) => node.textContent))).toEqual(["Phone 375×812", "Tablet 768×1024", "Desktop 1280×800", "Reset"]);
       expect(await page.$('[data-testid="annotation-agent-select"]')).not.toBeNull();
       expect(await page.$eval('[data-testid="annotation-preview-1"]', (node) => (node as HTMLImageElement).src.startsWith("data:image/png;base64,"))).toBe(true);
       await page.click('[data-testid="viewport-phone"]');
@@ -163,6 +212,9 @@ describe("Design Mode compiled IIFE", () => {
       const evidenceDir = path.resolve(".vqa/visual-qa");
       fs.mkdirSync(evidenceDir, { recursive: true });
       await page.screenshot({ path: path.join(evidenceDir, `design-mode-overlay-${width}.png`) as `${string}.png` });
+      await page.click('[data-testid="markup-start"]');
+      await page.waitForSelector('[data-testid="markup-editor"]');
+      await page.screenshot({ path: path.join(evidenceDir, `design-mode-markup-${width}.png`) as `${string}.png` });
     } finally { await page.close(); }
   }, HANG_TIMEOUT_MS);
 });
