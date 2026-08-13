@@ -225,3 +225,16 @@ conversation panel.
   Design Mode failed before inject with `Timed out waiting for editor-browser child debug session (CDP)`.
   The session and pointer were cleared. This run therefore does not attest pick→chat→reply; the focused
   production-path tests and preview evidence are green, but live dogfood remains the exact next action.
+
+### Live dogfood after `t-54b9c3` (`0.86.1`)
+
+- Integrated `main` at `52b7fe07`, rebuilt the extension, and ran the checkout-local headless EDH.
+- A real click on `button#dogfood-pick` in the Integrated Browser passed through the thin page binding
+  and appeared as **Attached selection** in the Preact inspector.
+- A reply posted through `/design-mode/chat-reply` (the exact IDE-host door used by the MCP
+  `design_mode_chat_reply` tool) returned `200` and appeared as an agent bubble in the Preact transcript.
+- Page-realm assertion at reply land: `#tachyon-dm-root` present; `#tachyon-dm-toolbar`,
+  `#tachyon-dm-chat`, `#tachyon-dm-card`, and `window.__tachyonDmChatPush` absent.
+- **Evidence:** `docs/specs/488-ide-browser-design-mode/evidence/t-64edaf-live-reply.png`.
+- Cleanup: headless EDH down; pointer cleared; bridge absent. Coordinator notified immediately so the
+  sibling runtime matrix could reuse the browser.
