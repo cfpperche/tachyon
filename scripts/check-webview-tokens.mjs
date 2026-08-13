@@ -11,8 +11,8 @@
  * new code needs means ADDING it there, not adding an exception here. Exception is for what
  * already shipped, not for what is written next.
  *
- * `src/webview/design-mode-overlay/` is skipped, not excepted: t-f5b467 owns that directory
- * this round and its numbers are moving. Do not fold it into this scan until that task lands.
+ * t-ba41a8 — `design-mode-overlay/` is scanned like every other directory. t-f5b467 landed
+ * (hex = 0). Leftover numeric z-index is excepted per file with a reason; it is not a skip.
  *
  * One implementation. `scripts/verify-full.mjs` runs it as a static gate;
  * `test/unit/webviewTokenLint.test.ts` imports the same functions.
@@ -28,19 +28,6 @@ export const SCAN_ROOT = "src/webview";
 export const TOKEN_SOURCE = "src/webview/shared/design-system.css";
 export const EXTENSIONS = Object.freeze([".css", ".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 export const MIN_REASON = 20;
-
-/**
- * Directory skip, not a hex/z-index exception. The overlay's values are someone else's
- * moving target; listing them here would freeze a number that t-f5b467 is changing.
- */
-export const SKIP_DIRS = Object.freeze([
-  {
-    name: "design-mode-overlay",
-    reason: "t-f5b467 owns this directory this round; overlay hex and z-index are moving independently. Exclude until that task lands — then add the overlay and decide closed vs remaining exceptions.",
-  },
-]);
-
-const SKIP_DIR_NAMES = new Set(SKIP_DIRS.map((d) => d.name));
 
 /**
  * Each row is one file's existing hex literals and WHY they are still here.
@@ -233,11 +220,37 @@ export const Z_INDEX_EXCEPTIONS = Object.freeze([
     values: [2, 3],
     reason: "Same prototype watermark/header pair as task-detail; keep the two lists in lockstep until both use tokens.",
   },
+  {
+    file: "src/webview/design-mode-overlay/App.tsx",
+    values: [1, 2],
+    reason: "Local stacking inside the overlay shadow (markup editor = 1, panel/badges = 2). --ds-z-popover is 20 and names product chrome, not an internal 1; using it here would be a lie.",
+  },
+  {
+    file: "src/webview/design-mode-overlay/App.tsx",
+    values: [2147483646],
+    reason: "Hover outline (#tachyon-dm-root). After t-f5b467 this node lives in the shadow; the integer is leftover page-max from when it competed in the light DOM. Product --ds-z-* (20/40/50/60) cannot name that layer.",
+  },
+  {
+    file: "src/webview/design-mode-overlay/styles.ts",
+    values: [3],
+    reason: "Markup-active editor is raised above the shadow chrome (1/2) with a local 3. Same case as App.tsx 1/2: not a product popover/dialog/toast/overlay.",
+  },
+  {
+    file: "src/webview/design-mode-overlay/styles.ts",
+    values: [2147483647],
+    reason: ":host stacks above the entire third-party page. The product --ds-z-* scale describes our chrome, not a page we do not control.",
+  },
+  {
+    file: "src/webview/design-mode-overlay/main.tsx",
+    values: [2147483647],
+    reason: "host.style.zIndex assignment — the second door of the same :host layer (styles.ts). Still the third-party page, still not a --ds-z-* token.",
+  },
 ]);
 
 const HEX_RE = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/g;
 const Z_CSS_RE = /z-index\s*:\s*([^;}\n]+)/gi;
 const Z_JS_RE = /\bzIndex\s*:\s*([^,}\n]+)/g;
+const Z_ASSIGN_RE = /\.zIndex\s*=\s*(?:["'](\d[\d_]*)["']|(\d[\d_]*))/g;
 
 export function maskComments(src, ext) {
   let out = "";
@@ -308,6 +321,14 @@ export function findNumericZIndex(src, ext = ".css") {
       hits.push({ line: lineOf(src, m.index), value });
     }
   }
+  // t-ba41a8 — `el.style.zIndex = "2147483647"` is the same numeric door as `zIndex:`.
+  // A scanner that only reads the property form lets the host assignment stay silent.
+  Z_ASSIGN_RE.lastIndex = 0;
+  let assign;
+  while ((assign = Z_ASSIGN_RE.exec(code))) {
+    const raw = assign[1] ?? assign[2];
+    hits.push({ line: lineOf(src, assign.index), value: Number(raw.replace(/_/g, "")) });
+  }
   return hits;
 }
 
@@ -327,7 +348,7 @@ export function sourceFiles(dir, acc = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
-      if (e.name === "node_modules" || SKIP_DIR_NAMES.has(e.name)) continue;
+      if (e.name === "node_modules") continue;
       sourceFiles(full, acc);
     } else if (e.isFile() && EXTENSIONS.includes(path.extname(e.name))) {
       acc.push(full);

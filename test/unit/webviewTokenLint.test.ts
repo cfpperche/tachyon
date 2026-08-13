@@ -11,7 +11,6 @@ const {
   HEX_EXCEPTIONS,
   MIN_REASON,
   SCAN_ROOT,
-  SKIP_DIRS,
   TOKEN_SOURCE,
   Z_INDEX_EXCEPTIONS,
   findHexLiterals,
@@ -22,7 +21,6 @@ const {
   HEX_EXCEPTIONS: Array<{ file: string; values: string[]; reason: string }>;
   MIN_REASON: number;
   SCAN_ROOT: string;
-  SKIP_DIRS: Array<{ name: string; reason: string }>;
   TOKEN_SOURCE: string;
   Z_INDEX_EXCEPTIONS: Array<{ file: string; values: number[]; reason: string }>;
   findHexLiterals: (src: string, ext?: string) => Array<{ line: number; value: string }>;
@@ -47,6 +45,8 @@ describe("t-c8e2bd — webview token lint", () => {
     expect(css).toEqual([{ line: 1, value: 9999 }]);
     const js = findNumericZIndex("const s = { zIndex: 2_147_483_647 };\n", ".ts");
     expect(js).toEqual([{ line: 1, value: 2147483647 }]);
+    const assign = findNumericZIndex(`host.style.zIndex = "2147483647";\n`, ".ts");
+    expect(assign).toEqual([{ line: 1, value: 2147483647 }]);
   });
 
   it("does not treat a token z-index as numeric", () => {
@@ -74,24 +74,40 @@ describe("t-c8e2bd — webview token lint", () => {
   });
 
   it("every exception carries a written reason, not an anonymous block", () => {
-    const rows = [...HEX_EXCEPTIONS, ...Z_INDEX_EXCEPTIONS, ...SKIP_DIRS];
+    const rows = [...HEX_EXCEPTIONS, ...Z_INDEX_EXCEPTIONS];
     expect(rows.length).toBeGreaterThan(0);
     expect(
       rows
         .filter((row) => !row.reason || row.reason.trim().length < MIN_REASON)
-        .map((row) => ("file" in row ? row.file : row.name)),
+        .map((row) => row.file),
     ).toEqual([]);
   });
 
-  it("skips design-mode-overlay by name, and the skip is doing work", () => {
-    expect(SKIP_DIRS.map((d) => d.name)).toEqual(["design-mode-overlay"]);
-    const overlay = path.join(ROOT, SCAN_ROOT, "design-mode-overlay", "App.tsx");
-    expect(fs.existsSync(overlay)).toBe(true);
-    const overlayHex = findHexLiterals(fs.readFileSync(overlay, "utf8"), ".tsx");
-    const overlayZ = findNumericZIndex(fs.readFileSync(overlay, "utf8"), ".tsx");
-    expect(overlayHex.length).toBeGreaterThan(0);
-    expect(overlayZ.length).toBeGreaterThan(0);
-    expect(scanRepo(ROOT).some((v) => v.file.includes("design-mode-overlay"))).toBe(false);
+  it("scans design-mode-overlay: hex is closed, leftover z-index is declared, skip is gone", () => {
+    const dir = path.join(ROOT, SCAN_ROOT, "design-mode-overlay");
+    const files = ["App.tsx", "main.tsx", "styles.ts"].map((name) => path.join(dir, name));
+    expect(files.every((file) => fs.existsSync(file))).toBe(true);
+
+    const hex = files.flatMap((file) => findHexLiterals(fs.readFileSync(file, "utf8"), path.extname(file)));
+    expect(hex).toEqual([]);
+
+    const byFile = new Map<string, number[]>();
+    for (const file of files) {
+      const rel = path.relative(ROOT, file).split(path.sep).join("/");
+      const values = findNumericZIndex(fs.readFileSync(file, "utf8"), path.extname(file)).map((h) => h.value);
+      byFile.set(rel, [...new Set(values)].sort((a, b) => a - b));
+    }
+    expect(Object.fromEntries(byFile)).toEqual({
+      "src/webview/design-mode-overlay/App.tsx": [1, 2, 2147483646],
+      "src/webview/design-mode-overlay/main.tsx": [2147483647],
+      "src/webview/design-mode-overlay/styles.ts": [3, 2147483647],
+    });
+
+    const overlayRows = Z_INDEX_EXCEPTIONS.filter((row) => row.file.startsWith("src/webview/design-mode-overlay/"));
+    expect(overlayRows.length).toBeGreaterThan(0);
+    expect(overlayRows.every((row) => row.reason.trim().length >= MIN_REASON)).toBe(true);
+    expect(scanRepo(ROOT).filter((v) => v.file.includes("design-mode-overlay"))).toEqual([]);
+    expect("SKIP_DIRS" in tokens).toBe(false);
   });
 });
 
