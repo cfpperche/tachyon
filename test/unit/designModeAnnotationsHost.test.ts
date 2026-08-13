@@ -160,4 +160,41 @@ describe("Design Mode host annotation batch", () => {
     await manager.handleDesignPickRaw(JSON.stringify({ action: "viewport.set", preset: "tablet" }));
     expect(evaluateInPage).toHaveBeenLastCalledWith(expect.stringContaining('"preset":"phone","status":"error","text":"CDP refused"'));
   });
+
+  it("owns the frozen markup across sync and sends its composed PNG through the confirmed batch ladder", async () => {
+    const send = connect(["ada"]);
+    manager.session.cdp.screenshotPngBase64 = vi.fn(async () => Buffer.from("frozen-png").toString("base64"));
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "markup.capture" }));
+    expect(manager.designMarkup).toMatchObject({ sourceUrl: expect.any(String), shapes: [] });
+    expect(manager.designMarkup.frozen).toMatch(/^data:image\/png;base64,/);
+    const shapes = [{ kind: "rect", from: { x: 0.1, y: 0.2 }, to: { x: 0.5, y: 0.6 } }];
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "markup.update", shapes }));
+    evaluateInPage.mockClear();
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "markup.sync" }));
+    expect(evaluateInPage).toHaveBeenCalledWith(expect.stringContaining('"kind":"rect"'));
+    const composed = `data:image/png;base64,${Buffer.from("composed-png").toString("base64")}`;
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "markup.export", intent: "send", targetAgent: "ada", dataUrl: composed }));
+    expect(send).toHaveBeenCalledOnce();
+    expect(send.mock.calls[0]![1]).toContain("Apply the viewport markup");
+    expect(send.mock.calls[0]![1]).toContain("Screenshot:");
+    expect(manager.designAnnotations).toEqual([]);
+    expect(manager.designMarkup).toMatchObject({ shapes: [], status: "sent" });
+  });
+
+  it("preserves vectors when markup delivery is stale and bounds persisted Copy to one replaceable PNG", async () => {
+    connect(["ada"]);
+    manager.designMarkup = { frozen: "data:image/png;base64,AA==", sourceUrl: "https://before.test", shapes: [{ kind: "pen", points: [{ x: 0, y: 0 }] }] };
+    const composed = `data:image/png;base64,${Buffer.from("copy-one").toString("base64")}`;
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "markup.export", intent: "copy", dataUrl: composed }));
+    const first = manager.copiedMarkupPath;
+    expect(fs.existsSync(first)).toBe(true);
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "markup.export", intent: "copy", dataUrl: composed }));
+    expect(fs.existsSync(first)).toBe(false);
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "markup.export", intent: "send", targetAgent: "gone", dataUrl: composed }));
+    expect(manager.designMarkup.shapes).toHaveLength(1);
+    expect(manager.designMarkup.status).toBe("error");
+    expect(manager.designAnnotations).toHaveLength(1);
+    await manager.handleDesignPickRaw(JSON.stringify({ action: "markup.export", intent: "send", targetAgent: "gone", dataUrl: composed }));
+    expect(manager.designAnnotations).toHaveLength(1);
+  });
 });

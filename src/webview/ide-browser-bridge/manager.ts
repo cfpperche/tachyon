@@ -33,6 +33,7 @@ export type DesignModeState = {
 const DESIGN_ANNOTATION_MAX_COUNT = 20;
 const DESIGN_ANNOTATION_SCREENSHOT_MAX_BYTES = 2 * 1024 * 1024;
 const DESIGN_ANNOTATION_SCREENSHOT_BATCH_MAX_BYTES = 8 * 1024 * 1024;
+const DESIGN_MARKUP_MAX_SHAPES = 100;
 type DesignModeViewportPreset = "phone" | "tablet" | "desktop" | "reset";
 
 export function formatDesignAnnotationBatch(annotations: Array<Record<string, unknown> & { index: number }>): string {
@@ -62,6 +63,8 @@ export class IdeBrowserBridgeManager {
   private designAnnotations: Array<Record<string, unknown> & { index: number }> = [];
   private nextDesignAnnotationIndex = 1;
   private designViewportPreset: DesignModeViewportPreset = "reset";
+  private designMarkup: { frozen?: string; sourceUrl?: string; shapes: unknown[]; status?: string; text?: string } = { shapes: [] };
+  private copiedMarkupPath: string | undefined;
   private pickHandling = false;
   private onDesignModeChanged: ((state: DesignModeState) => void) | null = null;
 
@@ -286,6 +289,38 @@ export class IdeBrowserBridgeManager {
       }
       return;
     }
+    if (parsed.action === "markup.sync") {
+      await this.pushAnnotationState("__tachyonDmApplyMarkupState", this.designMarkup);
+      return;
+    }
+    if (parsed.action === "markup.capture") {
+      try {
+        const png = await this.cdp.screenshotPngBase64();
+        const bytes = Buffer.from(png, "base64");
+        if (bytes.byteLength > DESIGN_ANNOTATION_SCREENSHOT_MAX_BYTES) throw new Error(`Frozen viewport exceeds ${DESIGN_ANNOTATION_SCREENSHOT_MAX_BYTES} bytes`);
+        this.cleanupCopiedMarkup();
+        this.designMarkup = { frozen: `data:image/png;base64,${png}`, sourceUrl: this.cdp.url, shapes: [], status: "idle" };
+      } catch (err) {
+        this.designMarkup = { shapes: [], status: "error", text: `Could not freeze viewport: ${err instanceof Error ? err.message : String(err)}` };
+      }
+      await this.pushAnnotationState("__tachyonDmApplyMarkupState", this.designMarkup);
+      return;
+    }
+    if (parsed.action === "markup.update") {
+      const shapes = Array.isArray(parsed.shapes) ? parsed.shapes.slice(0, DESIGN_MARKUP_MAX_SHAPES) : [];
+      if (JSON.stringify(shapes).length <= 250_000) this.designMarkup = { ...this.designMarkup, shapes, status: "idle", text: undefined };
+      return;
+    }
+    if (parsed.action === "markup.clear") {
+      this.designMarkup = { shapes: [] };
+      this.cleanupCopiedMarkup();
+      await this.pushAnnotationState("__tachyonDmApplyMarkupState", this.designMarkup);
+      return;
+    }
+    if (parsed.action === "markup.export") {
+      await this.exportDesignMarkup(parsed);
+      return;
+    }
 
     // Layout / chat / agents must NEVER share the pickHandling lock — concurrent posts
     // (open + tail + agents.list) used to drop the hydrate tail silently.
@@ -463,6 +498,46 @@ export class IdeBrowserBridgeManager {
     }
   }
 
+  private async exportDesignMarkup(parsed: Record<string, unknown>): Promise<void> {
+    const intent = parsed.intent === "send" ? "send" : parsed.intent === "copy" ? "copy" : null;
+    const match = typeof parsed.dataUrl === "string" ? /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(parsed.dataUrl) : null;
+    if (!intent || !match || !this.designMarkup.frozen || !this.designMarkup.shapes.length) return;
+    const bytes = Buffer.from(match[1]!, "base64");
+    const pendingMarkup = this.designAnnotations.filter((annotation) => (annotation.target as { tag?: unknown } | undefined)?.tag === "VIEWPORT");
+    const pendingBytes = pendingMarkup.reduce((total, annotation) => {
+      try { return total + (typeof annotation.screenshotPath === "string" ? fs.statSync(annotation.screenshotPath).size : 0); } catch { return total; }
+    }, 0);
+    if (!bytes.byteLength || bytes.byteLength > DESIGN_ANNOTATION_SCREENSHOT_BATCH_MAX_BYTES || this.annotationScreenshotBytes() - pendingBytes + bytes.byteLength > DESIGN_ANNOTATION_SCREENSHOT_BATCH_MAX_BYTES) {
+      await this.pushAnnotationState("__tachyonDmApplyMarkupState", { ...this.designMarkup, status: "error", text: "Composed PNG exceeded the 8 MiB markup budget." });
+      return;
+    }
+    this.cleanupCopiedMarkup();
+    const file = this.writePickScreenshot(match[1]!);
+    if (intent === "copy") {
+      this.copiedMarkupPath = file;
+      await vscode.env.clipboard.writeText(file);
+      this.designMarkup = { ...this.designMarkup, status: "copied", text: `PNG copied; persisted at ${file}` };
+      await this.pushAnnotationState("__tachyonDmApplyMarkupState", this.designMarkup);
+      return;
+    }
+    this.cleanupAnnotationScreenshots(pendingMarkup);
+    this.designAnnotations = this.designAnnotations.filter((annotation) => (annotation.target as { tag?: unknown } | undefined)?.tag !== "VIEWPORT");
+    this.designAnnotations.push({
+      index: this.nextDesignAnnotationIndex++, intent: "change", comment: "Apply the viewport markup in the attached PNG.", screenshotPath: file,
+      page: { url: this.designMarkup.sourceUrl || this.cdp.url }, target: { selector: "viewport", tag: "VIEWPORT" },
+    });
+    await this.sendDesignAnnotations(typeof parsed.targetAgent === "string" ? parsed.targetAgent.trim() : "");
+    if (!this.designAnnotations.length) this.designMarkup = { shapes: [], status: "sent", text: "Markup sent." };
+    else this.designMarkup = { ...this.designMarkup, status: "error", text: "Send was not confirmed; the frozen viewport and vectors were preserved." };
+    await this.pushAnnotationState("__tachyonDmApplyMarkupState", this.designMarkup);
+  }
+
+  private cleanupCopiedMarkup(): void {
+    if (!this.copiedMarkupPath) return;
+    this.cleanupAnnotationScreenshots([{ screenshotPath: this.copiedMarkupPath }]);
+    this.copiedMarkupPath = undefined;
+  }
+
   private writePickScreenshot(base64Png: string): string {
     const dir = path.join(this.workspaceRoot, ".tachyon", "ide-browser-picks");
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -525,6 +600,9 @@ export class IdeBrowserBridgeManager {
       .sort((a, b) => a.localeCompare(b));
   }
   async stop(): Promise<void> {
+    this.clearDesignAnnotations();
+    this.cleanupCopiedMarkup();
+    this.designMarkup = { shapes: [] };
     await this.session.resetBrowserSession();
     this.session.dispose();
     await this.host.stop();
