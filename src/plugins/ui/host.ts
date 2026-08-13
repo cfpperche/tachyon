@@ -12,7 +12,7 @@ import {
   type WorkspacePluginPresentationTarget,
 } from "../../shell/WorkspacePresentation.js";
 import { panelIcon } from "../../webview/shared/panelIcon.js";
-import { renderWebviewShell } from "../../webview/shared/shell.js";
+import { renderWebviewShell, SHELL_BASE_STYLESHEETS } from "../../webview/shared/shell.js";
 import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap, type PluginUiActionRelayMessage } from "../../webview/plugin-host/relay.js";
 import { notify } from "../../workspace/NotificationService.js";
 
@@ -213,7 +213,7 @@ export class PluginSurfaceHost implements vscode.WebviewViewProvider {
     return renderWebviewShell({
       cspSource: webview.cspSource,
       title: surface?.title ?? "Plugin Surfaces",
-      styles: [uri("codicon.css"), uri("design-system.css"), uri("plugin-host.css")],
+      styles: [...SHELL_BASE_STYLESHEETS.map(uri), uri("plugin-host.css")],
       bundle: uri("plugin-host.js"),
       mode: "live",
       surface: shellViewType,
