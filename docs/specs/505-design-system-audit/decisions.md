@@ -80,15 +80,21 @@ não pode ser a fotografia do acúmulo — tem de ser decidida.
 **Decisão: (b), e SÓ PARA O ESPAÇO.** Logo depois de decidir, o dono restringiu: *"tipografia vamos
 manter como temos hoje, me agrada a tipografia escolhida"*.
 
-Então:
+Perguntei o que "manter a tipografia" abrangia, porque cabiam duas leituras. Resposta: *"manter
+familias, definir desenhar rampa"*.
 
-    ESPAÇO ....... desenhado. ~800 pontos migram. A fatia 8 cresce, e isso está aceito de olhos abertos.
-    TIPOGRAFIA ... fica como está. As famílias escolhidas agradam e não entram em discussão.
+Então o recorte final:
 
-ABERTO, e é estreito: a rampa declarada é 16/13/12/11, e `10px` aparece **76 vezes em 14 arquivos**,
-abaixo do menor passo. "Manter a tipografia" pode significar duas coisas aqui — manter as famílias e
-aceitar o 10px como passo real, ou manter a rampa exatamente como está e tratar os 76 usos como
-desvio a corrigir. Perguntado ao dono; não presumido.
+    FAMÍLIAS ....... FIXAS. Tachyon Mono, sans e reading agradam e não entram em discussão.
+    ESPAÇO ......... DESENHADO.
+    RAMPA DE TIPO .. DESENHADA, igual ao espaço.
+
+O que isso resolve por consequência: os **76 usos de `10px` em 14 arquivos** não ficam legitimados por
+serem frequentes. A rampa desenhada decide se existe um passo ali ou se aqueles 76 estavam errados —
+e os dois desfechos são aceitáveis porque agora alguém decide, em vez de o número vencer por
+repetição.
+
+~800 pontos de espaço migram, mais os de tipo. A fatia 8 cresce, e isso está aceito de olhos abertos.
 
 ### Q8 — DUAS densidades, nomeadas
 
