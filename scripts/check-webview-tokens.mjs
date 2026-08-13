@@ -14,6 +14,16 @@
  * t-ba41a8 — `design-mode-overlay/` is scanned like every other directory. t-f5b467 landed
  * (hex = 0). Leftover numeric z-index is excepted per file with a reason; it is not a skip.
  *
+ * t-f45320 — a `var(--ds-*|--tachyon-*)` whose name is declared nowhere in
+ * `src/webview` and that carries no fallback is the same class of silence as a
+ * raw hex: the declaration is invalid at computed-value time and the property
+ * vanishes. Cross every such `var()` against the declared set (CSS `--name:`
+ * plus JS/TS `"--name":` keys, so runtime-injected overlay tokens in
+ * themeTokens.ts count). Fail only when there is no declaration AND no
+ * fallback — a fallback still applies the property. Missing a token means
+ * ADDING it to the design system, not inventing a synonym (`--ds-danger` is
+ * `--ds-err`) and not adding an exception.
+ *
  * One implementation. `scripts/verify-full.mjs` runs it as a static gate;
  * `test/unit/webviewTokenLint.test.ts` imports the same functions.
  *
@@ -247,6 +257,18 @@ export const Z_INDEX_EXCEPTIONS = Object.freeze([
   },
 ]);
 
+/**
+ * Undeclared `--ds-*` / `--tachyon-*` `var()` already on disk that have no fallback.
+ * A new name in an excepted file still fails. A listed name that is now declared
+ * or no longer referenced without a fallback is stale and fails.
+ */
+export const UNDECLARED_EXCEPTIONS = Object.freeze([]);
+
+const TOKEN_NAME_RE = "--(?:ds|tachyon)-[\\w-]+";
+const TOKEN_VAR_RE = new RegExp(`var\\(\\s*(${TOKEN_NAME_RE})\\s*(,|\\))`, "g");
+const TOKEN_DECL_RE = new RegExp(`(${TOKEN_NAME_RE})\\s*:`, "g");
+const TOKEN_KEY_RE = new RegExp(`["'\`](${TOKEN_NAME_RE})["'\`]\\s*:`, "g");
+
 const HEX_RE = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{4}|[0-9a-fA-F]{3})\b/g;
 const Z_CSS_RE = /z-index\s*:\s*([^;}\n]+)/gi;
 const Z_JS_RE = /\bzIndex\s*:\s*([^,}\n]+)/g;
@@ -330,6 +352,99 @@ export function findNumericZIndex(src, ext = ".css") {
     hits.push({ line: lineOf(src, assign.index), value: Number(raw.replace(/_/g, "")) });
   }
   return hits;
+}
+
+/** `var(--ds-*|--tachyon-*)` references. `hasFallback` is the comma after the name. */
+export function findTokenVars(src, ext = ".css") {
+  const code = maskComments(src, ext);
+  const hits = [];
+  TOKEN_VAR_RE.lastIndex = 0;
+  let m;
+  while ((m = TOKEN_VAR_RE.exec(code))) {
+    hits.push({ line: lineOf(src, m.index), name: m[1], hasFallback: m[2] === "," });
+  }
+  return hits;
+}
+
+/** Custom-property assignments: CSS `--name:` and JS/TS `"--name":` keys. */
+export function findTokenDeclarations(src, ext = ".css") {
+  const code = maskComments(src, ext);
+  const names = new Set();
+  for (const re of [TOKEN_DECL_RE, TOKEN_KEY_RE]) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(code))) names.add(m[1]);
+  }
+  return names;
+}
+
+export function evaluateUndeclaredTokens(hits, declared, exceptions = UNDECLARED_EXCEPTIONS) {
+  const violations = [];
+  const excByFile = new Map();
+  for (const row of exceptions) {
+    if (typeof row.reason !== "string" || row.reason.trim().length < MIN_REASON) {
+      violations.push({
+        kind: "anonymous-exception",
+        rule: "undeclared-token",
+        file: row.file,
+        message: `${row.file}: undeclared-token exception has no written reason (min ${MIN_REASON} chars)`,
+      });
+    }
+    if (!excByFile.has(row.file)) excByFile.set(row.file, new Set());
+    const set = excByFile.get(row.file);
+    for (const v of row.values) set.add(v);
+  }
+
+  const foundByFile = new Map();
+  for (const h of hits) {
+    if (h.hasFallback || declared.has(h.name)) continue;
+    if (!foundByFile.has(h.file)) foundByFile.set(h.file, []);
+    foundByFile.get(h.file).push(h);
+  }
+
+  for (const [file, fileHits] of foundByFile) {
+    const allowed = excByFile.get(file) ?? new Set();
+    const found = new Set(fileHits.map((h) => h.name));
+    for (const name of found) {
+      if (allowed.has(name)) continue;
+      const where = fileHits
+        .filter((h) => h.name === name)
+        .map((h) => `${h.line}`)
+        .slice(0, 4)
+        .join(", ");
+      violations.push({
+        kind: "new-value",
+        rule: "undeclared-token",
+        file,
+        value: name,
+        message: `${file}:${where} — ${name} is not declared in src/webview and has no fallback`,
+      });
+    }
+  }
+
+  for (const [file, allowed] of excByFile) {
+    const found = new Set((foundByFile.get(file) ?? []).map((h) => h.name));
+    for (const name of allowed) {
+      if (declared.has(name)) {
+        violations.push({
+          kind: "stale-exception",
+          rule: "undeclared-token",
+          file,
+          value: name,
+          message: `${file} — undeclared-token exception ${name} is now declared; delete it from the list so the debt shrinks`,
+        });
+      } else if (!found.has(name)) {
+        violations.push({
+          kind: "stale-exception",
+          rule: "undeclared-token",
+          file,
+          value: name,
+          message: `${file} — undeclared-token exception ${name} is gone; delete it from the list so the debt shrinks`,
+        });
+      }
+    }
+  }
+  return violations;
 }
 
 /** `--ds-z-*` integers declared on :root in the token file. */
@@ -439,6 +554,8 @@ export function scanRepo(root = ROOT) {
   const files = sourceFiles(path.join(root, SCAN_ROOT));
   const hexHits = [];
   const zHits = [];
+  const tokenHits = [];
+  const declared = new Set();
   for (const full of files) {
     const rel = path.relative(root, full).split(path.sep).join("/");
     const ext = path.extname(full);
@@ -447,16 +564,21 @@ export function scanRepo(root = ROOT) {
       for (const h of findHexLiterals(src, ext)) hexHits.push({ file: rel, ...h });
     }
     for (const h of findNumericZIndex(src, ext)) zHits.push({ file: rel, ...h });
+    for (const name of findTokenDeclarations(src, ext)) declared.add(name);
+    for (const h of findTokenVars(src, ext)) tokenHits.push({ file: rel, ...h });
   }
   return [
     ...evaluateKind(hexHits, HEX_EXCEPTIONS, "hex"),
     ...evaluateKind(zHits, Z_INDEX_EXCEPTIONS, "z-index"),
+    ...evaluateUndeclaredTokens(tokenHits, declared, UNDECLARED_EXCEPTIONS),
   ];
 }
 
 export const FIX_HINT =
   "New hex belongs in src/webview/shared/design-system.css as a --ds-* token, not as a literal and not as an exception. " +
   "New stacking belongs on --ds-z-popover / --ds-z-dialog / --ds-z-toast / --ds-z-overlay. " +
+  "A var(--ds-*|--tachyon-*) must name a token declared in src/webview or carry a fallback; " +
+  "do not invent a synonym (--ds-danger is --ds-err) and do not add an exception for a token the design system is missing. " +
   "Exceptions are only for values that already shipped — each row needs its own reason.";
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

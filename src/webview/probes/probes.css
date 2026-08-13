@@ -7,7 +7,7 @@
 /* t-ca31c2 follow-up — bare h1/table/th/td/code also leaked after a Probes visit (same co-load, never
    unload contract as rich-doc's main leak). Everything lives under .probes-root. */
 .probes-root { padding: var(--ds-4); }
-.probes-root h1 { font-size: var(--ds-large, 1.2em); margin: 0 0 var(--ds-3); }
+.probes-root h1 { font-size: var(--ds-title); margin: 0 0 var(--ds-3); }
 .probes-root .counts { display: flex; gap: var(--ds-3); margin: 0 0 var(--ds-3); color: var(--ds-muted); font-size: var(--ds-small); }
 .probes-root .counts .ok { color: var(--vscode-testing-iconPassed, #3fb950); }
 .probes-root .counts .fail { color: var(--vscode-testing-iconFailed, #f85149); }

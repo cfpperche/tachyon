@@ -12,9 +12,13 @@ const {
   MIN_REASON,
   SCAN_ROOT,
   TOKEN_SOURCE,
+  UNDECLARED_EXCEPTIONS,
   Z_INDEX_EXCEPTIONS,
+  evaluateUndeclaredTokens,
   findHexLiterals,
   findNumericZIndex,
+  findTokenDeclarations,
+  findTokenVars,
   scanRepo,
 } = tokens as {
   FIX_HINT: string;
@@ -22,9 +26,17 @@ const {
   MIN_REASON: number;
   SCAN_ROOT: string;
   TOKEN_SOURCE: string;
+  UNDECLARED_EXCEPTIONS: Array<{ file: string; values: string[]; reason: string }>;
   Z_INDEX_EXCEPTIONS: Array<{ file: string; values: number[]; reason: string }>;
+  evaluateUndeclaredTokens: (
+    hits: Array<{ file: string; line: number; name: string; hasFallback: boolean }>,
+    declared: Set<string>,
+    exceptions?: Array<{ file: string; values: string[]; reason: string }>,
+  ) => Array<{ kind: string; rule: string; file: string; value?: string; message: string }>;
   findHexLiterals: (src: string, ext?: string) => Array<{ line: number; value: string }>;
   findNumericZIndex: (src: string, ext?: string) => Array<{ line: number; value: number }>;
+  findTokenDeclarations: (src: string, ext?: string) => Set<string>;
+  findTokenVars: (src: string, ext?: string) => Array<{ line: number; name: string; hasFallback: boolean }>;
   scanRepo: (root?: string) => Array<{ file: string; message: string }>;
 };
 
@@ -74,7 +86,7 @@ describe("t-c8e2bd — webview token lint", () => {
   });
 
   it("every exception carries a written reason, not an anonymous block", () => {
-    const rows = [...HEX_EXCEPTIONS, ...Z_INDEX_EXCEPTIONS];
+    const rows = [...HEX_EXCEPTIONS, ...Z_INDEX_EXCEPTIONS, ...UNDECLARED_EXCEPTIONS];
     expect(rows.length).toBeGreaterThan(0);
     expect(
       rows
@@ -111,6 +123,102 @@ describe("t-c8e2bd — webview token lint", () => {
   });
 });
 
+describe("t-f45320 — undeclared --ds-* / --tachyon-* var()", () => {
+  it("detects an injected undeclared token with no fallback — the guard is not vacuous", () => {
+    const hits = findTokenVars(".x { color: var(--ds-not-a-token); }\n", ".css");
+    expect(hits).toEqual([{ line: 1, name: "--ds-not-a-token", hasFallback: false }]);
+    const violations = evaluateUndeclaredTokens(
+      hits.map((h) => ({ file: "src/webview/probe.css", ...h })),
+      new Set(["--ds-err"]),
+    );
+    expect(violations).toEqual([
+      expect.objectContaining({
+        kind: "new-value",
+        rule: "undeclared-token",
+        value: "--ds-not-a-token",
+      }),
+    ]);
+  });
+
+  it("an undeclared token with a fallback is not a violation — the property still applies", () => {
+    const hits = findTokenVars(".x { font-size: var(--ds-large, 1.2em); }\n", ".css");
+    expect(hits).toEqual([{ line: 1, name: "--ds-large", hasFallback: true }]);
+    expect(
+      evaluateUndeclaredTokens(
+        hits.map((h) => ({ file: "src/webview/probe.css", ...h })),
+        new Set(),
+      ),
+    ).toEqual([]);
+  });
+
+  it("a declared token with no fallback is not a violation", () => {
+    const css = ":root { --ds-err: red; }\n.x { color: var(--ds-err); }\n";
+    const declared = findTokenDeclarations(css, ".css");
+    expect(declared.has("--ds-err")).toBe(true);
+    expect(
+      evaluateUndeclaredTokens(
+        findTokenVars(css, ".css").map((h) => ({ file: "src/webview/probe.css", ...h })),
+        declared,
+      ),
+    ).toEqual([]);
+  });
+
+  it("counts a JS object key as a declaration — overlay tokens live in themeTokens.ts", () => {
+    const declared = findTokenDeclarations(`const t = { "--ds-font-ui": fontFamily };\n`, ".ts");
+    expect([...declared]).toEqual(["--ds-font-ui"]);
+  });
+
+  it("ignores token names inside comments", () => {
+    expect(findTokenVars("/* color: var(--ds-danger); */\n.x { color: var(--ds-err); }\n", ".css")).toEqual([
+      { line: 2, name: "--ds-err", hasFallback: false },
+    ]);
+    expect(findTokenDeclarations("/* --ds-ghost: red; */\n:root { --ds-err: red; }\n", ".css")).toEqual(
+      new Set(["--ds-err"]),
+    );
+  });
+
+  it("a stale undeclared-token exception fails the same way a stale hex row does", () => {
+    const stale = evaluateUndeclaredTokens([], new Set(["--ds-err"]), [
+      {
+        file: "src/webview/probe.css",
+        values: ["--ds-ghost"],
+        reason: "Placeholder long enough to pass the written-reason floor.",
+      },
+    ]);
+    expect(stale.some((v) => v.kind === "stale-exception" && v.value === "--ds-ghost")).toBe(true);
+
+    const nowDeclared = evaluateUndeclaredTokens(
+      [{ file: "src/webview/probe.css", line: 1, name: "--ds-err", hasFallback: false }],
+      new Set(["--ds-err"]),
+      [
+        {
+          file: "src/webview/probe.css",
+          values: ["--ds-err"],
+          reason: "Placeholder long enough to pass the written-reason floor.",
+        },
+      ],
+    );
+    expect(nowDeclared.some((v) => v.kind === "stale-exception" && v.value === "--ds-err")).toBe(true);
+  });
+
+  it("the invented error/success/radius/font names are gone from live rules", () => {
+    const banned = ["--ds-danger", "--ds-success", "--ds-radius-lg", "--ds-large", "--tachyon-ui-font", "--tachyon-mono", "--tachyon-font-sans"];
+    const src = [
+      "src/webview/rich-doc/rich-doc.css",
+      "src/webview/task-studio/task-studio.css",
+      "src/webview/agent-studio-shell/agent-studio-shell.css",
+      "src/webview/plugin-host/plugin-host.css",
+      "src/webview/probes/probes.css",
+      "src/webview/shared/studio/studio-frame.css",
+      "src/webview/shared/design-system.css",
+    ]
+      .map((file) => fs.readFileSync(path.join(ROOT, file), "utf8"))
+      .join("\n");
+    const live = findTokenVars(src, ".css").filter((h) => banned.includes(h.name));
+    expect(live).toEqual([]);
+  });
+});
+
 describe("t-c8e2bd — one implementation, wired as a static gate", () => {
   it("runs before the compile, after the cheaper byte scan", async () => {
     // @ts-expect-error -- plain ESM, see the import above
@@ -131,5 +239,7 @@ describe("t-c8e2bd — one implementation, wired as a static gate", () => {
   it("teaches the fix rather than only reporting a position", () => {
     expect(FIX_HINT).toContain("design-system.css");
     expect(FIX_HINT).toContain("--ds-");
+    expect(FIX_HINT).toContain("fallback");
+    expect(FIX_HINT).toContain("--ds-err");
   });
 });

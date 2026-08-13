@@ -1,6 +1,6 @@
 .plugin-host-empty {
   color: var(--vscode-descriptionForeground);
-  font: var(--tachyon-ui-font);
+  font: var(--ds-body) / 1.4 var(--tachyon-font-mono);
   padding: 16px;
 }
 
