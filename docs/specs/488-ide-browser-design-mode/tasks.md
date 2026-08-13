@@ -30,7 +30,7 @@ _Generated from `plan.md` on 2026-08-04. Work top-to-bottom. Check boxes as task
 - [ ] Panel drag + resize stable; dropdown anchored to toolbar (no `position:fixed` under transform)
 - [ ] Re-inject Design Mode UI after navigation / CDP reconnect
 - [ ] Status-bar: adjacent icon cluster only (shared group name; no long dual labels)
-- [x] Demote pane markers: prompt forbids markers; tool-only happy path
+- [x] Remove the pane-text reply protocol; `design_mode_chat_reply` is the only path (`t-45b266`)
 
 ## Phase 2 — Dogfood gate
 

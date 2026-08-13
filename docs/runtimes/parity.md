@@ -54,7 +54,7 @@ What “first-class” means in Tachyon (ordered for reading, not strict priorit
 | 16 | **Auth-required detection** | Runtime exposes a MEASURED signal that it cannot execute for authentication reasons, distinct from rate limit, quota, permission, network and invalid session. `✓` needs a **turn-attached** signal measured on a stated version AND consumed by Tachyon — turn-attached is what makes it work mid-run as well as at launch. `~` means measured but not yet consumed, OR consumed only at the launch boundary because the runtime emits nothing during a turn (`t-0338fc`). `✗` means the runtime gives no reliable signal anywhere. Inferring auth state from silence or exit code alone never qualifies. |
 | 17 | **Temporary Agent (`spawn_agent`)** | The runtime may be handed a DELEGATION through the lighter Temporary path — no durable Agent Profile required — and can honor it: it resumes as the same entity, it can receive the spec 246 brief, and it can answer through the Bridge. `✓` needs all three; `~` means the runtime is admitted with a declared, task-owned shortfall; `✗` means a command of that shape is refused as an Agent and belongs to `spawn_terminal`. This is a SEPARATE axis from Agent Profile attestation — see §3.6.1. |
 | 18 | **Internal checklist telemetry** | Runtime has a native structured execution checklist and Tachyon can observe it through a measured structured protocol/event/transcript path. This is ephemeral telemetry only: it never becomes a Board Task or proves Delivery completion. `✓` requires structured read plus correlation and provenance; `~` means native mechanism with weaker observation/control; `✗` means no built-in mechanism. See the [2026-07-28 research](../research/runtime-internal-checklist-capabilities.md). |
-| 19 | **Design Mode chat reply (`design_mode_chat_reply`)** | Under the current tool-only Design Mode prompt (`formatDmChatPrompt`, post-`t-181925` turn id), the runtime **lists** the Bridge tool and the model **calls** it (not pane markers). `✓` needs a dated headless or live dogfood that shows a real MCP tool call on a stated binary version. `~` means listed only, or called without turn bind / panel land. `✗` means the model refuses the tool path and falls back to markers or pane text. Panel land (IDE Browser Bridge online + chat JSONL) is a separate cell in §3.1.3 — tool-call green does **not** imply F1 may delete markers without a land dogfood. Research: [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md). |
+| 19 | **Design Mode chat reply (`design_mode_chat_reply`)** | Under the tool-only Design Mode prompt (`formatDmChatPrompt`, post-`t-181925` turn id), the runtime **lists** the Bridge tool and the model **calls** it. `✓` needs a dated live dogfood resolving a host-issued turn into the production panel; `~` means listed/called without that complete bind-and-land proof. F1 (`t-45b266`) executed after the live matrix closed for the supported scope: Claude, Codex, and Grok. Research: [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md). |
 | 20 | **Auth status probe (pre-launch)** | Runtime answers "is this config home authenticated?" through a **local, non-interactive** command, measured on a stated version, whose output separates authenticated from unauthenticated **before** any work is attempted. Distinct from row 16, which is about recognizing a FAILURE after one. `✓` needs the probe measured in BOTH states AND consumed by Tachyon; `~` means measured but not consumed; `?` means unmeasured; `✗` means the runtime offers no such command. A file existence check never qualifies — it proves bytes exist, not that a session is live. Neither does an exit code alone: Grok exits 0 signed out (§3.8). |
 | 21 | **Native login surface** | What the runtime's own login actually requires of a human, measured by running it — an interactive TUI/paste-back, a device code, or a browser loopback — and whether Tachyon can offer it **from inside the product** without an external terminal. `✓` needs the surface measured on a stated version AND a governed in-product path; `~` means the surface is measured but the human still leaves Tachyon; `?` means unmeasured. Driving a non-interactive key path (stdin API key, token env var) never qualifies and is explicitly out of bounds — see §3.8. |
 | 22 | **Write confinement / discovery root** | Two things the product ASSERTS today and does not enforce, so they are scored instead of assumed. **(a) Write confinement:** the runtime offers a mechanism that stops a tool call from writing outside a declared root, measured on a stated version. `✓` needs the mechanism to cover **every** write path (not just shell), to be **fail-closed**, AND to be consumed by Tachyon; `~` means a real mechanism with a named hole or with zero Tachyon readers; `✗` means the runtime offers none; `?` unmeasured. A sandbox covering `Bash` while `Edit`/`Write` go through skippable permission rules is `~`, never `✓`. A profile that **warns and continues** when enforcement fails is `~` — continuing is the defect. **(b) Discovery root:** whether Tachyon can point the runtime's config/skill discovery at a private directory instead of the runtime's own CWD→repo-root convention. As of the 2026-08-11 sweep **none of the four measured runtimes permits (b)**, which is why a colliding project directory can only be composed into, never replaced (`t-f842f0`). Measurement: [`runtime-write-discovery-isolation-t5313dc.md`](../research/runtime-write-discovery-isolation-t5313dc.md). |
@@ -177,8 +177,8 @@ exclusion was disproved by `t-a4060b`: the production rows have `lifetime`, not 
 `temporary` that the old filter read, so both Saved and Temporary live runtime agents were eligible.
 Therefore Pi is `~`, not `✓`. OpenCode / Outros remain **?** unmeasured. Full matrix §3.1.3 and
 [`design-mode-chat-reply-runtime-matrix-t-dd46a4.md`](../research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md).
-**F1 (delete marker fallback) is unblocked for tool-compliance on claude/codex/grok, not for
-unconditional marker deletion** — re-dogfood with IDE bridge up first.
+That 2026-08-06 result did not release F1 by itself. The later live pending-turn closure in §3.1.3
+did; F1 was executed for the supported Claude/Codex/Grok scope by `t-45b266`.
 
 ᵃ **Auth status probe / native login surface (2026-08-07, `t-9b5457` / SDD 495):** measured by
 running each CLI against an isolated, credential-free config home and against the real one, and by
@@ -446,8 +446,9 @@ in the same change.
 ### 3.1.3 Design Mode `design_mode_chat_reply` (SDD 488 F3 / `t-dd46a4`)
 
 Product context: Design Mode chat's happy path is Bridge tool `design_mode_chat_reply` (prompt from
-`formatDmChatPrompt`; optional `turnId` after `t-181925` / 0.62.0). Pane markers remain in code as
-legacy unwrap (`extractDmChatReplyMarkers`) until F1 — F1 is gated on this matrix.
+`formatDmChatPrompt`; optional `turnId` after `t-181925` / 0.62.0). F1 (`t-45b266`) executed after
+the live pending-turn matrix closed for Claude, Codex, and Grok; `design_mode_chat_reply` is now the
+only reply path.
 
 **Measured 2026-08-06** by running each CLI **directly** (no `spawn_agent`) against the live
 workspace Bridge with a prompt matching the current tool-only shape. Full write-up and raw streams:
@@ -462,8 +463,8 @@ workspace Bridge with a prompt matching the current tool-only shape. Full write-
 | Pi | 0.80.10 | ✓ | ✓ (`design_mode_chat_reply`) | ✓ `dm-turn-ba47e2c5-46cc-43b8-95f0-cec9e23181b0` | ✗ | ✓ host-issued pending turn → tool reply → JSONL + live DOM |
 | OpenCode | 1.18.16 | ✓ | ✓ (`tachyon_bridge_design_mode_chat_reply`) | ✓ `dm-turn-6d4faadf-5dc3-4bf4-89a7-655db56b7520` | ✗ | ✓ host-issued pending turn → tool reply → JSONL + live DOM |
 | Hermes | 0.18.2 | ✓ | ✓ (`mcp__tachyon_bridge__design_mode_chat_reply`) | ✓ `dm-turn-c665e18a-55eb-4d98-91b2-14fe3275fc94` | ✗ | ✓ host-issued pending turn → tool reply → JSONL + live DOM |
-| Gemini | — | **N/A** — admission declares `bridge: null` | **N/A** — no Bridge tools | **N/A** | **?** marker-only fallback unmeasured | **N/A** — no tool return path |
-| Qwen | — | **N/A** — admission declares `bridge: null` | **N/A** — no Bridge tools | **N/A** | **?** marker-only fallback unmeasured | **N/A** — no Bridge or opening-brief channel |
+| Gemini | — | **N/A** — admission declares `bridge: null` | **N/A** — no Bridge tools | **N/A** | **N/A** | **N/A** — outside the supported Design Mode reply scope |
+| Qwen | — | **N/A** — admission declares `bridge: null` | **N/A** — no Bridge tools | **N/A** | **N/A** | **N/A** — outside the supported Design Mode reply scope |
 
 Invocations (summary): Claude `claude -p … --mcp-config … --output-format stream-json`; Codex
 `codex exec --json` with private `CODEX_HOME` Bridge MCP; Grok `grok -p … --output-format json`
@@ -495,7 +496,8 @@ host-minted outstanding turn through the same tool, closing the generic seam. De
 fallback is still **not** green under `t-45b266`'s stated “after runtime matrix (F3) is green”
 criterion: Codex, Grok, and Pi have not been observed resolving a pending host-issued turn, and
 OpenCode remains unmeasured.
-Do not remove markers from this task.
+This verdict is retained as the superseded 2026-08-12 checkpoint; the live closure below replaced it
+and `t-45b266` subsequently executed F1.
 
 **Live pending-turn matrix closed 2026-08-13 (`t-727d9c`).** One real Xvfb EDH drove the production
 Design Mode panel and Bridge on Tachyon 0.86.0 plus the `t-54b9c3` CDP hotfix. Codex, Grok, Pi,
@@ -517,18 +519,11 @@ user → delivery → same-agent `source:"tool"`, and the new webview rendered e
 `.dm-message` rows (human + agent). This revalidates the changed panel seam on the delivered tree;
 the runtime-specific tool/turn bindings for Pi, OpenCode, and Hermes are the live measurements above.
 
-**F1 is not released for unconditional marker deletion.** Every runtime that currently has Bridge
-wiring is green through the live pending-turn door: Claude, Codex, Grok, Pi, OpenCode, and Hermes.
-Gemini and Qwen are structurally outside the tool path, not merely unmeasured:
-`agentRuntimeAdmission` declares `bridge: null` for both, and Qwen also declares `brief: null`, while
-the Design Mode selector currently offers every running non-terminal agent without a runtime
-capability gate. F1 must choose separately between retaining a per-runtime marker fallback and
-capability-gating the selector; `t-727d9c` records both choices but deliberately does not decide
-between them. **Recommendation: capability-gate the selector.** F1 is released to delete the marker
-fallback for Claude, Codex, Grok, Pi, OpenCode, and Hermes; it is not released as a generic deletion
-while Gemini and Qwen remain selectable. Hiding agents that cannot receive or return a Design Mode
-turn fixes the existing false affordance and lets F1 remove the marker machinery completely;
-retaining a per-runtime fallback would preserve that false affordance and permanent legacy code.
+**F1 executed 2026-08-13 (`t-45b266`).** The supported Design Mode scope is Claude, Codex, and
+Grok, and all three are green through the live pending-turn production door above. The pane-text
+reply protocol was removed without a per-runtime fallback or selector capability gate;
+`design_mode_chat_reply` is the single path. Gemini and Qwen are outside this task's supported
+scope; enabling Design Mode chat for either runtime is future work for whoever adds that support.
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 

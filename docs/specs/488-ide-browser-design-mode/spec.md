@@ -189,7 +189,7 @@ when work starts; keep status notes here until split.
 
 | ID | Follow-up | Why deferred | Suggested next artifact |
 |---|---|---|---|
-| F1 | **Deprecate pane markers** entirely (`START/END` reply markers) | v1 may keep emergency fallback during runtime tool-call variance | task under this SDD or 488.1 |
+| F1 | **Remove the pane-text reply protocol** | Completed by `t-45b266` after live Claude/Codex/Grok pending-turn proof; `design_mode_chat_reply` is the sole path | done |
 | F2 | **Multi-agent group thread** (selector of saved agents, concurrent speakers, @-mention routing) | Needs product rules for who answers; prototype UI is exploratory only | SDD 488-group or board design task |
 | F3 | **Runtime parity matrix** (Claude / Codex / Grok / Pi) for tool-call reliability of `design_mode_chat_reply` | Codex dogfood showed “tool listed but unused” behavior | dogfood matrix in notes + optional SDD |
 | F4 | **GA settings gate + onboarding** (`settings.ideBrowser.enabled`, first-run tips) | Prototype is Dev Host–shaped | plan phase when v1 dogfood green |

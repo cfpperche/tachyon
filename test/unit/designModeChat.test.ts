@@ -7,14 +7,11 @@ import { pathToFileURL } from "node:url";
 import {
   appendDmChatEvent,
   designModeChatPath,
-  extractDmChatReplyMarkers,
   formatDmChatPrompt,
   inspectDmChatFile,
   loadDmChatBefore,
   tailDmChat,
   DM_CHAT_MAX_BYTES,
-  DM_CHAT_REPLY_END,
-  DM_CHAT_REPLY_START,
 } from "../../src/webview/ide-browser-bridge/designModeChat.js";
 
 describe("designModeChat JSONL store", () => {
@@ -96,16 +93,6 @@ describe("designModeChat JSONL store", () => {
     expect(older.items.every((e) => e.lineNo < 16)).toBe(true);
   });
 
-  it("extracts marker replies but rejects instruction residue 'and'", () => {
-    const pane = `noise\n${DM_CHAT_REPLY_START}\nplain answer\n${DM_CHAT_REPLY_END}\nmore`;
-    expect(extractDmChatReplyMarkers(pane)).toBe("plain answer");
-    expect(extractDmChatReplyMarkers("no markers")).toBeNull();
-    // Historic bug: prompt said "between START and END" → extracted body "and".
-    const instruction =
-      `put the plain answer alone between ${DM_CHAT_REPLY_START} and ${DM_CHAT_REPLY_END}.`;
-    expect(extractDmChatReplyMarkers(instruction)).toBeNull();
-  });
-
   it("formatDmChatPrompt points at chat.jsonl instead of pasting history", () => {
     const p = formatDmChatPrompt({
       agent: "claude",
@@ -125,10 +112,7 @@ describe("designModeChat JSONL store", () => {
     expect(p).toMatch(/read\/tail that file with tools/i);
     expect(p).toMatch(/Required:.*design_mode_chat_reply/);
     expect(p).toMatch(/ONLY via Bridge tool design_mode_chat_reply/i);
-    // Happy path is tool-only — do not advertise pane markers (agents skip the tool).
-    expect(p).not.toContain(DM_CHAT_REPLY_START);
-    expect(p).not.toContain(DM_CHAT_REPLY_END);
-    expect(p).toMatch(/Do not wrap the answer in markers/i);
+    // There is one reply protocol: the turn-bound Bridge tool.
     // Prior turns / giant agent replies must not be re-injected.
     expect(p).not.toContain("Human: hi");
     expect(p).not.toContain("A".repeat(100));

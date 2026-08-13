@@ -63,7 +63,6 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
 
     const late = await mgr.ingestChatReply(
       "answer that belonged to turn 1",
-      "tool",
       "alice",
       "dm-turn-1",
     );
@@ -73,7 +72,7 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
     expect(mgr.chatWait?.turnId).toBe("dm-turn-2");
     expect(tailDmChat(root, 10).items).toHaveLength(0);
 
-    const ok = await mgr.ingestChatReply("answer for turn 2", "tool", "alice", "dm-turn-2");
+    const ok = await mgr.ingestChatReply("answer for turn 2", "alice", "dm-turn-2");
     expect(ok.ok).toBe(true);
     expect(mgr.chatWait).toBeNull();
     const tail = tailDmChat(root, 10);
@@ -83,7 +82,7 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
 
   it("reply without turnId is rejected while a wait is outstanding", async () => {
     mgr.beginChatReplyWait("alice", "dm-turn-9");
-    const bare = await mgr.ingestChatReply("orphan body", "tool", "alice");
+    const bare = await mgr.ingestChatReply("orphan body", "alice");
     expect(bare.ok).toBe(false);
     if (!bare.ok) expect(bare.error).toMatch(/turnId required/i);
     expect(mgr.chatWait?.turnId).toBe("dm-turn-9");
@@ -104,11 +103,11 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
 
   it("matching reply clears wait; subsequent orphan reply does not invent a second resolve", async () => {
     mgr.beginChatReplyWait("alice", "dm-turn-4");
-    const first = await mgr.ingestChatReply("done", "tool", "alice", "dm-turn-4");
+    const first = await mgr.ingestChatReply("done", "alice", "dm-turn-4");
     expect(first.ok).toBe(true);
     expect(mgr.chatWait).toBeNull();
 
-    const second = await mgr.ingestChatReply("extra", "tool", "alice", "dm-turn-4");
+    const second = await mgr.ingestChatReply("extra", "alice", "dm-turn-4");
     expect(second.ok).toBe(true);
     // Still no wait — orphan records but does not clear anything that is not there.
     expect(mgr.chatWait).toBeNull();
@@ -166,7 +165,6 @@ describe("designMode chat reply turn binding (manager, t-181925)", () => {
     mgr.beginChatReplyWait("alice", "dm-turn-edit");
     const result = await mgr.ingestChatReply(
       "Done — the button now has more room.",
-      "tool",
       "alice",
       "dm-turn-edit",
       {

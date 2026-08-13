@@ -23,7 +23,6 @@ import {
 } from "./pick.js";
 import {
   appendDmChatEvent,
-  extractDmChatReplyMarkers,
   formatDmChatPrompt,
   loadDmChatBefore,
   tailDmChat,
@@ -139,7 +138,6 @@ export class IdeBrowserBridgeManager {
       }) => {
         const result = await this.ingestChatReply(
           req.text,
-          "tool",
           req.agent,
           req.turnId,
           req.edit,
@@ -816,12 +814,11 @@ export class IdeBrowserBridgeManager {
 
   /**
    * Ingest a plain agent reply from Bridge tool `design_mode_chat_reply`.
-   * Happy path is tool-only; marker unwrap is not the product path.
+   * The Bridge tool is the only reply path.
    * Bound to the outstanding wait by host turn id (t-181925 / C-06).
    */
   async ingestChatReply(
     text: string,
-    source: "tool" | "markers" | "activity" = "tool",
     agent?: string,
     turnId?: string,
     edit?: DmChatEdit,
@@ -847,20 +844,7 @@ export class IdeBrowserBridgeManager {
         `[design-mode] chat reply speaker '${claimed}' ignored — using bound '${who}'`,
       );
     }
-    // Tool path: plain body. Only unwrap if the entire payload is a clean marker wrap (legacy).
-    let plain = body;
-    let effectiveSource: "tool" | "markers" | "activity" = source;
-    if (source === "tool") {
-      const fromMarkers = extractDmChatReplyMarkers(body);
-      if (fromMarkers && body.includes(fromMarkers) && body.length <= fromMarkers.length + 80) {
-        plain = fromMarkers;
-        effectiveSource = "markers";
-      }
-    } else if (source === "markers") {
-      plain = extractDmChatReplyMarkers(body) || body;
-      effectiveSource = "markers";
-    }
-    plain = plain.trim();
+    const plain = body;
     if (!plain || /^(and|or|…|\.\.\.)$/i.test(plain)) {
       return { ok: false, error: "reply empty or instruction residue — ignored" };
     }
@@ -904,7 +888,7 @@ export class IdeBrowserBridgeManager {
         ].join("\n"),
         ...normalizedEdit,
         activeAgent,
-        source: effectiveSource,
+        source: "tool",
       })
       : await appendDmChatEvent(this.workspaceRoot, {
         kind: "message",
@@ -912,7 +896,7 @@ export class IdeBrowserBridgeManager {
         agent: who,
         text: reply,
         activeAgent,
-        source: effectiveSource,
+        source: "tool",
       });
     if (match.resolvesWait) {
       this.clearChatReplyWait();
@@ -926,7 +910,7 @@ export class IdeBrowserBridgeManager {
       );
     }
     this.log.appendLine(
-      `[design-mode] chat reply ← ${who} (${effectiveSource})${turnId ? ` turn=${turnId}` : ""}`,
+      `[design-mode] chat reply ← ${who} (tool)${turnId ? ` turn=${turnId}` : ""}`,
     );
     return { ok: true, event: ev };
   }

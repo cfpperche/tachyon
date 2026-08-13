@@ -75,7 +75,7 @@ Present in code (exploratory / dogfood quality — not a ship claim):
 |---|---|---|
 | HTTP+CDP manager | `src/webview/ide-browser-bridge/manager.ts` | start/stop, instance file, chat HTTP, attention poll |
 | Inject UI | `designModeInject.ts` | toolbar, chat panel, Trusted Types constraints |
-| Chat store | `designModeChat.ts` | JSONL, prompt format, marker extract |
+| Chat store | `designModeChat.ts` | JSONL and tool-only prompt format |
 | Engine client | `src/ide-browser/client.ts` | discover, sweep dead PIDs, request |
 | MCP tools | `src/bridge/tools.ts` | `ide_browser_*`, `design_mode_chat_reply` |
 | Status bar cluster | `register.ts` | adjacent priorities, shared name |
@@ -141,9 +141,9 @@ Living dogfood for `design_mode_chat_reply` tool-call reliability (blocks confid
   `docs/research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md`; parity §3.1.3 / row 19.
 - **Historical Codex “listed, used markers”** (2026-08-04 notes above) did **not** reproduce on
   0.146.0 under the current tool-only prompt.
-- **F1 verdict:** tool-compliance green for claude/codex/grok → F1 no longer blocked by “Codex
-  won’t call the tool.” Marker deletion still needs a live panel dogfood (IDE Browser Bridge up)
-  before removing `extractDmChatReplyMarkers`. Do not do F1 from this task.
+- **F1 closure (`t-45b266`, 2026-08-13):** after the live pending-turn matrix proved Claude,
+  Codex, and Grok through pick → chat → tool reply in the production panel, F1 removed the legacy
+  pane-text reply protocol. `design_mode_chat_reply` is the sole supported reply path.
 - **Live schema gap:** running Bridge `tools/list` omitted `turnId` despite 0.62.0 source; engine
   process was long-lived. Re-check after engine reload when dogfooding panel land.
 
