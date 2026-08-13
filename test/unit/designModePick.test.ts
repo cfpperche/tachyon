@@ -174,6 +174,41 @@ describe("Design Mode shell entry points (shipped source)", () => {
     expect(reinstall).toHaveBeenCalledTimes(1);
   });
 
+  it("turns Design Mode off and invalidates host state when re-inject attempts are exhausted", async () => {
+    vi.useFakeTimers();
+    const { IdeBrowserCdpSession } = await import(
+      "../../src/webview/ide-browser-bridge/cdpSession.js"
+    );
+    const session = new IdeBrowserCdpSession() as unknown as {
+      designModeOn: boolean;
+      state: "connected";
+      ws: { readyState: number };
+      reinstallAfterInternalNav(log: (message: string) => void, reason: string): Promise<void>;
+      reattachPageTarget(log: (message: string) => void): Promise<void>;
+      evaluate(expression: string): Promise<unknown>;
+      send(method: string, params: Record<string, unknown>): Promise<unknown>;
+      injectDesignModeScript(options: { restorePickMode: boolean }): Promise<void>;
+      setDesignModeInvalidatedHandler(handler: (() => void) | null): void;
+      readonly isDesignModeOn: boolean;
+    };
+    session.designModeOn = true;
+    session.state = "connected";
+    session.ws = { readyState: 1 };
+    vi.spyOn(session, "reattachPageTarget").mockResolvedValue();
+    vi.spyOn(session, "evaluate").mockResolvedValue("complete|body");
+    vi.spyOn(session, "send").mockResolvedValue({});
+    vi.spyOn(session, "injectDesignModeScript").mockRejectedValue(new Error("blocked"));
+    const invalidated = vi.fn();
+    session.setDesignModeInvalidatedHandler(invalidated);
+
+    const reinstall = session.reinstallAfterInternalNav(() => undefined, "test");
+    await vi.runAllTimersAsync();
+    await reinstall;
+
+    expect(session.isDesignModeOn).toBe(false);
+    expect(invalidated).toHaveBeenCalledTimes(1);
+  });
+
   it("manager formats picks with the same shipped formatter", () => {
     // Guard against a fork of the prompt format that bypasses pick.ts
     const pick = assembleDesignModePick({
