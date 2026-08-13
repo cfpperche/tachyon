@@ -21,7 +21,11 @@ export type DesignModeAnnotation = Capture & {
   index: number;
   intent: Intent;
   comment: string;
+  screenshotPath?: string;
 };
+
+export type DesignModeAgentState = { agents: string[]; active?: string; emptyReason?: string };
+export type DesignModeSendState = { status: "idle" | "sending" | "sent" | "error"; text?: string };
 
 function selectorFor(el: Element): string {
   const escape = (value: string) => CSS.escape(value);
@@ -69,6 +73,9 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
   const [intent, setIntent] = useState<Intent>("change");
   const [annotations, setAnnotations] = useState<DesignModeAnnotation[]>([]);
   const [positions, setPositions] = useState<Record<number, { left: number; top: number } | null>>({});
+  const [agentState, setAgentState] = useState<DesignModeAgentState>({ agents: [] });
+  const [targetAgent, setTargetAgent] = useState("");
+  const [sendState, setSendState] = useState<DesignModeSendState>({ status: "idle" });
 
   const post = (value: unknown) => {
     const raw = JSON.stringify(value);
@@ -82,8 +89,15 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
 
   useEffect(() => {
     window.__tachyonDmApplyAnnotationState = (next) => { setAnnotations(next); return next.length; };
+    window.__tachyonDmApplyAgentState = (next) => {
+      setAgentState(next);
+      setTargetAgent((current) => next.agents.includes(current) ? current : next.active && next.agents.includes(next.active) ? next.active : next.agents[0] || "");
+      return next.agents.length;
+    };
+    window.__tachyonDmApplySendState = (next) => { setSendState(next); return next.status; };
     post({ __annotation: "sync" });
-    return () => { delete window.__tachyonDmApplyAnnotationState; };
+    post({ __annotation: "agents" });
+    return () => { delete window.__tachyonDmApplyAnnotationState; delete window.__tachyonDmApplyAgentState; delete window.__tachyonDmApplySendState; };
   }, [bindingName]);
 
   useEffect(() => {
@@ -137,6 +151,7 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
   }, [bindingName, restorePickMode, draft]);
 
   const add = () => { if (!draft || !comment.trim()) return; post({ __annotation: "add", intent, comment: comment.trim(), capture: draft.capture }); setDraft(null); setComment(""); };
+  const send = () => { if (!targetAgent || sendState.status === "sending") return; setSendState({ status: "sending" }); post({ action: "annotation.send", targetAgent }); };
 
   return <div data-tachyon-dm-overlay>
     <div ref={outline} id="tachyon-dm-root" aria-hidden="true" style={{ position: "fixed", display: "none", pointerEvents: "none", zIndex: 2_147_483_646, border: `2px solid ${focusColor}`, boxSizing: "border-box", borderRadius: "2px" }} />
@@ -156,6 +171,15 @@ export function App({ bindingName, focusColor, restorePickMode }: DesignModeOver
         <div style={{ minWidth: 0 }}><div style={{ display: "flex", alignItems: "center", gap: "6px" }}><code style={{ color: "#d0d0d0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{annotation.target.tag.toLowerCase()}{annotation.target.id ? `#${annotation.target.id}` : ""}</code><small style={{ color: annotation.intent === "question" ? "#c4b5fd" : "#7dd3fc", textTransform: "capitalize" }}>{annotation.intent}</small></div><div style={{ color: "#aaa", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{annotation.target.text || annotation.target.selector}</div><div style={{ marginTop: "3px", overflowWrap: "anywhere" }}>{annotation.comment}</div>{positions[annotation.index] === null && <div role="status" style={{ color: "#fbbf24", marginTop: "4px" }}>Target not found</div>}</div>
         <button type="button" aria-label={`Delete annotation ${annotation.index}`} onClick={() => post({ __annotation: "delete", index: annotation.index })} style={{ alignSelf: "start", color: "#ccc", background: "transparent", border: 0, fontSize: "18px", cursor: "pointer" }}>×</button>
       </article>)}
+      <footer style={{ padding: "10px 12px", display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: "8px", alignItems: "center" }}>
+        <select data-testid="annotation-agent-select" aria-label="Send annotations to agent" value={targetAgent} onChange={(event) => setTargetAgent(event.currentTarget.value)} disabled={!agentState.agents.length || sendState.status === "sending"} style={{ minWidth: 0, color: "#fff", background: "#303136", border: "1px solid #686a70", borderRadius: "5px", padding: "6px 8px", font: "inherit" }}>
+          {!agentState.agents.length && <option value="">No agent available</option>}
+          {agentState.agents.map((agent) => <option value={agent}>{agent}</option>)}
+        </select>
+        <button type="button" aria-label="Refresh agents" onClick={() => post({ __annotation: "agents" })} disabled={sendState.status === "sending"} style={{ color: "#ddd", background: "transparent", border: "1px solid #686a70", borderRadius: "5px", padding: "6px 8px", cursor: "pointer" }}>↻</button>
+        <button data-testid="annotation-send" type="button" disabled={!targetAgent || sendState.status === "sending"} onClick={send} style={{ color: "white", background: targetAgent ? focusColor : "#555", border: 0, borderRadius: "5px", padding: "7px 14px", cursor: targetAgent ? "pointer" : "default" }}>{sendState.status === "sending" ? "Sending…" : "Send"}</button>
+        {(sendState.text || agentState.emptyReason) && <div role="status" style={{ gridColumn: "1 / -1", color: sendState.status === "error" ? "#fca5a5" : "#bbb", overflowWrap: "anywhere" }}>{sendState.text || agentState.emptyReason}</div>}
+      </footer>
     </aside>}
   </div>;
 }
@@ -165,5 +189,7 @@ declare global {
     __tachyonDmQueue?: string[];
     __tachyonDmSetPickMode?: (on: boolean) => boolean;
     __tachyonDmApplyAnnotationState?: (annotations: DesignModeAnnotation[]) => number;
+    __tachyonDmApplyAgentState?: (state: DesignModeAgentState) => number;
+    __tachyonDmApplySendState?: (state: DesignModeSendState) => string;
   }
 }

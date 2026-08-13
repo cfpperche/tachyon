@@ -46,6 +46,22 @@ export type DesignModeState = {
   lastPick: DesignModePickPayload | null;
 };
 
+export function formatDesignAnnotationBatch(annotations: Array<Record<string, unknown> & { index: number }>): string {
+  const first = annotations[0] as { page?: { url?: string } } | undefined;
+  const lines = [`## Design Feedback: ${first?.page?.url || "current page"}`, ""];
+  for (const annotation of annotations) {
+    const target = annotation.target as Record<string, unknown> | undefined;
+    lines.push(`### ${annotation.index}. ${String(annotation.intent || "change")}: ${String(target?.selector || target?.tag || "element")}`);
+    lines.push(String(annotation.comment || ""));
+    if (annotation.screenshotPath) lines.push(`Screenshot: ${String(annotation.screenshotPath)}`);
+    if (target?.text) lines.push(`Text: ${String(target.text)}`);
+    if (target?.html) lines.push(`HTML: ${String(target.html)}`);
+    if (target?.bounds) lines.push(`Bounds: ${JSON.stringify(target.bounds)}`);
+    lines.push("");
+  }
+  return lines.join("\n").trim();
+}
+
 export class IdeBrowserBridgeManager {
   private readonly log: vscode.OutputChannel;
   private readonly workspaceRoot: string;
@@ -269,6 +285,10 @@ export class IdeBrowserBridgeManager {
       await this.pushDesignAnnotationsToPage();
       return;
     }
+    if (parsed.__annotation === "agents") {
+      await this.pushAnnotationAgentsToPage();
+      return;
+    }
     if (parsed.__annotation === "delete") {
       const index = Number(parsed.index);
       if (Number.isInteger(index)) {
@@ -285,9 +305,24 @@ export class IdeBrowserBridgeManager {
       // must never hitch a ride in this object (Orca's measured memory boundary).
       if (intent && comment && capture && JSON.stringify(capture).length <= 80_000) {
         const annotation = JSON.parse(JSON.stringify(capture, (key, value) => key === "screenshot" || key === "screenshotPath" ? undefined : value)) as Record<string, unknown>;
-        this.designAnnotations.push({ ...annotation, index: this.nextDesignAnnotationIndex++, intent, comment });
+        let screenshotPath: string | undefined;
+        const target = annotation.target as { bounds?: { x?: number; y?: number; width?: number; height?: number } } | undefined;
+        const bounds = target?.bounds;
+        try {
+          if (bounds && Number(bounds.width) > 0 && Number(bounds.height) > 0) {
+            const png = await this.cdp.screenshotPngBase64({ x: Number(bounds.x) || 0, y: Number(bounds.y) || 0, width: Number(bounds.width), height: Number(bounds.height) });
+            screenshotPath = this.writePickScreenshot(png);
+          }
+        } catch (err) {
+          this.log.appendLine(`[design-mode] annotation screenshot failed (continuing without): ${err instanceof Error ? err.message : String(err)}`);
+        }
+        this.designAnnotations.push({ ...annotation, index: this.nextDesignAnnotationIndex++, intent, comment, ...(screenshotPath ? { screenshotPath } : {}) });
         await this.pushDesignAnnotationsToPage();
       }
+      return;
+    }
+    if (parsed.action === "annotation.send") {
+      await this.sendDesignAnnotations(typeof parsed.targetAgent === "string" ? parsed.targetAgent.trim() : "");
       return;
     }
 
@@ -423,6 +458,46 @@ export class IdeBrowserBridgeManager {
     }
   }
 
+  private async pushAnnotationState(functionName: string, value: unknown): Promise<void> {
+    const state = JSON.stringify(value).replace(/</g, "\\u003c");
+    try { await this.cdp.evaluateInPage(`typeof window.${functionName} === 'function' && window.${functionName}(${state})`); } catch { /* navigation races are recovered by mount sync */ }
+  }
+
+  private async pushAnnotationAgentsToPage(): Promise<void> {
+    try {
+      const agents = await this.listRunningAgents();
+      await this.pushAnnotationState("__tachyonDmApplyAgentState", { agents, active: agents.includes(this.designAgent) ? this.designAgent : agents[0], ...(!agents.length ? { emptyReason: "No agents are running." } : {}) });
+    } catch (err) {
+      await this.pushAnnotationState("__tachyonDmApplyAgentState", { agents: [], emptyReason: `Could not load running agents: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }
+
+  private async sendDesignAnnotations(targetAgent: string): Promise<void> {
+    const preserve = async (text: string) => this.pushAnnotationState("__tachyonDmApplySendState", { status: "error", text });
+    if (!this.designAnnotations.length) return preserve("There are no annotations to send.");
+    if (!targetAgent) return preserve("Choose a running agent.");
+    const ws = this.getWorkspace?.();
+    if (!ws) return preserve("Tachyon workspace is not connected.");
+    try {
+      const agents = await this.listRunningAgents();
+      if (!agents.includes(targetAgent)) return preserve(`Agent '${targetAgent}' is no longer available. Refresh the roster and choose another agent.`);
+      const prompt = formatDesignAnnotationBatch(this.designAnnotations);
+      const receipt = await ws.activity.sendAgentInput(targetAgent, prompt, true);
+      const reason = "reason" in receipt ? receipt.reason : receipt.status;
+      if (receipt.status !== "submitted") return preserve(`Delivery to ${targetAgent} was not confirmed (${reason}). Your annotations were preserved.`);
+      this.designAnnotations = [];
+      this.nextDesignAnnotationIndex = 1;
+      this.designAgent = targetAgent;
+      await this.pushDesignAnnotationsToPage();
+      await this.pushAnnotationState("__tachyonDmApplySendState", { status: "sent", text: `Sent to ${targetAgent}.` });
+      this.log.appendLine(`[design-mode] annotation batch → ${targetAgent} receipt=submitted`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const composer = /refused-composer|composer draft/i.test(message);
+      await preserve(composer ? `${targetAgent} has a draft in the terminal. Clear or submit it, then retry; your annotations were preserved.` : `Send failed: ${message}. Your annotations were preserved.`);
+    }
+  }
+
   private writePickScreenshot(base64Png: string): string {
     const dir = path.join(this.workspaceRoot, ".tachyon", "ide-browser-picks");
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -446,6 +521,7 @@ export class IdeBrowserBridgeManager {
         kind?: string;
         running?: boolean;
         dead?: boolean;
+        stopping?: boolean;
       }>
       : [];
     return rows
@@ -454,7 +530,8 @@ export class IdeBrowserBridgeManager {
           r.name
           && (r.kind === undefined || r.kind === "agent")
           && !!r.running
-          && !r.dead,
+          && !r.dead
+          && !r.stopping,
       )
       .map((r) => r.name!)
       .filter(Boolean)
