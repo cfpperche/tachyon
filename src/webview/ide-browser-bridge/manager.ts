@@ -54,6 +54,8 @@ export class IdeBrowserBridgeManager {
   private getWorkspace: (() => WorkspaceShellHandle | undefined) | null = null;
   private designAgent = "grok";
   private lastPick: DesignModePickPayload | null = null;
+  private designAnnotations: Array<Record<string, unknown> & { index: number }> = [];
+  private nextDesignAnnotationIndex = 1;
   private pickHandling = false;
   private onDesignModeChanged: ((state: DesignModeState) => void) | null = null;
   /**
@@ -263,6 +265,32 @@ export class IdeBrowserBridgeManager {
       return;
     }
 
+    if (parsed.__annotation === "sync") {
+      await this.pushDesignAnnotationsToPage();
+      return;
+    }
+    if (parsed.__annotation === "delete") {
+      const index = Number(parsed.index);
+      if (Number.isInteger(index)) {
+        this.designAnnotations = this.designAnnotations.filter((annotation) => annotation.index !== index);
+        await this.pushDesignAnnotationsToPage();
+      }
+      return;
+    }
+    if (parsed.__annotation === "add") {
+      const intent = parsed.intent === "question" ? "question" : parsed.intent === "change" ? "change" : null;
+      const comment = typeof parsed.comment === "string" ? parsed.comment.trim().slice(0, 4_000) : "";
+      const capture = parsed.capture && typeof parsed.capture === "object" ? parsed.capture as Record<string, unknown> : null;
+      // The durable batch is textual/structural. A pick PNG is momentary context and
+      // must never hitch a ride in this object (Orca's measured memory boundary).
+      if (intent && comment && capture && JSON.stringify(capture).length <= 80_000) {
+        const annotation = JSON.parse(JSON.stringify(capture, (key, value) => key === "screenshot" || key === "screenshotPath" ? undefined : value)) as Record<string, unknown>;
+        this.designAnnotations.push({ ...annotation, index: this.nextDesignAnnotationIndex++, intent, comment });
+        await this.pushDesignAnnotationsToPage();
+      }
+      return;
+    }
+
     // Layout / chat / agents must NEVER share the pickHandling lock — concurrent posts
     // (open + tail + agents.list) used to drop the hydrate tail silently.
     if (parsed.__cancel === true) {
@@ -383,6 +411,15 @@ export class IdeBrowserBridgeManager {
       void vscode.window.showErrorMessage(`Design Mode pick failed: ${msg}`);
     } finally {
       this.pickHandling = false;
+    }
+  }
+
+  private async pushDesignAnnotationsToPage(): Promise<void> {
+    const state = JSON.stringify(this.designAnnotations).replace(/</g, "\\u003c");
+    try {
+      await this.cdp.evaluateInPage(`typeof window.__tachyonDmApplyAnnotationState === 'function' && window.__tachyonDmApplyAnnotationState(${state})`);
+    } catch {
+      /* Navigation can race the ack; mount requests sync again after re-inject. */
     }
   }
 
