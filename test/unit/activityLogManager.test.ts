@@ -3,13 +3,66 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ActivityLogManager, sessionIdFromTranscriptPath } from "../../src/activity/ActivityLogManager.js";
-import { agentLogId } from "../../src/activity/logStore.js";
+import { ActivityLog, agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
 import { encodeClaudeCwd } from "../../src/resume/adapters.js";
 
 const dirs: string[] = [];
 const freshDir = (): string => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "alm-")); dirs.push(d); return d; };
 afterEach(() => { while (dirs.length) fs.rmSync(dirs.pop()!, { recursive: true, force: true }); });
+
+describe("ActivityLogManager lifecycle windows (t-1484bc)", () => {
+  it("measures standalone grace and stale-action expiry by elapsed time, independent of tick count", async () => {
+    const ws = freshDir();
+    const transcript = path.join(ws, "session.jsonl");
+    fs.writeFileSync(transcript, `${JSON.stringify({
+      type: "assistant", uuid: "u1", sessionId: "session", version: "2.1",
+      timestamp: "2026-08-13T00:00:00Z", message: { content: [{ type: "text", text: "hello" }] },
+    })}\n`);
+    let currentTranscript = transcript;
+    const rec = { resume: { runtime: "claude", sessionId: "session" }, declared: true };
+    const wsStub = {
+      workspaceRoot: ws,
+      wsHash: "hash",
+      ledger: { all: () => new Map([["agent", rec]]), get: () => rec },
+      manager: { transcriptPathOf: async () => ({ path: currentTranscript, runtime: "claude" }) },
+    };
+    let now = 0;
+    const manager = new ActivityLogManager(() => [wsStub as never], 9_999, 0, undefined, () => now);
+    const tick = async (): Promise<void> => { await (manager as unknown as { tick(): Promise<void> }).tick(); };
+    const reasons = (): Array<string | undefined> => new ActivityLog(path.join(ws, ".tachyon", "activity"), "agent")
+      .readTail(50).filter((event) => event.type === "session.boundary")
+      .map((event) => (event.payload as { reason?: string }).reason);
+
+    await tick();
+    manager.noteLifecycle("hash", "agent", "resumed");
+    manager.armLifecycle("hash", "agent");
+    for (let i = 0; i < 20; i++) await tick();
+    expect(reasons()).toEqual([]); // many fast polls are not six seconds
+    now = 5_999;
+    await tick();
+    expect(reasons()).toEqual([]);
+    now = 6_000;
+    await tick();
+    expect(reasons()).toEqual(["resumed"]);
+
+    manager.noteLifecycle("hash", "agent", "restarted");
+    manager.armLifecycle("hash", "agent");
+    for (let i = 0; i < 40; i++) await tick();
+    now = 65_999;
+    await tick();
+    now = 66_000; // the 60 s backstop expires this non-standalone action
+    await tick();
+    currentTranscript = path.join(ws, "later-session.jsonl");
+    fs.writeFileSync(currentTranscript, `${JSON.stringify({
+      type: "assistant", uuid: "u2", sessionId: "later-session", version: "2.1",
+      timestamp: "2026-08-13T00:01:06Z", message: { content: [{ type: "text", text: "later" }] },
+    })}\n`);
+    now = 66_001;
+    await tick();
+    expect(reasons()).toEqual(["resumed", "new"]); // stale "restarted" did not label the later session
+  });
+});
 
 describe("ActivityLogManager — mid-tick dismiss race (pin p-4dadd3)", () => {
   it("skips poll for a row removed during the resolve await, so it never resurrects the just-deleted log", async () => {

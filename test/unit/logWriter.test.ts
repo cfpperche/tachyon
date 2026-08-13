@@ -129,10 +129,12 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     const adir = path.join(root, "activity");
     const a = path.join(root, "A.jsonl");
     fs.writeFileSync(a, `${rec("a1", "A", "hi")}\n`);
-    const w = new ActivityLogWriter(adir, "claude", clock);
+    let now = 0;
+    const w = new ActivityLogWriter(adir, "claude", clock, () => now);
     w.poll(loc(a, "A")); // establish A
     w.noteLifecycle("resumed"); w.arm(); // noted before the action, armed after it settled
-    for (let i = 0; i < 3; i++) w.poll(loc(a, "A")); // grace polls with no uuid change → standalone marker
+    now = 6_000;
+    w.poll(loc(a, "A")); // elapsed grace with no uuid change → standalone marker
     const reasons = new ActivityLog(adir, "claude").readTail(50)
       .filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason);
     expect(reasons).toEqual(["resumed"]);
@@ -143,14 +145,17 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
     const adir = path.join(root, "activity");
     const a = path.join(root, "A.jsonl");
     fs.writeFileSync(a, `${rec("a1", "A", "hi")}\n`);
-    const w = new ActivityLogWriter(adir, "claude", clock);
+    let now = 0;
+    const w = new ActivityLogWriter(adir, "claude", clock, () => now);
     w.poll(loc(a, "A"));
     w.noteLifecycle("resumed"); // NOT armed yet (action still in flight)
+    now = 60_000;
     for (let i = 0; i < 5; i++) w.poll(loc(a, "A")); // even past the grace window — must emit nothing
     const log = new ActivityLog(adir, "claude");
     expect(log.readTail(50).filter((e) => e.type === "session.boundary")).toHaveLength(0);
     w.arm(); // action settled
-    for (let i = 0; i < 3; i++) w.poll(loc(a, "A"));
+    now = 66_000;
+    w.poll(loc(a, "A"));
     expect(log.readTail(50).filter((e) => e.type === "session.boundary").map((e) => (e.payload as { reason?: string }).reason)).toEqual(["resumed"]);
   });
 
