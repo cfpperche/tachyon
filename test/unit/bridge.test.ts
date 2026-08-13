@@ -108,7 +108,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // hand-written "who's touching what" list.
   // t-167b5c — 77 → 78: read_notices, the durable read door onto .tachyon/doorbells.jsonl (spec 493).
   // t-1926ce — 78 → 79: read-only orphan process reporting for deleted managed worktrees.
-  it("exposes exactly the 82 canonical tools, including runtime lifecycle ingest and the explicit Terminal operation", async () => {
+  it("exposes exactly the 83 canonical tools, including runtime lifecycle ingest and the explicit Terminal operation", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "acknowledge_agent",
@@ -171,6 +171,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       "request_human_approval",
       "request_human_attention",
       "restart_agent",
+      "retask_agent",
       "run_command",
       "run_host_action",
       "run_runbook",
@@ -203,14 +204,17 @@ describe("Bridge end-to-end over streamable HTTP", () => {
   // Legacy generated guard: it("exposes exactly the 60 tools (17 agent ...")
   const { sessions, launches, dead, panes, exec } = fakeTmuxExec();
   const notifications: Array<{ message: string; level: string }> = [];
+  let taskRows: TaskStore | undefined;
   const config = parseConfig("agents:\n  claude:\n    cmd: claude\nsettings:\n  maxAgents: 2\n").config;
   const tmux = new TmuxService(exec);
+  const sessionLedger = new SessionLedger(WS);
   const manager = new AgentManager({
     tmux,
     wsHash: HASH,
     workspaceRoot: WS,
-    ledger: new SessionLedger(WS),
+    ledger: sessionLedger,
     getConfig: () => config,
+    assignedWork: (name) => (taskRows?.listRaw() ?? []).filter((task) => task.assignee === name),
     launchPreflight: {
       check: async (command) => command.model === "missing-model"
         ? { state: "unsupported", code: "runtime_model_unavailable", runtime: "codex", model: command.model, suggestions: ["gpt-5.6-sol"] }
@@ -233,12 +237,14 @@ describe("Bridge end-to-end over streamable HTTP", () => {
       deliver: (target, line) => notifyAssignee?.(target, line) ?? Promise.resolve(),
     }); },
   });
+  taskRows = tasks;
   const validations = new ValidationStore(pinsRoot);
   const continuity = new ContinuityStore(pinsRoot);
   const handoff = new ProjectHandoffStore(pinsRoot);
   let taskChanges = 0;
   let noticeMode: "immediate" | "queued" = "immediate";
   let deliveredNoticeMetadata: NoticeSourceMetadata | undefined;
+  const deliveredNoticeLines: string[] = [];
   // t-8605be — "claude"'s attention is mutable so tests can flip it between needs-input (the default,
   // relied on by other suites below: list_agents attention + wait_for_agent) and a genuinely-busy state
   // to exercise write_input's refusal path without disturbing those other tests.
@@ -282,6 +288,7 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     composerDraftNow: async (agent) => (agent === "claude" ? claudeComposerDraftNow : undefined),
     deliverNotice: async (target, line, metadata) => {
       deliveredNoticeMetadata = metadata;
+      deliveredNoticeLines.push(line);
       if (noticeMode === "queued") return { status: "queued", queued: 1 };
       await tmux.sendSubmittedLine(manager.session(target), line, { delayMs: 0 });
       return { status: "notified" };
@@ -646,6 +653,43 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     // t-ab7708 — the window declares what came back so "nothing" never has to be guessed at.
     expect(fullParsed.journalWindow).toMatchObject({ mode: "tail", returned: 4, total: 4, truncated: false });
     expect(taskChanges).toBeGreaterThanOrEqual(3);
+  });
+
+  it("retask_agent claims live work and pushes a fresh record without changing worktree or branch", async () => {
+    const spawned = await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "retask-worker", cmd: "claude", skip_contract_reason: "idle fixture awaiting board work" },
+    });
+    expect(spawned.isError).toBeFalsy();
+    const existing = sessionLedger.get("retask-worker")!;
+    const isolation = { path: "/wt/retask-worker", branch: "tachyon/retask-worker", tachyonCreatedBranch: true, baseRef: "base", createdAt: "now" };
+    sessionLedger.record("retask-worker", { ...existing, cwd: isolation.path, worktree: isolation });
+
+    const made = await client.callTool({ name: "create_task", arguments: { title: "new live assignment" } });
+    const id = JSON.parse((made.content as Array<{ text: string }>)[0].text).id as string;
+    await client.callTool({ name: "update_task", arguments: { id, status: "triaged" } });
+
+    noticeMode = "queued";
+    const result = await client.callTool({ name: "retask_agent", arguments: { name: "retask-worker", task_id: id } });
+    noticeMode = "immediate";
+    expect(result.isError).toBeFalsy();
+    expect(JSON.parse((result.content as Array<{ text: string }>)[0].text)).toMatchObject({ delivery: "queued" });
+    expect(tasks.get(id)).toMatchObject({ status: "active", assignee: "retask-worker" });
+    expect(deliveredNoticeLines.at(-1)).toContain("SESSION RETASK: WORK ON RECORD");
+    expect(deliveredNoticeLines.at(-1)).toContain(id);
+    expect(sessionLedger.get("retask-worker")?.worktree).toEqual(isolation);
+
+    const second = await client.callTool({ name: "create_task", arguments: { title: "must not displace live work" } });
+    const secondId = JSON.parse((second.content as Array<{ text: string }>)[0].text).id as string;
+    await client.callTool({ name: "update_task", arguments: { id: secondId, status: "triaged" } });
+    const refused = await client.callTool({ name: "retask_agent", arguments: { name: "retask-worker", task_id: secondId } });
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused.content)).toContain(`still owns active ${id}`);
+    expect(tasks.get(secondId)).toMatchObject({ status: "triaged" });
+
+    sessionLedger.record("retask-worker", existing);
+    await client.callTool({ name: "kill_agent", arguments: { name: "retask-worker" } });
+    await client.callTool({ name: "dismiss_agent", arguments: { name: "retask-worker" } });
   });
 
   it("get_task windows the journal by bytes, declares what it withheld, and hands back the whole log on request", async () => {

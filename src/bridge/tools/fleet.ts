@@ -18,6 +18,66 @@ import { type BridgeDeps, AGENT_NAME, TASK_ID, dismissOwnedWorktree, dismissRece
 export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
 
   mcp.registerTool(
+    "retask_agent",
+    {
+      description:
+        "Give one triaged board Task to an already-live Temporary agent without restarting it or touching its checkout. " +
+        "Claims the task, then pushes a freshly projected WORK ON RECORD into the existing conversation through the " +
+        "queue-safe notice path. Refuses while the agent owns different active work: finish or release that assignment first.",
+      inputSchema: {
+        name: AGENT_NAME.describe("live Temporary agent to retask"),
+        task_id: TASK_ID.describe("triaged or active-unassigned board task to claim"),
+      },
+    },
+    async ({ name, task_id }) => {
+      try {
+        const denied = lifecycleScopeGuard(deps, "restart_agent", name);
+        if (denied) return fail(new Error(denied.replaceAll("restart_agent", "retask_agent")));
+        if (!deps.deliverNotice) throw new Error("retask_agent is unavailable: queue-safe agent delivery is not configured");
+
+        // Validate the live Temporary and its prompt channel before the board write. The returned
+        // projection is intentionally discarded: the authoritative one is rendered after the claim.
+        await deps.manager.liveRetaskWorkRecord(name);
+        const competing = deps.tasks.listRaw().filter(
+          (task) => task.status === "active" && task.assignee === name && task.id !== task_id,
+        );
+        if (competing.length > 0) {
+          throw new Error(
+            `retask_agent refused: '${name}' still owns active ${competing.map((task) => task.id).join(", ")}; ` +
+            "finish or release that assignment before choosing different work",
+          );
+        }
+
+        const prior = deps.tasks.get(task_id);
+        const decision = decideSpawnTaskClaim(prior, name);
+        if (decision.kind === "refuse") {
+          throw new Error(decision.reason.replaceAll("spawn_agent", "retask_agent").replaceAll("Spawning", "Retasking"));
+        }
+        let claimed: Task | undefined;
+        try {
+          if (decision.kind === "claim") {
+            claimed = await deps.tasks.update(task_id, {
+              status: "active",
+              assignee: name,
+              expect: { updatedAt: prior.updatedAt },
+              ...(deps.caller?.kind === "agent" && deps.caller.name ? { actor: deps.caller.name } : {}),
+            });
+            deps.onTasksChanged?.({ reason: "task-mutated", id: claimed.id });
+          }
+          const record = await deps.manager.liveRetaskWorkRecord(name);
+          const receipt = await deps.deliverNotice(name, record);
+          return ok(JSON.stringify({ agent: name, task: task_id, delivery: receipt.status }, null, 2));
+        } catch (error) {
+          if (claimed) await releaseSpawnClaim(deps, claimed, prior);
+          throw error;
+        }
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  mcp.registerTool(
     "spawn_agent",
     {
       description:

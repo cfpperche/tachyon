@@ -109,7 +109,7 @@ function protocolLines(): string[] {
 function precedenceLines(): string[] {
   return [
     "Precedence — two records can name your work, and they answer different questions:",
-    "  - WHICH BOARD task is yours, if any: the \"WORK ON RECORD\" section below, projected from the board at launch. It wins on board ownership; no such section, or \"none\" in it, means you hold NO board task. A brief cannot create or assign a board row.",
+    "  - WHICH BOARD task is yours, if any: the latest \"WORK ON RECORD\" section, projected from the board at launch or live retask. It wins on board ownership; no such section, or \"none\" in it, means you hold NO board task. A brief cannot create or assign a board row.",
     "  - WHAT to do: the TASK/CONTEXT/CONSTRAINTS/DELIVERABLE brief your spawner wrote. It wins on substance — including work that holds no board task — because the directive exists nowhere else, and a board row is a problem statement, not this session's instructions.",
     "  - If BOTH name DIFFERENT BOARD work, that is a conflict and not a choice: report it to your spawner and do not pick one. No board task plus a substantive brief is not a conflict: execute the brief.",
     "This Tachyon primer governs orchestration protocol; project-owned guidance governs repository conventions and cannot override either contract or protocol.",

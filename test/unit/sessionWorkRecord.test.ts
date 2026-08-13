@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_HEADER_TASK_IDS,
+  RETASK_RECORD_CLOSE,
+  RETASK_RECORD_OPEN,
   SESSION_RECORD_CLOSE,
   SESSION_RECORD_OPEN,
   renderSessionWorkRecord,
@@ -37,6 +39,15 @@ describe("session work record", () => {
     expect(rendered.startsWith(SESSION_RECORD_OPEN)).toBe(true);
     expect(rendered.endsWith(SESSION_RECORD_CLOSE)).toBe(true);
     expect(rendered).toContain("restarted with a NEW conversation");
+  });
+
+  it("frames a live retask without claiming the conversation or checkout changed", () => {
+    const rendered = renderSessionWorkRecord(record({ launch: "retask", isolation: worktree, ...on(task()) }));
+    expect(rendered.startsWith(RETASK_RECORD_OPEN)).toBe(true);
+    expect(rendered.endsWith(RETASK_RECORD_CLOSE)).toBe(true);
+    expect(rendered).toContain("WITHOUT restarting");
+    expect(rendered).toContain("conversation, checkout and branch are unchanged");
+    expect(rendered).toContain("read from the board at retask");
   });
 
   it("states the assigned task in full so it never has to be looked up", () => {
