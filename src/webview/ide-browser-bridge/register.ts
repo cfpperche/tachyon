@@ -399,7 +399,7 @@ async function ensureManager(): Promise<IdeBrowserBridgeManager> {
   }
   if (!manager) {
     if (!log) log = vscode.window.createOutputChannel("Tachyon IDE Browser");
-    manager = new IdeBrowserBridgeManager(root, log, extensionContext?.extensionUri.fsPath);
+    manager = new IdeBrowserBridgeManager(root, log, extensionContext?.extensionUri?.fsPath);
     if (!extensionContext) throw new Error("IDE Browser extension context is unavailable");
     designModePanel?.dispose();
     designModePanel = new DesignModePanel(extensionContext.extensionUri, root, manager);

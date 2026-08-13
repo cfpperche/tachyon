@@ -1,4 +1,5 @@
 import { render } from "preact";
+import { ErrorBoundary } from "../shared/ErrorBoundary.js";
 import { App, type DesignModeOverlayOptions } from "./App.js";
 
 const VERSION = 1;
@@ -18,7 +19,7 @@ function mount(options: DesignModeOverlayOptions): { version: number } {
   unmount();
   host = document.createElement("div");
   document.documentElement.appendChild(host);
-  render(<App {...options} />, host);
+  render(<ErrorBoundary><App {...options} /></ErrorBoundary>, host);
   window.__tachyonDmCleanup = () => { window.__tachyonDmOverlay?.unmount(); };
   return { version: VERSION };
 }
