@@ -306,4 +306,43 @@ describe("ActivityLogWriter (spec 239 inc 3b)", () => {
       .map((e) => (e.payload as { text: string }).text);
     expect(texts).toEqual(["ola", "more", "after restart"]);
   });
+
+  it("t-08abf8: a Grok N-tool batch yields N tool.completed when the first child has a tool_result", () => {
+    // Measured shape (c2b710b6 L135 / this session L17+L30): assistant has no rec.id, empty
+    // content, N tool_calls. ingestLines used to key the origin record as events[0].recordId
+    // (= first call.id), so that child's tool_result collided and was dropped.
+    const root = freshRoot();
+    const adir = path.join(root, "activity");
+    const sess = path.join(root, "sess", "chat_history.jsonl");
+    fs.mkdirSync(path.dirname(sess), { recursive: true });
+    const ids = [
+      "call-3b4d9ce1-d579-4cca-b271-9ef59b72f59f-80",
+      "call-3b4d9ce1-d579-4cca-b271-9ef59b72f59f-81",
+      "call-3b4d9ce1-d579-4cca-b271-9ef59b72f59f-82",
+      "call-3b4d9ce1-d579-4cca-b271-9ef59b72f59f-83",
+    ];
+    const grokLoc = (p: string, id: string) => ({ path: p, sessionId: id, runtime: "grok" });
+    const assistant = JSON.stringify({
+      type: "assistant",
+      content: "",
+      model_id: "grok-4.5",
+      tool_calls: ids.map((id) => ({ id, name: "run_terminal_command", arguments: "{\"command\":\"true\"}" })),
+    });
+    const results = ids.map((id) => JSON.stringify({ type: "tool_result", tool_call_id: id, content: "ok" }));
+    fs.writeFileSync(sess, `${assistant}\n`);
+    const w = new ActivityLogWriter(adir, "grok", clock);
+    w.poll(grokLoc(sess, "sess"));
+    fs.appendFileSync(sess, `${results.join("\n")}\n`);
+    w.poll(grokLoc(sess, "sess"));
+    const log = new ActivityLog(adir, "grok");
+    const events = log.readTail(50);
+    const started = events.filter((e) => e.type === "tool.started").map((e) => (e.payload as { toolUseId: string }).toolUseId);
+    const completed = events.filter((e) => e.type === "tool.completed").map((e) => (e.payload as { toolUseId: string }).toolUseId);
+    expect(started).toEqual(ids);
+    expect(completed).toEqual(ids); // N completed, not N-1 — first child must not collide with the origin key
+    const originIds = [...new Set(events.filter((e) => e.type === "tool.started").map((e) => e.source.recordId))];
+    expect(originIds).toHaveLength(1);
+    expect(ids).not.toContain(originIds[0]);
+    expect(w.poll(grokLoc(sess, "sess"))).toBe(0); // reminted origin key stays idempotent
+  });
 });
