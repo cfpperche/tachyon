@@ -5,17 +5,17 @@ _Generated from `plan.md` on 2026-08-13. Work top-to-bottom. Check boxes as task
 ## Implementation
 
 - [x] Record the live sequence and cause.
-- [ ] Add and run the red deadlock regression.
-- [ ] Add exact queue-head composer ownership detection.
-- [ ] Retry the staged line without retyping.
-- [ ] Prove unrelated human drafts remain held.
+- [x] Add and run the red deadlock regression.
+- [x] Add exact queue-head composer ownership detection.
+- [x] Retry the staged line without retyping.
+- [x] Prove unrelated human drafts remain held.
 
 ## Verification
 
 _Acceptance checks tied to `spec.md`. Each should map to a checklist item there._
 
-- [ ] Focused delivery and composer tests pass.
-- [ ] `npm run verify:full:quiet` attests the final tree.
+- [x] Focused delivery and composer tests pass.
+- [x] `npm run verify:full:quiet` attests the final tree.
 
 **Headless check:** `npm run verify:full:quiet`
 

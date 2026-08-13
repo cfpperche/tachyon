@@ -2,7 +2,8 @@
 
 _Created 2026-08-13._
 
-**Status:** in-progress
+**Status:** shipped
+**Closure:** Exact retained queue-head ownership now retries an already-staged notice without retyping; a later `notify_agent` is an escape door, while unrelated human drafts remain held. Focused fail-before/pass-after evidence is in `notes.md`; final tree attestation is recorded in the task journal.
 <!-- Bare enum only: draft | in-progress | shipped | shipped-partial | superseded | abandoned | deferred.
      When this ships, add a **Closure:** line here recording what shipped (commit/evidence);
      `/sdd close` flags a shipped spec that still lacks one (alongside unchecked boxes,
@@ -14,16 +15,16 @@ _Created 2026-08-13._
 
 ## Acceptance criteria
 
-- [ ] **Scenario: recover Tachyon's own stranded queued notice**
+- [x] **Scenario: recover Tachyon's own stranded queued notice**
   - **Given** a notice queued while an agent was working and staged-but-unsubmitted during its working-to-idle drain
   - **When** recovery runs again or another notice arrives
   - **Then** Tachyon recognizes the exact queued notice in the composer and retries its submit without typing the line twice
-- [ ] **Scenario: preserve a real human draft**
+- [x] **Scenario: preserve a real human draft**
   - **Given** a non-empty composer whose text is not the exact queued Tachyon notice
   - **When** notify, write-input, retask, or the queued drain reaches the pane
   - **Then** the human draft is not overwritten or submitted
-- [ ] A fail-before test reproduces the retained queue, staged tool text, single exhausted idle edge, and closed delivery doors.
-- [ ] The root cause and measured live timing are recorded.
+- [x] A fail-before test reproduces the retained queue, staged tool text, single exhausted idle edge, and closed delivery doors.
+- [x] The root cause and measured live timing are recorded.
 
 ## Non-goals
 

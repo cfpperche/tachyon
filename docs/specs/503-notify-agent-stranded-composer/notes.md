@@ -20,3 +20,10 @@ _Where implementation intentionally departed from `plan.md`, and why it was nece
 ## Open questions
 
 _Questions surfaced during the build with no answer yet. Owner or path to resolution if known._
+
+None.
+
+## Fail-before / pass-after
+
+- Before implementation, the focused regression failed with `stagedSubmits` 0: the second recovery returned at composer occupancy and retained the queue forever.
+- After implementation, 120 focused attention/delivery/composer tests passed; the exact final-tree full-gate result follows in the task journal and verification record.
