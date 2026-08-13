@@ -6,6 +6,45 @@ Marketplace release notes.
 
 ## Unreleased
 
+## 0.88.0 — the board tells you who is working on what, and Design Mode gets its viewport presets back
+
+Two of these are regressions this release fixes rather than features it adds, and both were found by
+using the product: the board had stopped naming anyone, and the responsive presets went missing when
+Design Mode's chat moved out of the page.
+
+### Fixed
+
+- **The board no longer labels every task `unassigned`** (`t-2a944c`). `assignee` is not a stored
+  field — it is derived from the attempts ledger, and the store does that correctly. The board's wire
+  projection forwarded only `assignee` while the card label reads `currentAssignee` for live work and
+  `lastDeliverer` for history, so the webview received one field and the label read the other two.
+  Every card said "unassigned", including 389 delivered tasks that had a recorded deliverer. The
+  agent filter was measured and was **not** affected: it reads the field that was being forwarded.
+- **Design Mode's viewport presets are back** (`t-0807b2`). Phone 375×812, tablet 768×1024, desktop
+  1280×800 and reset lived in the injected page toolbar and went out with it in 0.87.0. The backend
+  never left — `Emulation.setDeviceMetricsOverride` and its handler were intact the whole time, with
+  nothing left to reach them. The controls now live in the Design Mode tab and show which preset is
+  active, which matters more than it did on the old toolbar: in a separate tab there is otherwise no
+  way to tell whether the page is at 375 or 1280.
+- **Closing an already-delivered task no longer looks like assigning work** (`t-964eef`).
+  `reconcile_task` is the quiet door for bookkeeping and stays quiet; a guard now holds that, proven
+  by injecting a synthetic assignee to watch the test fail before trusting it.
+
+### Added
+
+- **The picked element's screenshot appears in the Design Mode chat** (`t-49ef22`). The capture was
+  always being taken and its path already travelled in the agent's prompt; it simply was never shown.
+  Undoing an edit — the other half of that task — is deliberately still out: it needs a written
+  transaction contract first (what exactly is undone, whole patch or per file, and what happens when
+  the file changed since). **Not proven live:** the headless Dev Host could not inject the picker, so
+  this shipped on catalog visual QA. If pointing at an element does not show its image, it regressed.
+- **`retask_agent`** (`t-a8b630`, SDD 502) hands one triaged board task to an already-live Temporary
+  agent: it claims the task and pushes a freshly projected WORK ON RECORD into the existing
+  conversation. No restart, no touched checkout. Until now the only ways to change what a live agent
+  was working on either did not move the board record at all or destroyed the worktree the work lived
+  in. It refuses while that agent still owns different active work, because a re-task door that
+  always accepts recreates the two-tasks conflict it exists to resolve.
+
 ## 0.87.1 — a Dev Host could delete `claude` from your machine
 
 Hotfix for anyone who runs the Extension Development Host, by F5 or headless.
