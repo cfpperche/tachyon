@@ -99,6 +99,27 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   a check that did not run.
 - Integrate `main` once at the end inside the change worktree, verify that combined tree, and deliver
   there. If `main` moves again, re-integrate and reverify.
+- **Whoever moves `main` owns the cost of that re-integration, and most of it buys nothing.** Proof is
+  keyed by tree, so every merge invalidates the attestation of every branch still in flight. Measured
+  2026-08-13 over the day's ten merges: of the 45 possible pairs, **40 (88 %) touch disjoint files** —
+  a full gate re-run over changes that cannot interact. The five overlapping pairs are the finding:
+  the most expensive one was two agents dispatched onto the same Design Mode screen at the same time,
+  which no merge order fixes. So the discipline is (`docs/research/t-fe60a3-merge-cadence.md`):
+  1. **Check file overlap BEFORE dispatching, not after.** Two tasks on one screen collide by
+     construction, and resolving it costs a third agent.
+  2. **On merge, compare the landing branch's files against every branch still in flight.** Zero
+     overlap → the individual attestations still cover and nobody re-gates. Overlap → the combined
+     tree is the only proof, and only the agent that touches it re-gates.
+  3. **A branch that FIXES the gate skips the queue.** Holding it behind the notify-before-gate order
+     keeps the whole fleet red.
+
+  Two limits, both declared rather than assumed. Disjoint files is a strong signal, not a proof: the
+  break it misses is cross-file (one branch adds a caller, another changes the callee's signature
+  elsewhere), and the gate's `typecheck` — its first stage — is what catches that class. And landing a
+  merge whose combined tree was never gated is a **judgment**, not a record: three of today's fifteen
+  trunk states are exactly that. Trunk adherence is 80 % today against 60 % on 2026-08-09, which is
+  the number to watch. Do not answer this with new machinery: `t-fb7025` §7 already refused `affected`
+  tiers, partial-tree caching, and loosening the lock, each with its own measurement.
 - Moving `main` is a HUMAN action in the primary checkout, not the delivering agent's. **One product
   fact and one convention** put it there, and the difference matters: the integrate door is
   record-only — it proves containment and records the fact, and never runs a main-mutating Git
