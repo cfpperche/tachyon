@@ -18,6 +18,8 @@ declare global {
     };
     tachyonDesignModePick?: (raw: string) => void;
     __tachyonDmApplyAnnotationState?: (annotations: Array<Record<string, unknown>>) => number;
+    __tachyonDmApplyAgentState?: (state: { agents: string[]; active?: string }) => number;
+    __tachyonDmApplySendState?: (state: { status: "idle" | "sending" | "sent" | "error"; text?: string }) => string;
   }
 }
 
@@ -90,6 +92,39 @@ describe("Design Mode compiled IIFE", () => {
       await page.$eval("#ephemeral", (node) => node.remove());
       await page.waitForFunction(() => document.querySelector('[data-testid="annotation-row-1"]')?.textContent?.includes("Target not found"));
       expect(await page.$('[data-testid="annotation-badge-1"]')).toBeNull();
+    } finally {
+      await page.close();
+    }
+  }, HANG_TIMEOUT_MS);
+
+  it("renders the host roster inside the tray and posts one send without clearing before host confirmation", async () => {
+    const page = await browser.newPage();
+    try {
+      await page.setViewport({ width: 880, height: 700 });
+      await page.setContent(`<button id="cta">Send feedback target</button>`);
+      await page.evaluate((source) => { (0, eval)(source); }, bundle);
+      await page.evaluate(() => {
+        window.tachyonDesignModePick = (raw) => {
+          const request = JSON.parse(raw) as { __annotation?: string; action?: string; targetAgent?: string; capture?: Record<string, unknown>; intent?: string; comment?: string };
+          if (request.__annotation === "add" && request.capture) window.__tachyonDmApplyAnnotationState?.([{ ...request.capture, intent: request.intent, comment: request.comment, index: 1 }]);
+          if (request.__annotation === "agents") window.__tachyonDmApplyAgentState?.({ agents: ["ada", "new-agent"], active: "ada" });
+        };
+        window.__tachyonDmOverlay?.mount({ bindingName: "tachyonDesignModePick", focusColor: "#007fd4", restorePickMode: true });
+      });
+      await page.click("#cta");
+      await page.type('[aria-label="Annotation comment"]', "Fix it");
+      await page.click('[data-testid="annotation-add"]');
+      await page.select('[data-testid="annotation-agent-select"]', "new-agent");
+      await page.click('[data-testid="annotation-send"]');
+
+      const sent = await page.evaluate(() => window.__tachyonDmQueue?.map((raw) => JSON.parse(raw)).find((item) => item.action === "annotation.send"));
+      expect(sent).toEqual({ action: "annotation.send", targetAgent: "new-agent" });
+      expect(await page.$('[data-testid="annotation-row-1"]')).not.toBeNull();
+      await page.evaluate(() => window.__tachyonDmApplySendState?.({ status: "error", text: "Receipt not confirmed; annotations preserved." }));
+      expect(await page.$eval('[role="status"]', (node) => node.textContent)).toContain("annotations preserved");
+      expect(await page.$('[data-testid="annotation-row-1"]')).not.toBeNull();
+      await page.evaluate(() => { window.__tachyonDmApplyAnnotationState?.([]); window.__tachyonDmApplySendState?.({ status: "sent", text: "Sent." }); });
+      await page.waitForSelector('[data-testid="annotation-tray"]', { hidden: true });
     } finally {
       await page.close();
     }
