@@ -23,7 +23,8 @@ describe("Design Mode overlay cutover structure", () => {
 
   it("has no Design Mode panel, chat app, composer, or reply tool after cutover", () => {
     expect(fs.existsSync(path.join(root, "src/webview/DesignModePanel.ts"))).toBe(false);
-    expect(fs.readdirSync(path.join(root, "src/webview/design-mode"))).toEqual([]);
+    const retiredApp = path.join(root, "src/webview/design-mode");
+    expect(fs.existsSync(retiredApp) ? fs.readdirSync(retiredApp) : []).toEqual([]);
     expect(read("esbuild.mjs")).not.toMatch(/WEBVIEW_APP_VIEWS\s*=\s*\[[^\]]*"design-mode"/);
     expect(read("src/webview/webviewApps.ts")).not.toContain('view: "design-mode"');
     expect(read("src/bridge/tools/ide-browser.ts")).not.toContain("design_mode_chat_reply");
