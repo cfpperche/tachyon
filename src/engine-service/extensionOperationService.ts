@@ -1001,12 +1001,16 @@ async function promoteAgent(
     );
   }
   if (definition.kind !== "terminal") {
-    throw new Error("only a terminal instance can be saved to tachyon.yml; create an agent in Agent Studio instead");
+    throw new Error(
+      "only a terminal instance can be saved as a terminal declaration; to keep a fork, create a Saved Agent in Agent Studio with the same command — the fork's session is not adopted",
+    );
   }
-  if (workspace.config?.agents[agent] !== undefined) throw new Error(`'${agent}' is already declared in tachyon.yml`);
+  if (workspace.config?.agents[agent] !== undefined) {
+    throw new Error(`'${agent}' is already declared as a terminal declaration`);
+  }
   const changed = workspace.promoteTerminalDeclaration(agent, definition.cmd);
   if (changed) onViewsChanged("agents");
-  if (!changed) throw new Error(`could not save '${agent}' to .tachyon/terminals/${agent}.yml`);
+  if (!changed) throw new Error(`could not save '${agent}' as a terminal declaration at .tachyon/terminals/${agent}.yml`);
   // t-04052d — PROMOTION, and the one place the two axes and the capability must be written apart.
   // A durable Profile now exists for this name (the config edit above), so the definition outlives the
   // process: `lifetime` becomes `saved` and it may be started again from that Profile. What does NOT

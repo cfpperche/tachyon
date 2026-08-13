@@ -49,7 +49,7 @@ export const ACTION_META: Record<ActionId, { icon: string; label: string }> = {
   reinjectContinuity: { icon: "history", label: "Re-inject continuity" },
   injectPrompt: { icon: "symbol-snippet", label: "Inject prompt template" },
   continueTask: { icon: "debug-step-over", label: "Continue task in…" },
-  promote: { icon: "save", label: "Save to tachyon.yml" },
+  promote: { icon: "save", label: "Save as terminal declaration" },
   reviewWorktree: { icon: "git-compare", label: "Review worktree changes" },
   createPr: { icon: "git-pull-request", label: "Create PR" },
   edit: { icon: "edit", label: "Edit in Studio" },
@@ -107,6 +107,12 @@ const canResume = (a: AgentVM) => !!a.resumable && isAgentRow(a) && (a.status ==
  * door whatsoever, which is the failure mode this task was written to avoid, not to cause.
  */
 const hasStudioForget = (a: AgentVM) => isAgentRow(a) && !a.adhoc;
+/**
+ * t-7b7701 — this door writes a terminal declaration at `.tachyon/terminals/<name>.yml`.
+ * Offering it on a Temporary agent (a fork) always failed: `promoteAgent` refuses anything
+ * that is not a terminal. A fork becomes a Saved Agent in Agent Studio; the session is not adopted.
+ */
+const canPromote = (a: AgentVM) => !!a.adhoc && a.kind === "terminal";
 
 /** Every action available for an agent, gated by state + capability (the full set; "more" menu source). */
 export function actionsFor(a: AgentVM): ActionId[] {
@@ -135,7 +141,7 @@ export function actionsFor(a: AgentVM): ActionId[] {
   // t-41117e — Saved Agent only (not Temporary, not terminal). Webview opens the destination picker.
   if (isAgentRow(a) && !a.adhoc) out.push("continueTask");
   if (a.worktree) out.push("reviewWorktree", "createPr");
-  if (a.adhoc) out.push("promote");
+  if (canPromote(a)) out.push("promote");
   if (!a.adhoc) out.push("edit", "editYaml", "clone");
   if (!hasStudioForget(a)) out.push("remove");
   return out;

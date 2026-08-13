@@ -2731,7 +2731,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // representable. It was rejected (D2). Each old tab carries the title and icon of a surface that no
   // longer exists, and reviving it as System would leave a human holding a tab that says Overview and
   // draws something else. Disposing says the honest thing; the launcher's one tile is a click away.
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine"]) {
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonDesignMode", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine"]) {
     registerDisposePanelSerializer(context, viewType);
   }
 
@@ -3940,14 +3940,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       await injectPromptTemplateFlow(ws, item.agentName);
     }),
     vscode.commands.registerCommand("tachyon.promoteAgentItem", async (item: AgentItem) => {
-      // Spec 211: promote a Temporary (MCP-spawned) agent to a declared one in
-      // tachyon.yml. cmd + kind + instructions; never an absolute cwd (portability).
+      // t-7b7701 — promote a Temporary terminal instance to a declared terminal at
+      // `.tachyon/terminals/<name>.yml`. cmd only; never an absolute cwd (portability).
       const ws = wsOf(item);
       if (!ws) return;
       const name = item.agentName;
       await extensionInvoke(ws, { action: "config.agent.promote", agent: name });
       refreshAll();
-      notify(vscode.l10n.t("'{0}' saved to tachyon.yml.", name));
+      notify(vscode.l10n.t("'{0}' saved as a terminal declaration.", name));
     }),
     vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);

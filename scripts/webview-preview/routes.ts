@@ -52,6 +52,7 @@ import { commandStudioShellFixtures, commandStudioShellMakeMessage } from "./fix
 import { runbookStudioShellFixtures, runbookStudioShellMakeMessage } from "./fixtures/runbook-studio-shell";
 import { scheduleStudioShellFixtures, scheduleStudioShellMakeMessage } from "./fixtures/schedule-studio-shell";
 import { sectionAppFixtureFixtures, sectionAppFixtureMakeMessage } from "./fixtures/section-app-fixture";
+import { designModeEvent } from "../../src/webview/design-mode/messages";
 
 /** provenance of a fixture VM — keeps a hand-authored fiction from masquerading as real intent. */
 export type Provenance = "sample-derived" | "unit-fixture-derived" | "captured-host-vm" | "synthetic-edge";
@@ -99,6 +100,17 @@ const DESIGN_SYSTEM = "/dist/webview/design-system.css";
 const QUICK_PICKER = "/dist/webview/quick-picker.css";
 
 export const ROUTES: Record<string, Route> = {
+  "design-mode": {
+    bundle: "/dist/webview/design-mode.js",
+    cssLinks: [CODICON, DESIGN_SYSTEM, "/dist/webview/design-mode.css"],
+    frame: { w: 880, h: 760 },
+    module: true,
+    fixtures: { default: { provenance: "synthetic-edge", vm: [{ type: "snapshot", agents: ["claude", "codex", "grok"], active: "claude", selection: { summary: "<button> .hero__primary", text: "Start building" }, items: [
+        { lineNo: 1, kind: "message", role: "user", text: "[selection: <button> .hero__primary]\nMake this action clearer on narrow screens." },
+        { lineNo: 2, kind: "message", role: "agent", agent: "claude", text: "I tightened the label and kept the action full-width below 480 px. The page is ready to review." },
+      ] }] } },
+    makeMessage: (vm) => (vm as Array<Record<string, unknown>>).map(designModeEvent),
+  },
   sidebar: {
     bundle: "/dist/webview/sidebar.js",
     cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/sidebar.css"],
