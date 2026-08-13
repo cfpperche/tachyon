@@ -5,14 +5,14 @@ import path from "node:path";
 import * as vscode from "vscode";
 import { IdeBrowserBridgeManager } from "../../src/webview/ide-browser-bridge/manager.js";
 
-// Private production doors reached deliberately: the injected page calls pushAgentsToPage.
+// Private production door reached deliberately: the injected page requests `__annotation: agents`.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ManagerHarness = any;
 
 describe("Design Mode agent-list honesty (t-a4060b)", () => {
   let root: string;
   let manager: ManagerHarness;
-  let pushed: Array<Record<string, unknown>>;
+  let pushed: string[];
   let logLines: string[];
 
   beforeEach(() => {
@@ -29,9 +29,7 @@ describe("Design Mode agent-list honesty (t-a4060b)", () => {
     manager = new IdeBrowserBridgeManager(root, {
       appendLine: (line: string) => { logLines.push(line); },
     } as unknown as vscode.OutputChannel);
-    manager.session.cdp.pushDesignModeChat = async (payload: Record<string, unknown>) => {
-      pushed.push(payload);
-    };
+    manager.session.cdp.evaluateInPage = async (expression: string) => { pushed.push(expression); };
   });
 
   afterEach(async () => {
@@ -39,14 +37,10 @@ describe("Design Mode agent-list honesty (t-a4060b)", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  it("labels a disconnected page instead of claiming the roster is empty", async () => {
-    await manager.pushAgentsToPage();
+  it("labels a disconnected workspace instead of claiming the roster is empty", async () => {
+    await manager.handleDesignPickRaw(JSON.stringify({ __annotation: "agents" }));
 
-    expect(pushed).toEqual([expect.objectContaining({
-      type: "agents",
-      agents: [],
-      emptyReason: "Design Mode is disconnected from this page — reopen the IDE Browser.",
-    })]);
+    expect(pushed.at(-1)).toContain('"agents":[],"emptyReason":"Could not load running agents: Tachyon workspace is not connected"');
   });
 
   it("labels a failed query and records its cause", async () => {
@@ -55,12 +49,9 @@ describe("Design Mode agent-list honesty (t-a4060b)", () => {
       extension: { query: async () => { throw new Error("engine unavailable"); } },
     });
 
-    await manager.pushAgentsToPage();
+    await manager.handleDesignPickRaw(JSON.stringify({ __annotation: "agents" }));
 
-    expect(pushed).toEqual([expect.objectContaining({
-      agents: [],
-      emptyReason: "Could not load running agents: engine unavailable",
-    })]);
+    expect(pushed.at(-1)).toContain('"agents":[],"emptyReason":"Could not load running agents: engine unavailable"');
     expect(logLines).toContain("[design-mode] agent list failed: engine unavailable");
   });
 
@@ -73,12 +64,9 @@ describe("Design Mode agent-list honesty (t-a4060b)", () => {
       ] },
     });
 
-    await manager.pushAgentsToPage();
+    await manager.handleDesignPickRaw(JSON.stringify({ __annotation: "agents" }));
 
-    expect(pushed).toEqual([expect.objectContaining({
-      agents: [],
-      emptyReason: "No agents are running.",
-    })]);
+    expect(pushed.at(-1)).toContain('"agents":[],"emptyReason":"No agents are running."');
   });
 
   it("offers live Saved and Temporary agents and excludes terminals", async () => {
@@ -91,8 +79,8 @@ describe("Design Mode agent-list honesty (t-a4060b)", () => {
       ] },
     });
 
-    await manager.pushAgentsToPage();
+    await manager.handleDesignPickRaw(JSON.stringify({ __annotation: "agents" }));
 
-    expect(pushed).toEqual([{ type: "agents", agents: ["claude", "fork"], active: "claude" }]);
+    expect(pushed.at(-1)).toContain('"agents":["claude","fork"],"active":"claude"');
   });
 });

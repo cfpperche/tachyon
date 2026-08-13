@@ -618,7 +618,7 @@ export async function executeExtensionCommand(
       return json({ stopped: true });
     case "bridge.refresh-tools":
       // IDE browser start/stop (and similar): close live MCP sessions so registerTools re-runs
-      // and runtimes re-discover ide_browser_* / design_mode_chat_reply.
+      // and runtimes re-discover ide_browser_*.
       workspace.bridge.forceToolListRefresh();
       return json({ refreshed: true });
     case "tmux.kill": {

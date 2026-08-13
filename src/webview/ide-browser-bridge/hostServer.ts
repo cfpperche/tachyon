@@ -19,7 +19,6 @@ import {
   IDE_BROWSER_ROUTES,
   IDE_BROWSER_TOKEN_HEADER,
   decodeIdeBrowserHttpRequest,
-  type IdeBrowserChatReplyEdit,
 } from "../../ide-browser/protocol.js";
 import { sweepDeadIdeBrowserInstances } from "../../ide-browser/client.js";
 
@@ -31,12 +30,6 @@ export type IdeBrowserHostRouteHandlers = {
   snapshot: () => Promise<{ text: string; url: string }>;
   currentUrl: () => Promise<{ url: string }>;
   click: (selector: string) => Promise<{ clicked: string }>;
-  chatReply: (req: {
-    text: string;
-    agent?: string;
-    turnId?: string;
-    edit?: IdeBrowserChatReplyEdit;
-  }) => Promise<{ ok: true; event: unknown } | { ok: false; error: string }>;
 };
 
 export type IdeBrowserHostServerDeps = {
@@ -177,15 +170,6 @@ export class IdeBrowserHostServer {
         case IDE_BROWSER_ROUTES.url: {
           const data = await this.handlers.currentUrl();
           json(200, { ok: true, data });
-          return;
-        }
-        case IDE_BROWSER_ROUTES.chatReply: {
-          const result = await this.handlers.chatReply(decoded.body);
-          if (!result.ok) {
-            json(400, { ok: false, error: result.error });
-            return;
-          }
-          json(200, { ok: true, data: { event: result.event } });
           return;
         }
         case IDE_BROWSER_ROUTES.click: {

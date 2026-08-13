@@ -24,7 +24,6 @@ describe("ide-browser HTTP protocol (t-47503a)", () => {
       "/snapshot",
       "/url",
       "/click",
-      "/design-mode/chat-reply",
     ]));
     expect(Object.keys(IDE_BROWSER_ROUTE_TABLE).sort()).toEqual([...paths].sort());
   });
@@ -85,33 +84,6 @@ describe("ide-browser HTTP protocol (t-47503a)", () => {
       ok: false,
       status: 400,
       error: "expression must be at most 50000 characters",
-    });
-  });
-
-  it("decodes chat-reply including optional agent/turnId/edit", () => {
-    const decoded = decodeIdeBrowserHttpRequest("POST", "/design-mode/chat-reply", {
-      text: "hello",
-      agent: "alice",
-      turnId: "dm-turn-1",
-      edit: {
-        summary: "pad",
-        files: ["a.css"],
-        patch: "diff --git a/a.css b/a.css\n",
-      },
-    });
-    expect(decoded).toEqual({
-      ok: true,
-      path: "/design-mode/chat-reply",
-      body: {
-        text: "hello",
-        agent: "alice",
-        turnId: "dm-turn-1",
-        edit: {
-          summary: "pad",
-          files: ["a.css"],
-          patch: "diff --git a/a.css b/a.css\n",
-        },
-      },
     });
   });
 

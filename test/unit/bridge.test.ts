@@ -201,7 +201,6 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     expect(description("worktree_processes")).toContain("does not terminate reported processes automatically");
   });
 
-  // Legacy generated guard: it("exposes exactly the 60 tools (17 agent ...")
   const { sessions, launches, dead, panes, exec } = fakeTmuxExec();
   const notifications: Array<{ message: string; level: string }> = [];
   let taskRows: TaskStore | undefined;

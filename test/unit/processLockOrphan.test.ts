@@ -12,18 +12,13 @@ import {
   withProcessLockSync,
 } from "../../src/locks/processLock.js";
 import { PinStore } from "../../src/pins/PinStore.js";
-import {
-  appendDmChatEvent,
-  designModeChatLockPath,
-  readAllDmChatEvents,
-} from "../../src/webview/ide-browser-bridge/designModeChat.js";
 
 /**
  * t-7843d0 — a cross-process lock whose holder died must not wedge the product.
  *
  * The guard is stated as a behaviour, not as an implementation: KILL the owner and prove the next
- * writer proceeds, at both doors that take a lock. The pre-change measurement on this tree was
- * dm-chat wedged 10002ms then threw, pins wedged 5007ms then threw — and both stayed that way until
+ * writer proceeds at the remaining product doors. The pre-change measurement on this tree was
+ * pins wedged 5007ms then threw — and stayed that way until
  * somebody deleted the lock by hand.
  */
 
@@ -275,36 +270,6 @@ describe("a killed lock owner does not wedge the next writer (t-7843d0)", () => 
     await exited;
   }
 
-  it("Design Mode chat: append proceeds after the owner is killed", async () => {
-    const workspaceRoot = path.join(scratch, "ws-chat");
-    fs.mkdirSync(workspaceRoot, { recursive: true });
-    const child = await holder(`
-      import { withDmChatWriteLock } from ${srcUrl("src/webview/ide-browser-bridge/designModeChat.ts")};
-      const root = process.argv[2]!;
-      await withDmChatWriteLock(root, () => new Promise(() => {
-        process.stdout.write("held\\n");
-      }));
-    `, [workspaceRoot]);
-
-    const lock = designModeChatLockPath(workspaceRoot);
-    expect(Number.parseInt(fs.readFileSync(lock, "utf8").trim(), 10)).toBe(child.pid);
-    await kill(child);
-    // The owner is gone and its lock is still on disk — this is the orphan.
-    expect(fs.existsSync(lock)).toBe(true);
-
-    const started = Date.now();
-    const event = await appendDmChatEvent(workspaceRoot, {
-      kind: "message",
-      role: "user",
-      text: "after the crash",
-      activeAgent: "grok",
-    });
-    expect(Date.now() - started).toBeLessThan(2_000);
-    expect(event.lineNo).toBe(1);
-    expect(readAllDmChatEvents(workspaceRoot)).toHaveLength(1);
-    expect(fs.existsSync(lock)).toBe(false);
-  }, 60_000);
-
   it("pins: mutation proceeds after the owner is killed", async () => {
     const workspaceRoot = path.join(scratch, "ws-pins");
     fs.mkdirSync(workspaceRoot, { recursive: true });
@@ -333,38 +298,6 @@ describe("a killed lock owner does not wedge the next writer (t-7843d0)", () => 
    * proof is a timer — it cannot tick at all while `Atomics.wait` holds the thread, which is what the
    * previous implementation did for up to ten seconds.
    */
-  it("Design Mode chat: waiting for a live holder keeps the event loop running", async () => {
-    const workspaceRoot = path.join(scratch, "ws-live");
-    fs.mkdirSync(workspaceRoot, { recursive: true });
-    await holder(`
-      import { withDmChatWriteLock } from ${srcUrl("src/webview/ide-browser-bridge/designModeChat.ts")};
-      const root = process.argv[2]!;
-      const holdMs = Number(process.argv[3]!);
-      await withDmChatWriteLock(root, async () => {
-        process.stdout.write("held\\n");
-        await new Promise((resolve) => setTimeout(resolve, holdMs));
-      });
-    `, [workspaceRoot, "800"]);
-
-    let ticks = 0;
-    const timer = setInterval(() => { ticks += 1; }, 20);
-    const started = Date.now();
-    try {
-      await appendDmChatEvent(workspaceRoot, {
-        kind: "message",
-        role: "user",
-        text: "queued behind another window",
-        activeAgent: "grok",
-      });
-    } finally {
-      clearInterval(timer);
-    }
-    // It really did wait for the other process...
-    expect(Date.now() - started).toBeGreaterThan(200);
-    // ...without freezing the host while it did.
-    expect(ticks).toBeGreaterThanOrEqual(5);
-  }, 60_000);
-
   it("pins: waiting for a live holder keeps the event loop running", async () => {
     const workspaceRoot = path.join(scratch, "ws-pins-live");
     fs.mkdirSync(workspaceRoot, { recursive: true });

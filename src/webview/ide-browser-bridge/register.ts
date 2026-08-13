@@ -21,7 +21,6 @@ import {
 import type { WorkspaceShellHandle } from "../../shell/WorkspaceShellHandle.js";
 import { resolveIdeBrowserHomeUrl } from "./homeUrl.js";
 import { IdeBrowserBridgeManager } from "./manager.js";
-import { DesignModePanel } from "../DesignModePanel.js";
 import {
   invalidateDmThemeTokenCache,
   seedDmThemeTokensFromKind,
@@ -63,7 +62,6 @@ let browserBar: vscode.StatusBarItem | null = null;
 let designBar: vscode.StatusBarItem | null = null;
 let registerOptions: IdeBrowserBridgeRegisterOptions = {};
 let extensionContext: vscode.ExtensionContext | null = null;
-let designModePanel: DesignModePanel | null = null;
 
 export type IdeBrowserBridgeRegisterOptions = {
   /** Resolve the active Tachyon workspace shell handle (after engine connects). */
@@ -198,8 +196,6 @@ export function registerIdeBrowserBridge(
     dispose: () => {
       log?.appendLine("[ide-browser] extension subscription dispose — stopping manager");
       void manager?.stop();
-      designModePanel?.dispose();
-      designModePanel = null;
       manager = null;
       extensionContext = null;
     },
@@ -348,7 +344,6 @@ async function toggleDesignMode(): Promise<void> {
       }
     }
     const state = await m.toggleDesignMode();
-    if (state.on) designModePanel?.open();
     paintBars();
     log?.appendLine(
       state.on
@@ -366,7 +361,6 @@ async function setDesignMode(on: boolean): Promise<void> {
     if (!m.running) await m.start();
     if (m.status.cdp !== "connected") await m.navigate(homeUrl());
     await m.setDesignMode(on);
-    if (on) designModePanel?.open();
     paintBars();
   } catch (err) {
     fail("design mode", err);
@@ -401,8 +395,6 @@ async function ensureManager(): Promise<IdeBrowserBridgeManager> {
     if (!log) log = vscode.window.createOutputChannel("Tachyon IDE Browser");
     manager = new IdeBrowserBridgeManager(root, log, extensionContext?.extensionUri?.fsPath);
     if (!extensionContext) throw new Error("IDE Browser extension context is unavailable");
-    designModePanel?.dispose();
-    designModePanel = new DesignModePanel(extensionContext.extensionUri, root, manager);
     manager.setWorkspaceResolver(() => owner);
     manager.setDesignModeChangedHandler(() => {
       paintBars();

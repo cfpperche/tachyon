@@ -6,7 +6,7 @@ import * as vscode from "vscode";
 import { IdeBrowserBridgeManager } from "../../src/webview/ide-browser-bridge/manager.js";
 
 // Private production collaborators are replaced deliberately so this test enters through
-// the same webview-message door as the shipped Design Mode panel.
+// the same page-overlay binding door as production.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ManagerHarness = any;
 
@@ -39,10 +39,7 @@ describe("Design Mode responsive webview presets (t-0807b2)", () => {
       const setResponsivePreset = vi.fn(async () => undefined);
       manager.session.cdp.setResponsivePreset = setResponsivePreset;
 
-      await manager.handleDesignModeWebviewMessage({
-        __layout: "responsive",
-        preset,
-      });
+      await manager.handleDesignPickRaw(JSON.stringify({ action: "viewport.set", preset }));
 
       expect(setResponsivePreset).toHaveBeenCalledOnce();
       expect(setResponsivePreset).toHaveBeenCalledWith(
