@@ -133,6 +133,13 @@ describe("dev-host launch config (spec 448)", () => {
     expect(env).toEqual(expected);
   });
 
+  it("t-9eb7ef: disables Claude auto-update only inside the dev host", () => {
+    const ownerSetting = process.env.DISABLE_AUTOUPDATER;
+    const env = devHostEnv("/tmp/dev-host") as Record<string, string>;
+    expect(env.DISABLE_AUTOUPDATER).toBe("1");
+    expect(process.env.DISABLE_AUTOUPDATER, "constructing child env does not mutate the owner shell").toBe(ownerSetting);
+  });
+
   it("passes the same defining arguments the harness passes", () => {
     const config = readLaunchConfigurations().find((c) => c.name === DEV_HOST_CONFIG)!;
     const expected = devHostArgs({
