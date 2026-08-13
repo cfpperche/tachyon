@@ -1,7 +1,9 @@
 export const READY = "ready" as const;
+export type ResponsivePreset = "phone" | "tablet" | "desktop" | "reset";
 export type DesignModeEvent = Record<string, unknown> & { type: string };
 export type DesignModeWebviewMessage =
   | { type: typeof READY }
+  | { __layout: "responsive"; preset: ResponsivePreset }
   | { type: "designMode.pickMode"; on: boolean }
   | { type: "designMode.agent"; agent: string }
   | { type: "designMode.loadBefore"; before: number }

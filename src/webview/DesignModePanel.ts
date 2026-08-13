@@ -47,7 +47,7 @@ export class DesignModePanel {
       void panel.webview.postMessage(designModeEvent(event));
     });
     panel.webview.onDidReceiveMessage((raw: DesignModeWebviewMessage) => {
-      if (raw?.type === READY) void this.controller.initialDesignModeUi();
+      if (raw && "type" in raw && raw.type === READY) void this.controller.initialDesignModeUi();
       else void this.controller.handleDesignModeWebviewMessage(raw);
     });
     panel.onDidDispose(() => {
