@@ -125,13 +125,15 @@ describe("livemodel2Behavior — spec 378 live-model-sidebar acceptance scenario
     const adir = path.join(root, "activity");
     const sessA = path.join(root, "A.jsonl");
     fs.writeFileSync(sessA, claudeAssistant("a1", "A", "hi", "claude-opus-4-8") + "\n");
-    const writer = new ActivityLogWriter(adir, "worker", () => "2026-07-13T00:00:00Z");
+    let now = 0;
+    const writer = new ActivityLogWriter(adir, "worker", () => "2026-07-13T00:00:00Z", () => now);
     writer.poll(claudeLoc(sessA, "A"));
 
     // Tachyon RESUMES the agent into the SAME session uuid — no rotation, so the writer emits the boundary
     // standalone after the grace window (STANDALONE_OK covers "resumed").
     writer.noteLifecycle("resumed", true);
-    for (let i = 0; i < 4; i++) writer.poll(claudeLoc(sessA, "A"));
+    now = 6_000;
+    writer.poll(claudeLoc(sessA, "A"));
 
     const service = new RuntimeOpsSnapshotService(() => [], { activityLog: (r, agent) => new ActivityLog(path.join(r, "activity"), agent) });
     const observed = service.observedModelFor(root, "ws", "worker");
