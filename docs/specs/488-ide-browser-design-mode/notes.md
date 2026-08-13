@@ -193,3 +193,35 @@ Three launches, three child deaths. Two while Design Mode was on (`reattach Targ
 - 2026-08-04 — Product lean agreed in conversation: Design Mode viable as Tachyon product slice;
   v1 = reliable single-agent visual loop; document follows; **no merge to main** until explicit.
   Formal maintainer checkbox ratify of Q1–Q5 still open.
+
+## Hybrid D step 1 visual anchor (`t-64edaf`, written before implementation)
+
+At both **880 px** and **360 px**, the Design Mode editor panel should read as quiet VS Code chrome
+beside the shared page: the active running agent and picker state are immediately legible; the attached
+selection is a compact inspector/context card rather than a second conversation; the transcript remains
+the primary reading surface; and the composer/send action remains reachable without horizontal scrolling,
+clipping, or overlap. At 360 px the same information stacks in one column without shrinking controls or
+hiding selection state. The surface must use the existing Tachyon design-system tokens and must not mimic
+or inject page styling. Turning Design Mode off disarms page picking but does not erase or close the durable
+conversation panel.
+
+### Hybrid D step 1 result
+
+- **Evidence:** `docs/specs/488-ide-browser-design-mode/evidence/t-64edaf-design-mode-880.png`
+  and `docs/specs/488-ide-browser-design-mode/evidence/t-64edaf-design-mode-360.png`, captured from
+  the shipped Preact bundle through the repository preview harness.
+- **Verdict:** pass after one correction round. The first capture exposed undefined spacing/surface
+  token names and an unhydrated transcript; the final captures use only existing `--ds-*`/VS Code
+  tokens and shared control classes. At 360 px, agent controls, selection, transcript, and composer
+  stack without horizontal clipping or panel overlap.
+- **Page-realm exception:** `internalNav` remains beside pick because the page must observe same-tab
+  link/form intent so the host can re-inject the picker after navigation. No chat, inspector, agent
+  menu, responsive control, Trusted Types chrome, or selection-clear UI remains in the page inject.
+- **F6 eval doors:** host chat push (`window.__tachyonDmChatPush(payload)`) is retired; it is now a
+  typed host→webview `postMessage`. HTTP/MCP eval, encoded click, the thin inject/re-inject, and the
+  pick presence/queue probes remain necessary and unchanged in authority. The page binding remains,
+  but accepts only pick payloads and `internalNav`, so page script can no longer forge `chat.send`.
+- **Live dogfood attempt:** the checkout-local headless EDH opened the Integrated Browser, but enabling
+  Design Mode failed before inject with `Timed out waiting for editor-browser child debug session (CDP)`.
+  The session and pointer were cleared. This run therefore does not attest pick→chat→reply; the focused
+  production-path tests and preview evidence are green, but live dogfood remains the exact next action.

@@ -2731,7 +2731,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // representable. It was rejected (D2). Each old tab carries the title and icon of a surface that no
   // longer exists, and reviving it as System would leave a human holding a tab that says Overview and
   // draws something else. Disposing says the honest thing; the launcher's one tile is a click away.
-  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine"]) {
+  for (const viewType of ["tachyonPluginSurface", "tachyonPluginSurfaces", "tachyonAgentFixtureStudio", "tachyonSectionAppFixture", "tachyonDesignMode", "tachyonControlInspector", "tachyonSketch", "tachyonRuntimeOpsView", "tachyonFleet", "tachyonOverview", "tachyonEngine"]) {
     registerDisposePanelSerializer(context, viewType);
   }
 
