@@ -8,7 +8,7 @@ import { subtreeCpuTicks } from "./attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "./inspector/model.js";
 import { asAgent, CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
-import { agentEntryLine, commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "./config/YamlConfigEditor.js";
+import { commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "./config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
@@ -3952,19 +3952,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.editAgentItem", async (item: AgentItem) => {
       const ws = wsOf(item);
       if (!ws) return;
-      const file = configPathOf(ws);
-      if (!file) {
-        notify(vscode.l10n.t("no tachyon.yml in this workspace"), "warn");
+      const file = path.join(ws.workspaceRoot, ".tachyon", "agents", item.agentName, "agent.yml");
+      if (!fs.existsSync(file)) {
+        notify(vscode.l10n.t("Saved Agent '{0}' has no agent.yml", item.agentName), "warn");
         return;
       }
       const doc = await vscode.workspace.openTextDocument(file);
       const editor = await vscode.window.showTextDocument(doc, { preview: false });
-      const line = agentEntryLine(doc.getText(), item.agentName);
-      if (line !== undefined) {
-        const pos = new vscode.Position(line, 0);
-        editor.selection = new vscode.Selection(pos, pos);
-        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
-      }
+      const pos = new vscode.Position(0, 0);
+      editor.selection = new vscode.Selection(pos, pos);
+      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
     }),
     // ---- lifecycle ----
     vscode.commands.registerCommand("tachyon.start", async () => {

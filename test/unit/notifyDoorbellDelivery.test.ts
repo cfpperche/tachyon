@@ -133,6 +133,10 @@ const priv = (ws: Workspace) => ws as unknown as {
   pokeParentOnNeedsInput(agent: string, matchedLine: string | undefined): void;
   recoveryInFlight: Set<string>;
   noticeQueue: { count(t: string): number; queues: Map<string, Array<{ createdAt: number }>> };
+  humanDraftPresent(agent: string): Promise<boolean>;
+  submitNoticeLine(agent: string, line: string): Promise<{ status: string; reason?: string }>;
+  submitStagedNoticeLine(agent: string, line: string): Promise<{ status: string; reason?: string }>;
+  stagedQueuedNoticePresent(agent: string, line: string): Promise<boolean>;
 };
 
 /** The exact shape `notify_agent` enqueues: the SENDER's identity, tagged as authored by it. */
@@ -314,6 +318,49 @@ describe("t-fb1453 — a notice the TTL eats is never eaten in silence", () => {
 });
 
 describe("t-fb1453 — the drain reaches notices that arrive at an awkward moment", () => {
+  it("t-e169e4: a queued notice stranded by the sole idle drain remains reachable without retyping", async () => {
+    // Live sequence, reduced: notify_agent queued at 15:48 while the recipient was working. Its one
+    // working→idle drain typed the line during runtime handback, but Enter was not accepted. The queue
+    // correctly retained the unconfirmed item; every later drain then mistook that exact tool-owned
+    // line for a human draft, so there was no second submit attempt and no remaining delivery door.
+    const { ws } = await withCoordAndChild();
+    let staged = "";
+    let freshTypes = 0;
+    let stagedSubmits = 0;
+    const internals = priv(ws);
+    internals.humanDraftPresent = async () => staged.length > 0;
+    internals.stagedQueuedNoticePresent = async (_agent, line) => staged === line;
+    internals.submitNoticeLine = async (_agent, line) => {
+      freshTypes += 1;
+      staged = line;
+      return { status: "submit-unconfirmed", reason: "still-staged" };
+    };
+    internals.submitStagedNoticeLine = async (_agent, line) => {
+      expect(staged).toBe(line); // exact queue ownership, not provenance-shaped guesswork
+      stagedSubmits += 1;
+      staged = "";
+      return { status: "submitted", reason: "composer-cleared" };
+    };
+
+    forceStateOf(ws, "coord", "working");
+    await internals.deliverNotice("coord", DOORBELL, doorbellMetadataFor(ws, "child"));
+    forceStateOf(ws, "coord", "idle");
+    await internals.recoverOnIdle("coord", false); // sole edge: types, submit is unconfirmed
+    expect(staged).toBe(DOORBELL);
+    expect(internals.noticeQueue.count("coord")).toBe(1);
+
+    const followup = await internals.deliverNotice(
+      "coord",
+      "[tachyon] another → coord: follow-up [details: t-e169e4]",
+      doorbellMetadataFor(ws, "child"),
+    ); // notify_agent itself is now an escape door
+    expect(stagedSubmits).toBe(1);
+    expect(freshTypes).toBe(1); // never duplicate the notice in the composer
+    expect(followup.status).toBe("queued");
+    expect(internals.noticeQueue.count("coord")).toBe(1); // only the newer notice remains
+    ws.dispose();
+  });
+
   it("a notice queued because recovery held the mutex is drained in the same idle pass", async () => {
     // deliverNotice queues even an IDLE recipient while `recoveryInFlight` is set, so a doorbell that
     // lands during re-anchor/continuity used to wait for the next working→idle edge — and an agent

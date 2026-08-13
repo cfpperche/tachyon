@@ -2,7 +2,7 @@ import { classifyAttentionTail, type TailClassification } from "./patterns.js";
 import { detectCompaction } from "../anchor/compaction.js";
 import { runtimeOf } from "../resume/adapters.js";
 import { runtimeProfile } from "../runtime/runtimeProfile.js";
-import { findComposerRegion, isChangeConfinedToComposer, isComposerOccupied, stripAnsi } from "../runtime/composerRegion.js";
+import { composerText, findComposerRegion, isChangeConfinedToComposer, isComposerOccupied, stripAnsi } from "../runtime/composerRegion.js";
 import { AUTH_SIGNAL_TAIL_LINES, classifyAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
 import type { RateLimitInfo, RateLimitRuntime } from "./patterns.js";
 import type { ResumeRuntime } from "../resume/adapters.js";
@@ -921,6 +921,25 @@ export class AttentionMonitor {
     // measured suggestion rule, plain otherwise). A second copy of this decision is how one runtime
     // ends up measured once and fixed twice.
     return (await this.composerSnapshot(agent, content)).composerOccupied;
+  }
+
+  /**
+   * t-e169e4 — fresh text for the narrower question "is the composer holding the exact queued line
+   * Tachyon already typed?". Undefined stays fail-closed: without a profile or readable pane there is
+   * no ownership evidence, so callers must continue treating occupied content as human-owned.
+   */
+  async probeComposerText(agent: string): Promise<string | undefined> {
+    const composer = this.composerProfileOf(agent);
+    if (!composer) return undefined;
+    try {
+      const content = this.io.capturePaneEscaped
+        ? await this.io.capturePaneEscaped(agent, composer.tailLines)
+        : await this.io.capturePane(agent);
+      if (!findComposerRegion(content.split("\n"), composer)) return undefined;
+      return composerText(content, composer) ?? undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private async composerSnapshot(agent: string, content: string): Promise<{ composerOccupied: boolean; composerEvidence: boolean }> {

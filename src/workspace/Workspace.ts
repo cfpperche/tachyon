@@ -4249,6 +4249,16 @@ export class Workspace {
     const attention = this.attentionOf(agent);
     const state = attention?.state;
     const evidencedWorking = isEvidencedWorking(state, attention?.hasStartedTurn);
+    // t-e169e4 — a later notify is itself an escape door for the deadlock. Submit the exact retained
+    // queue head already staged in an IDLE composer, then queue this newer notice behind the turn we
+    // just started. Never continue into a second immediate paste on the now-working runtime.
+    if (state === "idle" && !this.recoveryInFlight.has(agent)) {
+      const queued = this.noticeQueue.peek(agent);
+      if (queued && await this.stagedQueuedNoticePresent(agent, queued.line)) {
+        await this.flushQueuedNotice(agent);
+        return this.enqueueNotice(agent, line, metadata);
+      }
+    }
     if (evidencedWorking || state === "throttled" || state === "needs-input" || attention?.composerOccupied || this.recoveryInFlight.has(agent)) {
       return this.enqueueNotice(agent, line, metadata, attention?.composerOccupied ? "human-draft" : undefined);
     }
@@ -4345,10 +4355,15 @@ export class Workspace {
     // that was stuck. The declared exit (expire, and tell the human by name — t-fb1453) only exists
     // if it is reachable while the queue is held.
     this.noticeQueue.clearExpired(agent);
-    if (await this.humanDraftPresent(agent)) return false;
     // t-fb1453 — peek, submit, THEN drop. Removing first meant an unobserved submit took the notice
     // with it (t-b4a799's unknown-flattened-into-known); now only a KNOWN fate consumes the item.
     let item = this.noticeQueue.peek(agent);
+    if (!item) return false;
+    const composerOccupied = await this.humanDraftPresent(agent);
+    const retryStaged = composerOccupied && await this.stagedQueuedNoticePresent(agent, item.line);
+    // t-e169e4 — occupied content remains human-owned unless it is byte-for-byte the retained queue
+    // head. The queue is the out-of-band ownership mark; provenance-looking text alone is not enough.
+    if (composerOccupied && !retryStaged) return false;
     while (item) {
       let line = item.line;
       if (item.sourceChild !== undefined) {
@@ -4393,7 +4408,9 @@ export class Workspace {
         }
       }
       try {
-        const receipt = await this.submitNoticeLine(agent, line);
+        const receipt = retryStaged
+          ? await this.submitStagedNoticeLine(agent, line)
+          : await this.submitNoticeLine(agent, line);
         // t-8d190f drew the line between "delivered" and "we could not see it leave the composer";
         // t-fb1453 makes the queue respect it. An unconfirmed line stays queued for the next idle
         // rather than being consumed on a guess. Both outcomes still wrote to the pane, so both
@@ -4451,6 +4468,21 @@ export class Workspace {
     // (the text left the editor) instead of assumed. Undeclared runtimes resolve to undefined and
     // keep the older, weaker check, reported as unconfirmed rather than as success.
     return this.tmux.sendSubmittedLine(session, line, {
+      composer: composerProfileFor(this.manager.defOf(agent)?.cmd),
+    });
+  }
+
+  private async stagedQueuedNoticePresent(agent: string, line: string): Promise<boolean> {
+    return (await this.monitor.probeComposerText(agent)) === line.trim();
+  }
+
+  private async submitStagedNoticeLine(agent: string, line: string): Promise<SubmitReceipt> {
+    const session = this.manager.session(agent);
+    if (!(await this.tmux.hasSession(session))) {
+      this.noticeQueue.clear(agent);
+      throw new Error(`agent '${agent}' is not running`);
+    }
+    return this.tmux.sendStagedLine(session, line, {
       composer: composerProfileFor(this.manager.defOf(agent)?.cmd),
     });
   }
