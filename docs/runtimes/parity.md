@@ -457,10 +457,13 @@ workspace Bridge with a prompt matching the current tool-only shape. Full write-
 | Runtime | Binary | Listed | Called tool | Sent `turnId` | Used markers | Panel land |
 |---------|--------|:------:|:-----------:|:-------------:|:------------:|:----------:|
 | Claude | 2.1.223 headless; live Saved Agent version not captured | ✓ | ✓ (`mcp__tachyon_bridge__design_mode_chat_reply` after ToolSearch) | ✓ live (`dm-turn-4fe022b5-58bd-46b5-9d48-44a72c57a477`); 2026-08-06 probe sent `{text}` only | ✗ | ✓ host-issued pending turn → tool reply → production chat JSONL |
-| Codex | 0.146.0 | ✓ | ✓ (`mcp_tool_call`) | ✓ (`dm-turn-f3matrix01`) | ✗ | **?** offline |
-| Grok | 0.2.118 | ✓ | ✓ (`use_tool` ×2) | ✓ first call; second `{text}` only | ✗ | **?** offline |
-| Pi | — | **?** unmeasured | **?** | **?** | **?** | **?** |
-| OpenCode / Outros | — | **?** unmeasured | **?** | **?** | **?** | **?** |
+| Codex | 0.146.1 | ✓ | ✓ (`mcp_tool_call`) | ✓ `dm-turn-a0bd2b96-8d93-49b6-a222-dd69e6092748` | ✗ | ✓ host-issued pending turn → tool reply → JSONL + live DOM |
+| Grok | 1.0.3 | ✓ | ✓ (`use_tool`) | ✓ `dm-turn-143335dd-0ef5-47b1-9a70-27b3ed919de5` | ✗ | ✓ host-issued pending turn → tool reply → JSONL + live DOM |
+| Pi | 0.80.10 | ✓ | ✓ (`design_mode_chat_reply`) | ✓ `dm-turn-ba47e2c5-46cc-43b8-95f0-cec9e23181b0` | ✗ | ✓ host-issued pending turn → tool reply → JSONL + live DOM |
+| OpenCode | 1.18.16 | ✓ | ✓ (`tachyon_bridge_design_mode_chat_reply`) | ✓ `dm-turn-6d4faadf-5dc3-4bf4-89a7-655db56b7520` | ✗ | ✓ host-issued pending turn → tool reply → JSONL + live DOM |
+| Hermes | 0.18.2 | ✓ | ✓ (`mcp__tachyon_bridge__design_mode_chat_reply`) | ✓ `dm-turn-c665e18a-55eb-4d98-91b2-14fe3275fc94` | ✗ | ✓ host-issued pending turn → tool reply → JSONL + live DOM |
+| Gemini | — | **N/A** — admission declares `bridge: null` | **N/A** — no Bridge tools | **N/A** | **?** marker-only fallback unmeasured | **N/A** — no tool return path |
+| Qwen | — | **N/A** — admission declares `bridge: null` | **N/A** — no Bridge tools | **N/A** | **?** marker-only fallback unmeasured | **N/A** — no Bridge or opening-brief channel |
 
 Invocations (summary): Claude `claude -p … --mcp-config … --output-format stream-json`; Codex
 `codex exec --json` with private `CODEX_HOME` Bridge MCP; Grok `grok -p … --output-format json`
@@ -485,7 +488,7 @@ the user message at line 2, the host's outstanding-turn instruction at line 3, a
 `source:"tool"` reply at line 4. This proves the pending-turn tool bind and production JSONL land for
 Claude only. It does **not** promote Codex, Grok, Pi, or OpenCode by analogy.
 
-**F1 verdict:** tool-call compliance is green for **claude / codex / grok** on the versions above
+**2026-08-12 F1 verdict (superseded by the live closure below):** tool-call compliance is green for **claude / codex / grok** on the versions above
 (the 2026-08-04 “Codex listed tool, used markers” failure did **not** reproduce under the current
 prompt), and Pi now has partial live runtime-to-panel evidence. One agent now has resolved a
 host-minted outstanding turn through the same tool, closing the generic seam. Deleting the marker
@@ -493,6 +496,39 @@ fallback is still **not** green under `t-45b266`'s stated “after runtime matri
 criterion: Codex, Grok, and Pi have not been observed resolving a pending host-issued turn, and
 OpenCode remains unmeasured.
 Do not remove markers from this task.
+
+**Live pending-turn matrix closed 2026-08-13 (`t-727d9c`).** One real Xvfb EDH drove the production
+Design Mode panel and Bridge on Tachyon 0.86.0 plus the `t-54b9c3` CDP hotfix. Codex, Grok, Pi,
+OpenCode, and Hermes each received a host-minted current turn, called `design_mode_chat_reply` with
+that exact id, appended the same-runtime `source:"tool"` event to the production chat JSONL, and
+painted the matching agent bubble in the live DOM. Evidence `ev-2026-08-13T02:13:53.774Z-1` carries
+the full 16-line JSONL and screenshot; Hermes' private runtime log preserves its exact tool argument
+in addendum `ev-2026-08-13T02:14:40.380Z-2`. Pi's earlier line 7 has no delivery/tool event because
+its native trust selector had not been answered; the accepted Pi proof is lines 8–10 and the turn id
+shown in the table. OpenCode ran 1.18.16 on `opencode/big-pickle` after its configured OpenAI token
+failed refresh and its OpenCode Go account reported insufficient balance; model choice does not
+change the runtime's Bridge/tool path.
+
+After integrating `main` (which moved the chat UI from injected page chrome to the
+`tachyonDesignMode` editor webview), the combined tree `85b11dd1` was re-dogfooded through that new
+production surface. Codex resolved `dm-turn-4c47a89b-c694-485b-9dca-77651514354d` and Grok resolved
+the following host-issued turn: in each case the combined-tree JSONL recorded
+user → delivery → same-agent `source:"tool"`, and the new webview rendered exactly two matching
+`.dm-message` rows (human + agent). This revalidates the changed panel seam on the delivered tree;
+the runtime-specific tool/turn bindings for Pi, OpenCode, and Hermes are the live measurements above.
+
+**F1 is not released for unconditional marker deletion.** Every runtime that currently has Bridge
+wiring is green through the live pending-turn door: Claude, Codex, Grok, Pi, OpenCode, and Hermes.
+Gemini and Qwen are structurally outside the tool path, not merely unmeasured:
+`agentRuntimeAdmission` declares `bridge: null` for both, and Qwen also declares `brief: null`, while
+the Design Mode selector currently offers every running non-terminal agent without a runtime
+capability gate. F1 must choose separately between retaining a per-runtime marker fallback and
+capability-gating the selector; `t-727d9c` records both choices but deliberately does not decide
+between them. **Recommendation: capability-gate the selector.** F1 is released to delete the marker
+fallback for Claude, Codex, Grok, Pi, OpenCode, and Hermes; it is not released as a generic deletion
+while Gemini and Qwen remain selectable. Hiding agents that cannot receive or return a Design Mode
+turn fixes the existing false affordance and lets F1 remove the marker machinery completely;
+retaining a per-runtime fallback would preserve that false affordance and permanent legacy code.
 
 ### 3.2 Per-runtime: native mechanism → Tachyon seam
 
