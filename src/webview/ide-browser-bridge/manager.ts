@@ -78,6 +78,9 @@ export class IdeBrowserBridgeManager {
     this.session.cdp.setDesignModePickHandler((raw) => {
       void this.handleDesignPickRaw(raw);
     });
+    this.session.cdp.setDesignModeInvalidatedHandler(() => {
+      this.onDesignModeChanged?.(this.designMode);
+    });
     this.host = new IdeBrowserHostServer({
       workspaceRoot: this.workspaceRoot,
       log,

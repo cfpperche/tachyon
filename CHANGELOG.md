@@ -6,6 +6,70 @@ Marketplace release notes.
 
 ## Unreleased
 
+### Fixed
+
+- **The Activity feed stops arriving in two-second batches** (`t-1484bc`, measured in `t-7e157a`).
+  The complaint was that Activity "doesn't feel alive". Timed live, native write → durable JSONL was
+  **p50 1096 ms, max 1946 ms**; the watcher added 0–500 ms and the app painted the pixel in 16 ms. So
+  the delay was one timer — the log manager's 2 s tick — and it was not protecting anything: eight
+  idle agents cost 0.054 ms per poll. The tick is now 500 ms and the same live measurement reads
+  **p50 244 ms**. The obvious-looking culprit was measured and rejected: dropping the feed's 500 ms
+  `watchFile` to 100 ms buys at most 20 % of the ceiling and multiplies `stat()` by five.
+
+  What made this dangerous was not the number. Two constants counted **polls** while claiming a
+  duration — `LIFECYCLE_GRACE_POLLS = 3`, whose comment read *"At ~2s/poll this is a few seconds"* —
+  so lowering the tick would have silently shrunk a 6 s grace window to 1.5 s and a 60 s backstop to
+  15 s. Nothing would have gone red: every test already constructs the manager with its own interval.
+  They are expressed in milliseconds now, with a test that asserts twenty fast ticks emit nothing.
+
+- **The first tool of a parallel Grok batch no longer runs forever** (`t-08abf8`). Grok writes one
+  `assistant` record holding N tool calls; the durable log keyed that whole record by the **first**
+  tool's id, and that tool's own result reuses the same id — so the log's idempotency check read the
+  completion as a replay and dropped it. In Activity the first tool of every parallel batch stayed
+  spinning with no end. The origin record is now keyed distinctly from its children. The idempotency
+  check itself was not loosened: it was never the defect, the key was.
+
+  Declared, because a durable key changed shape: a log written before this upgrade and re-read inside
+  the crash-recovery window can append one batch twice. One duplicated Activity row, once. No key
+  migration — the window is one-shot and migrating costs more than the defect.
+
+### Changed
+
+- **Design Mode's page overlay is now a compiled bundle instead of a hand-written string**
+  (`t-1ca53b`, `t-5c5323`). `designModeInject.ts` went from **1765 lines to 15**; the picker is a
+  Preact app built by esbuild as a self-contained 17 KB IIFE and evaluated over CDP. Behaviour is
+  unchanged — this is the groundwork for annotations and for removing the separate Design Mode chat
+  tab. A ratchet keeps the injection wrapper under 400 characters (it measures 196), so UI can grow
+  in the bundle and not back into the string.
+
+  **Still true in this build:** the Design Mode chat tab is still there and annotations do not exist
+  yet. Both are the next slices of the same migration.
+
+- **Clicking a link with Design Mode on no longer kills the overlay** (`t-03afe7`). The status bar
+  kept saying ON while the overlay was gone — the product asserting a state it was not holding. The
+  intended re-injection was never running: the presence watcher fires every 400 ms and each call
+  cleared and re-armed a 450 ms timer, so the timer never reached its own deadline. It is now
+  idempotent, and a real click restores the overlay in 719 ms.
+
+  The suspected cause — a race between the dying document and the message going up — was tested and
+  **refuted** before any line was changed: sending the navigation signal directly ahead of the click
+  still did not close the loop. And the other half of the fix matters as much: when re-injection is
+  genuinely impossible, Design Mode now turns **off** and tells the host, rather than leaving a
+  status bar that lies.
+
+### Internal
+
+- Two pairs of tests that pinned the Bridge's tool **count** were removed (`t-33b5cd`, `t-4e328b`).
+  One of them carried a `.gen.` suffix with no generator left to regenerate it, and the number it
+  froze (83) had already drifted from the canonical list (80 names). The by-name inventory is the
+  real guard and is untouched.
+- The coordinator's merge cadence was measured (`t-fe60a3`): of the day's 45 possible merge pairs,
+  **40 touched disjoint files**, so most re-integration proved nothing. The finding inverted the
+  premise — the expensive collisions came from dispatching two agents onto the same screen, not from
+  merge order. Written up as ordering discipline, not machinery.
+- The exclusion of plugin `view` from spec 486 was contested and held on measurement (`t-7ec4b2`):
+  of 15 installed plugins exactly one contributes a view, and it opens as a tab on demand.
+
 ## 0.88.0 — the board tells you who is working on what, and Design Mode gets its viewport presets back
 
 Two of these are regressions this release fixes rather than features it adds, and both were found by

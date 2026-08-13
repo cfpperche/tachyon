@@ -190,6 +190,21 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   first: on 2026-08-03 a static guard written to close exactly that gap was itself blind — it compared
   line text against a `switch` body, so an injected bypass matched as a substring of the switch's own
   `case` and every violation passed. The fail-before caught it; nothing else would have.
+- **A red gate has three natures and they need opposite reactions — measure the test alone on clean
+  `main` before deciding which.** On the night of 2026-08-12, with four agents gating, `verify:full`
+  went red three times and all three read identically in the summary: *"a test unrelated to my change
+  failed"*. Measured in isolation they were not the same thing at all.
+
+  | test | alone on clean `main` | nature | correct reaction |
+  |---|---|---|---|
+  | `tmuxReap` | 5 failures in 10 | broken TEST — a race guarded once, then re-asserted unguarded three lines below | fix the test (`t-f71795`) |
+  | `processLock` | ~1 in 750 SIGKILLs | PRODUCT — a real residue, measured 2026-08-05 and deliberately accepted | do **not** fix; name the residue |
+  | `restartModesDogfood` | 0 failures in 6 | LOAD — deterministic once it can be scheduled | retrying is legitimate |
+
+  Without that isolation run all three get the same reaction — retry until green — and the middle one
+  buries a concurrency defect under a green. The run costs minutes and answers whether the defect
+  belongs to the test, the product, or the machine. **And no green erases an observed red:** a test
+  that failed once and passes now is a measurement you owe, not a result you already have.
 
 ## Measurement and diagnosis
 

@@ -48,6 +48,7 @@ export class IdeBrowserCdpSession {
   private designPickMode = true;
   private designModeLog: ((m: string) => void) | null = null;
   private onDesignPick: ((rawJson: string) => void) | null = null;
+  private onDesignModeInvalidated: (() => void) | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   /** While Design Mode is on, poll that the inject chrome still exists (URL-bar nav is flaky on CDP). */
   private presenceWatchTimer: ReturnType<typeof setInterval> | null = null;
@@ -117,6 +118,11 @@ export class IdeBrowserCdpSession {
   /** Register host callback for page-side Design Mode picks (JSON string). */
   setDesignModePickHandler(handler: ((rawJson: string) => void) | null): void {
     this.onDesignPick = handler;
+  }
+
+  /** Notify the host when promised chrome can no longer be restored. */
+  setDesignModeInvalidatedHandler(handler: (() => void) | null): void {
+    this.onDesignModeInvalidated = handler;
   }
 
   /**
@@ -610,7 +616,7 @@ export class IdeBrowserCdpSession {
   }
 
   private scheduleInternalReinject(log: (m: string) => void, reason: string): void {
-    this.clearReinjectTimer();
+    if (this.reinjectTimer) return;
     // Wait for document after main-frame link/form navigation.
     this.reinjectTimer = setTimeout(() => {
       this.reinjectTimer = null;
@@ -677,7 +683,14 @@ export class IdeBrowserCdpSession {
         }
         await new Promise((r) => setTimeout(r, 180 * attempt));
       }
-      if (!ok) log("Design Mode re-inject failed — presence watch will retry or user can toggle");
+      if (!ok) {
+        this.designModeOn = false;
+        this.pendingInternalNav = false;
+        this.stopPresenceWatch();
+        this.stopPickPoll();
+        log("Design Mode OFF — re-inject failed and overlay presence could not be restored");
+        this.onDesignModeInvalidated?.();
+      }
     } finally {
       this.reinjectInFlight = false;
     }
@@ -827,6 +840,7 @@ export class IdeBrowserCdpSession {
     this.designPickMode = true;
     this.pendingInternalNav = false;
     this.onDesignPick = null;
+    this.onDesignModeInvalidated = null;
     for (const [, p] of this.pending) p.reject(new Error("CDP disposed"));
     this.pending.clear();
     try {
