@@ -41,9 +41,9 @@
    out — no regions, no side actions, and deliberately no Save. Muted rather than alarming: nothing
    went wrong here, the subject is simply gone. */
 .sf-tombstone-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--ds-2); max-width: 46rem; width: 100%; margin: 0 auto; padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-page-pad-bottom); box-sizing: border-box; text-align: center; }
-.sf-tombstone-mark { font-size: 28px; line-height: 1; color: var(--ds-fg-muted, var(--vscode-descriptionForeground)); opacity: 0.7; }
+.sf-tombstone-mark { font-size: 28px; line-height: 1; color: var(--ds-muted, var(--vscode-descriptionForeground)); opacity: 0.7; }
 .sf-tombstone-mark .codicon { font-size: 28px; }
-.sf-tombstone-headline { font: var(--tachyon-weight-semibold) var(--ds-title) / 1.3 var(--tachyon-font-sans, inherit); color: var(--vscode-editor-foreground); }
+.sf-tombstone-headline { font: var(--tachyon-weight-semibold) var(--ds-title) / 1.3 var(--tachyon-font-reading); color: var(--vscode-editor-foreground); }
 .sf-tombstone-detail { font-size: var(--ds-small); color: var(--vscode-descriptionForeground); max-width: 34rem; }
 .sf-tombstone-detail .ref { font-family: var(--tachyon-font-mono); color: var(--vscode-editor-foreground); }
 /* The one thing here a human might act on knowing: work that existed and no longer does. */
