@@ -3,6 +3,12 @@ import { buildDesignModeInjectExpression } from "../../src/webview/ide-browser-b
 import { fallbackDsTokens, formatDmThemeCssBlock, mapVscodeVarsToDs } from "../../src/webview/ide-browser-bridge/themeTokens.js";
 
 describe("buildDesignModeInjectExpression — compiled page app boundary", () => {
+  it("ratchets the page expression to a thin wrapper", () => {
+    const bundle = "window.__tachyonDmOverlay={mount:(options)=>options}";
+    const expression = buildDesignModeInjectExpression(bundle, { bindingName: "binding", themeVars: fallbackDsTokens(), restorePickMode: false });
+    expect(expression.length - bundle.length).toBeLessThan(400);
+  });
+
   it("executes the artifact and passes typed install configuration", () => {
     const expression = buildDesignModeInjectExpression(
       "window.__tachyonDmOverlay={mount:(options)=>options}",
