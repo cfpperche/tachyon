@@ -6,7 +6,7 @@ import {
   workspaceActivityContextSuccessV1,
   workspaceCommandSuccessV1,
 } from "@tachyon/engine/engine-service/protocol.js";
-import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
+import { FakeWorkspaceClient } from "../helpers/FakeWorkspaceClient.js";
 import { workspaceActivityTarget } from "../../apps/vscode-extension/src/shell/ActivityTarget.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 

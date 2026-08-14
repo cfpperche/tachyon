@@ -6,7 +6,7 @@
  * Pure data (no vscode, no DOM) so it's unit-testable and importable anywhere.
  */
 
-import { SHELL_EXTENSION_POINTS, type ShellExtensionPoint } from "../../apps/vscode-extension/src/webview/shared/shell.js";
+import { SHELL_EXTENSION_POINTS, type ShellExtensionPoint } from "./shared/shell.js";
 
 /** runtime contract: `live` = ready handshake + host message listener + actions; `static` = render-once. */
 export type WebviewMode = "live" | "static";
@@ -265,7 +265,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // this sentence.
   // `hostKind: "dev-only"` and not "standalone": the mechanism is for standalone apps, but THIS surface
   // never reaches a user, and the field classifies the host that owns it, not what the surface demonstrates.
-  { viewId: "tachyonSectionAppFixture", view: "section-app-fixture", hostFile: "src/webview/SectionAppFixturePanel.ts", mode: "live", converted: true, hostKind: "dev-only", posture: "conform" },
+  { viewId: "tachyonSectionAppFixture", view: "section-app-fixture", hostFile: "apps/vscode-extension/src/webview/SectionAppFixturePanel.ts", mode: "live", converted: true, hostKind: "dev-only", posture: "conform" },
   // t-610705 (SDD 410 Phase D, D0/D1a/D1b) — the standalone Command/Terminal/Runbook/Schedule/Agent
   // Studio (shell) panels were retired: they're Control routes now (studio-new/studio-edit, studio:
   // "command"/"terminal"/"runbook"/"schedule"/"agent" — studios-routes-design.md; standalone bundles

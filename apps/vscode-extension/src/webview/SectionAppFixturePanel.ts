@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { SectionPanelManager, type SectionAppConfig, type SectionPanelState, type SectionPanelTarget } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
-import { webviewApp, type WebviewAppEntry } from "../../apps/vscode-extension/src/webview/webviewApps.js";
+import { SectionPanelManager, type SectionAppConfig, type SectionPanelState, type SectionPanelTarget } from "./shared/SectionPanelManager.js";
+import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import {
   sectionFixtureModelMessage,
   sectionFixtureRefreshKind,

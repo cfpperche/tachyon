@@ -5,7 +5,7 @@ import * as vscode from "vscode";
 import { __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
 import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
 import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
-import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
+import { WEBVIEW_SURFACES } from "../../apps/vscode-extension/src/webview/surfaces.js";
 import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 import { SAMPLE, TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";

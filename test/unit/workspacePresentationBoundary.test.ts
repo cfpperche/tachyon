@@ -118,7 +118,7 @@ describe("persistent workspace presentation boundary", () => {
       "packages/engine/src/runtime-api/stagedPayload.ts",
       "packages/engine/src/runtime-api/taskStudioCommands.ts",
       "packages/engine/src/runtime-api/taskStudioProjection.ts",
-      "src/shell/FakeWorkspaceClient.ts",
+      "test/helpers/FakeWorkspaceClient.ts",
       "apps/vscode-extension/src/shell/ActivityTarget.ts",
       "apps/vscode-extension/src/shell/HandoffTarget.ts",
       "apps/vscode-extension/src/shell/BoardTarget.ts",

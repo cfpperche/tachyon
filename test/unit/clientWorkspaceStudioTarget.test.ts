@@ -8,7 +8,7 @@ import {
   workspaceExtensionQuerySuccessV1,
 } from "@tachyon/engine/engine-service/protocol.js";
 import { ClientWorkspaceStudioTarget } from "../../apps/vscode-extension/src/shell/ClientWorkspaceStudioTarget.js";
-import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
+import { FakeWorkspaceClient } from "../helpers/FakeWorkspaceClient.js";
 import { CommandStudioAdapter } from "../../apps/vscode-extension/src/webview/CommandStudioAdapter.js";
 import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../apps/vscode-extension/src/webview/studioSubmit.js";

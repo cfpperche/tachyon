@@ -37,11 +37,10 @@ export const BOOTSTRAP_DOOR_MODULE = "packages/engine/src/agents/formation/boots
  * Call sites that forward a mutation they did not choose. Each one is closed by a test in
  * `agentFormationBootstrap.test.ts`, not by this list — the list only makes a NEW one visible.
  *
- * - `humanLaneTransactions.ts` — `commit()` forwards `barrier.mutation` verbatim. Its `parseIntent`
- *   requires the barrier's mutation to be `profile-edit` or `retire`, so a bootstrap barrier throws
- *   before the forward. Covered by "closes the dynamic pass-through".
+ * The previous src/ leftover (`humanLaneTransactions.ts`) had zero import consumers and was deleted
+ * (t-9734df). Production bootstrap remains `BOOTSTRAP_DOOR_MODULE`.
  */
-export const DYNAMIC_MUTATION_CALL_SITES = ["src/agents/formation/humanLaneTransactions.ts"] as const;
+export const DYNAMIC_MUTATION_CALL_SITES = [] as const;
 
 const STORE_MUTATION_ENTRY_POINTS = new Set(["replaceVector", "beginMutationBarrier"]);
 

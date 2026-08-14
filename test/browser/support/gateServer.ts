@@ -2,7 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { renderGatePage } from "../../../src/webview/ui-gate/gatePage.js";
+import { renderGatePage } from "../../../apps/vscode-extension/src/webview/ui-gate/gatePage.js";
 import { PREFLIGHT_FIXTURE_HTML } from "../../../packages/webview-ui/src/webview/ui-gate/preflightFixture.js";
 import { SHELL_BASE_STYLESHEETS } from "../../../apps/vscode-extension/src/webview/shared/shell.js";
 import { renderPluginFrameGatePage } from "../../../scripts/webview-preview/pluginFrameGate.js";

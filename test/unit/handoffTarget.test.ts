@@ -7,7 +7,7 @@ import {
   workspaceHandoffEnsureSuccessV1,
   workspaceHandoffViewSuccessV1,
 } from "@tachyon/engine/engine-service/protocol.js";
-import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
+import { FakeWorkspaceClient } from "../helpers/FakeWorkspaceClient.js";
 import { workspaceHandoffTarget } from "../../apps/vscode-extension/src/shell/HandoffTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
