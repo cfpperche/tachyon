@@ -4,6 +4,8 @@
  * real agent CLI (e.g. `claude -p --mcp-config ...`) can drive the 7 tools end-to-end.
  * Prints the Bridge URL on stdout; runs until killed.
  */
+// Keep workspace imports relative: delegated worktrees share the primary checkout's node_modules,
+// so package-name imports can resolve a different tree and split TypeScript private-class identities.
 import { Bridge } from "../../packages/engine/src/bridge/Bridge.js";
 import { AgentManager } from "../../packages/engine/src/agents/AgentManager.js";
 import { TmuxService, workspaceHash } from "../../packages/engine/src/tmux/TmuxService.js";
@@ -11,7 +13,7 @@ import { parseConfig } from "../../packages/engine/src/config/loadConfig.js";
 import { PinStore } from "../../packages/engine/src/pins/PinStore.js";
 import { TaskStore } from "../../packages/engine/src/tasks/TaskStore.js";
 import { ValidationStore } from "../../packages/engine/src/validations/ValidationStore.js";
-import { AttentionMonitor } from "@tachyon/shared/attention/AttentionMonitor.js";
+import { AttentionMonitor } from "../../packages/shared/src/attention/AttentionMonitor.js";
 import { LifecycleMonitor } from "../../packages/engine/src/agents/LifecycleMonitor.js";
 import { CMD_WAIT_PREFIX, Waiters } from "../../packages/engine/src/workspace/Waiters.js";
 import { ControlModeClient } from "../../packages/engine/src/tmux/ControlModeClient.js";
