@@ -7,7 +7,7 @@
  * `mode` from entityId presence, `assets` from Cockpit.ts's bootstrapGlobals).
  */
 
-import type { PinDetailEntity } from "../../../src/webview/pin-studio/domain";
+import type { PinDetailEntity } from "@tachyon/webview-ui/webview/pin-studio/domain";
 import type { Fixture } from "../routes";
 
 const STUDIO_PROTOCOL_VERSION = 1;

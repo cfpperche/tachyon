@@ -3,7 +3,7 @@ import {
   projectInboxArtifacts,
   summarizeInboxArtifacts,
   type InboxArtifactContent,
-} from "../../src/humanInbox/artifacts.js";
+} from "../../src/humanInbox/artifacts";
 import type { ArtifactRef } from "@tachyon/shared/tasks/types.js";
 
 /**

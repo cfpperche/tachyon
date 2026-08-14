@@ -1,5 +1,5 @@
 import type { BoardAgentRow, WorkspaceBoardTarget } from "../../shell/BoardTarget.js";
-import type { BoardVM } from "./messages.js";
+import type { BoardVM } from "@tachyon/webview-ui/webview/board/messages";
 
 /** Agent liveness enriches the board, but must never gate its task snapshot. */
 export const BOARD_AGENT_LIST_TIMEOUT_MS = 250;

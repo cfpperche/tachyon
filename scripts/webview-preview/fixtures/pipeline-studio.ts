@@ -9,7 +9,7 @@
  * the banners render.
  */
 
-import type { PipelineEntity, PipelineFields } from "../../../src/webview/pipeline-studio/domain";
+import type { PipelineEntity, PipelineFields } from "@tachyon/webview-ui/webview/pipeline-studio/domain";
 import type { Fixture, Route } from "../routes";
 
 interface PipelineFixtureVM {

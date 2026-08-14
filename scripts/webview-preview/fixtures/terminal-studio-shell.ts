@@ -3,8 +3,8 @@
  * through the real studio-shell protocol for visual passes without an extension host.
  */
 
-import type { TerminalStudioEntity, TerminalStudioReferenceData } from "../../../src/webview/terminal-studio-shell/domain";
-import { blankTerminalFields } from "../../../src/webview/terminal-studio-shell/domain";
+import type { TerminalStudioEntity, TerminalStudioReferenceData } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain";
+import { blankTerminalFields } from "@tachyon/webview-ui/webview/terminal-studio-shell/domain";
 import type { Fixture, Route } from "../routes";
 
 interface TerminalStudioShellFixtureVM {

@@ -3,8 +3,8 @@
  * through the real studio-shell protocol for visual passes without an extension host.
  */
 
-import type { RunbookStudioEntity, RunbookStudioReferenceData } from "../../../src/webview/runbook-studio-shell/domain";
-import { blankRunbookFields } from "../../../src/webview/runbook-studio-shell/domain";
+import type { RunbookStudioEntity, RunbookStudioReferenceData } from "@tachyon/webview-ui/webview/runbook-studio-shell/domain";
+import { blankRunbookFields } from "@tachyon/webview-ui/webview/runbook-studio-shell/domain";
 import type { Fixture, Route } from "../routes";
 
 interface RunbookStudioShellFixtureVM {

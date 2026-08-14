@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const app = readFileSync(path.join(__dirname, "../../src/webview/sidebar/App.tsx"), "utf8");
-const css = readFileSync(path.join(__dirname, "../../src/webview/sidebar/sidebar.css"), "utf8");
+const app = readFileSync(path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
+const css = readFileSync(path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/sidebar.css"), "utf8");
 
 describe("Agents header dropdown (t-a9d1f2)", () => {
   it("renders every counted status option in the Agents section action toolbar", () => {

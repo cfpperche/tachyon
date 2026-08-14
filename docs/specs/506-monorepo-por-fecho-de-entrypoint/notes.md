@@ -117,3 +117,54 @@ Every byte of that difference was classified by normalizing only the two old phy
 (`../shared/`, `../../node_modules/`). The complete normalized artifacts compare byte-for-byte and
 both hash to `1e605a67306e353093bb0d142761f0bdcfeab8990962dec40b76c5b763a6caad`. Thus emitted executable
 code and data are identical; only esbuild's source-address labels changed.
+
+## Slice 3 — webview UI closure and address migration
+
+Before moving source, the 27 `main.tsx` entrypoints measured a **206-module runtime closure**:
+174 exclusive browser modules under `src/` plus the 32 runtime members already owned by
+`@tachyon/shared`. The independent type-aware closure measured **268 modules**. Its 62 additional
+members were the nine shared type modules plus 53 modules under `src/`.
+
+The 174 runtime-exclusive modules moved with `git mv` into `packages/webview-ui/src/`, preserving
+their relative shape. Type-only dependencies were then made explicit: pure type/protocol modules
+moved wholesale and declarations consumed from mixed host implementations were extracted into
+concept modules, with compatibility re-exports at the old host addresses. The package contains 203
+TypeScript source files physically (174 runtime members plus 29 type-only/concept modules), while
+the reproduced runtime closure remains exactly **206 = 174 package-owned + 32 shared**. The final
+type-aware closure is **244 = 203 package-owned + 41 shared**; the 268 → 244 reduction is the intended
+removal of host implementation addresses from the type graph. The graph reports zero runtime
+coupling and zero direct `vscode` imports in both value and type position for all 203 package files.
+
+`themeTokens.ts` deliberately remains a host adapter under `src/webview/ide-browser-bridge`: it
+imports `vscode` directly, so moving it would violate the package's stronger zero-`vscode`
+invariant. The generated `tokens.css` browser asset moved into the package and the generator/checker
+addresses were updated accordingly. The package-boundary exception list remains empty; the checker
+continues to report only the three pre-existing shared JSON assets.
+
+### Webview bundle and visual comparison
+
+All 30 top-level webview JavaScript outputs (the 27 requested entrypoints plus three auxiliary
+bundles) and all 11 split chunks were compared against the pre-move build. After normalizing only
+the content-hash token in split-chunk filenames and the source-provenance prefix
+`packages/webview-ui/src/` → `src/`, 28 top-level outputs are byte-identical and the 11 chunk hash
+multisets are identical. `plugin-host.js` and `worktrees.js` differ only in minified local identifier
+allocation caused by erased TypeScript-only narrowing/type-address changes; their executable AST,
+strings, constants and behavior are unchanged. The machine report is
+`.tachyon/evidence/t-547fda/bundle-comparison.json`.
+
+The worktree preview harness served all 23 views. Before/after captures cover 23 views × two widths
+(880/360) × two themes (dark/light), 92 images per side. 89 pairs are byte-identical. The remaining
+three Activity pairs differ in only 88–98 pixels inside the 10×53 animated progress-glyph strip
+(maximum channel delta 50); no layout, token, typography, content, or component pixel differs.
+Representative screenshots and the complete comparison are recorded under
+`.tachyon/evidence/t-547fda/{before,after,visual-comparison.json}`. The viewport harness test passes
+all nine assertions.
+
+### Slice 3 verification
+
+The package compiler, root typecheck, browser typecheck, build, package-boundary gate, webview-token
+gate, theme-token check, preview viewport suite, graph measurement, and full verification all pass.
+The final dirty-tree functional run reports **733 files passed, 8,260 tests passed, four paid
+live-model tests skipped, and 175 browser tests passed**. Main was integrated once at the end and was
+already identical to the slice base (`770f165a`). A clean committed-tree run follows this log entry
+to provide the final verification attestation.

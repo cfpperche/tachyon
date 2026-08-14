@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ScheduleStudioAdapter } from "../../src/webview/ScheduleStudioAdapter.js";
-import { blankScheduleFields } from "../../src/webview/schedule-studio-shell/domain.js";
+import { blankScheduleFields } from "../../packages/webview-ui/src/webview/schedule-studio-shell/domain.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 import type { AgentDef, CommandDef, RunbookDef, ScheduleDef } from "@tachyon/engine/config/loadConfig.js";

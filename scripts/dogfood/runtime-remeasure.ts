@@ -13,7 +13,7 @@
  * drifts, because the code keeps obeying the old measurement and nothing says so.
  *
  * 1. `packages/engine/src/config/codexNativeConfigProjection.ts:294` — the config enums the projection enforces.
- * 2. `packages/engine/src/webview/formLogic.ts:65` — `--full-auto` is refused, so the chip list must omit it.
+ * 2. `packages/engine/packages/webview-ui/src/webview/formLogic.ts:65` — `--full-auto` is refused, so the chip list must omit it.
  * 3. `packages/engine/src/harness/HarnessManager.ts:2291` — directory trust is exact-path, and argv cannot grant it.
  * 4. `src/runtime/adapters/codexMemory.ts` — `--disable memories` suppresses native memory.
  *
@@ -165,7 +165,7 @@ function measureFullAuto(home: string): DimensionResult {
     return {
       id: "codex-full-auto",
       title: "codex refuses --full-auto",
-      anchor: "packages/engine/src/webview/formLogic.ts:65",
+      anchor: "packages/engine/packages/webview-ui/src/webview/formLogic.ts:65",
       recordedVersion: "codex-cli 0.146.0",
       recorded: "rejected; the chip list omits it",
       observed: `neither refusal nor help (exit ${run.status})`,
@@ -177,7 +177,7 @@ function measureFullAuto(home: string): DimensionResult {
   return {
     id: "codex-full-auto",
     title: "codex refuses --full-auto",
-    anchor: "packages/engine/src/webview/formLogic.ts:65",
+    anchor: "packages/engine/packages/webview-ui/src/webview/formLogic.ts:65",
     recordedVersion: "codex-cli 0.146.0",
     recorded: "rejected; the chip list omits it",
     observed: `${rejected ? "rejected: unexpected argument" : "accepted: help printed"}; chip list ${offered ? "offers it" : "omits it"}`,
@@ -365,7 +365,7 @@ function unavailableResults(reason: string): DimensionResult[] {
     unavailable({
       id: "codex-full-auto",
       title: "codex refuses --full-auto",
-      anchor: "packages/engine/src/webview/formLogic.ts:65",
+      anchor: "packages/engine/packages/webview-ui/src/webview/formLogic.ts:65",
       recordedVersion: "codex-cli 0.146.0",
       recorded: "rejected; the chip list omits it",
     }),

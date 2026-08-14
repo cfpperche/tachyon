@@ -16,21 +16,21 @@ import {
   humanInboxItemMissingMessage,
   humanInboxMessage,
   type HumanInboxAction,
-} from "./human-inbox/messages.js";
-import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "./human-inbox/viewModel.js";
+} from "@tachyon/webview-ui/webview/human-inbox/messages";
+import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "./human-inbox/viewModel";
 import { makeInboxArtifactLoader } from "@tachyon/engine/humanInbox/loadArtifact.js";
-import type { HumanInboxKind, StaleAfter } from "../humanInbox/model.js";
+import type { HumanInboxKind, StaleAfter } from "@tachyon/webview-ui/humanInbox/model";
 import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
 import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
 import type { WorkspaceBoardTarget } from "../shell/BoardTarget.js";
-import { buildValidationsViewModel } from "./validations/viewModel.js";
-import { listApprovalViewItems } from "./approval/viewModel.js";
+import { buildValidationsViewModel } from "./validations/viewModel";
+import { listApprovalViewItems } from "./approval/viewModel";
 import { readLiveSavedAgentProposalQueue } from "@tachyon/engine/agents/savedAgentProposalStore.js";
-import { buildSavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
+import { buildSavedAgentProposalReview } from "../agents/savedAgentProposalReview";
 import { denySavedAgentProposal, type SavedAgentCommitResult } from "../agents/savedAgentProposalCommit.js";
 import { readLiveSavedAgentRemovalProposalQueue } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
-import { buildSavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview.js";
+import { buildSavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview";
 import {
   denySavedAgentRemovalProposal,
   type SavedAgentRemovalCommitResult,

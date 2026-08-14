@@ -27,7 +27,7 @@ import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from 
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "@tachyon/engine/agents/paneTranscript.js";
 import type { ResolvedAgentCapabilityProjection } from "@tachyon/engine/config/agentProfileResolver.js";
 import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
-import { agentGroupParent, agentIsNested } from "../../src/webview/sidebar/grouping.js";
+import { agentGroupParent, agentIsNested } from "../../packages/webview-ui/src/webview/sidebar/grouping.js";
 import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 const WS = "/repo";

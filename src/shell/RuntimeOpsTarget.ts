@@ -1,4 +1,4 @@
-import type { RuntimeOpsSnapshot } from "../runtimeOps/types.js";
+import type { RuntimeOpsSnapshot } from "@tachyon/webview-ui/runtimeOps/types";
 import { mergeRuntimeOpsSnapshotsV1 } from "@tachyon/engine/runtime-api/runtimeOpsProjection.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";

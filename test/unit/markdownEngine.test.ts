@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderMarkdownHtml, segments } from "../../src/webview/activity/markdownEngine.js";
+import { renderMarkdownHtml, segments } from "../../packages/webview-ui/src/webview/activity/markdownEngine.js";
 
 describe("markdownEngine (spec 238 inc 17)", () => {
   it("renders GFM tables", () => {

@@ -10,7 +10,7 @@ import { parseRootDeclarations, resolveChain } from "./support/cssVarResolver.js
 // this fixture theme define" + a WCAG contrast check on the resolved hex pairs is a real, headless check of
 // the SAME fallback logic a browser would run — not a browser re-implementation.
 const ROOT = path.resolve(__dirname, "..", "..");
-const css = fs.readFileSync(path.join(ROOT, "src/webview/shared/vscode-theme.css"), "utf8");
+const css = fs.readFileSync(path.join(ROOT, "packages/webview-ui/src/webview/shared/vscode-theme.css"), "utf8");
 const declarations = parseRootDeclarations(css);
 
 // WCAG relative-luminance contrast ratio, hex-only (this project's literal fallbacks are all hex; a resolved

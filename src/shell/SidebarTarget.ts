@@ -14,7 +14,7 @@ import {
   applySidebarMutation,
   type SidebarMutationResult,
 } from "@tachyon/engine/sidebar/sidebarMutationService.js";
-import type { PinStudioAttachmentVM } from "../webview/pin-studio/types.js";
+import type { PinStudioAttachmentVM } from "@tachyon/webview-ui/webview/pin-studio/types";
 import {
   legacyPinStudioTarget,
   workspacePinStudioTarget,

@@ -11,7 +11,7 @@ import type {
   RuntimeConfigKnownSetting,
   RuntimeConfigRuntimeInventory,
   RuntimeConfigScope,
-} from "./types.js";
+} from "@tachyon/webview-ui/runtimeConfig/types";
 
 export interface ClaudeRuntimeConfigInventory extends RuntimeConfigRuntimeInventory {
   runtime: "claude";

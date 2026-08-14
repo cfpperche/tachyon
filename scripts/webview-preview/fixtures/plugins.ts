@@ -9,7 +9,7 @@
  * spec-278 fixture-fidelity rule: a fixture must not silently diverge from what the host actually emits).
  */
 
-import type { PluginsViewModel } from "../../../src/plugins/viewModel";
+import type { PluginsViewModel } from "@tachyon/webview-ui/plugins/viewModel";
 import type { Fixture } from "../routes";
 import vms from "./plugins.vms.json";
 

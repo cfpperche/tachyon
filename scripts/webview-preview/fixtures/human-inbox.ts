@@ -1,7 +1,7 @@
-import { buildHumanInbox, humanInboxCounts } from "../../../src/humanInbox/model";
-import type { HumanInboxItemViewModel, HumanInboxViewModel } from "../../../src/webview/human-inbox/viewModel";
-import type { ApprovalViewItem } from "../../../src/webview/approval/viewModel";
-import type { ValidationViewItem } from "../../../src/webview/validations/viewModel";
+import { buildHumanInbox, humanInboxCounts } from "@tachyon/webview-ui/humanInbox/model";
+import type { HumanInboxItemViewModel, HumanInboxViewModel } from "@tachyon/webview-ui/webview/human-inbox/viewModel";
+import type { ApprovalViewItem } from "@tachyon/webview-ui/webview/approval/viewModel";
+import type { ValidationViewItem } from "@tachyon/webview-ui/webview/validations/viewModel";
 import { humanInboxFixtureVm, humanInboxItemFixtureVm } from "./cockpit";
 import type { Fixture } from "../routes";
 

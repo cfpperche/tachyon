@@ -22,7 +22,7 @@
  * handshake decides whether the item is still pending). Re-deriving those rules here would be a
  * second copy free to disagree with the first — the very thing this file exists to prevent.
  */
-import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "./model.js";
+import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "@tachyon/webview-ui/humanInbox/model";
 
 /**
  * Where a `tachyon.openHumanInbox` invocation should land.

@@ -10,10 +10,10 @@ import type { ControlWorkspaceScope } from "../ControlWorkspaceScope.js";
 import type { WorkspaceStudioTarget } from "../../../shell/WorkspacePresentation.js";
 import type { StudioHostAdapter } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import type { StudioPanelState } from "./StudioPanelManagerBase.js";
-import { decodeStudioMessage, envelope } from "./protocol.js";
-import { mapUnknownError } from "./errorTaxonomy.js";
-import { acceptsWhileVanished, isTombstone } from "./tombstone.js";
-import { READY } from "../ready.js";
+import { decodeStudioMessage, envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol";
+import { mapUnknownError } from "./errorTaxonomy";
+import { acceptsWhileVanished, isTombstone } from "@tachyon/webview-ui/webview/shared/studio/tombstone";
+import { READY } from "@tachyon/webview-ui/webview/shared/ready";
 import {
   SingleModeStudioEditPolicy,
   type SingleModeStudioDraft,

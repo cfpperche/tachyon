@@ -27,7 +27,7 @@ records exactly where it came from and what was adapted, so a future upgrade kno
   ```
   Each `<c>.json`'s `.files[0].content` field is the vendored `.tsx` source (before the adaptations below).
 - **No `components.json`.** The CLI would normally write one recording style/aliases/Tailwind config
-  choices; since the CLI never ran, there is none — this file + `src/webview/shared/tailwind-theme.css` (the
+  choices; since the CLI never ran, there is none — this file + `packages/webview-ui/src/webview/shared/tailwind-theme.css` (the
   `@theme inline` semantic-token mapping every shadcn component's Tailwind classes resolve against) ARE the
   config baseline. `tailwindcss`/`@tailwindcss/cli` are v4 (CSS-native config — no `tailwind.config.js`
   exists in this project at all, vendored or otherwise).

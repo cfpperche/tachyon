@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
-const cssPath = "src/webview/shared/tokens.css";
+const cssPath = "packages/webview-ui/src/webview/shared/tokens.css";
 const tsPath = "src/webview/ide-browser-bridge/themeTokens.ts";
 const start = "// BEGIN GENERATED TOKEN DEFINITIONS — do not edit; run npm run generate:theme-tokens\n";
 const end = "// END GENERATED TOKEN DEFINITIONS\n";

@@ -14,8 +14,8 @@ import {
   runtimeOpsSessionInspectionMessage,
   runtimeOpsSnapshotMessage,
   runtimeOpsSnapshotUnavailableMessage,
-} from "./runtime-ops/messages.js";
-import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../runtimeOps/types.js";
+} from "@tachyon/webview-ui/webview/runtime-ops/messages";
+import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "@tachyon/webview-ui/runtimeOps/types";
 import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /**

@@ -1,5 +1,5 @@
 import type { ValidationExecutor, ValidationOutcome } from "@tachyon/engine/validations/types.js";
-import type { ValidationsViewModel } from "./viewModel";
+import type { ValidationsViewModel } from "@tachyon/webview-ui/webview/validations/viewModel";
 
 export const VALIDATIONS = "validations" as const;
 export const VALIDATION_ERROR = "validationError" as const;

@@ -7,7 +7,7 @@ const dispatch = new Proxy({}, { get: () => () => {} }) as never;
 
 describe("Human Inbox resolved-history rendering (t-cede16)", () => {
   it("renders state, kind, compatible result, period and search controls", async () => {
-    const { App } = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/human-inbox/App.tsx"));
+    const { App } = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/human-inbox/App.tsx"));
     const vm = buildHumanInboxViewModel({ folder: "tachyon", wsHash: "ws", approvals: [], validations: [] });
     const html = renderStatic((App as (props: unknown) => unknown)({ vm, dispatch }));
 
@@ -21,7 +21,7 @@ describe("Human Inbox resolved-history rendering (t-cede16)", () => {
   });
 
   it("renders resolved approval provenance verbatim and no decision controls", async () => {
-    const { ItemApp } = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/human-inbox/App.tsx"));
+    const { ItemApp } = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/human-inbox/App.tsx"));
     const vm = buildHumanInboxViewModel({
       folder: "tachyon",
       wsHash: "ws",

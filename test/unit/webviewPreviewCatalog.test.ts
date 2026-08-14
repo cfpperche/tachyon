@@ -51,7 +51,7 @@ describe("webview preview route catalog (spec 278)", () => {
     const surfaceViews = new Set(convertedSurfaces.map((s) => s.view));
     for (const [view, reason] of Object.entries(PREVIEW_ROUTE_OPTOUTS)) {
       expect(
-        surfaceViews.has(view) || existsSync(`src/webview/${view}`),
+        surfaceViews.has(view) || existsSync(`packages/webview-ui/src/webview/${view}`),
         `preview opt-out '${view}' is neither a converted surface nor a webview renderer`,
       ).toBe(true);
       expect(reason.trim().length, `preview opt-out '${view}' needs a non-empty reason`).toBeGreaterThan(0);

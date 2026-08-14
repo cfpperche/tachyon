@@ -10,7 +10,7 @@ import {
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { CommandStudioAdapter } from "../../src/webview/CommandStudioAdapter.js";
-import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
+import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../src/webview/studioSubmit.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 import type { AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";

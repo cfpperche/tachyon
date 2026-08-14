@@ -20,8 +20,8 @@ import * as vscode from "vscode";
 import type { WorkspaceAgentStudioTarget } from "../../shell/WorkspacePresentation.js";
 import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "@tachyon/shared/config/agentProfileRefusal.js";
 import { redactSecrets } from "@tachyon/engine/bridge/redact.js";
-import { envelope } from "../shared/studio/protocol.js";
-import { validateAgentStudioInboundMessage } from "./domain.js";
+import { envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol";
+import { validateAgentStudioInboundMessage } from "@tachyon/webview-ui/webview/agent-studio-shell/domain";
 import {
   agentProfileErrorMessage,
   agentProfileNoticeMessage,
@@ -33,7 +33,7 @@ import {
   agentProfileBundleCreatedMessage,
   agentProfileBundleErrorMessage,
   agentProfileBundleExportMessage,
-} from "./messages.js";
+} from "@tachyon/webview-ui/webview/agent-studio-shell/messages";
 import type { StudioDomainContext } from "../shared/studio/studioRegistry.js";
 
 export function handleAgentStudioDomainMessage(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext, message: { type: string }): void {

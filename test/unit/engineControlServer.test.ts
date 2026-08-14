@@ -14,7 +14,7 @@ import {
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
 } from "@tachyon/engine/engine-service/protocol.js";
-import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
+import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { controlNoncePath, readControlNonce } from "@tachyon/engine/engine-service/controlPeerAuth.js";
 

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import * as esbuild from "esbuild";
 import { loadPlugin, previewInstall, applyInstall } from "../../src/plugins/engine.js";
-import { buildInstallConsent } from "../../src/plugins/consentViewModel.js";
+import { buildInstallConsent } from "../../src/plugins/consentViewModel";
 import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { resolveExternalTool } from "../../src/plugins/externalTool.js";
 

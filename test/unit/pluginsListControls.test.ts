@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { filterAndSortInstalledPlugins, filterInstalledPlugins, sortInstalledPlugins, type InstalledSortMode } from "../../src/webview/plugins/listControls.js";
-import type { InstalledPluginVM } from "../../src/plugins/viewModel.js";
+import { filterAndSortInstalledPlugins, filterInstalledPlugins, sortInstalledPlugins, type InstalledSortMode } from "../../packages/webview-ui/src/webview/plugins/listControls.js";
+import type { InstalledPluginVM } from "@tachyon/webview-ui/plugins/viewModel";
 
 function plugin(name: string, opts: Partial<InstalledPluginVM> = {}): InstalledPluginVM {
   return {

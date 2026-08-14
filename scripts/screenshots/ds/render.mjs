@@ -20,14 +20,14 @@ import { themeRootCss } from "./themes.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..", "..");
 const OUT = join(HERE, "out");
-const DS_CSS = join(ROOT, "src/webview/shared/design-system.css");
+const DS_CSS = join(ROOT, "packages/webview-ui/src/webview/shared/design-system.css");
 
 // Each entry pairs the panel stylesheet (an extracted host <style> or a direct CSS file) with EITHER a Preact harness (`harness`: a tsx
 // that mounts <App> with a fixture) OR a static body fragment (`body`: an .html file of representative markup)
 // for the vanilla-JS panels whose DOM is built host-side via postMessage and can't be mounted standalone.
 const PANELS = {
   plugins: { harness: "harness/plugins.tsx", styleFrom: "src/webview/PluginsPanel.ts" },
-  "plugins-consent": { harness: "harness/plugins-consent.tsx", styleFile: "src/webview/plugins/plugins.css", width: 880 },
+  "plugins-consent": { harness: "harness/plugins-consent.tsx", styleFile: "packages/webview-ui/src/webview/plugins/plugins.css", width: 880 },
   handoff: { harness: "harness/handoff.tsx", styleFrom: "src/webview/HandoffPanel.ts" },
   inspector: { body: "harness/inspector.body.html", styleFrom: "src/webview/ServerInspector.ts" },
   studio: { body: "harness/studio.body.html", styleFrom: "src/webview/AgentStudioPanel.ts" },

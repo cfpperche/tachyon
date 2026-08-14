@@ -2,7 +2,7 @@
 // `fleets = [SAMPLE]`), so the screenshot exercises the dense list: icon tabs, status-dot rows, badges, the
 // cmd+K bar — proving they follow the theme on --ds-* tokens after the migration.
 import { render } from "preact";
-import { App } from "../../../../src/webview/sidebar/App";
+import { App } from "@tachyon/webview-ui/webview/sidebar/App";
 
 const root = document.getElementById("root");
 if (root) render(<App />, root);

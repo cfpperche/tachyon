@@ -7,18 +7,18 @@ import {
 } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import { buildTaskDetailVm, emptyTombstoneVm } from "./task-detail/taskDetailVm.js";
-import { taskDocumentModeMessage, taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "./task-detail/messages.js";
-import { READY } from "./shared/ready.js";
+import { taskDocumentModeMessage, taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "@tachyon/webview-ui/webview/task-detail/messages";
+import { READY } from "@tachyon/webview-ui/webview/shared/ready";
 import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
 import type { TaskDetailProjectionV1 } from "@tachyon/engine/runtime-api/taskDetailProjection.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
 import { TaskStudioAdapter } from "./TaskStudioAdapter.js";
-import { decodeStudioMessage, envelope } from "./shared/studio/protocol.js";
-import { mapUnknownError } from "./shared/studio/errorTaxonomy.js";
+import { decodeStudioMessage, envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol";
+import { mapUnknownError } from "./shared/studio/errorTaxonomy";
 import { handleTaskStudioDomainMessage } from "./task-detail/taskStudioDomain.js";
 import { TaskDocumentEditPolicy, type TaskDocumentDraft } from "./task-detail/editPolicy.js";
-import type { TaskPatch } from "./task-studio/domain.js";
+import type { TaskPatch } from "@tachyon/webview-ui/webview/task-studio/domain";
 import { confirmDocumentStudioCancel } from "./shared/studio/documentStudioCancel.js";
 
 export const TASK_DETAIL_VIEW_TYPE = "tachyonTaskDetail";

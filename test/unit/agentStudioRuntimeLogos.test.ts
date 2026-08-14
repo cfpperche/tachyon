@@ -4,7 +4,7 @@ import path from "node:path";
 
 describe("Agent Studio runtime logos", () => {
   it("quick-add chips carry official runtime logos", () => {
-    const source = fs.readFileSync(path.join(process.cwd(), "src/webview/agent-studio-shell/runtimeLogos.tsx"), "utf8");
+    const source = fs.readFileSync(path.join(process.cwd(), "packages/webview-ui/src/webview/agent-studio-shell/runtimeLogos.tsx"), "utf8");
     const ids = [
       "claude",
       "codex",

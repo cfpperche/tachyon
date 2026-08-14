@@ -110,12 +110,12 @@ describe("t-c8e2bd — webview token lint", () => {
       byFile.set(rel, [...new Set(values)].sort((a, b) => a - b));
     }
     expect(Object.fromEntries(byFile)).toEqual({
-      "src/webview/design-mode-overlay/App.tsx": [1, 2, 2147483646],
-      "src/webview/design-mode-overlay/main.tsx": [2147483647],
-      "src/webview/design-mode-overlay/styles.ts": [3, 2147483647],
+      "packages/webview-ui/src/webview/design-mode-overlay/App.tsx": [1, 2, 2147483646],
+      "packages/webview-ui/src/webview/design-mode-overlay/main.tsx": [2147483647],
+      "packages/webview-ui/src/webview/design-mode-overlay/styles.ts": [3, 2147483647],
     });
 
-    const overlayRows = Z_INDEX_EXCEPTIONS.filter((row) => row.file.startsWith("src/webview/design-mode-overlay/"));
+    const overlayRows = Z_INDEX_EXCEPTIONS.filter((row) => row.file.startsWith("packages/webview-ui/src/webview/design-mode-overlay/"));
     expect(overlayRows.length).toBeGreaterThan(0);
     expect(overlayRows.every((row) => row.reason.trim().length >= MIN_REASON)).toBe(true);
     expect(scanRepo(ROOT).filter((v) => v.file.includes("design-mode-overlay"))).toEqual([]);
@@ -128,7 +128,7 @@ describe("t-f45320 — undeclared --ds-* / --tachyon-* var()", () => {
     const hits = findTokenVars(".x { color: var(--ds-not-a-token); }\n", ".css");
     expect(hits).toEqual([{ line: 1, name: "--ds-not-a-token", hasFallback: false }]);
     const violations = evaluateUndeclaredTokens(
-      hits.map((h) => ({ file: "src/webview/probe.css", ...h })),
+      hits.map((h) => ({ file: "packages/webview-ui/src/webview/probe.css", ...h })),
       new Set(["--ds-err"]),
     );
     expect(violations).toEqual([
@@ -145,7 +145,7 @@ describe("t-f45320 — undeclared --ds-* / --tachyon-* var()", () => {
     expect(hits).toEqual([{ line: 1, name: "--ds-large", hasFallback: true }]);
     expect(
       evaluateUndeclaredTokens(
-        hits.map((h) => ({ file: "src/webview/probe.css", ...h })),
+        hits.map((h) => ({ file: "packages/webview-ui/src/webview/probe.css", ...h })),
         new Set(),
       ),
     ).toEqual([]);
@@ -157,7 +157,7 @@ describe("t-f45320 — undeclared --ds-* / --tachyon-* var()", () => {
     expect(declared.has("--ds-err")).toBe(true);
     expect(
       evaluateUndeclaredTokens(
-        findTokenVars(css, ".css").map((h) => ({ file: "src/webview/probe.css", ...h })),
+        findTokenVars(css, ".css").map((h) => ({ file: "packages/webview-ui/src/webview/probe.css", ...h })),
         declared,
       ),
     ).toEqual([]);
@@ -180,7 +180,7 @@ describe("t-f45320 — undeclared --ds-* / --tachyon-* var()", () => {
   it("a stale undeclared-token exception fails the same way a stale hex row does", () => {
     const stale = evaluateUndeclaredTokens([], new Set(["--ds-err"]), [
       {
-        file: "src/webview/probe.css",
+        file: "packages/webview-ui/src/webview/probe.css",
         values: ["--ds-ghost"],
         reason: "Placeholder long enough to pass the written-reason floor.",
       },
@@ -188,11 +188,11 @@ describe("t-f45320 — undeclared --ds-* / --tachyon-* var()", () => {
     expect(stale.some((v) => v.kind === "stale-exception" && v.value === "--ds-ghost")).toBe(true);
 
     const nowDeclared = evaluateUndeclaredTokens(
-      [{ file: "src/webview/probe.css", line: 1, name: "--ds-err", hasFallback: false }],
+      [{ file: "packages/webview-ui/src/webview/probe.css", line: 1, name: "--ds-err", hasFallback: false }],
       new Set(["--ds-err"]),
       [
         {
-          file: "src/webview/probe.css",
+          file: "packages/webview-ui/src/webview/probe.css",
           values: ["--ds-err"],
           reason: "Placeholder long enough to pass the written-reason floor.",
         },
@@ -204,13 +204,13 @@ describe("t-f45320 — undeclared --ds-* / --tachyon-* var()", () => {
   it("the invented error/success/radius/font names are gone from live rules", () => {
     const banned = ["--ds-danger", "--ds-success", "--ds-radius-lg", "--ds-large", "--tachyon-ui-font", "--tachyon-mono", "--tachyon-font-sans"];
     const src = [
-      "src/webview/rich-doc/rich-doc.css",
-      "src/webview/task-studio/task-studio.css",
-      "src/webview/agent-studio-shell/agent-studio-shell.css",
-      "src/webview/plugin-host/plugin-host.css",
-      "src/webview/probes/probes.css",
-      "src/webview/shared/studio/studio-frame.css",
-      "src/webview/shared/design-system.css",
+      "packages/webview-ui/src/webview/rich-doc/rich-doc.css",
+      "packages/webview-ui/src/webview/task-studio/task-studio.css",
+      "packages/webview-ui/src/webview/agent-studio-shell/agent-studio-shell.css",
+      "packages/webview-ui/src/webview/plugin-host/plugin-host.css",
+      "packages/webview-ui/src/webview/probes/probes.css",
+      "packages/webview-ui/src/webview/shared/studio/studio-frame.css",
+      "packages/webview-ui/src/webview/shared/design-system.css",
     ]
       .map((file) => fs.readFileSync(path.join(ROOT, file), "utf8"))
       .join("\n");

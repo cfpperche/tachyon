@@ -4,7 +4,7 @@
  * agent chips, priorities, assignees, SDD badges, attention, and attachment count.
  */
 
-import type { BoardVM } from "../../../src/webview/board/messages";
+import type { BoardVM } from "@tachyon/webview-ui/webview/board/messages";
 import type { BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
 import type { Task, TaskView } from "@tachyon/shared/tasks/types";
 import type { ValidationSummary } from "@tachyon/engine/validations/ValidationStore.js";

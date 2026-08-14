@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   INIT, MODEL, CAPTURE, initMessage, modelMessage, captureMessage,
   refreshAction, openAction, killAction, reapDeadAction, reapOrphansAction, captureAction,
-} from "../../src/webview/inspector/messages.js";
-import type { InspectorModel } from "../../src/inspector/model.js";
+} from "../../packages/webview-ui/src/webview/inspector/messages.js";
+import type { InspectorModel } from "@tachyon/webview-ui/inspector/model";
 
 // spec 279 — locks the Inspector's BOTH-DIRECTIONS envelope (the contract that used to hide in the inline
 // <script>). The host (ServerInspector), the webview (inspector/main.tsx + App), and the harness all build

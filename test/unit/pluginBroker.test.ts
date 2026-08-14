@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ACTION_META } from "../../src/sidebar/actions.js";
+import { ACTION_META } from "@tachyon/webview-ui/sidebar/actions";
 import { PluginActionBroker } from "../../src/plugins/ui/broker.js";
 import type { PluginActionTarget } from "../../src/plugins/ui/broker.js";
 

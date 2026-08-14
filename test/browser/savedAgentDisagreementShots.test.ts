@@ -17,7 +17,7 @@ import { SAMPLE, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.
  *
  * `plan.md` predicted a length risk: the measured refusal is already around 260 characters and the
  * state name makes it longer. The prediction is answered by measurement here rather than by reading
- * the source — the refusal rides a `title` tooltip (`src/webview/sidebar/App.tsx`, the `refused` meta
+ * the source — the refusal rides a `title` tooltip (`packages/webview-ui/src/webview/sidebar/App.tsx`, the `refused` meta
  * renderer), so the assertion is that row GEOMETRY does not move, and that the state is nevertheless
  * present in the attribute a person hovers.
  *
@@ -78,7 +78,7 @@ describe("SDD 494 Part 4 saved-agent disagreement on the sidebar row — headles
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
-    const mod = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/sidebar/App.tsx"));
+    const mod = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"));
     App = mod.App as typeof App;
     browser = await puppeteer.launch({
       executablePath: resolveChromeExecutable(),

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stalenessLabel, noteGlyph, relativeTime } from "../../src/webview/handoff/handoffViewModel.js";
+import { stalenessLabel, noteGlyph, relativeTime } from "../../packages/webview-ui/src/webview/handoff/handoffViewModel.js";
 
 // spec 245 inc D — the PURE Project Handoff view-model helpers (the CI-covered part; the Preact render + the
 // panel host plumbing are EDH-validated). "logic in the vscode layer escapes CI" → these stay outside it.

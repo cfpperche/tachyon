@@ -21,11 +21,11 @@ import { AGENT_CARD_FIXTURES, scrubLocaleTimestamps } from "../fixtures/sidebar/
  * is scoped to agent cards: if a terminal row moves, the boundary was crossed.
  */
 const GOLDEN_PATH = path.join(__dirname, "../fixtures/sidebar/agentCardGolden.txt");
-const APP_TSX = path.join(__dirname, "../../src/webview/sidebar/App.tsx");
+const APP_TSX = path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx");
 const HEADER = [
   "# SDD 479 — agent card golden",
   "#",
-  "# Base capture: src/webview/sidebar/App.tsx at 76546c4d, BEFORE the phase-1 component-catalog",
+  "# Base capture: packages/webview-ui/src/webview/sidebar/App.tsx at 76546c4d, BEFORE the phase-1 component-catalog",
   "# refactor. Every card here is still the byte-for-byte output of that pre-catalog renderer EXCEPT",
   "# these intentional product changes:",
   "#",

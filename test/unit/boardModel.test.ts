@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentFilterOptions, buildBoardModel, colorTokenFor, matchesBoardSearch, HUMAN_COLOR_VAR } from "../../src/tasks/boardModel.js";
+import { agentFilterOptions, buildBoardModel, colorTokenFor, matchesBoardSearch, HUMAN_COLOR_VAR } from "@tachyon/webview-ui/tasks/boardModel";
 import type { BoardChip, BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
 import type { Task, TaskView } from "@tachyon/shared/tasks/types.js";
 

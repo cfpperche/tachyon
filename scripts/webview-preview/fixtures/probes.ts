@@ -6,7 +6,7 @@
  */
 
 import type { ProbeView } from "@tachyon/engine/probe/probeView.js";
-import type { ProbesVM } from "../../../src/webview/probes/messages";
+import type { ProbesVM } from "@tachyon/webview-ui/webview/probes/messages";
 import type { Fixture } from "../routes";
 
 const view: ProbeView = {

@@ -46,9 +46,9 @@ describe("SDD 485 D13 — editing-only studio document apps", () => {
   });
 
   it("has one standalone entry per studio and no renderer residue in Control", () => {
-    expect(() => readFileSync("src/webview/cockpit/App.tsx", "utf8")).toThrow();
+    expect(() => readFileSync("packages/webview-ui/src/webview/cockpit/App.tsx", "utf8")).toThrow();
     for (const studio of studios) {
-      const main = readFileSync(`src/webview/${studio}-studio-shell/main.tsx`, "utf8");
+      const main = readFileSync(`packages/webview-ui/src/webview/${studio}-studio-shell/main.tsx`, "utf8");
       // t-cd01bb: this asserted the literal `mountSingleModeStudio(App)` and went red when the
       // studio roots gained an error boundary — the argument became a callback supplying the same
       // App. What this case is FOR is unchanged by that: one standalone entry per studio, mounted
@@ -82,7 +82,7 @@ describe("SDD 485 D13 — editing-only studio document apps", () => {
     // the exact defect, arriving through a studio nobody re-checked.
     expect(studiosOnTheSharedHost()).toEqual([...studios].sort());
     for (const studio of studios) {
-      const app = readFileSync(`src/webview/${studio}-studio-shell/App.tsx`, "utf8");
+      const app = readFileSync(`packages/webview-ui/src/webview/${studio}-studio-shell/App.tsx`, "utf8");
       expect(app, `${studio}: no tombstone branch`).toContain('d.type === "tombstone"');
       expect(app, `${studio}: does not render the shared tombstone`).toContain("<StudioTombstone");
       // Rendered INSTEAD of the frame, not above it — this is what removes Save from the DOM.

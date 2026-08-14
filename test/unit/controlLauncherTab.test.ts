@@ -6,7 +6,7 @@ import { __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
 import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
 import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
-import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
+import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 import { SAMPLE, TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 
@@ -40,7 +40,7 @@ function fakeView(): { view: vscode.WebviewView; receive: (msg: unknown) => void
 }
 
 async function loadApp() {
-  const mod = await loadWebviewModule(path.join(repoRoot, "src/webview/sidebar/App.tsx"));
+  const mod = await loadWebviewModule(path.join(repoRoot, "packages/webview-ui/src/webview/sidebar/App.tsx"));
   return mod.App as (props: { fleets?: FleetVM[]; initialTab?: TabId; dispatch?: unknown }) => unknown;
 }
 
@@ -60,8 +60,8 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
     const viewIds = pkg.contributes.views.tachyon.map((v) => v.id);
     expect(viewIds).toEqual(["tachyonSidebarPrototype", "tachyonPluginSurfaces"]);
     expect(WEBVIEW_SURFACES.some((s) => s.viewId === "tachyonControlLauncher" || s.view === "control-launcher")).toBe(false);
-    expect(existsSync(path.join(repoRoot, "src/webview/ControlLauncherProvider.ts"))).toBe(false);
-    expect(existsSync(path.join(repoRoot, "src/webview/control-launcher"))).toBe(false);
+    expect(existsSync(path.join(repoRoot, "packages/webview-ui/src/webview/ControlLauncherProvider.ts"))).toBe(false);
+    expect(existsSync(path.join(repoRoot, "packages/webview-ui/src/webview/control-launcher"))).toBe(false);
     for (const file of ["src/extension.ts", "esbuild.mjs", "scripts/webview-preview/routes.json"]) {
       expect(read(file)).not.toContain("ControlLauncher");
       expect(read(file)).not.toContain("control-launcher");
@@ -97,7 +97,7 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
     expect(html).not.toContain('class="grp folder');
     expect(html).not.toContain("folder-body");
     // and the grid lives INSIDE the one tabpanel, never above the tab strip.
-    const app = read("src/webview/sidebar/App.tsx");
+    const app = read("packages/webview-ui/src/webview/sidebar/App.tsx");
     expect(app.split('class="tabs"')[0] ?? "").not.toContain("<ControlGrid");
     // t-374df3 — non-vacuity guard for the line above, nothing more: with no `<ControlGrid` in the
     // file at all, that split assertion passes by being empty. It counted `=== 1` and so went red on

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import { validateTerminalForm, type FormState } from "@tachyon/engine/webview/formLogic.js";
-import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/domain.js";
+import { blankTerminalFields } from "../../packages/webview-ui/src/webview/terminal-studio-shell/domain.js";
 import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
 
 /**

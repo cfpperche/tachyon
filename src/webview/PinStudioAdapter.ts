@@ -1,6 +1,6 @@
 import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
 import type { StudioHostAdapter } from "@tachyon/engine/webview/shared/studio/adapter.js";
-import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
+import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy";
 import {
   PIN_STUDIO_DOMAIN_MESSAGE_NAMES,
   canDiscardPinFields,
@@ -10,7 +10,7 @@ import {
   type PinDetailEntity,
   type PinFields,
   type PinPatch,
-} from "./pin-studio/domain.js";
+} from "@tachyon/webview-ui/webview/pin-studio/domain";
 
 /** Presentation adapter only; Pin persistence and media mutation live behind WorkspacePinStudioTarget. */
 export class PinStudioAdapter implements StudioHostAdapter<PinDetailEntity, PinFields, PinPatch> {

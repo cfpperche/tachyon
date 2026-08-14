@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { COCKPIT_SECTION_ORDER } from "../../src/sections/model.js";
-import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
+import { COCKPIT_SECTION_ORDER } from "@tachyon/webview-ui/sections/model";
+import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 
 describe("CONTROL_SECTION_NAV (t-6e2952)", () => {
   it("lists nine top-level tiles, covering every section Control renders", () => {

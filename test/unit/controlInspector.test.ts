@@ -3,7 +3,7 @@ import {
   buildControlInspectorModel,
   formatControlInspectorDiagnostics,
   parseBridgePort,
-} from "../../src/control-inspector/model.js";
+} from "@tachyon/webview-ui/control-inspector/model";
 
 describe("control inspector model (POC)", () => {
   it("parseBridgePort reads host:port URLs", () => {

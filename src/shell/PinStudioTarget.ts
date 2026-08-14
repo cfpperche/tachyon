@@ -21,8 +21,8 @@ import {
 } from "@tachyon/engine/pins/pinStudioService.js";
 import type { PinAttachment } from "@tachyon/engine/pins/types.js";
 import type { StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
-import type { PinDetailEntity, PinPatch } from "../webview/pin-studio/domain.js";
-import type { PinStudioAttachmentVM } from "../webview/pin-studio/types.js";
+import type { PinDetailEntity, PinPatch } from "@tachyon/webview-ui/webview/pin-studio/domain";
+import type { PinStudioAttachmentVM } from "@tachyon/webview-ui/webview/pin-studio/types";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
 

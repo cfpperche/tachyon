@@ -47,12 +47,12 @@ A menor e a mais importante. 36 módulos, zero alcançam `vscode`, direção já
 
 174 módulos exclusivos. Fecho dos 27 `main.tsx`, menos os 32 compartilhados.
 
-- [ ] Os 174 movidos por `git mv`.
-- [ ] Zero módulos do pacote importam `vscode`, nem em valor nem em tipo. Hoje o fecho do navegador tem zero dos dois e isso não pode piorar.
-- [ ] Os 27 entrypoints continuam produzindo os mesmos bundles; `scripts/check-webview-tokens.mjs` e `check:theme-tokens` continuam verdes.
-- [ ] O harness de preview (`scripts/webview-preview/`) continua servindo as 23 views.
-- [ ] **Validação visual obrigatória** em 880 e 360, nos dois temas. Esta fatia move o código de tudo que se vê.
-- [ ] Contagem do script bate com 174.
+- [x] Os 174 movidos por `git mv`.
+- [x] Zero módulos do pacote importam `vscode`, nem em valor nem em tipo. Hoje o fecho do navegador tem zero dos dois e isso não pode piorar.
+- [x] Os 27 entrypoints continuam produzindo os mesmos bundles; `scripts/check-webview-tokens.mjs` e `check:theme-tokens` continuam verdes.
+- [x] O harness de preview (`scripts/webview-preview/`) continua servindo as 23 views.
+- [x] **Validação visual obrigatória** em 880 e 360, nos dois temas. Esta fatia move o código de tudo que se vê.
+- [x] Contagem do script bate com 174.
 
 ---
 

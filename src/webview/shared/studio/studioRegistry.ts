@@ -11,7 +11,7 @@
  * whole checklist; the compiler enforces the rest.
  */
 import * as vscode from "vscode";
-import type { StudioId } from "./studioIds.js";
+import type { StudioId } from "@tachyon/webview-ui/webview/shared/studio/studioIds";
 import type { StudioHostAdapter } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../../../shell/WorkspacePresentation.js";
 import type { WorkspaceTaskStudioTarget } from "../../../shell/TaskStudioTarget.js";
@@ -23,11 +23,11 @@ import { ScheduleStudioAdapter } from "../../ScheduleStudioAdapter.js";
 import { AgentStudioAdapter } from "../../AgentStudioAdapter.js";
 import { TaskStudioAdapter } from "../../TaskStudioAdapter.js";
 import { PinStudioAdapter } from "../../PinStudioAdapter.js";
-import { createAgentProfileLabels } from "../../agent-studio-shell/domain.js";
+import { createAgentProfileLabels } from "@tachyon/webview-ui/webview/agent-studio-shell/domain";
 import { handleAgentStudioDomainMessage } from "../../agent-studio-shell/agentStudioDomain.js";
 import { handleTaskStudioDomainMessage } from "../../task-detail/taskStudioDomain.js";
 import { handlePinStudioDomainMessage } from "../../pin-studio/pinStudioDomain.js";
-import { envelope } from "../../shared/studio/protocol.js";
+import { envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol";
 
 type Adapter = StudioHostAdapter<unknown, unknown, unknown, unknown>;
 

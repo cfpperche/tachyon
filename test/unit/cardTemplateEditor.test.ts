@@ -9,7 +9,7 @@ import {
   toYaml,
   toggleComponent,
   validate,
-} from "../../src/webview/shared/control/cardTemplateEditor.js";
+} from "../../packages/webview-ui/src/webview/shared/control/cardTemplateEditor.js";
 import {
   CARD_COMPONENT_IDS,
   CARD_REGIONS,
@@ -17,7 +17,7 @@ import {
   parseCardTemplate,
   type CardComponentId,
 } from "@tachyon/shared/sidebar/cardTemplate.js";
-import { CARD_PREVIEW_ROWS, CARD_PREVIEW_WIDTHS } from "../../src/sidebar/cardPreviewRows.js";
+import { CARD_PREVIEW_ROWS, CARD_PREVIEW_WIDTHS } from "@tachyon/webview-ui/sidebar/cardPreviewRows";
 
 /**
  * SDD 479 phase 4 — the composer behind the Settings block.

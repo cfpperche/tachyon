@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
-import { STUDIO_PROTOCOL_VERSION } from "../../src/webview/shared/studio/protocol";
-import type { TaskDetailEntity } from "../../src/webview/task-studio/domain";
+import { STUDIO_PROTOCOL_VERSION } from "@tachyon/webview-ui/webview/shared/studio/protocol";
+import type { TaskDetailEntity } from "@tachyon/webview-ui/webview/task-studio/domain";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 import { openPreview } from "./support/preview";
 

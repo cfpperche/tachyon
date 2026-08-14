@@ -10,7 +10,7 @@ import { BOARD_VIEW_TYPE, BoardPanelManager, boardRefreshKind, type BoardPanelDe
 import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
 import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
-import { readyMessage, requestSnapshotAction } from "../../src/webview/board/messages.js";
+import { readyMessage, requestSnapshotAction } from "../../packages/webview-ui/src/webview/board/messages.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 
 /**

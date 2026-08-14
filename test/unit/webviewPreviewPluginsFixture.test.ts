@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPluginsViewModel, type UpdateCheck } from "../../src/plugins/viewModel.js";
+import { buildPluginsViewModel, type UpdateCheck } from "../../src/plugins/viewModel";
 import { serializeLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import type { Runtime } from "@tachyon/engine/plugins/manifest.js";
 import vms from "../../scripts/webview-preview/fixtures/plugins.vms.json";

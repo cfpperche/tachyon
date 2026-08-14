@@ -13,7 +13,7 @@ import {
 } from "../../shell/WorkspacePresentation.js";
 import { panelIcon } from "../../webview/shared/panelIcon.js";
 import { renderWebviewShell, SHELL_BASE_STYLESHEETS } from "../../webview/shared/shell.js";
-import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap, type PluginUiActionRelayMessage } from "../../webview/plugin-host/relay.js";
+import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap, type PluginUiActionRelayMessage } from "@tachyon/webview-ui/webview/plugin-host/relay";
 import { notify } from "../../workspace/NotificationService.js";
 
 const PLUGIN_EDITOR_VIEW_TYPE = "tachyonPluginSurface";

@@ -12,8 +12,8 @@
  * exactly like the old panel's own guards.
  */
 import type { WorkspacePinStudioTarget } from "../../shell/PinStudioTarget.js";
-import { envelope } from "../shared/studio/protocol.js";
-import { attachmentStoredMessage } from "./messages.js";
+import { envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol";
+import { attachmentStoredMessage } from "@tachyon/webview-ui/webview/pin-studio/messages";
 import { notify } from "../../workspace/NotificationService.js";
 import type { StudioDomainContext } from "../shared/studio/studioRegistry.js";
 

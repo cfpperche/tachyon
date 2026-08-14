@@ -5,7 +5,7 @@
  * here: "when in doubt, restore LESS — losing a draft is better than resurrecting a stale one silently."
  */
 
-import type { StudioRestoreSnapshot } from "./protocol";
+import type { StudioRestoreSnapshot } from "@tachyon/webview-ui/webview/shared/studio/protocol";
 
 export type RestoreAction = "restore-patch" | "restore-clean" | "discard";
 

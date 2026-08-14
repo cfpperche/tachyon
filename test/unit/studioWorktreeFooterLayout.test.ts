@@ -16,7 +16,7 @@ function readSrc(rel: string): string {
 
 describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions footer)", () => {
   it("agent-studio-shell places the worktree section in fields and omits sideActions", () => {
-    const src = readSrc("src/webview/agent-studio-shell/App.tsx");
+    const src = readSrc("packages/webview-ui/src/webview/agent-studio-shell/App.tsx");
     expect(src).toContain("Separate git checkout + branch");
     expect(src).toContain("ash-cwd");
     // worktree markup is inside the fields region tree, not a sideActions prop
@@ -39,7 +39,7 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
    * trips on its own explanation teaches the next person to delete the explanation.
    */
   it("agent-studio-shell binds no isolated-harness control (t-aa06a8)", () => {
-    const src = readSrc("src/webview/agent-studio-shell/App.tsx")
+    const src = readSrc("packages/webview-ui/src/webview/agent-studio-shell/App.tsx")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
     expect(src).not.toContain("Isolated harness");
@@ -51,8 +51,8 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
   });
 
   it("renders agent configuration blocks as always-expanded static sections", () => {
-    const src = readSrc("src/webview/agent-studio-shell/App.tsx");
-    const css = readSrc("src/webview/agent-studio-shell/agent-studio-shell.css");
+    const src = readSrc("packages/webview-ui/src/webview/agent-studio-shell/App.tsx");
+    const css = readSrc("packages/webview-ui/src/webview/agent-studio-shell/agent-studio-shell.css");
     expect(src).not.toContain("<details");
     expect(src).not.toContain("<summary");
     expect(src).toContain('class="ash-static-section" aria-labelledby="ash-persistent-instructions-title"');
@@ -62,7 +62,7 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
   });
 
   it("does not expose the deprecated transcript-isolation toggle in either Agent Studio mode", () => {
-    const src = readSrc("src/webview/agent-studio-shell/App.tsx");
+    const src = readSrc("packages/webview-ui/src/webview/agent-studio-shell/App.tsx");
     expect(src).not.toContain("Isolate runtime transcript/config home");
     expect(src).not.toContain('set("isolate"');
   });
@@ -75,7 +75,7 @@ describe("t-a1ba6c studio worktree sections are in-flow fields (not sideActions 
    * against the loader in `terminalStudioAgentOnlyKeys.test.ts`.
    */
   it("terminal-studio-shell keeps its fields in the fields region and omits sideActions", () => {
-    const src = readSrc("src/webview/terminal-studio-shell/App.tsx");
+    const src = readSrc("packages/webview-ui/src/webview/terminal-studio-shell/App.tsx");
     expect(src).toContain("tsh-cwd");
     expect(src).not.toMatch(/sideActions\s*:/);
     expect(src.indexOf('for="tsh-cwd"')).toBeGreaterThan(-1);

@@ -21,7 +21,7 @@ import { describe, expect, it } from "vitest";
  * once nothing is pending) creates it once `mount.current` is actually populated.
  */
 describe("rich-doc editor mount race stays fixed (t-112627)", () => {
-  for (const file of ["src/webview/pin-studio/App.tsx", "src/webview/task-studio/App.tsx"]) {
+  for (const file of ["packages/webview-ui/src/webview/pin-studio/App.tsx", "packages/webview-ui/src/webview/task-studio/App.tsx"]) {
     it(`${file}: resetEditorFrom defers editor creation to a post-commit effect instead of running it inline`, () => {
       const src = readFileSync(file, "utf8");
       expect(src).toContain("pendingEditorEntity");

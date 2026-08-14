@@ -6,10 +6,10 @@ import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../src/webview/human-inbox/viewModel.js";
 import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
-import type { ApprovalViewItem } from "../../src/webview/approval/viewModel.js";
-import type { ValidationViewItem } from "../../src/webview/validations/viewModel.js";
-import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
-import type { SavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
+import type { ApprovalViewItem } from "../../packages/webview-ui/src/webview/approval/viewModel.js";
+import type { ValidationViewItem } from "../../packages/webview-ui/src/webview/validations/viewModel.js";
+import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview";
+import type { SavedAgentProposalReview } from "@tachyon/webview-ui/agents/savedAgentProposalReview";
 
 /**
  * Human Inbox — headless Visual QA for the states the task enumerates (t-e76acc).
@@ -175,7 +175,7 @@ describe("Human Inbox — durable previews and the narrow-viewport guarantee", (
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
-    const mod = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/human-inbox/App.tsx"));
+    const mod = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/human-inbox/App.tsx"));
     App = mod.App as typeof App;
     ItemApp = mod.ItemApp as typeof ItemApp;
     browser = await puppeteer.launch({ executablePath: resolveChromeExecutable(), headless: true });

@@ -3,14 +3,14 @@ import type {
   RuntimeConfigChange,
   RuntimeConfigControlSnapshot,
   RuntimeConfigRuntime,
-} from "../runtimeConfig/types.js";
-import type { RuntimeConfigStrings } from "./runtime-config/messages.js";
+} from "@tachyon/webview-ui/runtimeConfig/types";
+import type { RuntimeConfigStrings } from "@tachyon/webview-ui/webview/runtime-config/messages";
 import {
   POLL,
   READY,
   runtimeConfigSnapshotMessage,
   runtimeConfigSnapshotUnavailableMessage,
-} from "./runtime-config/messages.js";
+} from "@tachyon/webview-ui/webview/runtime-config/messages";
 import {
   SectionPanelManager,
   type SectionAppConfig,

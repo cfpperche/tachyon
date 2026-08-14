@@ -26,7 +26,7 @@ import { describe, expect, it } from "vitest";
  * shrink but never grow.
  */
 
-const MAINS_DIR = "src/webview";
+const MAINS_DIR = "packages/webview-ui/src/webview";
 const read = (file: string): string => readFileSync(file, "utf8");
 
 function appMains(): string[] {
@@ -46,15 +46,15 @@ function appMains(): string[] {
  */
 const UNPROTECTED = [
   // Dev-only spec 350 fixture: failures should stay raw and conspicuous to fixture authors.
-  "src/webview/agent-studio-fixture/main.tsx",
+  "packages/webview-ui/src/webview/agent-studio-fixture/main.tsx",
   // Dev-only preview: masking a broken development surface with product recovery has no user benefit.
-  "src/webview/pipeline-studio/main.tsx",
+  "packages/webview-ui/src/webview/pipeline-studio/main.tsx",
   // Imperative sandbox host with no Preact tree: plugin faults belong to isolation/relay handling, not this boundary.
-  "src/webview/plugin-host/main.tsx",
+  "packages/webview-ui/src/webview/plugin-host/main.tsx",
   // This is the whole navigation app, not an editor panel; replacing it needs a sidebar-wide recovery design.
-  "src/webview/sidebar/main.tsx",
+  "packages/webview-ui/src/webview/sidebar/main.tsx",
   // Dev-only compatibility harness: uncaught failures are the gate's diagnostic output, not a recoverable state.
-  "src/webview/ui-gate/main.tsx",
+  "packages/webview-ui/src/webview/ui-gate/main.tsx",
 ];
 
 function wrapsProductRoot(source: string): boolean {
@@ -67,7 +67,7 @@ function wrapsProductRoot(source: string): boolean {
 
 describe("the shared ErrorBoundary keeps its contract (t-668b05)", () => {
   it("is a Preact class component implementing the error-boundary contract", () => {
-    const src = read("src/webview/shared/ErrorBoundary.tsx");
+    const src = read("packages/webview-ui/src/webview/shared/ErrorBoundary.tsx");
     expect(src).toMatch(/class ErrorBoundary extends Component/);
     expect(src).toMatch(/static getDerivedStateFromError/);
     expect(src).toMatch(/componentDidCatch/);
@@ -78,14 +78,14 @@ describe("the shared ErrorBoundary keeps its contract (t-668b05)", () => {
   // no remount — so if the crash-causing data is still there, the very next render throws again in a
   // loop). Fixed by cloning the child with a fresh `key` on every reset, forcing a genuine remount.
   it("Try again forces a genuine remount (cloneElement with a fresh key), not just clearing the error flag", () => {
-    const src = read("src/webview/shared/ErrorBoundary.tsx");
+    const src = read("packages/webview-ui/src/webview/shared/ErrorBoundary.tsx");
     expect(src).toMatch(/import\s*\{\s*Component,\s*cloneElement,/);
     expect(src).toMatch(/resetGeneration:\s*prev\.resetGeneration \+ 1/);
     expect(src).toMatch(/cloneElement\(this\.props\.children,\s*\{\s*key:\s*resetGeneration\s*\}\)/);
   });
 
   it("offers Copy details for a screenshot-unfriendly error (name/message/stack, not just the message)", () => {
-    const src = read("src/webview/shared/ErrorBoundary.tsx");
+    const src = read("packages/webview-ui/src/webview/shared/ErrorBoundary.tsx");
     expect(src).toMatch(/error\.stack/);
     expect(src).toMatch(/navigator\.clipboard\?\.writeText/);
   });

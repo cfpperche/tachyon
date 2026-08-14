@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import { renderWebviewShell, type ShellExtensionPoint } from "../shell.js";
 import { panelIcon } from "../panelIcon.js";
 import type { StudioHostAdapter } from "@tachyon/engine/webview/shared/studio/adapter.js";
-import { decodeStudioMessage, envelope, STUDIO_PROTOCOL_VERSION, type StudioConcurrencyState, type StudioRestoreSnapshot } from "./protocol.js";
-import { mapUnknownError, type StudioError } from "./errorTaxonomy.js";
+import { decodeStudioMessage, envelope, STUDIO_PROTOCOL_VERSION, type StudioConcurrencyState, type StudioRestoreSnapshot } from "@tachyon/webview-ui/webview/shared/studio/protocol";
+import { mapUnknownError, type StudioError } from "./errorTaxonomy";
 import { decideRestore } from "./restoreDecisions.js";
 import { PanelWorkGate, panelVisibility } from "../panelWorkGate.js";
 

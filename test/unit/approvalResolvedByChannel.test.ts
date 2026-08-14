@@ -27,7 +27,7 @@
  * WHY THE SYNTAX TREE AND NOT A REGEX (t-45db7d). Enumeration (2) used to scan every line of src/ for
  * `/\bresolvedBy\s*:\s*([^,}]+)/` and call each hit a call site. `resolvedBy:` appears on BOTH sides of
  * this field's life: a door WRITES one, and a view model READING the stored value back to show it puts
- * the same text on the left of the same colon. So `src/humanInbox/model.ts` (t-cede16) projected the
+ * the same text on the left of the same colon. So `packages/webview-ui/src/humanInbox/model.ts` (t-cede16) projected the
  * already-recorded value onto three rows and turned `main` red, on lines that record nothing. The guard's
  * concern is the WRITE — a resolution must not be attributed to an actor — and reading the field cannot
  * violate it. This is the third time the repository has paid for a static guard comparing TEXT instead of
@@ -373,7 +373,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
   it("GREEN on reads: projecting the stored value onto a screen is not a write door", () => {
     // The three lines t-cede16 added to the Human Inbox view model, which the old regex called call
     // sites. Asserted against the REAL file, so this cannot pass by describing a shape nobody ships.
-    const model = "src/humanInbox/model.ts";
+    const model = "packages/webview-ui/src/humanInbox/model.ts";
     const live = scanResolvedBy(model, fs.readFileSync(path.join(repoRoot, model), "utf8"));
     expect(live.findings).toEqual([]);
     expect(live.doors).toEqual([]);

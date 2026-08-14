@@ -9,7 +9,7 @@ import {
   getEngineLogRing,
   installEngineLogRing,
 } from "@tachyon/engine/engine-service/engineLogRing.js";
-import { buildControlInspectorModel } from "../../src/control-inspector/model.js";
+import { buildControlInspectorModel } from "@tachyon/webview-ui/control-inspector/model";
 
 describe("t-cd3626 engine log ring V1–V2.5", () => {
   afterEach(() => {

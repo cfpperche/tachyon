@@ -9,7 +9,7 @@ import { SAMPLE, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.
 // the literal `12` and went red when the Fleet tile was deleted, which is a stale number reporting a
 // deliberate change as a defect. The claim this test owns is "Control keeps its launcher", not how many
 // tiles the launcher happens to hold; `controlSectionNav.test.ts` is what pins the inventory itself.
-import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
+import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 
 /**
  * t-72ff5a — headless Visual QA for the sidebar's single workspace regime.
@@ -80,7 +80,7 @@ describe("t-72ff5a sidebar workspace scope — headless Visual QA", () => {
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
-    const mod = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/sidebar/App.tsx"));
+    const mod = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"));
     App = mod.App as typeof App;
     browser = await puppeteer.launch({
       executablePath: resolveChromeExecutable(),

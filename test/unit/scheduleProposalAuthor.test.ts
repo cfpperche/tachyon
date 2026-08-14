@@ -8,7 +8,7 @@ import {
   SCHEDULE_PROPOSAL_PENDING_CEILING,
   SCHEDULE_PROPOSAL_TTL_MS,
 } from "@tachyon/engine/schedule/ProposalStore.js";
-import { buildHumanInbox } from "../../src/humanInbox/model.js";
+import { buildHumanInbox } from "@tachyon/webview-ui/humanInbox/model";
 import type { CallerSnapshot } from "@tachyon/engine/bridge/callerIdentity.js";
 
 /** A fake MCP server that just captures tool handlers (same shape probeBridge.test.ts uses). */

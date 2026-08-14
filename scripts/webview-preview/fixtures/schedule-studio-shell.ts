@@ -3,8 +3,8 @@
  * through the real studio-shell protocol for visual passes without an extension host.
  */
 
-import type { ScheduleStudioEntity, ScheduleStudioReferenceData } from "../../../src/webview/schedule-studio-shell/domain";
-import { blankScheduleFields } from "../../../src/webview/schedule-studio-shell/domain";
+import type { ScheduleStudioEntity, ScheduleStudioReferenceData } from "@tachyon/webview-ui/webview/schedule-studio-shell/domain";
+import { blankScheduleFields } from "@tachyon/webview-ui/webview/schedule-studio-shell/domain";
 import type { Fixture, Route } from "../routes";
 
 interface ScheduleStudioShellFixtureVM {

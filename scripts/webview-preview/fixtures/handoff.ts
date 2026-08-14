@@ -3,7 +3,7 @@
  * the real HandoffViewModel (a drift breaks the build). Covers the populated doc, the cold-start, and a stale state.
  */
 
-import type { HandoffViewModel } from "../../../src/webview/handoff/handoffViewModel";
+import type { HandoffViewModel } from "@tachyon/webview-ui/webview/handoff/handoffViewModel";
 import { HANDOFF_DISTILL_PROFILES } from "@tachyon/shared/handoff/distill";
 import type { Fixture } from "../routes";
 

@@ -4,8 +4,8 @@
  * rendered on the studio shell, for the visual pass (create + edit) without needing the full extension host.
  */
 
-import type { AgentStudioEntity } from "../../../src/webview/agent-studio-shell/domain";
-import { blankAgentFields, canonicalAgentFields, createAgentProfileLabels } from "../../../src/webview/agent-studio-shell/domain";
+import type { AgentStudioEntity } from "@tachyon/webview-ui/webview/agent-studio-shell/domain";
+import { blankAgentFields, canonicalAgentFields, createAgentProfileLabels } from "@tachyon/webview-ui/webview/agent-studio-shell/domain";
 import type { AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio";
 import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan";
 import type { Fixture, Route } from "../routes";

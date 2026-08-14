@@ -7,7 +7,7 @@ import {
   runtimeOpsInspectSessionAction,
   runtimeOpsSessionInspectionMessage,
   type SessionInspectionState,
-} from "../../src/webview/runtime-ops/messages.js";
+} from "../../packages/webview-ui/src/webview/runtime-ops/messages.js";
 import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /**
@@ -22,7 +22,7 @@ import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspect
  * omits the `not-projected` rows, or that shows a file-only projection as if it were a live process,
  * fails at exactly the job it was built for.
  */
-const APP_TSX = path.join(__dirname, "../../src/webview/runtime-ops/App.tsx");
+const APP_TSX = path.join(__dirname, "../../packages/webview-ui/src/webview/runtime-ops/App.tsx");
 
 const AGENT_KEY = "a1b2c3:claude";
 

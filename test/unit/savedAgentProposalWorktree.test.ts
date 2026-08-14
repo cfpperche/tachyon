@@ -11,7 +11,7 @@ import {
   DEFAULT_NEW_AGENT_WORKTREE_ENABLED,
 } from "@tachyon/shared/config/agentProfileStudio.js";
 import type { AgentProfileLifecycleSnapshot } from "@tachyon/engine/config/agentProfileLifecycle.js";
-import { canonicalAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
+import { canonicalAgentFields } from "../../packages/webview-ui/src/webview/agent-studio-shell/domain.js";
 import { branchFor, resolveBase } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 /**

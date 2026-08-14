@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
+import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types.js";
 
 const read = (file: string): string => readFileSync(file, "utf8");
-const SIDEBAR_TSX = "src/webview/sidebar/App.tsx";
+const SIDEBAR_TSX = "packages/webview-ui/src/webview/sidebar/App.tsx";
 
 describe("t-aa2780 — the engine log-error dot has a destination", () => {
   let SidebarApp: (props: { fleets?: FleetVM[]; initialTab?: string }) => unknown;
@@ -17,7 +17,7 @@ describe("t-aa2780 — the engine log-error dot has a destination", () => {
   const erroring: FleetVM = { ...clean, engineLogHasError: true };
 
   it("Control's own tab dot is gone with the shell", () => {
-    expect(() => read("src/webview/cockpit/App.tsx")).toThrow();
+    expect(() => read("packages/webview-ui/src/webview/cockpit/App.tsx")).toThrow();
   });
 
   it("lights the sidebar's Control tab — visible from EVERY tab, not only the launcher", () => {
@@ -72,7 +72,7 @@ describe("t-aa2780 — the engine log-error dot has a destination", () => {
   });
 
   it("sidebar.css declares both dots", () => {
-    const css = read("src/webview/sidebar/sidebar.css");
+    const css = read("packages/webview-ui/src/webview/sidebar/sidebar.css");
     expect(css).toContain(".tab-dot");
     expect(css).toContain(".ctl-tile-dot");
   });
@@ -115,6 +115,6 @@ describe("t-aa2780 — navigation semantics did not regress", () => {
     expect(html).not.toContain('role="tab"');
     expect(html).not.toContain("aria-current");
     // the decision is argued where a reader of the code will meet it, not only here.
-    expect(read("src/webview/sidebar/App.tsx")).toContain("WHY THIS IS NOT A `tablist`");
+    expect(read("packages/webview-ui/src/webview/sidebar/App.tsx")).toContain("WHY THIS IS NOT A `tablist`");
   });
 });

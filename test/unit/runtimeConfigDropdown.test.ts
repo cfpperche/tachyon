@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, "../..");
 
 describe("Runtime Config runtime dropdown", () => {
   it("uses the accessible Kit dropdown with canonical runtime logos", () => {
-    const inventory = fs.readFileSync(path.join(root, "src/webview/runtime-config/App.tsx"), "utf8");
+    const inventory = fs.readFileSync(path.join(root, "packages/webview-ui/src/webview/runtime-config/App.tsx"), "utf8");
 
     expect(inventory).toContain("<KitDropdown>");
     expect(inventory).toContain('data-testid="runtime-config-runtime-trigger"');
@@ -17,8 +17,8 @@ describe("Runtime Config runtime dropdown", () => {
   });
 
   it("keeps the scope selector segmented and scopes menu styling to Runtime Config", () => {
-    const source = fs.readFileSync(path.join(root, "src/webview/runtime-config/App.tsx"), "utf8");
-    const styles = fs.readFileSync(path.join(root, "src/webview/runtime-config/runtime-config.css"), "utf8");
+    const source = fs.readFileSync(path.join(root, "packages/webview-ui/src/webview/runtime-config/App.tsx"), "utf8");
+    const styles = fs.readFileSync(path.join(root, "packages/webview-ui/src/webview/runtime-config/runtime-config.css"), "utf8");
 
     expect(source).toContain('<div class="rcp-segmented" role="group" aria-label={s.runtimeConfigScope}>');
     expect(styles).toContain('.rcp-runtime-menu[data-slot="dropdown-menu-content"]');

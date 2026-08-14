@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Frame } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
-import { STUDIO_PROTOCOL_VERSION } from "../../src/webview/shared/studio/protocol";
+import { STUDIO_PROTOCOL_VERSION } from "@tachyon/webview-ui/webview/shared/studio/protocol";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 import { openPreview } from "./support/preview";
 

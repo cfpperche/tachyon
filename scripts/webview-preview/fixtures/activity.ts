@@ -12,7 +12,7 @@
  * snapshot (`activity.vms.json`).
  */
 
-import type { ActivityViewModel } from "../../../src/activity/activityView";
+import type { ActivityViewModel } from "@tachyon/webview-ui/activity/activityView";
 import type { Fixture } from "../routes";
 import vms from "./activity.vms.json";
 import mermaidNavVm from "./activity-mermaid-nav.vm.json";

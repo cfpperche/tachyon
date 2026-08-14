@@ -6,7 +6,7 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0
 // Computed (non-literal) specifier: the plain tsconfig used for test/unit/*.ts has no --jsx, so a
 // static `import` of this .tsx would fail tsc; a runtime-computed path is untyped (`any`) to tsc but
 // still resolves for real under vitest, letting this test exercise the actual resolver + components.
-const runtimeLogosPath = ["..", "..", "src/webview/agent-studio-shell/runtimeLogos"].join("/");
+const runtimeLogosPath = ["..", "..", "packages/webview-ui/src/webview/agent-studio-shell/runtimeLogos"].join("/");
 
 describe("container-generated delegation behavior", () => {
   it("every quick-add runtime logo id resolves to a valid inline renderer with no corrupt base64", async () => {

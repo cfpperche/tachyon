@@ -10,7 +10,7 @@ import {
   type PipelineEntity,
   type PipelineFields,
   type PipelinePatch,
-} from "./pipeline-studio/domain.js";
+} from "@tachyon/webview-ui/webview/pipeline-studio/domain";
 
 /**
  * spec 350 T4 — the Pipeline Studio (Fake 1) host adapter: in-memory load/save/delete, no real persistence,

@@ -4,7 +4,7 @@ import path from "node:path";
 import * as esbuild from "esbuild";
 import { resolveChromeExecutable } from "./support/chrome";
 import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../src/webview/human-inbox/viewModel.js";
-import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
+import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview";
 
 /**
  * t-58f9e9 point 4 — drive the REAL click, not an injected prop.
@@ -32,7 +32,7 @@ const DENY = '[data-testid="inbox-deny-saved-agent"]';
 
 /** Bundle ItemApp for the browser with REAL preact hooks, and expose a mount/update handle. */
 async function bundleHarness(): Promise<string> {
-  const entry = path.resolve(__dirname, "../../src/webview/human-inbox/App.tsx");
+  const entry = path.resolve(__dirname, "../../packages/webview-ui/src/webview/human-inbox/App.tsx");
   const built = await esbuild.build({
     stdin: {
       contents: `

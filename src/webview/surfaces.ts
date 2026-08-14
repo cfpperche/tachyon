@@ -43,7 +43,7 @@ export type WebviewHostKind =
 interface WebviewSurfaceBase {
   /** the createWebviewPanel id / WebviewView viewType. */
   viewId: string;
-  /** the bundle/dir name: `src/webview/<view>/main.tsx` → `dist/webview/<view>.js`. */
+  /** the bundle/dir name: `packages/webview-ui/src/webview/<view>/main.tsx` → `dist/webview/<view>.js`. */
   view: string;
   /** the vscode-bound host file that creates the panel. */
   hostFile: string;
@@ -73,7 +73,7 @@ export type WebviewSurface = WebviewSurfaceBase & WebviewPosture;
 
 export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // t-6e2952 — the Control launcher is NOT a surface: it is a TAB inside the sidebar webview
-  // (src/webview/sidebar/App.tsx), so it has no viewType, no bundle and no host file of its own. The
+  // (packages/webview-ui/src/webview/sidebar/App.tsx), so it has no viewType, no bundle and no host file of its own. The
   // first delivery registered it as a separate WebviewView ("tachyonControlLauncher") and it rendered
   // as a second collapsible section stacked above the Tachyon panel — one panel is the requirement.
   // already preact (the 5 that established the convention)
@@ -87,18 +87,18 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // SDD 485 D18 — one document app whose immutable identity is workspace-wide or agent-scoped.
   { viewId: "tachyonProbes", view: "probes", hostFile: "src/webview/ProbeResultPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // t-610705 (SDD 410 Phase C.3, 2026-07-21) — the standalone Project Handoff panel was retired:
-  // it's a Control section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx;
+  // it's a Control section now (packages/webview-ui/src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx;
   // standalone bundle + harness route retired — use ?view=cockpit&fixture=handoff instead). The
   // trusted serializer for the legacy "tachyonHandoff" viewType stays registered in extension.ts: a
   // revived pre-410 panel disposes itself and redirects into Control → Handoff.
   // t-610705 (SDD 410 Phase A/B pilot, found + closed in the Phase E audit, 2026-07-22) — the
   // standalone Approvals panel was retired: it's a Control section now (src/webview/approval/App.tsx
-  // stays, lazy-imported by cockpit/App.tsx). ApprovalPanelManager (src/webview/ApprovalPanel.ts) is
+  // stays, lazy-imported by cockpit/App.tsx). ApprovalPanelManager (packages/webview-ui/src/webview/ApprovalPanel.ts) is
   // a pure redirect stub — it never calls createWebviewPanel, matching every other retired panel's
   // shape below. The trusted serializer for the legacy "tachyonApprovals" viewType stays registered
   // in extension.ts: a revived pre-410 panel disposes itself and redirects into Control → Approvals.
   // t-610705 (SDD 410 Phase D, D3) — the standalone Pin Studio panel (spec 255) was retired: it's a
-  // Control studio route now (src/webview/pin-studio/App.tsx stays, lazy-imported by cockpit/App.tsx
+  // Control studio route now (packages/webview-ui/src/webview/pin-studio/App.tsx stays, lazy-imported by cockpit/App.tsx
   // via CSS co-load, same as command/terminal/runbook/schedule/agent/task before it). The trusted
   // serializer for the legacy "tachyonPinStudio" viewType stays registered in extension.ts
   // (registerLegacyStudioRedirect): a revived pre-410 panel disposes itself and redirects into
@@ -138,7 +138,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // scan reads `html`/`body` selectors), so this stays a conforming surface that now owns its own pad.
   { viewId: "tachyonPlugins", view: "plugins", hostFile: "src/webview/PluginsPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // The Engine/Bridge Control Inspector POC was removed as dead code (t-b5dcae, 2026-07-20):
-  // ControlInspector.ts and src/webview/control-inspector/* had zero real importers — Cockpit's
+  // ControlInspector.ts and packages/webview-ui/src/webview/control-inspector/* had zero real importers — Cockpit's
   // Engine tab was already built on its own JSX + EngineLogPanel.tsx, using src/control-inspector/
   // model.ts's types directly (that pure model survives). The dispose-only serializer for the
   // legacy "tachyonControlInspector" viewType stays registered in extension.ts, same defensive
@@ -182,7 +182,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // task-detail.css neither styles the page frame nor mints `--ds-*` values → `conform`.
   { viewId: "tachyonTaskDetail", view: "task-detail", hostFile: "src/webview/TaskDetailPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // t-610705 (SDD 410 Phase D, D2) — the standalone Task Studio panel was retired: it's a Control
-  // studio route now (src/webview/task-studio/App.tsx stays, lazy-imported by cockpit/App.tsx via
+  // studio route now (packages/webview-ui/src/webview/task-studio/App.tsx stays, lazy-imported by cockpit/App.tsx via
   // CSS co-load, same as command/terminal/runbook/schedule/agent before it). The trusted serializer
   // for the legacy "tachyonTaskStudio" viewType stays registered in extension.ts: a revived pre-410
   // panel disposes itself and redirects into Control → the task's studio-edit route.

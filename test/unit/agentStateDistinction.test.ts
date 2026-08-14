@@ -20,7 +20,7 @@ import type { AgentStatus } from "@tachyon/shared/sidebar/types.js";
 const RAW = { name: "a", running: true, dead: false, crashed: false, cmd: "claude" };
 
 function css(): string {
-  return fs.readFileSync(path.resolve(__dirname, "..", "..", "src/webview/sidebar/sidebar.css"), "utf8");
+  return fs.readFileSync(path.resolve(__dirname, "..", "..", "packages/webview-ui/src/webview/sidebar/sidebar.css"), "utf8");
 }
 
 /** The declarations of one `.sdot.<status>` rule, whitespace-normalised. */
@@ -99,7 +99,7 @@ describe("t-0d689f agent state is legible", () => {
 
   describe("meaning never rides on colour alone", () => {
     it("labels every status for the tooltip and the screen reader", () => {
-      const app = fs.readFileSync(path.resolve(__dirname, "..", "..", "src/webview/sidebar/App.tsx"), "utf8");
+      const app = fs.readFileSync(path.resolve(__dirname, "..", "..", "packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
       const statuses: AgentStatus[] = [
         "running", "needs", "throttled", "done", "idle", "stopping", "stop-failed", "stopped", "crashed",
       ];
@@ -114,7 +114,7 @@ describe("t-0d689f agent state is legible", () => {
     });
 
     it("names done and running differently for a screen reader", () => {
-      const app = fs.readFileSync(path.resolve(__dirname, "..", "..", "src/webview/sidebar/App.tsx"), "utf8");
+      const app = fs.readFileSync(path.resolve(__dirname, "..", "..", "packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
       const labels = /const STATUS_LABEL[^=]*=\s*\{([^}]*)\}/.exec(app)?.[1] ?? "";
       const done = /done:\s*"([^"]+)"/.exec(labels)?.[1];
       const running = /running:\s*"([^"]+)"/.exec(labels)?.[1];

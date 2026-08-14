@@ -6,9 +6,9 @@ const studios = ["pin-studio", "task-studio"] as const;
 describe("rich-doc image Import shares the paste/drop content path (t-cdab51)", () => {
   for (const studio of studios) {
     it(`${studio}: every Import trigger opens KitFilePicker and selected files call attachFile`, () => {
-      const app = readFileSync(`src/webview/${studio}/App.tsx`, "utf8");
-      const messages = readFileSync(`src/webview/${studio}/messages.ts`, "utf8");
-      const types = readFileSync(`src/webview/${studio}/types.ts`, "utf8");
+      const app = readFileSync(`packages/webview-ui/src/webview/${studio}/App.tsx`, "utf8");
+      const messages = readFileSync(`packages/webview-ui/src/webview/${studio}/messages.ts`, "utf8");
+      const types = readFileSync(`packages/webview-ui/src/webview/${studio}/types.ts`, "utf8");
       const domain = readFileSync(
         `src/${studio === "pin-studio" ? "webview/pin-studio/pinStudioDomain" : "webview/task-detail/taskStudioDomain"}.ts`,
         "utf8",
@@ -28,7 +28,7 @@ describe("rich-doc image Import shares the paste/drop content path (t-cdab51)", 
   }
 
   it("the shared picker delegates file selection to KitFilePicker instead of creating another input", () => {
-    const picker = readFileSync("src/webview/rich-doc/ImageImportPicker.tsx", "utf8");
+    const picker = readFileSync("packages/webview-ui/src/webview/rich-doc/ImageImportPicker.tsx", "utf8");
     expect(picker).toContain("<KitFilePicker");
     expect(picker).not.toContain('type="file"');
   });

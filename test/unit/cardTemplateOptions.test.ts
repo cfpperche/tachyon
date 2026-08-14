@@ -126,7 +126,7 @@ describe("t-045d44 — parsing `options`", () => {
 describe("t-045d44 — what the options actually do to a card", () => {
   let AgentRow: (props: unknown) => unknown;
   beforeAll(async () => {
-    const mod = await loadWebviewModule(path.join(__dirname, "../../src/webview/sidebar/App.tsx"));
+    const mod = await loadWebviewModule(path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"));
     AgentRow = mod.AgentRow as typeof AgentRow;
   }, 60_000);
 

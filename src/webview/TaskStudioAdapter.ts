@@ -5,7 +5,7 @@ import type {
   StudioLoadResult,
   StudioSaveResult,
 } from "@tachyon/engine/webview/shared/studio/adapter.js";
-import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
+import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy";
 import {
   canDiscardTaskFields,
   computeTaskDirty,
@@ -14,7 +14,7 @@ import {
   type TaskDetailEntity,
   type TaskFields,
   type TaskPatch,
-} from "./task-studio/domain.js";
+} from "@tachyon/webview-ui/webview/task-studio/domain";
 
 export const TASK_STUDIO_DOMAIN_MESSAGE_NAMES = ["importImage", "importPrototype", "attachImage", "storeSketch", "attachmentStored"] as const;
 

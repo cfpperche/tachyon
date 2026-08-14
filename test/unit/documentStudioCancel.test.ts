@@ -60,8 +60,8 @@ describe("document studio Cancel", () => {
   });
 
   it("removes the misleading read-mode breadcrumbs from Task and Pin", () => {
-    const task = fs.readFileSync("src/webview/task-detail/main.tsx", "utf8");
-    const pin = fs.readFileSync("src/webview/pin-preview/main.tsx", "utf8");
+    const task = fs.readFileSync("packages/webview-ui/src/webview/task-detail/main.tsx", "utf8");
+    const pin = fs.readFileSync("packages/webview-ui/src/webview/pin-preview/main.tsx", "utf8");
     expect(task).not.toContain("Read task");
     expect(pin).not.toContain("Read pin");
   });

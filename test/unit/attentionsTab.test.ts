@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { SAMPLE, TABS, type FleetVM, type NoticeVM, type TabId } from "@tachyon/shared/sidebar/types.js";
-import { attentionRows } from "../../src/sidebar/attentionStack.js";
+import { attentionRows } from "@tachyon/webview-ui/sidebar/attentionStack";
 
 /**
  * t-37f554 — Attentions is its own sidebar tab; Agents no longer hosts the permanent stack.
@@ -36,7 +36,7 @@ function fleetWithNotices(count: number): FleetVM {
 }
 
 async function loadApp() {
-  const mod = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/sidebar/App.tsx"));
+  const mod = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"));
   return mod.App as (props: {
     fleets?: FleetVM[];
     initialTab?: TabId;
@@ -54,7 +54,7 @@ describe("t-37f554 — Attentions tab composition", () => {
   });
 
   it("composition: stack only mounts under the Attentions panel, never above the tab bar", () => {
-    const app = fs.readFileSync(path.resolve(__dirname, "../../src/webview/sidebar/App.tsx"), "utf8");
+    const app = fs.readFileSync(path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
     // Permanent placement above tabs is gone.
     const beforeTabs = app.split('class="tabs"')[0] ?? "";
     expect(beforeTabs).not.toContain("<AttentionStack");

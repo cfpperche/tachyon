@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { PipelineStudioPanelManager } from "../../src/webview/PipelineStudioPanel.js";
-import { envelope } from "../../src/webview/shared/studio/protocol.js";
-import { patchMessage, dirtyMessage, saveMessage, cancelMessage, importStagesMessage } from "../../src/webview/pipeline-studio/messages.js";
+import { envelope } from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
+import { patchMessage, dirtyMessage, saveMessage, cancelMessage, importStagesMessage } from "../../packages/webview-ui/src/webview/pipeline-studio/messages.js";
 
 // spec 350 T4 — Fake 1 (Pipeline Studio) proven behaviorally complete: the FULL shell lifecycle against the
 // REAL PipelineStudioPanelManager (not the generic fake in studioPanelBase.test.ts) — load new/edit, patch,

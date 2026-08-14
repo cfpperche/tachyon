@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assemblePluginSrcdoc, isRelayActionMessage, messageTooLarge } from "../../src/webview/plugin-host/relay.js";
+import { assemblePluginSrcdoc, isRelayActionMessage, messageTooLarge } from "../../packages/webview-ui/src/webview/plugin-host/relay.js";
 
 describe("plugin host relay (spec 349 T10)", () => {
   it("nonce-stamps plugin inline scripts and owns the srcdoc CSP", () => {

@@ -21,7 +21,7 @@ describe("t-7b4bb5 — Settings scope copy", () => {
   });
 
   it("Settings surface renders dual-scope cards with paths and open actions", () => {
-    const app = read("src/webview/settings/main.tsx");
+    const app = read("packages/webview-ui/src/webview/settings/main.tsx");
     expect(app).toContain('data-testid="control-settings-scopes"');
     expect(app).toContain('data-testid="control-settings-scope-global"');
     expect(app).toContain('data-testid="control-settings-scope-workspace"');
@@ -36,7 +36,7 @@ describe("t-7b4bb5 — Settings scope copy", () => {
   });
 
   it("CSS keeps paths wrapping and stacks scopes on narrow viewports", () => {
-    const css = read("src/webview/settings/settings.css");
+    const css = read("packages/webview-ui/src/webview/settings/settings.css");
     expect(css).toContain(".ck-settings-scopes");
     expect(css).toContain("grid-template-columns: 1fr 1fr");
     expect(css).toMatch(/@media \(max-width:\s*720px\)[\s\S]*\.ck-settings-scopes[\s\S]*grid-template-columns:\s*1fr/);

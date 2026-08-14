@@ -10,19 +10,19 @@
  * First slice (spec 278): `sidebar`. `plugins` + `activity` land in lanes B/C; `handoff`/`pin-studio` later.
  */
 
-import { fleetMessage } from "../../src/webview/sidebar/messages";
-import { pluginsMessage } from "../../src/webview/plugins/messages";
-import { activityMessage } from "../../src/webview/activity/messages";
-import { probesMessage } from "../../src/webview/probes/messages";
-import { pinDocumentModeMessage, pinPreviewMessage } from "../../src/webview/pin-preview/messages";
-import { handoffMessage } from "../../src/webview/handoff/messages";
-import { humanInboxItemMessage, humanInboxMessage } from "../../src/webview/human-inbox/messages";
-import { taskMessage } from "../../src/webview/task-detail/messages";
-import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "../../src/webview/runtime-ops/messages";
-import { worktreePrDraftMessage, worktreesModelMessage } from "../../src/webview/worktrees/messages";
-import { runtimeConfigSnapshotMessage } from "../../src/webview/runtime-config/messages";
-import { settingsModelMessage } from "../../src/webview/settings/messages";
-import { systemModelMessage } from "../../src/webview/system/messages";
+import { fleetMessage } from "@tachyon/webview-ui/webview/sidebar/messages";
+import { pluginsMessage } from "@tachyon/webview-ui/webview/plugins/messages";
+import { activityMessage } from "@tachyon/webview-ui/webview/activity/messages";
+import { probesMessage } from "@tachyon/webview-ui/webview/probes/messages";
+import { pinDocumentModeMessage, pinPreviewMessage } from "@tachyon/webview-ui/webview/pin-preview/messages";
+import { handoffMessage } from "@tachyon/webview-ui/webview/handoff/messages";
+import { humanInboxItemMessage, humanInboxMessage } from "@tachyon/webview-ui/webview/human-inbox/messages";
+import { taskMessage } from "@tachyon/webview-ui/webview/task-detail/messages";
+import { runtimeOpsLoadingMessage, runtimeOpsSnapshotMessage } from "@tachyon/webview-ui/webview/runtime-ops/messages";
+import { worktreePrDraftMessage, worktreesModelMessage } from "@tachyon/webview-ui/webview/worktrees/messages";
+import { runtimeConfigSnapshotMessage } from "@tachyon/webview-ui/webview/runtime-config/messages";
+import { settingsModelMessage } from "@tachyon/webview-ui/webview/settings/messages";
+import { systemModelMessage } from "@tachyon/webview-ui/webview/system/messages";
 import { sidebarFixtures } from "./fixtures/sidebar";
 import { handoffFixtures } from "./fixtures/handoff";
 import { pinStudioFixtures, pinStudioMakeMessage } from "./fixtures/pin-studio";
@@ -30,7 +30,7 @@ import { pluginsFixtures } from "./fixtures/plugins";
 import { activityFixtures } from "./fixtures/activity";
 import { probesFixtures } from "./fixtures/probes";
 import { inspectorFixtures, scopeFor as inspectorScopeFor, strings as inspectorStrings } from "./fixtures/inspector";
-import { initMessage as inspectorInitMessage, modelMessage as inspectorModelMessage } from "../../src/webview/inspector/messages";
+import { initMessage as inspectorInitMessage, modelMessage as inspectorModelMessage } from "@tachyon/webview-ui/webview/inspector/messages";
 import {
   cockpitFixtures,
   runtimeConfigFixtureSnapshot,
@@ -41,7 +41,7 @@ import {
 import { pinPreviewFixtures } from "./fixtures/pin-preview";
 import { taskDetailFixtures } from "./fixtures/task-detail";
 import { boardFixtures } from "./fixtures/board";
-import { snapshotMessage as boardSnapshotMessage } from "../../src/webview/board/messages";
+import { snapshotMessage as boardSnapshotMessage } from "@tachyon/webview-ui/webview/board/messages";
 import { runtimeOpsFixtures, type RuntimeOpsPreviewState } from "./fixtures/runtime-ops";
 import { humanInboxFixtures, type HumanInboxPreviewState } from "./fixtures/human-inbox";
 import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pipeline-studio";

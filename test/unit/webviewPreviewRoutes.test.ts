@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { transformSync } from "esbuild";
-import { FLEET, READY, fleetMessage, readyMessage } from "../../src/webview/sidebar/messages.js";
+import { FLEET, READY, fleetMessage, readyMessage } from "../../packages/webview-ui/src/webview/sidebar/messages.js";
 import { ROUTES, buildCatalog } from "../../scripts/webview-preview/routes.js";
 import { SAMPLE } from "@tachyon/shared/sidebar/types.js";
 

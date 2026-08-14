@@ -148,12 +148,12 @@ for (const w of widths) {
     base: "main",
     current: "c47b8e10d9a3",
     files: [
-      { path: "src/webview/worktrees/App.tsx", status: "M" },
-      { path: "src/webview/shared/ui/patterns.tsx", status: "M" },
-      { path: "src/webview/shared/design-system.css", status: "M" },
+      { path: "packages/webview-ui/src/webview/worktrees/App.tsx", status: "M" },
+      { path: "packages/webview-ui/src/webview/shared/ui/patterns.tsx", status: "M" },
+      { path: "packages/webview-ui/src/webview/shared/design-system.css", status: "M" },
       { path: "src/presentation/items.ts", status: "M" },
       { path: "scripts/visual-qa/worktrees-land-card.mjs", status: "A" },
-      { path: "src/webview/worktrees/land.css", status: "R", from: "src/webview/worktrees/old-land.css" },
+      { path: "packages/webview-ui/src/webview/worktrees/land.css", status: "R", from: "packages/webview-ui/src/webview/worktrees/old-land.css" },
     ],
   });
   await new Promise((resolve) => setTimeout(resolve, 300));

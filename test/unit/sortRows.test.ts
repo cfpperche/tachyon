@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sortRows, groupByParent, asSortMode, type SortMode } from "../../src/sidebar/sortRows.js";
+import { sortRows, groupByParent, asSortMode, type SortMode } from "@tachyon/webview-ui/sidebar/sortRows";
 
 type Row = { name: string };
 const rows: Row[] = [

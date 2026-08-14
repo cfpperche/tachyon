@@ -1,5 +1,5 @@
-import { emptyRuntimeOpsSnapshot, unavailableRuntimeOpsSnapshot } from "../../../src/runtimeOps/types";
-import type { RuntimeOpsSnapshot, RuntimeOpsSnapshotV2 } from "../../../src/runtimeOps/types";
+import { emptyRuntimeOpsSnapshot, unavailableRuntimeOpsSnapshot } from "@tachyon/webview-ui/runtimeOps/types";
+import type { RuntimeOpsSnapshot, RuntimeOpsSnapshotV2 } from "@tachyon/webview-ui/runtimeOps/types";
 import { buildRuntimeOpsSnapshot } from "@tachyon/engine/runtimeOps/model.js";
 import { projectRuntimeOpsProviderCapacity } from "@tachyon/engine/runtimeOps/providerProjection.js";
 import type {

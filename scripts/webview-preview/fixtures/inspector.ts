@@ -6,8 +6,8 @@
  * buildInspectorModel from a live tmux snapshot — there's no cheap pure capture, hence typed synthetic states.)
  */
 
-import type { InspectorModel } from "../../../src/inspector/model";
-import type { InspectorScope, InspectorStrings } from "../../../src/webview/inspector/messages";
+import type { InspectorModel } from "@tachyon/webview-ui/inspector/model";
+import type { InspectorScope, InspectorStrings } from "@tachyon/webview-ui/webview/inspector/messages";
 import type { Fixture } from "../routes";
 
 export const strings: InspectorStrings = {

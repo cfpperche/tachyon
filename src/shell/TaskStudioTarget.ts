@@ -26,8 +26,8 @@ import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js"
 import type { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
-import type { RichDocAttachmentVM } from "../webview/rich-doc/types.js";
-import type { TaskDetailEntity, TaskPatch } from "../webview/task-studio/domain.js";
+import type { RichDocAttachmentVM } from "@tachyon/webview-ui/webview/rich-doc/types";
+import type { TaskDetailEntity, TaskPatch } from "@tachyon/webview-ui/webview/task-studio/domain";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
 

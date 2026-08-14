@@ -14,11 +14,13 @@ const root = process.cwd();
 const srcRoot = path.join(root, "src");
 const sharedRoot = path.join(root, "packages", "shared");
 const engineRoot = path.join(root, "packages", "engine");
+const webviewUiRoot = path.join(root, "packages", "webview-ui");
 const srcFiles = walk(srcRoot).filter((file) => /\.tsx?$/.test(file)).sort();
 const packageSharedFiles = walk(path.join(sharedRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
 const packageEngineFiles = walk(path.join(engineRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
+const packageWebviewUiFiles = walk(path.join(webviewUiRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
 const sharedRuntimeFiles = walk(sharedRoot).filter((file) => /\.cjs$/.test(file)).sort();
-const files = [...srcFiles, ...packageSharedFiles, ...packageEngineFiles, ...sharedRuntimeFiles].sort();
+const files = [...srcFiles, ...packageSharedFiles, ...packageEngineFiles, ...packageWebviewUiFiles, ...sharedRuntimeFiles].sort();
 const fileSet = new Set(files);
 const nodes = new Map();
 const relativeSpecifiers = new Map();
@@ -63,8 +65,10 @@ const surprising = srcFiles.filter((file) => valueCoupled.has(file) && !nodes.ge
 const webviewRoot = files.filter((file) => path.dirname(file) === path.join(srcRoot, "webview"));
 const webviewBrowser = files.filter((file) => file.startsWith(path.join(srcRoot, "webview") + path.sep)
   && path.dirname(file) !== path.join(srcRoot, "webview"));
-const browserEntries = webviewBrowser.filter((file) => path.basename(file) === "main.tsx");
+const browserEntries = [...webviewBrowser, ...packageWebviewUiFiles]
+  .filter((file) => path.basename(file) === "main.tsx");
 const browserProgram = forwardClosure(browserEntries, "value");
+const browserTypeProgram = forwardClosure(browserEntries, "both");
 const engineEntries = ["engineService.ts", "daemonMain.ts"].map((name) => path.join(engineRoot, "src", "engine-service", name));
 const engineProgram = forwardClosure(engineEntries, "value");
 const engineTypeProgram = forwardClosure(engineEntries, "both");
@@ -117,6 +121,7 @@ const output = {
     sharedRuntimeFiles: sharedRuntimeFiles.length,
     packageSharedRuntimeFiles: packageSharedFiles.length + sharedRuntimeFiles.length,
     packageEngineSourceFiles: packageEngineFiles.length,
+    packageWebviewUiSourceFiles: packageWebviewUiFiles.length,
     runtimePortable: files.length - valueCoupled.size,
     runtimeCoupled: valueCoupled.size,
     typeAwareCoupled: typeAwareCoupled.size,
@@ -142,6 +147,7 @@ const output = {
   webview: {
     host: summarize(webviewRoot),
     physicalSubfolders: summarize(webviewBrowser),
+    package: summarize(packageWebviewUiFiles),
     browser: { ...summarize([...browserProgram]), entries: browserEntries.length },
     boundary,
   },
@@ -153,6 +159,11 @@ const output = {
       return { ...programSummary(group), members: [...group].map(rel).sort() };
     })(),
     browser: { ...programSummary(browserProgram), members: [...browserProgram].map(rel).sort() },
+    browserTypeAware: { ...programSummary(browserTypeProgram), members: [...browserTypeProgram].map(rel).sort() },
+    browserOwnedRuntime: (() => {
+      const group = new Set([...browserProgram].filter((file) => packageWebviewUiFiles.includes(file)));
+      return { ...programSummary(group), members: [...group].map(rel).sort() };
+    })(),
     engineBrowserShared: { ...programSummary(engineBrowserShared), members: [...engineBrowserShared].map(rel).sort() },
     outsideEngineAndBrowser: (() => {
       const group = new Set(files.filter((file) => !engineProgram.has(file) && !browserProgram.has(file)));

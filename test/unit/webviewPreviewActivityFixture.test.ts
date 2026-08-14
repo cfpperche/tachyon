@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildActivityView } from "../../src/activity/activityView.js";
+import { buildActivityView } from "../../src/activity/activityView";
 import { normalizeClaude } from "@tachyon/engine/activity/claudeNormalizer.js";
 import vms from "../../scripts/webview-preview/fixtures/activity.vms.json";
 

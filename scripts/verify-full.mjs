@@ -86,7 +86,7 @@ const SOURCE_EXTENSIONS = Object.freeze([".ts", ".tsx", ".mts", ".js", ".mjs", "
  * t-e2c8a2 — the trigger set is DERIVED from what the browser suite actually reads, never written
  * out here.
  *
- * The gate this replaces triggered on `src/webview/` alone, which was the ONE input someone
+ * The gate this replaces triggered on `packages/webview-ui/src/webview/` alone, which was the ONE input someone
  * remembered when t-6e929b wrote it. Measured against the suite: it also imports `src/sidebar`
  * (six files), `src/agents`, `src/cockpit` and `scripts/webview-preview` — and, worst of all, it
  * did not trigger on `test/browser/` itself, so the person writing a browser test was the one

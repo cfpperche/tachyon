@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
  */
 
 const repoRoot = process.cwd();
-const SHEET = "src/webview/rich-doc/rich-doc.css";
+const SHEET = "packages/webview-ui/src/webview/rich-doc/rich-doc.css";
 const css = fs.readFileSync(path.join(repoRoot, ...SHEET.split("/")), "utf8");
 
 /** Prefixes this sheet owns. `rd-` is the namespace; the other two are tiptap's own element classes. */
@@ -113,7 +113,7 @@ describe("t-61189b — rich-doc.css cannot reach outside its own surface", () =>
   it("leaves Task Detail with no local defense against this sheet", () => {
     // The mitigation from t-5564b4 must not outlive its cause: a defense nobody can trace back to a
     // live bug is the thing that makes the next reader afraid to touch the CSS.
-    const taskDetail = fs.readFileSync(path.join(repoRoot, "src", "webview", "task-detail", "task-detail.css"), "utf8");
+    const taskDetail = fs.readFileSync(path.join(repoRoot, "packages", "webview-ui", "src", "webview", "task-detail", "task-detail.css"), "utf8");
     expect(taskDetail).not.toContain(".ds-badge.err");
   });
 });

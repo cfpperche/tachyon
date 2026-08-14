@@ -19,10 +19,10 @@ import {
   denySavedAgentRemovalProposal,
   readSavedAgentRemovalProposalReceipt,
 } from "../../src/agents/savedAgentRemovalProposalCommit.js";
-import { buildSavedAgentRemovalProposalReview } from "../../src/agents/savedAgentRemovalProposalReview.js";
+import { buildSavedAgentRemovalProposalReview } from "../../src/agents/savedAgentRemovalProposalReview";
 import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
-import { buildHumanInbox, humanInboxCounts } from "../../src/humanInbox/model.js";
+import { buildHumanInbox, humanInboxCounts } from "@tachyon/webview-ui/humanInbox/model";
 
 /**
  * t-afe120 — governed Saved Agent removal proposals.

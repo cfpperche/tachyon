@@ -13,7 +13,7 @@ const designPath = path.join(ROOT, "dist/webview/design-system.css");
 const pickerPath = path.join(ROOT, "dist/webview/quick-picker.css");
 const afterDesign = readFileSync(designPath);
 const afterPicker = readFileSync(pickerPath);
-const beforeDesign = execFileSync("git", ["show", "HEAD:src/webview/shared/design-system.css"], { cwd: ROOT });
+const beforeDesign = execFileSync("git", ["show", "HEAD:packages/webview-ui/src/webview/shared/design-system.css"], { cwd: ROOT });
 
 const browser = await puppeteer.launch({ executablePath: "/usr/bin/google-chrome", headless: "new", args: ["--no-sandbox", "--disable-gpu"] });
 const cases = [

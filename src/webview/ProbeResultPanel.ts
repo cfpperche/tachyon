@@ -8,7 +8,7 @@ import {
   type SectionPanelTarget,
 } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { probesMessage, PROBES } from "./probes/messages.js";
+import { probesMessage, PROBES } from "@tachyon/webview-ui/webview/probes/messages";
 
 export const PROBES_VIEW_TYPE = "tachyonProbes";
 

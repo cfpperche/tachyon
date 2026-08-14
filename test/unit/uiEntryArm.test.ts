@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { actionsFor } from "../../src/sidebar/actions.js";
+import { actionsFor } from "@tachyon/webview-ui/sidebar/actions";
 import { isAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types.js";
 import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
 import { resolveAgentFocus } from "@tachyon/engine/sidebar/agentFocus.js";
@@ -85,7 +85,7 @@ describe("t-6ebdc8 — the sidebar reads the managed-entry arm", () => {
     const root = path.resolve(__dirname, "..", "..");
     const sources = [
       "packages/shared/src/sidebar/types.ts",
-      "src/sidebar/actions.ts",
+      "packages/webview-ui/src/sidebar/actions.ts",
       "packages/engine/src/sidebar/agentModel.ts",
       "packages/engine/src/sidebar/agentFocus.ts",
       "packages/engine/src/sidebar/sidebarFleetService.ts",

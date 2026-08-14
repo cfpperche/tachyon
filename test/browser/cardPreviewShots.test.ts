@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { CARD_PREVIEW_ROWS } from "../../src/sidebar/cardPreviewRows.js";
+import { CARD_PREVIEW_ROWS } from "@tachyon/webview-ui/sidebar/cardPreviewRows";
 import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, type CardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
 import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
@@ -80,7 +80,7 @@ describe("SDD 479 phase 4 — durable card previews", () => {
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
-    const mod = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/sidebar/App.tsx"));
+    const mod = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"));
     AgentRow = mod.AgentRow as typeof AgentRow;
     CardTemplateRefusalBanner = mod.CardTemplateRefusalBanner as typeof CardTemplateRefusalBanner;
     browser = await puppeteer.launch({ executablePath: resolveChromeExecutable(), headless: true });

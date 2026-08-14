@@ -38,7 +38,7 @@ await build({
   stdin: {
     contents: `
       import { render } from "preact";
-      import { App } from ${JSON.stringify(path.join(ROOT, "src/webview/agent-pane/App.tsx"))};
+      import { App } from ${JSON.stringify(path.join(ROOT, "packages/webview-ui/src/webview/agent-pane/App.tsx"))};
 
       let handler = () => {};
       const send = (msg) => handler(msg);
@@ -88,7 +88,7 @@ await build({
 writeFileSync(path.join(OUT, "agent-pane-foreign-client.html"), `<!doctype html>
 <html><head><meta charset="utf-8">
 <link rel="stylesheet" href="${path.join(ROOT, "node_modules/@xterm/xterm/css/xterm.css")}">
-<link rel="stylesheet" href="${path.join(ROOT, "src/webview/agent-pane/agent-pane.css")}">
+<link rel="stylesheet" href="${path.join(ROOT, "packages/webview-ui/src/webview/agent-pane/agent-pane.css")}">
 </head><body><div id="root"></div><script src="./agent-pane-foreign-client.js"></script></body></html>
 `);
 

@@ -6,7 +6,7 @@
  * Detection must match the segment, never `endsWith("-temporary")` / `/-temporary$/` (those missed a Temporary agent
  * that ALSO has a worktree — a stopped fork — and mis-routed its Delete to the tachyon.yml path, erroring
  * "does not exist"; dogfood 2026-06-16). (The native tree's `when`-regex consumer was retired in spec 237;
- * the webview gates actions via the capability matrix in src/sidebar/actions.ts.)
+ * the webview gates actions via the capability matrix in packages/webview-ui/src/sidebar/actions.ts.)
  */
 
 export type AgentItemStateName = "running" | "stopped" | "crashed";

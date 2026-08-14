@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placeMoreMenu } from "../../src/webview/sidebar/menuPosition";
+import { placeMoreMenu } from "@tachyon/webview-ui/webview/sidebar/menuPosition";
 
 describe("placeMoreMenu", () => {
   it("keeps a menu opened near the top-left click point", () => {

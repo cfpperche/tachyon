@@ -4,8 +4,8 @@ import path from "node:path";
 import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
 import { DEFAULT_CARD_TEMPLATE } from "@tachyon/shared/sidebar/cardTemplate.js";
 
-const appTsx = readFileSync(path.join(__dirname, "../../src/webview/sidebar/App.tsx"), "utf8");
-const css = readFileSync(path.join(__dirname, "../../src/webview/sidebar/sidebar.css"), "utf8");
+const appTsx = readFileSync(path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
+const css = readFileSync(path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/sidebar.css"), "utf8");
 
 describe("spec 386 — agent live resource metrics", () => {
   it("maps resources onto AgentVM", () => {

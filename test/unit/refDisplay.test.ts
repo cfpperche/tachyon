@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { REF_DISPLAY_MAX, middleTruncate, refDisplay } from "../../src/webview/task-detail/refDisplay.js";
+import { REF_DISPLAY_MAX, middleTruncate, refDisplay } from "../../packages/webview-ui/src/webview/task-detail/refDisplay.js";
 
 /**
  * `t-5564b4` — a long artifact ref must be readable at both ends and must never widen its container.
@@ -26,7 +26,7 @@ describe("t-5564b4 — middle truncation", () => {
   });
 
   it("keeps the tail of a path, where the filename lives", () => {
-    const p = "/home/goat/.cache/tachyon/worktrees/b349073a/claude-opus5-4/src/webview/task-detail/task-detail.css";
+    const p = "/home/goat/.cache/tachyon/worktrees/b349073a/claude-opus5-4/packages/webview-ui/src/webview/task-detail/task-detail.css";
     const shown = middleTruncate(p, REF_DISPLAY_MAX);
     expect(shown).toHaveLength(REF_DISPLAY_MAX);
     expect(shown.endsWith("task-detail.css")).toBe(true);

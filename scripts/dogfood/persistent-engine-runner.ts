@@ -35,7 +35,7 @@ import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore
 import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
-import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
+import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../src/webview/studioSubmit.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-dogfood-"));

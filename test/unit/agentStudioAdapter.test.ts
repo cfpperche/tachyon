@@ -12,7 +12,7 @@ import {
   nativeConfigSourceChoices,
   permissionAuthorizationChoices,
   setNativeConfigAuthorized,
-} from "../../src/webview/agent-studio-shell/domain.js";
+} from "../../packages/webview-ui/src/webview/agent-studio-shell/domain.js";
 import { validateAgentNativeConfigPolicy } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";

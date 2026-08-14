@@ -3,7 +3,7 @@
 // `srcdoc` iframe standing in for an untrusted plugin document, relays a two-way postMessage ping/pong, and
 // reads back — verbatim, un-interpreted — whatever the framed document reports about its own attempts to
 // reach the parent DOM, storage, and the network. Plain vanilla JS, no build step (dev/test-only asset, never
-// shipped): a real production relay lands in `src/webview/plugin-host/*` at T10, out of T1's scope.
+// shipped): a real production relay lands in `packages/webview-ui/src/webview/plugin-host/*` at T10, out of T1's scope.
 
 // the stand-in "untrusted plugin document" — entirely self-contained (D9's eventual entry-HTML validator would
 // accept a doc shaped exactly like this: inline script only, no remote/vscode-webview-resource URLs, no nested
