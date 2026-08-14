@@ -62,6 +62,18 @@ const CDP_SESSION_WITH_WS = [
 ].join("\n");
 
 describe("the package contains everything its own code loads (t-e0a0f5)", () => {
+  it("treats relocated bundle provenance and staged dependencies as third-party code", () => {
+    const root = stageExtension({ bundle: [
+      "// ../../node_modules/ajv/dist/compile/index.js",
+      'var formats = require("ajv-formats");',
+    ].join("\n") });
+    const staged = path.join(root, "dist", "node_modules", "node-pty");
+    fs.mkdirSync(path.join(staged, "lib"), { recursive: true });
+    fs.writeFileSync(path.join(staged, "package.json"), JSON.stringify({ name: "node-pty" }));
+    fs.writeFileSync(path.join(staged, "lib", "windowsTerminal.test.js"), 'require("ps-list");');
+    expect(importClosureViolations(root)).toEqual([]);
+  });
+
   it("REFUSES the shipped 0.57.0 shape: our code loads 'ws' and the package has no ws", () => {
     const root = stageExtension({ bundle: CDP_SESSION_WITH_WS, packaged: ["node-pty"] });
 

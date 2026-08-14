@@ -50,14 +50,6 @@ export function preparePackage(repositoryRoot = process.cwd()) {
   catch (error) { throw new Error(`stable engine manifest is unreadable: ${String(error)}`); }
   assertStableEngineManifest(engineManifest, stableSource);
 
-  // vsce's monorepo dependency walk treats the hoisted root as an invalid package tree. Stage the
-  // one native external beside the bundle that requires it, then package with --no-dependencies.
-  const nativeDependencySource = path.join(repositoryRoot, "node_modules", "node-pty");
-  const nativeDependencyTarget = path.join(dist, "node_modules", "node-pty");
-  if (!fs.existsSync(nativeDependencySource)) throw new Error("node-pty is missing; install dependencies before packaging");
-  fs.rmSync(nativeDependencyTarget, { recursive: true, force: true });
-  stageNativeDependency(nativeDependencySource, nativeDependencyTarget);
-
   for (const file of walk(dist)) {
     const rel = path.relative(root, file).split(path.sep).join("/");
     if (classifyShipFile(rel) !== "allowed") {
@@ -65,6 +57,15 @@ export function preparePackage(repositoryRoot = process.cwd()) {
       console.log(`pruned ${rel}`);
     }
   }
+
+  // vsce's monorepo dependency walk treats the hoisted root as an invalid package tree. Stage the
+  // one native external beside the bundle that requires it, after pruning so its historical
+  // allowlisted payload remains byte-for-byte identical, then package with --no-dependencies.
+  const nativeDependencySource = path.join(repositoryRoot, "node_modules", "node-pty");
+  const nativeDependencyTarget = path.join(dist, "node_modules", "node-pty");
+  if (!fs.existsSync(nativeDependencySource)) throw new Error("node-pty is missing; install dependencies before packaging");
+  fs.rmSync(nativeDependencyTarget, { recursive: true, force: true });
+  stageNativeDependency(nativeDependencySource, nativeDependencyTarget);
 
 // t-06a542 — ship-boundary allows every dist/webview/chunks/* file; unreferenced content-hashed
 // cockpit chunks must still be removed (or the package is bloated). Prune, then fail closed if any

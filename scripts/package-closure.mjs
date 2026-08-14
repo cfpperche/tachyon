@@ -72,6 +72,7 @@ export function packagedNodeBundles(extensionRoot) {
   return walk(path.join(extensionRoot, "dist"))
     .filter((rel) => /\.(?:c|m)?js$/.test(rel))
     .filter((rel) => !rel.startsWith("webview/") && !rel.startsWith("webview-preview/"))
+    .filter((rel) => !rel.startsWith("node_modules/"))
     .map((rel) => `dist/${rel}`)
     .sort();
 }
@@ -114,7 +115,7 @@ export function bundleImports(bundleFile) {
 
 /** An import is ours when the module that wrote it is not a third-party package. */
 function isFirstParty(origin) {
-  return !origin.startsWith("node_modules/");
+  return !origin.replace(/^(?:\.\.\/)+/, "").startsWith("node_modules/");
 }
 
 /**
