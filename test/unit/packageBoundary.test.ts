@@ -15,8 +15,11 @@ function fixture(engineDependencies?: Record<string, string>) {
   roots.push(root);
   mkdirSync(path.join(root, "packages/engine/src"), { recursive: true });
   mkdirSync(path.join(root, "packages/webview-ui/src"), { recursive: true });
+  mkdirSync(path.join(root, "apps/shell/src"), { recursive: true });
+  writeFileSync(path.join(root, "package.json"), '{"private":true,"workspaces":["apps/*","packages/*"]}\n');
   writeFileSync(path.join(root, "packages/engine/package.json"), `${JSON.stringify({ name: "@tachyon/engine", dependencies: engineDependencies })}\n`);
   writeFileSync(path.join(root, "packages/webview-ui/package.json"), '{"name":"@tachyon/webview-ui"}\n');
+  writeFileSync(path.join(root, "apps/shell/package.json"), '{"name":"shell"}\n');
   writeFileSync(path.join(root, "packages/webview-ui/src/view.ts"), "export const view = true;\n");
   return root;
 }
@@ -35,6 +38,13 @@ describe("package boundary gate", () => {
     writeFileSync(path.join(root, "packages/engine/src/index.ts"), 'import "../../webview-ui/src/view.js";\n');
 
     expect(() => runGate(root)).toThrowError(/outside packages\/engine/);
+  });
+
+  it("fails when a relative import escapes the root of an app", () => {
+    const root = fixture();
+    writeFileSync(path.join(root, "apps/shell/src/index.ts"), 'import "../../../packages/webview-ui/src/view.js";\n');
+
+    expect(() => runGate(root)).toThrowError(/outside apps\/shell/);
   });
 
   it("fails when a named workspace import has no declared dependency", () => {

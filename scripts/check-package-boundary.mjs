@@ -8,46 +8,41 @@ import {
   visitSpecifiers,
   walk,
 } from "./research/monorepo-imports.mjs";
+import { workspaceDirectories } from "./workspace-layout.mjs";
 
 export const PACKAGE_BOUNDARY_EXCEPTIONS = [];
 
 export function checkPackageBoundaries(root = process.cwd()) {
-  const packagesRoot = path.join(root, "packages");
-  const packageRoots = fs.existsSync(packagesRoot)
-    ? fs.readdirSync(packagesRoot, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(packagesRoot, entry.name))
-      .sort()
-    : [];
-  const runtimeFiles = packageRoots.flatMap((packageRoot) => walk(packageRoot))
+  const workspaceRoots = workspaceDirectories(root);
+  const runtimeFiles = workspaceRoots.flatMap((workspaceRoot) => walk(workspaceRoot))
     .filter((file) => /\.(?:tsx?|cjs)$/.test(file))
     .sort();
   const fileSet = new Set(runtimeFiles);
   const violations = [];
   const unresolved = [];
-  const packageNames = new Map(packageRoots.map((packageRoot) => {
-    const manifest = JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8"));
-    return [manifest.name, { packageRoot, manifest }];
+  const workspaceNames = new Map(workspaceRoots.map((workspaceRoot) => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(workspaceRoot, "package.json"), "utf8"));
+    return [manifest.name, { workspaceRoot, manifest }];
   }));
 
   for (const importer of runtimeFiles) {
-    const packageRoot = packageRoots.find((candidate) => importer.startsWith(`${candidate}${path.sep}`));
-    if (!packageRoot) continue;
+    const workspaceRoot = workspaceRoots.find((candidate) => importer.startsWith(`${candidate}${path.sep}`));
+    if (!workspaceRoot) continue;
+    const manifest = workspaceNames.get(JSON.parse(fs.readFileSync(path.join(workspaceRoot, "package.json"), "utf8")).name).manifest;
     const source = ts.createSourceFile(importer, fs.readFileSync(importer, "utf8"), ts.ScriptTarget.Latest, true);
     visitSpecifiers(source, (specifier) => {
-      const workspaceName = [...packageNames.keys()].find((name) => specifier === name || specifier.startsWith(`${name}/`));
-      if (workspaceName) {
-        const targetPackage = packageNames.get(workspaceName);
-        if (targetPackage.packageRoot !== packageRoot) {
-          const manifest = packageNames.get(JSON.parse(fs.readFileSync(path.join(packageRoot, "package.json"), "utf8")).name).manifest;
+      const dependencyName = [...workspaceNames.keys()].find((name) => specifier === name || specifier.startsWith(`${name}/`));
+      if (dependencyName) {
+        const targetWorkspace = workspaceNames.get(dependencyName);
+        if (targetWorkspace.workspaceRoot !== workspaceRoot) {
           const declared = { ...manifest.dependencies, ...manifest.devDependencies, ...manifest.peerDependencies };
-          if (!declared[workspaceName]) {
+          if (!declared[dependencyName]) {
             violations.push({
               importer: relative(root, importer),
               specifier,
-              target: relative(root, targetPackage.packageRoot),
-              packageRoot: relative(root, packageRoot),
-              reason: `workspace dependency ${workspaceName} is not declared`,
+              target: relative(root, targetWorkspace.workspaceRoot),
+              packageRoot: relative(root, workspaceRoot),
+              reason: `workspace dependency ${dependencyName} is not declared`,
             });
           }
         }
@@ -60,12 +55,12 @@ export function checkPackageBoundaries(root = process.cwd()) {
         unresolved.push({ importer: relative(root, importer), specifier, reason: unresolvedReason(importer, specifier) });
       }
       const target = resolved ?? lexicalTarget;
-      if (target !== packageRoot && !target.startsWith(`${packageRoot}${path.sep}`)) {
+      if (target !== workspaceRoot && !target.startsWith(`${workspaceRoot}${path.sep}`)) {
         violations.push({
           importer: relative(root, importer),
           specifier,
           target: relative(root, target),
-          packageRoot: relative(root, packageRoot),
+          packageRoot: relative(root, workspaceRoot),
         });
       }
     });
