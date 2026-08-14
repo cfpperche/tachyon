@@ -1,5 +1,3 @@
-import type { BridgeRequestCompleteInfo } from "../bridge/Bridge.js";
-
 export const BRIDGE_EXTREME_SLOW_REQUEST_MS = 5 * 60 * 1000;
 export const BRIDGE_SLOW_TOAST_DEDUPE_MS = 10 * 60 * 1000;
 
@@ -16,12 +14,22 @@ export interface BridgeSlowRequestPolicyOptions {
   dedupeMs?: number;
 }
 
+/** Transport-supplied completion data consumed by the slow-request policy. */
+export interface BridgeSlowRequestCompleteInfo {
+  durationMs: number;
+  slow: boolean;
+  requestKind: string;
+  tool?: string;
+  claimedIdentity?: string;
+  caller?: { kind: string; name?: string };
+}
+
 export class BridgeSlowRequestToastPolicy {
   private readonly lastToastAt = new Map<string, number>();
 
   constructor(private readonly options: BridgeSlowRequestPolicyOptions = {}) {}
 
-  decide(info: BridgeRequestCompleteInfo): BridgeSlowRequestToast | undefined {
+  decide(info: BridgeSlowRequestCompleteInfo): BridgeSlowRequestToast | undefined {
     if (!info.slow) return undefined;
     if (info.requestKind !== "mcp-tool") return undefined;
     if (info.tool && LONG_RUNNING_TOOLS.has(info.tool)) return undefined;
@@ -40,7 +48,7 @@ export class BridgeSlowRequestToastPolicy {
   }
 }
 
-export function bridgeSlowRequestMessage(info: BridgeRequestCompleteInfo): string {
+export function bridgeSlowRequestMessage(info: BridgeSlowRequestCompleteInfo): string {
   const parts = [info.tool ? `tool ${info.tool}` : "unknown tool"];
   const actor = bridgeSlowRequestActor(info);
   if (actor) parts.push(actor);
@@ -48,7 +56,7 @@ export function bridgeSlowRequestMessage(info: BridgeRequestCompleteInfo): strin
   return `Bridge request completed very slowly (${parts.join(", ")})`;
 }
 
-function bridgeSlowRequestActor(info: BridgeRequestCompleteInfo): string | undefined {
+function bridgeSlowRequestActor(info: BridgeSlowRequestCompleteInfo): string | undefined {
   if (info.caller?.kind === "agent" && info.caller.name) return `caller ${info.caller.name}`;
   if (info.caller?.kind && info.caller.kind !== "legacy") return `caller ${info.caller.kind}`;
   if (info.claimedIdentity) return `claimed ${info.claimedIdentity}`;
