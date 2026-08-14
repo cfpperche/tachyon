@@ -7,7 +7,7 @@ import {
   PARENT_CWD_RULE,
   parentCwdExitsFor,
   parentCwdRefusalFor,
-} from "@tachyon/engine/bridge/spawnContract.js";
+} from "@tachyon/engine/agents/spawnContract.js";
 
 /**
  * t-6fe04b — the refusal moves earlier, and starts naming the way out.

@@ -29,14 +29,14 @@ import {
 } from "../activity/logStore.js";
 import { composerProfileFor, composerText, findComposerRegion, isComposerOccupied } from "@tachyon/shared/runtime/composerRegion.js";
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
-import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
+import { spawnContractCompletion, type SpawnContract } from "./spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, projectScopedTranscriptWarning, runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
 import { removeDerivedAgentFiles } from "./derivedFile.js";
 import { PI_SESSION_DIR_ENV, piSessionDir } from "./piSession.js";
-import { wrapWithPrimer, renderPrimer } from "../bridge/primer.js";
+import { wrapWithPrimer, renderPrimer } from "./primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
 import { assertSafeBriefTransport, deliverableBody, previewDeliverableBody } from "./briefFile.js";
 import {
@@ -70,7 +70,7 @@ import { renderSessionWorkRecord, type SessionLaunchKind, type SessionWorkRecord
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
 import { sweepSessions } from "../tmux/sessionSweep.js";
 import type { FormationLifecyclePort } from "./formation/lifecycleConsumer.js";
-import { PARENT_CWD_REFUSAL } from "../bridge/spawnContract.js";
+import { PARENT_CWD_REFUSAL } from "./spawnContract.js";
 
 /** A remembered pid is only a hint about WHICH process to measure. Pids are reusable, so existence
  *  alone cannot prove that the process still occupies this checkout. `/proc/<pid>/cwd` re-establishes

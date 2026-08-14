@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import crypto from "node:crypto";
-import { PARENT_CWD_REFUSAL } from "@tachyon/engine/bridge/spawnContract.js";
+import { PARENT_CWD_REFUSAL } from "@tachyon/engine/agents/spawnContract.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -23,7 +23,7 @@ import { HarnessManager, bridgeGrokHome, bridgeHermesHome, bridgeMcpPath, bridge
 import { adapterFor, harnessable } from "@tachyon/shared/resume/adapters.js";
 import { CallerIdentityRegistry } from "@tachyon/engine/bridge/callerIdentity.js";
 import { briefFilePath } from "@tachyon/engine/agents/briefFile.js";
-import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "@tachyon/engine/bridge/spawnContract.js";
+import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "@tachyon/engine/agents/spawnContract.js";
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "@tachyon/engine/agents/paneTranscript.js";
 import type { ResolvedAgentCapabilityProjection } from "@tachyon/engine/config/agentProfileResolver.js";
 import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config/agentNativeConfigPolicy.js";

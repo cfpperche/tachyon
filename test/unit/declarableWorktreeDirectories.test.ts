@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { renderPrimer, type PrimerInput } from "@tachyon/engine/bridge/primer.js";
+import { renderPrimer, type PrimerInput } from "@tachyon/engine/agents/primer.js";
 import { shareDependencies } from "@tachyon/engine/worktree/dependencySharing.js";
 
 describe("t-5ac1df — worktree directories are declared by the project", () => {

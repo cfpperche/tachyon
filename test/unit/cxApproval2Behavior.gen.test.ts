@@ -12,7 +12,7 @@ import {
   writeApprovalRequest,
 } from "@tachyon/engine/bridge/approvalRequest.js";
 import { buildApprovalViewModel } from "../../apps/vscode-extension/src/webview/approval/viewModel.js";
-import { renderPrimer } from "@tachyon/engine/bridge/primer.js";
+import { renderPrimer } from "@tachyon/engine/agents/primer.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
