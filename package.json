@@ -915,9 +915,11 @@
     ]
   },
   "scripts": {
-    "build": "node scripts/build-engine-channel.mjs dev",
-    "build:stable": "node scripts/build-engine-channel.mjs stable",
-    "watch": "node scripts/build-engine-channel.mjs dev --watch",
+    "generate:theme-tokens": "node scripts/generate-theme-tokens.mjs",
+    "check:theme-tokens": "node scripts/generate-theme-tokens.mjs --check",
+    "build": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs dev",
+    "build:stable": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs stable",
+    "watch": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs dev --watch",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "check:source-diffable": "node scripts/check-source-diffable.mjs",

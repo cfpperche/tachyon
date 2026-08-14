@@ -27,6 +27,18 @@ describe("buildDesignModeInjectExpression — compiled page app boundary", () =>
 });
 
 describe("theme token mapping", () => {
-  it("maps vscode vars to ds tokens", () => { const ds=mapVscodeVarsToDs({"--vscode-foreground":"#abc","--vscode-button-background":"#0e639c","--vscode-sideBar-background":"#111"}); expect(ds["--ds-fg"]).toBe("#abc"); expect(ds["--ds-btn-bg"]).toBe("#0e639c"); expect(ds["--ds-sidebar-bg"]).toBe("#111"); });
+  it("maps vscode vars through the CSS-authored token definitions", () => { const ds=mapVscodeVarsToDs({"--vscode-foreground":"#abc","--vscode-button-background":"#0e639c","--vscode-editor-background":"#111"}); expect(ds["--ds-fg"]).toBe("#abc"); expect(ds["--ds-btn-bg"]).toBe("#0e639c"); expect(ds["--ds-editor-bg"]).toBe("#111"); });
+  it("keeps a white input from becoming raised chrome on a dark glass shell", () => {
+    const ds = mapVscodeVarsToDs({
+      "--vscode-editor-background": "#202124",
+      "--vscode-input-background": "#ffffff",
+      "--vscode-sideBar-background": "#2b2c30",
+    });
+    expect(ds["--ds-surface-raised"]).toBe("#2b2c30");
+  });
+  it("classifies an rgb() editor background as light", () => {
+    const ds = mapVscodeVarsToDs({ "--vscode-editor-background": "rgb(250, 250, 250)" });
+    expect(ds["--ds-color-scheme"]).toBe("light");
+  });
   it("formats a CSS block for remaining consumers", () => { const block=formatDmThemeCssBlock(fallbackDsTokens(),"#x"); expect(block).toMatch(/^#x \{/); expect(block).toContain("--ds-fg:"); });
 });
