@@ -65,6 +65,45 @@ aceita.
 Nada de mover tudo e consertar depois. Cada fatia move um conjunto medido, ajusta o que aponta para
 ele, e passa o gate inteiro antes da próxima começar.
 
+### D7 — refatorar é permitido; o vocabulário de tipo ganha casa no pacote.
+
+Descoberto oito minutos depois de a fatia 1 começar, e é um buraco na medição, não um erro de quem
+executou.
+
+**A interseção dos 32 foi calculada sobre arestas de VALOR.** É a pergunta certa para "isto alcança
+`vscode` em runtime" e a pergunta errada para "o que este pacote precisa para compilar". Um módulo
+de tipo puro não emite JavaScript — `src/richDoc/types.ts` tem 65 linhas e zero exports de valor,
+`src/externalTools/types.ts` tem 41 e zero. Nenhum dos dois pode aparecer numa interseção de runtime,
+por construção.
+
+O baseline separou tipo de valor e acertou. A consequência que ninguém tirou: **um pacote precisa dos
+seus tipos, e o grafo de runtime não consegue enumerá-los.** Quem descobriu foi o `typecheck`
+independente do pacote — critério de aceite que fica.
+
+O que o buraco revelou é o problema que esta SDD existe para resolver, em forma concreta:
+`TemporaryBackstopMonitor` importa `ManagedEntryInfo` de dentro de uma classe de **5.587 linhas**, e
+`sidebar/types.ts` importa `EntryKind` de um carregador de config de **2.080**. O tipo está certo; o
+ENDEREÇO está errado. Um vocabulário compartilhado sem casa mora dentro da implementação, e quem
+precisa da palavra arrasta o arquivo inteiro.
+
+**Decisão do dono, tomada quando eu propus encolher a fatia para evitar a refatoração:** *"eu nao to
+preocupado com refatoracoes, se tiver que criar pacotes e arquivos novos crie ... quero essa merda
+monoreporizada sem acoplamento direto entre as camadas do projeto"*.
+
+Então:
+
+- o tipo se muda para o pacote; a implementação importa de volta. **Nunca `shared` → `src/`.**
+- criar arquivo e módulo novo é permitido e esperado;
+- criar um pacote novo exige o número que o justifica, não simetria;
+- **é mudança de ENDEREÇO, não reescrita.** Cada tipo extraído mantém a forma exata. Uma mudança de
+  forma escondida dentro de uma migração de 5.587 linhas não é revisável por ninguém;
+- **não vale depósito de tipos.** Um `types.ts` gigante no pacote é o mesmo problema com endereço
+  novo. O tipo mora junto do conceito dele.
+
+Consequência para as fatias seguintes: as contagens de `engine` (355) e `webview-ui` (174) têm o
+mesmo viés. Cada fatia mede o fecho de TIPO dos seus membros antes de mover, e a diferença contra o
+número de runtime é resultado esperado, não defeito.
+
 ### D6 — a medição vira ratchet.
 
 `measure-monorepo-graph.mjs` é reproduzível. Cada fatia termina rodando ele e comparando o número do
