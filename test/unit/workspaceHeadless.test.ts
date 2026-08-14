@@ -10,7 +10,8 @@ import { resolveAgentProfileHomeDir, Workspace } from "@tachyon/engine/workspace
 import { ResumeUnavailableError } from "@tachyon/engine/agents/AgentManager.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import { registerTools, type NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import { registerTools } from "@tachyon/engine/bridge/tools.js";
+import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { ActivityLog, agentLogId } from "@tachyon/engine/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
 import { ReloadTransactionStore } from "@tachyon/engine/host-action/index.js";

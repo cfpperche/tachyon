@@ -1,6 +1,6 @@
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { NotifyLevel } from "../bridge/tools.js";
+import type { NotifyLevel } from "./EngineHost.js";
 import { isJsonValue, type JsonValue } from "../runtime-api/extensionOperations.js";
 import type { EngineUiRequestV1 } from "../engine-service/protocol.js";
 import { DaemonStateStore } from "../engine-service/daemonStateStore.js";

@@ -23,7 +23,7 @@ import os from "node:os";
 import path from "node:path";
 import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
-import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { savedAgentSecrets, savedAgentsYaml, writeSavedAgent } from "../helpers/savedAgentFixture.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";

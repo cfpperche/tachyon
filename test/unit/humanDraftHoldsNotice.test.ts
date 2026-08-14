@@ -7,7 +7,7 @@ import path from "node:path";
 import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import type { NoticeQueueMetadata } from "@tachyon/engine/workspace/NoticeQueue.js";
 import { RUNTIME_PROFILES } from "@tachyon/shared/runtime/runtimeProfile.js";
 import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes.js";

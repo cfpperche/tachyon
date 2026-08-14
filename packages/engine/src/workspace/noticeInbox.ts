@@ -1,4 +1,4 @@
-import type { NotifyLevel } from "../bridge/tools.js";
+import type { NotifyLevel } from "./EngineHost.js";
 import type { NoticeActionRoute } from "./EngineHost.js";
 
 /**
