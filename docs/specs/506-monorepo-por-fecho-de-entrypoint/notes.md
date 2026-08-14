@@ -224,3 +224,383 @@ tests that still deliberately read root `src/` (specific-file reads included):
 `devHostNoSlots`, `i18n`, `landDoorHasNoAgentDoor`, and `runtimeImportVisibility`. The latter six must
 derive the new app workspace alongside package workspaces; they must not drop the app root from their
 non-empty union.
+## Slice 4 — residual ownership and slice-5 operational cost
+
+Measured on 2026-08-14 with `node scripts/research/measure-monorepo-graph.mjs` after slices 1–3.
+The unit is still the import closure of a real entrypoint, not a directory name. For the app boundary,
+the extension and every auxiliary entrypoint configured in `esbuild.mjs` were traversed once with
+value edges and once with value + type edges.
+
+### Result and partition
+
+There are **190** `.ts`/`.tsx` files under `src/` today, **22 fewer than the baseline's 212**. The
+difference is expected: slices 1–3 moved runtime members and pure-type modules, and extracted new
+concept modules inside packages. The current complete partition is:
+
+| measured owner | files | destination in slice 5 |
+|---|---:|---|
+| VS Code extension shell/runtime closure | **80** | move to `apps/vscode-extension/src/` |
+| VS Code webview hosts/adapters in that same closure | **75** | move to `apps/vscode-extension/src/`; these are host-side code, not `webview-ui` |
+| auxiliary shipped entrypoints, exclusive of the extension closure | **9** | move to `apps/vscode-extension/src/`; their bundles ship in the same VSIX |
+| dev/test/measurement support outside every shipped entrypoint closure | **17** | do **not** move in slice 5; keep in root `src/` for slice 6 disposition |
+| compatibility shims outside every shipped entrypoint closure | **8** | do **not** move in slice 5; keep in root `src/` until consumers/tests are readdressed |
+| unowned legacy VS Code adapter | **1** | do **not** move in slice 5; keep in root `src/` and decide removal or a real consumer in slice 6 |
+| **total** | **190** | **164 move; 26 do not** |
+
+No fourth package is justified. The **26** excluded files do not form one runtime: they split into
+test/dev machinery, compatibility addresses and one unowned adapter. Naming a package for that union
+would encode absence of ownership as an API.
+
+### The 164 files that move to `apps/vscode-extension`
+
+The extension's **155-file type-aware closure** is 153 runtime members plus two compile-only members
+(`presentation/items.ts` and `webview/ServerInspector.ts`). Its 80 shell/runtime files are:
+
+```text
+src/activity/activityShare.ts
+src/activity/activityView.ts
+src/agents/savedAgentProposalCommit.ts
+src/agents/savedAgentProposalReview.ts
+src/agents/savedAgentRemovalProposalCommit.ts
+src/agents/savedAgentRemovalProposalReview.ts
+src/config/settingsImport.ts
+src/engine-service/devHostBoundary.ts
+src/engine-service/engineCurrency.ts
+src/extension.ts
+src/externalTools/events.ts
+src/humanInbox/artifacts.ts
+src/humanInbox/deepLink.ts
+src/init/initLogic.ts
+src/inspector/classify.ts
+src/inspector/model.ts
+src/plugins/appliedState.ts
+src/plugins/consentViewModel.ts
+src/plugins/dataLauncher.ts
+src/plugins/dataPlan.ts
+src/plugins/engine.ts
+src/plugins/entryHtmlValidator.ts
+src/plugins/externalTool.ts
+src/plugins/fetcher.ts
+src/plugins/fsx.ts
+src/plugins/gitHookRegistry.ts
+src/plugins/gitHookState.ts
+src/plugins/gitRepo.ts
+src/plugins/i18nPtbrGate.ts
+src/plugins/mcpConfig.ts
+src/plugins/pluginDeps.ts
+src/plugins/skill.ts
+src/plugins/source.ts
+src/plugins/toolLauncher.ts
+src/plugins/toolPlaceholder.ts
+src/plugins/toolPlan.ts
+src/plugins/toolPlatform.ts
+src/plugins/toolProvisionRun.ts
+src/plugins/toolProvisioning.ts
+src/plugins/toolTransaction.ts
+src/plugins/ui/broker.ts
+src/plugins/ui/host.ts
+src/plugins/ui/projectionBuilder.ts
+src/plugins/ui/projectionProvider.ts
+src/plugins/viewModel.ts
+src/presentation/Terminals.ts
+src/presentation/TmuxAttachClient.ts
+src/presentation/agentPaneFont.ts
+src/presentation/contextValue.ts
+src/presentation/items.ts
+src/presentation/sessionViewport.ts
+src/provenance/record.ts
+src/provenance/verify.ts
+src/runtime-api/workspaceProjection.ts
+src/runtimeConfig/claudeInventory.ts
+src/runtimeConfig/codexInventory.ts
+src/runtimeConfig/grokInventory.ts
+src/runtimeConfig/sourceLock.ts
+src/runtimeOps/openRuntimeOps.ts
+src/sections/resolveSection.ts
+src/sections/route.ts
+src/shell/ActivityTarget.ts
+src/shell/BoardTarget.ts
+src/shell/ClientWorkspaceStudioTarget.ts
+src/shell/HandoffTarget.ts
+src/shell/PinStudioTarget.ts
+src/shell/RuntimeOpsTarget.ts
+src/shell/SidebarTarget.ts
+src/shell/TaskDetailTarget.ts
+src/shell/TaskStudioTarget.ts
+src/shell/WorkspaceClient.ts
+src/shell/WorkspaceClientRegistry.ts
+src/shell/WorkspaceExtensionTarget.ts
+src/shell/WorkspacePresentation.ts
+src/shell/WorkspaceShellHandle.ts
+src/workspace/NotificationService.ts
+src/workspace/legacyVsCodeSettings.ts
+src/workspace/notify.ts
+src/workspace/shellDiagnosticLog.ts
+src/workspace/workspaceFolderOps.ts
+```
+
+The 75 host-side webview files in the same closure are:
+
+```text
+src/webview/ActivityPanel.ts
+src/webview/AgentPanePanel.ts
+src/webview/AgentStudioAdapter.ts
+src/webview/AgentStudioPanel.ts
+src/webview/BoardPanel.ts
+src/webview/CommandStudioAdapter.ts
+src/webview/CommandStudioPanel.ts
+src/webview/HandoffPanel.ts
+src/webview/HumanInboxPanel.ts
+src/webview/PinDetailPanel.ts
+src/webview/PinStudioAdapter.ts
+src/webview/PinStudioPanel.ts
+src/webview/PipelineStudioPanel.ts
+src/webview/PluginsPanel.ts
+src/webview/ProbeResultPanel.ts
+src/webview/RunbookStudioAdapter.ts
+src/webview/RunbookStudioPanel.ts
+src/webview/RuntimeConfigPanel.ts
+src/webview/RuntimeOpsPanel.ts
+src/webview/ScheduleStudioAdapter.ts
+src/webview/ScheduleStudioPanel.ts
+src/webview/ServerInspector.ts
+src/webview/SettingsPanel.ts
+src/webview/SidebarPrototype.ts
+src/webview/SystemPanel.ts
+src/webview/TaskDetailPanel.ts
+src/webview/TaskStudioAdapter.ts
+src/webview/TaskStudioPanel.ts
+src/webview/TerminalStudioAdapter.ts
+src/webview/TerminalStudioPanel.ts
+src/webview/TmuxPanel.ts
+src/webview/WorktreesPanel.ts
+src/webview/activity/activityFeed.ts
+src/webview/agent-pane/protocol.ts
+src/webview/agent-studio-shell/agentStudioDomain.ts
+src/webview/agentPaneDelivery.ts
+src/webview/approval/viewModel.ts
+src/webview/board/boardVm.ts
+src/webview/chat-bridge/ops.ts
+src/webview/chat-bridge/parse.ts
+src/webview/chat-bridge/register.ts
+src/webview/controlStrings.ts
+src/webview/human-inbox/viewModel.ts
+src/webview/ide-browser-bridge/browserSession.ts
+src/webview/ide-browser-bridge/cdpSession.ts
+src/webview/ide-browser-bridge/designModeInject.ts
+src/webview/ide-browser-bridge/homeUrl.ts
+src/webview/ide-browser-bridge/hostServer.ts
+src/webview/ide-browser-bridge/manager.ts
+src/webview/ide-browser-bridge/pick.ts
+src/webview/ide-browser-bridge/register.ts
+src/webview/ide-browser-bridge/themeTokens.ts
+src/webview/pin-preview/editPolicy.ts
+src/webview/pin-studio/pinStudioDomain.ts
+src/webview/pipelineStudioAdapter.ts
+src/webview/shared/ControlWorkspaceScope.ts
+src/webview/shared/SectionPanelManager.ts
+src/webview/shared/panelIcon.ts
+src/webview/shared/panelSerializer.ts
+src/webview/shared/panelWorkGate.ts
+src/webview/shared/shell.ts
+src/webview/shared/studio/SingleModeStudioPanelManager.ts
+src/webview/shared/studio/StudioPanelManagerBase.ts
+src/webview/shared/studio/documentStudioCancel.ts
+src/webview/shared/studio/errorTaxonomy.ts
+src/webview/shared/studio/restoreDecisions.ts
+src/webview/shared/studio/singleModeEditPolicy.ts
+src/webview/shared/studio/studioIds.ts
+src/webview/shared/studio/studioRegistry.ts
+src/webview/studioSubmit.ts
+src/webview/task-detail/editPolicy.ts
+src/webview/task-detail/taskDetailVm.ts
+src/webview/task-detail/taskStudioDomain.ts
+src/webview/validations/viewModel.ts
+src/webview/webviewApps.ts
+```
+
+The nine exclusive auxiliary-entry files are nominally measured, not estimated:
+
+| bundle/entry | exclusive files that move | reason |
+|---|---|---|
+| tool launcher | `src/toolLauncherEntry.ts` | shipped `dist/tool-launcher.cjs`; its other four members are already in the extension closure |
+| plugin validator | `src/pluginValidateEntry.ts` | shipped `dist/plugin-validate.cjs` |
+| data resolver | `src/dataResolverEntry.ts` | shipped `dist/data-resolver.cjs`; its other member is already in the extension closure |
+| external resolver | `src/externalResolverEntry.ts` | shipped `dist/external-resolver.cjs`; its other two members are already in the extension closure |
+| Pi bridge | `src/pi-bridge-extension/index.ts`, `src/pi-bridge-extension/toolProjection.ts` | shipped under `dist/engine/` in this VSIX |
+| webview auxiliary assets | `src/webview/activity/katex-entry.ts`, `src/webview/activity/mermaid-entry.ts`, `src/webview/pin-studio/excalidraw-entry.tsx` | three shipped `dist/webview/*.js` assets |
+
+Therefore slice 5 is **smaller than the plan's stale 212-file residual premise: 164 source files
+move, 48 fewer than 212**. This is not a request to delete the other 26; their explicit destinations
+follow.
+
+### The 26 files that do not move in slice 5
+
+Seventeen files remain root-owned test/dev/measurement support. None is reached from the nine shipped
+entrypoints measured above:
+
+| files | why not app-owned; declared destination |
+|---|---|
+| `src/agents/formation/humanLaneTransactions.ts`, `src/agents/formation/lifecycleContract.ts`, `src/agents/formation/memoryLane.ts`, `src/agents/formation/resolver.ts`, `src/agents/formation/sessionPolicy.ts`, `src/memory/domain.ts` | formation foundation/proof modules reached by tests/static scans, not a shipped entrypoint; remain in root `src/` for slice 6 |
+| `src/config/argvCommand.ts` | unit-test-only parser; remain for slice 6 |
+| `src/runtime/adapters/claudeMemory.ts`, `src/runtime/adapters/codexMemory.ts`, `src/runtime/nativeLaneSuppression.ts`, `src/runtimeObservability/grokInspectConfigSource.ts` | runtime measurement/test implementations, not shipped app closure; remain for slice 6 |
+| `src/shell/FakeWorkspaceClient.ts` | test fake used by shell tests; remain for slice 6 |
+| `src/webview/AgentFixtureStudioPanel.ts`, `src/webview/SectionAppFixturePanel.ts` | explicitly dev-only fixture hosts; remain for slice 6 rather than ship as product hosts |
+| `src/webview/shared/lazySectionStyles.ts` | test-only browser helper no longer reached by a current browser entrypoint; remain for slice 6 |
+| `src/webview/surfaces.ts` | static convention/preview manifest consumed by checks and tests; remain for slice 6 |
+| `src/webview/ui-gate/gatePage.ts` | browser-gate/test server page renderer; remain for slice 6 |
+
+Eight compatibility addresses remain until their consumers/tests are readdressed; moving them into
+the app would turn historical import compatibility into an app API:
+
+```text
+src/config/runtimePromptAdapters.ts
+src/webview/approval/App.tsx
+src/webview/approval/messages.ts
+src/webview/pin-studio/data-url.ts
+src/webview/pin-studio/document.ts
+src/webview/pin-studio/tiptap.ts
+src/webview/validations/App.tsx
+src/webview/validations/messages.ts
+```
+
+Finally, `src/workspace/VsCodeHost.ts` imports `vscode` in value position but has no production or
+test importer today. It is neither evidence for a package nor silently app-owned: it remains in root
+`src/` for slice 6 to choose deletion or establish a real entrypoint consumer.
+
+### VS Code coupling inside the 190 residual files
+
+The baseline's runtime result remains exactly **50**, but the type-aware result changed from 88 to
+**79** after type extraction. Counted separately:
+
+| destination | runtime-coupled | type-aware-coupled | direct value import | direct type-only import |
+|---|---:|---:|---:|---:|
+| moves to `apps/vscode-extension` (164 files) | **47** | **76** | **39** | **9** |
+| does not move in slice 5 (26 files) | **3** | **3** | **3** | **0** |
+| **all residual `src/`** | **50** | **79** | **42** | **9** |
+
+The three coupled files outside the app move are the two explicitly dev-only hosts
+`AgentFixtureStudioPanel.ts` and `SectionAppFixturePanel.ts`, plus the unowned `VsCodeHost.ts`.
+The other 47 runtime-coupled files all have an app destination. The **29-file 79 − 50 difference**
+is type-only propagation, not runtime coupling; all 29 are in the 164-file app move.
+
+For nominal audit, the 47 runtime-coupled files moving to the app are:
+
+```text
+src/extension.ts
+src/plugins/ui/host.ts
+src/presentation/Terminals.ts
+src/presentation/TmuxAttachClient.ts
+src/runtimeOps/openRuntimeOps.ts
+src/webview/ActivityPanel.ts
+src/webview/AgentPanePanel.ts
+src/webview/AgentStudioPanel.ts
+src/webview/BoardPanel.ts
+src/webview/CommandStudioPanel.ts
+src/webview/HandoffPanel.ts
+src/webview/HumanInboxPanel.ts
+src/webview/PinDetailPanel.ts
+src/webview/PipelineStudioPanel.ts
+src/webview/PluginsPanel.ts
+src/webview/ProbeResultPanel.ts
+src/webview/RunbookStudioPanel.ts
+src/webview/RuntimeConfigPanel.ts
+src/webview/RuntimeOpsPanel.ts
+src/webview/ScheduleStudioPanel.ts
+src/webview/SettingsPanel.ts
+src/webview/SidebarPrototype.ts
+src/webview/SystemPanel.ts
+src/webview/TaskDetailPanel.ts
+src/webview/TerminalStudioPanel.ts
+src/webview/TmuxPanel.ts
+src/webview/WorktreesPanel.ts
+src/webview/agent-studio-shell/agentStudioDomain.ts
+src/webview/chat-bridge/register.ts
+src/webview/controlStrings.ts
+src/webview/ide-browser-bridge/browserSession.ts
+src/webview/ide-browser-bridge/cdpSession.ts
+src/webview/ide-browser-bridge/designModeInject.ts
+src/webview/ide-browser-bridge/manager.ts
+src/webview/ide-browser-bridge/register.ts
+src/webview/ide-browser-bridge/themeTokens.ts
+src/webview/shared/SectionPanelManager.ts
+src/webview/shared/panelIcon.ts
+src/webview/shared/panelSerializer.ts
+src/webview/shared/studio/SingleModeStudioPanelManager.ts
+src/webview/shared/studio/StudioPanelManagerBase.ts
+src/webview/shared/studio/documentStudioCancel.ts
+src/webview/shared/studio/studioRegistry.ts
+src/webview/task-detail/taskStudioDomain.ts
+src/workspace/legacyVsCodeSettings.ts
+src/workspace/notify.ts
+src/workspace/shellDiagnosticLog.ts
+```
+
+The 29 additional type-aware-only files, all moving to the app, are:
+
+```text
+src/presentation/items.ts
+src/shell/ActivityTarget.ts
+src/shell/BoardTarget.ts
+src/shell/ClientWorkspaceStudioTarget.ts
+src/shell/HandoffTarget.ts
+src/shell/PinStudioTarget.ts
+src/shell/RuntimeOpsTarget.ts
+src/shell/SidebarTarget.ts
+src/shell/TaskDetailTarget.ts
+src/shell/TaskStudioTarget.ts
+src/shell/WorkspaceExtensionTarget.ts
+src/shell/WorkspacePresentation.ts
+src/shell/WorkspaceShellHandle.ts
+src/webview/AgentStudioAdapter.ts
+src/webview/CommandStudioAdapter.ts
+src/webview/PinStudioAdapter.ts
+src/webview/PinStudioPanel.ts
+src/webview/RunbookStudioAdapter.ts
+src/webview/ScheduleStudioAdapter.ts
+src/webview/TaskStudioAdapter.ts
+src/webview/TaskStudioPanel.ts
+src/webview/TerminalStudioAdapter.ts
+src/webview/activity/activityFeed.ts
+src/webview/board/boardVm.ts
+src/webview/pin-studio/pinStudioDomain.ts
+src/webview/shared/ControlWorkspaceScope.ts
+src/webview/shared/panelWorkGate.ts
+src/webview/studioSubmit.ts
+src/webview/task-detail/taskDetailVm.ts
+```
+
+### Re-measurement of the 18 operational files
+
+The nominal union is still **18/18 files**: none disappeared and no nineteenth file now owns a root
+manifest, flat product `dist/`, or checkout-wide gate/F5 assumption. Slices 1–3 did change their
+state: workspace-aware root orchestration now exists, while the extension packaging path is still
+root-relative.
+
+| file | current measured assumption and slice-5 consequence | break order |
+|---|---|---:|
+| `package.json` | still the extension manifest; `main` is `./dist/extension.js` and `vscode:prepublish` invokes root packaging, while `workspaces` contains only `packages/*`; must split product manifest from root orchestrator and add the app workspace | 1 |
+| `.vscodeignore` | still packages root `dist/**` and root `package.json`; vsce selection is wrong immediately after manifest relocation | 1 |
+| `esbuild.mjs` | still reads root `package.json`; has **19 `outfile` + 1 `outdir` configurations** under flat root `dist/` (still 20 output configurations) and 94 quoted `dist/` path literals; must derive the app output root | 2 |
+| `scripts/prepare-package.mjs` | defaults `root = process.cwd()`, edits root `package.json`, prunes root `dist/`, and launches root-relative provenance | 1 then 2 |
+| `scripts/package-closure.mjs` | accepts an extension root but expects `package.json`, `node_modules` and `dist/*` beneath that same root; caller and dependency-root semantics must be separated | 2 |
+| `scripts/record-provenance.mjs` | binds cwd to manifest, VSIX search, `dist/`, audit output and `npm run verify:full`; needs separate repository and extension roots | 2 |
+| `scripts/vsix-smoke.mjs` | finds VSIX in checkout root but correctly reads the unpacked extension's own manifest; discovery/probe root must be made explicit after relocation | 1 |
+| `scripts/dev-host/pointer.mjs` | validates and names the worktree root itself as extension path, requiring its `package.json`, `node_modules` and `dist/`; must point F5 at the app while retaining repository/fixture roots | 3 |
+| `scripts/ship-boundary.mjs` | models `dist/engine` under the packaged extension root; caller must pass the relocated app tree | 2 |
+| `scripts/vsix-artifact.mjs` | claims `dist/*` and hard-codes `dist/engine` relative to extension root; artifact root must follow the manifest | 2 |
+| `.vscode/launch.json` | still has exactly **five** `${workspaceFolder}[/...]/dist/**/*.js` outFiles references; development path/outFiles must target the app/pointer app | 3 |
+| `package-lock.json` | already records all three package workspaces; slice 5 adds the app workspace, so the root install model survives but lockfile changes | 4 |
+| `tsconfig.json` | already references the three packages and uses rootDir `.`; needs an app project reference/root without undoing root orchestration | 4 |
+| `tsconfig.webview.json` | already resolves `packages/webview-ui`; any remaining app-host sources/includes must follow their move | 4 |
+| `.vscode/tasks.json` | still builds with cwd/prefix equal to the pointed extension worktree root and links root `node_modules`; must distinguish repo root from app root | 3 |
+| `.github/workflows/ci.yml` | already runs `npm ci` and `npm run verify:full` at workspace root; no first-order break if root remains orchestrator, but it must prove the new app workspace | 4 |
+| `scripts/verify-full.mjs` | now derives browser roots from root workspaces, so it is already plural for packages; it must discover `apps/*` via the updated workspace manifest, not a literal app name | 4 |
+| `scripts/verify-record.mjs` | correctly attests the whole git tree; its model can remain checkout-wide, but its verifier fingerprint must cover the relocated scripts/manifest | 4 |
+
+The current order therefore remains **(1) manifest/vsce, (2) build/staging, (3) F5/dev-host,
+(4) gate/CI**. `package.json#main` and vsce still break first. What changed is the tail: CI and the
+verification record no longer need a new execution unit, because slices 1–3 made the checkout a
+workspace orchestrator; they need discovery/coverage updates, not relocation. The highest immediate
+cost remains the manifest boundary plus `esbuild.mjs`, while the five F5 paths remain a separate
+owner-visible risk.
