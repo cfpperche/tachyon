@@ -115,3 +115,66 @@ morreria com ele. Um sync completo dali criaria um projeto cuja âncora local se
 minuto, e a rodada seguinte a partir da raiz criaria um segundo.
 
 **Vale para qualquer projeto:** o sync tem de rodar onde o `.design-sync/config.json` sobrevive.
+
+---
+
+# Segunda sessão — "sobe só os tokens", e ela abortou
+
+O dono decidiu subir apenas os tokens, já que os componentes não renderizam. Agente `dstokens`.
+
+## Passo 6 — o mecanismo de "só tokens" que eu escolhi NÃO é o mecanismo
+
+**Eu supus** que esvaziar `componentSrcMap` deixaria os componentes de fora. Escrevi isso no contrato
+como se fosse fato.
+
+**Medido, executando o IIFE em node:** `componentSrcMap: {}` suprime o CARTÃO, o `.d.ts` e o
+`.prompt.md` — zero emitidos, sem diretório `components/`. E não controla o `_ds_bundle.js`, que vem
+do barrel apontado por `entry` e carrega tudo que o barrel exporta.
+
+    cabeçalho do bundle .... "components": []
+    window.TachyonDS ....... 20 exports, incluindo 17/17 componentes, todos typeof function
+
+O arquivo declara zero componentes e exporta dezessete. Subir aquilo seria publicar os 17 Preact
+quebrados sem contrato e sem cartão — exatamente o que a decisão de subir só tokens queria evitar.
+
+**Vale para qualquer projeto:** `componentSrcMap` controla o que é DOCUMENTADO, não o que é
+EMPACOTADO. Quem decide o conteúdo do bundle é o `entry`. Verifique executando o bundle, não lendo o
+cabeçalho dele.
+
+## Passo 7 — o `guidelinesGlob` varre `docs/*.md` por padrão
+
+Sem ninguém pedir, a rodada recolheu **4 documentos internos, ~60 KB, com 28 ids de task**:
+
+    project-guidance.md ............ histórico de incidentes, postura de sandbox por runtime,
+                                     falas do mantenedor
+    system-design.md
+    tachyon-capability-matrix.md
+    STYLEGUIDE.md .................. o único que é plausivelmente guia de design
+
+**Vale para qualquer projeto, e é a lição mais transferível desta sessão:** restrinja
+`guidelinesGlob` ANTES da primeira rodada. O padrão assume que `docs/` é documentação de design; num
+repositório com documentação interna, ele publica o que ninguém pediu, e nada avisa.
+
+## A decisão: abortar
+
+Havia uma saída: apontar `entry` para um módulo que não exporte componente, mantendo `cssEntry` e
+`extraFonts`. Tokens de verdade, e funcionaria.
+
+O dono recusou: *"aborta, nao vale driblar a ferramenta"*.
+
+A razão é mais forte que a conveniência. A skill existe para levar o design system COMPILADO — ela
+diz, na própria documentação, *"the bundle is their compiled `dist/`, never a reimplementation"*. Um
+entry vazio faz ela subir um sistema que não existe, e tudo que voltasse de lá seria construído sobre
+uma mentira que nós mesmos plantamos.
+
+## Correção de um número meu
+
+Eu havia reportado 56 tokens. São **61** — 54 `--ds-*` mais 7 `--tachyon-*`. A minha contagem
+ancorava em início de linha e perdia declarações inline. O 61 bate com o README.
+
+## Estado ao fim da segunda sessão
+
+    nada enviado    nenhum projeto criado    finalize_plan NUNCA chamado
+    sem commit      HEAD 4cb6aed1 intocado   src/ intocado
+
+Quatro descobertas, zero bytes publicados.
