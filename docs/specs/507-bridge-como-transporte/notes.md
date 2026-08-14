@@ -6,6 +6,22 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Design decisions
 
+- **Fatia 3 (`t-15dbb9`):** `stateMigration` did not need the four imported symbols. The caller
+  registry entry is a structural persisted shape and is now declared locally; the three location
+  functions collapse into two transport-owned operations, `tokenFileNames` and
+  `clientGenerationStateKey`. The migration provider now carries that storage shape beside its lazy
+  `provide` operation, so the supervisor contract gains one composition member rather than a second
+  independently optional setting.
+- Persistence compatibility is executable in both applicable directions without changing the
+  format: the collection fixture writes the pre-inversion filenames and generation key as frozen
+  literals, while the apply fixture reads the newly installed state through the current transport
+  functions. Deliberately prefixing the composed bridge-token filename made the focused test fail in
+  both directions (old token not collected; new token not found), and restoring it passed. No
+  behavioral assertion changed.
+- Slice measurement: **27 bindings · 10 imports · 2 consumers → 23 bindings · 7 imports · 1
+  consumer**. `stateMigration.ts` has zero imports from `bridge/`; all persisted filenames, keys and
+  envelope fields remain byte-for-byte unchanged.
+
 - **Fatia 2 (`t-f37763`):** `extensionOperationService` used only three members of `BridgeDeps`:
   `manager`, `attentionOf`, and `waiters`, solely to call `executeWait`. That use case already declares
   the exact structural shape it consumes, so the service now passes its local object directly instead
