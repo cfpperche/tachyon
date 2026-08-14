@@ -90,6 +90,12 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
 
 ## Verification economy
 
+- **A fresh worktree has no `node_modules`. Run `npm install` before your first check.** Worktrees
+  used to inherit the primary checkout's, and that was removed on 2026-08-14 (t-4ab1fb) because it
+  made `@tachyon/*` resolve to the PRIMARY's `packages/` instead of your own — measured in Node,
+  Vitest, tsc and esbuild alike, with one real mixed run. A green gate that loaded another tree's
+  source is worse than a red one. If resolution looks wrong, or a check reports missing workspace
+  links, install and say so; never route around it with relative paths.
 - During implementation, run focused fail-before/pass-after checks. Run one `npm run
   verify:full:quiet` on the final coherent tree; creating a Task or doing read-only investigation
   does not justify a full gate.
