@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
-import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
+import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../apps/vscode-extension/src/webview/surfaces.js";
 import { SHELL_BASE_STYLESHEETS, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../apps/vscode-extension/src/webview/shared/shell.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
 import { WEBVIEW_APPS } from "../../apps/vscode-extension/src/webview/webviewApps.js";

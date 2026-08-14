@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { ROUTES, PREVIEW_ROUTE_OPTOUTS, buildCatalog } from "../../scripts/webview-preview/routes.js";
-import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
+import { WEBVIEW_SURFACES } from "../../apps/vscode-extension/src/webview/surfaces.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
 import { nonEmpty } from "../helpers/repositorySourceScan.js";
 

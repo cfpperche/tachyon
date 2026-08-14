@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { workspaceCommandSuccessV1, workspaceBoardViewSuccessV1 } from "@tachyon/engine/engine-service/protocol.js";
-import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
+import { FakeWorkspaceClient } from "../helpers/FakeWorkspaceClient.js";
 import { workspaceBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 

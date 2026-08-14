@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { workspaceCommandSuccessV1, workspaceTaskDetailViewSuccessV1 } from "@tachyon/engine/engine-service/protocol.js";
 import type { BoardTaskPatchV1 } from "@tachyon/engine/runtime-api/boardCommands.js";
 import type { TaskPrototypeReviewActionV1 } from "../../apps/vscode-extension/src/shell/TaskDetailTarget.js";
-import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
+import { FakeWorkspaceClient } from "../helpers/FakeWorkspaceClient.js";
 import { legacyTaskDetailTarget, workspaceTaskDetailTarget } from "../../apps/vscode-extension/src/shell/TaskDetailTarget.js";
 import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";

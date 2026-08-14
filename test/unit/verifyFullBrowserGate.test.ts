@@ -208,7 +208,7 @@ describe("the trigger set is DERIVED from what the browser suite reads (t-e2c8a2
     const roots = browserSuiteRoots({ cwd: path.resolve(__dirname, "..", "..") });
     expect(roots).toEqual(expect.arrayContaining([
       "test/browser/", "vitest.browser.config.ts",
-      "apps/vscode-extension/", "src/webview/", "scripts/webview-preview/",
+      "apps/vscode-extension/", "scripts/webview-preview/",
       // SDD 506 slice 1: browser imports now cross the workspace by package name.
       "packages/engine/", "packages/shared/", "packages/webview-ui/",
     ]));

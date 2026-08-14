@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { renderGatePage } from "../../src/webview/ui-gate/gatePage.js";
+import { renderGatePage } from "../../apps/vscode-extension/src/webview/ui-gate/gatePage.js";
 
 const read = (path: string) => readFileSync(path, "utf8");
 

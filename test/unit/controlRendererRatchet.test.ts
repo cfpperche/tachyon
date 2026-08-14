@@ -27,7 +27,7 @@ describe("SDD 485 E1 — Control cannot return through another door", () => {
     expect(read("esbuild.mjs")).not.toMatch(/WEBVIEW_APP_VIEWS\s*=\s*\[[^\]]*["']cockpit["']/s);
     expect(read("esbuild.mjs")).not.toContain("packages/webview-ui/src/webview/cockpit/cockpit.css");
     expect(read("esbuild.mjs")).toContain('["cockpit.js", "cockpit.js.map", "cockpit.css"]');
-    expect(read("src/webview/surfaces.ts")).not.toContain('viewId: "tachyonCockpit"');
+    expect(read("apps/vscode-extension/src/webview/surfaces.ts")).not.toContain('viewId: "tachyonCockpit"');
   });
 
   it("keeps the sidebar launcher and command compatibility doors", () => {

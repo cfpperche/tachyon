@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderGatePage } from "../../src/webview/ui-gate/gatePage.js";
+import { renderGatePage } from "../../apps/vscode-extension/src/webview/ui-gate/gatePage.js";
 
 // spec 342 T2 — the FINAL CSS order `renderWebviewShell` produces for a Tailwind-opted surface must stay
 // tokens.css → faces.css → design-system.css → vscode-theme.css → Tailwind layers → surface CSS

@@ -5,7 +5,7 @@ import { resolveSectionDestination } from "../../apps/vscode-extension/src/secti
 import { isSectionId, resolveSection } from "../../apps/vscode-extension/src/sections/resolveSection.js";
 import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 import { WEBVIEW_APPS } from "../../apps/vscode-extension/src/webview/webviewApps.js";
-import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
+import { WEBVIEW_SURFACES } from "../../apps/vscode-extension/src/webview/surfaces.js";
 
 /**
  * SDD 500 S1 — `system` is the destination; `overview` and `engine` keep decoding and resolve to it.

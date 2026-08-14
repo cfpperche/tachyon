@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { WEBVIEW_APPS, WEBVIEW_APP_REACHABLE_BUDGET_BYTES } from "../../apps/vscode-extension/src/webview/webviewApps.js";
-import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
+import { WEBVIEW_SURFACES } from "../../apps/vscode-extension/src/webview/surfaces.js";
 import { workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 /**

@@ -10,7 +10,7 @@ import {
 } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 import { webviewApp, type WebviewAppEntry } from "../../apps/vscode-extension/src/webview/webviewApps.js";
-import { SectionAppFixturePanelManager } from "../../src/webview/SectionAppFixturePanel.js";
+import { SectionAppFixturePanelManager } from "../../apps/vscode-extension/src/webview/SectionAppFixturePanel.js";
 import { sectionFixtureReadyMessage } from "../../packages/webview-ui/src/webview/section-app-fixture/protocol.js";
 
 const {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
+import { FakeWorkspaceClient } from "../helpers/FakeWorkspaceClient.js";
 import {
   workspaceGitPresentationTarget,
   workspacePluginPresentationTarget,
