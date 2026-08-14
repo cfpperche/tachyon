@@ -10,7 +10,7 @@ import {
   readDoorbellTrailEvents,
   hasDoorbellRung,
   DOORBELLS_REL_PATH,
-} from "@tachyon/engine/bridge/doorbell.js";
+} from "@tachyon/engine/workspace/doorbell.js";
 
 describe("doorbell", () => {
   const roots: string[] = [];

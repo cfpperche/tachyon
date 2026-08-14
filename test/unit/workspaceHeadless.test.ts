@@ -37,7 +37,7 @@ import { asAgent, composeCommand } from "@tachyon/engine/config/loadConfig.js";
 import { composeAgentPrompt } from "@tachyon/engine/agents/promptLayers.js";
 import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
 import { parseExtensionCommandV1, type ExtensionCommandV1 } from "@tachyon/engine/runtime-api/extensionOperations.js";
-import type { NoticeQueueMetadata } from "@tachyon/engine/bridge/NoticeQueue.js";
+import type { NoticeQueueMetadata } from "@tachyon/engine/workspace/NoticeQueue.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with

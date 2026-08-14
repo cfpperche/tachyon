@@ -30,7 +30,7 @@ import { parseEvery, parseAt } from "../../config/loadConfig.js";
 import type { ScheduleDef } from "../../config/loadConfig.js";
 import type { Severity, EvidenceView } from "../../worktree/evidence.js";
 import type { ProbeService } from "../../probe/ProbeService.js";
-import type { NoticeQueueMetadata } from "../NoticeQueue.js";
+import type { NoticeQueueMetadata } from "../../workspace/NoticeQueue.js";
 import { resolveActor } from "../callerIdentity.js";
 import type { CallerSnapshot, CallerIdentityRegistry, CallerScope } from "../callerIdentity.js";
 import { redactSecrets } from "../../utils/redactSecrets.js";

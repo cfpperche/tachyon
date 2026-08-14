@@ -16,7 +16,7 @@ import { validateCompleteNode } from "@tachyon/engine/pipeline/completeNode.js";
 import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, isSafeArtifactRef, viewEvidence, type WorktreeEvidence } from "@tachyon/engine/worktree/evidence.js";
 import type { ChangedFile } from "@tachyon/engine/worktree/review.js";
-import { readDoorbellEvents } from "@tachyon/engine/bridge/doorbell.js";
+import { readDoorbellEvents } from "@tachyon/engine/workspace/doorbell.js";
 import { projectRuntimeCondition, NO_QUOTA_CHANNEL } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
 import type { NoticeSourceMetadata } from "@tachyon/engine/bridge/tools.js";
 import { resolveAgentFocus } from "@tachyon/engine/sidebar/agentFocus.js";
