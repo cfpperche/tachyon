@@ -12,7 +12,7 @@ import type { Validation } from "@tachyon/engine/validations/types.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { legacyBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
 import { composeFixedApprovalResponse } from "@tachyon/engine/approvals/approvalRequest.js";
-import type { NoticeDeliveryResult } from "@tachyon/engine/bridge/tools.js";
+import type { NoticeDeliveryResult } from "@tachyon/engine/workspace/noticeDelivery.js";
 
 /**
  * t-c6c4ad / t-ebde5f — Validation close must wake the author without inventing an actor.

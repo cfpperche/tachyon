@@ -1,4 +1,4 @@
-import type { NotifyLevel } from "../bridge/tools.js";
+import type { NotifyLevel } from "./EngineHost.js";
 import type { NoticeAction } from "./EngineHost.js";
 import { describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
 

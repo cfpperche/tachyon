@@ -14,7 +14,7 @@ import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentPr
 import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
-import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { asAgent } from "@tachyon/engine/config/loadConfig.js";
 
 /**

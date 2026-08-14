@@ -24,7 +24,7 @@ import { projectSidebarView } from "@tachyon/engine/runtime-api/sidebarProjectio
 import { applySidebarMutation } from "@tachyon/engine/sidebar/sidebarMutationService.js";
 import { isSidebarMutationInputV1 } from "@tachyon/engine/runtime-api/sidebarCommands.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
-import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 

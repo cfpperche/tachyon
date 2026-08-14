@@ -28,7 +28,7 @@ import type { Scheduler } from "../../schedule/Scheduler.js";
 import type { ProposalStore } from "../../schedule/ProposalStore.js";
 import { parseEvery, parseAt } from "../../config/loadConfig.js";
 import type { ScheduleDef } from "../../config/loadConfig.js";
-import type { Severity, EvidenceView } from "../../worktree/evidence.js";
+import type { EvidenceView } from "../../worktree/evidence.js";
 import type { ProbeService } from "../../probe/ProbeService.js";
 import type { NoticeQueueMetadata } from "../../workspace/NoticeQueue.js";
 import { resolveActor } from "../callerIdentity.js";
@@ -41,30 +41,9 @@ import type { TaskNotificationEvent } from "../../tasks/taskNotificationPolicy.j
 import type { TaskPrototypeSnapshot } from "../../tasks/TaskPrototypeStore.js";
 import { RuntimeLaunchPreflightError } from "@tachyon/shared/runtime/launchPreflight.js";
 import { RuntimeLaunchReadinessError } from "../../runtime/launchReadiness.js";
-
-export type NotifyLevel = "info" | "warn" | "error";
-/**
- * t-8d190f — `submit-unconfirmed` is a THIRD outcome, distinct from both. The line was typed and Enter
- * was pressed, but Tachyon never observed it leave the composer, so it may be sitting staged in the
- * recipient's editor. It is not `notified` (nothing is proven delivered) and not `queued` (nothing is
- * held for a later flush); reporting either would be the bug this task fixes.
- */
-export type NoticeDeliveryResult = {
-  status: "notified" | "queued" | "submit-unconfirmed";
-  dropped?: number;
-  queued?: number;
-  /** t-44ae02 — createdAt of the oldest item still waiting for this target. Feeds the queued receipt. */
-  oldestCreatedAt?: number;
-  /** Why confirmation failed, propagated from the tmux submit receipt. */
-  submitReason?: string;
-  /**
-   * t-a53dd9 — set when the wait is on a HUMAN, not on the recipient's turn. A queue held because the
-   * recipient is mid-turn ends by itself in seconds; one held because a person is typing into that
-   * pane ends when they submit, or at the TTL with the loss reported to them. The sender is told
-   * which, because "queued" alone is what makes a doorbell that never lands look like one that did.
-   */
-  heldFor?: "human-draft";
-};
+import type { NotifyLevel } from "../../workspace/EngineHost.js";
+import type { NoticeDeliveryResult } from "../../workspace/noticeDelivery.js";
+import type { AttachEvidenceInput } from "../../worktree/evidence.js";
 /**
  * t-fb1453 — one definition, imported rather than restated. The second copy that used to live here
  * could not express the `origin` requirement, so a caller binding a notice to a child's identity got
@@ -536,20 +515,6 @@ export function contextRenewalRequestRefusal(input: {
     return `fresh context refused for '${input.agent}': no continuity brief exists`;
   }
   return undefined;
-}
-
-/** spec 273 — the input to attach_evidence (producer is self-declared, per the bridge's caller model). */
-export interface AttachEvidenceInput {
-  targetAgent: string;
-  producer: string;
-  kind: string;
-  severity: Severity;
-  summary: string;
-  detail?: string;
-  data?: Record<string, unknown>;
-  artifacts?: string[];
-  onBehalfOf?: string;
-  sourceRunId?: string;
 }
 
 /** Validates a proposed schedule (same rules as config) before storing it. */

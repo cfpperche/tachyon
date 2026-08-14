@@ -6,11 +6,8 @@
  */
 
 export {
-  type NotifyLevel,
-  type NoticeDeliveryResult,
   type NoticeSourceMetadata,
   type BridgeDeps,
-  type AttachEvidenceInput,
   contextRenewalRequestRefusal,
   validateProposedSchedule,
 } from "./tools/shared.js";

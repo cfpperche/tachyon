@@ -12,7 +12,7 @@ import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import { buildSidebarFleet, type SidebarFleetSource } from "@tachyon/engine/sidebar/sidebarFleetService.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
-import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 

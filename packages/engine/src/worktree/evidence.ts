@@ -14,6 +14,20 @@
 
 export type Severity = "info" | "warn" | "error";
 
+/** spec 273 — the input to attach_evidence (producer is self-declared, per the bridge's caller model). */
+export interface AttachEvidenceInput {
+  targetAgent: string;
+  producer: string;
+  kind: string;
+  severity: Severity;
+  summary: string;
+  detail?: string;
+  data?: Record<string, unknown>;
+  artifacts?: string[];
+  onBehalfOf?: string;
+  sourceRunId?: string;
+}
+
 /** The current record schema version. Bump ONLY on a breaking shape change. */
 export const EVIDENCE_SCHEMA_VERSION = 1 as const;
 

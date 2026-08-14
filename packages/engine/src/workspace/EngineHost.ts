@@ -1,4 +1,3 @@
-import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
 import type { TerminalPresentation, TerminalPresentationOptions } from "@tachyon/engine/workspace/TerminalPresentation.js";
 
 /**
@@ -6,6 +5,8 @@ import type { TerminalPresentation, TerminalPresentationOptions } from "@tachyon
  * (`DaemonEngineHost` today); a CLI/other-IDE shell can implement its own. The engine (Workspace + managers) must
  * never import `vscode` — it calls these small, composed ports. See `docs/system-design.md`.
  */
+
+export type NotifyLevel = "info" | "warn" | "error";
 
 /** Which sidebar surface a change touches (the shell maps these to its own views). */
 export type ViewKind = "agents" | "pins" | "tasks" | "commands" | "schedules" | "handoff" | "probes";
