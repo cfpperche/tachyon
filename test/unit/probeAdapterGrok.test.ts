@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { createGrokAdapter, extractGrokResult } from "../../src/probe/adapters/grok.js";
-import type { RawOutcome } from "../../src/probe/adapters/types.js";
+import { createGrokAdapter, extractGrokResult } from "@tachyon/engine/probe/adapters/grok.js";
+import type { RawOutcome } from "@tachyon/engine/probe/adapters/types.js";
 
 const adapter = createGrokAdapter({ versionProbe: async () => "grok 0.2.111 (test)" });
 

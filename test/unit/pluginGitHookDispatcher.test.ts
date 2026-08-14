@@ -13,7 +13,7 @@ import {
   readDispatcherTemplateVersion,
   dispatcherScript,
 } from "../../src/plugins/gitHookRegistry.js";
-import { GIT_HOOK_EVENTS } from "../../src/plugins/manifest.js";
+import { GIT_HOOK_EVENTS } from "@tachyon/engine/plugins/manifest.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });

@@ -14,9 +14,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ManagedWorktreeService } from "../../src/worktree/ManagedWorktreeService.js";
-import { WorktreeManager } from "../../src/worktree/WorktreeManager.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { ManagedWorktreeService } from "@tachyon/engine/worktree/ManagedWorktreeService.js";
+import { WorktreeManager } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 const PI_002 = Object.freeze({
   id: "worktree-cleanup-commit-safety",

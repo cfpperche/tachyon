@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BridgeSlowRequestToastPolicy, bridgeSlowRequestMessage } from "../../src/workspace/bridgeSlowRequestPolicy.js";
+import { BridgeSlowRequestToastPolicy, bridgeSlowRequestMessage } from "@tachyon/engine/workspace/bridgeSlowRequestPolicy.js";
 
 describe("BridgeSlowRequestToastPolicy", () => {
   it("keeps normal 10s slow completions metric-only", () => {

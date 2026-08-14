@@ -15,7 +15,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { WorkspaceShellHandle } from "../../shell/WorkspaceShellHandle.js";
-import type { IdeBrowserStatus } from "../../ide-browser/protocol.js";
+import type { IdeBrowserStatus } from "@tachyon/engine/ide-browser/protocol.js";
 import {
   assembleDesignModePick,
   type DesignModePickPayload,

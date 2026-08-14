@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { classifyComposerSubmission, composerText } from "@tachyon/shared/runtime/composerRegion.js";
 import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
@@ -91,7 +91,7 @@ describe("t-8d190f — a submit is confirmed by the composer, not assumed", () =
   });
 
   it("the old last-line guard is blind to that same pane — why the bug escaped its tests", async () => {
-    const { looksLikeStrandedSubmittedLine } = await import("../../src/tmux/TmuxService.js");
+    const { looksLikeStrandedSubmittedLine } = await import("@tachyon/engine/tmux/TmuxService.js");
     const plain = claudePane(composerLine(NOTICE)).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 
     // The text is demonstrably sitting in the editor...

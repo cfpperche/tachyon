@@ -4,7 +4,7 @@ import {
   sanitizeSummary,
   PIPELINE_NODE_GUIDANCE,
   SUMMARY_CAP_BYTES,
-} from "../../src/pipeline/nodePrompt";
+} from "@tachyon/engine/pipeline/nodePrompt.js";
 
 // Frozen copy of the EXACT guidance literal that shipped in Workspace.ts (spec 230). If the guidance text
 // is ever edited, this assertion fails — that is the byte-identical regression lock for input:none nodes.

@@ -1,3 +1,6 @@
+export { HUMAN_INBOX_KINDS } from "@tachyon/engine/humanInbox/types.js";
+import type { HumanInboxKind, StaleAfter } from "@tachyon/engine/humanInbox/types.js";
+export type { HumanInboxKind, StaleAfter } from "@tachyon/engine/humanInbox/types.js";
 /**
  * Human Inbox — the aggregate read-model over pending work and its read-only decision history.
  *
@@ -32,10 +35,7 @@ import type { ValidationViewItem } from "../webview/validations/viewModel.js";
 import type { ArtifactRef } from "@tachyon/shared/tasks/types.js";
 import type { SavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
 import type { SavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview.js";
-import type { ScheduleProposal } from "../schedule/ProposalStore.js";
-
-export const HUMAN_INBOX_KINDS = ["approval", "saved-agent-proposal", "saved-agent-removal", "schedule-proposal", "validation"] as const;
-export type HumanInboxKind = (typeof HUMAN_INBOX_KINDS)[number];
+import type { ScheduleProposal } from "@tachyon/engine/schedule/ProposalStore.js";
 
 /**
  * Kind severity, highest first. An approval outranks the rest because an approval BLOCKS an agent
@@ -126,16 +126,6 @@ export interface HumanInboxInput {
 
 /** The product's answer when a workspace configures nothing. */
 export const DEFAULT_STALE_AFTER_HOURS = 24;
-
-/**
- * t-e4f662 — how long a row may wait before it is MARKED stale, or `"never"`.
- *
- * `"never"` is a real answer, not a disabled feature: a fleet that parks approvals for days on
- * purpose would see every row marked, and a mark that is always on has stopped being a signal. It is
- * spelled as a word rather than as `0` because `0` reads literally as "stale after zero hours" — the
- * OPPOSITE of off — and this loader refuses ambiguity rather than picking the friendlier reading.
- */
-export type StaleAfter = number | "never";
 
 export interface HumanInboxOptions {
   /** ISO instant used as "now" for staleness; passed in so the projection stays pure and testable */

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { LifecycleMonitor, RESTART_DELAYS_MS } from "../../src/agents/LifecycleMonitor.js";
-import type { RestartPolicy } from "../../src/config/loadConfig.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { LifecycleMonitor, RESTART_DELAYS_MS } from "@tachyon/engine/agents/LifecycleMonitor.js";
+import type { RestartPolicy } from "@tachyon/engine/config/loadConfig.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 
 function makeLifecycle(policies: Record<string, RestartPolicy>) {
   let now = 1_000_000;

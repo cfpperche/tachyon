@@ -3,19 +3,19 @@ import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import { commitAgentProfileLifecycle } from "../../src/config/agentProfileLifecycle.js";
+import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
+import { commitAgentProfileLifecycle } from "@tachyon/engine/config/agentProfileLifecycle.js";
 import {
   acquireAgentProfileTransactionLock,
   acquireAgentProfileTransactionLocks,
   type AgentProfileAuthorityPort,
-} from "../../src/config/agentProfileTransactions.js";
+} from "@tachyon/engine/config/agentProfileTransactions.js";
 import {
   agentProfileRenameBlocked,
   commitAgentProfileRename,
   reconcileAgentProfileRenames,
-} from "../../src/config/agentProfileRename.js";
+} from "@tachyon/engine/config/agentProfileRename.js";
 
 const roots: string[] = [];
 
@@ -92,7 +92,7 @@ describe("canonical agent profile rename", () => {
     const sourceAuthority = input.authority.records.get("reviewer")!;
     sourceAuthority.capabilityGrants = [{ referenceId: "docs", sourceSha256: "a".repeat(64), adapter: "codex", kind: "mcp" }];
     input.authority.records.set("reviewer", sourceAuthority);
-    const refreshed = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    const refreshed = await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority }));
     fs.writeFileSync(path.join(input.root, ".tachyon", "agents", "reviewer", "owned.txt"), "preserve me\n");
 
@@ -133,7 +133,7 @@ describe("canonical agent profile rename", () => {
       activateState: () => undefined,
     });
 
-    const reviewer = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    const reviewer = await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority }));
 
     const result = await commitAgentProfileRename({
@@ -146,7 +146,7 @@ describe("canonical agent profile rename", () => {
       activateState: () => undefined,
     });
 
-    const ownerAfter = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    const ownerAfter = await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }));
     expect(ownerAfter.profile.ownership?.subagents).toEqual(["maintainer"]);
     expect(input.authority.records.get("boss")?.revision).toBe(`lifecycle-${result.txid}`);
@@ -171,7 +171,7 @@ describe("canonical agent profile rename", () => {
       authority: input.authority,
       activateState: () => undefined,
     });
-    const reviewer = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    const reviewer = await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "reviewer", authority: input.authority }));
 
     await expect(commitAgentProfileRename({
@@ -185,7 +185,7 @@ describe("canonical agent profile rename", () => {
       onPhase: (phase) => { if (phase === "authority-moved") throw new Error("interrupt"); },
     })).rejects.toThrow("interrupt");
 
-    expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    expect((await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }))).profile.ownership?.subagents)
       .toEqual(["reviewer"]);
 
@@ -194,7 +194,7 @@ describe("canonical agent profile rename", () => {
       authority: input.authority,
       activateState: () => undefined,
     })).resolves.toMatchObject({ reconciled: [expect.any(String)], degraded: [] });
-    expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    expect((await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }))).profile.ownership?.subagents)
       .toEqual(["maintainer"]);
   });

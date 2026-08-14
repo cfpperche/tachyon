@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { EngineEventJournal, pruneEngineEventJournals } from "../../src/engine-service/eventJournal.js";
+import { EngineEventJournal, pruneEngineEventJournals } from "@tachyon/engine/engine-service/eventJournal.js";
 
 const roots: string[] = [];
 const fixture = () => {

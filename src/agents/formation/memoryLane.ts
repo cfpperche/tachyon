@@ -4,7 +4,7 @@ import {
   selectedMemorySha256,
   type SelectedMemoryActiveState,
 } from "../../memory/domain.js";
-import { formationDigest, type MemoryActivationHeadV1 } from "./domain.js";
+import { formationDigest, type MemoryActivationHeadV1 } from "@tachyon/engine/agents/formation/domain.js";
 
 export const SELECTED_MEMORY_RENDERER_CONTRACT = "tachyon-selected-memory-v1";
 export const SELECTED_MEMORY_RENDERER_SHA256 = formationDigest({

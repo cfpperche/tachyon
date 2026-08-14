@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SurfacePreservation } from "../../src/workspace/surfacePreservation.js";
+import { SurfacePreservation } from "@tachyon/engine/workspace/surfacePreservation.js";
 
 /**
  * t-b88106 — the reported defect: restarting an agent that was working headless opened its terminal

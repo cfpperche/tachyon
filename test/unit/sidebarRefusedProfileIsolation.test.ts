@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { buildSidebarFleet, type SidebarFleetSource } from "../../src/sidebar/sidebarFleetService.js";
+import { buildSidebarFleet, type SidebarFleetSource } from "@tachyon/engine/sidebar/sidebarFleetService.js";
 
 const REASON = "profile/schema: schemaVersion: Invalid literal value, expected 1";
 

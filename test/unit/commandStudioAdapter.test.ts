@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { CommandStudioAdapter } from "../../src/webview/CommandStudioAdapter.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
+import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
-import type { AgentDef, CommandDef } from "../../src/config/loadConfig.js";
+import type { AgentDef, CommandDef } from "@tachyon/engine/config/loadConfig.js";
 
 function commandDef(overrides: Partial<CommandDef> = {}): CommandDef {
   return {

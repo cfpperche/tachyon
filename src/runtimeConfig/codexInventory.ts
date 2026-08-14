@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "@iarna/toml";
-import { asAgent, type AgentDef } from "../config/loadConfig.js";
-import { codexNativeConfigRevision, type CodexEditableSettingKey } from "../config/codexNativeConfigProjection.js";
+import { asAgent, type AgentDef } from "@tachyon/engine/config/loadConfig.js";
+import { codexNativeConfigRevision, type CodexEditableSettingKey } from "@tachyon/engine/config/codexNativeConfigProjection.js";
 import { binaryOf } from "@tachyon/shared/resume/adapters.js";
 import type {
   RuntimeConfigDocumentInventory,

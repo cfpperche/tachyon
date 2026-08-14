@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { stopAgentSessionForDelete } from "../../src/agents/agentRemovalCascade.js";
-import type { AgentOccupancyVerdict } from "../../src/agents/AgentManager.js";
+import { stopAgentSessionForDelete } from "@tachyon/engine/agents/agentRemovalCascade.js";
+import type { AgentOccupancyVerdict } from "@tachyon/engine/agents/AgentManager.js";
 
 function sessionManager(dead: boolean, removeOnKill = true) {
   const states = new Map<string, { dead: boolean; exitCode?: number }>([

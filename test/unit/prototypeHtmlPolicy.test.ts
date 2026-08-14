@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PROTOTYPE_DATA_MAX_DECODED_BYTES, PROTOTYPE_HTML_MAX_BYTES, validatePrototypeHtml } from "../../src/tasks/prototypeHtmlPolicy.js";
+import { PROTOTYPE_DATA_MAX_DECODED_BYTES, PROTOTYPE_HTML_MAX_BYTES, validatePrototypeHtml } from "@tachyon/engine/tasks/prototypeHtmlPolicy.js";
 import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 
 describe("prototypeHtmlPolicy", () => {

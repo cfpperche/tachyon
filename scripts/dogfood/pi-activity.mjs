@@ -69,7 +69,7 @@ try {
   const bundle = path.join(temp, "activity-runtime.mjs");
   await build({
     stdin: {
-      contents: `export { ActivityLogWriter } from "./src/activity/logWriter.ts"; export { ActivityLog } from "./src/activity/logStore.ts";`,
+      contents: `export { ActivityLogWriter } from "./packages/engine/src/activity/logWriter.ts"; export { ActivityLog } from "./packages/engine/src/activity/logStore.ts";`,
       resolveDir: root,
       sourcefile: "pi-activity-dogfood-entry.ts",
       loader: "ts",

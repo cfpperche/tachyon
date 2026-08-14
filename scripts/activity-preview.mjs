@@ -21,7 +21,7 @@ if (!fs.existsSync(file)) { console.error(`not found: ${file}`); process.exit(66
 const out = path.join(os.tmpdir(), `activity-preview-${process.pid}.mjs`);
 await esbuild.build({
   stdin: {
-    contents: `export { normalizeClaude } from "./src/activity/claudeNormalizer.ts";\nexport { buildActivityView } from "./src/activity/activityView.ts";`,
+    contents: `export { normalizeClaude } from "./packages/engine/src/activity/claudeNormalizer.ts";\nexport { buildActivityView } from "./src/activity/activityView.ts";`,
     resolveDir: ".",
     loader: "ts",
   },

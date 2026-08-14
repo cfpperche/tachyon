@@ -508,7 +508,7 @@ describe("t-4662e9 — rename is not reachable from the sidebar surface at any l
     // Deliberately NOT removed: `config.agent.rename` is a declared EXTENSION_COMMAND_ACTIONS entry
     // served by extensionOperationService, reachable by API clients that never had a sidebar.
     // Asserting it stays keeps a later cleanup from mistaking this task for permission to drop it.
-    expect(read("src/runtime-api/extensionOperations.ts")).toContain("config.agent.rename");
-    expect(read("src/engine-service/extensionOperationService.ts")).toContain("config.agent.rename");
+    expect(read("packages/engine/src/runtime-api/extensionOperations.ts")).toContain("config.agent.rename");
+    expect(read("packages/engine/src/engine-service/extensionOperationService.ts")).toContain("config.agent.rename");
   });
 });

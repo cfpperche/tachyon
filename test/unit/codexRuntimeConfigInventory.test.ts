@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { inspectCodexRuntimeConfig } from "../../src/runtimeConfig/codexInventory.js";
-import { applyCodexNativeConfigChange } from "../../src/config/codexNativeConfigProjection.js";
-import type { AgentDef } from "../../src/config/loadConfig.js";
+import { applyCodexNativeConfigChange } from "@tachyon/engine/config/codexNativeConfigProjection.js";
+import type { AgentDef } from "@tachyon/engine/config/loadConfig.js";
 
 const roots: string[] = [];
 

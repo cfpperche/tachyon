@@ -2,9 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, it, expect } from "vitest";
-import { createCodexAdapter } from "../../src/probe/adapters/codex.js";
-import { PRIVATE_HOME_DIRNAME, type CodexSessionEvidence } from "../../src/probe/adapters/codexSessionEvidence.js";
-import type { Invocation, RawOutcome } from "../../src/probe/adapters/types.js";
+import { createCodexAdapter } from "@tachyon/engine/probe/adapters/codex.js";
+import { PRIVATE_HOME_DIRNAME, type CodexSessionEvidence } from "@tachyon/engine/probe/adapters/codexSessionEvidence.js";
+import type { Invocation, RawOutcome } from "@tachyon/engine/probe/adapters/types.js";
 
 const spec = { runtime: "codex", prompt: "review this", cwd: "/repo", timeoutMs: 1 };
 const inv = { cmd: "codex", args: [], cwd: "/repo", env: { CODEX_HOME: "/scratch/codex-home" } } satisfies Invocation;

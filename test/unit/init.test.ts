@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { detectStack, buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "../../src/init/initLogic.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 
 const base = (over: Partial<DetectedProject> = {}): DetectedProject => ({
   files: [],

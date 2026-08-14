@@ -7,12 +7,12 @@ import {
   readSavedAgentRemovalProposal,
   savedAgentRemovalProposalPath,
   appendSavedAgentRemovalProposalWitness,
-} from "./savedAgentRemovalProposalStore.js";
+} from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
 import {
   savedAgentRemovalProposalIsExpired,
   type SavedAgentRemovalProposal,
-} from "./savedAgentRemovalProposal.js";
-import type { AgentProfileGrants } from "../config/agentProfileGrants.js";
+} from "@tachyon/engine/agents/savedAgentRemovalProposal.js";
+import type { AgentProfileGrants } from "@tachyon/engine/config/agentProfileGrants.js";
 
 /**
  * t-afe120 — host-only path from an approved removal proposal to the canonical forget cascade.

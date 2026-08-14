@@ -6,13 +6,13 @@ import {
   projectAgentProfileStudioSnapshot,
   type AgentProfileStudioMutationV1,
 } from "@tachyon/shared/config/agentProfileStudio.js";
-import { agentProfileSchemaV1 } from "../../src/config/agentProfileSchema.js";
+import { agentProfileSchemaV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 import { canonicalAgentFields, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
-import { savedAgentCreateMutation } from "../../src/agents/savedAgentProposal.js";
-import { toTerminalEntry, type FormState } from "../../src/webview/formLogic.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
-import { upsertAgent } from "../../src/config/YamlConfigEditor.js";
+import { savedAgentCreateMutation } from "@tachyon/engine/agents/savedAgentProposal.js";
+import { toTerminalEntry, type FormState } from "@tachyon/engine/webview/formLogic.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import type { AgentProfileLifecycleSnapshot } from "@tachyon/engine/config/agentProfileLifecycle.js";
+import { upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/domain.js";
 
 /**

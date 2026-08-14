@@ -7,12 +7,12 @@ import {
   isWakeableAgentName,
   validationCloseWakeRecipients,
   wakeValidationClosedAuthors,
-} from "../../src/validations/validationCloseNotify.js";
-import type { Validation } from "../../src/validations/types.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
+} from "@tachyon/engine/validations/validationCloseNotify.js";
+import type { Validation } from "@tachyon/engine/validations/types.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { legacyBoardTarget } from "../../src/shell/BoardTarget.js";
-import { composeFixedApprovalResponse } from "../../src/bridge/approvalRequest.js";
-import type { NoticeDeliveryResult } from "../../src/bridge/tools.js";
+import { composeFixedApprovalResponse } from "@tachyon/engine/bridge/approvalRequest.js";
+import type { NoticeDeliveryResult } from "@tachyon/engine/bridge/tools.js";
 
 /**
  * t-c6c4ad / t-ebde5f — Validation close must wake the author without inventing an actor.

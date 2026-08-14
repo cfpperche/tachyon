@@ -9,7 +9,7 @@
 
 import path from "node:path";
 import type { LoadedPlugin } from "./engine.js";
-import type { ToolLaunchPolicy } from "./manifest.js";
+import type { ToolLaunchPolicy } from "@tachyon/engine/plugins/manifest.js";
 import { resolveHostPlatform, type PlatformResolution } from "./toolPlatform.js";
 
 export interface ToolPlanItem {

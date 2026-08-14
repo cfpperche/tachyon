@@ -5,7 +5,7 @@ import {
   AttentionMonitor,
   type AttentionSettings,
 } from "@tachyon/shared/attention/AttentionMonitor.js";
-import { applyCompletionHint, CompletionHintStore } from "../../src/attention/completionHint.js";
+import { applyCompletionHint, CompletionHintStore } from "@tachyon/engine/attention/completionHint.js";
 import { isComposerOccupied } from "@tachyon/shared/runtime/composerRegion.js";
 import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 

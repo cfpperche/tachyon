@@ -23,7 +23,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { loadManifest } from "./plugins/manifest.js";
+import { loadManifest } from "@tachyon/engine/plugins/manifest.js";
 
 const MANIFEST = "tachyon-plugin.json";
 

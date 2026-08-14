@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
-import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
-import type { StagedEngineBundle, StagedEngineRuntime } from "../../src/engine-service/engineBundleStore.js";
+import { startEngineControlServer, type RunningEngineControlServer } from "@tachyon/engine/engine-service/controlServer.js";
+import { EngineEventJournal } from "@tachyon/engine/engine-service/eventJournal.js";
+import type { StagedEngineBundle, StagedEngineRuntime } from "@tachyon/engine/engine-service/engineBundleStore.js";
 import {
   ENGINE_SHELL_PROTOCOL,
   workspaceCommandSuccessV1,
   workspaceProbeViewSuccessV1,
   type EngineServiceIdentityV1,
   type WorkspaceSnapshotEnvelopeV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 import { connectRemoteWorkspaceClient } from "../../src/shell/WorkspaceClient.js";
-import { ENGINE_UI_CAPABILITY } from "../../src/engine-service/uiRequestBroker.js";
-import { workspaceHash } from "../../src/tmux/TmuxService.js";
+import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
+import { workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const roots: string[] = [];

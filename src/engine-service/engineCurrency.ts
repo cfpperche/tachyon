@@ -1,4 +1,4 @@
-import type { EngineServiceIdentityV1 } from "./protocol.js";
+import type { EngineServiceIdentityV1 } from "@tachyon/engine/engine-service/protocol.js";
 
 /**
  * t-f54b62 — is the engine serving this workspace the one the extension would launch today?

@@ -7,19 +7,19 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   loadProfileAwareConfig,
   type LoadProfileAwareConfigInput,
-} from "../../src/config/agentProfileConfigLoader.js";
+} from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import {
   CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
   GROK_PRIVATE_HOME_INPUT_INSPECTOR,
   PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR,
-} from "../../src/config/agentProfileProjection.js";
-import { agentProfileSchemaV1 } from "../../src/config/agentProfileSchema.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
-import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
-import { digestCapturedCapability, type CapturedCapabilityEntry } from "../../src/config/agentCapabilitySource.js";
-import { asAgent } from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/config/agentProfileProjection.js";
+import { agentProfileSchemaV1 } from "@tachyon/engine/config/agentProfileSchema.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
+import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
+import { digestCapturedCapability, type CapturedCapabilityEntry } from "@tachyon/engine/config/agentCapabilitySource.js";
+import { asAgent } from "@tachyon/engine/config/loadConfig.js";
 
 const roots: string[] = [];
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";

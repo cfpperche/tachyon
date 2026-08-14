@@ -1,15 +1,15 @@
 import fs from "node:fs";
 import * as vscode from "vscode";
-import type { EntryKind } from "../config/loadConfig.js";
-import { SOCKET_NAME, socketPath, utf8LocaleEnv } from "../tmux/TmuxService.js";
+import type { EntryKind } from "@tachyon/engine/config/loadConfig.js";
+import { SOCKET_NAME, socketPath, utf8LocaleEnv } from "@tachyon/engine/tmux/TmuxService.js";
 import type { SessionViewportRegistry } from "./sessionViewport.js";
 import type {
   TerminalManifestStore,
   TerminalPresentation,
   TerminalRestoreEntry,
-} from "../workspace/TerminalPresentation.js";
+} from "@tachyon/engine/workspace/TerminalPresentation.js";
 
-export type { TerminalManifestStore, TerminalRestoreEntry } from "../workspace/TerminalPresentation.js";
+export type { TerminalManifestStore, TerminalRestoreEntry } from "@tachyon/engine/workspace/TerminalPresentation.js";
 
 /**
  * SDD 478 M5 — one icon per arm of the managed-entry union, exhaustively. A `Record<EntryKind, …>`

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   FormationAuthorityStore,
   type ResolvedFormationPayload,
-} from "../../src/agents/formation/authorityStore.js";
+} from "@tachyon/engine/agents/formation/authorityStore.js";
 import {
   formationDigest,
   formationSkillRelativePathError,
@@ -14,13 +14,13 @@ import {
   type FormationAuthorityVector,
   type FormationGenerationHeadV1,
   type ProfileActivationHeadV2,
-} from "../../src/agents/formation/domain.js";
+} from "@tachyon/engine/agents/formation/domain.js";
 import {
   FORMATION_GOVERNED_LANES,
   validateFormationSessionTransition,
 } from "../../src/agents/formation/sessionPolicy.js";
-import { FormationObjectStore } from "../../src/agents/formation/objectStore.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
+import { FormationObjectStore } from "@tachyon/engine/agents/formation/objectStore.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
 
 const roots: string[] = [];
 afterEach(() => {

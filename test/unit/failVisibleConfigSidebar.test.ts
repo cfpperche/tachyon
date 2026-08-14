@@ -3,10 +3,10 @@
  * AND ledger-derived rows — never an empty-roster-only signal when config is invalid.
  */
 import { describe, expect, it } from "vitest";
-import { degradedRosterExtras, toConfigErrorVM } from "../../src/config/configFailure.js";
-import { toAgentVM } from "../../src/sidebar/agentModel.js";
+import { degradedRosterExtras, toConfigErrorVM } from "@tachyon/engine/config/configFailure.js";
+import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
 import type { AgentVM, FleetVM } from "@tachyon/shared/sidebar/types.js";
-import type { SessionRecord } from "../../src/resume/SessionLedger.js";
+import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
 
 function buildDegradedFleet(opts: {
   failure: { path: string; file: string; errors: string[]; at: string };

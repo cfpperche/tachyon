@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { materializePiAgentHome, materializePiSessionDir, piAgentHome, piSessionDir, removePiSessionDir } from "../../src/agents/piSession.js";
-import { resolvePiSession } from "../../src/resume/resolvers.js";
+import { materializePiAgentHome, materializePiSessionDir, piAgentHome, piSessionDir, removePiSessionDir } from "@tachyon/engine/agents/piSession.js";
+import { resolvePiSession } from "@tachyon/engine/resume/resolvers.js";
 
 const roots: string[] = [];
 const temp = (prefix: string): string => {

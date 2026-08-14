@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoader.js";
+import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 
 /**
  * t-fe772a — the ONBOARDING ARTIFACT, exercised the way a newcomer exercises it.

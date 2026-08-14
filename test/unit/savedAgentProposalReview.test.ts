@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
 import { buildHumanInbox, humanInboxCounts } from "../../src/humanInbox/model.js";
-import { admitSavedAgentProposal, type SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
+import { admitSavedAgentProposal, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
 import { assertOwnershipTargets, type AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 
 /**

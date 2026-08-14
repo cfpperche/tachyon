@@ -7,19 +7,19 @@ import {
   readCanonicalAgentProfile,
   readCanonicalAgentProfileEntry,
   replaceCanonicalAgentProfileEntry,
-} from "../../config/agentProfileReader.js";
-import { agentProfileSchemaV1 } from "../../config/agentProfileSchema.js";
+} from "@tachyon/engine/config/agentProfileReader.js";
+import { agentProfileSchemaV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 import {
   FormationAuthorityStore,
   FormationAuthorityStoreError,
   type FormationCaller,
   type FormationMutationBarrier,
-} from "./authorityStore.js";
+} from "@tachyon/engine/agents/formation/authorityStore.js";
 import {
   formationDigest,
   validateFormationAuthorityVector,
   type FormationAuthorityVector,
-} from "./domain.js";
+} from "@tachyon/engine/agents/formation/domain.js";
 
 interface EncodedEntry {
   priorSha256: string | null;

@@ -9,9 +9,9 @@ import {
 import {
   PROVIDER_CONFIGURATION_READ_CAPABILITY,
   type ConfigurationObservationGrantV1,
-} from "../../src/runtimeObservability/source.js";
-import type { CollectorEnvelopeV1, ProviderConfigurationFactV1 } from "../../src/runtimeObservability/types.js";
-import { validateCollectorEnvelopeV1 } from "../../src/runtimeObservability/validate.js";
+} from "@tachyon/engine/runtimeObservability/source.js";
+import type { CollectorEnvelopeV1, ProviderConfigurationFactV1 } from "@tachyon/engine/runtimeObservability/types.js";
+import { validateCollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/validate.js";
 
 const NOW = "2026-08-02T18:00:00.000Z";
 const SCOPE = {

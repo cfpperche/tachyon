@@ -2,8 +2,8 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { legacyFallbackUsed } from "../../src/agents/agentInstancePolicy.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { legacyFallbackUsed } from "@tachyon/engine/agents/agentInstancePolicy.js";
 
 /**
  * SDD 482 phase 2 (`t-5e1113`) + t-04052d — `lifetime` and `resumePolicy` are DECLARED, never inferred.

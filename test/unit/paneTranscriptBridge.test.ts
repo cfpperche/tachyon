@@ -4,14 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Bridge } from "../../src/bridge/Bridge.js";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { PinStore } from "../../src/pins/PinStore.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
+import { Bridge } from "@tachyon/engine/bridge/Bridge.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { PinStore } from "@tachyon/engine/pins/PinStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
+import { ensurePaneTranscriptFile } from "@tachyon/engine/agents/paneTranscript.js";
 
 /**
  * t-6a6a00 — end-to-end Bridge coverage for the durable pipe-pane transcript READ path

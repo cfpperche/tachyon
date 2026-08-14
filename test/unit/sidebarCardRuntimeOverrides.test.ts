@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { toAgentVM } from "../../src/sidebar/agentModel.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
 import { SUPPORTED_AGENT_RUNTIME_NAMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import {
   CARD_TEMPLATE_VERSION,

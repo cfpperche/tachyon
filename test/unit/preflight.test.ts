@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nodeCanSignal, nodeRuntimeOf } from "../../src/pipeline/preflight";
+import { nodeCanSignal, nodeRuntimeOf } from "@tachyon/engine/pipeline/preflight.js";
 
 describe("nodeCanSignal (spec 232 → 236)", () => {
   const base = { bridgeUp: true } as const;

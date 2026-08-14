@@ -11,7 +11,7 @@ import {
   SERVER_SCOPE_COOLDOWN_MS,
   SERVER_SCOPE_RETRY_BACKOFF_MS,
   SERVER_SCOPE_TRANSIENT_FAILS_BEFORE_COOLDOWN,
-} from "../../src/tmux/TmuxService.js";
+} from "@tachyon/engine/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { isPaneForkChild } from "../helpers/tmuxReap.js";
 

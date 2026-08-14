@@ -72,7 +72,7 @@ const MANAGEABLE_ORIGIN: RuntimeConditionOriginV1 = {
 
 const MEASURED_ORIGIN: RuntimeConditionOriginV1 = {
   registry: "RUNTIME_NATIVE_MEMORY_REGISTRY",
-  module: "src/runtime/nativeMemory.ts",
+  module: "packages/engine/src/runtime/nativeMemory.ts",
 };
 
 const CHANNEL_ORIGIN: RuntimeConditionOriginV1 = {

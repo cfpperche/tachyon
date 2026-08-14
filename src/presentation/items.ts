@@ -4,7 +4,7 @@
  * tree used to pass TreeItem instances carrying the same fields. Handlers must read ONLY these fields, so
  * the command layer is UI-agnostic — it works whether the caller is the webview, a test, or a future client.
  */
-import type { PipelineRun } from "../pipeline/runState.js";
+import type { PipelineRun } from "@tachyon/engine/pipeline/runState.js";
 import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
 
 export interface AgentItem { ws?: WorkspacePresentationTarget; agentName: string; contextValue?: string }

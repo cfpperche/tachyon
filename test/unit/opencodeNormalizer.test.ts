@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeOpencode, type OpencodeTurnRecord } from "../../src/activity/opencodeNormalizer.js";
+import { normalizeOpencode, type OpencodeTurnRecord } from "@tachyon/engine/activity/opencodeNormalizer.js";
 
 const turn = (o: Partial<OpencodeTurnRecord["message"]>, parts: OpencodeTurnRecord["parts"] = []): OpencodeTurnRecord => ({
   message: { sessionID: "s1", role: "assistant", ...o },

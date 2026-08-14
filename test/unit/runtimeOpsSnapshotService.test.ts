@@ -3,12 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { LoggedEvent } from "../../src/activity/logStore.js";
-import type { SessionRecord } from "../../src/resume/SessionLedger.js";
-import type { RuntimeOpsProviderObservationSnapshotInput } from "../../src/runtimeOps/providerProjection.js";
-import { RuntimeOpsSnapshotService } from "../../src/runtimeOps/snapshotService.js";
-import { admitVitestRun } from "../../src/host/vitestBudget.js";
-import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "../../src/host/hostResources.js";
+import type { LoggedEvent } from "@tachyon/engine/activity/logStore.js";
+import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import type { RuntimeOpsProviderObservationSnapshotInput } from "@tachyon/engine/runtimeOps/providerProjection.js";
+import { RuntimeOpsSnapshotService } from "@tachyon/engine/runtimeOps/snapshotService.js";
+import { admitVitestRun } from "@tachyon/engine/host/vitestBudget.js";
+import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "@tachyon/engine/host/hostResources.js";
 
 describe("RuntimeOpsSnapshotService", () => {
   it("dispatches through the agent collection without dropping agent membership", async () => {

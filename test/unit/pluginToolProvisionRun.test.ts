@@ -9,7 +9,7 @@ import { loadPlugin, previewInstall, applyInstall, previewRemove, applyRemove } 
 import { rehydrateTools } from "../../src/plugins/toolProvisionRun.js";
 import { gatherToolPlan } from "../../src/plugins/toolPlan.js";
 import { resolveHostPlatform } from "../../src/plugins/toolPlatform.js";
-import { parseLockfile } from "../../src/plugins/lockfile.js";
+import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
 
 const kp = tlsKeypair();

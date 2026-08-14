@@ -6,7 +6,7 @@ import {
   workspacePresentationTarget,
   workspaceProbePresentationTarget,
 } from "../../src/shell/WorkspacePresentation.js";
-import { workspaceCommandSuccessV1, workspaceProbeViewSuccessV1 } from "../../src/engine-service/protocol.js";
+import { workspaceCommandSuccessV1, workspaceProbeViewSuccessV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 describe("FakeWorkspaceClient", () => {

@@ -12,7 +12,7 @@ import type { HumanInboxItemViewModel, HumanInboxViewModel } from "../../../src/
 import { buildHumanInbox, humanInboxCounts } from "../../../src/humanInbox/model";
 import type { SavedAgentProposalReview } from "../../../src/agents/savedAgentProposalReview";
 import { approvalFixtures } from "./approval";
-import type { Validation } from "../../../src/validations/types";
+import type { Validation } from "@tachyon/engine/validations/types.js";
 import type { Fixture } from "../routes";
 
 export const strings: CockpitStrings & WorktreesStrings = {

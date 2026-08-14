@@ -1,5 +1,5 @@
-import type { NotifyLevel } from "../bridge/tools.js";
-import type { TerminalPresentation, TerminalPresentationOptions } from "./TerminalPresentation.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import type { TerminalPresentation, TerminalPresentationOptions } from "@tachyon/engine/workspace/TerminalPresentation.js";
 
 /**
  * spec 233 — the host port the engine depends on instead of `vscode`. The VS Code shell implements it

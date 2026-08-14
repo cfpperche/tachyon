@@ -1,10 +1,10 @@
-import { mintTaskId } from "../tasks/TaskStore.js";
+import { mintTaskId } from "@tachyon/engine/tasks/TaskStore.js";
 import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
 import type {
   StudioHostAdapter,
   StudioLoadResult,
   StudioSaveResult,
-} from "./shared/studio/adapter.js";
+} from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
 import {
   canDiscardTaskFields,

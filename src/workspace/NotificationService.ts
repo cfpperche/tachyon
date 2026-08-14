@@ -1,5 +1,5 @@
-import type { NotifyLevel } from "../bridge/tools.js";
-import type { NoticeAction } from "./EngineHost.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import type { NoticeAction } from "@tachyon/engine/workspace/EngineHost.js";
 
 export interface NotificationOptions {
   modal?: boolean;

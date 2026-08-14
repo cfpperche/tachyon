@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveClipboardHelper } from "../../src/tmux/clipboard.js";
+import { resolveClipboardHelper } from "@tachyon/engine/tmux/clipboard.js";
 
 describe("resolveClipboardHelper (spec 219) — wire only when a tool is detected, else null (OSC 52)", () => {
   it("opted out (clipboard: off) → null, regardless of tool presence", () => {

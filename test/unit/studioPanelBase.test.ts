@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { StudioPanelManagerBase, type StudioSurfaceConfig } from "../../src/webview/shared/studio/StudioPanelManagerBase.js";
-import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "../../src/webview/shared/studio/adapter.js";
+import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { envelope } from "../../src/webview/shared/studio/protocol.js";
 import type { StudioRestoreSnapshot } from "../../src/webview/shared/studio/protocol.js";
 

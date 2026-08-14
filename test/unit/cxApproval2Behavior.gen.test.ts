@@ -10,9 +10,9 @@ import {
   readApprovalRequest,
   resolveApproval,
   writeApprovalRequest,
-} from "../../src/bridge/approvalRequest.js";
+} from "@tachyon/engine/bridge/approvalRequest.js";
 import { buildApprovalViewModel } from "../../src/webview/approval/viewModel.js";
-import { renderPrimer } from "../../src/bridge/primer.js";
+import { renderPrimer } from "@tachyon/engine/bridge/primer.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {
@@ -50,13 +50,13 @@ describe("container-generated delegation behavior", () => {
     expect(extensionSource).toContain('vscode.commands.registerCommand("tachyon.resolveApproval"');
     expect(extensionSource).toContain('await extensionInvoke(ws, { action: "approval.resolve"');
     expect(extensionSource).not.toContain("await resolveApproval({");
-    const serviceSource = fs.readFileSync(path.join(process.cwd(), "src/engine-service/extensionOperationService.ts"), "utf8");
+    const serviceSource = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/engine-service/extensionOperationService.ts"), "utf8");
     expect(serviceSource).toContain('case "approval.resolve"');
     expect(serviceSource).toContain("await resolveApproval({");
     // t-3b47ad — approval tools live under tools/human-approvals.ts; absence of a resolve tool is a whole-surface check.
-    const toolsDir = path.join(process.cwd(), "src/bridge/tools");
+    const toolsDir = path.join(process.cwd(), "packages/engine/src/bridge/tools");
     const toolsSource = [
-      fs.readFileSync(path.join(process.cwd(), "src/bridge/tools.ts"), "utf8"),
+      fs.readFileSync(path.join(process.cwd(), "packages/engine/src/bridge/tools.ts"), "utf8"),
       ...fs.readdirSync(toolsDir).filter((f) => f.endsWith(".ts")).map((f) => fs.readFileSync(path.join(toolsDir, f), "utf8")),
     ].join("\n");
     expect(toolsSource).toContain('"list_pending_approvals"');
@@ -154,7 +154,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("wires the persistent Workspace composition to the tested approval route", () => {
-    const engineSource = fs.readFileSync(path.join(process.cwd(), "src/engine-service/engineService.ts"), "utf8");
+    const engineSource = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/engine-service/engineService.ts"), "utf8");
     expect(engineSource).toMatch(
       /Workspace\.createDaemon\(canonicalRoot,\s*{[\s\S]*?onApprovalRequested:\s*\(approvalWorkspace, request\)\s*=>\s*{\s*routeHumanApprovalRequest\(host, approvalWorkspace\.wsHash, request\);/,
     );

@@ -184,9 +184,10 @@ const externalResolver = {
 // extension-version directory, then the Linux user-service manager owns its lifetime across reloads.
 // The manifest plugin hashes the exact emitted daemon and its only runtime media dependency.
 const engineDaemon = {
+  absWorkingDir: path.resolve("packages/engine"),
   entryPoints: ["src/engine-service/daemonMain.ts"],
   bundle: true,
-  outfile: "dist/engine/engine-daemon.cjs",
+  outfile: path.resolve("dist/engine/engine-daemon.cjs"),
   platform: "node",
   format: "cjs",
   target: "node20",

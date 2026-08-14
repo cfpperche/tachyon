@@ -6,18 +6,18 @@ import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { bridgeGenerationStateKey } from "../../src/bridge/clientRebind.js";
-import { AGENT_TOKEN_ENV_VAR, bridgeTokenFileName } from "../../src/bridge/token.js";
-import { requestEngineControl } from "../../src/engine-service/controlClient.js";
-import { DaemonStateStore, engineDaemonStateRoot } from "../../src/engine-service/daemonStateStore.js";
-import { stageEngineBundle, stageEngineRuntime, stagePackagedEngineBundle } from "../../src/engine-service/engineBundleStore.js";
+import { bridgeGenerationStateKey } from "@tachyon/engine/bridge/clientRebind.js";
+import { AGENT_TOKEN_ENV_VAR, bridgeTokenFileName } from "@tachyon/engine/bridge/token.js";
+import { requestEngineControl } from "@tachyon/engine/engine-service/controlClient.js";
+import { DaemonStateStore, engineDaemonStateRoot } from "@tachyon/engine/engine-service/daemonStateStore.js";
+import { stageEngineBundle, stageEngineRuntime, stagePackagedEngineBundle } from "@tachyon/engine/engine-service/engineBundleStore.js";
 import {
   engineRuntimeDir,
   engineSystemdUnitName,
   ensureDaemonEngine,
-} from "../../src/engine-service/engineSupervisor.js";
-import type { EngineBundleManifestV1, EngineServiceIdentityV1, EngineUiRequestV1 } from "../../src/engine-service/protocol.js";
-import { ENGINE_UI_CAPABILITY } from "../../src/engine-service/uiRequestBroker.js";
+} from "@tachyon/engine/engine-service/engineSupervisor.js";
+import type { EngineBundleManifestV1, EngineServiceIdentityV1, EngineUiRequestV1 } from "@tachyon/engine/engine-service/protocol.js";
+import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
 import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
 import { workspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
 import { workspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
@@ -28,13 +28,13 @@ import { workspacePinStudioTarget } from "../../src/shell/PinStudioTarget.js";
 import { workspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 import { workspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { workspaceTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
-import { PinStore } from "../../src/pins/PinStore.js";
-import { sessionName, TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
-import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
-import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
-import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { PinStore } from "@tachyon/engine/pins/PinStore.js";
+import { sessionName, TmuxService, workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
+import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
+import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore.js";
+import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../src/webview/studioSubmit.js";
 

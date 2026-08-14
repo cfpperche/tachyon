@@ -17,7 +17,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { loadManifest, resolveCompat, SUPPORTED_RUNTIMES, type PluginManifest, type Runtime, type ViewDecl } from "./manifest.js";
+import { loadManifest, resolveCompat, SUPPORTED_RUNTIMES, type PluginManifest, type Runtime, type ViewDecl } from "@tachyon/engine/plugins/manifest.js";
 import {
   mergeHooks,
   removeHooks,
@@ -28,18 +28,18 @@ import {
   type HookSettings,
   type OwnedHooks,
   type BlockParseResult,
-} from "./adapters/hooks.js";
-import { parseClaudeHooksBlock } from "./adapters/claude.js";
-import { parseCodexHooksBlock } from "./adapters/codex.js";
-import { parseGrokHooksBlock } from "./adapters/grok.js";
+} from "@tachyon/engine/plugins/adapters/hooks.js";
+import { parseClaudeHooksBlock } from "@tachyon/engine/plugins/adapters/claude.js";
+import { parseCodexHooksBlock } from "@tachyon/engine/plugins/adapters/codex.js";
+import { parseGrokHooksBlock } from "@tachyon/engine/plugins/adapters/grok.js";
 import { readFile, atomicWrite } from "./fsx.js";
-import { PLUGIN_PAYLOAD_ROOT, PLUGIN_SKILLS_DIR } from "./paths.js";
+import { PLUGIN_PAYLOAD_ROOT, PLUGIN_SKILLS_DIR } from "@tachyon/engine/plugins/paths.js";
 import { MCP_SERVER_NAME, readMcpConfig, renderMcp, setMcpServer, setMcpFromRemoval, removeMcpServerText, currentMcp, mcpRepEquals, writeMcpConfig } from "./mcpConfig.js";
 import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "./source.js";
 import { fetchSource, defaultGitRun, resolveLatestSemverTag, type GitRun } from "./fetcher.js";
 import { parseSkillFrontmatter } from "./skill.js";
 import { validateEntryHtml } from "./entryHtmlValidator.js";
-import { loadMcpPayload, type McpServer } from "./mcp.js";
+import { loadMcpPayload, type McpServer } from "@tachyon/engine/plugins/mcp.js";
 import {
   argvWrapperScript,
   GitHookStore,
@@ -56,9 +56,9 @@ import { detectExternalTool, buildAssistedInstall, materializeExternalResolver }
 import { isTrustedExecPath } from "./toolProvisioning.js";
 import { provisionTools, provisionData, type ProvisionProgressFn } from "./toolProvisionRun.js";
 import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlaceholder.js";
-import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCounts, type ToolLock, type DataLock, type ExternalToolReqLock, type LauncherLock } from "./lockfile.js";
+import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCounts, type ToolLock, type DataLock, type ExternalToolReqLock, type LauncherLock } from "@tachyon/engine/plugins/lockfile.js";
 import { dependencyStates, type DependencyState } from "./pluginDeps.js";
-import { agentEntriesOfLkg, readConfigLkg } from "../config/configLkg.js";
+import { agentEntriesOfLkg, readConfigLkg } from "@tachyon/engine/config/configLkg.js";
 import { runtimeOf } from "@tachyon/shared/resume/adapters.js";
 import { AppliedStateError, AppliedStateStore, type ContributionRef } from "./appliedState.js";
 
@@ -76,7 +76,7 @@ import {
   type SourceLock,
   type IntegrityLock,
   type GitHookLock,
-} from "./lockfile.js";
+} from "@tachyon/engine/plugins/lockfile.js";
 
 export const MANIFEST_REL = "tachyon-plugin.json";
 const HOOKS_FILE = "hooks.json"; // inside a runtime block dir

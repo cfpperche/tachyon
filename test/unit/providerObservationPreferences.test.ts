@@ -4,7 +4,7 @@ import {
   ProviderObservationPreferences,
   type ProviderObservationPreferenceInputV1,
   type ProviderObservationStatePort,
-} from "../../src/runtimeObservability/preferences.js";
+} from "@tachyon/engine/runtimeObservability/preferences.js";
 
 class MemoryState implements ProviderObservationStatePort {
   readonly values = new Map<string, unknown>();

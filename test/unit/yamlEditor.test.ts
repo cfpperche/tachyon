@@ -15,9 +15,9 @@ import {
   agentStanzaSection,
   agentStanzaSourceSlice,
   replaceAgentStanzaValue,
-} from "../../src/config/YamlConfigEditor.js";
-import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
-import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "../../src/config/agentProfileConfigLoader.js";
+} from "@tachyon/engine/config/YamlConfigEditor.js";
+import { asAgent, parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 
 /**
  * t-c1ef82 — the EXACT call promotion makes (`extensionOperationService.promoteAgent`).

@@ -1,4 +1,4 @@
-import type { FormationSessionSelectorV1 } from "./domain.js";
+import type { FormationSessionSelectorV1 } from "@tachyon/engine/agents/formation/domain.js";
 
 export type FormationSessionOperation = "restart" | "resume" | "rebind" | "reanchor" | "fork";
 

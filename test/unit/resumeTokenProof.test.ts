@@ -3,11 +3,11 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Workspace } from "../../src/workspace/Workspace.js";
-import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
-import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
-import type { NotifyLevel } from "../../src/bridge/tools.js";
-import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
+import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import type { EngineHost, NoticeAction, ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
+import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import { CallerIdentityRegistry } from "@tachyon/engine/bridge/callerIdentity.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
 
 /**
@@ -232,7 +232,7 @@ describe("resume env integration proof (spec 351 T6)", () => {
 
 /** Re-derive the HMAC key the way Workspace._create does, from the SAME shared SecretStorage map. */
 async function secretHmacKey(secretsMap: Map<string, string>): Promise<Buffer> {
-  const { loadOrCreateHmacKey } = await import("../../src/bridge/callerIdentity.js");
+  const { loadOrCreateHmacKey } = await import("@tachyon/engine/bridge/callerIdentity.js");
   return loadOrCreateHmacKey({
     getSecret: (k) => Promise.resolve(secretsMap.get(k)),
     setSecret: (k, v) => {

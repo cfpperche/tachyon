@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { HarnessManager } from "../../src/harness/HarnessManager.ts";
+import { HarnessManager } from "@tachyon/engine/harness/HarnessManager.js";
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pi-harness-resources-"));
 const workspace = path.join(temp, "workspace");

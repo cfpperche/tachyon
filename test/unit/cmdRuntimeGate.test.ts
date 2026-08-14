@@ -3,7 +3,7 @@ import {
   cmdRuntimeChanged,
   cmdRuntimeIdentity,
   gateCmdRuntimeChange,
-} from "../../src/agents/cmdRuntimeGate.js";
+} from "@tachyon/engine/agents/cmdRuntimeGate.js";
 
 describe("cmdRuntimeGate (t-6d09e6)", () => {
   it("identity uses runtime family when known", () => {

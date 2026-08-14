@@ -3,14 +3,14 @@
  * Registration always follows ideBrowserRequest wiring (see ideBrowserToolsOffline.test.ts).
  */
 import { describe, expect, it } from "vitest";
-import { registerIdeBrowserTools } from "../../src/bridge/tools/ide-browser.js";
-import type { BridgeDeps } from "../../src/bridge/tools/shared.js";
+import { registerIdeBrowserTools } from "@tachyon/engine/bridge/tools/ide-browser.js";
+import type { BridgeDeps } from "@tachyon/engine/bridge/tools/shared.js";
 import {
   IDE_BROWSER_DISABLED_CODE,
   IDE_BROWSER_DISABLED_ERROR,
   IDE_BROWSER_FIRST_USE_TIPS,
   isIdeBrowserEnabled,
-} from "../../src/ide-browser/settings.js";
+} from "@tachyon/engine/ide-browser/settings.js";
 import { IDE_BROWSER_TOOL_NAMES } from "../helpers/bridgeConditionalToolNames.js";
 
 type ToolResult = { content: Array<{ type?: string; text: string }>; isError?: boolean };

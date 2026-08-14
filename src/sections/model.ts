@@ -14,7 +14,7 @@ import {
   type ControlInspectorWorkspaceInput,
 } from "../control-inspector/model.js";
 import { DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
-import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
+import type { AgentInstanceLifetime } from "@tachyon/engine/resume/SessionLedger.js";
 
 /**
  * t-585d5c — the product default in the unit Settings speaks. DERIVED from the monitor's constant,
@@ -138,7 +138,7 @@ export interface WorktreeRow {
    * computed here). Absent only for a row sourced from the fail-closed `disk.ts` fallback path
    * (the classifier itself threw); the client must never treat "absent" as "safe".
    */
-  classification?: import("../worktree/classify.js").WorktreeClassification;
+  classification?: import("@tachyon/engine/worktree/classify.js").WorktreeClassification;
   /**
    * t-621613 — for an `agent` row, whether the agent it belongs to still exists anywhere Tachyon
    * knows. Computed host-side alongside `classification` (it reads the roster, the ledger and tmux).
@@ -146,7 +146,7 @@ export interface WorktreeRow {
    * tmux read, or a row from the fail-closed fallback that never asked — must read as "somebody
    * lives here", exactly as it does in the engine's own authority decision.
    */
-  ownerPresence?: import("../worktree/hygieneAuthority.js").OwnerPresence;
+  ownerPresence?: import("@tachyon/engine/worktree/hygieneAuthority.js").OwnerPresence;
   /**
    * t-7cb971 — the land suggestion for a row that still has work the trunk does not contain: the
    * exact command, and the state of every precondition behind it. Computed host-side beside
@@ -154,7 +154,7 @@ export interface WorktreeRow {
    * land. Absent is never "ready" — a client must render nothing rather than guess, exactly as it
    * must for `classification`.
    */
-  land?: import("../worktree/land.js").LandSuggestion;
+  land?: import("@tachyon/engine/worktree/land.js").LandSuggestion;
 }
 
 /**

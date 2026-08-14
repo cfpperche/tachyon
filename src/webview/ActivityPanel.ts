@@ -26,7 +26,7 @@ import {
   type ExternalShareChannel,
 } from "./activity/messages.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
-import { sharedGlobalSettings } from "../config/globalSettings.js";
+import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 
 export const ACTIVITY_VIEW_TYPE = "tachyonActivity";
 

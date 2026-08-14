@@ -9,8 +9,8 @@ import {
   savedAgentProposalIsExpired,
   type SavedAgentProposal,
   type SavedAgentProposalSpec,
-} from "../../src/agents/savedAgentProposal.js";
-import { AGENT_PROFILE_SCHEMA_VERSION, agentProfileSchemaV1 } from "../../src/config/agentProfileSchema.js";
+} from "@tachyon/engine/agents/savedAgentProposal.js";
+import { AGENT_PROFILE_SCHEMA_VERSION, agentProfileSchemaV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 
 /**
  * SDD 482 phase 4 slice A (`t-5e1113`) — the proposal is inert data, and every control is a REFUSAL.

@@ -348,7 +348,7 @@ function configuredWorkspace(work, label) {
 /**
  * The digest the product computes for an engine identity, restated.
  *
- * `engineWorkspaceKey` (src/engine-service/engineSupervisor.ts) folds the tmux socket override into
+ * `engineWorkspaceKey` (packages/engine/src/engine-service/engineSupervisor.ts) folds the tmux socket override into
  * the key, so this run owns a distinct control socket, state directory and systemd unit. The rule is
  * repeated here, as `.vscode-test.mjs` repeats it, because this script must not import build output.
  * `engineIdentityIsolation` in the unit tests pins the shape, so a change fails there instead of

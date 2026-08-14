@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { detectExternalTool, detectExternalToolPresence, resolveOnCleanPathNoSpawn, candidateNames, detectPackageManager, validateInstallArgv, adaptLockedInstall, buildAssistedInstall } from "../../src/plugins/externalTool.js";
-import type { ExternalToolDecl } from "../../src/plugins/manifest.js";
+import type { ExternalToolDecl } from "@tachyon/engine/plugins/manifest.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";

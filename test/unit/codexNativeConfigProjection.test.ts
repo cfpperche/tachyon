@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { projectCodexScalarNativeConfig } from "../../src/config/codexNativeConfigProjection.js";
-import type { AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
+import { projectCodexScalarNativeConfig } from "@tachyon/engine/config/codexNativeConfigProjection.js";
+import type { AgentProfileV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 
 const POLICY = {
   treatment: "overlay",

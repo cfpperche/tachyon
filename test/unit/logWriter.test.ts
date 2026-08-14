@@ -2,8 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ActivityLogWriter } from "../../src/activity/logWriter.js";
-import { ActivityLog } from "../../src/activity/logStore.js";
+import { ActivityLogWriter } from "@tachyon/engine/activity/logWriter.js";
+import { ActivityLog } from "@tachyon/engine/activity/logStore.js";
 
 const roots: string[] = [];
 function freshRoot(): string { const d = fs.mkdtempSync(path.join(os.tmpdir(), "logw-")); roots.push(d); return d; }

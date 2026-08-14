@@ -4,12 +4,12 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { HarnessManager } from "../../src/harness/HarnessManager.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { delegatedOpencodePermission, expectedAgentOpencodeEntry } from "../../src/registration/adapters.js";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { HarnessManager } from "@tachyon/engine/harness/HarnessManager.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { delegatedOpencodePermission, expectedAgentOpencodeEntry } from "@tachyon/engine/registration/adapters.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 
 /**
  * `t-64ea85` — measured: without this seam each of the three `cmd: opencode` spawns below executed

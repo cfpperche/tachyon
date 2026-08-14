@@ -59,7 +59,7 @@ import type {
   AgentStudioPatch,
 } from "./types";
 import type { AgentOwnershipViewV1 } from "@tachyon/shared/config/agentProfileStudio";
-import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates";
+import type { AuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 // Node-free by construction — same reason domain.ts may import it into this browser bundle.
 import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes";
 // Node-free for the same reason: these are the limits the host writer enforces at the door, shared

@@ -14,7 +14,7 @@
  * versions, so a per-checkout rule sees one copy each, calls both required, and frees nothing. The
  * unit of the problem is the fleet, not the checkout.
  *
- * SO: POOL FIRST, DELETE LAST. Same argument as `src/worktree/dependencySharing.ts` — all checkouts of
+ * SO: POOL FIRST, DELETE LAST. Same argument as `packages/engine/src/worktree/dependencySharing.ts` — all checkouts of
  * one workspace are checkouts of the same repo, so a payload one of them downloaded is byte-for-byte
  * the payload the next one would download. Move each version ONCE into a shared store and leave a
  * symlink where it was; `fallbackToLocalEntries` in test-electron `readdir`s the cache directory and

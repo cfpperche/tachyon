@@ -10,7 +10,7 @@ import {
   nativeMemoryCapability,
   resolveMemoryPolicy,
   type RuntimeNativeMemoryCapabilityV1,
-} from "../../src/runtime/nativeMemory.js";
+} from "@tachyon/engine/runtime/nativeMemory.js";
 
 /**
  * t-56daa1 — the typed capability and its fail-closed resolution.

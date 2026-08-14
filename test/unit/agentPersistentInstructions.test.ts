@@ -11,11 +11,11 @@ import {
 import {
   mergedPersistentInstructionsReferences,
   persistentInstructionsWriteFor,
-} from "../../src/config/agentInstructionsWrite.js";
+} from "@tachyon/engine/config/agentInstructionsWrite.js";
 import { patchProfileFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
-import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
-import type { AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
-import { MATERIALIZED_PROFILE_REFERENCE_KINDS } from "../../src/config/agentProfileMaterialization.js";
+import type { AgentProfileLifecycleSnapshot } from "@tachyon/engine/config/agentProfileLifecycle.js";
+import type { AgentProfileV1 } from "@tachyon/engine/config/agentProfileSchema.js";
+import { MATERIALIZED_PROFILE_REFERENCE_KINDS } from "@tachyon/engine/config/agentProfileMaterialization.js";
 
 const AGENT_ID = "123e4567-e89b-42d3-a456-426614174000";
 const sha256 = (text: string): string => crypto.createHash("sha256").update(text).digest("hex");

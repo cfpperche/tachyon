@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateDone } from "../../src/pipeline/doneContract.js";
+import { evaluateDone } from "@tachyon/engine/pipeline/doneContract.js";
 
 describe("evaluateDone — exit", () => {
   it("pending until the process exits", () => {

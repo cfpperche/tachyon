@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { z } from "zod";
-import { AGENT_NAME_PATTERN } from "../config/nameValidation.js";
+import { AGENT_NAME_PATTERN } from "@tachyon/engine/config/nameValidation.js";
 
 export const SELECTED_MEMORY_SCHEMA_VERSION = 1 as const;
 export const SELECTED_MEMORY_MAX_ENTRIES = 128;

@@ -13,7 +13,7 @@ import {
   loadProjectGuidance,
   projectGuidancePathError,
   renderProjectGuidance,
-} from "../../src/config/projectGuidance.js";
+} from "@tachyon/engine/config/projectGuidance.js";
 
 const roots: string[] = [];
 

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { ExternalToolInput } from "./registry.js";
-import { externalToolSessionId } from "./registry.js";
+import type { ExternalToolInput } from "@tachyon/engine/externalTools/registry.js";
+import { externalToolSessionId } from "@tachyon/engine/externalTools/registry.js";
 
 export function appendExternalToolEvent(workspaceRoot: string, event: ExternalToolInput & { event: "launch" | "exit" }): string | undefined {
   const id = event.id ?? externalToolSessionId(event);

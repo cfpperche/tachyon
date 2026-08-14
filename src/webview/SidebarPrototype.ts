@@ -1,6 +1,6 @@
 import path from "node:path";
 import * as vscode from "vscode";
-import { sharedGlobalSettings } from "../config/globalSettings.js";
+import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 import { isAgentRow, type FleetVM, type AgentVM } from "@tachyon/shared/sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
 import { isSectionId } from "../sections/resolveSection.js";

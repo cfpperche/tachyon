@@ -9,8 +9,8 @@
  * stays a thin shell (logic in the vscode layer escapes CI).
  */
 
-import { SUPPORTED_RUNTIMES, type Runtime } from "./manifest.js";
-import { parseLockfile, type PluginLock, type ExternalToolReqLock } from "./lockfile.js";
+import { SUPPORTED_RUNTIMES, type Runtime } from "@tachyon/engine/plugins/manifest.js";
+import { parseLockfile, type PluginLock, type ExternalToolReqLock } from "@tachyon/engine/plugins/lockfile.js";
 
 /** A plugin's freshness relative to its source. `unknown` = not yet checked (no update-check injected). */
 export type PluginStatusKind =

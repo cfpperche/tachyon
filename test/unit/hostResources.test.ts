@@ -5,7 +5,7 @@ import {
   readHostMemory,
   recommendVitestMaxWorkers,
   type HostMemorySnapshot,
-} from "../../src/host/hostResources.js";
+} from "@tachyon/engine/host/hostResources.js";
 import hostResourceSizing from "@tachyon/shared/host-resource-sizing.cjs";
 import hostResourceCostInputs from "@tachyon/shared/host-resource-cost-inputs.cjs";
 

@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ActivityLog } from "../../src/activity/logStore.js";
-import { ActivityLogWriter } from "../../src/activity/logWriter.js";
-import { resolveOpencodeStorageSession } from "../../src/workspace/opencodeStorage.js";
+import { ActivityLog } from "@tachyon/engine/activity/logStore.js";
+import { ActivityLogWriter } from "@tachyon/engine/activity/logWriter.js";
+import { resolveOpencodeStorageSession } from "@tachyon/engine/workspace/opencodeStorage.js";
 
 describe("container-generated delegation behavior", () => {
   it("an opencode agent's storage messages are normalized into Activity events attributed to that agent", async () => {

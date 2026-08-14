@@ -7,7 +7,7 @@ import {
   authRequiredOf,
   runtimeLoginCommand,
 } from "@tachyon/shared/runtime/authRequired.js";
-import { authRequiredLaunchNotice, loginFinishedNotice } from "../../src/workspace/authRequiredNotice.js";
+import { authRequiredLaunchNotice, loginFinishedNotice } from "@tachyon/engine/workspace/authRequiredNotice.js";
 import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
 import { showNotificationActions } from "../../src/workspace/NotificationService.js";
 import {

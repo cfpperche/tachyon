@@ -7,7 +7,7 @@ import {
   readApprovalRequest,
   resolveApproval,
   writeApprovalRequest,
-} from "../../src/bridge/approvalRequest.js";
+} from "@tachyon/engine/bridge/approvalRequest.js";
 
 /**
  * t-7a306a — completing the pin is a SECONDARY step, and both halves of that were wrong.

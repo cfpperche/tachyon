@@ -7,7 +7,7 @@ import {
   skillReferenceIdFor,
   type SkillAuthorizationState,
   type SkillOrigin,
-} from "../../src/config/agentSkillAuthorization.js";
+} from "@tachyon/engine/config/agentSkillAuthorization.js";
 
 /**
  * t-5498a6 — authorizing a skill, which nobody could do before.
@@ -300,7 +300,7 @@ describe("t-5498a6 — revoking has to take the selection with it", () => {
  */
 describe("t-5498a6 — emitted records match the persisted schemas", () => {
   it("uses the grant adapters and the reference kind the schemas actually accept", () => {
-    const authority = fs.readFileSync(path.join(process.cwd(), "src/config/agentProfileAuthority.ts"), "utf8");
+    const authority = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/config/agentProfileAuthority.ts"), "utf8");
     const adapters = /adapter: z\.enum\(\[([^\]]*)\]\)/.exec(authority);
     expect(adapters).toBeTruthy();
     for (const adapter of ["claude", "codex", "grok", "pi"]) {
@@ -311,7 +311,7 @@ describe("t-5498a6 — emitted records match the persisted schemas", () => {
     const grantKinds = /kind: z\.enum\(\[([^\]]*)\]\)/.exec(authority);
     expect(grantKinds![1]).toContain(`"${result.ok ? result.state.grants[0]!.kind : ""}"`);
 
-    const schema = fs.readFileSync(path.join(process.cwd(), "src/config/agentProfileSchema.ts"), "utf8");
+    const schema = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/config/agentProfileSchema.ts"), "utf8");
     expect(schema).toContain('scope: z.enum(["profile", "project", "product"])');
     expect(schema).toContain('mode: z.enum(["pinned", "floating"])');
   });
@@ -319,7 +319,7 @@ describe("t-5498a6 — emitted records match the persisted schemas", () => {
   it("honours the schema rule that a profile-scoped reference is owned by its own agent", () => {
     // agentProfileSchema.ts refines: scope === "profile" requires owner === profile.agentId. A copied
     // runtime-home skill is the only origin that lands there, so the rule is enforced at this door.
-    const schema = fs.readFileSync(path.join(process.cwd(), "src/config/agentProfileSchema.ts"), "utf8");
+    const schema = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/config/agentProfileSchema.ts"), "utf8");
     expect(schema).toContain('reference.scope === "profile" && reference.owner !== profile.agentId');
 
     const result = authorizeWorkspaceSkill(empty, {

@@ -6,7 +6,7 @@ import {
   isNativeSuppressionConfirmed,
   nativeLaneSuppressionCapability,
 } from "../../src/runtime/nativeLaneSuppression.js";
-import { nativeMemoryCapability } from "../../src/runtime/nativeMemory.js";
+import { nativeMemoryCapability } from "@tachyon/engine/runtime/nativeMemory.js";
 
 /**
  * SDD 490 Fatia C — combined native lane suppression registry.

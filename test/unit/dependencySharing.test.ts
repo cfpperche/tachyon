@@ -10,7 +10,7 @@ import {
   planDependencySharing,
   shareDependencies,
   type LockfileFingerprint,
-} from "../../src/worktree/dependencySharing.js";
+} from "@tachyon/engine/worktree/dependencySharing.js";
 
 /**
  * t-3f93b4 — the delegated child that installs 478 MB by itself.

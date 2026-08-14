@@ -15,9 +15,9 @@ import {
   GROK_NATIVE_CONFIG_FAMILY_KEYS,
   GROK_PROJECTED_KEY_ORDER,
   GROK_WITHDRAWN_NATIVE_CONFIG_KEYS,
-} from "../../src/config/grokNativeConfigProjection.js";
-import { renderGrokCanonicalConfig } from "../../src/harness/HarnessManager.js";
-import type { AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
+} from "@tachyon/engine/config/grokNativeConfigProjection.js";
+import { renderGrokCanonicalConfig } from "@tachyon/engine/harness/HarnessManager.js";
+import type { AgentProfileV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 
 const base: ResolvedAgentNativeConfigProjection = { adapter: "grok", selectors: {} };
 

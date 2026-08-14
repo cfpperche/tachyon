@@ -43,7 +43,7 @@ export const refreshAuthorizableCapabilitiesMessage = (agent: string) =>
 /** Host → webview: the two candidate lists, queried fresh rather than read off the snapshot. */
 export const authorizableCapabilitiesMessage = (
   agent: string,
-  capabilities: import("../../config/agentCapabilityCandidates.js").AuthorizableCapabilities,
+  capabilities: import("@tachyon/engine/config/agentCapabilityCandidates.js").AuthorizableCapabilities,
 ) => envelope({ type: "authorizableCapabilities" as const, agent, capabilities });
 export const refreshAgentProfileMessage = (agent: string) =>
   envelope({ type: "refreshAgentProfile" as const, agent });

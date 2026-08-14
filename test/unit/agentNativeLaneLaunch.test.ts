@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyNativeLaneSuppressionCommand } from "../../src/agents/AgentManager.js";
+import { applyNativeLaneSuppressionCommand } from "@tachyon/engine/agents/AgentManager.js";
 
 describe("t-e3d14c — measured native-lane launch controls", () => {
   it("applies Claude's measured project-instruction suppression", () => {

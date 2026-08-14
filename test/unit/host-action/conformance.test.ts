@@ -15,7 +15,7 @@ import {
   type HostActionExecutionEnvelope,
   type HostActionPort,
   type HostActionPortResult,
-} from "../../../src/host-action/index.js";
+} from "@tachyon/engine/host-action/index.js";
 
 const reloadAction = hostActionName("reloadWindow");
 

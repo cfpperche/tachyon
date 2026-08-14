@@ -5,10 +5,10 @@
  */
 
 import type { BoardVM } from "../../../src/webview/board/messages";
-import type { BoardSnapshot } from "../../../src/tasks/boardSnapshot";
+import type { BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
 import type { Task, TaskView } from "@tachyon/shared/tasks/types";
-import type { ValidationSummary } from "../../../src/validations/ValidationStore";
-import type { ValidationCandidate } from "../../../src/validations/types";
+import type { ValidationSummary } from "@tachyon/engine/validations/ValidationStore.js";
+import type { ValidationCandidate } from "@tachyon/engine/validations/types.js";
 import type { Fixture } from "../routes";
 
 const now = "2026-07-03T20:05:00.000Z";

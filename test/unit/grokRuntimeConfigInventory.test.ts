@@ -11,7 +11,7 @@ import {
   grokDocumentScope,
   inspectGrokRuntimeConfig,
 } from "../../src/runtimeConfig/grokInventory.js";
-import type { AgentDef } from "../../src/config/loadConfig.js";
+import type { AgentDef } from "@tachyon/engine/config/loadConfig.js";
 
 const roots: string[] = [];
 

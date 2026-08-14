@@ -2,8 +2,8 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { GROK_NATIVE_CONFIG_FAMILY_KEYS } from "../../src/config/grokNativeConfigProjection.js";
-import { grokSessionReader } from "../../src/runtimeOps/grokSessionReader.js";
+import { GROK_NATIVE_CONFIG_FAMILY_KEYS } from "@tachyon/engine/config/grokNativeConfigProjection.js";
+import { grokSessionReader } from "@tachyon/engine/runtimeOps/grokSessionReader.js";
 
 /**
  * t-a5d827 — the Grok reader, driven by the files and argv a real session actually has.
@@ -297,7 +297,7 @@ describe("t-a5d827 — the Grok projectable-key list matches the projector", () 
 
     // And the source file must not re-list the keys as string literals next to projectableKeys —
     // a second list is the defect this import exists to prevent.
-    const source = fs.readFileSync(path.join(process.cwd(), "src/runtimeOps/grokSessionReader.ts"), "utf8");
+    const source = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/runtimeOps/grokSessionReader.ts"), "utf8");
     expect(source).toContain("GROK_NATIVE_CONFIG_FAMILY_KEYS");
   });
 });

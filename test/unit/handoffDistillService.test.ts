@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
 import {
   listHandoffDistillTargets,
   startHandoffDistillation,
   type HandoffDistillOperations,
-} from "../../src/handoff/handoffDistillService.js";
+} from "@tachyon/engine/handoff/handoffDistillService.js";
 
 describe("handoff distillation service", () => {
   it("sends once to an already-live declared target without a lifecycle transition", async () => {

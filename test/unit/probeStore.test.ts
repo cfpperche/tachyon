@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ProbeStore, mintRunId, type ProbeRunMeta } from "../../src/probe/ProbeStore.js";
-import { envelopeFor, type ProbeResult } from "../../src/probe/taxonomy.js";
+import { ProbeStore, mintRunId, type ProbeRunMeta } from "@tachyon/engine/probe/ProbeStore.js";
+import { envelopeFor, type ProbeResult } from "@tachyon/engine/probe/taxonomy.js";
 
 let root: string;
 beforeEach(async () => {

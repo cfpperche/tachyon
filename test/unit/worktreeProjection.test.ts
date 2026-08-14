@@ -8,8 +8,8 @@ import {
   describeToolingProjection,
   projectPluginTooling,
   resolveAuthorityRoot,
-} from "../../src/plugins/worktreeProjection.js";
-import { LOCKFILE_REL_PATH } from "../../src/plugins/lockfile.js";
+} from "@tachyon/engine/plugins/worktreeProjection.js";
+import { LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 
 /**
  * t-36182f — the measured defect: `agent-browser` is installed and healthy in the primary checkout

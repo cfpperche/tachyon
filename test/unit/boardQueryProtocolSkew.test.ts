@@ -13,7 +13,7 @@
  * mis-read becomes a wrong answer instead of an error.
  */
 import { describe, expect, it } from "vitest";
-import { ENGINE_SHELL_PROTOCOL, isWorkspaceQueryV1 } from "../../src/engine-service/protocol.js";
+import { ENGINE_SHELL_PROTOCOL, isWorkspaceQueryV1 } from "@tachyon/engine/engine-service/protocol.js";
 
 const boardQuery = (input: Record<string, unknown>) => ({ schemaVersion: 1, method: "task.board", input });
 

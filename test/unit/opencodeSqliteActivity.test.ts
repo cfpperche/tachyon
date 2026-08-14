@@ -3,9 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { OpencodeStorageReader, resolveOpencodeStore } from "../../src/activity/opencodeStorageReader.js";
-import { ActivityLog } from "../../src/activity/logStore.js";
-import { resolveOpencodeId } from "../../src/resume/resolvers.js";
+import { OpencodeStorageReader, resolveOpencodeStore } from "@tachyon/engine/activity/opencodeStorageReader.js";
+import { ActivityLog } from "@tachyon/engine/activity/logStore.js";
+import { resolveOpencodeId } from "@tachyon/engine/resume/resolvers.js";
 
 /**
  * Bytes captured verbatim from a real `~/.local/share/opencode/opencode.db` (opencode 1.18.5, the

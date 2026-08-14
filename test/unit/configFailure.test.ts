@@ -8,17 +8,17 @@ import {
   lkgSpawnRefusalMessage,
   toConfigErrorVM,
   type ConfigFailure,
-} from "../../src/config/configFailure.js";
+} from "@tachyon/engine/config/configFailure.js";
 import {
   parseConfigLkg,
   readConfigLkg,
   snapshotFromConfig,
   writeConfigLkg,
   type ConfigLkgSnapshot,
-} from "../../src/config/configLkg.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import type { SessionRecord } from "../../src/resume/SessionLedger.js";
-import { buildDoctorReport, formatDoctorReport } from "../../src/workspace/doctorReport.js";
+} from "@tachyon/engine/config/configLkg.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import { buildDoctorReport, formatDoctorReport } from "@tachyon/engine/workspace/doctorReport.js";
 
 function tmpRoot(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-fail-visible-"));

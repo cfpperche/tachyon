@@ -1,4 +1,4 @@
-import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
+import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import {
   PIPELINE_DOMAIN_MESSAGE_NAMES,
   canDiscardPipelineFields,

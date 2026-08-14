@@ -5,8 +5,8 @@
  * IO) → unit-tested. Reuses the spec-266 semver helpers (parseSemverTag/compareSemver) — NOT the transitive
  * `semver` lib. Caret/tilde are the common author ranges; 0.x caret is treated major-wise (approximate, documented).
  */
-import type { PluginDep } from "./manifest.js";
-import type { Lockfile } from "./lockfile.js";
+import type { PluginDep } from "@tachyon/engine/plugins/manifest.js";
+import type { Lockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { parseSemverTag, compareSemver } from "./source.js";
 
 export type DependencyStatus = "satisfied" | "out-of-range" | "missing";

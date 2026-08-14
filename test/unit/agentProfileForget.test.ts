@@ -3,17 +3,17 @@ import os from "node:os";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AgentProfileForgetSnapshot } from "../../src/agents/AgentManager.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
+import type { AgentProfileForgetSnapshot } from "@tachyon/engine/agents/AgentManager.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
 import {
   agentProfileForgetBlocked,
   commitAgentProfileForget,
   reconcileAgentProfileForgets,
   retiredAgentProfileRoot,
-} from "../../src/config/agentProfileForget.js";
-import { commitAgentProfileLifecycle } from "../../src/config/agentProfileLifecycle.js";
-import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
-import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
+} from "@tachyon/engine/config/agentProfileForget.js";
+import { commitAgentProfileLifecycle } from "@tachyon/engine/config/agentProfileLifecycle.js";
+import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
+import type { AgentProfileAuthorityPort } from "@tachyon/engine/config/agentProfileTransactions.js";
 
 const roots: string[] = [];
 
@@ -138,7 +138,7 @@ describe("canonical agent profile forget", () => {
       activateState: () => undefined,
     });
 
-    const ownerAfter = await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    const ownerAfter = await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }));
     expect(ownerAfter.profile.ownership).toBeUndefined();
     expect(input.authority.records.get("boss")?.revision).toBe(`lifecycle-${result.txid}`);
@@ -175,7 +175,7 @@ describe("canonical agent profile forget", () => {
       onPhase: (phase) => { if (phase === "authority-retired") throw new Error("interrupt"); },
     })).rejects.toThrow("interrupt");
 
-    expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    expect((await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }))).profile.ownership?.subagents)
       .toEqual(["reviewer"]);
 
@@ -185,7 +185,7 @@ describe("canonical agent profile forget", () => {
       live: input.live,
       activateState: () => undefined,
     })).resolves.toMatchObject({ reconciled: [expect.any(String)], degraded: [] });
-    expect((await import("../../src/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
+    expect((await import("@tachyon/engine/config/agentProfileLifecycle.js").then(({ inspectAgentProfileLifecycle }) =>
       inspectAgentProfileLifecycle({ workspaceRoot: input.root, agentName: "boss", authority: input.authority }))).profile.ownership)
       .toBeUndefined();
   });

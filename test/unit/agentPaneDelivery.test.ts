@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { deliverAgentPaneText } from "../../src/webview/agentPaneDelivery.js";
-import { TmuxService, type ExecResult, type SubmitReceipt } from "../../src/tmux/TmuxService.js";
-import { looksLikeStrandedSubmittedLine } from "../../src/tmux/TmuxService.js";
+import { TmuxService, type ExecResult, type SubmitReceipt } from "@tachyon/engine/tmux/TmuxService.js";
+import { looksLikeStrandedSubmittedLine } from "@tachyon/engine/tmux/TmuxService.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 
 /**

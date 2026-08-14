@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { NotifyLevel } from "../bridge/tools.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
 import {
   notify as serviceNotify,
   setNotificationProvider,

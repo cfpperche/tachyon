@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeGrok } from "../../src/activity/grokNormalizer.js";
+import { normalizeGrok } from "@tachyon/engine/activity/grokNormalizer.js";
 
 const line = (rec: unknown): string => JSON.stringify(rec);
 

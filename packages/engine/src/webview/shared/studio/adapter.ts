@@ -10,7 +10,7 @@
  * with zero DOM or extension-host dependency.
  */
 
-import type { StudioErrorSource, StudioValidationResult } from "./errorTaxonomy";
+import type { StudioErrorSource, StudioValidationResult } from "./errorTaxonomyTypes.js";
 
 /** `none`: no CAS, last-write-wins. `cas`: the host tracks a per-load revision (`revisionOf`) and echoes it
  *  back as the save precondition; a `save()` returning `status: "conflict"` means the revision moved

@@ -12,7 +12,7 @@ import {
   readPaneTranscript,
   PANE_TRANSCRIPT_MAX_BYTES,
   PANE_TRANSCRIPT_RETAIN_BYTES,
-} from "../../src/agents/paneTranscript.js";
+} from "@tachyon/engine/agents/paneTranscript.js";
 
 describe("paneTranscript (t-6a6a00 — durable per-agent pane transcripts)", () => {
   let ws: string;

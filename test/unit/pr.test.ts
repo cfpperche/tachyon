@@ -12,8 +12,8 @@ import {
   isWorktreeDirty,
   type CliExec,
   type CliResult,
-} from "../../src/worktree/pr.js";
-import { createGitExec, type GitExec } from "../../src/worktree/WorktreeManager.js";
+} from "@tachyon/engine/worktree/pr.js";
+import { createGitExec, type GitExec } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 const ok = (stdout = ""): CliResult => ({ stdout, stderr: "", code: 0 });
 const fail = (stderr = "", code = 1): CliResult => ({ stdout: "", stderr, code });

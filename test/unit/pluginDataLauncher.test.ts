@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { resolveDataForAccess, DATA_STORE_REL } from "../../src/plugins/dataLauncher.js";
-import { serializeLockfile, LOCKFILE_REL_PATH, type Lockfile, type DataLock } from "../../src/plugins/lockfile.js";
+import { serializeLockfile, LOCKFILE_REL_PATH, type Lockfile, type DataLock } from "@tachyon/engine/plugins/lockfile.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";

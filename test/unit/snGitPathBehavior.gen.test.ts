@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveGitBinary, resolveGitBinaryForHost, gitNotFoundError } from "../../src/worktree/gitBinary.js";
+import { resolveGitBinary, resolveGitBinaryForHost, gitNotFoundError } from "@tachyon/engine/worktree/gitBinary.js";
 
 describe("container-generated delegation behavior", () => {
   it("git is resolved via setting or common-location probe when not on PATH, with a clear PATH-naming error", () => {

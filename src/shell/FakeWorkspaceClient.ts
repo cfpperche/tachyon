@@ -14,8 +14,8 @@ import {
   type WorkspaceQueryV1,
   type WorkspaceEventV1,
   type WorkspaceSnapshotEnvelopeV1,
-} from "../engine-service/protocol.js";
-import { workspaceCommandFingerprint } from "../engine-service/commandIdentity.js";
+} from "@tachyon/engine/engine-service/protocol.js";
+import { workspaceCommandFingerprint } from "@tachyon/engine/engine-service/commandIdentity.js";
 import type { EngineCurrency } from "../engine-service/engineCurrency.js";
 import {
   assertWorkspacePresentationIdentity,
@@ -23,7 +23,7 @@ import {
   type WorkspacePresentationSnapshotV1,
 } from "../runtime-api/workspaceProjection.js";
 import { createHash } from "node:crypto";
-import type { StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
+import type { StagedPayloadRefV1 } from "@tachyon/engine/runtime-api/stagedPayload.js";
 import {
   type WorkspaceClient,
   type WorkspaceClientListener,

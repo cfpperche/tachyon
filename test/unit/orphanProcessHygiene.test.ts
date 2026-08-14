@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
-import { scanOrphanedWorktreeProcesses, type OrphanProcessHygieneFs } from "../../src/worktree/orphanProcessHygiene.js";
+import { scanOrphanedWorktreeProcesses, type OrphanProcessHygieneFs } from "@tachyon/engine/worktree/orphanProcessHygiene.js";
 
 function procFixture(entries: Record<string, { cwd?: string; command?: string }>): OrphanProcessHygieneFs {
   return {

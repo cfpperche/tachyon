@@ -3,7 +3,7 @@ import {
   buildCompanionMobileOpenUrl,
   buildCompanionPairQrPayload,
   companionPairQrDataUrl,
-} from "../../src/companion/pairQr.js";
+} from "@tachyon/engine/companion/pairQr.js";
 
 describe("companion pair QR (SDD 422 / t-0e1f58)", () => {
   it("builds versioned JSON payload with baseUrls", () => {

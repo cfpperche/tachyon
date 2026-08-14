@@ -1,5 +1,5 @@
 import { useMemo, useState } from "preact/hooks";
-import type { ValidationOutcome } from "../../validations/types";
+import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import type { ValidationExecutorFilter } from "./messages";
 import type { ValidationsViewModel, ValidationViewItem } from "./viewModel";
 import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textarea } from "../shared/ui";

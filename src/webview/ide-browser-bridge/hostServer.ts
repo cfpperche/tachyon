@@ -11,7 +11,7 @@ import * as fs from "node:fs";
 import * as http from "node:http";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { IdeBrowserEnvelope, IdeBrowserInstanceFile, IdeBrowserStatus } from "../../ide-browser/protocol.js";
+import type { IdeBrowserEnvelope, IdeBrowserInstanceFile, IdeBrowserStatus } from "@tachyon/engine/ide-browser/protocol.js";
 import {
   IDE_BROWSER_INSTANCE_HEADER,
   IDE_BROWSER_INSTANCE_HEARTBEAT_MS,
@@ -19,8 +19,8 @@ import {
   IDE_BROWSER_ROUTES,
   IDE_BROWSER_TOKEN_HEADER,
   decodeIdeBrowserHttpRequest,
-} from "../../ide-browser/protocol.js";
-import { sweepDeadIdeBrowserInstances } from "../../ide-browser/client.js";
+} from "@tachyon/engine/ide-browser/protocol.js";
+import { sweepDeadIdeBrowserInstances } from "@tachyon/engine/ide-browser/client.js";
 
 export type IdeBrowserHostRouteHandlers = {
   getStatus: () => IdeBrowserStatus;

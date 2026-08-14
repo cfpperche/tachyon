@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { adversarialReview, composeBrief, extractJsonObject, factualVerify, freeform, getArchetype } from "../../src/probe/archetypes.js";
+import { adversarialReview, composeBrief, extractJsonObject, factualVerify, freeform, getArchetype } from "@tachyon/engine/probe/archetypes.js";
 
 describe("archetypes — composeBrief folds the framing guard in (D7)", () => {
   it("adversarial-review prepends the anti-bias guard + the output contract", () => {

@@ -3,7 +3,7 @@ import {
   DaemonTerminalPresentation,
   type TerminalRestoreEntry,
   type TerminalUiRequest,
-} from "../../src/workspace/TerminalPresentation.js";
+} from "@tachyon/engine/workspace/TerminalPresentation.js";
 
 /**
  * `t-9b5acb` — what the engine restores when an editor shell attaches, and what it must not.

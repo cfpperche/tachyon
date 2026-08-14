@@ -15,17 +15,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { classifyManagedWorktree, type ClassifyWorktreeDeps } from "../../src/worktree/classify.js";
-import { ManagedWorktreeService } from "../../src/worktree/ManagedWorktreeService.js";
+import { classifyManagedWorktree, type ClassifyWorktreeDeps } from "@tachyon/engine/worktree/classify.js";
+import { ManagedWorktreeService } from "@tachyon/engine/worktree/ManagedWorktreeService.js";
 import {
   WorktreeManager,
   type GitExec,
   type GitResult,
   type WorktreeOccupancy,
   type WorktreeStatus,
-} from "../../src/worktree/WorktreeManager.js";
-import type { ManagedWorktreeEntry } from "../../src/worktree/managedWorktree.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { ManagedWorktreeEntry } from "@tachyon/engine/worktree/managedWorktree.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 function git(args: string[], cwd: string): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });

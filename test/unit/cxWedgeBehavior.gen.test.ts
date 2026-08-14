@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxError, TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxError, TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 
 const repoRoot = path.resolve(__dirname, "../..");
 
@@ -31,7 +31,7 @@ const SYNC_CHILD_PROCESS_ALLOWLIST: Record<string, string> = {
 };
 
 function syncChildProcessOffenders(textOverrides: Record<string, string> = {}): string[] {
-  const files = sourceFiles("src");
+  const files = [...sourceFiles("src"), ...sourceFiles("packages/engine/src")];
   return files.flatMap((file) => {
     const rel = path.relative(repoRoot, file).split(path.sep).join(path.posix.sep);
     if (rel in SYNC_CHILD_PROCESS_ALLOWLIST) return [];
@@ -46,9 +46,9 @@ describe("container-generated delegation behavior", () => {
     expect(syncChildProcessOffenders()).toEqual([]);
     expect(
       syncChildProcessOffenders({
-        "src/agents/AgentManager.ts": `${fs.readFileSync(path.join(repoRoot, "src/agents/AgentManager.ts"), "utf8")}\nspawnSync("git", ["status"]);\n`,
+        "packages/engine/src/agents/AgentManager.ts": `${fs.readFileSync(path.join(repoRoot, "packages/engine/src/agents/AgentManager.ts"), "utf8")}\nspawnSync("git", ["status"]);\n`,
       }),
-    ).toEqual([expect.stringMatching(/^src\/agents\/AgentManager\.ts:/)]);
+    ).toEqual([expect.stringMatching(/^packages\/engine\/src\/agents\/AgentManager\.ts:/)]);
 
     vi.useFakeTimers();
     const kill = vi.fn();

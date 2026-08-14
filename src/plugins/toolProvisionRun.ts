@@ -14,7 +14,7 @@ import { materializeLauncher } from "./toolLauncher.js";
 import { materializeDataResolver } from "./dataLauncher.js";
 import { materializeExternalResolver } from "./externalTool.js";
 import { ToolTransaction } from "./toolTransaction.js";
-import { parseLockfile, serializeLockfile, LOCKFILE_REL_PATH, physicalToolKey, physicalDataKey, type ToolLock, type DataLock, type LauncherLock, type Lockfile } from "./lockfile.js";
+import { parseLockfile, serializeLockfile, LOCKFILE_REL_PATH, physicalToolKey, physicalDataKey, type ToolLock, type DataLock, type LauncherLock, type Lockfile } from "@tachyon/engine/plugins/lockfile.js";
 import type { ToolPlan } from "./toolPlan.js";
 import type { DataPlan } from "./dataPlan.js";
 

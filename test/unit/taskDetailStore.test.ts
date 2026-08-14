@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TaskStore, mintTaskId } from "../../src/tasks/TaskStore.js";
-import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
-import { TaskDetailStore, hashBody, TASK_DETAIL_SCHEMA_VERSION } from "../../src/tasks/TaskDetailStore.js";
+import { TaskStore, mintTaskId } from "@tachyon/engine/tasks/TaskStore.js";
+import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
+import { TaskDetailStore, hashBody, TASK_DETAIL_SCHEMA_VERSION } from "@tachyon/engine/tasks/TaskDetailStore.js";
 import { EMPTY_DOC } from "../../src/webview/rich-doc/document.js";
 
 let root: string;

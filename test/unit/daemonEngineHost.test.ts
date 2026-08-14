@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DaemonEngineHost, EngineUiUnavailableError, type DaemonHostEvent, type DaemonUiRequest } from "../../src/workspace/DaemonEngineHost.js";
-import { Workspace } from "../../src/workspace/Workspace.js";
-import { TmuxService } from "../../src/tmux/TmuxService.js";
-import { routeHumanApprovalRequest } from "../../src/engine-service/engineService.js";
+import { DaemonEngineHost, EngineUiUnavailableError, type DaemonHostEvent, type DaemonUiRequest } from "@tachyon/engine/workspace/DaemonEngineHost.js";
+import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import { TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
+import { routeHumanApprovalRequest } from "@tachyon/engine/engine-service/engineService.js";
 
 const roots: string[] = [];
 const hosts: DaemonEngineHost[] = [];

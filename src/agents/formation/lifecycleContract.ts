@@ -1,5 +1,5 @@
 import { FORMATION_GOVERNED_LANES } from "./sessionPolicy.js";
-import type { FormationLaneName } from "./domain.js";
+import type { FormationLaneName } from "@tachyon/engine/agents/formation/domain.js";
 
 export const FORMATION_LIFECYCLE_CONTRACT_VERSION = 1 as const;
 

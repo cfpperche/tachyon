@@ -5,7 +5,7 @@
  * builder to capture from, so these are typed synthetic states covering the three render branches.)
  */
 
-import type { ProbeView } from "../../../src/probe/probeView";
+import type { ProbeView } from "@tachyon/engine/probe/probeView.js";
 import type { ProbesVM } from "../../../src/webview/probes/messages";
 import type { Fixture } from "../routes";
 

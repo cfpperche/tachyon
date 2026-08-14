@@ -607,7 +607,7 @@ export interface TachyonConfig {
      * display-only mark does not earn a doubled config surface. The scalar spelling leaves room: a
      * later mapping can be accepted beside it without changing what a number means.
      */
-    humanInbox?: { staleAfterHours?: import("../humanInbox/model.js").StaleAfter };
+    humanInbox?: { staleAfterHours?: import("../humanInbox/types.js").StaleAfter };
     /**
      * t-585d5c — how long a parented agent may sit idle before Tachyon nudges its parent.
      *

@@ -1,11 +1,11 @@
 import * as vscode from "vscode";
-import type { AgentInstanceLifetime } from "../../resume/SessionLedger.js";
+import type { AgentInstanceLifetime } from "@tachyon/engine/resume/SessionLedger.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PluginActionBroker, type PluginActionBrokerResult } from "./broker.js";
 import { PluginFleetProjectionProvider } from "./projectionProvider.js";
-import { loadManifest, type ViewDecl } from "../manifest.js";
-import { LOCKFILE_REL_PATH, parseLockfile, type MaterializedTarget } from "../lockfile.js";
+import { loadManifest, type ViewDecl } from "@tachyon/engine/plugins/manifest.js";
+import { LOCKFILE_REL_PATH, parseLockfile, type MaterializedTarget } from "@tachyon/engine/plugins/lockfile.js";
 import {
   pluginFleetPresentation,
   type WorkspacePresentationTarget,

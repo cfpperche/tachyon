@@ -18,7 +18,7 @@ import {
   resolveApproval,
   writeApprovalRequest,
   type ApprovalRequest,
-} from "../../src/bridge/approvalRequest.js";
+} from "@tachyon/engine/bridge/approvalRequest.js";
 
 /**
  * spec t-7d8bdf Phase 1 — the human-approval protocol BACKBONE, proven at the level the security

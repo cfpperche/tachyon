@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { createClaudeAdapter, extractClaudeResult } from "../../src/probe/adapters/claude.js";
-import type { RawOutcome } from "../../src/probe/adapters/types.js";
+import { createClaudeAdapter, extractClaudeResult } from "@tachyon/engine/probe/adapters/claude.js";
+import type { RawOutcome } from "@tachyon/engine/probe/adapters/types.js";
 
 const adapter = createClaudeAdapter({ versionProbe: async () => "1.2.3 (test)" });
 

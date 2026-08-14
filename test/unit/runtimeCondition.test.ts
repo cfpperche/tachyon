@@ -3,11 +3,11 @@ import {
   NO_QUOTA_CHANNEL,
   projectRuntimeCondition,
   type RuntimeConditionInputV1,
-} from "../../src/runtimeOps/runtimeCondition.js";
+} from "@tachyon/engine/runtimeOps/runtimeCondition.js";
 import { SUPPORTED_AGENT_RUNTIMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
-import { RUNTIME_NATIVE_MEMORY_REGISTRY } from "../../src/runtime/nativeMemory.js";
-import type { CollectorEnvelopeV1 } from "../../src/runtimeObservability/types.js";
-import type { ProviderQuotaChannelDescriptorV1 } from "../../src/runtimeObservability/service.js";
+import { RUNTIME_NATIVE_MEMORY_REGISTRY } from "@tachyon/engine/runtime/nativeMemory.js";
+import type { CollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/types.js";
+import type { ProviderQuotaChannelDescriptorV1 } from "@tachyon/engine/runtimeObservability/service.js";
 
 const AT = "2026-08-02T18:00:00.000Z";
 
@@ -203,7 +203,7 @@ describe("projectRuntimeCondition", () => {
     });
     expect(pi.measured.origin).toEqual({
       registry: "RUNTIME_NATIVE_MEMORY_REGISTRY",
-      module: "src/runtime/nativeMemory.ts",
+      module: "packages/engine/src/runtime/nativeMemory.ts",
     });
   });
 

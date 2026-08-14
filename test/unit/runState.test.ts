@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadPipeline, type PipelineDef } from "../../src/pipeline/loadPipeline.js";
+import { loadPipeline, type PipelineDef } from "@tachyon/engine/pipeline/loadPipeline.js";
 import {
   initRun,
   runnableNodes,
@@ -12,7 +12,7 @@ import {
   recordHandoff,
   pruneHandoffs,
   upstreamHandoffs,
-} from "../../src/pipeline/runState.js";
+} from "@tachyon/engine/pipeline/runState.js";
 
 const AGENTS = new Set(["researcher", "coder", "reviewer"]);
 

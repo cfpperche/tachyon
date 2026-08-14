@@ -5,12 +5,12 @@ import net from "node:net";
 import path from "node:path";
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
-import { EngineControlClient } from "../../src/engine-service/controlClient.js";
-import { StagedPayloadStore } from "../../src/engine-service/stagedPayloadStore.js";
-import { ENGINE_SHELL_PROTOCOL, type EngineServiceIdentityV1, type EngineShellHelloV1, type WorkspaceEventV1 } from "../../src/engine-service/protocol.js";
-import { encodePinStudioStagedPayloadV1 } from "../../src/runtime-api/pinStudioCommands.js";
-import { encodeTaskStudioStagedPayloadV1 } from "../../src/runtime-api/taskStudioCommands.js";
-import { PinStore } from "../../src/pins/PinStore.js";
+import { EngineControlClient } from "@tachyon/engine/engine-service/controlClient.js";
+import { StagedPayloadStore } from "@tachyon/engine/engine-service/stagedPayloadStore.js";
+import { ENGINE_SHELL_PROTOCOL, type EngineServiceIdentityV1, type EngineShellHelloV1, type WorkspaceEventV1 } from "@tachyon/engine/engine-service/protocol.js";
+import { encodePinStudioStagedPayloadV1 } from "@tachyon/engine/runtime-api/pinStudioCommands.js";
+import { encodeTaskStudioStagedPayloadV1 } from "@tachyon/engine/runtime-api/taskStudioCommands.js";
+import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import {
   TmuxService,
   isolatedArgs,
@@ -19,13 +19,13 @@ import {
   workspaceHash,
   type ExecResult,
   type PaneSnapshot,
-} from "../../src/tmux/TmuxService.js";
+} from "@tachyon/engine/tmux/TmuxService.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
-import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
-import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
+import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore.js";
+import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
@@ -128,7 +128,7 @@ describe("daemon engine service", () => {
     const testBin = path.join(root, "test-bin");
     fs.mkdirSync(testBin, { mode: 0o700 });
     // t-29962c — the fixture runtime MUST answer `--version` and exit. `runtime-ops.view` probes
-    // `<runtime> --version` (src/runtimeOps/snapshotService.ts:401) with a 10_000ms timeout, and a
+    // `<runtime> --version` (packages/engine/src/runtimeOps/snapshotService.ts:401) with a 10_000ms timeout, and a
     // bare `exec sh` DROPS the argument and then blocks reading execFile's still-open stdin pipe —
     // so the probe burned the whole timeout. Measured: that single query was 10.4s of this test's
     // ~15s, against the test's own 20_000ms cap. ~5s of headroom for a 16-worker gate is not
@@ -897,8 +897,8 @@ describe("daemon engine service", () => {
  * chrome for the attention monitor to read. What the monitor produces for it is therefore not an
  * observation, it is the SYNTHETIC seed state — `AttentionMonitor.runTick` creates a fresh agent's
  * snapshot at `state: "working"` (src/attention/AttentionMonitor.ts:447) and cannot leave it before
- * `silenceSec` of pane stability (8s: src/config/loadConfig.ts:32, agentProfileProjection.ts:128),
- * sampled on a 3s grid (ATTENTION_POLL_MS, src/workspace/Workspace.ts:317). `prompt.inject` with
+ * `silenceSec` of pane stability (8s: packages/engine/src/config/loadConfig.ts:32, agentProfileProjection.ts:128),
+ * sampled on a 3s grid (ATTENTION_POLL_MS, packages/engine/src/workspace/Workspace.ts:317). `prompt.inject` with
  * `submit: true` refuses while the state is `working` (extensionOperationService.ts:341 →
  * injectFlow.ts:42).
  *

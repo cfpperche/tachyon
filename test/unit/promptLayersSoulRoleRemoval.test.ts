@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import crypto from "node:crypto";
-import { composeAgentPrompt } from "../../src/agents/promptLayers.js";
+import { composeAgentPrompt } from "@tachyon/engine/agents/promptLayers.js";
 
 describe("prompt composition without Soul or Role", () => {
   it("keeps the remaining layers in their established order and omits removed manifest facts", () => {

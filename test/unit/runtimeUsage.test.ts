@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRuntimeUsageRows, buildRuntimeUsageSource } from "../../src/runtimeUsage/model.js";
+import { buildRuntimeUsageRows, buildRuntimeUsageSource } from "@tachyon/engine/runtimeUsage/model.js";
 
 describe("buildRuntimeUsageSource", () => {
   it("uses the latest Codex cumulative token snapshot instead of summing snapshots", () => {

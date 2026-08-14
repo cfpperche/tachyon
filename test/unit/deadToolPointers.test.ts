@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { registerTools } from "../../src/bridge/tools.js";
-import { renderPrimer } from "../../src/bridge/primer.js";
-import { hostFallbackLine } from "../../src/workspace/GatedCompletionMonitor.js";
+import { registerTools } from "@tachyon/engine/bridge/tools.js";
+import { renderPrimer } from "@tachyon/engine/bridge/primer.js";
+import { hostFallbackLine } from "@tachyon/engine/workspace/GatedCompletionMonitor.js";
 
 /**
  * t-8b8315 — a removed tool keeps giving orders through the text that named it.

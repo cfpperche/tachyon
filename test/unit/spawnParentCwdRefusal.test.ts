@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { registerTools } from "../../src/bridge/tools.js";
-import { resolveActor } from "../../src/bridge/callerIdentity.js";
-import type { CallerKind, CallerSnapshot } from "../../src/bridge/callerIdentity.js";
+import { registerTools } from "@tachyon/engine/bridge/tools.js";
+import { resolveActor } from "@tachyon/engine/bridge/callerIdentity.js";
+import type { CallerKind, CallerSnapshot } from "@tachyon/engine/bridge/callerIdentity.js";
 import {
   PARENT_CWD_REFUSAL,
   PARENT_CWD_RULE,
   parentCwdExitsFor,
   parentCwdRefusalFor,
-} from "../../src/bridge/spawnContract.js";
+} from "@tachyon/engine/bridge/spawnContract.js";
 
 /**
  * t-6fe04b — the refusal moves earlier, and starts naming the way out.

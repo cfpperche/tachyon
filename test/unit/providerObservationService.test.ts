@@ -2,23 +2,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ProviderObservationPreferences,
   type ProviderObservationStatePort,
-} from "../../src/runtimeObservability/preferences.js";
+} from "@tachyon/engine/runtimeObservability/preferences.js";
 import {
   PROVIDER_OBSERVATION_LAST_GOOD_STATE_KEY,
   ProviderObservationService,
-} from "../../src/runtimeObservability/service.js";
+} from "@tachyon/engine/runtimeObservability/service.js";
 import type {
   ProviderObservationRequestV1,
   ProviderObservationSource,
-} from "../../src/runtimeObservability/source.js";
+} from "@tachyon/engine/runtimeObservability/source.js";
 import type {
   CollectorEnvelopeV1,
   ProviderAccountObservationScopeV1,
   ProviderSourceKindV1,
   ProviderUnavailableReasonV1,
   RuntimeObservabilityProviderV1,
-} from "../../src/runtimeObservability/types.js";
-import { validateCollectorEnvelopeV1 } from "../../src/runtimeObservability/validate.js";
+} from "@tachyon/engine/runtimeObservability/types.js";
+import { validateCollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/validate.js";
 
 class MemoryState implements ProviderObservationStatePort {
   readonly values = new Map<string, unknown>();

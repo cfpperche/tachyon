@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
-import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
+import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
 
 /**
  * t-35d95a — "request_human_attention": an AUTHORED (never derived) in-app human-attention signal for

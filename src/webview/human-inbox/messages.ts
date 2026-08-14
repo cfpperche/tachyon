@@ -13,8 +13,8 @@
  * shape at all that could reach the approval path. "A validation is not an authorization" holds on
  * the wire for the same reason it holds in the model: there is no message that says otherwise.
  */
-import type { ApprovalDecision } from "../../bridge/approvalRequest";
-import type { ValidationOutcome } from "../../validations/types";
+import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
+import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import type { HumanInboxKind } from "../../humanInbox/model";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "./viewModel";
 import { READY, readyMessage, type ReadyMessage } from "../shared/ready";

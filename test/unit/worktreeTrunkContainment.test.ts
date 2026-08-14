@@ -22,9 +22,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { classifyManagedWorktree, resolveTrunkRefs } from "../../src/worktree/classify.js";
-import type { ManagedWorktreeEntry } from "../../src/worktree/managedWorktree.js";
-import type { GitExec, WorktreeStatus } from "../../src/worktree/WorktreeManager.js";
+import { classifyManagedWorktree, resolveTrunkRefs } from "@tachyon/engine/worktree/classify.js";
+import type { ManagedWorktreeEntry } from "@tachyon/engine/worktree/managedWorktree.js";
+import type { GitExec, WorktreeStatus } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 /** A real repo: `main` with two commits, plus a branch whose single commit was merged into main. */
 function repo(): { dir: string; birthRef: string; git: (...a: string[]) => string } {

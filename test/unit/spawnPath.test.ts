@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { agentLaunchPath, nvmBinDir, userCliDirs } from "../../src/agents/spawnPath.js";
+import { agentLaunchPath, nvmBinDir, userCliDirs } from "@tachyon/engine/agents/spawnPath.js";
 
 describe("spawnPath — agent session PATH (rebind exit-127 fix)", () => {
   it("userCliDirs only returns existing dirs under home", () => {

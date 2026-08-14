@@ -1,5 +1,5 @@
 import type { ArtifactRef } from "@tachyon/shared/tasks/types.js";
-import type { Validation, ValidationActor, ValidationExecutor, ValidationOutcome, ValidationStatus } from "../../validations/types.js";
+import type { Validation, ValidationActor, ValidationExecutor, ValidationOutcome, ValidationStatus } from "@tachyon/engine/validations/types.js";
 
 export interface ValidationRoundVM {
   n: number;

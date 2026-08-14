@@ -3,8 +3,8 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
-import { ENGINE_UI_CAPABILITY } from "../../src/engine-service/uiRequestBroker.js";
+import { startEngineControlServer, type RunningEngineControlServer } from "@tachyon/engine/engine-service/controlServer.js";
+import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
 import {
   workspaceCommandSuccessV1,
   workspacePinStudioViewSuccessV1,
@@ -13,10 +13,10 @@ import {
   type EngineControlResponseV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
-import { controlNoncePath, readControlNonce } from "../../src/engine-service/controlPeerAuth.js";
+import { controlNoncePath, readControlNonce } from "@tachyon/engine/engine-service/controlPeerAuth.js";
 
 const roots: string[] = [];
 const servers: RunningEngineControlServer[] = [];

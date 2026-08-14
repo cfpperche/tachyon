@@ -18,14 +18,14 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Workspace } from "../../src/workspace/Workspace.js";
-import { buildSidebarFleet, type SidebarFleetSource } from "../../src/sidebar/sidebarFleetService.js";
-import { projectSidebarView } from "../../src/runtime-api/sidebarProjection.js";
-import { applySidebarMutation } from "../../src/sidebar/sidebarMutationService.js";
-import { isSidebarMutationInputV1 } from "../../src/runtime-api/sidebarCommands.js";
-import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
-import type { NotifyLevel } from "../../src/bridge/tools.js";
-import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import { buildSidebarFleet, type SidebarFleetSource } from "@tachyon/engine/sidebar/sidebarFleetService.js";
+import { projectSidebarView } from "@tachyon/engine/runtime-api/sidebarProjection.js";
+import { applySidebarMutation } from "@tachyon/engine/sidebar/sidebarMutationService.js";
+import { isSidebarMutationInputV1 } from "@tachyon/engine/runtime-api/sidebarCommands.js";
+import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 
 /**

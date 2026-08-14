@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isContainedRelPath, isSafePluginRoot, checkContainedRelPath } from "../../src/plugins/paths.js";
+import { isContainedRelPath, isSafePluginRoot, checkContainedRelPath } from "@tachyon/engine/plugins/paths.js";
 
 describe("isContainedRelPath", () => {
   it("accepts contained relative paths, including hyphenated kebab segments", () => {

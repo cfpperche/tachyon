@@ -1,8 +1,8 @@
 import { defineConfig } from "vitest/config";
 import os from "node:os";
 import path from "node:path";
-import { readHostMemory } from "./src/host/hostResources";
-import { admitOrFallback } from "./src/host/vitestBudget";
+import { readHostMemory } from "./packages/engine/src/host/hostResources";
+import { admitOrFallback } from "./packages/engine/src/host/vitestBudget";
 
 // spec 342 — the browser test project, SEPARATE from vitest.config.ts (plan.md: "npm run test:browser...
 // NOT in default `npm test`"). These tests launch a real system Chrome via puppeteer-core; they need the

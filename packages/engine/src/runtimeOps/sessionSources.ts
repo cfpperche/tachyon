@@ -11,7 +11,7 @@
  * new writes a reader and nothing else.
  */
 
-import type { InspectedHook } from "./sessionInspection.js";
+import type { InspectedHook } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /** One settings entry as a reader found it, before the rules decide what it means. */
 export interface FoundSetting {

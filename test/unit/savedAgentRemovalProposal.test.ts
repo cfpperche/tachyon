@@ -6,22 +6,22 @@ import path from "node:path";
 import {
   admitSavedAgentRemovalProposal,
   computeSavedAgentRemovalProposalDigest,
-} from "../../src/agents/savedAgentRemovalProposal.js";
+} from "@tachyon/engine/agents/savedAgentRemovalProposal.js";
 import {
   cancelSavedAgentRemovalProposal,
   listLiveSavedAgentRemovalProposals,
   readSavedAgentRemovalProposal,
   recordSavedAgentRemovalProposal,
   readSavedAgentRemovalProposalWitness,
-} from "../../src/agents/savedAgentRemovalProposalStore.js";
+} from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
 import {
   approveSavedAgentRemovalProposal,
   denySavedAgentRemovalProposal,
   readSavedAgentRemovalProposalReceipt,
 } from "../../src/agents/savedAgentRemovalProposalCommit.js";
 import { buildSavedAgentRemovalProposalReview } from "../../src/agents/savedAgentRemovalProposalReview.js";
-import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { readAgentProfileGrants, workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
+import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
 import { buildHumanInbox, humanInboxCounts } from "../../src/humanInbox/model.js";
 
 /**

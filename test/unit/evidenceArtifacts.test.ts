@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { copyEvidenceArtifacts } from "../../src/worktree/evidenceArtifacts.js";
+import { copyEvidenceArtifacts } from "@tachyon/engine/worktree/evidenceArtifacts.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });

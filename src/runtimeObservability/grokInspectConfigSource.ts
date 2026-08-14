@@ -7,13 +7,13 @@ import type {
   ProviderConfigurationFactV1,
   ProviderObservationScopeV1,
   ProviderUnavailableReasonV1,
-} from "./types.js";
+} from "@tachyon/engine/runtimeObservability/types.js";
 import {
   PROVIDER_CONFIGURATION_READ_CAPABILITY,
   type ConfigurationObservationRequestV1,
   type ConfigurationObservationSource,
-} from "./source.js";
-import { validateCollectorEnvelopeV1 } from "./validate.js";
+} from "@tachyon/engine/runtimeObservability/source.js";
+import { validateCollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/validate.js";
 
 const GROK_COMMAND = "grok";
 const GROK_ARGS = ["inspect", "--json"] as const;

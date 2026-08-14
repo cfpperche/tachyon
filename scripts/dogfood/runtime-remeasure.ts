@@ -12,9 +12,9 @@
  * Each one is a runtime fact that a source file acts on. Each one causes silent damage when it
  * drifts, because the code keeps obeying the old measurement and nothing says so.
  *
- * 1. `src/config/codexNativeConfigProjection.ts:294` — the config enums the projection enforces.
- * 2. `src/webview/formLogic.ts:65` — `--full-auto` is refused, so the chip list must omit it.
- * 3. `src/harness/HarnessManager.ts:2291` — directory trust is exact-path, and argv cannot grant it.
+ * 1. `packages/engine/src/config/codexNativeConfigProjection.ts:294` — the config enums the projection enforces.
+ * 2. `packages/engine/src/webview/formLogic.ts:65` — `--full-auto` is refused, so the chip list must omit it.
+ * 3. `packages/engine/src/harness/HarnessManager.ts:2291` — directory trust is exact-path, and argv cannot grant it.
  * 4. `src/runtime/adapters/codexMemory.ts` — `--disable memories` suppresses native memory.
  *
  * ## Rules this command obeys
@@ -45,14 +45,14 @@ import {
   CODEX_APPROVAL_POLICIES,
   CODEX_MEASURED_CLI_VERSION,
   CODEX_SANDBOX_MODES,
-} from "../../src/config/codexNativeConfigProjection.js";
-import { FLAG_SUGGESTIONS } from "../../src/webview/formLogic.js";
+} from "@tachyon/engine/config/codexNativeConfigProjection.js";
+import { FLAG_SUGGESTIONS } from "@tachyon/engine/webview/formLogic.js";
 import {
   CODEX_MEMORY_MEASURED_VERSION,
   codexFeaturesListArgv,
   codexMemoryEffectiveState,
 } from "../../src/runtime/adapters/codexMemory.js";
-import { normalizeCliVersion } from "../../src/runtime/measuredCliVersions.js";
+import { normalizeCliVersion } from "@tachyon/engine/runtime/measuredCliVersions.js";
 import {
   type CodexScreen,
   type DimensionResult,
@@ -122,7 +122,7 @@ function measureConfigEnums(home: string, installed: string): DimensionResult {
     return {
       id: c.id,
       title: c.title,
-      anchor: "src/config/codexNativeConfigProjection.ts:294",
+      anchor: "packages/engine/src/config/codexNativeConfigProjection.ts:294",
       recordedVersion: CODEX_MEASURED_CLI_VERSION,
       recorded: c.recorded.join(", "),
       observed: observed.length > 0 ? observed.join(", ") : `(none; exit ${run.status})`,
@@ -142,7 +142,7 @@ function measureConfigEnums(home: string, installed: string): DimensionResult {
   return {
     id: "codex-config-enums",
     title: "codex config rejection enums",
-    anchor: "src/config/codexNativeConfigProjection.ts:294",
+    anchor: "packages/engine/src/config/codexNativeConfigProjection.ts:294",
     recordedVersion: CODEX_MEASURED_CLI_VERSION,
     recorded: measured.map((entry) => `${entry.title.replace("codex ", "")}: ${entry.recorded}`).join("; "),
     observed: measured.map((entry) => `${entry.title.replace("codex ", "")}: ${entry.observed}`).join("; "),
@@ -165,7 +165,7 @@ function measureFullAuto(home: string): DimensionResult {
     return {
       id: "codex-full-auto",
       title: "codex refuses --full-auto",
-      anchor: "src/webview/formLogic.ts:65",
+      anchor: "packages/engine/src/webview/formLogic.ts:65",
       recordedVersion: "codex-cli 0.146.0",
       recorded: "rejected; the chip list omits it",
       observed: `neither refusal nor help (exit ${run.status})`,
@@ -177,7 +177,7 @@ function measureFullAuto(home: string): DimensionResult {
   return {
     id: "codex-full-auto",
     title: "codex refuses --full-auto",
-    anchor: "src/webview/formLogic.ts:65",
+    anchor: "packages/engine/src/webview/formLogic.ts:65",
     recordedVersion: "codex-cli 0.146.0",
     recorded: "rejected; the chip list omits it",
     observed: `${rejected ? "rejected: unexpected argument" : "accepted: help printed"}; chip list ${offered ? "offers it" : "omits it"}`,
@@ -248,7 +248,7 @@ async function measureTrust(base: string): Promise<DimensionResult> {
   const result = (verdict: DimensionResult["verdict"], observed: string, reason?: string): DimensionResult => ({
     id: "codex-directory-trust",
     title: "codex directory trust is exact-path",
-    anchor: "src/harness/HarnessManager.ts:2291",
+    anchor: "packages/engine/src/harness/HarnessManager.ts:2291",
     recordedVersion: "codex-cli 0.146.0",
     recorded: "a child of a trusted directory still asks; argv `-c` cannot grant trust",
     observed,
@@ -358,21 +358,21 @@ function unavailableResults(reason: string): DimensionResult[] {
     unavailable({
       id: "codex-config-enums",
       title: "codex config rejection enums",
-      anchor: "src/config/codexNativeConfigProjection.ts:294",
+      anchor: "packages/engine/src/config/codexNativeConfigProjection.ts:294",
       recordedVersion: CODEX_MEASURED_CLI_VERSION,
       recorded: `approval_policy values: ${CODEX_APPROVAL_POLICIES.join(", ")}; sandbox_mode values: ${CODEX_SANDBOX_MODES.join(", ")}`,
     }),
     unavailable({
       id: "codex-full-auto",
       title: "codex refuses --full-auto",
-      anchor: "src/webview/formLogic.ts:65",
+      anchor: "packages/engine/src/webview/formLogic.ts:65",
       recordedVersion: "codex-cli 0.146.0",
       recorded: "rejected; the chip list omits it",
     }),
     unavailable({
       id: "codex-directory-trust",
       title: "codex directory trust is exact-path",
-      anchor: "src/harness/HarnessManager.ts:2291",
+      anchor: "packages/engine/src/harness/HarnessManager.ts:2291",
       recordedVersion: "codex-cli 0.146.0",
       recorded: "a child of a trusted directory still asks; argv `-c` cannot grant trust",
     }),

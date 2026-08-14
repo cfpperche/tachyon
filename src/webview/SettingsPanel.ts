@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { buildSectionsModel, collectNeedsFor, type SectionsModel, type WorkspaceBundle } from "../sections/model.js";
 import { parseCardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
-import { sharedGlobalSettings } from "../config/globalSettings.js";
+import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 import { cockpitStrings } from "./controlStrings.js";
 import { POLL, READY, settingsModelMessage } from "./settings/messages.js";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";

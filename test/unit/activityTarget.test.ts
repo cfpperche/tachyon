@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   workspaceActivityContextSuccessV1,
   workspaceCommandSuccessV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { workspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";

@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { WorkspaceHandoffTarget } from "../shell/HandoffTarget.js";
 import { HANDOFF_DISTILL_PROFILES, normalizeAdditionalInstruction, normalizeHandoffDistillArgs } from "@tachyon/shared/handoff/distill.js";
-import { parseHandoffDistillInputV1, type HandoffDistillInputV1 } from "../runtime-api/handoffCommands.js";
+import { parseHandoffDistillInputV1, type HandoffDistillInputV1 } from "@tachyon/engine/runtime-api/handoffCommands.js";
 import { notify } from "../workspace/NotificationService.js";
 import { handoffMessage, type HandoffAction } from "./handoff/messages.js";
 import type { HandoffDistillTargetVM, HandoffNoteVM, HandoffViewModel } from "./handoff/handoffViewModel.js";

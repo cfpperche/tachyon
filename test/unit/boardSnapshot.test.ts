@@ -2,10 +2,10 @@ import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { EDITOR_HUMAN_ACTOR } from "../../src/validations/types.js";
-import { buildBoardSnapshot } from "../../src/tasks/boardSnapshot.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { EDITOR_HUMAN_ACTOR } from "@tachyon/engine/validations/types.js";
+import { buildBoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 
 let root: string;
 let store: TaskStore;
@@ -127,8 +127,8 @@ describe("buildBoardSnapshot", () => {
   it("computes per-task attachment counts from the Task Studio sidecar when workspaceRoot is given (read-only)", async () => {
     const withPic = await store.create({ title: "has a screenshot", author: "human" });
     const plain = await store.create({ title: "no attachments", author: "human" });
-    const { TaskDetailStore, hashBody } = await import("../../src/tasks/TaskDetailStore.js");
-    const { TaskAttachmentStore } = await import("../../src/tasks/TaskAttachmentStore.js");
+    const { TaskDetailStore, hashBody } = await import("@tachyon/engine/tasks/TaskDetailStore.js");
+    const { TaskAttachmentStore } = await import("@tachyon/engine/tasks/TaskAttachmentStore.js");
     const attStore = new TaskAttachmentStore(root, withPic.id);
     const att = attStore.putImage({ data: Buffer.from("png bytes"), mediaType: "image/png", name: "shot.png", source: "paste" });
     new TaskDetailStore(root).write({

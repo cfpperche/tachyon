@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { gatherDataPlan, DATA_ANY_PLATFORM } from "../../src/plugins/dataPlan.js";
 import type { LoadedPlugin } from "../../src/plugins/engine.js";
-import type { PluginManifest, DataDecl } from "../../src/plugins/manifest.js";
+import type { PluginManifest, DataDecl } from "@tachyon/engine/plugins/manifest.js";
 import type { PlatformResolution } from "../../src/plugins/toolPlatform.js";
 
 function pluginWithData(data: Record<string, DataDecl>): LoadedPlugin {

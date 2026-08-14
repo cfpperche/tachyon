@@ -3,8 +3,8 @@ import {
   enforceModelProof,
   modelIdentifierSatisfies,
   resolveModelProof,
-} from "../../src/probe/modelProof.js";
-import { statusForReason, type ProbeResult } from "../../src/probe/taxonomy.js";
+} from "@tachyon/engine/probe/modelProof.js";
+import { statusForReason, type ProbeResult } from "@tachyon/engine/probe/taxonomy.js";
 
 /**
  * SDD 473 / t-37fb51 — the recorded incidents this exists to prevent:

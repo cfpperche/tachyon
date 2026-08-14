@@ -34,7 +34,7 @@ import { ProviderObservationService } from "../runtimeObservability/service.js";
 import { ResourceSampler } from "../attention/resourceSample.js";
 import { executeExtensionCommand, executeExtensionQuery } from "./extensionOperationService.js";
 import { getEngineLogRing } from "./engineLogRing.js";
-import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjection.js";
+import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjectionTypes.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
 import { projectBoard } from "../runtime-api/boardProjection.js";
 import { projectPinStudio } from "../runtime-api/pinStudioProjection.js";
@@ -65,7 +65,7 @@ import { startEngineControlServer, type RunningEngineControlServer } from "./con
 import { engineDaemonStateRoot } from "./daemonStateStore.js";
 import { EngineEventJournal, pruneEngineEventJournals } from "./eventJournal.js";
 import { StagedPayloadStore } from "./stagedPayloadStore.js";
-import type { HumanInboxKind } from "../humanInbox/model.js";
+import type { HumanInboxKind } from "../humanInbox/types.js";
 import { GlobalTmuxWatchdog } from "./tmuxAuthority.js";
 import {
   ENGINE_SHELL_PROTOCOL,

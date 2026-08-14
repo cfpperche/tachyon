@@ -7,7 +7,7 @@ import {
   studioOwnsWorkspaceCommands,
   studioWorkspaceCommandIds,
 } from "@tachyon/shared/config/agentWorkspaceCommands.js";
-import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../../src/config/agentWorkspaceCommandWrite.js";
+import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "@tachyon/engine/config/agentWorkspaceCommandWrite.js";
 import type { AgentProfileStudioEditableV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";

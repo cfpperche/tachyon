@@ -21,7 +21,7 @@ import {
   classifyAuthRequired,
   describeAuthRequired,
 } from "@tachyon/shared/runtime/authRequired.js";
-import { OpencodeLaunchPreflight } from "../../src/runtime/adapters/opencodeLaunchPreflight.js";
+import { OpencodeLaunchPreflight } from "@tachyon/engine/runtime/adapters/opencodeLaunchPreflight.js";
 import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 

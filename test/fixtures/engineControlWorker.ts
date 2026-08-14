@@ -1,6 +1,6 @@
 import fs from "node:fs";
-import { startEngineControlServer } from "../../src/engine-service/controlServer.js";
-import type { EngineServiceIdentityV1 } from "../../src/engine-service/protocol.js";
+import { startEngineControlServer } from "@tachyon/engine/engine-service/controlServer.js";
+import type { EngineServiceIdentityV1 } from "@tachyon/engine/engine-service/protocol.js";
 
 async function main(): Promise<void> {
   const [workspaceRoot, socketPath] = process.argv.slice(2);

@@ -2,13 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProjectHandoffStore } from "../../src/handoff/ProjectHandoffStore.js";
-import { ensureProjectHandoffFile } from "../../src/handoff/handoffFileService.js";
-import { resolveHandoffFilePath } from "../../src/handoff/handoffPath.js";
+import { ProjectHandoffStore } from "@tachyon/engine/handoff/ProjectHandoffStore.js";
+import { ensureProjectHandoffFile } from "@tachyon/engine/handoff/handoffFileService.js";
+import { resolveHandoffFilePath } from "@tachyon/engine/handoff/handoffPath.js";
 import {
   parseHandoffViewV1,
   projectHandoffView,
-} from "../../src/runtime-api/handoffProjection.js";
+} from "@tachyon/engine/runtime-api/handoffProjection.js";
 
 const roots: string[] = [];
 

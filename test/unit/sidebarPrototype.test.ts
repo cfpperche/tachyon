@@ -6,15 +6,15 @@ import * as vscode from "vscode";
 import { __createdPanels, __getClipboardText, __getExecutedCommands, __getWarningMessageCalls, __resetVscodeMock, __setWarningMessageResult } from "../mocks/vscode.js";
 import { pinDocPreview, SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
 import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { Pin } from "../../src/pins/PinStore.js";
-import type { PinDetailRead } from "../../src/pins/PinStore.js";
-import type { AgentInfo } from "../../src/agents/AgentManager.js";
+import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import type { Pin } from "@tachyon/engine/pins/PinStore.js";
+import type { PinDetailRead } from "@tachyon/engine/pins/PinStore.js";
+import type { AgentInfo } from "@tachyon/engine/agents/AgentManager.js";
 import { legacySidebarTarget, type LegacySidebarSource, type WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
-import type { ObservedModelInput } from "../../src/sidebar/agentModel.js";
+import type { ObservedModelInput } from "@tachyon/engine/sidebar/agentModel.js";
 import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
-import type { SidebarFleetV1 } from "../../src/runtime-api/sidebarProjection.js";
-import type { ScheduleProposal } from "../../src/schedule/ProposalStore.js";
+import type { SidebarFleetV1 } from "@tachyon/engine/runtime-api/sidebarProjection.js";
+import type { ScheduleProposal } from "@tachyon/engine/schedule/ProposalStore.js";
 
 const temporaryRoots: string[] = [];
 

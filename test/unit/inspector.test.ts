@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { classifySession } from "../../src/inspector/classify.js";
 import { buildInspectorModel } from "../../src/inspector/model.js";
-import { TmuxService, type ExecResult, type PaneSnapshot } from "../../src/tmux/TmuxService.js";
+import { TmuxService, type ExecResult, type PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 
 const HASH = "a1b2c3d4";
 const HASH2 = "deadbeef";

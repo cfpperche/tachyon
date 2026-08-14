@@ -16,7 +16,7 @@ import {
   runtimeOpsSnapshotUnavailableMessage,
 } from "./runtime-ops/messages.js";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../runtimeOps/types.js";
-import type { InspectedSession } from "../runtimeOps/sessionInspection.js";
+import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /**
  * The viewType, and it is a NEW one — the opposite call from D1's and D2's, for a reason neither of those

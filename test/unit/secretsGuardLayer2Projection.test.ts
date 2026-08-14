@@ -18,15 +18,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import TOML from "@iarna/toml";
-import { HarnessManager, bridgeGrokHome, harnessHome } from "../../src/harness/HarnessManager.js";
+import { HarnessManager, bridgeGrokHome, harnessHome } from "@tachyon/engine/harness/HarnessManager.js";
 import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
-import { spawnSettingsPath, type OwnershipHookGroup } from "../../src/activity/sessionOwners.js";
+import { spawnSettingsPath, type OwnershipHookGroup } from "@tachyon/engine/activity/sessionOwners.js";
 import {
   planProjectedPluginHooks,
   readHookProjectionCandidates,
   type AgentHookProjectionPolicy,
   type HookProjectionCandidate,
-} from "../../src/plugins/agentHookProjection.js";
+} from "@tachyon/engine/plugins/agentHookProjection.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 /**

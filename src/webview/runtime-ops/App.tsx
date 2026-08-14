@@ -11,7 +11,7 @@ import type {
   RuntimeOpsValue,
 } from "../../runtimeOps/types";
 import type { ComponentChildren } from "preact";
-import type { InspectedHook, InspectedSession, InspectedSetting, SettingsOrigin } from "../../runtimeOps/sessionInspection";
+import type { InspectedHook, InspectedSession, InspectedSetting, SettingsOrigin } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 import type { SessionInspectionState } from "./messages";
 import { Button, EmptyState, PageChrome } from "../shared/ui";
 

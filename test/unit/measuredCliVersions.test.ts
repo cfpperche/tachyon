@@ -4,7 +4,7 @@ import {
   measuredCliVersion,
   MEASURED_CLI_VERSIONS,
   normalizeCliVersion,
-} from "../../src/runtime/measuredCliVersions.js";
+} from "@tachyon/engine/runtime/measuredCliVersions.js";
 
 describe("measuredCliVersions (t-1322b5)", () => {
   it("owns a single Codex baseline taken from existing product evidence", () => {

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { assigneePatch, canSubmitEdit, cardMenuActions, isStaleError, priorityPatch, resolveDrop, resolveReorder, type DragSession } from "../../src/webview/board/interactions.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
 
 function task(overrides: Partial<Task>): Task {

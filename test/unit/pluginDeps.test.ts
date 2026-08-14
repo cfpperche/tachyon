@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { satisfiesRange, dependencyState, dependencyStates } from "../../src/plugins/pluginDeps.js";
-import type { Lockfile } from "../../src/plugins/lockfile.js";
+import type { Lockfile } from "@tachyon/engine/plugins/lockfile.js";
 
 const lock = (plugins: Record<string, string>): Lockfile => ({
   schemaVersion: 1,

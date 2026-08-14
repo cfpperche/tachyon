@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderPrimer, type PrimerInput } from "../../src/bridge/primer.js";
+import { renderPrimer, type PrimerInput } from "@tachyon/engine/bridge/primer.js";
 
 // t-8b8315 — the `gate` this sample carried was the retired gated-delegation shape; the assertion
 // below never depended on it. The file's own provenance is now stale in a way this edit does not

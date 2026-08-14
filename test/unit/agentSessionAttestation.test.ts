@@ -3,7 +3,7 @@ import {
   POST_CUT_SESSION_ATTESTATION,
   POST_CUT_SESSION_ATTESTATION_ENV,
   withPostCutAttestation,
-} from "../../src/agents/legacyFleetGate.js";
+} from "@tachyon/engine/agents/legacyFleetGate.js";
 
 /**
  * t-e73e54 — every path that creates an AGENT session must mint the post-cut attestation.

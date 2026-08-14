@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { PinStore } from "../../src/pins/PinStore.js";
+import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pins-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -77,7 +77,7 @@ describe("PinStore", () => {
   it("preserves concurrent read-modify-write creates from separate processes", async () => {
     const repoRoot = process.cwd();
     const workerPath = path.join(root, "pin-writer.ts");
-    const pinStoreUrl = pathToFileURL(path.join(repoRoot, "src/pins/PinStore.ts")).href;
+    const pinStoreUrl = pathToFileURL(path.join(repoRoot, "packages/engine/src/pins/PinStore.ts")).href;
     fs.writeFileSync(workerPath, `
       import { PinStore } from ${JSON.stringify(pinStoreUrl)};
       const workspaceRoot = process.argv[2]!;

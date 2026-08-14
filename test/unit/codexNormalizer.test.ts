@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeCodex } from "../../src/activity/codexNormalizer.js";
+import { normalizeCodex } from "@tachyon/engine/activity/codexNormalizer.js";
 
 const line = (payload: unknown, type = "response_item", timestamp = "2026-06-30T12:00:00Z") =>
   JSON.stringify({ timestamp, type, payload });

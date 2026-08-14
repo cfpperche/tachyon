@@ -9,14 +9,14 @@ import {
   loadPinnedExternalPolicy,
   restorePinnedExternalPolicy,
   type HostActionExecutionEnvelope,
-} from "../../../src/host-action/index.js";
-import { VsCodeHostActionAdapter } from "../../../src/agent-vscode/hostActionAdapter.js";
+} from "@tachyon/engine/host-action/index.js";
+import { VsCodeHostActionAdapter } from "@tachyon/engine/agent-vscode/hostActionAdapter.js";
 import {
   VSCODE_RELOAD_WINDOW_CAPABILITY,
   VSCODE_RELOAD_WINDOW_POLICY_HASH,
   VSCODE_RELOAD_WINDOW_POLICY_JSON,
   vscodeReloadWindowDescriptorHash,
-} from "../../../src/agent-vscode/reloadCapability.js";
+} from "@tachyon/engine/agent-vscode/reloadCapability.js";
 
 describe("host-action P1b reload transaction and external policy", () => {
   it("loads reloadWindow from an out-of-workspace policy and fails closed on hash drift", async () => {

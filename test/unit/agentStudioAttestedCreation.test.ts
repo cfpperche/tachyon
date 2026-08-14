@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_CATALOG, quickAddChips } from "../../src/webview/formLogic.js";
+import { AGENT_CATALOG, quickAddChips } from "@tachyon/engine/webview/formLogic.js";
 import {
   canonicalAgentFields,
   newAgentRuntimeRefusal,
@@ -7,7 +7,7 @@ import {
   type AgentStudioFields,
 } from "../../src/webview/agent-studio-shell/domain.js";
 import { createProfileFromStudioMutation, patchProfileFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
-import { admitSavedAgentProposal, savedAgentCreateMutation } from "../../src/agents/savedAgentProposal.js";
+import { admitSavedAgentProposal, savedAgentCreateMutation } from "@tachyon/engine/agents/savedAgentProposal.js";
 import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes.js";
 
 /**

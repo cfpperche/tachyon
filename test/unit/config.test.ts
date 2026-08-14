@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { agentsOf, asAgent, parseConfig, suggestKindForCommand, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability, terminalsOf } from "../../src/config/loadConfig.js";
-import { PROJECT_GUIDANCE_MAX_FILES } from "../../src/config/projectGuidance.js";
+import { agentsOf, asAgent, parseConfig, suggestKindForCommand, composeCommand, resolveBinary, instructionsDeliverable, openingPromptCapability, terminalsOf } from "@tachyon/engine/config/loadConfig.js";
+import { PROJECT_GUIDANCE_MAX_FILES } from "@tachyon/engine/config/projectGuidance.js";
 
 const VALID = `
 agents:

@@ -10,7 +10,7 @@ import { buildTaskDetailVm, emptyTombstoneVm } from "./task-detail/taskDetailVm.
 import { taskDocumentModeMessage, taskMessage, taskDetailErrorMessage, type TaskDetailAction } from "./task-detail/messages.js";
 import { READY } from "./shared/ready.js";
 import type { WorkspaceTaskDetailTarget } from "../shell/TaskDetailTarget.js";
-import type { TaskDetailProjectionV1 } from "../runtime-api/taskDetailProjection.js";
+import type { TaskDetailProjectionV1 } from "@tachyon/engine/runtime-api/taskDetailProjection.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import type { WorkspaceTaskStudioTarget } from "../shell/TaskStudioTarget.js";
 import { TaskStudioAdapter } from "./TaskStudioAdapter.js";

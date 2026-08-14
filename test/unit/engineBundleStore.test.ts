@@ -14,8 +14,8 @@ import {
   stageEngineBundle,
   stageEngineRuntime,
   verifyStagedEngineRuntime,
-} from "../../src/engine-service/engineBundleStore.js";
-import type { EngineBundleManifestV1 } from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/engineBundleStore.js";
+import type { EngineBundleManifestV1 } from "@tachyon/engine/engine-service/protocol.js";
 
 const roots: string[] = [];
 

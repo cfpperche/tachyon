@@ -6,15 +6,15 @@ import {
   CONFIG_FILENAMES,
   suggestKindForCommand,
   type TachyonConfig,
-} from "../config/loadConfig.js";
-import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
+} from "@tachyon/engine/config/loadConfig.js";
+import type { AuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 import { agentForgetPlanResultSchemaV1, type AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan.js";
-import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
-import { scanAgentRosterDirectory } from "../config/agentRosterDirectory.js";
-import { detectInstalledClis } from "../webview/cliDetect.js";
+import { parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
+import { detectInstalledClis } from "@tachyon/engine/webview/cliDetect.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
-import { canonicalWorkspaceStudioFormV1 } from "../engine-service/protocol.js";
-import type { ExtensionCommandV1 } from "../runtime-api/extensionOperations.js";
+import { canonicalWorkspaceStudioFormV1 } from "@tachyon/engine/engine-service/protocol.js";
+import type { ExtensionCommandV1 } from "@tachyon/engine/runtime-api/extensionOperations.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import type { WorkspaceAgentStudioTarget } from "./WorkspacePresentation.js";
 import {

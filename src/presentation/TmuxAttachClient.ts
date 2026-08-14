@@ -11,7 +11,7 @@
  * Attach args mirror `Terminals.open`: `tmux -u -S <socket> attach-session -d -t =<session>`.
  */
 import { attachSocketPath } from "./Terminals.js";
-import { utf8LocaleEnv } from "../tmux/TmuxService.js";
+import { utf8LocaleEnv } from "@tachyon/engine/tmux/TmuxService.js";
 
 export interface TmuxAttachClientHandlers {
   onData: (chunk: string) => void;

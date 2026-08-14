@@ -1,4 +1,4 @@
-import { startDaemonEngineService } from "../../src/engine-service/engineService.js";
+import { startDaemonEngineService } from "@tachyon/engine/engine-service/engineService.js";
 
 async function main(): Promise<void> {
   const [workspaceRoot, storageRoot, mediaRoot, controlSocketPath] = process.argv.slice(2);

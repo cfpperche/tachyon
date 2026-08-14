@@ -18,7 +18,7 @@ import {
   type BoardVM,
 } from "./messages";
 import type { TaskPriority, TaskStatus, TaskUpdateInput } from "@tachyon/shared/tasks/types";
-import type { ValidationOutcome } from "../../validations/types";
+import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 
 /**
  * SDD 485 C5 — the Board's OWN bootstrap, error boundary and toast host.

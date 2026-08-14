@@ -12,9 +12,9 @@ import {
   WorktreeManager,
   type WorktreeRecord,
   type WorktreeResolveDeps,
-} from "../../src/worktree/WorktreeManager.js";
-import { AGENT_NAME_PATTERN } from "../../src/config/nameValidation.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/worktree/WorktreeManager.js";
+import { AGENT_NAME_PATTERN } from "@tachyon/engine/config/nameValidation.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 const settings = (s: Partial<TachyonConfig["settings"]> = {}): TachyonConfig["settings"] => s as TachyonConfig["settings"];
 

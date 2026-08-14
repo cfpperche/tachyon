@@ -5,7 +5,7 @@ import path from "node:path";
 import * as esbuild from "esbuild";
 import { loadPlugin, previewInstall, applyInstall } from "../../src/plugins/engine.js";
 import { buildInstallConsent } from "../../src/plugins/consentViewModel.js";
-import { parseLockfile } from "../../src/plugins/lockfile.js";
+import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { resolveExternalTool } from "../../src/plugins/externalTool.js";
 
 let bundle: string;

@@ -4,7 +4,7 @@ import {
   ManagedHookTrustError,
   applyManagedHookTrust,
   managedHookRuntimeOf,
-} from "../../src/agents/managedHookTrust.js";
+} from "@tachyon/engine/agents/managedHookTrust.js";
 
 describe("t-bc8d21 managedHookTrust", () => {
   it("no-op when proof.injected is false (any runtime)", () => {

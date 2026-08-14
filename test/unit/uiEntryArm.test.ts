@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { actionsFor } from "../../src/sidebar/actions.js";
 import { isAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types.js";
-import { toAgentVM } from "../../src/sidebar/agentModel.js";
-import { resolveAgentFocus } from "../../src/sidebar/agentFocus.js";
+import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
+import { resolveAgentFocus } from "@tachyon/engine/sidebar/agentFocus.js";
 import { internalShareTargets } from "../../src/activity/activityShare.js";
 
 /**
@@ -86,9 +86,9 @@ describe("t-6ebdc8 — the sidebar reads the managed-entry arm", () => {
     const sources = [
       "packages/shared/src/sidebar/types.ts",
       "src/sidebar/actions.ts",
-      "src/sidebar/agentModel.ts",
-      "src/sidebar/agentFocus.ts",
-      "src/sidebar/sidebarFleetService.ts",
+      "packages/engine/src/sidebar/agentModel.ts",
+      "packages/engine/src/sidebar/agentFocus.ts",
+      "packages/engine/src/sidebar/sidebarFleetService.ts",
       "src/activity/activityShare.ts",
     ];
     // Comments are stripped first: the doc that RECORDS the removal legitimately names the old bit.
@@ -98,7 +98,7 @@ describe("t-6ebdc8 — the sidebar reads the managed-entry arm", () => {
       expect(code, `${rel} still declares or reads the parallel 'ai' bit`).not.toMatch(/\bai\?\s*:\s*boolean|\.ai\b/);
     }
     // And the third derivation, by negating unrelated studio kinds, is gone from the studio submit.
-    const workspace = stripComments(fs.readFileSync(path.join(root, "src/workspace/Workspace.ts"), "utf8"));
+    const workspace = stripComments(fs.readFileSync(path.join(root, "packages/engine/src/workspace/Workspace.ts"), "utf8"));
     expect(workspace).not.toContain("isAgentKind");
     expect(workspace).not.toContain("!isScheduleOrCommandOrRunbook");
   });

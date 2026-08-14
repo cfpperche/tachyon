@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
+import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
 
 const roots: string[] = [];
 const root = () => { const value = fs.mkdtempSync(path.join(os.tmpdir(), "task-prototype-")); roots.push(value); return value; };

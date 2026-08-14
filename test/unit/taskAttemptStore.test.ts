@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { TaskAttemptStore } from "../../src/tasks/TaskAttemptStore.js";
+import { TaskAttemptStore } from "@tachyon/engine/tasks/TaskAttemptStore.js";
 
 let root: string;
 

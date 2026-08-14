@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ProbeService, ProbeRejectedError, probeCallerName, type ProbeRequest } from "../../src/probe/ProbeService.js";
-import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
-import { ProbeStore } from "../../src/probe/ProbeStore.js";
-import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "../../src/probe/adapters/types.js";
-import type { ProbeResult } from "../../src/probe/taxonomy.js";
+import { ProbeService, ProbeRejectedError, probeCallerName, type ProbeRequest } from "@tachyon/engine/probe/ProbeService.js";
+import { CallerIdentityRegistry } from "@tachyon/engine/bridge/callerIdentity.js";
+import { ProbeStore } from "@tachyon/engine/probe/ProbeStore.js";
+import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "@tachyon/engine/probe/adapters/types.js";
+import type { ProbeResult } from "@tachyon/engine/probe/taxonomy.js";
 
 let root: string;
 let store: ProbeStore;

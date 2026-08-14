@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { RuntimeSlackMonitor } from "../../src/workspace/RuntimeSlackMonitor.js";
-import { projectRuntimeCondition } from "../../src/runtimeOps/runtimeCondition.js";
-import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
-import type { CollectorEnvelopeV1 } from "../../src/runtimeObservability/types.js";
-import type { ProviderQuotaChannelDescriptorV1 } from "../../src/runtimeObservability/service.js";
+import { RuntimeSlackMonitor } from "@tachyon/engine/workspace/RuntimeSlackMonitor.js";
+import { projectRuntimeCondition } from "@tachyon/engine/runtimeOps/runtimeCondition.js";
+import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
+import type { CollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/types.js";
+import type { ProviderQuotaChannelDescriptorV1 } from "@tachyon/engine/runtimeObservability/service.js";
 
 const CHANNELS: Record<"codex" | "claude", ProviderQuotaChannelDescriptorV1> = {
   codex: {

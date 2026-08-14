@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
-import { PinStore, type TiptapJSON } from "../../src/pins/PinStore.js";
+import { PinAttachmentStore } from "@tachyon/engine/pins/PinAttachmentStore.js";
+import { PinStore, type TiptapJSON } from "@tachyon/engine/pins/PinStore.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-rich-pins-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -18,12 +18,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ProbeService } from "../../src/probe/ProbeService.js";
-import { ProbeStore } from "../../src/probe/ProbeStore.js";
-import { codexAdapter } from "../../src/probe/adapters/codex.js";
-import { PRIVATE_HOME_DIRNAME } from "../../src/probe/adapters/codexSessionEvidence.js";
-import { grokAdapter } from "../../src/probe/adapters/grok.js";
-import type { HeadlessCaptureAdapter, Invocation, RawOutcome } from "../../src/probe/adapters/types.js";
+import { ProbeService } from "@tachyon/engine/probe/ProbeService.js";
+import { ProbeStore } from "@tachyon/engine/probe/ProbeStore.js";
+import { codexAdapter } from "@tachyon/engine/probe/adapters/codex.js";
+import { PRIVATE_HOME_DIRNAME } from "@tachyon/engine/probe/adapters/codexSessionEvidence.js";
+import { grokAdapter } from "@tachyon/engine/probe/adapters/grok.js";
+import type { HeadlessCaptureAdapter, Invocation, RawOutcome } from "@tachyon/engine/probe/adapters/types.js";
 
 const cleanup: string[] = [];
 function temporaryDir(label: string): string {

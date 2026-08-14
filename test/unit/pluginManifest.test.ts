@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadManifest, resolveCompat, SUPPORTED_RUNTIMES } from "../../src/plugins/manifest.js";
+import { loadManifest, resolveCompat, SUPPORTED_RUNTIMES } from "@tachyon/engine/plugins/manifest.js";
 
 /** A valid claude+codex manifest used as the happy-path baseline. */
 const VALID = JSON.stringify({

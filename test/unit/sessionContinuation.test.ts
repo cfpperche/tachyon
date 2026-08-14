@@ -2,8 +2,8 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildFocusedHandoffMarkdown, writeFocusedHandoff } from "../../src/sessionContinuation/focusedHandoff.js";
-import { prepareContinueTask } from "../../src/sessionContinuation/continueTask.js";
+import { buildFocusedHandoffMarkdown, writeFocusedHandoff } from "@tachyon/engine/sessionContinuation/focusedHandoff.js";
+import { prepareContinueTask } from "@tachyon/engine/sessionContinuation/continueTask.js";
 
 const tmpDirs: string[] = [];
 afterEach(() => {

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import {
   inWaitOutputScope,
   waitForOutput,
@@ -13,7 +13,7 @@ import {
   waitOutputConcurrencyRefusalMessage,
   type WaitOutputCaptureSource,
   type WaitForOutputResult,
-} from "../../src/bridge/waitForOutput.js";
+} from "@tachyon/engine/bridge/waitForOutput.js";
 
 const WS = "/repo-wait-harden";
 const HASH = workspaceHash(WS);

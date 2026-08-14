@@ -1,7 +1,7 @@
 import type { WorkspaceAgentStudioTarget } from "../shell/WorkspacePresentation.js";
-import { FLAG_SUGGESTIONS, fromAgentDef, quickAddChips } from "./formLogic.js";
-import { asAgent } from "../config/loadConfig.js";
-import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
+import { FLAG_SUGGESTIONS, fromAgentDef, quickAddChips } from "@tachyon/engine/webview/formLogic.js";
+import { asAgent } from "@tachyon/engine/config/loadConfig.js";
+import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import {
   AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES,
   agentStudioTitleFor,

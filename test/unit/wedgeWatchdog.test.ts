@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { watchdogStep, type WatchdogState, type ProbeState } from "../../src/tmux/wedgeWatchdog.js";
+import { watchdogStep, type WatchdogState, type ProbeState } from "@tachyon/engine/tmux/wedgeWatchdog.js";
 
 /** Drive a sequence of probe results through the reducer; return the actions emitted. */
 function runSeq(seq: ProbeState[]): { actions: string[]; final: WatchdogState } {

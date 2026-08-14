@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveParentLocation, type ParentLocationSources } from "../../src/worktree/parentLocation.js";
+import { resolveParentLocation, type ParentLocationSources } from "@tachyon/engine/worktree/parentLocation.js";
 
 /**
  * t-c9da28 — the three states a parent can be in, which one `undefined` used to flatten.

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildActivityView } from "../../src/activity/activityView.js";
-import { normalizeClaude } from "../../src/activity/claudeNormalizer.js";
+import { normalizeClaude } from "@tachyon/engine/activity/claudeNormalizer.js";
 import vms from "../../scripts/webview-preview/fixtures/activity.vms.json";
 
 // spec 278 — the host-shape / fixture-fidelity guard for the Activity preview view. The browser harness

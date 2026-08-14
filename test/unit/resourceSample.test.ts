@@ -7,7 +7,7 @@ import {
   formatMemMb,
   subtreeRssKb,
   DEFAULT_CLK_TCK,
-} from "../../src/attention/resourceSample.js";
+} from "@tachyon/engine/attention/resourceSample.js";
 
 describe("resourceSample (spec 386)", () => {
   it("cpuPctFromTicks computes percent from tick deltas", () => {

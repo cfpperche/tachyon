@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { HarnessManager, HarnessUnavailableError } from "../../src/harness/HarnessManager.js";
+import { HarnessManager, HarnessUnavailableError } from "@tachyon/engine/harness/HarnessManager.js";
 import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 import { authRequiredOf } from "@tachyon/shared/runtime/authRequired.js";
-import type { HarnessDef } from "../../src/config/loadConfig.js";
+import type { HarnessDef } from "@tachyon/engine/config/loadConfig.js";
 
 /**
  * t-2656d7 (SDD 495, first slice) — a harness credential refusal carries its own recovery.

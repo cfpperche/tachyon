@@ -43,7 +43,11 @@ import path from "node:path";
 import { promisify } from "node:util";
 import dependencyLockfileValidity from "@tachyon/shared/dependency-lockfile-validity.cjs";
 
-const { LOCKFILES, fingerprintLockfiles, lockfileDivergenceReason } = dependencyLockfileValidity;
+const { LOCKFILES, fingerprintLockfiles, lockfileDivergenceReason }: {
+  LOCKFILES: typeof dependencyLockfileValidity.LOCKFILES;
+  fingerprintLockfiles(read: (name: string) => Buffer | null): LockfileFingerprint;
+  lockfileDivergenceReason(primary: LockfileFingerprint, worktree: LockfileFingerprint): string;
+} = dependencyLockfileValidity;
 export { LOCKFILES, fingerprintLockfiles };
 
 const execFileAsync = promisify(execFile);

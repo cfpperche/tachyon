@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import type { TaskNotificationEvent } from "../../src/tasks/taskNotificationPolicy.js";
+import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import type { TaskNotificationEvent } from "@tachyon/engine/tasks/taskNotificationPolicy.js";
 
 class FakeMcp {
   handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: { text: string }[]; isError?: boolean }>>();

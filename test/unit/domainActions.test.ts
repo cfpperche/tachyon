@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import * as domainActions from "../../src/workspace/domainActions.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
-import type { Pin } from "../../src/pins/PinStore.js";
-import type { ViewKind } from "../../src/workspace/EngineHost.js";
+import * as domainActions from "@tachyon/engine/workspace/domainActions.js";
+import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import type { Pin } from "@tachyon/engine/pins/PinStore.js";
+import type { ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 
 function fakeWorkspace(pins: Pin[] = []): Workspace {
   const calls: string[] = [];

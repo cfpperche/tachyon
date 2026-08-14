@@ -1,9 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import { resolveSource, resolveWorkspaceSource, walk } from "./research/monorepo-imports.mjs";
 
 const repoRoot = process.cwd();
-const entries = ["engineService.ts", "daemonMain.ts"].map((name) => path.join(repoRoot, "src", "engine-service", name));
+const engineRoot = path.join(repoRoot, "packages", "engine", "src");
+const entries = ["engineService.ts", "daemonMain.ts"].map((name) => path.join(engineRoot, "engine-service", name));
+const sourceFiles = [
+  ...walk(engineRoot),
+  ...walk(path.join(repoRoot, "packages", "shared")),
+].filter((file) => /\.(?:tsx?|cjs)$/.test(file));
+const fileSet = new Set(sourceFiles);
 const visited = new Set();
 const parent = new Map();
 const queue = [...entries];
@@ -21,8 +28,9 @@ while (queue.length > 0) {
       process.stderr.write(`${chain.map((item) => path.relative(repoRoot, item)).join(" -> ")} -> vscode\n`);
       process.exit(1);
     }
-    if (!specifier.startsWith(".")) continue;
-    const resolved = resolveSource(file, specifier);
+    const resolved = specifier.startsWith(".")
+      ? resolveSource(file, specifier, fileSet)
+      : resolveWorkspaceSource(repoRoot, specifier, fileSet);
     if (!resolved || visited.has(resolved)) continue;
     if (!parent.has(resolved)) parent.set(resolved, file);
     queue.push(resolved);
@@ -53,19 +61,4 @@ function runtimeSpecifiers(source) {
   };
   visit(source);
   return output;
-}
-
-function resolveSource(importer, specifier) {
-  const raw = path.resolve(path.dirname(importer), specifier);
-  const candidates = [
-    raw,
-    raw.replace(/\.js$/, ".ts"),
-    raw.replace(/\.jsx$/, ".tsx"),
-    `${raw}.ts`,
-    `${raw}.tsx`,
-    path.join(raw, "index.ts"),
-  ];
-  return candidates.find((candidate) => candidate.startsWith(path.join(repoRoot, "src") + path.sep)
-    && fs.existsSync(candidate)
-    && fs.statSync(candidate).isFile());
 }

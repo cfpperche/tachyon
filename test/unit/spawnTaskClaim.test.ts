@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { selectAssignedWork } from "../../src/agents/assignmentSelection.js";
-import { sessionRecordManifest } from "../../src/agents/sessionWorkRecord.js";
-import { registerTools } from "../../src/bridge/tools.js";
-import { decideSpawnTaskClaim } from "../../src/bridge/spawnTaskClaim.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { selectAssignedWork } from "@tachyon/engine/agents/assignmentSelection.js";
+import { sessionRecordManifest } from "@tachyon/engine/agents/sessionWorkRecord.js";
+import { registerTools } from "@tachyon/engine/bridge/tools.js";
+import { decideSpawnTaskClaim } from "@tachyon/engine/bridge/spawnTaskClaim.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
 
 /**

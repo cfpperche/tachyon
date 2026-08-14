@@ -1,11 +1,11 @@
 import type { WorkspaceClient } from "./WorkspaceClient.js";
-import type { GitExec } from "../worktree/WorktreeManager.js";
-import type { TachyonConfig } from "../config/loadConfig.js";
+import type { GitExec } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
-import type { ProbeView } from "../probe/probeView.js";
+import type { ProbeView } from "@tachyon/engine/probe/probeView.js";
 import { isAgentRow, type AgentStatus, type FleetVM } from "@tachyon/shared/sidebar/types.js";
 import type { WorkspaceAgentProjectionV1 } from "../runtime-api/workspaceProjection.js";
-import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
+import type { AuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1, AgentProfileStudioLifecycleMutationV1, AgentProfileStudioLifecycleResultV1, AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 

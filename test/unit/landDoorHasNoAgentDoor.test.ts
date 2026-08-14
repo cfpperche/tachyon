@@ -44,7 +44,7 @@ function argumentArrays(source: string): string[][] {
  * The surfaces an AGENT can reach: the Bridge's tools, the host-action broker and its capability
  * registry, and the agent-side adapter that drives it. `run_host_action` looks like the natural home
  * for "the product does something on the host", which is exactly why it is named here — the broker
- * refuses any caller whose kind is not `"agent"` (`src/host-action/policy.ts`), so a land door
+ * refuses any caller whose kind is not `"agent"` (`packages/engine/src/host-action/policy.ts`), so a land door
  * registered there would be reachable ONLY by agents and by no human at all.
  */
 const AGENT_REACHABLE = ["bridge", "host-action", "agent-vscode"];

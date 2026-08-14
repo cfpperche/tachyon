@@ -7,19 +7,19 @@ import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { HumanInboxPanelManager, type HumanInboxDeps } from "../../src/webview/HumanInboxPanel.js";
 import { readyMessage } from "../../src/webview/human-inbox/messages.js";
-import { routeHumanInboxItem } from "../../src/engine-service/engineService.js";
+import { routeHumanInboxItem } from "@tachyon/engine/engine-service/engineService.js";
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "../../src/humanInbox/model.js";
 import { decodeHumanInboxDeepLink } from "../../src/humanInbox/deepLink.js";
-import { DURABLE_NOTICE_COMMANDS } from "../../src/workspace/noticeInbox.js";
-import { buildApprovalRequest, writeApprovalRequest } from "../../src/bridge/approvalRequest.js";
-import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
-import { savedAgentProposalPath } from "../../src/agents/savedAgentProposalStore.js";
-import { computeSavedAgentRemovalProposalDigest } from "../../src/agents/savedAgentRemovalProposal.js";
-import { savedAgentRemovalProposalPath } from "../../src/agents/savedAgentRemovalProposalStore.js";
-import { workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
+import { DURABLE_NOTICE_COMMANDS } from "@tachyon/engine/workspace/noticeInbox.js";
+import { buildApprovalRequest, writeApprovalRequest } from "@tachyon/engine/bridge/approvalRequest.js";
+import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
+import { savedAgentProposalPath } from "@tachyon/engine/agents/savedAgentProposalStore.js";
+import { computeSavedAgentRemovalProposalDigest } from "@tachyon/engine/agents/savedAgentRemovalProposal.js";
+import { savedAgentRemovalProposalPath } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
+import { workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
 import type { WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
-import type { Validation } from "../../src/validations/types.js";
-import { ProposalStore } from "../../src/schedule/ProposalStore.js";
+import type { Validation } from "@tachyon/engine/validations/types.js";
+import { ProposalStore } from "@tachyon/engine/schedule/ProposalStore.js";
 
 /**
  * t-d16698 — the Review of a Saved Agent proposal must OPEN the proposal.

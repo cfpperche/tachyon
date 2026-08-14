@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeCommand, instructionsDeliverable, resolveBinary } from "../../src/config/loadConfig.js";
+import { composeCommand, instructionsDeliverable, resolveBinary } from "@tachyon/engine/config/loadConfig.js";
 
 describe("container-generated delegation behavior", () => {
   it("opencode spawns deliver the composed brief as a prompt argument", () => {

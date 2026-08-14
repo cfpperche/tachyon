@@ -11,8 +11,8 @@ import {
   type AttentionSettings,
   type AgentAttention,
 } from "@tachyon/shared/attention/AttentionMonitor.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { LifecycleMonitor } from "../../src/agents/LifecycleMonitor.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { LifecycleMonitor } from "@tachyon/engine/agents/LifecycleMonitor.js";
 
 // Captured verbatim from the spec 186 spike — a real Claude Code trust prompt pane.
 const CLAUDE_TRUST_PROMPT = `

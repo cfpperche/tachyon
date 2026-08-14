@@ -11,11 +11,11 @@
  * events (`wiredCommands`) + the file writes + the consent fingerprint. The user reviews every command.
  */
 
-import type { Runtime, ToolLaunchPolicy } from "./manifest.js";
+import type { Runtime, ToolLaunchPolicy } from "@tachyon/engine/plugins/manifest.js";
 import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview } from "./engine.js";
 import type { DependencyState } from "./pluginDeps.js";
-import { LOCKFILE_REL_PATH } from "./lockfile.js";
-import { mcpRequiredEnv, type McpServer } from "./mcp.js";
+import { LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
+import { mcpRequiredEnv, type McpServer } from "@tachyon/engine/plugins/mcp.js";
 import type { UpdateCheck } from "./viewModel.js";
 
 const PAYLOAD_ROOT_DISPLAY = ".tachyon/plugins";

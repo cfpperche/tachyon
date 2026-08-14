@@ -10,9 +10,9 @@ import {
   runtimeOpsPollAction,
   runtimeOpsSetProviderObservationAction,
 } from "../../src/webview/runtime-ops/messages.js";
-import { buildRuntimeOpsSnapshot } from "../../src/runtimeOps/model.js";
+import { buildRuntimeOpsSnapshot } from "@tachyon/engine/runtimeOps/model.js";
 import type { RuntimeOpsSnapshot } from "../../src/runtimeOps/types.js";
-import type { InspectedSession } from "../../src/runtimeOps/sessionInspection.js";
+import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /**
  * SDD 485 D3 — Runtime Ops as a standalone `window` app.

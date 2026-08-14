@@ -265,7 +265,7 @@ import {
 } from "./TerminalPresentation.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, validateTerminalForm, blockingErrors, toEntry, toTerminalEntry } from "../webview/formLogic.js";
-import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
+import type { StudioSubmit } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 import type { RuntimeLaunchPreflightPort } from "@tachyon/shared/runtime/launchPreflight.js";
@@ -6957,9 +6957,9 @@ export class Workspace {
     return undefined;
   };
 
-  studioDeps(): StudioDeps {
+  studioDeps() {
     return {
-      extensionUri: this.host.webviewRoot() as StudioDeps["extensionUri"],
+      extensionUri: this.host.webviewRoot() as never,
       detectClis: detectInstalledClis,
       takenNames: () => Object.keys(this.config?.agents ?? {}),
       commandNames: () => Object.keys(this.config?.commands ?? {}),

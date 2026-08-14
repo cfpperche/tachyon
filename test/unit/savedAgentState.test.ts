@@ -5,7 +5,7 @@ import {
   savedAgentRemovalDoor,
   type SavedAgentPresenceFacts,
   type SavedAgentState,
-} from "../../src/config/savedAgentState.js";
+} from "@tachyon/engine/config/savedAgentState.js";
 
 /**
  * SDD 494 Part 4 — the derivation is a total function over five booleans, so the test is the whole

@@ -5,7 +5,7 @@ import {
   pickFocusTask,
   resolveAgentFocus,
   truncateFocusText,
-} from "../../src/sidebar/agentFocus.js";
+} from "@tachyon/engine/sidebar/agentFocus.js";
 
 describe("agentFocus (spec 390)", () => {
   it("truncates with ellipsis", () => {

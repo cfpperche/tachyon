@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { CompanionPairingService } from "../../src/companion/CompanionPairingService.js";
-import { COMPANION_PROTOCOL_VERSION } from "../../src/companion/protocol.js";
-import { handleCompanionHttp } from "../../src/companion/CompanionHttp.js";
+import { CompanionPairingService } from "@tachyon/engine/companion/CompanionPairingService.js";
+import { COMPANION_PROTOCOL_VERSION } from "@tachyon/engine/companion/protocol.js";
+import { handleCompanionHttp } from "@tachyon/engine/companion/CompanionHttp.js";
 import http from "node:http";
 import { AddressInfo } from "node:net";
 
@@ -413,8 +413,8 @@ describe("Companion HTTP loopback (SDD 414)", () => {
   });
 
   it("fulfills user tab snapshot via tab.command SSE + POST /tab/result", async () => {
-    const { CompanionLiveSync } = await import("../../src/companion/CompanionLiveSync.js");
-    const { CompanionTabChannel } = await import("../../src/companion/CompanionTabChannel.js");
+    const { CompanionLiveSync } = await import("@tachyon/engine/companion/CompanionLiveSync.js");
+    const { CompanionTabChannel } = await import("@tachyon/engine/companion/CompanionTabChannel.js");
     const pairing = new CompanionPairingService({
       engineLabel: "ws",
       engineId: "hash",
@@ -518,7 +518,7 @@ describe("Companion HTTP loopback (SDD 414)", () => {
   });
 
   it("pushEvent onlyTokens isolates tab.command to browser sessions", async () => {
-    const { CompanionLiveSync } = await import("../../src/companion/CompanionLiveSync.js");
+    const { CompanionLiveSync } = await import("@tachyon/engine/companion/CompanionLiveSync.js");
     const pairing = new CompanionPairingService({
       engineLabel: "ws",
       engineId: "hash",
@@ -607,7 +607,7 @@ describe("Companion HTTP loopback (SDD 414)", () => {
   });
 
   it("streams live snapshots on GET /companion/v1/events (SSE)", async () => {
-    const { CompanionLiveSync } = await import("../../src/companion/CompanionLiveSync.js");
+    const { CompanionLiveSync } = await import("@tachyon/engine/companion/CompanionLiveSync.js");
     const pairing = new CompanionPairingService({
       engineLabel: "ws",
       engineId: "hash",

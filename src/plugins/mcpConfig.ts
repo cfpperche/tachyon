@@ -11,11 +11,11 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { Runtime } from "./manifest.js";
-import type { McpServer } from "./mcp.js";
-import { renderClaudeMcpEntry } from "./adapters/claude.js";
-import { renderCodexMcpBlock } from "./adapters/codex.js";
-import { setClaudeMcpServer, removeClaudeMcpServer, getClaudeMcpServer, setCodexMcpServer, removeCodexMcpServer, getCodexMcpServerBlock } from "../registration/adapters.js";
+import type { Runtime } from "@tachyon/engine/plugins/manifest.js";
+import type { McpServer } from "@tachyon/engine/plugins/mcp.js";
+import { renderClaudeMcpEntry } from "@tachyon/engine/plugins/adapters/claude.js";
+import { renderCodexMcpBlock } from "@tachyon/engine/plugins/adapters/codex.js";
+import { setClaudeMcpServer, removeClaudeMcpServer, getClaudeMcpServer, setCodexMcpServer, removeCodexMcpServer, getCodexMcpServerBlock } from "@tachyon/engine/registration/adapters.js";
 import { readFile, atomicWrite } from "./fsx.js";
 
 /** A valid MCP server name (kebab) — also the lockfile `ref` and the config key. Mirrors mcp.ts SERVER_NAME_RE. */

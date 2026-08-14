@@ -4,15 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Bridge } from "../../src/bridge/Bridge.js";
-import { loadOrCreateExternalToken, loadOrCreateToken, tokenMatches } from "../../src/bridge/token.js";
-import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { PinStore } from "../../src/pins/PinStore.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { Bridge } from "@tachyon/engine/bridge/Bridge.js";
+import { loadOrCreateExternalToken, loadOrCreateToken, tokenMatches } from "@tachyon/engine/bridge/token.js";
+import { CallerIdentityRegistry } from "@tachyon/engine/bridge/callerIdentity.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { PinStore } from "@tachyon/engine/pins/PinStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import {
   buildClaudeMcpJson,
   buildOpencodeJson,
@@ -20,7 +20,7 @@ import {
   buildOffers,
   claudeAlreadyRegistered,
   TOKEN_ENV_REF_CLAUDE,
-} from "../../src/registration/adapters.js";
+} from "@tachyon/engine/registration/adapters.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 const URL_ = "http://127.0.0.1:43210/mcp";

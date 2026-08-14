@@ -10,7 +10,7 @@ import {
   decodeIdeBrowserHttpRequest,
   isIdeBrowserRoutePath,
   normalizeIdeBrowserRoutePath,
-} from "../../src/ide-browser/protocol.js";
+} from "@tachyon/engine/ide-browser/protocol.js";
 
 describe("ide-browser HTTP protocol (t-47503a)", () => {
   it("pins a protocol version and a complete route table", () => {

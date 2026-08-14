@@ -31,7 +31,7 @@
 import ts from "typescript";
 
 /** The single production module permitted to name the bootstrap mutation. */
-export const BOOTSTRAP_DOOR_MODULE = "src/agents/formation/bootstrapTransaction.ts";
+export const BOOTSTRAP_DOOR_MODULE = "packages/engine/src/agents/formation/bootstrapTransaction.ts";
 
 /**
  * Call sites that forward a mutation they did not choose. Each one is closed by a test in

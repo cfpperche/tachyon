@@ -2,16 +2,16 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ClaudeStatusLineCaptureTransport } from "../src/runtimeObservability/claudeStatusLineCapture.js";
-import { ClaudeStatusLineObservationSource } from "../src/runtimeObservability/claudeStatusLineSource.js";
-import { CodexAppServerObservationSource } from "../src/runtimeObservability/codexAppServerSource.js";
+import { ClaudeStatusLineCaptureTransport } from "@tachyon/engine/runtimeObservability/claudeStatusLineCapture.js";
+import { ClaudeStatusLineObservationSource } from "@tachyon/engine/runtimeObservability/claudeStatusLineSource.js";
+import { CodexAppServerObservationSource } from "@tachyon/engine/runtimeObservability/codexAppServerSource.js";
 import {
   ProviderObservationPreferences,
   type ProviderObservationStatePort,
-} from "../src/runtimeObservability/preferences.js";
-import { ProviderObservationService } from "../src/runtimeObservability/service.js";
-import type { CollectorEnvelopeV1, RuntimeObservabilityProviderV1 } from "../src/runtimeObservability/types.js";
-import { validateCollectorEnvelopeV1 } from "../src/runtimeObservability/validate.js";
+} from "@tachyon/engine/runtimeObservability/preferences.js";
+import { ProviderObservationService } from "@tachyon/engine/runtimeObservability/service.js";
+import type { CollectorEnvelopeV1, RuntimeObservabilityProviderV1 } from "@tachyon/engine/runtimeObservability/types.js";
+import { validateCollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/validate.js";
 
 class MemoryState implements ProviderObservationStatePort {
   private readonly values = new Map<string, unknown>();

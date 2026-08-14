@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { BRIEF_FILE_THRESHOLD, SAFE_INLINE_CEILING, assertSafeBriefTransport, briefFilePath, deliverableBody } from "../../src/agents/briefFile.js";
+import { BRIEF_FILE_THRESHOLD, SAFE_INLINE_CEILING, assertSafeBriefTransport, briefFilePath, deliverableBody } from "@tachyon/engine/agents/briefFile.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("container-generated delegation behavior", () => {

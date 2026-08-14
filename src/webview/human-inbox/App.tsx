@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import type { ApprovalDecision } from "../../bridge/approvalRequest";
-import type { ValidationOutcome } from "../../validations/types";
+import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
+import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import {
   filterHumanInboxItems,
   type HumanInboxFilters,
@@ -9,7 +9,7 @@ import {
 } from "../../humanInbox/model";
 import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview";
 import type { SavedAgentRemovalProposalReview } from "../../agents/savedAgentRemovalProposalReview";
-import type { ScheduleProposal } from "../../schedule/ProposalStore";
+import type { ScheduleProposal } from "@tachyon/engine/schedule/ProposalStore.js";
 import type { InboxArtifactPreview } from "../../humanInbox/artifacts";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "./viewModel";
 import type { HumanInboxErrorReceipt } from "./messages";

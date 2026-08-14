@@ -6,7 +6,7 @@ import {
   routeHumanInboxItem,
   routeHumanValidationPending,
   routeSavedAgentProposal,
-} from "../../src/engine-service/engineService.js";
+} from "@tachyon/engine/engine-service/engineService.js";
 import { HUMAN_INBOX_KINDS } from "../../src/humanInbox/model.js";
 
 /**
@@ -148,7 +148,7 @@ describe("t-5ca73a — a Review that cannot open says so", () => {
  */
 describe("t-8e9b5e — a new Inbox kind cannot be added without a doorbell", () => {
   it("keys the routing table on HumanInboxKind itself", () => {
-    const source = fs.readFileSync(path.join(process.cwd(), "src/engine-service/engineService.ts"), "utf8");
+    const source = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/engine-service/engineService.ts"), "utf8");
 
     expect(source).toContain("const INBOX_REVIEW_TARGET: Record<HumanInboxKind,");
     expect(source).not.toMatch(/INBOX_REVIEW_TARGET:\s*Partial</);

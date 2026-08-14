@@ -2,9 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { mintPinId, PinStore } from "../../src/pins/PinStore.js";
-import { savePinStudio } from "../../src/pins/pinStudioService.js";
-import type { PinStudioPatchV1 } from "../../src/runtime-api/pinStudioCommands.js";
+import { mintPinId, PinStore } from "@tachyon/engine/pins/PinStore.js";
+import { savePinStudio } from "@tachyon/engine/pins/pinStudioService.js";
+import type { PinStudioPatchV1 } from "@tachyon/engine/runtime-api/pinStudioCommands.js";
 
 const roots: string[] = [];
 const patch: PinStudioPatchV1 = {

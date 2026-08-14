@@ -10,7 +10,7 @@ import {
   type ApprovalRequest,
   type ApprovalResolution,
   type ApprovalStatus,
-} from "../../bridge/approvalRequest.js";
+} from "@tachyon/engine/bridge/approvalRequest.js";
 import type { ApprovalRow } from "../../sections/model.js";
 
 export interface ApprovalViewItem {

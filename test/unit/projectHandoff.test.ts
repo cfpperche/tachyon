@@ -12,7 +12,7 @@ import {
   shouldRemindHandoff,
   advanceWatermark,
   HANDOFF_TEMPLATE,
-} from "../../src/handoff/ProjectHandoffStore.js";
+} from "@tachyon/engine/handoff/ProjectHandoffStore.js";
 
 describe("ProjectHandoff — pure helpers (spec 245)", () => {
   const note = (o: Record<string, unknown>) => JSON.stringify(o);

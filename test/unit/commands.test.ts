@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { CommandRunner } from "../../src/commands/CommandRunner.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
+import { CommandRunner } from "@tachyon/engine/commands/CommandRunner.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { parseConfig, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);

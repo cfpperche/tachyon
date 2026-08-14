@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PinAttachmentStore, PIN_IMAGE_MAX_BYTES } from "../../src/pins/PinAttachmentStore.js";
+import { PinAttachmentStore, PIN_IMAGE_MAX_BYTES } from "@tachyon/engine/pins/PinAttachmentStore.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-pin-blobs-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

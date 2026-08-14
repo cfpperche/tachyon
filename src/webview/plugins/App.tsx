@@ -1,6 +1,6 @@
 import { useMemo, useState } from "preact/hooks";
 import type { InstalledPluginVM, PluginsViewModel, PluginStatus, RuntimePill, PluginAction, McpContributionVM, ContributionVM } from "../../plugins/viewModel";
-import type { Runtime } from "../../plugins/manifest";
+import type { Runtime } from "@tachyon/engine/plugins/manifest.js";
 import type { ConsentVM } from "../../plugins/consentViewModel";
 import type { ConfirmPayload } from "./messages";
 import { isConsentBlocked, viewAckRequirements, viewConsentRows } from "./consentViewAcks";

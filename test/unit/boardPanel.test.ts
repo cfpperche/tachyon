@@ -4,14 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import { Uri } from "vscode";
 import { __createdPanels, __getClipboardText, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager, boardRefreshKind, type BoardPanelDeps } from "../../src/webview/BoardPanel.js";
 import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
 import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
 import { readyMessage, requestSnapshotAction } from "../../src/webview/board/messages.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
+import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 
 /**
  * SDD 485 C5 — the Board as a standalone DASHBOARD app.

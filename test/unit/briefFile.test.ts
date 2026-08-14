@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BRIEF_FILE_THRESHOLD, briefFilePath, deliverableBody } from "../../src/agents/briefFile.js";
-import type { StartupBriefManifest } from "../../src/agents/startupBrief.js";
+import { BRIEF_FILE_THRESHOLD, briefFilePath, deliverableBody } from "@tachyon/engine/agents/briefFile.js";
+import type { StartupBriefManifest } from "@tachyon/engine/agents/startupBrief.js";
 
 const guidanceOnly: StartupBriefManifest = {
   projectGuidanceSources: 2,

@@ -6,7 +6,7 @@ import {
   workspaceHandoffDistillSuccessV1,
   workspaceHandoffEnsureSuccessV1,
   workspaceHandoffViewSuccessV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { workspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";

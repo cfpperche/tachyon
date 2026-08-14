@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DaemonStateStore } from "../../src/engine-service/daemonStateStore.js";
+import { DaemonStateStore } from "@tachyon/engine/engine-service/daemonStateStore.js";
 
 const roots: string[] = [];
 const root = () => {

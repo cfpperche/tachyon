@@ -4,7 +4,7 @@ import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App } from "./App";
 import type { RuntimeOpsProviderV2, RuntimeOpsSnapshot } from "../../runtimeOps/types";
-import type { InspectedSession } from "../../runtimeOps/sessionInspection";
+import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 import {
   RUNTIME_OPS_LOADING,
   RUNTIME_OPS_SNAPSHOT,

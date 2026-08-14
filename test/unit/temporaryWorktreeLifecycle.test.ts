@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { registerTools } from "../../src/bridge/tools.js";
-import type { LifecycleOwnershipSource } from "../../src/bridge/lifecycleScope.js";
-import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
-import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
+import { registerTools } from "@tachyon/engine/bridge/tools.js";
+import type { LifecycleOwnershipSource } from "@tachyon/engine/bridge/lifecycleScope.js";
+import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
+import type { WorktreeRecord } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 /**
  * t-d06da3 (spec 484) — the two lifecycle doors that open once a Temporary child may own a worktree.

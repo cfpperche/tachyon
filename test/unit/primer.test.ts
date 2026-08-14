@@ -9,7 +9,7 @@ import {
   PRIMER_LINE_BUDGET,
   BEFORE_FINISHING_LINE_BUDGET,
   type PrimerInput,
-} from "../../src/bridge/primer.js";
+} from "@tachyon/engine/bridge/primer.js";
 
 /**
  * t-8b8315 — this used to be `gatedAdhoc`, carrying a `gate` with a behavior oracle. Gated

@@ -19,12 +19,12 @@ import {
   readyMessage,
   refreshInboxAction,
 } from "../../src/webview/human-inbox/messages.js";
-import { buildApprovalRequest, writeApprovalRequest } from "../../src/bridge/approvalRequest.js";
-import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
-import { savedAgentProposalPath } from "../../src/agents/savedAgentProposalStore.js";
-import { workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
+import { buildApprovalRequest, writeApprovalRequest } from "@tachyon/engine/bridge/approvalRequest.js";
+import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
+import { savedAgentProposalPath } from "@tachyon/engine/agents/savedAgentProposalStore.js";
+import { workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
 import type { WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
-import type { Validation } from "../../src/validations/types.js";
+import type { Validation } from "@tachyon/engine/validations/types.js";
 
 /**
  * SDD 485 D4 — the Human Inbox as a standalone `dashboard` app.

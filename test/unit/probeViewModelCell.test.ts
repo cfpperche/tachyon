@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildProbeView, modelCell } from "../../src/probe/probeView.js";
-import type { ProbeRunRecord } from "../../src/probe/ProbeStore.js";
+import { buildProbeView, modelCell } from "@tachyon/engine/probe/probeView.js";
+import type { ProbeRunRecord } from "@tachyon/engine/probe/ProbeStore.js";
 
 /**
  * SDD 475 / t-3a3de1 — the Probes model column. The invariant under test: the cell only ever prints

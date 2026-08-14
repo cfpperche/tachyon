@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { wakeTaskAssignee } from "../../src/tasks/taskNotificationPolicy.js";
+import { wakeTaskAssignee } from "@tachyon/engine/tasks/taskNotificationPolicy.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
 
 /**
@@ -34,11 +34,11 @@ describe("t-c3c0c2 — every TaskStore in src wires the mutation sink", () => {
   }
 
   it("no production construction leaves onMutation unplugged", () => {
-    const root = path.join(process.cwd(), "src");
+    const roots = [path.join(process.cwd(), "src"), path.join(process.cwd(), "packages", "engine", "src")];
     const unplugged: string[] = [];
     let constructions = 0;
 
-    for (const file of sourceFiles(root)) {
+    for (const file of roots.flatMap(sourceFiles)) {
       const text = fs.readFileSync(file, "utf8");
       for (const match of text.matchAll(/new TaskStore\(/g)) {
         constructions += 1;

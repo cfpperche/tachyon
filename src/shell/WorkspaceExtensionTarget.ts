@@ -3,7 +3,7 @@ import type {
   ExtensionCommandV1,
   ExtensionQueryV1,
   JsonValue,
-} from "../runtime-api/extensionOperations.js";
+} from "@tachyon/engine/runtime-api/extensionOperations.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
 

@@ -16,8 +16,8 @@ import {
   trustVerdict,
 } from "../../scripts/dogfood/runtime-remeasure-analysis.js";
 import { codexMemoryEffectiveState } from "../../src/runtime/adapters/codexMemory.js";
-import { CODEX_APPROVAL_POLICIES, CODEX_SANDBOX_MODES } from "../../src/config/codexNativeConfigProjection.js";
-import { FLAG_SUGGESTIONS } from "../../src/webview/formLogic.js";
+import { CODEX_APPROVAL_POLICIES, CODEX_SANDBOX_MODES } from "@tachyon/engine/config/codexNativeConfigProjection.js";
+import { FLAG_SUGGESTIONS } from "@tachyon/engine/webview/formLogic.js";
 
 const REAL_APPROVAL_ERROR =
   "Error: unknown variant `tachyon-remeasure-probe`, expected one of `untrusted`, `on-failure`, `on-request`, `granular`, `never`\nin `approval_policy`\n";

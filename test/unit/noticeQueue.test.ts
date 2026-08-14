@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { NoticeQueue } from "../../src/bridge/NoticeQueue.js";
+import { NoticeQueue } from "@tachyon/engine/bridge/NoticeQueue.js";
 
 describe("NoticeQueue", () => {
   it("keeps per-target FIFO order", () => {

@@ -21,7 +21,7 @@ import {
   AGENT_TOKEN_ENV_REF_OPENCODE,
   TOKEN_ENV_REF_CLAUDE,
   TOKEN_ENV_REF_OPENCODE,
-} from "../../src/registration/adapters.js";
+} from "@tachyon/engine/registration/adapters.js";
 
 const URL = "http://127.0.0.1:43210/mcp";
 

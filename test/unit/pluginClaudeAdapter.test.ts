@@ -12,7 +12,7 @@ import {
   PLUGIN_ROOT_PLACEHOLDER,
   type ClaudeSettings,
   type OwnedHooks,
-} from "../../src/plugins/adapters/claude.js";
+} from "@tachyon/engine/plugins/adapters/claude.js";
 
 const BLOCK = JSON.stringify({
   PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: `"${PLUGIN_ROOT_PLACEHOLDER}"/gate.sh` }] }],

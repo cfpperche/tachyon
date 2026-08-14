@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyCompletionHint, CompletionHintStore } from "../../src/attention/completionHint.js";
+import { applyCompletionHint, CompletionHintStore } from "@tachyon/engine/attention/completionHint.js";
 import type { AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 
 const base = (state: AgentAttention["state"], extra: Partial<AgentAttention> = {}): AgentAttention => ({

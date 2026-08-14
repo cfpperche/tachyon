@@ -8,9 +8,9 @@ import {
   isOwnedAgentSession,
   type LegacyRosterEntry,
   type LegacySessionEntry,
-} from "../../src/agents/legacyFleetGate.js";
-import type { InstancePolicySource } from "../../src/agents/agentInstancePolicy.js";
-import { agentsOf, parseConfig } from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/agents/legacyFleetGate.js";
+import type { InstancePolicySource } from "@tachyon/engine/agents/agentInstancePolicy.js";
+import { agentsOf, parseConfig } from "@tachyon/engine/config/loadConfig.js";
 
 /**
  * `t-fab832` step 1 — the activation gate, proven seed by seed.
@@ -179,7 +179,7 @@ describe("legacy fleet gate — what the operator is told (t-fab832)", () => {
    * to escalate, and "activation killed my running fleet" is worse than any refusal.
    */
   it("has no way to kill anything — asserted on the source, not assumed", () => {
-    const text = fs.readFileSync(path.resolve(__dirname, "../../src/agents/legacyFleetGate.ts"), "utf8");
+    const text = fs.readFileSync(path.resolve(__dirname, "../../packages/engine/src/agents/legacyFleetGate.ts"), "utf8");
     expect(text).not.toMatch(/\bkill\w*\(/);
     expect(text).not.toMatch(/\brm\w*\(|unlink|writeFile|execFile|spawn\(/);
   });

@@ -10,8 +10,8 @@ import {
   parseActivityMap,
   DEADMAP_SUBSCRIPTION,
   ACTIVITY_SUBSCRIPTION,
-} from "../../src/tmux/ControlModeClient.js";
-import { TmuxError, type ExecResult } from "../../src/tmux/TmuxService.js";
+} from "@tachyon/engine/tmux/ControlModeClient.js";
+import { TmuxError, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 
 /** A scripted control-mode client process: stdin lines are recorded, stdout is ours to feed. */
 function fakeProc() {

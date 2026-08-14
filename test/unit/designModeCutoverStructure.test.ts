@@ -27,7 +27,7 @@ describe("Design Mode overlay cutover structure", () => {
     expect(fs.existsSync(path.join(root, "src/webview/design-mode"))).toBe(false);
     expect(read("esbuild.mjs")).not.toMatch(/WEBVIEW_APP_VIEWS\s*=\s*\[[^\]]*"design-mode"/);
     expect(read("src/webview/webviewApps.ts")).not.toContain('view: "design-mode"');
-    expect(read("src/bridge/tools/ide-browser.ts")).not.toContain("design_mode_chat_reply");
+    expect(read("packages/engine/src/bridge/tools/ide-browser.ts")).not.toContain("design_mode_chat_reply");
     expect(read("src/webview/ide-browser-bridge/manager.ts")).not.toMatch(/(?:chatWait|sendChatMessage|ingestChatReply|designModeUiSink)/);
   });
 });

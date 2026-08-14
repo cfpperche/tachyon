@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("spec 382 — retired Extension Host Bridge proxy", () => {
   it("ships one engine-owned Bridge lifecycle with no proxy or in-process fallback", () => {
     const root = process.cwd();
-    const workspace = fs.readFileSync(path.join(root, "src/workspace/Workspace.ts"), "utf8");
+    const workspace = fs.readFileSync(path.join(root, "packages/engine/src/workspace/Workspace.ts"), "utf8");
     const build = fs.readFileSync(path.join(root, "esbuild.mjs"), "utf8");
     const manifest = fs.readFileSync(path.join(root, "package.json"), "utf8");
 

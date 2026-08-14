@@ -5,15 +5,15 @@ import { stringify } from "yaml";
 import {
   serializeAgentProfileAuthorityRegistry,
   type AgentProfileAuthorityRecord,
-} from "../../src/config/agentProfileAuthority.js";
-import { agentProfileAuthoritiesSecretKey } from "../../src/workspace/operationalStateKeys.js";
+} from "@tachyon/engine/config/agentProfileAuthority.js";
+import { agentProfileAuthoritiesSecretKey } from "@tachyon/engine/workspace/operationalStateKeys.js";
 import {
   CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
   GROK_PRIVATE_HOME_INPUT_INSPECTOR,
   PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR,
-} from "../../src/config/agentProfileProjection.js";
-import { workspaceHash } from "../../src/tmux/TmuxService.js";
+} from "@tachyon/engine/config/agentProfileProjection.js";
+import { workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
 import type { AttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 
 /**

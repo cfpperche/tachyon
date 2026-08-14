@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadMcpPayload, mcpRequiredEnv, resolveMcpPluginRootPath, withResolvedMcpPluginRoot, type McpServer } from "../../src/plugins/mcp.js";
+import { loadMcpPayload, mcpRequiredEnv, resolveMcpPluginRootPath, withResolvedMcpPluginRoot, type McpServer } from "@tachyon/engine/plugins/mcp.js";
 
 /** Build an `mcp.json` text from a list of server objects. */
 function payload(...servers: unknown[]): string {

@@ -36,8 +36,8 @@ import {
   type WorkspaceCommandV1,
   type WorkspaceProbeViewV1,
   type WorkspaceStudioFormV1,
-} from "../../src/engine-service/protocol.js";
-import { isExtensionCommandV1, isExtensionQueryV1 } from "../../src/runtime-api/extensionOperations.js";
+} from "@tachyon/engine/engine-service/protocol.js";
+import { isExtensionCommandV1, isExtensionQueryV1 } from "@tachyon/engine/runtime-api/extensionOperations.js";
 
 function hash(text: string): string {
   return createHash("sha256").update(text).digest("hex");

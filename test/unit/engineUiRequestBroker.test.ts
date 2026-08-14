@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { EngineUiRequestBroker, ENGINE_UI_CAPABILITY } from "../../src/engine-service/uiRequestBroker.js";
+import { EngineUiRequestBroker, ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
 
 const brokers: EngineUiRequestBroker[] = [];
 

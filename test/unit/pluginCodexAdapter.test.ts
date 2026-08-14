@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { parseCodexHooksBlock, CODEX_HOOK_EVENTS } from "../../src/plugins/adapters/codex.js";
-import { parseClaudeHooksBlock } from "../../src/plugins/adapters/claude.js";
-import { mergeHooks, removeHooks } from "../../src/plugins/adapters/hooks.js";
+import { parseCodexHooksBlock, CODEX_HOOK_EVENTS } from "@tachyon/engine/plugins/adapters/codex.js";
+import { parseClaudeHooksBlock } from "@tachyon/engine/plugins/adapters/claude.js";
+import { mergeHooks, removeHooks } from "@tachyon/engine/plugins/adapters/hooks.js";
 
 describe("parseCodexHooksBlock", () => {
   it("accepts a codex block with a statusMessage + codex-native matcher", () => {

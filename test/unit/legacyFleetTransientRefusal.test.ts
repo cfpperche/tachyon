@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isTransientLegacyRefusal } from "../../src/agents/legacyFleetGate.js";
+import { isTransientLegacyRefusal } from "@tachyon/engine/agents/legacyFleetGate.js";
 
 /**
  * t-1129e1 — which legacy-fleet refusals can clear themselves.

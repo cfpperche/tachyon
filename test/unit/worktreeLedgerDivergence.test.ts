@@ -20,11 +20,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { removeAgentWorktree, type AgentWorktreeRemovalPorts } from "../../src/agents/agentRemovalCascade.js";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { ManagedWorktreeService, agentWorktreePath } from "../../src/worktree/ManagedWorktreeService.js";
-import { WorktreeManager, type WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { removeAgentWorktree, type AgentWorktreeRemovalPorts } from "@tachyon/engine/agents/agentRemovalCascade.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { ManagedWorktreeService, agentWorktreePath } from "@tachyon/engine/worktree/ManagedWorktreeService.js";
+import { WorktreeManager, type WorktreeRecord } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 const AGENT = "claude-validador";
 const dirs: string[] = [];

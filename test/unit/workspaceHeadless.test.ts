@@ -6,14 +6,14 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { resolveAgentProfileHomeDir, Workspace } from "../../src/workspace/Workspace.js";
-import { ResumeUnavailableError } from "../../src/agents/AgentManager.js";
-import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
-import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { registerTools, type NotifyLevel } from "../../src/bridge/tools.js";
-import { ActivityLog, agentLogId } from "../../src/activity/logStore.js";
-import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
-import { ReloadTransactionStore } from "../../src/host-action/index.js";
+import { resolveAgentProfileHomeDir, Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import { ResumeUnavailableError } from "@tachyon/engine/agents/AgentManager.js";
+import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
+import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { registerTools, type NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import { ActivityLog, agentLogId } from "@tachyon/engine/activity/logStore.js";
+import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
+import { ReloadTransactionStore } from "@tachyon/engine/host-action/index.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 
 /**
@@ -25,19 +25,19 @@ import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
  */
 const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
 import { Terminals } from "../../src/presentation/Terminals.js";
-import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPresentation.js";
-import { harnessHome, harnessRoot } from "../../src/harness/HarnessManager.js";
+import type { TerminalPresentationOptions } from "@tachyon/engine/workspace/TerminalPresentation.js";
+import { harnessHome, harnessRoot } from "@tachyon/engine/harness/HarnessManager.js";
 import { parse as parseYaml, stringify } from "yaml";
-import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
+import { serializeAgentProfileAuthorityRegistry } from "@tachyon/engine/config/agentProfileAuthority.js";
 import type { AgentProfileStudioMutationV1 } from "@tachyon/shared/config/agentProfileStudio.js";
-import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
-import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
+import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "@tachyon/engine/config/agentProfileProjection.js";
+import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "@tachyon/engine/workspace/operationalStateKeys.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
-import { asAgent, composeCommand } from "../../src/config/loadConfig.js";
-import { composeAgentPrompt } from "../../src/agents/promptLayers.js";
-import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
-import { parseExtensionCommandV1, type ExtensionCommandV1 } from "../../src/runtime-api/extensionOperations.js";
-import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
+import { asAgent, composeCommand } from "@tachyon/engine/config/loadConfig.js";
+import { composeAgentPrompt } from "@tachyon/engine/agents/promptLayers.js";
+import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
+import { parseExtensionCommandV1, type ExtensionCommandV1 } from "@tachyon/engine/runtime-api/extensionOperations.js";
+import type { NoticeQueueMetadata } from "@tachyon/engine/bridge/NoticeQueue.js";
 
 /**
  * spec 235 — the headless Workspace smoke test (the deferred spec-233 payoff): drive the orchestrator with
@@ -1311,7 +1311,7 @@ describe("SDD 494 Part 0 — Saved Agent removal actor x trigger", () => {
  *  - **A5 Tachyon, interruption x between this door's two writes** — the window with no journal, no
  *    lock and no reconcile. Two cases, one per write, because the order between them IS the fix.
  *
- * The removal policy itself is `removeEmptyAgentProfileHome` (`src/config/agentProfileHome.ts`) and
+ * The removal policy itself is `removeEmptyAgentProfileHome` (`packages/engine/src/config/agentProfileHome.ts`) and
  * is not re-stated here: these cases drive the production door and assert what it leaves on disk,
  * which is the only thing that proves the door reaches the policy at all.
  */

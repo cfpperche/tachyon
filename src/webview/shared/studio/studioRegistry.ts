@@ -12,7 +12,7 @@
  */
 import * as vscode from "vscode";
 import type { StudioId } from "./studioIds.js";
-import type { StudioHostAdapter } from "./adapter.js";
+import type { StudioHostAdapter } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import type { WorkspaceStudioTarget, WorkspaceAgentStudioTarget } from "../../../shell/WorkspacePresentation.js";
 import type { WorkspaceTaskStudioTarget } from "../../../shell/TaskStudioTarget.js";
 import type { WorkspacePinStudioTarget } from "../../../shell/PinStudioTarget.js";

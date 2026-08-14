@@ -11,7 +11,7 @@ import {
   bridgeRuntimeHome,
   listBridgeRuntimeHomes,
   measureDirUsage,
-} from "../../src/harness/HarnessManager.js";
+} from "@tachyon/engine/harness/HarnessManager.js";
 import { RESUME_RUNTIMES, adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 

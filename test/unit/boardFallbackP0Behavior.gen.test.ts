@@ -2,11 +2,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { BOARD_AGENT_LIST_TIMEOUT_MS, BoardAgentLists, buildBoardVm } from "../../src/webview/board/boardVm.js";
 import { legacyBoardTarget } from "../../src/shell/BoardTarget.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
+import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 
 // t-610705 Phase B #6 — retargeted from the retired BoardPanelManager to the ported
 // bounded-liveness pass in src/webview/board/boardVm.ts (Control → Mission is the one board now).

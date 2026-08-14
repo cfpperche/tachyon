@@ -37,7 +37,7 @@ const roundLog = path.join(scratch, "rounds.jsonl");
 const stopPath = path.join(scratch, "STOP");
 const victimSrc = path.join(scratch, "victim.ts");
 const waiterSrc = path.join(scratch, "waiter.ts");
-const lockUrl = pathToFileURL(path.join(repoRoot, "src/locks/processLock.ts")).href;
+const lockUrl = pathToFileURL(path.join(repoRoot, "packages/engine/src/locks/processLock.ts")).href;
 const viteNode = path.join(repoRoot, "node_modules", ".bin", "vite-node");
 
 fs.writeFileSync(csLog, "", "utf8");

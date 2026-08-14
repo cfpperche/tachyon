@@ -13,10 +13,12 @@ import {
 const root = process.cwd();
 const srcRoot = path.join(root, "src");
 const sharedRoot = path.join(root, "packages", "shared");
+const engineRoot = path.join(root, "packages", "engine");
 const srcFiles = walk(srcRoot).filter((file) => /\.tsx?$/.test(file)).sort();
 const packageSharedFiles = walk(path.join(sharedRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
+const packageEngineFiles = walk(path.join(engineRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
 const sharedRuntimeFiles = walk(sharedRoot).filter((file) => /\.cjs$/.test(file)).sort();
-const files = [...srcFiles, ...packageSharedFiles, ...sharedRuntimeFiles].sort();
+const files = [...srcFiles, ...packageSharedFiles, ...packageEngineFiles, ...sharedRuntimeFiles].sort();
 const fileSet = new Set(files);
 const nodes = new Map();
 const relativeSpecifiers = new Map();
@@ -63,8 +65,9 @@ const webviewBrowser = files.filter((file) => file.startsWith(path.join(srcRoot,
   && path.dirname(file) !== path.join(srcRoot, "webview"));
 const browserEntries = webviewBrowser.filter((file) => path.basename(file) === "main.tsx");
 const browserProgram = forwardClosure(browserEntries, "value");
-const engineEntries = ["engineService.ts", "daemonMain.ts"].map((name) => path.join(srcRoot, "engine-service", name));
+const engineEntries = ["engineService.ts", "daemonMain.ts"].map((name) => path.join(engineRoot, "src", "engine-service", name));
 const engineProgram = forwardClosure(engineEntries, "value");
+const engineTypeProgram = forwardClosure(engineEntries, "both");
 const engineBrowserShared = new Set([...engineProgram].filter((file) => browserProgram.has(file)));
 const boundary = [];
 for (const importer of [...webviewRoot, ...webviewBrowser]) {
@@ -113,6 +116,7 @@ const output = {
     srcFiles: srcFiles.length,
     sharedRuntimeFiles: sharedRuntimeFiles.length,
     packageSharedRuntimeFiles: packageSharedFiles.length + sharedRuntimeFiles.length,
+    packageEngineSourceFiles: packageEngineFiles.length,
     runtimePortable: files.length - valueCoupled.size,
     runtimeCoupled: valueCoupled.size,
     typeAwareCoupled: typeAwareCoupled.size,
@@ -143,6 +147,11 @@ const output = {
   },
   programs: {
     engine: { ...programSummary(engineProgram), members: [...engineProgram].map(rel).sort() },
+    engineTypeAware: { ...programSummary(engineTypeProgram), members: [...engineTypeProgram].map(rel).sort() },
+    engineOwnedRuntime: (() => {
+      const group = new Set([...engineProgram].filter((file) => packageEngineFiles.includes(file)));
+      return { ...programSummary(group), members: [...group].map(rel).sort() };
+    })(),
     browser: { ...programSummary(browserProgram), members: [...browserProgram].map(rel).sort() },
     engineBrowserShared: { ...programSummary(engineBrowserShared), members: [...engineBrowserShared].map(rel).sort() },
     outsideEngineAndBrowser: (() => {

@@ -10,8 +10,8 @@ import {
   ProcessLockBusyError,
   withProcessLock,
   withProcessLockSync,
-} from "../../src/locks/processLock.js";
-import { PinStore } from "../../src/pins/PinStore.js";
+} from "@tachyon/engine/locks/processLock.js";
+import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 
 /**
  * t-7843d0 — a cross-process lock whose holder died must not wedge the product.
@@ -147,7 +147,7 @@ describe("processLock", () => {
     const workerCount = 6;
     const iters = 40;
     const workerPath = path.join(scratch, "contender.ts");
-    const lockUrl = pathToFileURL(path.join(repoRoot, "src/locks/processLock.ts")).href;
+    const lockUrl = pathToFileURL(path.join(repoRoot, "packages/engine/src/locks/processLock.ts")).href;
     fs.writeFileSync(workerPath, `
       import fs from "node:fs";
       import { withProcessLockSync } from ${JSON.stringify(lockUrl)};
@@ -274,8 +274,8 @@ describe("a killed lock owner does not wedge the next writer (t-7843d0)", () => 
     const workspaceRoot = path.join(scratch, "ws-pins");
     fs.mkdirSync(workspaceRoot, { recursive: true });
     const child = await holder(`
-      import { acquireProcessLock } from ${srcUrl("src/locks/processLock.ts")};
-      import { PinStore } from ${srcUrl("src/pins/PinStore.ts")};
+      import { acquireProcessLock } from ${srcUrl("packages/engine/src/locks/processLock.ts")};
+      import { PinStore } from ${srcUrl("packages/engine/src/pins/PinStore.ts")};
       acquireProcessLock(new PinStore(process.argv[2]!).lockPath);
       process.stdout.write("held\\n");
       setInterval(() => {}, 1_000);
@@ -302,8 +302,8 @@ describe("a killed lock owner does not wedge the next writer (t-7843d0)", () => 
     const workspaceRoot = path.join(scratch, "ws-pins-live");
     fs.mkdirSync(workspaceRoot, { recursive: true });
     await holder(`
-      import { withProcessLock } from ${srcUrl("src/locks/processLock.ts")};
-      import { PinStore } from ${srcUrl("src/pins/PinStore.ts")};
+      import { withProcessLock } from ${srcUrl("packages/engine/src/locks/processLock.ts")};
+      import { PinStore } from ${srcUrl("packages/engine/src/pins/PinStore.ts")};
       const store = new PinStore(process.argv[2]!);
       const holdMs = Number(process.argv[3]!);
       await withProcessLock(store.lockPath, async () => {

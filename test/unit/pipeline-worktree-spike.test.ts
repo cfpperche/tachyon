@@ -3,8 +3,8 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { WorktreeManager, branchFor, resolveWorktreeCwd, type WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { WorktreeManager, branchFor, resolveWorktreeCwd, type WorktreeRecord } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 /**
  * spec 230 — Step 0 SPIKE: de-risk B2 (run-scoped worktree + per-node spawn-cwd override).

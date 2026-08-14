@@ -5,7 +5,7 @@ import {
   probeOpencodeCredentials,
   type OpencodeCredentialProbe,
   type OpencodeProbeResult,
-} from "../../src/runtime/adapters/opencodeLaunchPreflight.js";
+} from "@tachyon/engine/runtime/adapters/opencodeLaunchPreflight.js";
 import {
   parseLaunchCommand,
   RuntimeLaunchPreflightError,

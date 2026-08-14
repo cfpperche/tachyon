@@ -15,10 +15,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { ManagedWorktreeService } from "../../src/worktree/ManagedWorktreeService.js";
-import { WorktreeManager } from "../../src/worktree/WorktreeManager.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
-import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
+import { ManagedWorktreeService } from "@tachyon/engine/worktree/ManagedWorktreeService.js";
+import { WorktreeManager } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
 
 function git(args: string[], cwd: string): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });

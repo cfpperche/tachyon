@@ -5,7 +5,7 @@ import path from "node:path";
 import { __createdPanels, __resetVscodeMock, __getShownDocuments, __setPanelVisible } from "../mocks/vscode.js";
 import { HandoffPanelManager } from "../../src/webview/HandoffPanel.js";
 import type { WorkspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
-import type { HandoffProjectionV1 } from "../../src/runtime-api/handoffProjection.js";
+import type { HandoffProjectionV1 } from "@tachyon/engine/runtime-api/handoffProjection.js";
 
 beforeEach(() => __resetVscodeMock());
 afterEach(() => { for (const panel of __createdPanels) if (!panel.disposed) panel.dispose(); });

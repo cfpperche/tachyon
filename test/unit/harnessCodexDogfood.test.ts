@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { HarnessManager } from "../../src/harness/HarnessManager.js";
+import { HarnessManager } from "@tachyon/engine/harness/HarnessManager.js";
 import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 import { requireMachineDependency } from "../helpers/machineDependency.js";
 

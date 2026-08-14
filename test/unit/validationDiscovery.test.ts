@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { discoverValidationCandidates } from "../../src/validations/discovery.js";
+import { discoverValidationCandidates } from "@tachyon/engine/validations/discovery.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("discoverValidationCandidates", () => {

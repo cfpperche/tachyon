@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Validation } from "../../src/validations/types.js";
+import type { Validation } from "@tachyon/engine/validations/types.js";
 import { buildValidationsViewModel } from "../../src/webview/validations/viewModel.js";
 
 const validation = (overrides: Partial<Validation>): Validation => ({

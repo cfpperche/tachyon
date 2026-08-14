@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { collectAgentTouchedFiles } from "../../src/worktree/agentTouchedFiles.js";
-import type { ChangedFile } from "../../src/worktree/review.js";
+import { collectAgentTouchedFiles } from "@tachyon/engine/worktree/agentTouchedFiles.js";
+import type { ChangedFile } from "@tachyon/engine/worktree/review.js";
 
 describe("collectAgentTouchedFiles (t-75e9c7)", () => {
   it("reports files per live agent, from the diff of its own worktree", async () => {

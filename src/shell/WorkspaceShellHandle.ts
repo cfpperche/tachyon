@@ -1,4 +1,4 @@
-import type { GitExec } from "../worktree/WorktreeManager.js";
+import type { GitExec } from "@tachyon/engine/worktree/WorktreeManager.js";
 import type { StudioDeps, StudioSubmit } from "../webview/studioSubmit.js";
 import { workspaceActivityTarget, type WorkspaceActivityTarget } from "./ActivityTarget.js";
 import { ClientWorkspaceStudioTarget } from "./ClientWorkspaceStudioTarget.js";

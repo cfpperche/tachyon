@@ -7,7 +7,7 @@ import { __createdPanels, __registeredWebviewPanelSerializers, __resetVscodeMock
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, pluginsRefreshKind, sourceSpecAtCommit, type PluginsPanelState } from "../../src/webview/PluginsPanel.js";
 import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
 import type { SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
-import { serializeLockfile, LOCKFILE_REL_PATH } from "../../src/plugins/lockfile.js";
+import { serializeLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 import { pollAction, readyMessage } from "../../src/webview/plugins/messages.js";
 import type { WorkspaceGitPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 

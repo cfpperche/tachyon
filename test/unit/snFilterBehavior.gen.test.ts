@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildBoardModel } from "../../src/tasks/boardModel.js";
-import type { BoardSnapshot } from "../../src/tasks/boardSnapshot.js";
+import type { BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
 import type { Task, TaskView } from "@tachyon/shared/tasks/types.js";
 import { applyAwaitingHumanFilter, shouldShowAwaitingFilterButton } from "../../src/webview/board/interactions.js";
 

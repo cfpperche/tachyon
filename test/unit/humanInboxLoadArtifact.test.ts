@@ -6,7 +6,7 @@ import {
   INBOX_IMAGE_MAX_BYTES,
   insideWorkspace,
   makeInboxArtifactLoader,
-} from "../../src/humanInbox/loadArtifact.js";
+} from "@tachyon/engine/humanInbox/loadArtifact.js";
 
 /**
  * Human Inbox — the boundary between "a ref points at this" and "these bytes go into the webview"

@@ -55,8 +55,8 @@
  * list and reaches the opposite conclusion.
  */
 import path from "node:path";
-import type { RuntimeNativeMemoryCapabilityV1 } from "../nativeMemory.js";
-import type { MemoryLifecycleOperation } from "../nativeMemory.js";
+import type { RuntimeNativeMemoryCapabilityV1 } from "@tachyon/engine/runtime/nativeMemory.js";
+import type { MemoryLifecycleOperation } from "@tachyon/engine/runtime/nativeMemory.js";
 
 /** The exact runtime this evidence describes. A different build is unmeasured until someone measures it. */
 export const CODEX_MEMORY_MEASURED_VERSION = "0.146.0";

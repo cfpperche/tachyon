@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildRuntimeOpsSnapshot } from "../../src/runtimeOps/model.js";
-import type { CollectorEnvelopeV1 } from "../../src/runtimeObservability/types.js";
+import { buildRuntimeOpsSnapshot } from "@tachyon/engine/runtimeOps/model.js";
+import type { CollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/types.js";
 
 const GENERATED_AT = "2026-07-09T21:00:00.000Z";
 const OBSERVED_AT = "2026-07-09T20:59:00.000Z";

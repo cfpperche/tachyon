@@ -17,9 +17,9 @@ import {
   type BridgeClientRebindDeps,
   type BridgeClientRebindSettings,
   type RebindResumeReadiness,
-} from "../../src/bridge/clientRebind.js";
-import { SessionLedger, durableBoundGeneration, type SessionRecord } from "../../src/resume/SessionLedger.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/bridge/clientRebind.js";
+import { SessionLedger, durableBoundGeneration, type SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-364-"));

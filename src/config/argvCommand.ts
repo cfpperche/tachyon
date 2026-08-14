@@ -1,4 +1,4 @@
-import { containsUnsafeFramingCharacter } from "./framingSafety.js";
+import { containsUnsafeFramingCharacter } from "@tachyon/engine/config/framingSafety.js";
 
 /** Parse a command into argv without invoking a shell. Supports whitespace separation, single/double
  * quotes, adjacent quoted fragments, and backslash escaping. Malformed input fails closed. */

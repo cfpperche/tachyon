@@ -6,7 +6,7 @@ import {
   workspacePinStudioViewSuccessV1,
   workspaceSidebarMutationSuccessV1,
   workspaceSidebarViewSuccessV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { workspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";

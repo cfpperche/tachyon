@@ -1,5 +1,5 @@
 import type { WorkspacePinStudioTarget } from "../shell/PinStudioTarget.js";
-import type { StudioHostAdapter } from "./shared/studio/adapter.js";
+import type { StudioHostAdapter } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
 import {
   PIN_STUDIO_DOMAIN_MESSAGE_NAMES,

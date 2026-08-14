@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import type { ToolPlatformKey } from "./manifest.js";
+import type { ToolPlatformKey } from "@tachyon/engine/plugins/manifest.js";
 
 export type UnsupportedCode = "UNSUPPORTED_OS" | "UNSUPPORTED_ARCH" | "AMBIGUOUS_ARCH" | "LIBC_UNRESOLVED";
 

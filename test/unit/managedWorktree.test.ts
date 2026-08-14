@@ -20,10 +20,10 @@ import {
   saveManagedWorktreeStore,
   upsertManagedEntry,
   type ManagedWorktreeEntry,
-} from "../../src/worktree/managedWorktree.js";
-import { ManagedWorktreeService } from "../../src/worktree/ManagedWorktreeService.js";
-import { WorktreeManager } from "../../src/worktree/WorktreeManager.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/worktree/managedWorktree.js";
+import { ManagedWorktreeService } from "@tachyon/engine/worktree/ManagedWorktreeService.js";
+import { WorktreeManager } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 describe("spec 392 managed worktree registry", () => {
   it("pathForChange is under base/wsHash/change/slug", () => {

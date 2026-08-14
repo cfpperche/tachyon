@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { emptyLockfile, serializeLockfile, parseLockfile, LOCKFILE_REL_PATH, physicalToolKey, toolReferenceCounts, type Lockfile } from "../../src/plugins/lockfile.js";
+import { emptyLockfile, serializeLockfile, parseLockfile, LOCKFILE_REL_PATH, physicalToolKey, toolReferenceCounts, type Lockfile } from "@tachyon/engine/plugins/lockfile.js";
 
 const VALID = {
   schemaVersion: 1,

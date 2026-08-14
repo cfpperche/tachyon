@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseNameStatus, mergeChanges, emptySides, baseSidePath, diffTitle } from "../../src/worktree/review.js";
+import { parseNameStatus, mergeChanges, emptySides, baseSidePath, diffTitle } from "@tachyon/engine/worktree/review.js";
 
 describe("worktree diff-review — pure helpers (spec 213)", () => {
   it("parseNameStatus handles A/M/D/T and rename/copy from -z NUL output (incl. a path with a space)", () => {

@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { executeExtensionCommand } from "../../src/engine-service/extensionOperationService.js";
-import { TmuxService, type ExecResult, type SubmitReceipt } from "../../src/tmux/TmuxService.js";
+import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
+import { TmuxService, type ExecResult, type SubmitReceipt } from "@tachyon/engine/tmux/TmuxService.js";
 
 const roots: string[] = [];
 

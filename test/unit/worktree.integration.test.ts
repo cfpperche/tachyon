@@ -3,9 +3,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { WorktreeManager, WorktreeUnavailableError, resolveWorktreeCwd } from "../../src/worktree/WorktreeManager.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
-import { collectAgentTouchedFiles } from "../../src/worktree/agentTouchedFiles.js";
+import { WorktreeManager, WorktreeUnavailableError, resolveWorktreeCwd } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { collectAgentTouchedFiles } from "@tachyon/engine/worktree/agentTouchedFiles.js";
 
 /** Real-git integration: create/reuse/attach/fail/dirty/ahead/remove on a tmp repo. */
 describe("WorktreeManager — git side (real git, tmp repo)", () => {

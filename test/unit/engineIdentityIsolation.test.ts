@@ -5,8 +5,8 @@ import {
   engineSystemdUnitName,
   engineRuntimeDir,
   engineStorageRoot,
-} from "../../src/engine-service/engineSupervisor.js";
-import { TMUX_SOCKET_ENV, resolveSocketName, DEFAULT_SOCKET_NAME } from "../../src/tmux/TmuxService.js";
+} from "@tachyon/engine/engine-service/engineSupervisor.js";
+import { TMUX_SOCKET_ENV, resolveSocketName, DEFAULT_SOCKET_NAME } from "@tachyon/engine/tmux/TmuxService.js";
 
 /**
  * t-05097f — an engine that runs against an isolated tmux server must BE a different engine.

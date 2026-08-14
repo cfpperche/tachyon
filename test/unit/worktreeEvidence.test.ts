@@ -9,7 +9,7 @@ import {
   EVIDENCE_SCHEMA_VERSION,
   type WorktreeEvidence,
   type Severity,
-} from "../../src/worktree/evidence.js";
+} from "@tachyon/engine/worktree/evidence.js";
 
 let seq = 0;
 const ev = (e: Partial<WorktreeEvidence> = {}): WorktreeEvidence => ({

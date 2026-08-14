@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ManagedAgentInputReceipt, ManagedAgentInputSource } from "../agents/agentInputService.js";
-import { sendManagedAgentInput } from "../agents/agentInputService.js";
+import type { ManagedAgentInputReceipt, ManagedAgentInputSource } from "@tachyon/engine/agents/agentInputService.js";
+import { sendManagedAgentInput } from "@tachyon/engine/agents/agentInputService.js";
 import {
   projectActivityContext,
   type ActivityContextProjectionV1,
   type ActivityContextSource,
-} from "../runtime-api/activityProjection.js";
+} from "@tachyon/engine/runtime-api/activityProjection.js";
 import type { WorkspaceAgentProjectionV1 } from "../runtime-api/workspaceProjection.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import {

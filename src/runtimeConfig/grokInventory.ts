@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parse } from "@iarna/toml";
-import type { AgentDef } from "../config/loadConfig.js";
-import { isTachyonManagedGrokHome } from "../harness/HarnessManager.js";
+import type { AgentDef } from "@tachyon/engine/config/loadConfig.js";
+import { isTachyonManagedGrokHome } from "@tachyon/engine/harness/HarnessManager.js";
 import { binaryOf } from "@tachyon/shared/resume/adapters.js";
 import { withRuntimeConfigSourceLock, type RuntimeConfigSourceLockOptions } from "./sourceLock.js";
 import type {
