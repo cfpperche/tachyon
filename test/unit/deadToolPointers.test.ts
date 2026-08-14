@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { registerTools } from "@tachyon/engine/bridge/tools.js";
-import { renderPrimer } from "@tachyon/engine/bridge/primer.js";
+import { renderPrimer } from "@tachyon/engine/agents/primer.js";
 import { hostFallbackLine } from "@tachyon/engine/workspace/GatedCompletionMonitor.js";
 
 /**

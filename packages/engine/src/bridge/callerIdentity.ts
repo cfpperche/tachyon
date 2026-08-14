@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { CALLER_IDENTITY_HMAC_SECRET_KEY } from "../workspace/operationalStateKeys.js";
+import type { SpawnActorKind } from "../agents/spawnActor.js";
 
 /**
  * spec 351 (layer B) — the Bridge RESOLVES the caller instead of trusting self-declared params. This
@@ -31,7 +32,7 @@ export async function loadOrCreateHmacKey(host: SecretPort): Promise<Buffer> {
   return key;
 }
 
-export type CallerKind = "agent" | "master" | "legacy" | "external" | "human";
+export type CallerKind = SpawnActorKind;
 
 /** Immutable — resolved exactly once at auth time; an in-flight request keeps its snapshot even if the
  *  underlying token is invalidated mid-request (dueto F4). */

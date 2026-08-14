@@ -4,7 +4,7 @@ import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { parseConfig, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 import { BRIEF_FILE_THRESHOLD, briefFilePath, deliverableBody } from "@tachyon/engine/agents/briefFile.js";
-import { composeSpawnContractBrief, type SpawnContract } from "@tachyon/engine/bridge/spawnContract.js";
+import { composeSpawnContractBrief, type SpawnContract } from "@tachyon/engine/agents/spawnContract.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 function configOf(yaml: string): TachyonConfig {

@@ -8,7 +8,7 @@
  * COMPOSITION (D3) — lossless, backstopped by an explicit MAX_CONTRACT_CHARS rejection (t-11a2d1).
  */
 
-import type { CallerKind } from "./callerIdentity.js";
+import type { SpawnActorKind } from "./spawnActor.js";
 
 export interface SpawnContract {
   task: string;
@@ -325,14 +325,14 @@ const AGENT_LINEAGE_NOTE =
   + "caller has here is not one you can take.";
 
 /** The exits that exist for a given caller kind. `undefined` is the unauthenticated/legacy Bridge. */
-export function parentCwdExitsFor(callerKind: CallerKind | undefined): SpawnCwdExit[] {
+export function parentCwdExitsFor(callerKind: SpawnActorKind | undefined): SpawnCwdExit[] {
   return callerKind === "agent"
     ? ["inherit-parent-cwd", "isolate-in-own-worktree", "declare-in-config"]
     : ["unparented-spawn", "isolate-in-own-worktree", "declare-in-config"];
 }
 
 /** The refusal as the given caller should hear it — the rule, then only the exits that caller has. */
-export function parentCwdRefusalFor(callerKind: CallerKind | undefined): string {
+export function parentCwdRefusalFor(callerKind: SpawnActorKind | undefined): string {
   const exits = parentCwdExitsFor(callerKind).map((exit) => EXIT_PROSE[exit]);
   const preamble = callerKind === "agent" ? [PARENT_CWD_RULE, AGENT_LINEAGE_NOTE] : [PARENT_CWD_RULE];
   return [...preamble, ...exits].join(" ");

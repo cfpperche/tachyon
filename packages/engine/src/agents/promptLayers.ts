@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { bridgeGuidanceTail } from "./bridgeGuidance.js";
-import { briefCarriesTaskSubstance } from "../bridge/spawnContract.js";
+import { briefCarriesTaskSubstance } from "./spawnContract.js";
 import { renderSessionWorkRecord, sessionRecordManifest, type SessionWorkRecord } from "./sessionWorkRecord.js";
 
 export interface AgentPromptLayers {

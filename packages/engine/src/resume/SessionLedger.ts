@@ -9,7 +9,7 @@ import { type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
 import type { SharedDependencyState } from "../worktree/dependencySharing.js";
-import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
+import { spawnContractCompletion, type SpawnContract } from "../agents/spawnContract.js";
 
 /**
  * Per-workspace session ledger (spec 209 + 211): `agentName -> SessionRecord`,

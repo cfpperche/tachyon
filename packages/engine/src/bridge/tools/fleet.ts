@@ -4,11 +4,11 @@ import { cancelSavedAgentProposal, readLiveSavedAgentProposalQueue, recordSavedA
 import { cancelSavedAgentRemovalProposal, readLiveSavedAgentRemovalProposalQueue, recordSavedAgentRemovalProposal } from "../../agents/savedAgentRemovalProposalStore.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../../config/agentProfileGrants.js";
 import type { AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
-import { parentCwdRefusalFor } from "../spawnContract.js";
+import { parentCwdRefusalFor } from "../../agents/spawnContract.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
 import { NO_QUOTA_CHANNEL } from "../../runtimeOps/runtimeCondition.js";
-import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, noInteractivePromptGuidance, identityLine, idleSpawnGuidance, normalizeField } from "../spawnContract.js";
-import type { SpawnContract } from "../spawnContract.js";
+import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, noInteractivePromptGuidance, identityLine, idleSpawnGuidance, normalizeField } from "../../agents/spawnContract.js";
+import type { SpawnContract } from "../../agents/spawnContract.js";
 import { decideSpawnTaskClaim } from "../spawnTaskClaim.js";
 import type { SpawnTaskClaimDecision } from "../spawnTaskClaim.js";
 import { collectAgentTouchedFiles } from "../../worktree/agentTouchedFiles.js";
