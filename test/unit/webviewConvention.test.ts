@@ -284,8 +284,8 @@ function sharedMountModules(): string[] {
 }
 
 /** the extension points a surface's shipped code ACTUALLY exercises, with the evidence that proves each. */
-function observedExtensionPoints(s: WebviewSurface): Map<ShellExtensionPoint, string> {
-  const found = new Map<ShellExtensionPoint, string>();
+function observedExtensionPoints(s: WebviewSurface): Map<string, string> {
+  const found = new Map<string, string>();
   const linked = linkedStylesheets(s);
   // SDD 505 Slice 1 — every surface consumes the complete nature-split baseline except Agent Pane,
   // whose measured xterm constraint applies to bundled faces only. Tokens and components remain mandatory.
@@ -461,7 +461,7 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
     const violations: string[] = [];
     for (const s of WEBVIEW_SURFACES) {
       if (s.posture === "replace") continue;
-      const declared = new Set(declaredExtensionPoints(s));
+      const declared = new Set<string>(declaredExtensionPoints(s));
       for (const [point, evidence] of observedExtensionPoints(s)) {
         if (!declared.has(point)) {
           violations.push(`${s.viewId}: UNDECLARED "${point}" — ${evidence}. Declare posture "extend" naming "${point}" in WEBVIEW_SURFACES, or stop departing.`);
