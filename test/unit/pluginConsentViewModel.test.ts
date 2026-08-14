@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck } from "../../src/plugins/consentViewModel.js";
+import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck } from "../../src/plugins/consentViewModel";
 import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview, InstallStep, McpPlanItem } from "../../src/plugins/engine.js";
 import type { McpServer } from "@tachyon/engine/plugins/mcp.js";
 

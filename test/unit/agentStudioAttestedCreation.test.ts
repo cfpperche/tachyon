@@ -5,7 +5,7 @@ import {
   newAgentRuntimeRefusal,
   serializeAgentPatch,
   type AgentStudioFields,
-} from "../../src/webview/agent-studio-shell/domain.js";
+} from "../../packages/webview-ui/src/webview/agent-studio-shell/domain.js";
 import { createProfileFromStudioMutation, patchProfileFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
 import { admitSavedAgentProposal, savedAgentCreateMutation } from "@tachyon/engine/agents/savedAgentProposal.js";
 import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes.js";

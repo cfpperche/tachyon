@@ -1,5 +1,5 @@
 import type { StudioPanelState } from "./shared/studio/StudioPanelManagerBase.js";
-import type { PinPatch } from "./pin-studio/domain.js";
+import type { PinPatch } from "@tachyon/webview-ui/webview/pin-studio/domain";
 
 export const PIN_STUDIO_VIEW_TYPE = "tachyonPinStudio";
 

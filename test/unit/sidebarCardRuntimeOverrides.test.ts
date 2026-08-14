@@ -245,7 +245,7 @@ describe("SDD 479 phase 3 — the row reports the runtime the override keys on",
 describe("SDD 479 phase 3 — end to end through the real card", () => {
   let AgentRow: (props: unknown) => unknown;
   beforeAll(async () => {
-    AgentRow = (await loadWebviewModule(path.join(__dirname, "../../src/webview/sidebar/App.tsx"))).AgentRow as typeof AgentRow;
+    AgentRow = (await loadWebviewModule(path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"))).AgentRow as typeof AgentRow;
   });
 
   const config = parseCardTemplate({

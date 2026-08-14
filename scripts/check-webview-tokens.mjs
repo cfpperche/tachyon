@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * t-c8e2bd — raw hex colors and numeric z-index in src/webview/ stop passing in silence.
+ * t-c8e2bd — raw hex colors and numeric z-index in packages/webview-ui/src/webview/ stop passing in silence.
  *
- * The design token source already exists (`src/webview/shared/tokens.css`). This gate is the
+ * The design token source already exists (`packages/webview-ui/src/webview/shared/tokens.css`). This gate is the
  * thing that refuses a new loose value. Existing debt is listed below, each row with a reason;
  * a new distinct hex or a new numeric z-index in an excepted file still fails. Paying a value
  * down means deleting it from the list — a stale row fails the same way an anonymous one does.
@@ -34,8 +34,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const SCAN_ROOT = "src/webview";
-export const TOKEN_SOURCE = "src/webview/shared/tokens.css";
+export const SCAN_ROOT = "packages/webview-ui/src/webview";
+export const TOKEN_SOURCE = "packages/webview-ui/src/webview/shared/tokens.css";
 export const EXTENSIONS = Object.freeze([".css", ".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 export const MIN_REASON = 20;
 
@@ -46,7 +46,7 @@ export const MIN_REASON = 20;
  */
 export const HEX_EXCEPTIONS = Object.freeze([
   {
-    file: "src/webview/activity/activity.css",
+    file: "packages/webview-ui/src/webview/activity/activity.css",
     values: [
       "#000", "#0000ff", "#008000", "#0451a5", "#098658", "#1e1e1e", "#267f99",
       "#4daafc", "#4ec97e", "#4ec9b0", "#569cd6", "#6a9955", "#795e26", "#9cdcfe",
@@ -56,41 +56,41 @@ export const HEX_EXCEPTIONS = Object.freeze([
     reason: "Activity markdown: highlight.js Dark+/Light+ syntax colors have no --ds syntax roles, plus vscode-var fallbacks, mask black, and a lightbox close glyph.",
   },
   {
-    file: "src/webview/agent-pane/App.tsx",
+    file: "packages/webview-ui/src/webview/agent-pane/App.tsx",
     values: [
       "#4ec9b0", "#569cd6", "#c586c0",
     ],
     reason: "Non-PTY inject marker colors identify stage/submit/template events; xterm itself reads the VS Code terminal theme.",
   },
   {
-    file: "src/webview/agent-pane/agent-pane.css",
+    file: "packages/webview-ui/src/webview/agent-pane/agent-pane.css",
     values: [
       "#1e1e1e", "#3794ff", "#3a3d41", "#4ec9b0", "#cca700", "#cccccc",
     ],
     reason: "Agent pane skips only bundled faces.css for xterm metrics; remaining literals are scoped vscode-var fallbacks and stage/notice colors.",
   },
   {
-    file: "src/webview/shared/design-system.css",
+    file: "packages/webview-ui/src/webview/shared/design-system.css",
     values: ["#000", "#1e1e1e", "#cca700", "#fff"],
     reason: "Shared component fallbacks already shipped here; tokens.css is now the only declaration source, so component literals remain explicit debt rather than becoming token declarations.",
   },
   {
-    file: "src/webview/agent-studio-shell/runtimeLogos.tsx",
+    file: "packages/webview-ui/src/webview/agent-studio-shell/runtimeLogos.tsx",
     values: ["#005af0", "#09090b", "#14b014", "#6950ef", "#8e75b2", "#d97757", "#fff"],
     reason: "Third-party runtime logo SVG fills (Claude/Codex/Gemini/Grok/OpenCode/Pi artwork), not product chrome.",
   },
   {
-    file: "src/webview/board/board.css",
+    file: "packages/webview-ui/src/webview/board/board.css",
     values: ["#0e70c0"],
     reason: "Accent fallback on the selected-column rule; replace with --ds-accent when the board chrome is next restyled.",
   },
   {
-    file: "src/webview/handoff/handoff.css",
+    file: "packages/webview-ui/src/webview/handoff/handoff.css",
     values: ["#1e1e1e", "#4daafc"],
     reason: "Task-checkbox vscode-var fallbacks predating the shared --ds-link / editor-bg tokens on this sheet.",
   },
   {
-    file: "src/webview/human-inbox/human-inbox.css",
+    file: "packages/webview-ui/src/webview/human-inbox/human-inbox.css",
     values: ["#fff"],
     reason: "QR/image plate background so a dark-on-dark code does not vanish; no --ds inverted-plate token yet — add one to the DS rather than keep extending this.",
   },
@@ -105,7 +105,7 @@ export const HEX_EXCEPTIONS = Object.freeze([
     reason: "Generated copies of tokens.css literals, light/dark VS Code fallback tables, and the runtime pure-white input guard; not independently authored surface colors.",
   },
   {
-    file: "src/webview/pin-preview/pin-preview.css",
+    file: "packages/webview-ui/src/webview/pin-preview/pin-preview.css",
     values: ["#fff"],
     reason: "Sketch-image plate so a transparent PNG does not sit on the editor background; same inverted-plate gap as human-inbox.",
   },
@@ -115,62 +115,62 @@ export const HEX_EXCEPTIONS = Object.freeze([
     reason: "Excalidraw export/view default canvas; the vendor scene expects a literal page color, not a --ds token.",
   },
   {
-    file: "src/webview/plugins/plugins.css",
+    file: "packages/webview-ui/src/webview/plugins/plugins.css",
     values: ["#fff"],
     reason: "Danger-segment label on --ds-err; should be --ds-btn-fg (or a --ds-on-err token) when this sheet is next touched.",
   },
   {
-    file: "src/webview/probes/probes.css",
+    file: "packages/webview-ui/src/webview/probes/probes.css",
     values: ["#3fb950", "#4daafc", "#f85149"],
     reason: "vscode testing-icon / charts fallbacks for pass/fail/run counts; map to --ds-ok/--ds-err/--ds-info instead of new literals.",
   },
   {
-    file: "src/webview/rich-doc/rich-doc.css",
+    file: "packages/webview-ui/src/webview/rich-doc/rich-doc.css",
     values: ["#fff"],
     reason: "Sketch-node plate, same inverted-plate gap as pin-preview; add a DS token rather than another local #fff.",
   },
   {
-    file: "src/webview/runtime-config/runtime-config.css",
+    file: "packages/webview-ui/src/webview/runtime-config/runtime-config.css",
     values: ["#000", "#cca700"],
     reason: "Shadow mix uses raw black; warning rail uses a vscode-var fallback. Both have --ds-shadow / --ds-warn replacements.",
   },
   {
-    file: "src/webview/settings/settings.css",
+    file: "packages/webview-ui/src/webview/settings/settings.css",
     values: ["#0002", "#007fd4", "#3ba55d", "#444", "#4443", "#888", "#cca700", "#f14c4c", "#fff"],
     reason: "Settings still carries vscode-var fallbacks and 4-digit alpha hex (#4443/#0002) from the card-template preview; QR plate is the inverted-plate #fff.",
   },
   {
-    file: "src/webview/shared/ErrorBoundary.tsx",
+    file: "packages/webview-ui/src/webview/shared/ErrorBoundary.tsx",
     values: ["#5a1d1d", "#a1260d", "#fff"],
     reason: "Inline crash-plate vscode-var fallbacks so a render error stays readable even if the DS sheet failed to load.",
   },
   {
-    file: "src/webview/shared/control/CardTemplateBlock.tsx",
+    file: "packages/webview-ui/src/webview/shared/control/CardTemplateBlock.tsx",
     values: ["#4443"],
     reason: "Preview-frame border fallback copied from settings.css's 4-digit panel-border hex; same debt, same replacement (--ds-border).",
   },
   {
-    file: "src/webview/shared/engine-workspace.css",
+    file: "packages/webview-ui/src/webview/shared/engine-workspace.css",
     values: ["#3794ff"],
     reason: "Focus-mix fallback on a workspace chip; --ds-focus is the replacement.",
   },
   {
-    file: "src/webview/shared/mermaid-block.css",
+    file: "packages/webview-ui/src/webview/shared/mermaid-block.css",
     values: ["#007fd4"],
     reason: "Focus-ring vscode-var fallback around the mermaid viewport; --ds-focus is the replacement.",
   },
   {
-    file: "src/webview/shared/quick-picker.css",
+    file: "packages/webview-ui/src/webview/shared/quick-picker.css",
     values: ["#000", "#1e1e1e"],
     reason: "QuickPicker component fallbacks keep its scrim/dialog readable if a host stylesheet fails to load.",
   },
   {
-    file: "src/webview/shared/vscode-theme.css",
+    file: "packages/webview-ui/src/webview/shared/vscode-theme.css",
     values: ["#007fd4", "#0e639c", "#1e1e1e", "#cccccc", "#f14c4c", "#ffffff"],
     reason: "spec 342 shadcn token-bridge: every chain bottoms out in a literal so a missing vscode theme still renders. Not product chrome; do not add new literals here without a matching --ds token.",
   },
   {
-    file: "src/webview/sidebar/sidebar.css",
+    file: "packages/webview-ui/src/webview/sidebar/sidebar.css",
     values: ["#4fc1ff", "#858585", "#8a8a8a", "#c586c0", "#c8c8c8", "#cca700", "#dcdcaa", "#f14c4c", "#fff"],
     reason: "Sidebar chrome still uses vscode-var fallbacks plus raw peek/focus-source syntax colors (blue/purple/yellow) with no --ds syntax roles.",
   },
@@ -182,77 +182,77 @@ export const HEX_EXCEPTIONS = Object.freeze([
  */
 export const Z_INDEX_EXCEPTIONS = Object.freeze([
   {
-    file: "src/webview/activity/activity.css",
+    file: "packages/webview-ui/src/webview/activity/activity.css",
     values: [2, 5, 20, 30, 50],
     reason: "Sticky chrome (2), jump chip (5), share menu (20), type menu (30), lightbox (50) predate --ds-z-popover/--ds-z-toast; replace with those tokens when this sheet is next touched.",
   },
   {
-    file: "src/webview/board/board.css",
+    file: "packages/webview-ui/src/webview/board/board.css",
     values: [40],
     reason: "Menu backdrop sits at the dialog layer but uses the raw 40 instead of --ds-z-dialog.",
   },
   {
-    file: "src/webview/handoff/handoff.css",
+    file: "packages/webview-ui/src/webview/handoff/handoff.css",
     values: [2],
     reason: "Sticky header local stacking; --ds-z-popover is the named replacement when the sheet is next touched.",
   },
   {
-    file: "src/webview/plugins/plugins.css",
+    file: "packages/webview-ui/src/webview/plugins/plugins.css",
     values: [20, 30],
     reason: "Consent scrim (20) and busy toast (30) predate --ds-z-dialog / --ds-z-toast.",
   },
   {
-    file: "src/webview/rich-doc/rich-doc.css",
+    file: "packages/webview-ui/src/webview/rich-doc/rich-doc.css",
     values: [3, 5, 20],
     reason: "Toolbar (3), slash menu (5), sketch modal (20) are local stacking; modal should be --ds-z-dialog, the rest --ds-z-popover or a documented local layer.",
   },
   {
-    file: "src/webview/runtime-config/runtime-config.css",
+    file: "packages/webview-ui/src/webview/runtime-config/runtime-config.css",
     values: [100],
     reason: "Runtime picker popover used 100 — above every declared token. Next touch should be --ds-z-popover or --ds-z-overlay, not another integer.",
   },
   {
-    file: "src/webview/shared/studio/studio-frame.css",
+    file: "packages/webview-ui/src/webview/shared/studio/studio-frame.css",
     values: [3],
     reason: "Sticky studio header local stacking; same 3 as task-detail / rich-doc toolbars.",
   },
   {
-    file: "src/webview/sidebar/sidebar.css",
+    file: "packages/webview-ui/src/webview/sidebar/sidebar.css",
     values: [2, 30, 40],
     reason: "Row actions (2), command palette (30), menu backdrop (40) predate the --ds-z-* names.",
   },
   {
-    file: "src/webview/task-detail/task-detail.css",
+    file: "packages/webview-ui/src/webview/task-detail/task-detail.css",
     values: [2, 3],
     reason: "Prototype watermark (2) and header (3) local stacking, copied into task-studio.",
   },
   {
-    file: "src/webview/task-studio/task-studio.css",
+    file: "packages/webview-ui/src/webview/task-studio/task-studio.css",
     values: [2, 3],
     reason: "Same prototype watermark/header pair as task-detail; keep the two lists in lockstep until both use tokens.",
   },
   {
-    file: "src/webview/design-mode-overlay/App.tsx",
+    file: "packages/webview-ui/src/webview/design-mode-overlay/App.tsx",
     values: [1, 2],
     reason: "Local stacking inside the overlay shadow (markup editor = 1, panel/badges = 2). --ds-z-popover is 20 and names product chrome, not an internal 1; using it here would be a lie.",
   },
   {
-    file: "src/webview/design-mode-overlay/App.tsx",
+    file: "packages/webview-ui/src/webview/design-mode-overlay/App.tsx",
     values: [2147483646],
     reason: "Hover outline (#tachyon-dm-root). After t-f5b467 this node lives in the shadow; the integer is leftover page-max from when it competed in the light DOM. Product --ds-z-* (20/40/50/60) cannot name that layer.",
   },
   {
-    file: "src/webview/design-mode-overlay/styles.ts",
+    file: "packages/webview-ui/src/webview/design-mode-overlay/styles.ts",
     values: [3],
     reason: "Markup-active editor is raised above the shadow chrome (1/2) with a local 3. Same case as App.tsx 1/2: not a product popover/dialog/toast/overlay.",
   },
   {
-    file: "src/webview/design-mode-overlay/styles.ts",
+    file: "packages/webview-ui/src/webview/design-mode-overlay/styles.ts",
     values: [2147483647],
     reason: ":host stacks above the entire third-party page. The product --ds-z-* scale describes our chrome, not a page we do not control.",
   },
   {
-    file: "src/webview/design-mode-overlay/main.tsx",
+    file: "packages/webview-ui/src/webview/design-mode-overlay/main.tsx",
     values: [2147483647],
     reason: "host.style.zIndex assignment — the second door of the same :host layer (styles.ts). Still the third-party page, still not a --ds-z-* token.",
   },
@@ -552,7 +552,11 @@ function evaluateKind(hits, exceptions, kind) {
 
 export function scanRepo(root = ROOT) {
   const tokenRel = TOKEN_SOURCE;
-  const files = sourceFiles(path.join(root, SCAN_ROOT));
+  const files = [
+    ...sourceFiles(path.join(root, SCAN_ROOT)),
+    path.join(root, "src/webview/ide-browser-bridge/themeTokens.ts"),
+    path.join(root, "src/webview/pin-studio/excalidraw-entry.tsx"),
+  ];
   const hexHits = [];
   const zHits = [];
   const tokenHits = [];
@@ -576,7 +580,7 @@ export function scanRepo(root = ROOT) {
 }
 
 export const FIX_HINT =
-  "New hex belongs in src/webview/shared/tokens.css as a --ds-* token, not as a literal and not as an exception. " +
+  "New hex belongs in packages/webview-ui/src/webview/shared/tokens.css as a --ds-* token, not as a literal and not as an exception. " +
   "New stacking belongs on --ds-z-popover / --ds-z-dialog / --ds-z-toast / --ds-z-overlay. " +
   "A var(--ds-*|--tachyon-*) must name a token declared in src/webview or carry a fallback; " +
   "do not invent a synonym (--ds-danger is --ds-err) and do not add an exception for a token the design system is missing. " +

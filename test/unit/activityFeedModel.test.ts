@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityItem } from "../../src/activity/activityView.js";
+import type { ActivityItem } from "@tachyon/webview-ui/activity/activityView";
 import {
   DEFAULT_ACTIVITY_FILTERS,
   activityCategory,
@@ -9,7 +9,7 @@ import {
   hiddenByActivityTypes,
   normalizeActivityFilters,
   toggleActivityFilter,
-} from "../../src/webview/activity/feedModel.js";
+} from "../../packages/webview-ui/src/webview/activity/feedModel.js";
 
 const item = (sequence: number, kind: ActivityItem["kind"], title: string): ActivityItem => ({ sequence, kind, title });
 

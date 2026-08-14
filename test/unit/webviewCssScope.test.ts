@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const WEBVIEW_ROOT = path.resolve("src/webview");
+const WEBVIEW_ROOT = path.resolve("packages/webview-ui/src/webview");
 
 /** Sheets that legitimately own bare document elements, with the reason. */
 const BARE_ELEMENT_OWNERS: Record<string, string> = {

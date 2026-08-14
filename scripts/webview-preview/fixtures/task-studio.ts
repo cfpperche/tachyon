@@ -5,7 +5,7 @@
  * byte-equivalent; `conflict` is new — the CAS precondition-failed banner (T4's shell-level proof).
  */
 
-import type { TaskDetailEntity } from "../../../src/webview/task-studio/domain";
+import type { TaskDetailEntity } from "@tachyon/webview-ui/webview/task-studio/domain";
 import type { Fixture, Route } from "../routes";
 
 const STUDIO_PROTOCOL_VERSION = 1;

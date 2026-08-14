@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __getExecutedCommands, __getQuickPickCalls, __getWarningMessageCalls, __resetVscodeMock, __setCommandResult } from "../mocks/vscode.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager, type WorktreesDeps } from "../../src/webview/WorktreesPanel.js";
-import { readyMessage } from "../../src/webview/worktrees/messages.js";
-import type { WorkspaceBundle, WorktreeRow } from "../../src/sections/model.js";
+import { readyMessage } from "../../packages/webview-ui/src/webview/worktrees/messages.js";
+import type { WorkspaceBundle, WorktreeRow } from "@tachyon/webview-ui/sections/model";
 
 /**
  * SDD 485 D6 — retargeted from Control's retired Worktrees handler to the standalone dashboard host.

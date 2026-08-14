@@ -1,0 +1,19 @@
+{
+  "name": "@tachyon/webview-ui",
+  "version": "0.91.0",
+  "private": true,
+  "exports": {
+    "./*.js": "./src/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "typesVersions": {
+    "*": {
+      "*.js": ["src/*.ts"],
+      "*": ["src/*.ts"]
+    }
+  },
+  "dependencies": {
+    "@tachyon/engine": "0.91.0",
+    "@tachyon/shared": "0.91.0"
+  }
+}

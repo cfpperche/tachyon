@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitNoticeAuthor } from "../../src/sidebar/attentionStack.js";
+import { splitNoticeAuthor } from "@tachyon/webview-ui/sidebar/attentionStack";
 
 // t-8aeaac follow-up — the notice CARD moves the author out of the message body into its own
 // footer slot; this is the pure parse that recovers it from the persisted `message` string

@@ -4,7 +4,7 @@ import {
   COLLECT_EVERYTHING,
   buildSectionsModel,
   type WorkspaceBundle,
-} from "../../src/sections/model.js";
+} from "@tachyon/webview-ui/sections/model";
 
 /**
  * t-af3eef — navigation used to block on a serial collect of the whole world.

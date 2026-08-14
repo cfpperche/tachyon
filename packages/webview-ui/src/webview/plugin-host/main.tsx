@@ -10,8 +10,8 @@ declare global {
 
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : { postMessage: (message: unknown) => window.parent.postMessage(message, "*") };
 const boot = window.__tachyonPluginHost;
-const root = document.getElementById("root");
-const relayNonce = document.currentScript instanceof HTMLScriptElement ? document.currentScript.nonce : "";
+const root: HTMLElement = document.getElementById("root")!;
+const relayNonce = document.currentScript instanceof HTMLScriptElement ? document.currentScript.nonce as string : "";
 
 let frame: HTMLIFrameElement | undefined;
 

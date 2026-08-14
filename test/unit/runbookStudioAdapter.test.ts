@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { RunbookStudioAdapter } from "../../src/webview/RunbookStudioAdapter.js";
-import { blankRunbookFields } from "../../src/webview/runbook-studio-shell/domain.js";
+import { blankRunbookFields } from "../../packages/webview-ui/src/webview/runbook-studio-shell/domain.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 

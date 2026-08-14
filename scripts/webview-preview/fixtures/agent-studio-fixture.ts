@@ -4,8 +4,8 @@
  * shell's declared regions (`fields` + `sideActions`).
  */
 
-import type { AgentFixtureVM } from "../../../src/webview/agent-studio-fixture/types";
-import { loadMessage } from "../../../src/webview/agent-studio-fixture/messages";
+import type { AgentFixtureVM } from "@tachyon/webview-ui/webview/agent-studio-fixture/types";
+import { loadMessage } from "@tachyon/webview-ui/webview/agent-studio-fixture/messages";
 import type { Fixture } from "../routes";
 
 const denseAgent: AgentFixtureVM = {

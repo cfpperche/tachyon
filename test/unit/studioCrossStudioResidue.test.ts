@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
  */
 describe("the surviving D1a standalone-studio fix stays in place", () => {
   it("Terminal Studio handles live referenceData pushes", () => {
-    const src = readFileSync("src/webview/terminal-studio-shell/App.tsx", "utf8");
+    const src = readFileSync("packages/webview-ui/src/webview/terminal-studio-shell/App.tsx", "utf8");
     expect(src).toMatch(/d\.type === "referenceData"/);
     expect(src).toContain("setReferenceData(d.referenceData ?? emptyReferenceData())");
   });

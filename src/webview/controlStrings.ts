@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import type { CockpitStrings } from "./shared/control/messages.js";
+import type { CockpitStrings } from "@tachyon/webview-ui/webview/shared/control/messages";
 
 export function cockpitStrings(): CockpitStrings {
   const t = vscode.l10n.t;

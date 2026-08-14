@@ -73,9 +73,9 @@ describe("Button icon+label DOM shape (t-240a3b)", () => {
   let Icon: (props: unknown) => unknown;
 
   beforeAll(async () => {
-    Button = await loadComponent("src/webview/shared/ui/Button.tsx", "Button");
-    IconButton = await loadComponent("src/webview/shared/ui/IconButton.tsx", "IconButton");
-    Icon = await loadComponent("src/webview/shared/ui/Icon.tsx", "Icon");
+    Button = await loadComponent("packages/webview-ui/src/webview/shared/ui/Button.tsx", "Button");
+    IconButton = await loadComponent("packages/webview-ui/src/webview/shared/ui/IconButton.tsx", "IconButton");
+    Icon = await loadComponent("packages/webview-ui/src/webview/shared/ui/Icon.tsx", "Icon");
   }, 30_000);
 
   it("an icon+label Button exposes at least one non-.codicon element child", () => {
@@ -121,7 +121,7 @@ describe("Button icon+label DOM shape (t-240a3b)", () => {
   });
 
   it("a trailing literal <Icon/> (sidebar/App.tsx tag-clear pattern) stays a direct sibling, not nested in the label span", () => {
-    // mirrors src/webview/sidebar/App.tsx:1023 — <Button class="tag-clear">#{activePinTag}<Icon name="close" /></Button>
+    // mirrors packages/webview-ui/src/webview/sidebar/App.tsx:1023 — <Button class="tag-clear">#{activePinTag}<Icon name="close" /></Button>
     const vnode = Button({ class: "tag-clear", children: ["#", "sometag", { type: Icon, props: { name: "close" } }] }) as HostVNode;
     const children = elementChildren(vnode.props.children);
     // exactly one label span (the two text nodes glued into ONE run — no gap between "#" and the tag) and
@@ -136,7 +136,7 @@ describe("Button icon+label DOM shape (t-240a3b)", () => {
   });
 
   it("a leading literal <Icon/> followed by its own <span> label (board/App.tsx more-item pattern) leaves both as direct siblings", () => {
-    // mirrors src/webview/board/App.tsx:680 — <Button><Icon name={a.icon} /><span>{a.label}</span></Button>
+    // mirrors packages/webview-ui/src/webview/board/App.tsx:680 — <Button><Icon name={a.icon} /><span>{a.label}</span></Button>
     const vnode = Button({
       class: "more-item",
       children: [{ type: Icon, props: { name: "check" } }, { type: "span", props: { children: "Do the thing" } }],
@@ -151,7 +151,7 @@ describe("Button icon+label DOM shape (t-240a3b)", () => {
   });
 
   it("the design-system.css icon-only rule still exists (guards against deleting instead of fixing)", () => {
-    const css = readFileSync("src/webview/shared/design-system.css", "utf8");
+    const css = readFileSync("packages/webview-ui/src/webview/shared/design-system.css", "utf8");
     expect(css).toContain(".ds-btn:not(:has(> :not(.codicon))):has(> .codicon)");
   });
 

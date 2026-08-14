@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isConsentBlocked, viewAckRequirements, viewConsentRows } from "../../src/webview/plugins/consentViewAcks";
-import { confirmMessage } from "../../src/webview/plugins/messages";
-import type { ConsentVM } from "../../src/plugins/consentViewModel";
+import { isConsentBlocked, viewAckRequirements, viewConsentRows } from "@tachyon/webview-ui/webview/plugins/consentViewAcks";
+import { confirmMessage } from "@tachyon/webview-ui/webview/plugins/messages";
+import type { ConsentVM } from "@tachyon/webview-ui/plugins/consentViewModel";
 
 const vm: ConsentVM = {
   op: "install",

@@ -2,8 +2,8 @@
 // stat chips + recent-window search), then a short transcript (user bubble right, agent markdown bubble left,
 // a tool chip). Proves the migrated .ds-title (16px) + theme-driven header, with the feed/markdown CSS intact.
 import { render } from "preact";
-import { App } from "../../../../src/webview/activity/App";
-import type { ActivityViewModel } from "../../../../src/activity/activityView";
+import { App } from "@tachyon/webview-ui/webview/activity/App";
+import type { ActivityViewModel } from "@tachyon/webview-ui/activity/activityView";
 
 const vm: ActivityViewModel = {
   runtime: "claude",

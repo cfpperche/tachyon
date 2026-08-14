@@ -2,7 +2,7 @@
  * spec 410 — pure section id resolution for cockpit nav + serializer restore.
  * Unknown / retired ids fall back to overview (asserted in unit tests).
  */
-import { COCKPIT_SECTION_IDS, type SectionId } from "./model.js";
+import { COCKPIT_SECTION_IDS, type SectionId } from "@tachyon/webview-ui/sections/model";
 
 const SECTION_SET = new Set<string>(COCKPIT_SECTION_IDS);
 

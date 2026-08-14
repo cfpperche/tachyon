@@ -1,4 +1,4 @@
-import type { ActivityItem, ActivityViewModel } from "./activityView.js";
+import type { ActivityItem, ActivityViewModel } from "@tachyon/webview-ui/activity/activityView";
 import { isAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 export const SHARE_TEXT_CAP = 6000;

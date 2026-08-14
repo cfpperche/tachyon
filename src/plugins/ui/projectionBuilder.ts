@@ -6,7 +6,7 @@ import type {
   PluginAgentStatusV1,
   PluginFleetProjectionCountsV1,
   PluginFleetProjectionV1,
-} from "./projectionTypes.js";
+} from "@tachyon/webview-ui/plugins/ui/projectionTypes";
 
 export interface PluginProjectionTarget {
   kind: "agent";

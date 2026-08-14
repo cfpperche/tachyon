@@ -149,7 +149,7 @@ describe("the package contains everything its own code loads (t-e0a0f5)", () => 
 
   it("does not read webview bundles, which resolve nothing from node_modules", () => {
     const root = stageExtension({
-      bundle: ['// src/webview/app.tsx', 'var preact = require("preact");'].join("\n"),
+      bundle: ['// packages/webview-ui/src/webview/app.tsx', 'var preact = require("preact");'].join("\n"),
       bundleName: "webview/cockpit.js",
     });
 

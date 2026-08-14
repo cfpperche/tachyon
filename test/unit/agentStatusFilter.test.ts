@@ -9,7 +9,7 @@ import {
   filterAgentsByStatus,
   asAgentStatusFilter,
   type AgentStatusFilter,
-} from "../../src/webview/sidebar/agentStatusFilter";
+} from "@tachyon/webview-ui/webview/sidebar/agentStatusFilter";
 import type { AgentVM } from "@tachyon/shared/sidebar/types";
 
 const a = (partial: Partial<AgentVM> & Pick<AgentVM, "name" | "status">): AgentVM => ({

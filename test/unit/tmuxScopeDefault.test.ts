@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import path from "node:path";
 import { h } from "preact";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import type { InspectorModel } from "../../src/inspector/model.js";
-import type { InspectorScope, InspectorStrings } from "../../src/webview/inspector/messages.js";
+import type { InspectorModel } from "@tachyon/webview-ui/inspector/model";
+import type { InspectorScope, InspectorStrings } from "../../packages/webview-ui/src/webview/inspector/messages.js";
 
 /**
  * t-6b5dea — the tmux app opens on the project the SIDEBAR selected, and no session becomes unreachable.
@@ -18,7 +18,7 @@ import type { InspectorScope, InspectorStrings } from "../../src/webview/inspect
  * FIRST PAINT — which is exactly what "opens already filtered" means — and the precedence rule a click
  * exercises is asserted on `effectiveWorkspace`, the pure function the component defers to.
  */
-const APP = path.resolve(__dirname, "../../src/webview/inspector/App.tsx");
+const APP = path.resolve(__dirname, "../../packages/webview-ui/src/webview/inspector/App.tsx");
 
 const scope: InspectorScope = { hash: "a1b2c3d4", label: "tachyon" };
 

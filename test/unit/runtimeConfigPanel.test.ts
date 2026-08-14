@@ -6,7 +6,7 @@ import {
   RuntimeConfigPanelManager,
   type RuntimeConfigDeps,
 } from "../../src/webview/RuntimeConfigPanel.js";
-import { readyMessage } from "../../src/webview/runtime-config/messages.js";
+import { readyMessage } from "../../packages/webview-ui/src/webview/runtime-config/messages.js";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));

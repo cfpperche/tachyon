@@ -22,8 +22,8 @@
  * declaration of record lives in TypeScript, and a test — not a habit — keeps the build honest against it.
  */
 
-import { controlSectionIcon } from "./sidebar/sectionNav.js";
-import type { SectionId } from "../sections/model.js";
+import { controlSectionIcon } from "@tachyon/webview-ui/webview/sidebar/sectionNav";
+import type { SectionId } from "@tachyon/webview-ui/sections/model";
 
 /**
  * How many panels of one app may exist at once, and — equivalently — what a panel's KEY is made of.
@@ -61,7 +61,7 @@ export type WebviewAppHost =
   | { host: "section"; cardinality: SectionAppCardinality };
 
 interface WebviewAppBase {
-  /** the app directory + bundle basename: `src/webview/<view>/main.tsx` → `dist/webview/<view>.js`. */
+  /** the app directory + bundle basename: `packages/webview-ui/src/webview/<view>/main.tsx` → `dist/webview/<view>.js`. */
   view: string;
   /** the `createWebviewPanel` viewType. Must match a `WEBVIEW_SURFACES` row's `viewId`. */
   viewId: string;

@@ -27,7 +27,7 @@ describe("webview convention (spec 279)", () => {
 
   it("every converted surface is a real preact bundle (main.tsx + esbuild entry)", () => {
     for (const s of WEBVIEW_SURFACES.filter((x) => x.converted)) {
-      expect(existsSync(`src/webview/${s.view}/main.tsx`), `${s.viewId}: missing src/webview/${s.view}/main.tsx`).toBe(true);
+      expect(existsSync(`packages/webview-ui/src/webview/${s.view}/main.tsx`), `${s.viewId}: missing packages/webview-ui/src/webview/${s.view}/main.tsx`).toBe(true);
       // SDD 485 C2 — a bundle is emitted either by its own target's `outfile` or as one entry of the
       // multi-entry splitting invocation (outdir + entryNames, so no literal output path exists).
       expect(buildsWebviewEntry(esbuild, s.view), `${s.viewId}: no esbuild entrypoint for dist/webview/${s.view}.js`).toBe(true);
@@ -46,7 +46,7 @@ describe("webview convention (spec 279)", () => {
   });
 
   it("no host emitter hand-rolls a <!DOCTYPE> — only the shared shell may (spec 280)", () => {
-    // every top-level src/webview/*.ts is a vscode-bound host emitter; the one sanctioned <!DOCTYPE> site is
+    // every top-level packages/webview-ui/src/webview/*.ts is a vscode-bound host emitter; the one sanctioned <!DOCTYPE> site is
     // src/webview/shared/shell.ts (a subdir → naturally excluded here). A host that hand-rolls a page reintroduces
     // the duplicated-shell + CSP-drift problem this spec closed.
     // spec 485 A4 — a surface that DECLARES `replace` is allowed its own page: that is what the posture buys.
@@ -168,7 +168,7 @@ function cssSelectors(css: string): string[] {
   return [...stripCssComments(css).matchAll(/(?:^|[};{])\s*([^{};@]+?)\s*\{/g)].map((m) => m[1]);
 }
 
-/** the surface's OWN stylesheets: `src/webview/<view>/**\/*.css`. Sheets a surface merely LINKS that belong to
+/** the surface's OWN stylesheets: `packages/webview-ui/src/webview/<view>/**\/*.css`. Sheets a surface merely LINKS that belong to
  *  another app's directory are that app's to answer for (Control links every embedded section's sheet). */
 function ownStylesheets(view: string): Array<{ file: string; css: string }> {
   const out: Array<{ file: string; css: string }> = [];
@@ -180,7 +180,7 @@ function ownStylesheets(view: string): Array<{ file: string; css: string }> {
       else if (entry.endsWith(".css")) out.push({ file: p, css: readFileSync(p, "utf8") });
     }
   };
-  walk(`src/webview/${view}`);
+  walk(`packages/webview-ui/src/webview/${view}`);
   return out;
 }
 
@@ -268,7 +268,7 @@ function linkedStylesheets(s: WebviewSurface): string[] {
   return [];
 }
 
-/** host files under `src/webview/shared/` that assemble a page — a surface may reach the shared shell through
+/** host files under `packages/webview-ui/src/webview/shared/` that assemble a page — a surface may reach the shared shell through
  *  one of these (PipelineStudioPanel delegates to StudioPanelManagerBase) instead of calling it directly. */
 function sharedMountModules(): string[] {
   const out: string[] = [];
@@ -356,7 +356,7 @@ function anchorsToPageFrame(view: string): boolean {
     cssRules(css).some(({ selector, body }) => selectsShellRoot(selector) && (declaresPercentHeight(body) || declaresOutOfFlowRoot(body))));
 }
 
-/** every `src/webview/**\/*.css` source, indexed by basename (a linked sheet is a `dist/webview` filename). */
+/** every `packages/webview-ui/src/webview/**\/*.css` source, indexed by basename (a linked sheet is a `dist/webview` filename). */
 function stylesheetSourcesByName(): Map<string, string[]> {
   const out = new Map<string, string[]>();
   const walk = (dir: string): void => {
@@ -366,7 +366,7 @@ function stylesheetSourcesByName(): Map<string, string[]> {
       else if (entry.endsWith(".css")) out.set(entry, [...(out.get(entry) ?? []), p]);
     }
   };
-  walk("src/webview");
+  walk("packages/webview-ui/src/webview");
   return out;
 }
 
@@ -391,7 +391,7 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
     };
     const violations: string[] = [];
     for (const app of WEBVIEW_APPS.filter((entry) => entry.host === "section" && entry.section !== undefined)) {
-      const sourceDir = `src/webview/${app.view}`;
+      const sourceDir = `packages/webview-ui/src/webview/${app.view}`;
       const source = readdirSync(sourceDir)
         .filter((name) => name.endsWith(".tsx"))
         .map((name) => readFileSync(join(sourceDir, name), "utf8"))
@@ -567,9 +567,9 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
     // The sheet outlived the app that motivated it: Engine merged into System, and the workspace/log
     // contract it linked came across whole. Still LINKED and not copied — Worktrees links it too.
     const host = readFileSync("src/webview/SystemPanel.ts", "utf8");
-    const consumers = readFileSync("src/webview/system/App.tsx", "utf8")
-      + readFileSync("src/webview/shared/control/EngineLogPanel.tsx", "utf8");
-    const shared = readFileSync("src/webview/shared/engine-workspace.css", "utf8");
+    const consumers = readFileSync("packages/webview-ui/src/webview/system/App.tsx", "utf8")
+      + readFileSync("packages/webview-ui/src/webview/shared/control/EngineLogPanel.tsx", "utf8");
+    const shared = readFileSync("packages/webview-ui/src/webview/shared/engine-workspace.css", "utf8");
     expect(host).toContain('"engine-workspace.css"');
     for (const className of ["ck-card-list", "ck-empty", "ci-ws", "ci-log"]) {
       expect(consumers).toContain(className);
@@ -680,7 +680,7 @@ function classAttributeValues(jsx: string): string[] {
 
 /** Every component source that ships inside one app's bundle — its whole directory, not one hoped-for name. */
 function appSourceFiles(view: string): string[] {
-  const dir = `src/webview/${view}`;
+  const dir = `packages/webview-ui/src/webview/${view}`;
   if (!existsSync(dir)) return [];
   const out: string[] = [];
   const walk = (d: string): void => {

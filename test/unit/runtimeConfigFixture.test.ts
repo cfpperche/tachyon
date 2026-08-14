@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "../../scripts/webview-preview/routes.js";
-import { RUNTIME_CONFIG_SNAPSHOT } from "../../src/webview/runtime-config/messages.js";
-import type { RuntimeConfigControlSnapshot } from "../../src/runtimeConfig/types.js";
+import { RUNTIME_CONFIG_SNAPSHOT } from "../../packages/webview-ui/src/webview/runtime-config/messages.js";
+import type { RuntimeConfigControlSnapshot } from "@tachyon/webview-ui/runtimeConfig/types";
 
 describe("standalone runtime config fixture (t-80d367 / SDD 485 D8)", () => {
   it("injects the product snapshot envelope into its own app", () => {

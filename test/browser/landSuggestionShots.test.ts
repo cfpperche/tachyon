@@ -5,7 +5,7 @@ import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
-import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "../../src/sections/model.js";
+import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "@tachyon/webview-ui/sections/model";
 import { landSuggestion, type LandFacts } from "@tachyon/engine/worktree/land.js";
 
 /**
@@ -113,7 +113,7 @@ describe("t-7cb971 land suggestion headless Visual QA", () => {
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
-    App = (await loadWebviewModule(path.resolve(__dirname, "../../src/webview/worktrees/App.tsx"), { packageResolution: true })).App as typeof App;
+    App = (await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/worktrees/App.tsx"), { packageResolution: true })).App as typeof App;
     browser = await puppeteer.launch({
       executablePath: resolveChromeExecutable(),
       headless: true,

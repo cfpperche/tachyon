@@ -9,15 +9,8 @@ import type { PluginDep } from "@tachyon/engine/plugins/manifest.js";
 import type { Lockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { parseSemverTag, compareSemver } from "./source.js";
 
-export type DependencyStatus = "satisfied" | "out-of-range" | "missing";
-
-export interface DependencyState {
-  name: string;
-  range: string;
-  status: DependencyStatus;
-  /** the installed version (when present), for the drawer to show "have X, want <range>". */
-  installedVersion?: string;
-}
+import type { DependencyState, DependencyStatus } from "@tachyon/webview-ui/plugins/pluginDeps";
+export type { DependencyState, DependencyStatus } from "@tachyon/webview-ui/plugins/pluginDeps";
 
 /**
  * Does `version` satisfy `range`? Supports `*`/empty (any), exact `X.Y.Z`, `^X.Y.Z` (same major, >= base),

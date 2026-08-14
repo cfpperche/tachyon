@@ -13,7 +13,7 @@ import type {
   RuntimeConfigKnownSetting,
   RuntimeConfigMcpServer,
   RuntimeConfigRuntimeInventory,
-} from "./types.js";
+} from "@tachyon/webview-ui/runtimeConfig/types";
 
 /**
  * SDD 481 — measured against `grok 0.2.112` on 2026-07-28 (isolated `GROK_HOME`, synthetic git

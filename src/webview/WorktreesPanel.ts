@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { buildSectionsModel, collectNeedsFor, type WorkspaceBundle } from "../sections/model.js";
+import { buildSectionsModel, collectNeedsFor, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
@@ -14,7 +14,7 @@ import {
   type WorktreeLandResult,
   type WorktreePrDraftView,
   type WorktreeReviewFile,
-} from "./worktrees/messages.js";
+} from "@tachyon/webview-ui/webview/worktrees/messages";
 import type { WorktreePrDraft, WorktreePrSelection, WorktreeReviewSelection } from "../presentation/items.js";
 
 export const WORKTREES_VIEW_TYPE = "tachyonWorktrees";

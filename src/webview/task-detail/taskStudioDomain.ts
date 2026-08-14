@@ -16,8 +16,8 @@ import * as vscode from "vscode";
 import fs from "node:fs";
 import path from "node:path";
 import type { WorkspaceTaskStudioTarget } from "../../shell/TaskStudioTarget.js";
-import { envelope } from "../shared/studio/protocol.js";
-import { attachmentStoredMessage } from "../task-studio/messages.js";
+import { envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol";
+import { attachmentStoredMessage } from "@tachyon/webview-ui/webview/task-studio/messages";
 import { notify } from "../../workspace/NotificationService.js";
 import type { StudioDomainContext } from "../shared/studio/studioRegistry.js";
 

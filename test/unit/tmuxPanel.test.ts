@@ -5,7 +5,7 @@ import { setNotificationProvider, type NotificationRequest } from "../../src/wor
 import { TMUX_VIEW_TYPE, TmuxPanelManager, tmuxRefreshKind } from "../../src/webview/TmuxPanel.js";
 import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
 import { sectionPanelKey, type SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
-import { readyMessage, refreshAction } from "../../src/webview/inspector/messages.js";
+import { readyMessage, refreshAction } from "../../packages/webview-ui/src/webview/inspector/messages.js";
 import type { InspectorDeps } from "../../src/webview/ServerInspector.js";
 import type { PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 

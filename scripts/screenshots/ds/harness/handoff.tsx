@@ -2,8 +2,8 @@
 // (.ds-title + staleness .ds-badge + .ds-btn actions), the markdown body (.md delta), the meta subline, and the
 // pending-note lane, so the screenshot proves the title is 16px and the badge/buttons match the other panels.
 import { render } from "preact";
-import { App } from "../../../../src/webview/handoff/App";
-import type { HandoffViewModel } from "../../../../src/webview/handoff/handoffViewModel";
+import { App } from "@tachyon/webview-ui/webview/handoff/App";
+import type { HandoffViewModel } from "@tachyon/webview-ui/webview/handoff/handoffViewModel";
 
 const vm: HandoffViewModel = {
   folder: "tachyon",

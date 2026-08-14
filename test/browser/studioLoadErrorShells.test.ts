@@ -10,7 +10,7 @@ import { runbookStudioShellFixtures } from "../../scripts/webview-preview/fixtur
 import { scheduleStudioShellFixtures } from "../../scripts/webview-preview/fixtures/schedule-studio-shell";
 import { terminalStudioShellFixtures } from "../../scripts/webview-preview/fixtures/terminal-studio-shell";
 import { pipelineStudioFixtures } from "../../scripts/webview-preview/fixtures/pipeline-studio";
-import { studioLoadErrorTitle } from "../../src/webview/shared/studio/studioLoadErrorTitle";
+import { studioLoadErrorTitle } from "@tachyon/webview-ui/webview/shared/studio/studioLoadErrorTitle";
 
 /**
  * t-f4e186 — an `error` envelope that arrives with NO prior `load` must not leave the surface

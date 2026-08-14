@@ -14,8 +14,8 @@ import {
   type AgentStudioEntity,
   type AgentStudioFields,
   type AgentStudioPatch,
-} from "./agent-studio-shell/domain.js";
-import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
+} from "@tachyon/webview-ui/webview/agent-studio-shell/domain";
+import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy";
 
 /**
  * spec 350 Phase 3 T1 + spec 377 T15A — AgentStudioAdapter for the `agent` kind.

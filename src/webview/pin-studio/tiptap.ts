@@ -7,4 +7,4 @@ export {
   RichDocImage as PinImage,
   RichDocSketch,
   RichDocSketch as PinSketch,
-} from "../rich-doc/tiptap.js";
+} from "@tachyon/webview-ui/webview/rich-doc/tiptap";

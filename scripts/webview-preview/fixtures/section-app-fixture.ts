@@ -10,8 +10,8 @@
  * than producing a silently wrong screenshot (spec 278's drift guard).
  */
 
-import { sectionFixtureModelMessage } from "../../../src/webview/section-app-fixture/protocol";
-import type { SectionFixtureModel } from "../../../src/webview/section-app-fixture/protocol";
+import { sectionFixtureModelMessage } from "@tachyon/webview-ui/webview/section-app-fixture/protocol";
+import type { SectionFixtureModel } from "@tachyon/webview-ui/webview/section-app-fixture/protocol";
 import type { Fixture, Route } from "../routes";
 
 export function sectionAppFixtureMakeMessage(vm: SectionFixtureModel): unknown {

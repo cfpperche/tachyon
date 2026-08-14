@@ -7,8 +7,8 @@ import path from "node:path";
 // row's sdot/name sat ~21px left of a row with a toggle. The fix reserves the same-sized gutter on every
 // row: a real toggle button when hasChildren, an equally-sized spacer when not.
 
-const appTsxPath = path.join(__dirname, "../../src/webview/sidebar/App.tsx");
-const cssPath = path.join(__dirname, "../../src/webview/sidebar/sidebar.css");
+const appTsxPath = path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx");
+const cssPath = path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/sidebar.css");
 const appTsx = readFileSync(appTsxPath, "utf8");
 const css = readFileSync(cssPath, "utf8");
 

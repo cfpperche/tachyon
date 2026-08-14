@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
-import { buildSectionsModel, collectNeedsFor, type SectionsModel, type WorkspaceBundle } from "../sections/model.js";
+import { buildSectionsModel, collectNeedsFor, type SectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { parseCardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
 import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 import { cockpitStrings } from "./controlStrings.js";
-import { POLL, READY, settingsModelMessage } from "./settings/messages.js";
+import { POLL, READY, settingsModelMessage } from "@tachyon/webview-ui/webview/settings/messages";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";

@@ -30,8 +30,8 @@ const messages = (index = 0) => __createdPanels[index].webview.posted.filter((me
 describe("Project Handoff standalone dashboard (SDD 485 D19)", () => {
   it("has no Handoff renderer or stylesheet path left in Control", () => {
     const root = process.cwd();
-    expect(fs.existsSync(path.join(root, "src/webview/cockpit/App.tsx"))).toBe(false);
-    expect(fs.existsSync(path.join(root, "src/webview/Cockpit.ts"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "packages/webview-ui/src/webview/cockpit/App.tsx"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "packages/webview-ui/src/webview/Cockpit.ts"))).toBe(false);
   });
 
   it("keeps command, legacy restore and fan-out wired to HandoffPanelManager", () => {

@@ -6,10 +6,10 @@ const read = (path: string) => readFileSync(path, "utf8");
 
 describe("SDD 505 Slice 1 — tokens, faces, and components are separate", () => {
   it("keeps each shared sheet limited to its declared nature", () => {
-    const design = read("src/webview/shared/design-system.css");
-    const picker = read("src/webview/shared/quick-picker.css");
-    const tokens = read("src/webview/shared/tokens.css");
-    const faces = read("src/webview/shared/faces.css");
+    const design = read("packages/webview-ui/src/webview/shared/design-system.css");
+    const picker = read("packages/webview-ui/src/webview/shared/quick-picker.css");
+    const tokens = read("packages/webview-ui/src/webview/shared/tokens.css");
+    const faces = read("packages/webview-ui/src/webview/shared/faces.css");
     expect(design).not.toContain(".ds-qp");
     expect(design).not.toContain("@font-face");
     expect(picker).toContain(".ds-qp-panel");
@@ -39,8 +39,8 @@ describe("SDD 505 Slice 1 — tokens, faces, and components are separate", () =>
   });
 
   it("copies the split sheets into the shipped webview assets", () => {
-    expect(read("esbuild.mjs")).toContain('copyFileSync("src/webview/shared/tokens.css", "dist/webview/tokens.css")');
-    expect(read("esbuild.mjs")).toContain('copyFileSync("src/webview/shared/faces.css", "dist/webview/faces.css")');
-    expect(read("esbuild.mjs")).toContain('copyFileSync("src/webview/shared/quick-picker.css", "dist/webview/quick-picker.css")');
+    expect(read("esbuild.mjs")).toContain('copyFileSync("packages/webview-ui/src/webview/shared/tokens.css", "dist/webview/tokens.css")');
+    expect(read("esbuild.mjs")).toContain('copyFileSync("packages/webview-ui/src/webview/shared/faces.css", "dist/webview/faces.css")');
+    expect(read("esbuild.mjs")).toContain('copyFileSync("packages/webview-ui/src/webview/shared/quick-picker.css", "dist/webview/quick-picker.css")');
   });
 });

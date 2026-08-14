@@ -9,7 +9,7 @@ import {
   type ApprovalRequest,
 } from "@tachyon/engine/bridge/approvalRequest.js";
 import { buildApprovalViewModel, listApprovalViewItems, pendingApprovalRows } from "../../src/webview/approval/viewModel.js";
-import { buildSectionsModel, type WorkspaceBundle } from "../../src/sections/model.js";
+import { buildSectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 
 const roots: string[] = [];
 

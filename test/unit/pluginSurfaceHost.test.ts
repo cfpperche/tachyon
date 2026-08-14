@@ -7,7 +7,7 @@ import { __createdPanels, __getExecutedCommands, __resetVscodeMock } from "../mo
 import { applyInstall, detectRuntimes, loadPlugin, previewInstall } from "../../src/plugins/engine.js";
 import { LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 import { legacyPluginSurfaceTarget, PluginSurfaceHost } from "../../src/plugins/ui/host.js";
-import { PLUGIN_UI_ACTION } from "../../src/webview/plugin-host/relay.js";
+import { PLUGIN_UI_ACTION } from "../../packages/webview-ui/src/webview/plugin-host/relay.js";
 import type { WorkspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
 
 const ROOT = path.resolve(__dirname, "..", "..");

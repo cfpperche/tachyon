@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { terminalThemeFromComputedStyle } from "../../src/webview/agent-pane/terminalTheme.js";
+import { terminalThemeFromComputedStyle } from "../../packages/webview-ui/src/webview/agent-pane/terminalTheme.js";
 
 describe("Agent Pane terminal theme", () => {
   it("reads editor background/foreground and every ANSI role from a light VS Code theme", () => {

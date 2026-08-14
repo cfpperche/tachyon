@@ -2,8 +2,8 @@
 // Covers the header/title, the install addbar, the Installed/Marketplace tabs, and cards spanning the badge
 // tones (ok / warn / err) + runtime pills, so the screenshot exercises every shared .ds-* component.
 import { render } from "preact";
-import { App } from "../../../../src/webview/plugins/App";
-import type { PluginsViewModel } from "../../../../src/plugins/viewModel";
+import { App } from "@tachyon/webview-ui/webview/plugins/App";
+import type { PluginsViewModel } from "@tachyon/webview-ui/plugins/viewModel";
 
 const vm: PluginsViewModel = {
   present: ["claude", "codex"],

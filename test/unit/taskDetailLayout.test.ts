@@ -41,8 +41,8 @@ function firstDecl(css: string, selector: string, prop: string): string | undefi
 }
 
 describe("t-cf477f — Task Detail reading column matches Pin Detail centering", () => {
-  const taskDetail = read("src/webview/task-detail/task-detail.css");
-  const pinPreview = read("src/webview/pin-preview/pin-preview.css");
+  const taskDetail = read("packages/webview-ui/src/webview/task-detail/task-detail.css");
+  const pinPreview = read("packages/webview-ui/src/webview/pin-preview/pin-preview.css");
 
   it("Pin Detail (reference) centres its main column with max-width + auto margins", () => {
     // The human report names Pin Detail as the visual reference — lock that contract first so a
@@ -89,7 +89,7 @@ describe("t-cf477f — Task Detail reading column matches Pin Detail centering",
   });
 
   it("App still mounts all sections under a single .td-root (shared axis/container)", () => {
-    const app = read("src/webview/task-detail/App.tsx");
+    const app = read("packages/webview-ui/src/webview/task-detail/App.tsx");
     expect(app).toMatch(/class=["']td-root["']/);
     // One root wrapper for metadata/body/notes/prototypes — not per-section recentering.
     const roots = app.match(/class=["']td-root["']/g) ?? [];

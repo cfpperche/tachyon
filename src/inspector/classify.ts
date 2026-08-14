@@ -12,7 +12,8 @@
  * No tmux access here — just string parsing, fully unit-tested.
  */
 
-export type SessionKind = "anchor" | "command" | "runbook" | "login" | "session" | "unknown";
+import type { SessionKind } from "@tachyon/webview-ui/inspector/classify";
+export type { SessionKind } from "@tachyon/webview-ui/inspector/classify";
 
 export interface ClassifiedSession {
   /** Kind inferred from the namespace segment. */

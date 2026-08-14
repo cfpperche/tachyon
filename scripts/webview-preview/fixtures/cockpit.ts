@@ -2,15 +2,15 @@
  * Control panel fixtures for dev-host preview (production-facing copy only).
  */
 
-import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "../../../src/sections/model";
+import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { routes as cockpitRoutes } from "../../../src/sections/route";
-import type { CockpitStrings } from "../../../src/webview/shared/control/messages";
-import type { WorktreesStrings } from "../../../src/webview/worktrees/messages";
-import type { RuntimeConfigControlSnapshot } from "../../../src/runtimeConfig/types";
+import type { CockpitStrings } from "@tachyon/webview-ui/webview/shared/control/messages";
+import type { WorktreesStrings } from "@tachyon/webview-ui/webview/worktrees/messages";
+import type { RuntimeConfigControlSnapshot } from "@tachyon/webview-ui/runtimeConfig/types";
 import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
-import type { HumanInboxItemViewModel, HumanInboxViewModel } from "../../../src/webview/human-inbox/viewModel";
-import { buildHumanInbox, humanInboxCounts } from "../../../src/humanInbox/model";
-import type { SavedAgentProposalReview } from "../../../src/agents/savedAgentProposalReview";
+import type { HumanInboxItemViewModel, HumanInboxViewModel } from "@tachyon/webview-ui/webview/human-inbox/viewModel";
+import { buildHumanInbox, humanInboxCounts } from "@tachyon/webview-ui/humanInbox/model";
+import type { SavedAgentProposalReview } from "@tachyon/webview-ui/agents/savedAgentProposalReview";
 import { approvalFixtures } from "./approval";
 import type { Validation } from "@tachyon/engine/validations/types.js";
 import type { Fixture } from "../routes";
@@ -296,7 +296,7 @@ export const strings: CockpitStrings & WorktreesStrings = {
   landCompareNoTrunk: "No local trunk to compare against — review shows this branch against the ref it was forked from.",
 };
 /** Standalone Runtime Config receives this bootstrap global from its host; preview mirrors it. */
-export const runtimeConfigPreviewStrings: import("../../../src/webview/runtime-config/messages.js").RuntimeConfigStrings = {
+export const runtimeConfigPreviewStrings: import("../../../packages/webview-ui/src/webview/runtime-config/messages.js").RuntimeConfigStrings = {
     none: "None",
     runtimeConfigTitle: "Runtime Config",
     runtimeConfigHint: "Global runtime configuration, capabilities, and agent impact.",

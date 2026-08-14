@@ -28,7 +28,7 @@ function Root() {
     const onMsg = (e: MessageEvent) => {
       const d = e.data as Partial<PinPreviewHostMessage> | undefined;
       if (d?.type === PIN_PREVIEW && d.vm) setVm(d.vm);
-      else if (d?.type === PIN_DOCUMENT_MODE) {
+      else if ((d as { type?: string } | undefined)?.type === PIN_DOCUMENT_MODE) {
         const next = (d as { mode: "read" | "edit" }).mode;
         setMode(next);
         vscode?.setState?.({ ...(window.__tachyonPersistedState as object), mode: next });

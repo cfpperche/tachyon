@@ -2,7 +2,7 @@ import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { mapStudioSubmitResult } from "./studioSubmit.js";
 import { FLAG_SUGGESTIONS, fromCommandDef } from "@tachyon/engine/webview/formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
-import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
+import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy";
 import {
   blankCommandFields,
   canDiscardCommandFields,
@@ -14,7 +14,7 @@ import {
   type CommandStudioFields,
   type CommandStudioPatch,
   type CommandStudioReferenceData,
-} from "./command-studio-shell/domain.js";
+} from "@tachyon/webview-ui/webview/command-studio-shell/domain";
 
 export class CommandStudioAdapter implements StudioHostAdapter<CommandStudioEntity, CommandStudioFields, CommandStudioPatch, CommandStudioReferenceData> {
   entityType = "command";

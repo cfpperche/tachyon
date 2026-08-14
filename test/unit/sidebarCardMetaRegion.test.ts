@@ -22,7 +22,7 @@ import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
  *  2. **The wrapper follows the content** — phase 2's answer to the question phase 1 left open.
  *  3. **A hidden failure state comes back** (ratified fork 3), and says why in its tooltip.
  */
-const APP_TSX = path.join(__dirname, "../../src/webview/sidebar/App.tsx");
+const APP_TSX = path.join(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx");
 
 const agent = (overrides: Partial<AgentVM> = {}): AgentVM => ({ name: "a", status: "running", kind: "agent", ...overrides });
 

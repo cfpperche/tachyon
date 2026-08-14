@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { CARD_PREVIEW_ROWS } from "../../src/sidebar/cardPreviewRows.js";
+import { CARD_PREVIEW_ROWS } from "@tachyon/webview-ui/sidebar/cardPreviewRows";
 
 /**
  * SDD 479 phase 4 — the Settings block, checked where it can be checked without a browser.
@@ -14,7 +14,7 @@ import { CARD_PREVIEW_ROWS } from "../../src/sidebar/cardPreviewRows.js";
  *  - the preview renders the sidebar's OWN `AgentRow` and links the sidebar's OWN stylesheet;
  *  - that stylesheet never reaches the Cockpit page, where it would restyle Control.
  */
-const BLOCK = path.join(__dirname, "../../src/webview/shared/control/CardTemplateBlock.tsx");
+const BLOCK = path.join(__dirname, "../../packages/webview-ui/src/webview/shared/control/CardTemplateBlock.tsx");
 const blockSource = readFileSync(BLOCK, "utf8");
 const settingsHost = readFileSync(path.join(__dirname, "../../src/webview/SettingsPanel.ts"), "utf8");
 

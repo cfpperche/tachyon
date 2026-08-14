@@ -12,7 +12,7 @@
  */
 
 import { ROUTES, type Route } from "./routes";
-import { READY } from "../../src/webview/shared/ready";
+import { READY } from "@tachyon/webview-ui/webview/shared/ready";
 
 const READY_TIMEOUT_MS = 4000;
 

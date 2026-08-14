@@ -1,8 +1,8 @@
 import { useMemo, useState } from "preact/hooks";
 import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import type { ValidationExecutorFilter } from "./messages";
-import type { ValidationsViewModel, ValidationViewItem } from "./viewModel";
-import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textarea } from "../shared/ui";
+import type { ValidationsViewModel, ValidationViewItem } from "@tachyon/webview-ui/webview/validations/viewModel";
+import { Badge, Button, EmptyState, Icon, IconButton, PageChrome, Select, Textarea } from "@tachyon/webview-ui/webview/shared/ui/index";
 
 export interface ValidationsDispatch {
   refresh(): void;

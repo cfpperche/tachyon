@@ -16,7 +16,7 @@ const TOOLBAR_HOSTS = {
 
 describe("rich-doc sketch host contract", () => {
   it("every EditorToolbar host handles Sketch and injects the shared Excalidraw assets", () => {
-    const webviewRoot = path.join(ROOT, "src/webview");
+    const webviewRoot = path.join(ROOT, "packages/webview-ui/src/webview");
     const consumers = fs.readdirSync(webviewRoot, { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)

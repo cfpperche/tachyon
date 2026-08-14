@@ -5,7 +5,6 @@ import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App } from "./App";
 import {
-  POLL,
   RUNTIME_CONFIG_SNAPSHOT,
   RUNTIME_CONFIG_SNAPSHOT_UNAVAILABLE,
   openRuntimeConfigSourceAction,

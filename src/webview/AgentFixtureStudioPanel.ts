@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { renderWebviewShell } from "./shared/shell.js";
-import { loadMessage } from "./agent-studio-fixture/messages.js";
-import type { AgentFixtureVM } from "./agent-studio-fixture/types.js";
+import { loadMessage } from "@tachyon/webview-ui/webview/agent-studio-fixture/messages";
+import type { AgentFixtureVM } from "@tachyon/webview-ui/webview/agent-studio-fixture/types";
 
 /**
  * spec 350 T5 — Fake 2 (Agent-entity fixture) host wiring: exists ONLY so this surface is a real, openable

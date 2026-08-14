@@ -44,7 +44,7 @@ await build({
   stdin: {
     contents: `
       import { render } from "preact";
-      import { App } from ${JSON.stringify(path.join(ROOT, "src/webview/agent-pane/App.tsx"))};
+      import { App } from ${JSON.stringify(path.join(ROOT, "packages/webview-ui/src/webview/agent-pane/App.tsx"))};
 
       const reason = new URLSearchParams(location.search).get("reason") ?? "handoff";
       let handler = () => {};
@@ -93,7 +93,7 @@ await build({
 writeFileSync(path.join(OUT, "agent-pane-detached.html"), `<!doctype html>
 <html><head><meta charset="utf-8">
 <link rel="stylesheet" href="${path.join(ROOT, "node_modules/@xterm/xterm/css/xterm.css")}">
-<link rel="stylesheet" href="${path.join(ROOT, "src/webview/agent-pane/agent-pane.css")}">
+<link rel="stylesheet" href="${path.join(ROOT, "packages/webview-ui/src/webview/agent-pane/agent-pane.css")}">
 </head><body><div id="root"></div><script src="./agent-pane-detached.js"></script></body></html>
 `);
 

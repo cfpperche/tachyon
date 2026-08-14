@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 describe("shared UI product patterns (STYLEGUIDE)", () => {
   it("exports PageChrome, ListRow, EmptyState from the ui barrel", () => {
-    const barrel = readFileSync("src/webview/shared/ui/index.ts", "utf8");
+    const barrel = readFileSync("packages/webview-ui/src/webview/shared/ui/index.ts", "utf8");
     expect(barrel).toContain("PageChrome");
     expect(barrel).toContain("ListRow");
     expect(barrel).toContain("EmptyState");
@@ -11,14 +11,14 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   });
 
   it("implements pattern components in patterns.tsx", () => {
-    const src = readFileSync("src/webview/shared/ui/patterns.tsx", "utf8");
+    const src = readFileSync("packages/webview-ui/src/webview/shared/ui/patterns.tsx", "utf8");
     expect(src).toContain("export function PageChrome");
     expect(src).toContain("export function ListRow");
     expect(src).toContain("export function EmptyState");
   });
 
   it("documents the patterns in design-system.css", () => {
-    const css = readFileSync("src/webview/shared/design-system.css", "utf8");
+    const css = readFileSync("packages/webview-ui/src/webview/shared/design-system.css", "utf8");
     expect(css).toContain(".ds-page-chrome");
     expect(css).toContain(".ds-list-row");
     expect(css).toContain(".ds-empty-state");
@@ -42,11 +42,11 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     // three states a human has to act on. AgentsRoster + the nine-value AgentStatus is the fix.
     //
     // t-5f2b5b — the Fleet APP is deleted (owner decision, 2026-08-07: the sidebar Agents tab is the
-    // only fleet), so this subject MOVED rather than being dropped. `src/webview/fleet/App.tsx` was
+    // only fleet), so this subject MOVED rather than being dropped. `packages/webview-ui/src/webview/fleet/App.tsx` was
     // where the assertion lived; `AgentsRoster` itself lives in — and is rendered by — the sidebar,
     // which is the surface that survived. Deleting the assertion with its old file would have let the
     // two-state list t-41117e removed come back with nothing red.
-    const roster = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+    const roster = readFileSync("packages/webview-ui/src/webview/sidebar/App.tsx", "utf8");
     expect(roster).toContain("export function AgentsRoster");
     expect(roster).toContain("EmptyState");
     // what a row paints its state from: the status union, never a boolean.
@@ -65,8 +65,8 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(approvals).toMatch(/Button[\s\S]*Approve/);
     const validations = readFileSync("src/webview/validations/App.tsx", "utf8");
     expect(validations).toContain("PageChrome");
-    expect(validations).toContain("from \"../shared/ui\"");
-    const runtime = readFileSync("src/webview/runtime-ops/App.tsx", "utf8");
+    expect(validations).toContain("from \"@tachyon/webview-ui/webview/shared/ui/index\"");
+    const runtime = readFileSync("packages/webview-ui/src/webview/runtime-ops/App.tsx", "utf8");
     expect(runtime).toContain("PageChrome");
   });
 
@@ -80,16 +80,16 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   });
 
   it("Board head and Inspector use PageChrome", () => {
-    const board = readFileSync("src/webview/board/App.tsx", "utf8");
+    const board = readFileSync("packages/webview-ui/src/webview/board/App.tsx", "utf8");
     expect(board).toContain("PageChrome");
     expect(board).not.toContain("◆");
-    const insp = readFileSync("src/webview/inspector/App.tsx", "utf8");
+    const insp = readFileSync("packages/webview-ui/src/webview/inspector/App.tsx", "utf8");
     expect(insp).toContain("PageChrome");
     expect(insp).toContain("Tabs");
   });
 
   it("Sidebar agent badges use shared Badge (Phase C.1)", () => {
-    const sidebar = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+    const sidebar = readFileSync("packages/webview-ui/src/webview/sidebar/App.tsx", "utf8");
     expect(sidebar).toMatch(/import \{[^}]*Badge/);
     expect(sidebar).toContain("BranchBadge");
     expect(sidebar).not.toMatch(/class=\"badge/);
@@ -98,10 +98,10 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   });
 
   it("Sidebar uses shared DenseRow (Phase C.2)", () => {
-    const patterns = readFileSync("src/webview/shared/ui/patterns.tsx", "utf8");
+    const patterns = readFileSync("packages/webview-ui/src/webview/shared/ui/patterns.tsx", "utf8");
     expect(patterns).toContain("export function DenseRow");
     expect(patterns).toContain("ds-dense-row");
-    const sidebar = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+    const sidebar = readFileSync("packages/webview-ui/src/webview/sidebar/App.tsx", "utf8");
     expect(sidebar).toMatch(/DenseRow/);
     expect(sidebar).toContain("const ListRow = DenseRow");
     expect(sidebar).not.toMatch(/function ListRow\(/);
@@ -109,11 +109,11 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
 
   it("Full standardize surfaces use PageChrome/Badge/Button", () => {
     for (const [file, needles] of [
-      ["src/webview/activity/App.tsx", ["PageChrome", "EmptyState"]],
-      ["src/webview/plugins/App.tsx", ["PageChrome", "Badge"]],
-      ["src/webview/task-detail/App.tsx", ["PageChrome", "Chip"]],
-      ["src/webview/pipeline-studio/App.tsx", ["IconButton"]],
-      ["src/webview/runtime-ops/App.tsx", ["Button"]],
+      ["packages/webview-ui/src/webview/activity/App.tsx", ["PageChrome", "EmptyState"]],
+      ["packages/webview-ui/src/webview/plugins/App.tsx", ["PageChrome", "Badge"]],
+      ["packages/webview-ui/src/webview/task-detail/App.tsx", ["PageChrome", "Chip"]],
+      ["packages/webview-ui/src/webview/pipeline-studio/App.tsx", ["IconButton"]],
+      ["packages/webview-ui/src/webview/runtime-ops/App.tsx", ["Button"]],
     ] as const) {
       const src = readFileSync(file, "utf8");
       for (const n of needles) expect(src, file).toContain(n);
@@ -121,25 +121,25 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   });
 
   it("Handoff + Activity + Board body adopt kit (Phase C.3)", () => {
-    const handoff = readFileSync("src/webview/handoff/App.tsx", "utf8");
+    const handoff = readFileSync("packages/webview-ui/src/webview/handoff/App.tsx", "utf8");
     expect(handoff).toContain("PageChrome");
     expect(handoff).toContain("EmptyState");
     expect(handoff).not.toMatch(/class=\{`ds-badge/);
-    const activity = readFileSync("src/webview/activity/App.tsx", "utf8");
+    const activity = readFileSync("packages/webview-ui/src/webview/activity/App.tsx", "utf8");
     expect(activity).toContain("from \"../shared/ui\"");
     expect(activity).toMatch(/Button[\s\S]*Show all/);
-    const board = readFileSync("src/webview/board/App.tsx", "utf8");
+    const board = readFileSync("packages/webview-ui/src/webview/board/App.tsx", "utf8");
     expect(board).toContain("Select");
     expect(board).toMatch(/stale-editor[\s\S]*Button/);
-    const radius = readFileSync("src/webview/shared/vscode-theme.css", "utf8");
+    const radius = readFileSync("packages/webview-ui/src/webview/shared/vscode-theme.css", "utf8");
     expect(radius).toMatch(/--radius:\s*var\(--ds-radius/);
   });
 
   it("Approvals does not restyle bare buttons; page chrome type is tokenized", () => {
-    const ap = readFileSync("src/webview/approval/approval.css", "utf8");
+    const ap = readFileSync("packages/webview-ui/src/webview/approval/approval.css", "utf8");
     expect(ap).not.toMatch(/\.approval-root\s+button\s*\{/);
     expect(ap).not.toMatch(/font-size:\s*22px/);
-    const ds = readFileSync("src/webview/shared/design-system.css", "utf8");
+    const ds = readFileSync("packages/webview-ui/src/webview/shared/design-system.css", "utf8");
     expect(ds).toMatch(/\.ds-btn\s*\{[\s\S]*min-height:\s*28px/);
     expect(ds).toMatch(/\.ds-page-chrome-title\s*\{[\s\S]*font-size:\s*var\(--ds-title\)/);
   });
@@ -152,7 +152,7 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   // the button drifted 2px away from the fields beside it. This one asserts the STRUCTURE that makes
   // drift impossible instead of a number that merely happens to be in the file.
   it("button/input/select-trigger share ONE control box (t-b8b85c: the 2px regression cannot come back)", () => {
-    const ds = `${readFileSync("src/webview/shared/tokens.css", "utf8")}\n${readFileSync("src/webview/shared/design-system.css", "utf8")}`;
+    const ds = `${readFileSync("packages/webview-ui/src/webview/shared/tokens.css", "utf8")}\n${readFileSync("packages/webview-ui/src/webview/shared/design-system.css", "utf8")}`;
 
     // 1. The three selectors are declared TOGETHER, in one rule. Split them and this fails — which is
     //    what 7be4265a did when it folded t-6da5f0's copy into `.ds-btn` alone and dropped a term.
@@ -218,20 +218,20 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   });
 
   it("editor PageChrome has no title icon and page shell tokens exist", () => {
-    const patterns = readFileSync("src/webview/shared/ui/patterns.tsx", "utf8");
+    const patterns = readFileSync("packages/webview-ui/src/webview/shared/ui/patterns.tsx", "utf8");
     const chromeFn = patterns.slice(patterns.indexOf("export function PageChrome"), patterns.indexOf("export type ListRowState"));
     expect(chromeFn).toContain("ds-page-chrome-title");
     expect(chromeFn).not.toContain("<Icon");
-    const ds = readFileSync("src/webview/shared/design-system.css", "utf8");
+    const ds = readFileSync("packages/webview-ui/src/webview/shared/design-system.css", "utf8");
     expect(ds).toContain("--ds-page-pad-x");
     expect(ds).toContain("--ds-border-width");
     expect(ds).toContain(".ds-page-chrome-title > .codicon");
-    const rt = readFileSync("src/webview/runtime-ops/App.tsx", "utf8");
+    const rt = readFileSync("packages/webview-ui/src/webview/runtime-ops/App.tsx", "utf8");
     expect(rt).not.toMatch(/PageChrome[^>]*icon=/);
   });
 
   it("sidebar Act/more-item stay native (no .ds-btn on density chrome)", () => {
-    const sidebar = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+    const sidebar = readFileSync("packages/webview-ui/src/webview/sidebar/App.tsx", "utf8");
     expect(sidebar).toMatch(/const Act =[\s\S]*?<button class="act"/);
     expect(sidebar).not.toMatch(/const Act =[\s\S]*?IconButton/);
     expect(sidebar).toMatch(/class="more-item" type="button"/);

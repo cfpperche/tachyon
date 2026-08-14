@@ -11,8 +11,8 @@ import {
   isStudioRoute,
   type ProductRoute,
   type CockpitNonStudioRoute,
-} from "../../src/sections/route.js";
-import { COCKPIT_SECTION_ORDER } from "../../src/sections/model.js";
+} from "../../src/sections/route";
+import { COCKPIT_SECTION_ORDER } from "@tachyon/webview-ui/sections/model";
 import { resolveSection } from "../../src/sections/resolveSection.js";
 import { STUDIO_IDS } from "../../src/webview/shared/studio/studioIds.js";
 

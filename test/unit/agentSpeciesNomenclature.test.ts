@@ -45,14 +45,14 @@ const BOUNDARY = {
   "packages/engine/src/runtime-api/handoffCommands.ts": "wire discriminant literal",
   "packages/engine/src/engine-service/protocol.ts": "wire validation of that discriminant",
   "packages/shared/src/handoff/distill.ts": "HandoffDistillMode, the discriminant's type",
-  "src/webview/handoff/messages.ts": "webview action carrying the discriminant",
-  "src/webview/handoff/App.tsx": "<option value> IS the discriminant; its label already reads Temporary",
+  "packages/webview-ui/src/webview/handoff/messages.ts": "webview action carrying the discriminant",
+  "packages/webview-ui/src/webview/handoff/App.tsx": "<option value> IS the discriminant; its label already reads Temporary",
   // the sidebar row's `adhoc` capability flag, produced and consumed across the engine/shell wire
   "packages/engine/src/runtime-api/sidebarProjection.ts": "strict() wire schema field",
   "packages/shared/src/sidebar/types.ts": "the row VM that schema validates",
   "packages/engine/src/sidebar/sidebarFleetService.ts": "produces the flag from lifetime",
   "packages/engine/src/sidebar/agentModel.ts": "carries the flag through the VM",
-  "src/sidebar/actions.ts": "gates actions on the flag",
+  "packages/webview-ui/src/sidebar/actions.ts": "gates actions on the flag",
   "src/shell/WorkspacePresentation.ts": "produces the flag shell-side",
   "src/webview/SidebarPrototype.ts": "reads the flag into the (renamed) context-value param",
   // one provenance comment naming the map that t-eb4b30 deleted
@@ -61,7 +61,7 @@ const BOUNDARY = {
 
 describe("the canonical/ad-hoc species is gone from product language", () => {
   it("only boundary-crossing files may still say adhoc/ad-hoc", () => {
-    const actual = grepFiles("\\badhoc\\b|ad-hoc", ["src", "packages/shared/src", "packages/engine/src"]);
+    const actual = grepFiles("\\badhoc\\b|ad-hoc", ["src", "packages/shared/src", "packages/engine/src", "packages/webview-ui/src"]);
     const allowed = Object.keys(BOUNDARY).sort();
     const reintroduced = actual.filter((f) => !(f in BOUNDARY));
     expect(reintroduced, "these files put the species back into product language").toEqual([]);

@@ -6,7 +6,7 @@ import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.j
 import { legacyTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
 import { TaskStudioAdapter } from "../../src/webview/TaskStudioAdapter.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
-import { computeTaskDirty, serializeTaskPatch, canDiscardTaskFields, type TaskFields } from "../../src/webview/task-studio/domain.js";
+import { computeTaskDirty, serializeTaskPatch, canDiscardTaskFields, type TaskFields } from "../../packages/webview-ui/src/webview/task-studio/domain.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 /** TaskStudioAdapter in isolation: no vscode or panel, with the legacy target proving the same narrow

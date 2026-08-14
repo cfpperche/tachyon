@@ -5,7 +5,7 @@ import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types.js";
-import { CONTROL_SECTION_NAV } from "../../src/webview/sidebar/sectionNav.js";
+import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 
 /**
  * t-6e2952 — headless Visual QA for the Control TAB (the launcher grid inside the one sidebar panel).
@@ -55,7 +55,7 @@ describe("t-6e2952 Control tab headless Visual QA", () => {
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
-    const mod = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/sidebar/App.tsx"));
+    const mod = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"));
     App = mod.App as typeof App;
     browser = await puppeteer.launch({
       executablePath: resolveChromeExecutable(),

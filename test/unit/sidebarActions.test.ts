@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
-import { actionsFor, primaryActions, moreActions, ACTION_META, type ActionId } from "../../src/sidebar/actions";
+import { actionsFor, primaryActions, moreActions, ACTION_META, type ActionId } from "@tachyon/webview-ui/sidebar/actions";
 import type { AgentVM } from "@tachyon/shared/sidebar/types";
 
 const A = (o: Partial<AgentVM> & { status: AgentVM["status"] }): AgentVM => ({ name: "x", kind: "agent", ...o });

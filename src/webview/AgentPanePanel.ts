@@ -19,9 +19,9 @@ import {
   type AgentPanePanelState,
   type AgentPanePickerItem,
   type AgentPaneToHost,
-} from "./agent-pane/protocol.js";
+} from "./agent-pane/protocol";
 
-export { AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./agent-pane/protocol.js";
+export { AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "@tachyon/webview-ui/webview/agent-pane/protocol";
 
 export interface AgentPaneOpenArgs {
   agent: string;

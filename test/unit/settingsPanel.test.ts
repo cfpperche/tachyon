@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "../../src/webview/SettingsPanel.js";
-import { readyMessage } from "../../src/webview/settings/messages.js";
+import { readyMessage } from "../../packages/webview-ui/src/webview/settings/messages.js";
 
 describe("SDD 485 D10 — standalone Settings dashboard", () => {
   it("opens one immutable panel per project and reads the selected project", async () => {
@@ -24,6 +24,6 @@ describe("SDD 485 D10 — standalone Settings dashboard", () => {
   });
 
   it("leaves no Settings renderer or unknown-section fallback in Control", () => {
-    expect(() => readFileSync("src/webview/cockpit/App.tsx", "utf8")).toThrow();
+    expect(() => readFileSync("packages/webview-ui/src/webview/cockpit/App.tsx", "utf8")).toThrow();
   });
 });

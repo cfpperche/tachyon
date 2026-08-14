@@ -219,6 +219,7 @@ const piBridgeExtension = {
 // crash reading a null dispatcher (caught live: Pilot A's plugins bundle crashed with "Cannot read
 // properties of null (reading 'useMemo')" before this was on the shared base, not just excalidraw/ui-gate).
 const preactCompat = {
+  "@tachyon/webview-ui": path.resolve("packages/webview-ui/src"),
   react: "preact/compat",
   "react-dom": "preact/compat",
   "react-dom/client": "preact/compat",
@@ -228,7 +229,7 @@ const preactCompat = {
 
 // spec 237 — the Preact sidebar webview bundle (browser; runs in the webview iframe, never imports vscode).
 const sidebar = {
-  entryPoints: ["src/webview/sidebar/main.tsx"],
+  entryPoints: ["packages/webview-ui/src/webview/sidebar/main.tsx"],
   bundle: true,
   outfile: "dist/webview/sidebar.js",
   platform: "browser",
@@ -246,7 +247,7 @@ const sidebar = {
 // t-1ca53b — page-realm Design Mode app: one self-contained artifact evaluated through CDP.
 const designModeOverlay = {
   ...sidebar,
-  entryPoints: ["src/webview/design-mode-overlay/main.tsx"],
+  entryPoints: ["packages/webview-ui/src/webview/design-mode-overlay/main.tsx"],
   outfile: "dist/webview/design-mode-overlay.js",
   splitting: false,
   format: "iife",
@@ -256,32 +257,32 @@ const designModeOverlay = {
 // t-6e2952 — the Control launcher has no bundle of its own: it is a tab inside the sidebar bundle above.
 
 // t-610705 (SDD 410 Phase C.2) — the standalone Activity bundle was retired: it's a Control
-// subroute now (src/webview/activity/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
+// subroute now (packages/webview-ui/src/webview/activity/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
 // co-load). activity.css is still copied below — Cockpit.ts co-loads it.
 
 // t-610705 (SDD 410 Phase C.3) — the standalone Project Handoff bundle was retired: it's a Control
-// section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
+// section now (packages/webview-ui/src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS
 // co-load). handoff.css is still copied below — Cockpit.ts co-loads it.
 
 // t-610705 (SDD 410 Phase A/B, found + closed in the Phase E audit, 2026-07-22) — the standalone
-// Approvals bundle was retired: it's a Control section now (src/webview/approval/App.tsx stays,
+// Approvals bundle was retired: it's a Control section now (packages/webview-ui/src/webview/approval/App.tsx stays,
 // lazy-imported by cockpit/App.tsx via CSS co-load). approval.css is still copied below — Cockpit.ts
-// co-loads it. ApprovalPanelManager (src/webview/ApprovalPanel.ts) is a pure redirect stub — it
+// co-loads it. ApprovalPanelManager (packages/webview-ui/src/webview/ApprovalPanel.ts) is a pure redirect stub — it
 // never calls createWebviewPanel, so this target had kept building a bundle nothing ever opened
 // since the Phase A pilot landed.
 
 // spec 250 — the Preact Plugins View webview bundle (editor-area panel; never imports vscode).
 
 // t-610705 (SDD 410 Phase C.2) — the standalone Probes bundle was retired: it's a Control subroute
-// now (src/webview/probes/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS co-load).
+// now (packages/webview-ui/src/webview/probes/App.tsx stays, lazy-imported by cockpit/App.tsx via CSS co-load).
 // probes.css is still copied below — Cockpit.ts co-loads it.
 
 // t-610705 (SDD 410 Phase B #5) — the standalone Inspector bundle was retired: the tmux Server
-// Inspector is a cockpit-only section now (src/webview/inspector/App.tsx stays, lazy-imported by
+// Inspector is a cockpit-only section now (packages/webview-ui/src/webview/inspector/App.tsx stays, lazy-imported by
 // cockpit/App.tsx via CSS co-load). inspector.css is still copied below — Cockpit.ts co-loads it.
 
 // t-b5dcae — the Engine/Bridge Control Inspector POC bundle was removed as dead code: its host
-// (ControlInspector.ts) had zero importers and its webview app (src/webview/control-inspector/*)
+// (ControlInspector.ts) had zero importers and its webview app (packages/webview-ui/src/webview/control-inspector/*)
 // was only reachable from that host and the dev-preview harness. The real domain logic
 // (src/control-inspector/model.ts) survives — Cockpit's own Engine tab uses it directly.
 
@@ -309,7 +310,7 @@ const webviewChunkHygienePlugin = {
  * shared utility would be copied once per app, which genuinely reopens 410's budget hole. Splitting across
  * one graph means the twelfth app costs its own code and nothing else.
  *
- * This array is the build's half of the app manifest (`src/webview/webviewApps.ts`, which esbuild cannot
+ * This array is the build's half of the app manifest (`packages/webview-ui/src/webview/webviewApps.ts`, which esbuild cannot
  * import because it is TypeScript). `test/unit/webviewAppBudget.test.ts` fails if the two disagree in
  * either direction, so the duplication cannot drift silently — the same bargain the convention guard
  * already takes when it reads this file as text.
@@ -319,7 +320,7 @@ const webviewChunkHygienePlugin = {
 const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "settings", "activity", "probes"];
 const webviewApps = {
   ...sidebar,
-  entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `src/webview/${view}/main.tsx`])),
+  entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `packages/webview-ui/src/webview/${view}/main.tsx`])),
   entryNames: "[name]",
   chunkNames: "chunks/app-[name]-[hash]",
   outdir: "dist/webview",
@@ -332,12 +333,12 @@ delete webviewApps.outfile;
 // t-610355 — layer-2 first-party agent pane (xterm.js viewport; never imports vscode)
 const agentPane = {
   ...sidebar,
-  entryPoints: ["src/webview/agent-pane/main.tsx"],
+  entryPoints: ["packages/webview-ui/src/webview/agent-pane/main.tsx"],
   outfile: "dist/webview/agent-pane.js",
 };
 
 // t-610705 (SDD 410 Phase D, D3) — the standalone Pin Studio bundle (spec 255) was retired: Pin
-// Studio is a cockpit-only studio route now (src/webview/pin-studio/App.tsx stays, lazy-imported by
+// Studio is a cockpit-only studio route now (packages/webview-ui/src/webview/pin-studio/App.tsx stays, lazy-imported by
 // cockpit/App.tsx via CSS co-load, same as command/terminal/runbook/schedule/agent/task before it).
 // pin-studio.css is still emitted below — Cockpit.ts co-loads it.
 
@@ -346,7 +347,7 @@ const agentPane = {
 // harness and its own host-side tests.
 const pipelineStudio = {
   ...sidebar,
-  entryPoints: ["src/webview/pipeline-studio/main.tsx"],
+  entryPoints: ["packages/webview-ui/src/webview/pipeline-studio/main.tsx"],
   outfile: "dist/webview/pipeline-studio.js",
 };
 
@@ -354,7 +355,7 @@ const pipelineStudio = {
 // preview route only — no command contribution anywhere ships this surface to a real user.
 const agentStudioFixture = {
   ...sidebar,
-  entryPoints: ["src/webview/agent-studio-fixture/main.tsx"],
+  entryPoints: ["packages/webview-ui/src/webview/agent-studio-fixture/main.tsx"],
   outfile: "dist/webview/agent-studio-fixture.js",
 };
 
@@ -368,20 +369,20 @@ const agentStudioFixture = {
 // inline plugin scripts, and relays typed messages to the VS Code host.
 const pluginHost = {
   ...sidebar,
-  entryPoints: ["src/webview/plugin-host/main.tsx"],
+  entryPoints: ["packages/webview-ui/src/webview/plugin-host/main.tsx"],
   outfile: "dist/webview/plugin-host.js",
 };
 
 // t-610705 (SDD 410 Phase B #6) — the standalone Board bundle was retired: the Board is a
-// cockpit-only section (src/webview/board/App.tsx stays, lazy-imported by cockpit/App.tsx
+// cockpit-only section (packages/webview-ui/src/webview/board/App.tsx stays, lazy-imported by cockpit/App.tsx
 // via CSS co-load). Both Board CSS files are still emitted below — Cockpit.ts co-loads them.
 
 // t-610705 (SDD 410 Phase C.1) — the standalone Task Detail bundle was retired: Task Detail is a
-// cockpit-only subroute now (src/webview/task-detail/App.tsx stays, lazy-imported by cockpit/App.tsx
+// cockpit-only subroute now (packages/webview-ui/src/webview/task-detail/App.tsx stays, lazy-imported by cockpit/App.tsx
 // via CSS co-load). task-detail.css is still emitted below — Cockpit.ts co-loads it.
 
 // t-610705 (SDD 410 Phase D, D2) — the standalone Task Studio bundle was retired: Task Studio is a
-// cockpit-only studio route now (src/webview/task-studio/App.tsx stays, lazy-imported by
+// cockpit-only studio route now (packages/webview-ui/src/webview/task-studio/App.tsx stays, lazy-imported by
 // cockpit/App.tsx via CSS co-load, same as command/terminal/runbook/schedule/agent before it).
 
 // spec 256 — Excalidraw as its OWN on-demand bundle. It declares React peers; Tachyon webviews stay
@@ -446,7 +447,7 @@ const previewShell = {
 // shipped in the vsix (dev/CI-only surface, same as `preview`).
 const uiGate = {
   ...sidebar,
-  entryPoints: ["src/webview/ui-gate/main.tsx"],
+  entryPoints: ["packages/webview-ui/src/webview/ui-gate/main.tsx"],
   outfile: "dist/webview/ui-gate.js",
   alias: preactCompat,
 };
@@ -456,11 +457,11 @@ const uiGate = {
 // `@tailwindcss/cli` package invoked directly as a Node script — no runtime, no external fetches, no
 // tailwind.config.js (v4 is CSS-config-only; preflight-off is a property of the input file, see its header).
 const tailwindSurfaces = [
-  { input: "src/webview/ui-gate/tailwind.css", output: "dist/webview/ui-gate.tailwind.css" },
-  { input: "src/webview/plugins/tailwind.css", output: "dist/webview/plugins.tailwind.css" }, // spec 342 Pilot A
-  { input: "src/webview/task-studio/tailwind.css", output: "dist/webview/task-studio.tailwind.css" }, // spec 342 Pilot B
-  { input: "src/webview/board/tailwind.css", output: "dist/webview/board.tailwind.css" }, // t-6da5f0 — first t-b0a229 board adoption (KitSelect agent filter)
-  { input: "src/webview/agent-studio-shell/tailwind.css", output: "dist/webview/agent-studio-shell.tailwind.css" },
+  { input: "packages/webview-ui/src/webview/ui-gate/tailwind.css", output: "dist/webview/ui-gate.tailwind.css" },
+  { input: "packages/webview-ui/src/webview/plugins/tailwind.css", output: "dist/webview/plugins.tailwind.css" }, // spec 342 Pilot A
+  { input: "packages/webview-ui/src/webview/task-studio/tailwind.css", output: "dist/webview/task-studio.tailwind.css" }, // spec 342 Pilot B
+  { input: "packages/webview-ui/src/webview/board/tailwind.css", output: "dist/webview/board.tailwind.css" }, // t-6da5f0 — first t-b0a229 board adoption (KitSelect agent filter)
+  { input: "packages/webview-ui/src/webview/agent-studio-shell/tailwind.css", output: "dist/webview/agent-studio-shell.tailwind.css" },
 ];
 const tailwindCli = fileURLToPath(new URL("./node_modules/@tailwindcss/cli/dist/index.mjs", import.meta.url));
 
@@ -498,54 +499,54 @@ if (existsSync("media/companion-mobile/index.html")) {
 buildTailwind();
 copyFileSync("src/config/tachyon.schema.json", "dist/tachyon.schema.json");
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.css", "dist/webview/codicon.css");
-copyFileSync("src/webview/shared/design-system.css", "dist/webview/design-system.css");
-copyFileSync("src/webview/shared/tokens.css", "dist/webview/tokens.css"); // SDD 505 Slice 1 — shared token declarations
-copyFileSync("src/webview/shared/faces.css", "dist/webview/faces.css"); // SDD 505 Slice 1 — bundled font faces
-copyFileSync("src/webview/shared/quick-picker.css", "dist/webview/quick-picker.css"); // spec 252 — shared webview design system
-copyFileSync("src/webview/shared/page-frame.css", "dist/webview/page-frame.css"); // t-32c872 — the shared PAGE FRAME (html/body height, no page scroll) a standalone app links
-copyFileSync("src/webview/shared/engine-workspace.css", "dist/webview/engine-workspace.css"); // SDD 485 D5 — opt-in Engine workspace/log contract
-copyFileSync("src/webview/shared/control-typography.css", "dist/webview/control-typography.css"); // SDD 485 D6 — Control + Worktrees typography utility
-copyFileSync("src/webview/shared/mermaid-block.css", "dist/webview/mermaid-block.css"); // spec 374 — Mermaid block + read-only nav (Activity/Handoff/Task Detail)
-copyFileSync("src/webview/shared/vscode-theme.css", "dist/webview/vscode-theme.css"); // spec 342 — shadcn/vendor token bridge (ONE shared source; see its header)
+copyFileSync("packages/webview-ui/src/webview/shared/design-system.css", "dist/webview/design-system.css");
+copyFileSync("packages/webview-ui/src/webview/shared/tokens.css", "dist/webview/tokens.css"); // SDD 505 Slice 1 — shared token declarations
+copyFileSync("packages/webview-ui/src/webview/shared/faces.css", "dist/webview/faces.css"); // SDD 505 Slice 1 — bundled font faces
+copyFileSync("packages/webview-ui/src/webview/shared/quick-picker.css", "dist/webview/quick-picker.css"); // spec 252 — shared webview design system
+copyFileSync("packages/webview-ui/src/webview/shared/page-frame.css", "dist/webview/page-frame.css"); // t-32c872 — the shared PAGE FRAME (html/body height, no page scroll) a standalone app links
+copyFileSync("packages/webview-ui/src/webview/shared/engine-workspace.css", "dist/webview/engine-workspace.css"); // SDD 485 D5 — opt-in Engine workspace/log contract
+copyFileSync("packages/webview-ui/src/webview/shared/control-typography.css", "dist/webview/control-typography.css"); // SDD 485 D6 — Control + Worktrees typography utility
+copyFileSync("packages/webview-ui/src/webview/shared/mermaid-block.css", "dist/webview/mermaid-block.css"); // spec 374 — Mermaid block + read-only nav (Activity/Handoff/Task Detail)
+copyFileSync("packages/webview-ui/src/webview/shared/vscode-theme.css", "dist/webview/vscode-theme.css"); // spec 342 — shadcn/vendor token bridge (ONE shared source; see its header)
 // spec 345 — Tachyon-owned webview fonts live in their own subtree so KaTeX/Excalidraw can continue owning
 // dist/webview/fonts directly without filename collisions or unclear provenance.
 rmSync("dist/webview/fonts/tachyon", { recursive: true, force: true });
-cpSync("src/webview/shared/fonts/tachyon", "dist/webview/fonts/tachyon", { recursive: true });
-copyFileSync("src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // spec 274 — sidebar styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/handoff/handoff.css", "dist/webview/handoff.css"); // spec 280 — handoff styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/approval/approval.css", "dist/webview/approval.css");
-copyFileSync("src/webview/validations/validations.css", "dist/webview/validations.css");
+cpSync("packages/webview-ui/src/webview/shared/fonts/tachyon", "dist/webview/fonts/tachyon", { recursive: true });
+copyFileSync("packages/webview-ui/src/webview/sidebar/sidebar.css", "dist/webview/sidebar.css"); // spec 274 — sidebar styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/handoff/handoff.css", "dist/webview/handoff.css"); // spec 280 — handoff styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/approval/approval.css", "dist/webview/approval.css");
+copyFileSync("packages/webview-ui/src/webview/validations/validations.css", "dist/webview/validations.css");
 // t-e76acc — the unified Human Inbox's sheet, co-loaded (or linked eagerly when Control opens on it).
-copyFileSync("src/webview/human-inbox/human-inbox.css", "dist/webview/human-inbox.css");
-copyFileSync("src/webview/rich-doc/rich-doc.css", "dist/webview/rich-doc.css"); // spec 339 — entity-neutral rich-doc editor styles (shared by pin-studio + task-studio + the dev preview harness)
-copyFileSync("src/webview/pin-studio/pin-studio.css", "dist/webview/pin-studio.css"); // spec 280 — pin-studio styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/task-studio/task-studio.css", "dist/webview/task-studio.css"); // spec 339 — task-studio styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/board/board.css", "dist/webview/board.css"); // spec 335 — Board styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/task-detail/task-detail.css", "dist/webview/task-detail.css"); // spec 335 — Task Detail styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/runtime-ops/runtime-ops.css", "dist/webview/runtime-ops.css"); // spec 367 — Runtime Ops bottom-panel styles
-copyFileSync("src/webview/runtime-config/runtime-config.css", "dist/webview/runtime-config.css"); // SDD 485 D8 — standalone Runtime Config styles
-copyFileSync("src/webview/settings/settings.css", "dist/webview/settings.css"); // SDD 485 D10
-copyFileSync("src/webview/system/system.css", "dist/webview/system.css"); // SDD 500
-copyFileSync("src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // spec 278 — plugins styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/worktrees/worktrees.css", "dist/webview/worktrees.css"); // SDD 485 D6 — standalone Worktrees leaf
-copyFileSync("src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
-copyFileSync("src/webview/agent-pane/agent-pane.css", "dist/webview/agent-pane.css"); // t-610355 — layer-2 agent pane chrome
+copyFileSync("packages/webview-ui/src/webview/human-inbox/human-inbox.css", "dist/webview/human-inbox.css");
+copyFileSync("packages/webview-ui/src/webview/rich-doc/rich-doc.css", "dist/webview/rich-doc.css"); // spec 339 — entity-neutral rich-doc editor styles (shared by pin-studio + task-studio + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/pin-studio/pin-studio.css", "dist/webview/pin-studio.css"); // spec 280 — pin-studio styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/task-studio/task-studio.css", "dist/webview/task-studio.css"); // spec 339 — task-studio styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/board/board.css", "dist/webview/board.css"); // spec 335 — Board styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/task-detail/task-detail.css", "dist/webview/task-detail.css"); // spec 335 — Task Detail styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/runtime-ops/runtime-ops.css", "dist/webview/runtime-ops.css"); // spec 367 — Runtime Ops bottom-panel styles
+copyFileSync("packages/webview-ui/src/webview/runtime-config/runtime-config.css", "dist/webview/runtime-config.css"); // SDD 485 D8 — standalone Runtime Config styles
+copyFileSync("packages/webview-ui/src/webview/settings/settings.css", "dist/webview/settings.css"); // SDD 485 D10
+copyFileSync("packages/webview-ui/src/webview/system/system.css", "dist/webview/system.css"); // SDD 500
+copyFileSync("packages/webview-ui/src/webview/plugins/plugins.css", "dist/webview/plugins.css"); // spec 278 — plugins styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/activity/activity.css", "dist/webview/activity.css"); // spec 278 — activity styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/probes/probes.css", "dist/webview/probes.css"); // spec 279 — probes styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/inspector/inspector.css", "dist/webview/inspector.css"); // spec 279 — inspector styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/worktrees/worktrees.css", "dist/webview/worktrees.css"); // SDD 485 D6 — standalone Worktrees leaf
+copyFileSync("packages/webview-ui/src/webview/pin-preview/pin-preview.css", "dist/webview/pin-preview.css"); // spec 279 — pin-preview styles (shared by the webview + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/agent-pane/agent-pane.css", "dist/webview/agent-pane.css"); // t-610355 — layer-2 agent pane chrome
 copyFileSync("node_modules/@xterm/xterm/css/xterm.css", "dist/webview/xterm.css"); // t-610355 — xterm.js styles
-copyFileSync("src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
-copyFileSync("src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
-copyFileSync("src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
-copyFileSync("src/webview/section-app-fixture/section-app-fixture.css", "dist/webview/section-app-fixture.css"); // SDD 485 C2 — per-app CSS for the section-app proof surface
-copyFileSync("src/webview/agent-studio-shell/agent-studio-shell.css", "dist/webview/agent-studio-shell.css"); // spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styles
+copyFileSync("packages/webview-ui/src/webview/shared/studio/studio-frame.css", "dist/webview/studio-frame.css"); // spec 350 — the studio shell's chrome (shared by any studio built on it + the dev preview harness)
+copyFileSync("packages/webview-ui/src/webview/pipeline-studio/pipeline-studio.css", "dist/webview/pipeline-studio.css"); // spec 350 T4 — Pipeline Studio (Fake 1) domain-region styles
+copyFileSync("packages/webview-ui/src/webview/agent-studio-fixture/agent-studio-fixture.css", "dist/webview/agent-studio-fixture.css"); // spec 350 T5 — Agent-entity fixture (Fake 2) domain-region styles
+copyFileSync("packages/webview-ui/src/webview/section-app-fixture/section-app-fixture.css", "dist/webview/section-app-fixture.css"); // SDD 485 C2 — per-app CSS for the section-app proof surface
+copyFileSync("packages/webview-ui/src/webview/agent-studio-shell/agent-studio-shell.css", "dist/webview/agent-studio-shell.css"); // spec 350 Phase 3 T3 — Agent Studio (shell) domain-region styles
 // t-610705 (Phase D, D0/D1a) — these four studio-shell stylesheets are co-loaded by Control now
 // (Cockpit.ts), not a standalone bundle's own entry point; the standalone .js targets are gone.
-copyFileSync("src/webview/terminal-studio-shell/terminal-studio-shell.css", "dist/webview/terminal-studio-shell.css");
-copyFileSync("src/webview/command-studio-shell/command-studio-shell.css", "dist/webview/command-studio-shell.css");
-copyFileSync("src/webview/runbook-studio-shell/runbook-studio-shell.css", "dist/webview/runbook-studio-shell.css");
-copyFileSync("src/webview/schedule-studio-shell/schedule-studio-shell.css", "dist/webview/schedule-studio-shell.css");
-copyFileSync("src/webview/plugin-host/plugin-host.css", "dist/webview/plugin-host.css"); // spec 349 T10 — plugin UI relay shell
+copyFileSync("packages/webview-ui/src/webview/terminal-studio-shell/terminal-studio-shell.css", "dist/webview/terminal-studio-shell.css");
+copyFileSync("packages/webview-ui/src/webview/command-studio-shell/command-studio-shell.css", "dist/webview/command-studio-shell.css");
+copyFileSync("packages/webview-ui/src/webview/runbook-studio-shell/runbook-studio-shell.css", "dist/webview/runbook-studio-shell.css");
+copyFileSync("packages/webview-ui/src/webview/schedule-studio-shell/schedule-studio-shell.css", "dist/webview/schedule-studio-shell.css");
+copyFileSync("packages/webview-ui/src/webview/plugin-host/plugin-host.css", "dist/webview/plugin-host.css"); // spec 349 T10 — plugin UI relay shell
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");
 // KaTeX stylesheet + fonts (the CSS references fonts/ relatively → keep them adjacent under dist/webview).
 copyFileSync("node_modules/katex/dist/katex.min.css", "dist/webview/katex.min.css");
@@ -569,7 +570,14 @@ if (existsSync(excalidrawAssets)) {
   cpSync(excalidrawAssets, "dist/webview/excalidraw-assets", { recursive: true });
 }
 
-const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate];
+const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
+  .map((target) => ({
+    ...target,
+    alias: {
+      ...target.alias,
+      "@tachyon/webview-ui": path.resolve("packages/webview-ui/src"),
+    },
+  }));
 if (watch) {
   const ctxs = await Promise.all(targets.map((c) => esbuild.context(c)));
   await Promise.all(ctxs.map((c) => c.watch()));

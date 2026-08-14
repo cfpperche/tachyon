@@ -1,3 +1,5 @@
+import type { ApprovalViewItem, ApprovalViewModel } from "@tachyon/webview-ui/webview/approval/viewModel";
+export type { ApprovalViewItem, ApprovalViewModel } from "@tachyon/webview-ui/webview/approval/viewModel";
 import fs from "node:fs";
 import path from "node:path";
 import {
@@ -5,33 +7,10 @@ import {
   APPROVAL_ID_PREFIX,
   witnessedDecisionSealState,
   readApprovalRequest,
-  type ApprovalCancellation,
   type ApprovalPayload,
   type ApprovalRequest,
-  type ApprovalResolution,
-  type ApprovalStatus,
 } from "@tachyon/engine/bridge/approvalRequest.js";
-import type { ApprovalRow } from "../../sections/model.js";
-
-export interface ApprovalViewItem {
-  id: string;
-  requester: string;
-  session: string;
-  createdAt: string;
-  payload: ApprovalPayload;
-  tampered: boolean;
-  warning?: string;
-  /** Production readers always set this; optional only for legacy preview/test fixtures. */
-  status?: ApprovalStatus;
-  resolution?: ApprovalResolution;
-  cancellation?: ApprovalCancellation;
-}
-
-export interface ApprovalViewModel {
-  folder: string;
-  wsHash: string;
-  approvals: ApprovalViewItem[];
-}
+import type { ApprovalRow } from "@tachyon/webview-ui/sections/model";
 
 const emptyPayload = (): ApprovalPayload => ({ reason: "", proposedAction: "", risk: "", exactPrompt: "" });
 

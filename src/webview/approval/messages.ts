@@ -1,6 +1,6 @@
 import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
-import type { ApprovalViewModel } from "./viewModel";
-import { READY, readyMessage, type ReadyMessage } from "../shared/ready";
+import type { ApprovalViewModel } from "@tachyon/webview-ui/webview/approval/viewModel";
+import { READY, readyMessage, type ReadyMessage } from "@tachyon/webview-ui/webview/shared/ready";
 
 export { READY, readyMessage, type ReadyMessage };
 

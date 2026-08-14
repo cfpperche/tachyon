@@ -1,13 +1,13 @@
 import { readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "../../src/sections/model.js";
+import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "../../src/webview/SystemPanel.js";
-import { readyMessage } from "../../src/webview/system/messages.js";
-import { summariseWorkspaceRows } from "../../src/webview/system/summary.js";
-import { buildControlInspectorModel, type ControlInspectorWorkspaceInput } from "../../src/control-inspector/model.js";
+import { readyMessage } from "../../packages/webview-ui/src/webview/system/messages.js";
+import { summariseWorkspaceRows } from "../../packages/webview-ui/src/webview/system/summary.js";
+import { buildControlInspectorModel, type ControlInspectorWorkspaceInput } from "@tachyon/webview-ui/control-inspector/model";
 
 const wsInput = (over: Partial<ControlInspectorWorkspaceInput> & { wsHash: string }): ControlInspectorWorkspaceInput => ({
   folderName: over.wsHash,
@@ -47,16 +47,16 @@ describe("SDD 500 — the System dashboard", () => {
 
   it("ships the stylesheet the standalone panel links", () => {
     const build = readFileSync("esbuild.mjs", "utf8");
-    expect(build).toContain('copyFileSync("src/webview/system/system.css", "dist/webview/system.css")');
+    expect(build).toContain('copyFileSync("packages/webview-ui/src/webview/system/system.css", "dist/webview/system.css")');
   });
 
   it("leaves no Overview or Engine app behind — no host, no bundle dir, no sheet", () => {
     for (const file of [
-      "src/webview/OverviewPanel.ts",
-      "src/webview/EnginePanel.ts",
-      "src/webview/overview/App.tsx",
-      "src/webview/engine/App.tsx",
-      "src/webview/overview/overview.css",
+      "packages/webview-ui/src/webview/OverviewPanel.ts",
+      "packages/webview-ui/src/webview/EnginePanel.ts",
+      "packages/webview-ui/src/webview/overview/App.tsx",
+      "packages/webview-ui/src/webview/engine/App.tsx",
+      "packages/webview-ui/src/webview/overview/overview.css",
     ]) {
       expect(() => readFileSync(file, "utf8"), `${file} still exists`).toThrow();
     }
@@ -109,7 +109,7 @@ describe("SDD 500 D3 — the summary is derived from the rows on screen", () => 
   describe("the rendered screen answers from its rows even when the aggregate disagrees", () => {
     let App: (props: Record<string, unknown>) => unknown;
     beforeAll(async () => {
-      App = (await loadWebviewModule("src/webview/system/App.tsx")).App as typeof App;
+      App = (await loadWebviewModule("packages/webview-ui/src/webview/system/App.tsx")).App as typeof App;
     });
 
     /** a model with ONE attached workspace, whose `overview` block has been made to lie. */
@@ -180,7 +180,7 @@ describe("SDD 500 D3 — the summary is derived from the rows on screen", () => 
  */
 describe("SDD 500 — the workspace-wide counts keep their own sources", () => {
   it("inboxPending and worktreesActive still come from model.overview, and the Inbox counter navigates", () => {
-    const app = readFileSync("src/webview/system/App.tsx", "utf8");
+    const app = readFileSync("packages/webview-ui/src/webview/system/App.tsx", "utf8");
     expect(app).toContain("overview.inboxPending");
     expect(app).toContain("overview.worktreesActive");
     expect(app).toContain('type: "openSection", section: "inbox"');
@@ -191,7 +191,7 @@ describe("SDD 500 — the workspace-wide counts keep their own sources", () => {
     // project exists"), and this app draws ONE card. Printing it as the Workspaces value would be the
     // counter-contradicts-the-cards state spec.md forbids, so the value is the rows and the window's
     // count survives underneath, saying its own scope.
-    const app = readFileSync("src/webview/system/App.tsx", "utf8");
+    const app = readFileSync("packages/webview-ui/src/webview/system/App.tsx", "utf8");
     expect(app).toContain("derived.workspaces");
     expect(app).toContain("workspacesInWindow");
     expect(app).toContain("window > derived.workspaces");
@@ -201,7 +201,7 @@ describe("SDD 500 — the workspace-wide counts keep their own sources", () => {
     // Measured rather than assumed: the field is not dead just because the screen stopped reading it
     // whole. Deleting it would silently empty three lines of the diagnostics a human copies when
     // something is already wrong.
-    const model = readFileSync("src/sections/model.ts", "utf8");
+    const model = readFileSync("packages/webview-ui/src/sections/model.ts", "utf8");
     for (const line of ["model.overview.approvalsPending", "model.overview.inboxPending", "model.overview.worktreesActive"]) {
       expect(model, `formatSectionsDiagnostics lost ${line}`).toContain(line);
     }
@@ -215,7 +215,7 @@ describe("SDD 500 — the workspace-wide counts keep their own sources", () => {
  */
 describe("SDD 500 — every action both pages carried is on the merged screen", () => {
   it("auto-refresh, refresh, copy diagnostics and open doctor are all posted from System", () => {
-    const app = readFileSync("src/webview/system/App.tsx", "utf8");
+    const app = readFileSync("packages/webview-ui/src/webview/system/App.tsx", "utf8");
     expect(app).toContain("setAuto");
     expect(app).toContain("type: POLL");
     expect(app).toContain('type: "copyDiagnostics"');

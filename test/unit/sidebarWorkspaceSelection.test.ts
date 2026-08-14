@@ -7,7 +7,7 @@ import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js"
 import { ControlWorkspaceScope, controlWorkspaceScope } from "../../src/webview/shared/ControlWorkspaceScope.js";
 import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
 import { SAMPLE, TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
-import { buildSectionsModel } from "../../src/sections/model.js";
+import { buildSectionsModel } from "@tachyon/webview-ui/sections/model";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 
@@ -77,7 +77,7 @@ const render = (props: AppProps): string => renderStatic(App(props));
 
 describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
   beforeEach(async () => {
-    const mod = await loadWebviewModule(path.join(repoRoot, "src/webview/sidebar/App.tsx"));
+    const mod = await loadWebviewModule(path.join(repoRoot, "packages/webview-ui/src/webview/sidebar/App.tsx"));
     App = mod.App as typeof App;
   });
 
@@ -203,7 +203,7 @@ describe("t-72ff5a — one project is in focus for the whole sidebar", () => {
     // is built from `fleets`, never from the selected one. Scoping it would make a name in another
     // root unreachable by the only mechanism built to find it; the label and the switch-on-open in
     // `pick` are what keep a foreign hit honest.
-    const src = readFileSync(path.join(repoRoot, "src/webview/sidebar/App.tsx"), "utf8");
+    const src = readFileSync(path.join(repoRoot, "packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
     expect(src).toContain("const index = useMemo(() => fleets.flatMap(searchIndex), [fleets]);");
     expect(src).toContain("{open && <CmdK fleets={fleets} selectedHash={selectedHash}");
     expect(src).toMatch(/if \(it\.wsHash && it\.wsHash !== selectedHash\) selectWorkspace\(it\.wsHash\);/);

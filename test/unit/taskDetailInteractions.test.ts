@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, type DetailStaleState } from "../../src/webview/task-detail/interactions.js";
-import type { TaskPrototypeListVM, TaskPrototypeVM } from "../../src/webview/task-prototype/types.js";
+import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, type DetailStaleState } from "../../packages/webview-ui/src/webview/task-detail/interactions.js";
+import type { TaskPrototypeListVM, TaskPrototypeVM } from "../../packages/webview-ui/src/webview/task-prototype/types.js";
 
 const STALE = "precondition-failed: updatedAt did not match";
 

@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
  */
 describe("PrototypePreview guards a missing/malformed sha256 (t-668b05)", () => {
   it("does not call .slice() directly on selected.sha256 without a type/truthiness guard first", () => {
-    const src = readFileSync("src/webview/shared/PrototypePreview.tsx", "utf8");
+    const src = readFileSync("packages/webview-ui/src/webview/shared/PrototypePreview.tsx", "utf8");
     expect(src).not.toMatch(/\{selected\.sha256\.slice\(/);
     expect(src).toMatch(/typeof selected\.sha256 === "string" && selected\.sha256/);
   });
@@ -23,7 +23,7 @@ describe("PrototypePreview guards a missing/malformed sha256 (t-668b05)", () => 
   // ALSO crash at `.filter`/`.find`/`.some`/`.at`/`.map` on `value.prototypes` if it were ever a
   // non-array, BEFORE the sha256 guard is even reached — normalized once at the top instead.
   it("normalizes value.prototypes to an array before any array method call on it", () => {
-    const src = readFileSync("src/webview/shared/PrototypePreview.tsx", "utf8");
+    const src = readFileSync("packages/webview-ui/src/webview/shared/PrototypePreview.tsx", "utf8");
     expect(src).toMatch(/const prototypes = Array\.isArray\(value\.prototypes\) \? value\.prototypes : \[\]/);
     // every subsequent array-method call site in the component uses the normalized local, not the
     // raw (unvalidated) `value.prototypes` field directly.

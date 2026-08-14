@@ -1,3 +1,5 @@
+import type { HumanInboxViewModel, HumanInboxItemViewModel } from "@tachyon/webview-ui/webview/human-inbox/viewModel";
+export type { HumanInboxViewModel, HumanInboxItemViewModel } from "@tachyon/webview-ui/webview/human-inbox/viewModel";
 /**
  * Human Inbox — the view models Control's section and detail route render (t-e76acc).
  *
@@ -11,43 +13,19 @@
 import {
   buildHumanInbox,
   humanInboxCounts,
-  type HumanInboxCounts,
-  type HumanInboxItem,
   type HumanInboxKind,
   type StaleAfter,
-} from "../../humanInbox/model.js";
+} from "@tachyon/webview-ui/humanInbox/model";
 import {
   projectInboxArtifacts,
   summarizeInboxArtifacts,
-  type InboxArtifactPreview,
   type InboxArtifactResolver,
-  type InboxArtifactSummary,
 } from "../../humanInbox/artifacts.js";
 import type { ApprovalViewItem } from "../approval/viewModel.js";
 import type { ValidationViewItem } from "../validations/viewModel.js";
 import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview.js";
 import type { SavedAgentRemovalProposalReview } from "../../agents/savedAgentRemovalProposalReview.js";
 import type { ScheduleProposal } from "@tachyon/engine/schedule/ProposalStore.js";
-
-export interface HumanInboxViewModel {
-  folder: string;
-  wsHash: string;
-  items: HumanInboxItem[];
-  counts: HumanInboxCounts;
-}
-
-/**
- * One item, opened. `artifacts` is what the route previews inline; `artifactSummary` is the line
- * above them. An item with nothing attached has `artifacts: []` and a zeroed summary — the renderer
- * says "nothing attached", and there is no field here it could read as "evidence checked".
- */
-export interface HumanInboxItemViewModel {
-  folder: string;
-  wsHash: string;
-  item: HumanInboxItem;
-  artifacts: InboxArtifactPreview[];
-  artifactSummary: InboxArtifactSummary;
-}
 
 export function buildHumanInboxViewModel(input: {
   folder: string;

@@ -1,8 +1,8 @@
 import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
-import { READY } from "./messages.js";
-import { pluginFleetProjectionMessage, type PluginUiHostMessage } from "./messages.js";
+import { READY } from "@tachyon/webview-ui/plugins/ui/messages";
+import { pluginFleetProjectionMessage, type PluginUiHostMessage } from "@tachyon/webview-ui/plugins/ui/messages";
 import { toPluginProjectionV1, type PluginProjectionHandleMint, type PluginProjectionLabelMint, type PluginProjectionTarget } from "./projectionBuilder.js";
-import type { PluginFleetProjectionV1 } from "./projectionTypes.js";
+import type { PluginFleetProjectionV1 } from "@tachyon/webview-ui/plugins/ui/projectionTypes";
 
 export interface PluginProjectionSink {
   postMessage(message: PluginUiHostMessage): boolean | Promise<boolean>;

@@ -57,7 +57,7 @@ async function seedRealisticBoard(store: TaskStore, n: number): Promise<void> {
       body: "Body is never part of list_tasks, but create still accepts it.",
       artifact_refs: [
         { type: "path", ref: `packages/engine/src/bridge/tools/tasks.ts`, role: "deliverable" },
-        { type: "path", ref: `src/tasks/boardModel.ts`, role: "relation" },
+        { type: "path", ref: `packages/webview-ui/src/tasks/boardModel.ts`, role: "relation" },
         { type: "task", ref: "t-ab7708", role: "relation" },
       ],
       deps: i > 0 ? [`t-${(i - 1).toString(16).padStart(6, "0")}`] : undefined,

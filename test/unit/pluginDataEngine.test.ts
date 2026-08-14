@@ -8,7 +8,7 @@ import * as esbuild from "esbuild";
 import { loadPlugin, previewInstall, applyInstall, applyRemove, previewRemove } from "../../src/plugins/engine.js";
 import { gatherDataPlan } from "../../src/plugins/dataPlan.js";
 import { rehydrateData } from "../../src/plugins/toolProvisionRun.js";
-import { buildInstallConsent } from "../../src/plugins/consentViewModel.js";
+import { buildInstallConsent } from "../../src/plugins/consentViewModel";
 import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
 

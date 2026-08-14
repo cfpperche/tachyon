@@ -4,7 +4,7 @@ import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import { legacyPinStudioTarget } from "../../src/shell/PinStudioTarget.js";
 import { PinStudioAdapter } from "../../src/webview/PinStudioAdapter.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
-import { computePinDirty, serializePinPatch, canDiscardPinFields, type PinFields } from "../../src/webview/pin-studio/domain.js";
+import { computePinDirty, serializePinPatch, canDiscardPinFields, type PinFields } from "../../packages/webview-ui/src/webview/pin-studio/domain.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 /**

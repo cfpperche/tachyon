@@ -4,7 +4,7 @@ import {
   collectNeedsFor,
   formatSectionsDiagnostics,
   type WorkspaceBundle,
-} from "../sections/model.js";
+} from "@tachyon/webview-ui/sections/model";
 import { cockpitStrings } from "./controlStrings.js";
 import {
   SectionPanelManager,
@@ -14,7 +14,7 @@ import {
 } from "./shared/SectionPanelManager.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { POLL, READY, systemErrorMessage, systemModelMessage } from "./system/messages.js";
+import { POLL, READY, systemErrorMessage, systemModelMessage } from "@tachyon/webview-ui/webview/system/messages";
 
 /**
  * SDD 500 D2 — a NEW viewType, and both ids it replaces are RETIRED rather than reused.

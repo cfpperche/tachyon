@@ -7,7 +7,7 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 // input, select, table, list, heading) must compute IDENTICAL styles whether or not Tailwind's compiled CSS
 // is linked on the page. The gate page (`/ui-gate`) links vscode-theme.css + Tailwind; the twin
 // (`/preflight-fixture-no-tailwind`) links only the shared baseline — both render the SAME
-// PREFLIGHT_FIXTURE_HTML string (see src/webview/ui-gate/preflightFixture.ts), so any computed-style diff is
+// PREFLIGHT_FIXTURE_HTML string (see packages/webview-ui/src/webview/ui-gate/preflightFixture.ts), so any computed-style diff is
 // attributable to Tailwind's inclusion, not to markup drift between two hand-copies.
 const PROPERTIES = [
   "boxSizing",

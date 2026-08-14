@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import type { TaskDetailVM } from "../../src/webview/task-detail/messages.js";
+import type { TaskDetailVM } from "../../packages/webview-ui/src/webview/task-detail/messages.js";
 
 /**
  * t-2f6cdd — the load-bearing deduction, measured instead of argued.
@@ -21,7 +21,7 @@ import type { TaskDetailVM } from "../../src/webview/task-detail/messages.js";
  * Deliberately NOT a golden file: the point is the invariant (visible output in every state), not the
  * exact markup, so this must not break when the detail's layout is legitimately restyled.
  */
-const APP_TSX = path.join(__dirname, "../../src/webview/task-detail/App.tsx");
+const APP_TSX = path.join(__dirname, "../../packages/webview-ui/src/webview/task-detail/App.tsx");
 
 const DISPATCH = {
   updateTask: () => {},

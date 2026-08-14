@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import { StudioPanelManagerBase, type StudioDomainMessageContext, type StudioSurfaceConfig } from "./shared/studio/StudioPanelManagerBase.js";
-import type { StudioRestoreSnapshot } from "./shared/studio/protocol.js";
+import type { StudioRestoreSnapshot } from "@tachyon/webview-ui/webview/shared/studio/protocol";
 import { createPipelineStudioAdapter } from "./pipelineStudioAdapter.js";
-import { parseImportedStages, type PipelineEntity, type PipelineFields, type PipelinePatch } from "./pipeline-studio/domain.js";
-import { stagesImportedMessage } from "./pipeline-studio/messages.js";
+import { parseImportedStages, type PipelineEntity, type PipelineFields, type PipelinePatch } from "@tachyon/webview-ui/webview/pipeline-studio/domain";
+import { stagesImportedMessage } from "@tachyon/webview-ui/webview/pipeline-studio/messages";
 
 export const PIPELINE_STUDIO_VIEW_TYPE = "tachyonPipelineStudio";
 

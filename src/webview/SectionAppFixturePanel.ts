@@ -5,7 +5,7 @@ import {
   sectionFixtureModelMessage,
   sectionFixtureRefreshKind,
   type SectionFixtureModel,
-} from "./section-app-fixture/protocol.js";
+} from "@tachyon/webview-ui/webview/section-app-fixture/protocol";
 
 export const SECTION_APP_FIXTURE_VIEW_TYPE = "tachyonSectionAppFixture";
 

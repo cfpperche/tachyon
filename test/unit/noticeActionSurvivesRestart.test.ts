@@ -9,7 +9,7 @@ import {
   restoreNoticeRoute,
 } from "@tachyon/engine/workspace/noticeInbox.js";
 import { routeHumanInboxItem } from "@tachyon/engine/engine-service/engineService.js";
-import { HUMAN_INBOX_KINDS } from "../../src/humanInbox/model.js";
+import { HUMAN_INBOX_KINDS } from "@tachyon/webview-ui/humanInbox/model";
 
 /**
  * t-ee2f19 — a notice outlived its own button.

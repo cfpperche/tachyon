@@ -12,7 +12,7 @@ import { parseRootDeclarations, resolveChain } from "./support/cssVarResolver.js
 //     this test instead of silently rendering unstyled. "Remove a mapping → build fails" (tasks.md
 //     verification): deleting any CANONICAL entry below from vscode-theme.css fails assertion #1.
 const ROOT = path.resolve(__dirname, "..", "..");
-const THEME_CSS_PATH = path.join(ROOT, "src/webview/shared/vscode-theme.css");
+const THEME_CSS_PATH = path.join(ROOT, "packages/webview-ui/src/webview/shared/vscode-theme.css");
 
 const CANONICAL_VARS = [
   "background",
@@ -71,8 +71,8 @@ describe("vscode-theme.css token bridge", () => {
 
   it("has no unbridged variable reference in vendored/kit source", () => {
     const files = [
-      ...walk(path.join(ROOT, "src/webview/shared/ui/vendor"), [".css", ".ts", ".tsx"]),
-      ...walk(path.join(ROOT, "src/webview/shared/ui/kit"), [".css", ".ts", ".tsx"]),
+      ...walk(path.join(ROOT, "packages/webview-ui/src/webview/shared/ui/vendor"), [".css", ".ts", ".tsx"]),
+      ...walk(path.join(ROOT, "packages/webview-ui/src/webview/shared/ui/kit"), [".css", ".ts", ".tsx"]),
     ];
     const unbridged = new Set<string>();
     const varRe = /var\(\s*--([a-z0-9-]+)/gi;

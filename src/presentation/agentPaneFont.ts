@@ -8,7 +8,7 @@
  * default. xterm then sizes every cell to measureText('W') of that proportional face and
  * letter-spaces each glyph into the cell → classic double-spaced TUI (human dogfood 2026-07-24).
  */
-import type { AgentPaneFontMetrics } from "../webview/agent-pane/protocol.js";
+import type { AgentPaneFontMetrics } from "@tachyon/webview-ui/webview/agent-pane/protocol";
 
 /**
  * Fonts that must actually exist on the host for cell metrics to be trustworthy.

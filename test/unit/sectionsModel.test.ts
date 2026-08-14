@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSectionsModel, COCKPIT_SECTION_ORDER, formatSectionsDiagnostics } from "../../src/sections/model.js";
+import { buildSectionsModel, COCKPIT_SECTION_ORDER, formatSectionsDiagnostics } from "@tachyon/webview-ui/sections/model";
 
 describe("cockpit model", () => {
   it("orders sections by ops frequency (no soon slots)", () => {

@@ -3,7 +3,7 @@ import { terminalsOf } from "@tachyon/engine/config/loadConfig.js";
 import { mapStudioSubmitResult } from "./studioSubmit.js";
 import { FLAG_SUGGESTIONS, fromTerminalDef } from "@tachyon/engine/webview/formLogic.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
-import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
+import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy";
 import {
   blankTerminalFields,
   canDiscardTerminalFields,
@@ -15,7 +15,7 @@ import {
   type TerminalStudioFields,
   type TerminalStudioPatch,
   type TerminalStudioReferenceData,
-} from "./terminal-studio-shell/domain.js";
+} from "@tachyon/webview-ui/webview/terminal-studio-shell/domain";
 
 export class TerminalStudioAdapter implements StudioHostAdapter<TerminalStudioEntity, TerminalStudioFields, TerminalStudioPatch, TerminalStudioReferenceData> {
   entityType = "terminal";

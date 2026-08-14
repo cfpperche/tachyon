@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../src/webview/human-inbox/viewModel.js";
-import type { ApprovalViewItem } from "../../src/webview/approval/viewModel.js";
-import type { ValidationViewItem } from "../../src/webview/validations/viewModel.js";
+import type { ApprovalViewItem } from "../../packages/webview-ui/src/webview/approval/viewModel.js";
+import type { ValidationViewItem } from "../../packages/webview-ui/src/webview/validations/viewModel.js";
 
 /**
  * Human Inbox — the aggregated view models Control renders (t-e76acc).

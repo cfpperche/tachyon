@@ -9,9 +9,9 @@ import type {
   RuntimeConfigDocumentInventory,
   RuntimeConfigRuntimeInventory,
   RuntimeConfigScope,
-} from "./types.js";
+} from "@tachyon/webview-ui/runtimeConfig/types";
 
-export type { RuntimeConfigScope } from "./types.js";
+export type { RuntimeConfigScope } from "@tachyon/webview-ui/runtimeConfig/types";
 export type RuntimeConfigSourceInventory = Omit<RuntimeConfigDocumentInventory, "id" | "label" | "kind">;
 
 export interface CodexRuntimeConfigInventory extends RuntimeConfigRuntimeInventory {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityItem, ActivityViewModel } from "../../src/activity/activityView.js";
+import type { ActivityItem, ActivityViewModel } from "@tachyon/webview-ui/activity/activityView";
 import {
   SHARE_TEXT_CAP,
   SHARE_URL_TEXT_CAP,

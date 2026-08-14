@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { TERMINAL_STRIPPED_AGENT_KEYS, upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { toTerminalEntry, type FormState } from "@tachyon/engine/webview/formLogic.js";
-import { blankTerminalFields } from "../../src/webview/terminal-studio-shell/domain.js";
+import { blankTerminalFields } from "../../packages/webview-ui/src/webview/terminal-studio-shell/domain.js";
 
 /**
  * t-b54ead — the Terminal Studio must never again offer a key the loader refuses for a terminal.
@@ -121,7 +121,7 @@ describe("t-b54ead — a terminal entry the Studio writes carries no agent-only 
     // Comments stripped first: this file's own doc comment NAMES the removed section and the four
     // keys, which is the point of it. A tripwire that trips on the explanation for its own existence
     // teaches the next person to delete the explanation.
-    const src = readFileSync("src/webview/terminal-studio-shell/App.tsx", "utf8")
+    const src = readFileSync("packages/webview-ui/src/webview/terminal-studio-shell/App.tsx", "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/^\s*\/\/.*$/gm, "");
     expect(src).not.toContain("Separate git checkout + branch");

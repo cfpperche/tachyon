@@ -18,7 +18,7 @@ import {
   pollInboxAction,
   readyMessage,
   refreshInboxAction,
-} from "../../src/webview/human-inbox/messages.js";
+} from "../../packages/webview-ui/src/webview/human-inbox/messages.js";
 import { buildApprovalRequest, writeApprovalRequest } from "@tachyon/engine/bridge/approvalRequest.js";
 import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
 import { savedAgentProposalPath } from "@tachyon/engine/agents/savedAgentProposalStore.js";

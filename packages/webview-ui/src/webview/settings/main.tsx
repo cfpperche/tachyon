@@ -1,6 +1,6 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import type { SectionsModel } from "../../sections/model";
+import type { GlobalSettingsState, SectionsModel } from "../../sections/model";
 import { CardTemplateBlock } from "../shared/control/CardTemplateBlock";
 import { formatCompanionPairClipboard, openGlobalSettingsFileAction, openPersonalCardTemplateAction, setGlobalSettingsAction, type CockpitAction, type CockpitStrings, type CompanionPairOffer } from "../shared/control/messages";
 import { Button, PageChrome } from "../shared/ui";

@@ -20,7 +20,7 @@ import {
   type ExecResult,
   type PaneSnapshot,
 } from "@tachyon/engine/tmux/TmuxService.js";
-import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
+import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
 import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore.js";

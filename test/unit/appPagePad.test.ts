@@ -35,11 +35,11 @@ import path from "node:path";
 const root = path.resolve(__dirname, "../..");
 const read = (rel: string) => fs.readFileSync(path.resolve(root, rel), "utf8");
 
-const VALIDATIONS_CSS = "src/webview/validations/validations.css";
-const RUNTIME_OPS_CSS = "src/webview/runtime-ops/runtime-ops.css";
-const HUMAN_INBOX_CSS = "src/webview/human-inbox/human-inbox.css";
+const VALIDATIONS_CSS = "packages/webview-ui/src/webview/validations/validations.css";
+const RUNTIME_OPS_CSS = "packages/webview-ui/src/webview/runtime-ops/runtime-ops.css";
+const HUMAN_INBOX_CSS = "packages/webview-ui/src/webview/human-inbox/human-inbox.css";
 const VALIDATIONS_APP = "src/webview/validations/App.tsx";
-const DESIGN_SYSTEM_CSS = "src/webview/shared/design-system.css";
+const DESIGN_SYSTEM_CSS = "packages/webview-ui/src/webview/shared/design-system.css";
 
 /** strip comments, then collect every `selector { declarations }` block (nested at-rule inner rules included). */
 function rules(css: string): { selector: string; body: string }[] {
@@ -76,14 +76,14 @@ function expectPagePad(css: string, selector: string, opts: { important?: boolea
 
 describe("Plugins owns its own page pad now that it is a standalone app (SDD 485 D2)", () => {
   it("the Plugins root consumes the shared Fleet page pad", () => {
-    expect(read("src/webview/plugins/App.tsx")).toMatch(/class="ck-plugins-root ds-page"/);
+    expect(read("packages/webview-ui/src/webview/plugins/App.tsx")).toMatch(/class="ck-plugins-root ds-page"/);
     expectPagePad(read(DESIGN_SYSTEM_CSS), ".ds-page");
   });
 
 
 
   it("PluginsApp still owns exactly one .ck-plugins-root as its own render root", () => {
-    const app = read("src/webview/plugins/App.tsx");
+    const app = read("packages/webview-ui/src/webview/plugins/App.tsx");
     expect(app.match(/class="ck-plugins-root ds-page"/g)?.length).toBe(2); // loading branch + loaded branch, each a single root
   });
 });
@@ -93,7 +93,7 @@ describe("Plugins owns its own page pad now that it is a standalone app (SDD 485
  *
  * D2 found the pad rule living in `cockpit.css` — the sheet a standalone app does not link — so the rule
  * had to MOVE or Plugins shipped flush against the tab edge at every width. The first thing this task did
- * was run D2's parting instruction (`grep -n "<root class>" src/webview/cockpit/cockpit.css`) and the
+ * was run D2's parting instruction (`grep -n "<root class>" packages/webview-ui/src/webview/cockpit/cockpit.css`) and the
  * answer came back different: `.runtime-ops`'s `--ds-page-pad-*` rule was always in `runtime-ops.css`.
  * What `cockpit.css` provided was only embed-context NEUTRALIZATION — `.ck-embed-host > .runtime-ops`
  * with `flex`/`min-height`/`width`/`margin` — and this sheet answered it with a `!important` re-assert of
@@ -150,7 +150,7 @@ describe("the Human Inbox owns its own page pad, and always did (SDD 485 D4)", (
    * MEASUREMENT in the visual pass confirms, since a static test cannot.
    */
   it("the Inbox root consumes the shared Fleet page pad", () => {
-    expect(read("src/webview/human-inbox/App.tsx")).toContain("hi-root ds-page");
+    expect(read("packages/webview-ui/src/webview/human-inbox/App.tsx")).toContain("hi-root ds-page");
     expectPagePad(read(DESIGN_SYSTEM_CSS), ".ds-page");
   });
 
@@ -205,7 +205,7 @@ describe("Validations pending list flows vertically (t-dc9f64)", () => {
   it("board.css still owns the unscoped names this scoping defends against", () => {
     // guards the premise: if board.css ever scopes its own board rules, this test's rationale
     // changes and should be revisited rather than silently protecting against nothing.
-    const mc = read("src/webview/board/board.css");
+    const mc = read("packages/webview-ui/src/webview/board/board.css");
     expect(rulesFor(mc, ".validation-list")).not.toHaveLength(0);
     expect(rulesFor(mc, ".validation-summary")).not.toHaveLength(0);
   });

@@ -17,7 +17,7 @@
 import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import type { WorkspaceActivityTarget } from "../../shell/ActivityTarget.js";
-import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../../activity/activityView.js";
+import { createActivityBuilder, type ActivityBuilder, type ActivityViewModel } from "../../activity/activityView";
 import { ActivityLog, type LoggedEvent } from "@tachyon/engine/activity/logStore.js";
 import type { NormalizedEvent } from "@tachyon/engine/activity/types.js";
 

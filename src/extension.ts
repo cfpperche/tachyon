@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
-import type { TmuxServerSnapshot } from "./inspector/model.js";
+import type { TmuxServerSnapshot } from "@tachyon/webview-ui/inspector/model";
 import { asAgent, CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "@tachyon/engine/config/loadConfig.js";
 import { commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
@@ -15,22 +15,22 @@ import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
 import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager } from "./webview/RuntimeOpsPanel.js";
 import { HUMAN_INBOX_VIEW_TYPE, HumanInboxPanelManager } from "./webview/HumanInboxPanel.js";
 import { WORKTREES_VIEW_TYPE, WorktreesPanelManager } from "./webview/WorktreesPanel.js";
-import type { WorktreeLandResult } from "./webview/worktrees/messages.js";
+import type { WorktreeLandResult } from "@tachyon/webview-ui/webview/worktrees/messages";
 import { SETTINGS_VIEW_TYPE, SettingsPanelManager } from "./webview/SettingsPanel.js";
 import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "./webview/SystemPanel.js";
 import { RUNTIME_CONFIG_VIEW_TYPE, RuntimeConfigPanelManager, type RuntimeConfigDeps } from "./webview/RuntimeConfigPanel.js";
-import { COLLECT_EVERYTHING, type SectionCollectNeeds, type WorkspaceBundle } from "./sections/model.js";
+import { COLLECT_EVERYTHING, type SectionCollectNeeds, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { SidebarPrototypeProvider } from "./webview/SidebarPrototype.js";
 import { resolveSection } from "./sections/resolveSection.js";
-import { resolveSectionDestination } from "./sections/route.js";
+import { resolveSectionDestination } from "./sections/route";
 import { AgentPanePanelManager, AGENT_PANE_VIEW_TYPE, type AgentPanePanelState } from "./webview/AgentPanePanel.js";
 import { deliverAgentPaneText } from "./webview/agentPaneDelivery.js";
-import { pinTitleFromSelection } from "./webview/agent-pane/protocol.js";
+import { pinTitleFromSelection } from "./webview/agent-pane/protocol";
 import { ACTIVITY_VIEW_TYPE, ActivityPanelManager, type ActivityPanelState } from "./webview/ActivityPanel.js";
 import { PluginsPanelManager, PLUGINS_VIEW_TYPE, type PluginsPanelState } from "./webview/PluginsPanel.js";
 import { HandoffPanelManager, HANDOFF_VIEW_TYPE, type HandoffPanelState } from "./webview/HandoffPanel.js";
-import { pendingApprovalRows } from "./webview/approval/viewModel.js";
-import { validationAwaitsHuman } from "./humanInbox/model.js";
+import { pendingApprovalRows } from "./webview/approval/viewModel";
+import { validationAwaitsHuman } from "@tachyon/webview-ui/humanInbox/model";
 import { decodeHumanInboxDeepLink } from "./humanInbox/deepLink.js";
 import { approveSavedAgentProposal, type SavedAgentCommitResult } from "./agents/savedAgentProposalCommit.js";
 import { approveSavedAgentRemovalProposal, type SavedAgentRemovalCommitResult } from "./agents/savedAgentRemovalProposalCommit.js";
@@ -1252,10 +1252,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(sidebarProto);
   // Runtime Ops lives in Control → Runtime only (bottom-panel webview contribution removed).
   // t-610705 (SDD 410 Phase C.2) — the standalone Activity panel was retired: it's a Control
-  // subroute now (fleet/agent/<name>/activity; src/webview/activity/App.tsx stays, lazy-imported by
+  // subroute now (fleet/agent/<name>/activity; packages/webview-ui/src/webview/activity/App.tsx stays, lazy-imported by
   // cockpit/App.tsx; the watcher moved to src/webview/activity/activityFeed.ts).
   // t-610705 (SDD 410 Phase C.3) — the standalone Project Handoff panel was retired: it's a Control
-  // section now (src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx).
+  // section now (packages/webview-ui/src/webview/handoff/App.tsx stays, lazy-imported by cockpit/App.tsx).
   // spec 349 — first-party host for untrusted plugin UI surfaces. It reads committed plugin lockfiles and
   // revokes open channels when an installed view target disappears.
   const pluginSurfaces = new PluginSurfaceHost(
@@ -1307,7 +1307,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     pluginsPanels.open(ws.wsHash);
   };
   // t-610705 (SDD 410 Phase C.2) — the standalone Probes inspector was retired: it's a Control
-  // subroute now (fleet/agent/<name>/probes; src/webview/probes/App.tsx stays, lazy-imported by
+  // subroute now (fleet/agent/<name>/probes; packages/webview-ui/src/webview/probes/App.tsx stays, lazy-imported by
   // cockpit/App.tsx).
   // spec 335 — the Task board + Task Detail are both Control subroutes now (Board since t-610705
   // Phase B #6; Task Detail since Phase C.1 — standalone TaskDetailPanelManager retired).
@@ -3710,7 +3710,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     //
     // `tachyon.deleteAgentItem` below survives ONLY for the rows Agent Studio cannot address —
     // Temporary instances (no canonical profile to forget) and declared terminals (no Studio page).
-    // The gate is `actionsFor` in src/sidebar/actions.ts, which is the sole reachable caller: the
+    // The gate is `actionsFor` in packages/webview-ui/src/sidebar/actions.ts, which is the sole reachable caller: the
     // palette entry is `when: false`, so nothing else can invoke it.
     vscode.commands.registerCommand("tachyon.deleteAgentItem", async (item: AgentItem, forceArg?: boolean) => {
       const ws = wsOf(item);

@@ -1,4 +1,4 @@
-import type { ApprovalViewModel } from "../../../src/webview/approval/viewModel";
+import type { ApprovalViewModel } from "@tachyon/webview-ui/webview/approval/viewModel";
 import type { Fixture } from "../routes";
 
 export const approvalFixtures: Record<string, Fixture<ApprovalViewModel>> = {

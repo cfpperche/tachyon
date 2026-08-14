@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
-import { buildInspectorModel, type InspectorModel } from "../inspector/model.js";
-import { READY, captureMessage, initMessage, modelMessage, type InspectorAction, type InspectorScope, type InspectorStrings } from "./inspector/messages.js";
+import { buildInspectorModel, type InspectorModel } from "../inspector/model";
+import { READY, captureMessage, initMessage, modelMessage, type InspectorAction, type InspectorScope, type InspectorStrings } from "@tachyon/webview-ui/webview/inspector/messages";
 import type { InspectorDeps } from "./ServerInspector.js";
 import { showNotification } from "../workspace/NotificationService.js";
 

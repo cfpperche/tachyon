@@ -7,7 +7,7 @@ import path from "node:path";
  * `button { background: vscode-button-background }` paints every Mission board chip blue.
  */
 describe("approval.css surface scoping (t-e1bd89)", () => {
-  const cssPath = path.resolve(__dirname, "../../src/webview/approval/approval.css");
+  const cssPath = path.resolve(__dirname, "../../packages/webview-ui/src/webview/approval/approval.css");
   const css = fs.readFileSync(cssPath, "utf8");
   const appPath = path.resolve(__dirname, "../../src/webview/approval/App.tsx");
   const app = fs.readFileSync(appPath, "utf8");
@@ -21,7 +21,7 @@ describe("approval.css surface scoping (t-e1bd89)", () => {
   });
 
   it("uses the shared Button component without adding approval-local button chrome", () => {
-    expect(app).toMatch(/import\s*{[^}]*\bButton\b[^}]*}\s*from\s*["']\.\.\/shared\/ui["']/);
+    expect(app).toMatch(/import\s*{[^}]*\bButton\b[^}]*}\s*from\s*["']@tachyon\/webview-ui\/webview\/shared\/ui\/index["']/);
     expect(app).toMatch(/<Button\b/);
     expect(css).not.toMatch(/(?:^|[,{])\s*(?:\.approval-root\s+)?button(?=[:.\s,{])/m);
   });

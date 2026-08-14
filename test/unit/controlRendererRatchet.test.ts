@@ -7,13 +7,13 @@ import fs from "node:fs";
  * and every `tachyon.*` compatibility command remain.
  */
 const absent = [
-  "src/webview/Cockpit.ts",
-  "src/webview/cockpit/App.tsx",
-  "src/webview/cockpit/main.tsx",
-  "src/webview/cockpit/SectionShell.tsx",
-  "src/webview/cockpit/cockpit.css",
-  "src/webview/cockpitSingleton.ts",
-  "src/webview/ApprovalPanel.ts",
+  "packages/webview-ui/src/webview/Cockpit.ts",
+  "packages/webview-ui/src/webview/cockpit/App.tsx",
+  "packages/webview-ui/src/webview/cockpit/main.tsx",
+  "packages/webview-ui/src/webview/cockpit/SectionShell.tsx",
+  "packages/webview-ui/src/webview/cockpit/cockpit.css",
+  "packages/webview-ui/src/webview/cockpitSingleton.ts",
+  "packages/webview-ui/src/webview/ApprovalPanel.ts",
 ];
 
 const read = (file: string): string => fs.readFileSync(file, "utf8");
@@ -25,7 +25,7 @@ describe("SDD 485 E1 — Control cannot return through another door", () => {
 
   it("keeps Control out of the app build and surface manifest", () => {
     expect(read("esbuild.mjs")).not.toMatch(/WEBVIEW_APP_VIEWS\s*=\s*\[[^\]]*["']cockpit["']/s);
-    expect(read("esbuild.mjs")).not.toContain("src/webview/cockpit/cockpit.css");
+    expect(read("esbuild.mjs")).not.toContain("packages/webview-ui/src/webview/cockpit/cockpit.css");
     expect(read("esbuild.mjs")).toContain('["cockpit.js", "cockpit.js.map", "cockpit.css"]');
     expect(read("src/webview/surfaces.ts")).not.toContain('viewId: "tachyonCockpit"');
   });

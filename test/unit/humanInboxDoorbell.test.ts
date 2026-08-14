@@ -7,7 +7,7 @@ import {
   routeHumanValidationPending,
   routeSavedAgentProposal,
 } from "@tachyon/engine/engine-service/engineService.js";
-import { HUMAN_INBOX_KINDS } from "../../src/humanInbox/model.js";
+import { HUMAN_INBOX_KINDS } from "@tachyon/webview-ui/humanInbox/model";
 
 /**
  * t-8e9b5e — every Human Inbox kind rings a doorbell.

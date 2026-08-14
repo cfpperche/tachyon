@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as vscode from "vscode";
 import { startActivityFeed, type ActivityFeed } from "./activity/activityFeed.js";
 import { withActivityShareKeys, resolveActivityShare, internalSharePrompt } from "../activity/activityShare.js";
-import type { ActivityViewModel } from "../activity/activityView.js";
+import type { ActivityViewModel } from "@tachyon/webview-ui/activity/activityView";
 import type { WorkspaceActivityTarget } from "../shell/ActivityTarget.js";
 import {
   SectionPanelManager,
@@ -24,7 +24,7 @@ import {
   shareAgentTargetsMessage,
   type ActivityWebviewMessage,
   type ExternalShareChannel,
-} from "./activity/messages.js";
+} from "@tachyon/webview-ui/webview/activity/messages";
 import { notify, showNotification } from "../workspace/NotificationService.js";
 import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 

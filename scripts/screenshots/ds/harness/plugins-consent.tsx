@@ -2,9 +2,9 @@
 // runtime settings-hooks plus the MCP section (stdio + http servers, env refs), an MCP collision
 // (Keep/Replace), and the OQ5 double-confirm ack. Proves the drawer the BLOCKING security gate paints.
 import { render } from "preact";
-import { App } from "../../../../src/webview/plugins/App";
-import type { PluginsViewModel } from "../../../../src/plugins/viewModel";
-import type { ConsentVM } from "../../../../src/plugins/consentViewModel";
+import { App } from "@tachyon/webview-ui/webview/plugins/App";
+import type { PluginsViewModel } from "@tachyon/webview-ui/plugins/viewModel";
+import type { ConsentVM } from "@tachyon/webview-ui/plugins/consentViewModel";
 
 const vm: PluginsViewModel = { present: ["claude", "codex"], empty: false, installed: [] };
 

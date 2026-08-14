@@ -1,7 +1,6 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import type { SectionsModel } from "../../sections/model";
-import type { CockpitStrings } from "../shared/control/messages";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { App, defaultStrings } from "./App";
@@ -16,6 +15,7 @@ import {
   type WorktreePrDraftView,
   type WorktreeReviewFiles,
   type WorktreesAction,
+  type WorktreesStrings,
 } from "./messages";
 
 declare function acquireVsCodeApi(): TachyonVsCodeApi;
@@ -36,7 +36,7 @@ function Root() {
   // the model underneath, and a refusal naming the exit a human has to take must not be swept away by
   // the next refresh. It is keyed by row id, so an outcome is only ever shown on the row it belongs to.
   const [landResult, setLandResult] = useState<WorktreeLandResult | null>(null);
-  const strings = (window as unknown as { __TACHYON_STRINGS__?: CockpitStrings }).__TACHYON_STRINGS__ ?? defaultStrings;
+  const strings = (window as unknown as { __TACHYON_STRINGS__?: WorktreesStrings }).__TACHYON_STRINGS__ ?? defaultStrings;
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.data?.type === WORKTREES_MODEL) setModel(event.data.model);

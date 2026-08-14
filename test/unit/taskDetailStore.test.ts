@@ -5,7 +5,7 @@ import path from "node:path";
 import { TaskStore, mintTaskId } from "@tachyon/engine/tasks/TaskStore.js";
 import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
 import { TaskDetailStore, hashBody, TASK_DETAIL_SCHEMA_VERSION } from "@tachyon/engine/tasks/TaskDetailStore.js";
-import { EMPTY_DOC } from "../../src/webview/rich-doc/document.js";
+import { EMPTY_DOC } from "../../packages/webview-ui/src/webview/rich-doc/document.js";
 
 let root: string;
 let taskStore: TaskStore;

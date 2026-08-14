@@ -1,5 +1,5 @@
 import type { PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
-import type { TmuxServerSnapshot } from "../inspector/model.js";
+import type { TmuxServerSnapshot } from "@tachyon/webview-ui/inspector/model";
 
 /**
  * SDD 485 D1 (2026-08-03) — what is left of this file is real DOMAIN logic and nothing else: the

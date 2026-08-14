@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { attentionRows, type AttentionRow } from "../../src/sidebar/attentionStack.js";
+import { attentionRows, type AttentionRow } from "@tachyon/webview-ui/sidebar/attentionStack";
 import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
 import { NOTICE_INBOX_CAP, restoreNoticeInbox } from "@tachyon/engine/workspace/noticeInbox.js";
 
@@ -95,9 +95,9 @@ describe("Attention Stack headless dogfood (spec 415)", () => {
   it("leaves no `queued` surface behind", () => {
     // Structural: a behavioural test cannot see a counter that is only ever rendered.
     const root = path.resolve(__dirname, "..", "..");
-    const app = fs.readFileSync(path.join(root, "src/webview/sidebar/App.tsx"), "utf8");
-    const css = fs.readFileSync(path.join(root, "src/webview/sidebar/sidebar.css"), "utf8");
-    const stack = fs.readFileSync(path.join(root, "src/sidebar/attentionStack.ts"), "utf8");
+    const app = fs.readFileSync(path.join(root, "packages/webview-ui/src/webview/sidebar/App.tsx"), "utf8");
+    const css = fs.readFileSync(path.join(root, "packages/webview-ui/src/webview/sidebar/sidebar.css"), "utf8");
+    const stack = fs.readFileSync(path.join(root, "packages/webview-ui/src/sidebar/attentionStack.ts"), "utf8");
 
     expect(app).not.toContain("attention-queued");
     expect(app).not.toContain("queued");
@@ -106,7 +106,7 @@ describe("Attention Stack headless dogfood (spec 415)", () => {
   });
 
   it("keeps the Attentions-tab panel scrollable (t-37f554 — no permanent max-height above Agents)", () => {
-    const css = fs.readFileSync(path.resolve(__dirname, "..", "..", "src/webview/sidebar/sidebar.css"), "utf8");
+    const css = fs.readFileSync(path.resolve(__dirname, "..", "..", "packages/webview-ui/src/webview/sidebar/sidebar.css"), "utf8");
     // Stack lives inside the tab panel and fills it; the list remains the scroll surface.
     expect(css).toContain(".panel .attention-stack");
     expect(css).toMatch(/\.panel \.attention-stack[\s\S]*?overflow:\s*hidden/);

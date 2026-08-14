@@ -620,7 +620,7 @@ describe("SidebarPrototypeProvider", () => {
 });
 
 describe("the pin row keeps one control, and Edit is not among its items (t-456ce0)", () => {
-  const app = readFileSync("src/webview/sidebar/App.tsx", "utf8");
+  const app = readFileSync("packages/webview-ui/src/webview/sidebar/App.tsx", "utf8");
   const row = app.slice(app.indexOf('{p.id && <div class="actions">'), app.indexOf('{p.id && <div class="actions">') + 900);
 
   it("offers Preview, Copy and Delete from the overflow menu", () => {

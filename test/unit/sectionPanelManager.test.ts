@@ -11,7 +11,7 @@ import {
 import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
 import { webviewApp, type WebviewAppEntry } from "../../src/webview/webviewApps.js";
 import { SectionAppFixturePanelManager } from "../../src/webview/SectionAppFixturePanel.js";
-import { sectionFixtureReadyMessage } from "../../src/webview/section-app-fixture/protocol.js";
+import { sectionFixtureReadyMessage } from "../../packages/webview-ui/src/webview/section-app-fixture/protocol.js";
 
 const {
   __resetVscodeMock,

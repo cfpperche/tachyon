@@ -73,7 +73,7 @@ describe("t-c515c0 the action bar of a row whose process is gone — headless Vi
 
   beforeAll(async () => {
     mkdirSync(OUT_DIR, { recursive: true });
-    const mod = await loadWebviewModule(path.resolve(__dirname, "../../src/webview/sidebar/App.tsx"));
+    const mod = await loadWebviewModule(path.resolve(__dirname, "../../packages/webview-ui/src/webview/sidebar/App.tsx"));
     App = mod.App as typeof App;
     browser = await puppeteer.launch({
       executablePath: resolveChromeExecutable(),

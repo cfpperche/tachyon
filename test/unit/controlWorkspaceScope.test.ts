@@ -12,7 +12,8 @@ import { describe, expect, it } from "vitest";
  * uses); the host-side half of the contract — one writer of `controlWsHash` — is asserted the same
  * way, then exercised for real by the router/board suites.
  */
-const WEBVIEW = path.resolve(__dirname, "..", "..", "src", "webview");
+const WEBVIEW = path.resolve(__dirname, "..", "..", "packages", "webview-ui", "src", "webview");
+const HOST_WEBVIEW = path.resolve(__dirname, "..", "..", "src", "webview");
 
 function webviewSources(dir = WEBVIEW): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -93,8 +94,8 @@ describe("the global workspace scope has exactly one control (SDD 485 C6, revise
   });
 
   it("the host authority is the window store, not Cockpit module state", () => {
-    const sidebarHost = readFileSync(path.join(WEBVIEW, "SidebarPrototype.ts"), "utf8");
-    const extension = readFileSync(path.resolve(WEBVIEW, "..", "extension.ts"), "utf8");
+    const sidebarHost = readFileSync(path.join(HOST_WEBVIEW, "SidebarPrototype.ts"), "utf8");
+    const extension = readFileSync(path.resolve(HOST_WEBVIEW, "..", "extension.ts"), "utf8");
     expect(sidebarHost).toMatch(/m\?\.type === "switchControlWorkspace"[\s\S]*?controlWorkspaceScope\.set\(hash\)/);
     expect(extension).toContain("controlWorkspaceScope.current");
     expect(webviewSources().some((file) => readFileSync(file, "utf8").includes("let controlWsHash"))).toBe(false);

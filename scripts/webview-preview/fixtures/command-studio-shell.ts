@@ -3,8 +3,8 @@
  * through the real studio-shell protocol for visual passes without an extension host.
  */
 
-import type { CommandStudioEntity, CommandStudioReferenceData } from "../../../src/webview/command-studio-shell/domain";
-import { blankCommandFields } from "../../../src/webview/command-studio-shell/domain";
+import type { CommandStudioEntity, CommandStudioReferenceData } from "@tachyon/webview-ui/webview/command-studio-shell/domain";
+import { blankCommandFields } from "@tachyon/webview-ui/webview/command-studio-shell/domain";
 import type { Fixture, Route } from "../routes";
 
 interface CommandStudioShellFixtureVM {

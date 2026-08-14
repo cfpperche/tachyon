@@ -15,7 +15,7 @@
  * the panel sat on "Loading task…" forever — including for the original `default` fixture.
  */
 
-import type { TaskDetailVM } from "../../../src/webview/task-detail/messages";
+import type { TaskDetailVM } from "@tachyon/webview-ui/webview/task-detail/messages";
 import type { Fixture } from "../routes";
 
 const detailTask: TaskDetailVM = {
@@ -76,7 +76,7 @@ const heavyTask: TaskDetailVM = {
     assignee: "claude-opus5-4",
     artifact_refs: [
       { type: "commit", ref: "76546c4d9ca35d925485e1800946d8516f0fe8a7" },
-      { type: "path", ref: "/home/goat/.cache/tachyon/worktrees/b349073a/claude-opus5-4/src/webview/task-detail/task-detail.css" },
+      { type: "path", ref: "/home/goat/.cache/tachyon/worktrees/b349073a/claude-opus5-4/packages/webview-ui/src/webview/task-detail/task-detail.css" },
       { type: "sdd", ref: "docs/specs/479-sidebar-agent-card-templates" },
       { type: "url", ref: "https://github.com/architecture-decision-record/architecture-decision-record/blob/main/README.md" },
       { type: "task", ref: "t-50bbd4" },

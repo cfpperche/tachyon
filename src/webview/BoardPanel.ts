@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { SectionPanelManager, type SectionAppConfig, type SectionPanelSession, type SectionPanelState, type SectionPanelTarget } from "./shared/SectionPanelManager.js";
 import { webviewApp, type WebviewAppEntry } from "./webviewApps.js";
 import { buildBoardVm, BoardAgentLists } from "./board/boardVm.js";
-import { READY, snapshotMessage, taskErrorMessage, type BoardAction } from "./board/messages.js";
+import { READY, snapshotMessage, taskErrorMessage, type BoardAction } from "@tachyon/webview-ui/webview/board/messages";
 import type { WorkspaceBoardTarget } from "../shell/BoardTarget.js";
 import type { ControlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 

@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 import { toPluginProjectionV1 } from "../../src/plugins/ui/projectionBuilder.js";
-import { PLUGIN_FLEET_PROJECTION, pluginFleetProjectionMessage, readyMessage } from "../../src/plugins/ui/messages.js";
+import { PLUGIN_FLEET_PROJECTION, pluginFleetProjectionMessage, readyMessage } from "@tachyon/webview-ui/plugins/ui/messages";
 import { PluginFleetProjectionProvider, PluginProjectionSession } from "../../src/plugins/ui/projectionProvider.js";
 
 describe("plugin fleet projection", () => {
@@ -72,7 +72,7 @@ describe("plugin fleet projection", () => {
   });
 
   it("keeps the projection type module detached from FleetVM and vscode imports", async () => {
-    const source = await readFile(path.join(process.cwd(), "src/plugins/ui/projectionTypes.ts"), "utf8");
+    const source = await readFile(path.join(process.cwd(), "packages/webview-ui/src/plugins/ui/projectionTypes.ts"), "utf8");
 
     expect(source).not.toMatch(/\bFleetVM\b/);
     expect(source).not.toMatch(/from ["']vscode["']/);

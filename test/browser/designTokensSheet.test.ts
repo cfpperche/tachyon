@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 
-const TOKENS_CSS = readFileSync("src/webview/shared/tokens.css", "utf8");
+const TOKENS_CSS = readFileSync("packages/webview-ui/src/webview/shared/tokens.css", "utf8");
 
 describe("SDD 505 Slice 1 — standalone token sheet", () => {
   let browser: Browser;

@@ -11,7 +11,7 @@
 import type { TaskDetailProjectionV1 } from "@tachyon/engine/runtime-api/taskDetailProjection.js";
 import type { WorkspaceTaskDetailTarget } from "../../shell/TaskDetailTarget.js";
 import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
-import type { TaskDetailVM } from "./messages.js";
+import type { TaskDetailVM } from "@tachyon/webview-ui/webview/task-detail/messages";
 
 /** Resolves `panel.webview.asWebviewUri` — injected so this module stays vscode-free. */
 export type ResolveBlobUri = (localPath: string) => string;
