@@ -620,8 +620,25 @@ owner-visible risk.
   `dist/node_modules`, records it in provenance, and calls `vsce --no-dependencies`; README and LICENSE
   are staged beside the app manifest only for the packaging callback.
 - Headless build, TypeScript, focused relocation tests, package-boundary and engine-boundary checks
-  are green. The human F5 proof and stable VSIX smoke remain explicit exit conditions and are not
-  represented as complete here.
+  are green. The human F5 proof remains an explicit exit condition and is not represented as complete here.
+
+### Slice 5 stable artifact comparison
+
+- A standalone clean clone of pre-slice commit `a42f2358` produced a stable `0.91.0` VSIX; a clean
+  clone of post-slice commit `571b8214` produced another. Both unpack to exactly **346 files**.
+- After normalizing the deliberate native dependency relocation
+  `node_modules/node-pty/** -> dist/node_modules/node-pty/**`, the file inventories differ only in the
+  eleven content-hashed webview chunk names. Those names and their import references changed because
+  esbuild's physical entrypoint/source addresses changed; payload byte sizes are unchanged.
+- Of the same-address files, **329 are byte-identical** after normalizing the source prefix and chunk
+  hash names. The four expected semantic differences are: product `package.json` drops the former
+  root `workspaces` field; `extension.js` embeds the new commit/tree attestation; the engine manifest
+  carries that same attestation (and the derived Pi bundle hash); and `provenance.json` records the
+  new tree plus relocated dist dependency paths.
+- The post-slice `npm run release` completed its real VSIX smoke: closure passed, VS Code `1.133.0`
+  installed the package, the persistent engine answered, all **99/99** declared commands registered,
+  both contributed views focused, and the node-missing run refused by `EngineBundleError`.
+- The only remaining slice-5 checkbox is the maintainer-owned F5 proof in the real development host.
 
 ### 2026-08-14T18:41:03Z — fail (0/1) — source: tasks.md
 - `npm run verify:full` — fail
