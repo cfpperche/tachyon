@@ -4,10 +4,10 @@ import { describe, expect, it } from "vitest";
 import {
   AttentionMonitor,
   type AttentionSettings,
-} from "../../src/attention/AttentionMonitor.js";
+} from "@tachyon/shared/attention/AttentionMonitor.js";
 import { applyCompletionHint, CompletionHintStore } from "../../src/attention/completionHint.js";
-import { isComposerOccupied } from "../../src/runtime/composerRegion.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { isComposerOccupied } from "@tachyon/shared/runtime/composerRegion.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * t-0db8cb — codex attention from REAL panes.

@@ -1,5 +1,5 @@
 import type { ActivityItem, ActivityViewModel } from "./activityView.js";
-import { isAgentRow, type AgentVM } from "../sidebar/types.js";
+import { isAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 export const SHARE_TEXT_CAP = 6000;
 export const SHARE_URL_TEXT_CAP = 1600;

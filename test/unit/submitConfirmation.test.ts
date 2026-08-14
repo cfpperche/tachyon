@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { classifyComposerSubmission, composerText } from "../../src/runtime/composerRegion.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { classifyComposerSubmission, composerText } from "@tachyon/shared/runtime/composerRegion.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * t-8d190f — notify_agent typed a line into claude-opus5's composer and reported success, but no Enter

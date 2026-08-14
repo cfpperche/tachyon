@@ -4,9 +4,9 @@ import type {
   AgentStudioPatch,
 } from "./domain";
 import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates.js";
-import type { AgentOwnershipViewV1, AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
-import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "../../config/agentProfileStudio";
-import type { AgentForgetPlanResultV1 } from "../../config/agentForgetPlan";
+import type { AgentOwnershipViewV1, AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio";
+import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "@tachyon/shared/config/agentProfileStudio";
+import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan";
 
 export type {
   AgentStudioEntity,

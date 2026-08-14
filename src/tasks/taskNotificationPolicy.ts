@@ -1,4 +1,4 @@
-import type { Task, TaskStatus } from "./types.js";
+import type { Task, TaskStatus } from "@tachyon/shared/tasks/types.js";
 
 export const TASK_NOTIFICATION_EVENT_IDS = [
   "created",

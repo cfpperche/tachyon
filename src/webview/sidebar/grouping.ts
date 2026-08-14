@@ -1,4 +1,4 @@
-import type { AgentVM } from "../../sidebar/types";
+import type { AgentVM } from "@tachyon/shared/sidebar/types";
 
 export function agentGroupParent(a: AgentVM): string | undefined {
   return a.parent ?? a.delegator ?? a.declaredOwner;

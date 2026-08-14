@@ -12,7 +12,7 @@ import {
   projectAgentProfileStudioSnapshot,
   type AgentOwnershipRosterV1,
   type AgentProfileStudioMutationV1,
-} from "../../src/config/agentProfileStudio.js";
+} from "@tachyon/shared/config/agentProfileStudio.js";
 import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
 
 function lifecycleSnapshot(): AgentProfileLifecycleSnapshot {

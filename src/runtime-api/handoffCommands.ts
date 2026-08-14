@@ -4,7 +4,7 @@ import {
   normalizeAdditionalInstruction,
   normalizeHandoffDistillArgs,
   resolveHandoffDistillProfile,
-} from "../handoff/distill.js";
+} from "@tachyon/shared/handoff/distill.js";
 
 const AGENT_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]{0,127}$/;
 

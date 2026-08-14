@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { TiptapJSON } from "../richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 
 export const RICH_DOC_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 export const RICH_DOC_SCENE_INPUT_MAX_BYTES = 48 * 1024 * 1024;

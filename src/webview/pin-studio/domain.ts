@@ -1,5 +1,5 @@
 import type { PinAttachment } from "../../pins/types.js";
-import { isEmptyPinDoc } from "../../pins/pinStudioModel.js";
+import { isEmptyPinDoc } from "@tachyon/shared/pins/pinStudioModel.js";
 import { assertNoDomainNameCollision } from "../shared/studio/protocol.js";
 import type { PinStudioAttachmentVM, TiptapJSON } from "./types.js";
 

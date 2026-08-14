@@ -1,0 +1,20 @@
+{
+  "name": "@tachyon/shared",
+  "version": "0.91.0",
+  "private": true,
+  "exports": {
+    "./*.cjs": "./*.cjs",
+    "./*.js": "./src/*.ts",
+    "./*": "./src/*.ts"
+  },
+  "typesVersions": {
+    "*": {
+      "*.cjs": ["*.d.cts"],
+      "*.js": ["src/*.ts"],
+      "*": ["src/*.ts"]
+    }
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  }
+}

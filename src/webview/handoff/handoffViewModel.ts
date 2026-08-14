@@ -3,7 +3,7 @@
 // HandoffViewModel from the engine snapshot + notes and posts it; the Preact App renders it as-is.
 
 import type { StalenessState } from "../../handoff/ProjectHandoffStore.js";
-import type { HandoffDistillProfileVM } from "../../handoff/distill.js";
+import type { HandoffDistillProfileVM } from "@tachyon/shared/handoff/distill.js";
 import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../../resume/SessionLedger.js";
 
 /** A pending note as the panel renders it (the engine's HandoffNote shape, kept local so the webview bundle

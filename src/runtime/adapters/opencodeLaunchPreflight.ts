@@ -1,12 +1,12 @@
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { RUNTIME_AUTH_PREFLIGHT } from "../authRequired.js";
+import { RUNTIME_AUTH_PREFLIGHT } from "@tachyon/shared/runtime/authRequired.js";
 import {
   PREFLIGHT_TIMEOUT_MS,
   type ParsedLaunchCommand,
   type RuntimeLaunchPreflight,
   type RuntimeLaunchPreflightPort,
-} from "../launchPreflight.js";
+} from "@tachyon/shared/runtime/launchPreflight.js";
 
 /**
  * SDD 477 / `t-0338fc` — the one runtime that fails authentication in the invisible direction.

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import type { RichDocAttachment } from "../richDoc/types.js";
-import type { ArtifactRef, TaskPriority } from "../tasks/types.js";
+import type { RichDocAttachment } from "@tachyon/shared/richDoc/types.js";
+import type { ArtifactRef, TaskPriority } from "@tachyon/shared/tasks/types.js";
 import {
   decodeRichDocBase64,
   isTiptapDoc,
@@ -41,7 +41,7 @@ export interface TaskStudioPatchV1 {
   assignee?: string;
   deps: string[];
   artifact_refs: ArtifactRef[];
-  doc: import("../richDoc/types.js").TiptapJSON;
+  doc: import("@tachyon/shared/richDoc/types.js").TiptapJSON;
   attachments: RichDocAttachment[];
   bodyBaseline?: string;
   dirty: {

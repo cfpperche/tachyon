@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AttentionMonitor, PATTERN_STABLE_MS, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
-import { classifyAttentionTail } from "../../src/attention/patterns.js";
+import { AttentionMonitor, PATTERN_STABLE_MS, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
+import { classifyAttentionTail } from "@tachyon/shared/attention/patterns.js";
 
 const SETTINGS: AttentionSettings = { enabled: true, silenceSec: 8, patterns: [] };
 

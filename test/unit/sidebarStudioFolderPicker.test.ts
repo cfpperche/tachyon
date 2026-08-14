@@ -15,7 +15,7 @@ import * as vscode from "vscode";
 import { __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
 import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
 import { studioFolderItems } from "../../src/webview/sidebar/studioFolders.js";
-import type { FleetVM } from "../../src/sidebar/types.js";
+import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 
 const fleet = (hash: string, name: string, port = "42462"): FleetVM => ({
   folder: { hash, name },

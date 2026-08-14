@@ -4,11 +4,11 @@ import { Button, Badge, EmptyState, DenseRow } from "../shared/ui";
 import {
   SAMPLE, TABS, searchIndex,
   type FleetVM, type TabId, type AgentVM, type AgentStatus, type SearchItem,
-} from "../../sidebar/types";
+} from "@tachyon/shared/sidebar/types";
 import {
   inlineMembers, readmittedCriticalComponents, resolveCardTemplate, topLevelComponents,
   type CardComponentId, type CardRegion, type CardTemplate, type CardTemplateConfig,
-} from "../../sidebar/cardTemplate";
+} from "@tachyon/shared/sidebar/cardTemplate";
 import { primaryActions, moreActions, ACTION_META, type ActionId } from "../../sidebar/actions";
 // t-6e2952 — the Control tab's tiles derive from the SAME catalog Control's own TabsBar order comes from
 // (COCKPIT_SECTION_ORDER); a section added there without nav metadata throws instead of silently vanishing.
@@ -663,7 +663,7 @@ const Empty = () => <EmptyState kind="empty" message="(none)" />;
  *  Its home is now the sidebar chrome beside the project selector: the handoff is a fact ABOUT the
  *  project in focus, so it belongs next to the control that says which project that is, and it is
  *  reachable from every tab instead of only from the ones that stacked folders. */
-function HandoffBtn({ handoff, onOpen }: { handoff?: import("../../sidebar/types").HandoffVM; onOpen: () => void }) {
+function HandoffBtn({ handoff, onOpen }: { handoff?: import("@tachyon/shared/sidebar/types").HandoffVM; onOpen: () => void }) {
   // Map staleness → {glyph, label, tone} (mirrors handoffViewModel.stalenessLabel; kept inline so the sidebar
   // bundle doesn't import the panel module). A missing/cold handoff still offers Open (to create it).
   const s = handoff?.staleness;

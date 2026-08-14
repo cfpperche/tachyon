@@ -22,7 +22,7 @@ import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoade
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import { HarnessManager } from "../../src/harness/HarnessManager.js";
-import { adapterForRuntime } from "../../src/resume/adapters.js";
+import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
 const LIFECYCLE = ["fresh", "restart", "resume"];

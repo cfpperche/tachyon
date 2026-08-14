@@ -28,7 +28,7 @@ import type { ToolLaunchPolicy } from "./manifest.js";
 import { runI18nPtbrStagedGate } from "./i18nPtbrGate.js";
 import { appendExternalToolEvent } from "../externalTools/events.js";
 import { isLauncherExternalToolKind } from "../externalTools/filters.js";
-import type { ExternalToolKind } from "../externalTools/types.js";
+import type { ExternalToolKind } from "@tachyon/shared/externalTools/types.js";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";
 

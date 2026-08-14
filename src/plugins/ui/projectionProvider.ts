@@ -1,4 +1,4 @@
-import type { FleetVM } from "../../sidebar/types.js";
+import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 import { READY } from "./messages.js";
 import { pluginFleetProjectionMessage, type PluginUiHostMessage } from "./messages.js";
 import { toPluginProjectionV1, type PluginProjectionHandleMint, type PluginProjectionLabelMint, type PluginProjectionTarget } from "./projectionBuilder.js";

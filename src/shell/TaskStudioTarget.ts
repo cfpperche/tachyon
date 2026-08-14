@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
-import type { RichDocAttachment } from "../richDoc/types.js";
+import type { RichDocAttachment } from "@tachyon/shared/richDoc/types.js";
 import {
   encodeTaskStudioStagedPayloadV1,
   parseTaskStudioStagedPayloadV1,
@@ -25,7 +25,7 @@ import {
 import { TaskPrototypeStore } from "../tasks/TaskPrototypeStore.js";
 import type { TaskStore } from "../tasks/TaskStore.js";
 import type { StudioSaveResult } from "../webview/shared/studio/adapter.js";
-import { assembleUntrustedSrcdoc } from "../webview/shared/untrustedSrcdoc.js";
+import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 import type { RichDocAttachmentVM } from "../webview/rich-doc/types.js";
 import type { TaskDetailEntity, TaskPatch } from "../webview/task-studio/domain.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";

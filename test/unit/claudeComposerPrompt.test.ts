@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("t-3fe20f: claude composer prompt matches the measured '❯' glyph", () => {
   it("promptLine matches the measured '❯' glyph, not only ASCII '>'", () => {

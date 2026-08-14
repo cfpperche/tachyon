@@ -1,4 +1,4 @@
-import { isAgentRow, type AgentVM } from "./types";
+import { isAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types";
 
 /**
  * spec 237 — the pure capability/action matrix (no vscode, no preact). Mirrors the tree's `when`-clause

@@ -1,6 +1,6 @@
 import type { TmuxService } from "../tmux/TmuxService.js";
-import { RUNTIME_LOGIN } from "../runtime/authRequired.js";
-import type { ResumeRuntime } from "../resume/adapters.js";
+import { RUNTIME_LOGIN } from "@tachyon/shared/runtime/authRequired.js";
+import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 
 /**
  * t-2656d7 (SDD 495, first slice) — the pane a human logs a runtime in from.

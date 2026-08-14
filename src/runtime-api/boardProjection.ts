@@ -8,7 +8,7 @@ import {
   type TaskAttention,
   type TaskStatus,
   type TaskView,
-} from "../tasks/types.js";
+} from "@tachyon/shared/tasks/types.js";
 import { isValidationExecutor, isValidationOutcome, isValidationStatus, VALIDATION_ID_RE } from "../validations/types.js";
 import type { ValidationSummary } from "../validations/ValidationStore.js";
 

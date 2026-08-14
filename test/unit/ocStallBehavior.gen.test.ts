@@ -4,7 +4,7 @@ import {
   STALL_AFTER_MS,
   type AgentAttention,
   type AttentionSettings,
-} from "../../src/attention/AttentionMonitor.js";
+} from "@tachyon/shared/attention/AttentionMonitor.js";
 
 /**
  * t-47bfe8 — symphony borrows #2: inactivity-based stall detection.

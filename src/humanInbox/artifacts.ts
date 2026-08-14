@@ -28,7 +28,7 @@
  * testable without a webview, a disk, or a host.
  */
 import path from "node:path";
-import type { ArtifactRef } from "../tasks/types.js";
+import type { ArtifactRef } from "@tachyon/shared/tasks/types.js";
 
 /** How a ref can be shown. `reference` is the readable fallback, never a failure. */
 export type InboxArtifactKind = "image" | "prototype" | "link" | "reference";

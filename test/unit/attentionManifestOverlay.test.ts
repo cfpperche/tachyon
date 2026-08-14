@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { evaluateAttentionManifest } from "../../src/attention/manifestEngine.js";
-import { BASE_MANIFEST, resolveManifest, type ManifestOverlay } from "../../src/attention/manifests.js";
+import { evaluateAttentionManifest } from "@tachyon/shared/attention/manifestEngine.js";
+import { BASE_MANIFEST, resolveManifest, type ManifestOverlay } from "@tachyon/shared/attention/manifests.js";
 
 describe("attention manifest overlay seam", () => {
   it("has no shipped overlays today — every runtime falls through to the base manifest untouched", () => {

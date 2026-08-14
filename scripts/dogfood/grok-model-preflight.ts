@@ -15,7 +15,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { GrokLaunchPreflight } from "../../src/runtime/adapters/grokLaunchPreflight.js";
-import { RuntimeLaunchPreflightRegistry, parseLaunchCommand } from "../../src/runtime/launchPreflight.js";
+import { RuntimeLaunchPreflightRegistry, parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 
 const registry = new RuntimeLaunchPreflightRegistry({ grok: new GrokLaunchPreflight() });
 

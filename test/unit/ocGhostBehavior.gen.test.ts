@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AttentionMonitor, PATTERN_STABLE_MS, type AttentionSettings, type AgentAttention } from "../../src/attention/AttentionMonitor.js";
+import { AttentionMonitor, PATTERN_STABLE_MS, type AttentionSettings, type AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 
 /**
  * t-f1b4ff — ghost-attention regression.

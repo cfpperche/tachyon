@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { degradedRosterExtras, toConfigErrorVM } from "../../src/config/configFailure.js";
 import { toAgentVM } from "../../src/sidebar/agentModel.js";
-import type { AgentVM, FleetVM } from "../../src/sidebar/types.js";
+import type { AgentVM, FleetVM } from "@tachyon/shared/sidebar/types.js";
 import type { SessionRecord } from "../../src/resume/SessionLedger.js";
 
 function buildDegradedFleet(opts: {

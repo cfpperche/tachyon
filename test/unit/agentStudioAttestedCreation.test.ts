@@ -6,9 +6,9 @@ import {
   serializeAgentPatch,
   type AgentStudioFields,
 } from "../../src/webview/agent-studio-shell/domain.js";
-import { createProfileFromStudioMutation, patchProfileFromStudioMutation } from "../../src/config/agentProfileStudio.js";
+import { createProfileFromStudioMutation, patchProfileFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
 import { admitSavedAgentProposal, savedAgentCreateMutation } from "../../src/agents/savedAgentProposal.js";
-import { ATTESTED_RUNTIMES } from "../../src/runtime/attestedRuntimes.js";
+import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes.js";
 
 /**
  * t-d68b8b — creating a Saved Agent for a runtime Tachyon does not attest was a dead end, and this

@@ -12,7 +12,7 @@ import type { PinDetailRead } from "../../src/pins/PinStore.js";
 import type { AgentInfo } from "../../src/agents/AgentManager.js";
 import { legacySidebarTarget, type LegacySidebarSource, type WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 import type { ObservedModelInput } from "../../src/sidebar/agentModel.js";
-import { SAMPLE, type FleetVM, type NoticeVM } from "../../src/sidebar/types.js";
+import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
 import type { SidebarFleetV1 } from "../../src/runtime-api/sidebarProjection.js";
 import type { ScheduleProposal } from "../../src/schedule/ProposalStore.js";
 

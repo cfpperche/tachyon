@@ -1,4 +1,4 @@
-import type { AgentVM, FleetVM } from "../../sidebar/types.js";
+import type { AgentVM, FleetVM } from "@tachyon/shared/sidebar/types.js";
 import type {
   PluginAgentAttentionV1,
   PluginAgentBadgeV1,

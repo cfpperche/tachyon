@@ -19,7 +19,7 @@ import { useLayoutEffect, useRef, useState } from "preact/hooks";
 import { Button } from "../ui";
 import { AgentRow } from "../../sidebar/App";
 import { CARD_PREVIEW_ROWS, CARD_PREVIEW_WIDTHS } from "../../../sidebar/cardPreviewRows";
-import { CARD_REGIONS, type CardRegion, type CardTemplate } from "../../../sidebar/cardTemplate";
+import { CARD_REGIONS, type CardRegion, type CardTemplate } from "@tachyon/shared/sidebar/cardTemplate";
 import {
   editorStateFrom,
   moveComponent,

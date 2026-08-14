@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { TiptapJSON } from "../richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import {
   parseSidebarMutationInputV1,
   type SidebarMutationInputV1,

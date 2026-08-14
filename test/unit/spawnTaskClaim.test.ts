@@ -7,7 +7,7 @@ import { sessionRecordManifest } from "../../src/agents/sessionWorkRecord.js";
 import { registerTools } from "../../src/bridge/tools.js";
 import { decideSpawnTaskClaim } from "../../src/bridge/spawnTaskClaim.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
-import type { Task } from "../../src/tasks/types.js";
+import type { Task } from "@tachyon/shared/tasks/types.js";
 
 /**
  * t-48f504 — one operation to launch an agent FOR a board task, and a refusal at the call when it

@@ -7,7 +7,7 @@
  * components — never innerHTML — under a strict nonce'd CSP. That's what makes flipping enableScripts on safe.
  */
 
-import type { PinPreviewVM } from "../../sidebar/types";
+import type { PinPreviewVM } from "@tachyon/shared/sidebar/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 

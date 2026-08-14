@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { FleetVM } from "../../src/sidebar/types.js";
+import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 import { toPluginProjectionV1 } from "../../src/plugins/ui/projectionBuilder.js";
 import { PLUGIN_FLEET_PROJECTION, pluginFleetProjectionMessage, readyMessage } from "../../src/plugins/ui/messages.js";
 import { PluginFleetProjectionProvider, PluginProjectionSession } from "../../src/plugins/ui/projectionProvider.js";

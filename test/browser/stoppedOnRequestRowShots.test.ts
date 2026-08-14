@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, type FleetVM, type TabId } from "../../src/sidebar/types.js";
+import { SAMPLE, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * t-9d76b1 — headless Visual QA for the row of an agent the HUMAN stopped.

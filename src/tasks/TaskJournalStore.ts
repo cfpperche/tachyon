@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { TASK_ID_RE, type JournalEntry, type JournalMode, type JournalWindow } from "./types.js";
+import { TASK_ID_RE, type JournalEntry, type JournalMode, type JournalWindow } from "@tachyon/shared/tasks/types.js";
 
 export const JOURNAL_TEXT_MAX_CODEPOINTS = 4000;
 export const JOURNAL_MAX_BYTES = 256 * 1024;

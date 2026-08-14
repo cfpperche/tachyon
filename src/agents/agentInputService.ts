@@ -1,5 +1,5 @@
 import type { ManagedEntryInfo } from "./AgentManager.js";
-import { composerProfileFor } from "../runtime/composerRegion.js";
+import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 import type { SubmitReceipt } from "../tmux/TmuxService.js";
 
 export type ManagedAgentInputReceipt = SubmitReceipt | { status: "typed-unsubmitted" };

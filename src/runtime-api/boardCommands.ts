@@ -5,7 +5,7 @@ import {
   type TaskPriority,
   type TaskStatus,
   type TaskUpdateExpect,
-} from "../tasks/types.js";
+} from "@tachyon/shared/tasks/types.js";
 import { isValidationOutcome, VALIDATION_ID_RE, type ValidationOutcome } from "../validations/types.js";
 
 export interface BoardTaskPatchV1 {

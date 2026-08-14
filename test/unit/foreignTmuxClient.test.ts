@@ -3,7 +3,7 @@ import {
   foreignClientBannerText,
   parseSessionClients,
   probeForeignClients,
-} from "../../src/presentation/foreignTmuxClient.js";
+} from "@tachyon/shared/presentation/foreignTmuxClient.js";
 
 /**
  * t-edbe36 — measured classification of a foreign tmux client co-attached to the Agent Pane.

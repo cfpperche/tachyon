@@ -3,7 +3,7 @@ import puppeteer, { type Browser, type Frame, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 import { previewSurface } from "./support/preview";
-import type { PinPreviewVM } from "../../src/sidebar/types";
+import type { PinPreviewVM } from "@tachyon/shared/sidebar/types";
 
 // t-321e9d — maintainer dogfood: a pin body with an inline image rendered the literal placeholder text
 // "[Image]" instead of the actual image, even though the Visuals aside resolved + showed its thumbnail fine.

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { HarnessManager, harnessHome } from "../../src/harness/HarnessManager.js";
-import { adapterForRuntime } from "../../src/resume/adapters.js";
+import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 
 describe("container-generated delegation behavior", () => {
   it("a harnessed grok agent materializes lifecycle hooks that wire the Tachyon session recorders", () => {

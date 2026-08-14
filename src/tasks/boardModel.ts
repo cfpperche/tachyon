@@ -1,6 +1,6 @@
 import type { BoardChip, BoardSnapshot } from "./boardSnapshot.js";
-import { compareTasksByPriorityRank } from "./nextTask.js";
-import type { Task, TaskAttention, TaskAwaitingHumanKind, TaskEmptyReason, TaskPriority, TaskStatus } from "./types.js";
+import { compareTasksByPriorityRank } from "@tachyon/shared/tasks/nextTask.js";
+import type { Task, TaskAttention, TaskAwaitingHumanKind, TaskEmptyReason, TaskPriority, TaskStatus } from "@tachyon/shared/tasks/types.js";
 import type { ValidationExecutor, ValidationOutcome, ValidationStatus } from "../validations/types.js";
 import type { ValidationSummary } from "../validations/ValidationStore.js";
 

@@ -6,7 +6,7 @@ import Image from "@tiptap/extension-image";
 import FileHandler from "@tiptap/extension-file-handler";
 import TaskList from "@tiptap/extension-task-list";
 import TaskItem from "@tiptap/extension-task-item";
-import type { TiptapJSON } from "../../richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import { EMPTY_DOC } from "./document.js";
 
 export const RichDocImage = Image.extend({

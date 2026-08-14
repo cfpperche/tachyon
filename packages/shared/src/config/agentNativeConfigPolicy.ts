@@ -1,8 +1,8 @@
 import {
   AGENT_NATIVE_CONFIG_FAMILIES,
   type AgentNativeConfigPolicyV1,
-} from "./agentNativeConfigSchema.js";
-import type { AgentProfileV1 } from "./agentProfileSchema.js";
+} from "@tachyon/shared/config/agentNativeConfigSchema.js";
+import type { AgentProfileV1 } from "./agentProfile.js";
 
 export type AgentNativeConfigFamily = (typeof AGENT_NATIVE_CONFIG_FAMILIES)[number];
 export const CODEX_SCALAR_NATIVE_CONFIG_FAMILIES = [

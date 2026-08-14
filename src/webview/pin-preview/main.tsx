@@ -2,7 +2,7 @@ import { render } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { App } from "./App";
 import { PIN_DOCUMENT_MODE, PIN_PREVIEW, readyMessage, setPinDocumentModeAction, type PinPreviewHostMessage } from "./messages";
-import type { PinPreviewVM } from "../../sidebar/types";
+import type { PinPreviewVM } from "@tachyon/shared/sidebar/types";
 import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientState";
 import { ErrorBoundary } from "../shared/ErrorBoundary";
 import { App as PinStudioApp } from "../pin-studio/App";

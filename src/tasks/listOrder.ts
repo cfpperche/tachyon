@@ -1,4 +1,4 @@
-import type { Task, TaskStatus, TaskView } from "./types.js";
+import type { Task, TaskStatus, TaskView } from "@tachyon/shared/tasks/types.js";
 
 /**
  * Listing (Board tool) sort priority — actionable work first, terminal/archive last.

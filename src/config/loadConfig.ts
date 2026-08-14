@@ -1,7 +1,9 @@
 import fs from "node:fs";
+import type { EntryKind } from "@tachyon/shared/config/entry.js";
+export type { EntryKind } from "@tachyon/shared/config/entry.js";
 import { parse as parseYaml } from "yaml";
 import { parseAgentMemoryMax } from "../agents/agentMemoryScope.js";
-import { binaryOf, binaryIndex } from "../resume/adapters.js";
+import { binaryOf, binaryIndex } from "@tachyon/shared/resume/adapters.js";
 import { TASK_NOTIFICATION_EVENT_IDS, type TaskNotificationSettingsInput } from "../tasks/taskNotificationPolicy.js";
 import {
   PROJECT_GUIDANCE_MAX_FILES,
@@ -10,16 +12,16 @@ import {
 } from "./projectGuidance.js";
 import { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
 import { AGENT_NAME_PATTERN } from "./nameValidation.js";
-import { runtimePromptAdapter } from "../agents/runtimePromptAdapters.js";
-import { ATTESTED_RUNTIMES } from "../runtime/attestedRuntimes.js";
-import { parseLaunchCommand } from "../runtime/launchPreflight.js";
+import { runtimePromptAdapter } from "@tachyon/shared/agents/runtimePromptAdapters.js";
+import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes.js";
+import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 export { openingPromptCapability, resolveBinary } from "../agents/openingPromptCapability.js";
-import { parseCardTemplate, type CardTemplateConfig } from "../sidebar/cardTemplate.js";
+import { parseCardTemplate, type CardTemplateConfig } from "@tachyon/shared/sidebar/cardTemplate.js";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
 import { PROJECTED_HOOK_CLASSES as AGENT_HOOK_PROJECTION_CLASSES, type ProjectedHookClass } from "../plugins/agentHookProjection.js";
 import type { ResolvedAgentCapabilityProjection } from "./agentProfileResolver.js";
 import type { WithheldCapability } from "./withheldCapability.js";
-import type { ResolvedAgentNativeConfigProjection } from "./agentNativeConfigPolicy.js";
+import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 
 export interface AttentionDef {
@@ -31,8 +33,6 @@ export interface AttentionDef {
 export const ATTENTION_DEFAULT_SILENCE_SEC = 8;
 
 export type RestartPolicy = "never" | "on-crash";
-
-export type EntryKind = "agent" | "terminal";
 
 /**
  * Attention is on for an agent and off for a terminal (servers, shells and builds are silent by

@@ -2,7 +2,7 @@
  * t-41117e — destination picker for "Continue task in…".
  * One implementation for the Fleet tab and the sidebar Agents roster.
  */
-import type { AgentVM } from "../../../sidebar/types";
+import type { AgentVM } from "@tachyon/shared/sidebar/types";
 import { QuickPicker, type QuickPickerItem } from "../ui";
 import { continueTaskCandidates, destinationBusy } from "./continueTaskCandidates";
 

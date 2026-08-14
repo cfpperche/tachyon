@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { sliceJournal, TaskJournalStore } from "../../src/tasks/TaskJournalStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
-import type { JournalEntry } from "../../src/tasks/types.js";
+import type { JournalEntry } from "@tachyon/shared/tasks/types.js";
 
 let root: string;
 

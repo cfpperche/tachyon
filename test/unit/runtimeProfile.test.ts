@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertVerifiedTranscriptIsolation, hasVerifiedTranscriptIsolation, isolationMechanismForCommand, modelLabelForRuntime, projectScopedTranscriptWarning, runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, hasVerifiedTranscriptIsolation, isolationMechanismForCommand, modelLabelForRuntime, projectScopedTranscriptWarning, runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("runtime profiles (spec 358 phase 1)", () => {
   it("declares Claude isolation as measured mint", () => {

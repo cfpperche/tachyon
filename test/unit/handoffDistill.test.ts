@@ -10,7 +10,7 @@ import {
   reconcileDistillSelection,
   resolveHandoffDistillProfile,
   type DistillListRow,
-} from "../../src/handoff/distill.js";
+} from "@tachyon/shared/handoff/distill.js";
 
 describe("handoff distill prompt (spec 328)", () => {
   it("requires read-first, human approval, CAS, and pending-note watermark", () => {

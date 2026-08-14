@@ -7,12 +7,12 @@ import {
   persistentInstructionsText,
   studioOwnsPersistentInstructions,
   studioPersistentInstructionsId,
-} from "../../src/config/agentInstructionsDocument.js";
+} from "@tachyon/shared/config/agentInstructionsDocument.js";
 import {
   mergedPersistentInstructionsReferences,
   persistentInstructionsWriteFor,
 } from "../../src/config/agentInstructionsWrite.js";
-import { patchProfileFromStudioMutation } from "../../src/config/agentProfileStudio.js";
+import { patchProfileFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
 import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
 import type { AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
 import { MATERIALIZED_PROFILE_REFERENCE_KINDS } from "../../src/config/agentProfileMaterialization.js";

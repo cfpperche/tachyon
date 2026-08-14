@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
 import { buildHumanInbox, humanInboxCounts } from "../../src/humanInbox/model.js";
 import { admitSavedAgentProposal, type SavedAgentProposal } from "../../src/agents/savedAgentProposal.js";
-import { assertOwnershipTargets, type AgentOwnershipRosterV1 } from "../../src/config/agentProfileStudio.js";
+import { assertOwnershipTargets, type AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 slice C (`t-5e1113`) — what the human sees, and what they must never see.

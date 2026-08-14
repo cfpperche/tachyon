@@ -17,7 +17,7 @@ import {
   updateTaskAction,
   type BoardVM,
 } from "./messages";
-import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
+import type { TaskPriority, TaskStatus, TaskUpdateInput } from "@tachyon/shared/tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
 /**

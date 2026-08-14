@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, type FleetVM, type TabId } from "../../src/sidebar/types.js";
+import { SAMPLE, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * SDD 494 Part 4 — headless Visual QA for the sidebar row that now carries the disagreement state.

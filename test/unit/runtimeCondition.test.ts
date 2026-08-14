@@ -4,7 +4,7 @@ import {
   projectRuntimeCondition,
   type RuntimeConditionInputV1,
 } from "../../src/runtimeOps/runtimeCondition.js";
-import { SUPPORTED_AGENT_RUNTIMES } from "../../src/agents/agentRuntimeAdmission.js";
+import { SUPPORTED_AGENT_RUNTIMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import { RUNTIME_NATIVE_MEMORY_REGISTRY } from "../../src/runtime/nativeMemory.js";
 import type { CollectorEnvelopeV1 } from "../../src/runtimeObservability/types.js";
 import type { ProviderQuotaChannelDescriptorV1 } from "../../src/runtimeObservability/service.js";
@@ -199,7 +199,7 @@ describe("projectRuntimeCondition", () => {
 
     expect(pi.manageable.origin).toEqual({
       registry: "SUPPORTED_AGENT_RUNTIMES",
-      module: "src/agents/agentRuntimeAdmission.ts",
+      module: "packages/shared/src/agents/agentRuntimeAdmission.ts",
     });
     expect(pi.measured.origin).toEqual({
       registry: "RUNTIME_NATIVE_MEMORY_REGISTRY",

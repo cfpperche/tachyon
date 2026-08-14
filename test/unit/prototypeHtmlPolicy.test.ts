@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROTOTYPE_DATA_MAX_DECODED_BYTES, PROTOTYPE_HTML_MAX_BYTES, validatePrototypeHtml } from "../../src/tasks/prototypeHtmlPolicy.js";
-import { assembleUntrustedSrcdoc } from "../../src/webview/shared/untrustedSrcdoc.js";
+import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 
 describe("prototypeHtmlPolicy", () => {
   it("accepts a bounded self-contained mock with inline CSS, script, and raster data", () => {

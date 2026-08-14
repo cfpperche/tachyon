@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { evaluateAttentionManifest } from "../../src/attention/manifestEngine.js";
-import { ATTENTION_MANIFEST_RUNTIMES, attentionManifestForRuntime } from "../../src/attention/manifests.js";
+import { evaluateAttentionManifest } from "@tachyon/shared/attention/manifestEngine.js";
+import { ATTENTION_MANIFEST_RUNTIMES, attentionManifestForRuntime } from "@tachyon/shared/attention/manifests.js";
 
 describe("container-generated delegation behavior", () => {
   it("attention detection is driven by per-runtime manifests and preserves current verdicts for claude codex grok opencode pi", () => {

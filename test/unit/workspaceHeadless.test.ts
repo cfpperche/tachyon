@@ -29,7 +29,7 @@ import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPr
 import { harnessHome, harnessRoot } from "../../src/harness/HarnessManager.js";
 import { parse as parseYaml, stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "../../src/config/agentProfileAuthority.js";
-import type { AgentProfileStudioMutationV1 } from "../../src/config/agentProfileStudio.js";
+import type { AgentProfileStudioMutationV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";

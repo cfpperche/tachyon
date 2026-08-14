@@ -11,7 +11,7 @@
  * breaks the BUILD (typecheck) instead of silently producing a wrong preview screenshot.
  */
 
-import type { FleetVM } from "../../sidebar/types";
+import type { FleetVM } from "@tachyon/shared/sidebar/types";
 
 // the webview→host ready handshake is shared across all views; re-exported here for sidebar consumers.
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { TASK_PRIORITIES, type ArtifactRef, type TaskPriority } from "../tasks/types.js";
+import { TASK_PRIORITIES, type ArtifactRef, type TaskPriority } from "@tachyon/shared/tasks/types.js";
 import {
   isValidationActorKind,
   isValidationExecutor,

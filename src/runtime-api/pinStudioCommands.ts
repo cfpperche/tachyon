@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { PinAttachment } from "../pins/types.js";
-import type { TiptapJSON } from "../richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import {
   isTiptapDoc,
   richDocAttachmentV1Schema,

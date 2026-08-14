@@ -10,7 +10,7 @@
  * Real product data is reused where it exists (`SAMPLE` from the sidebar view-model) instead of being
  * re-invented here, so the proof covers the rows the preview harness and the shipped sample show.
  */
-import { SAMPLE, type AgentVM } from "../../../src/sidebar/types.js";
+import { SAMPLE, type AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 /** Props `AgentRow` accepts. Declared here because the component's prop type is inline (not exported). */
 export interface AgentCardProps {

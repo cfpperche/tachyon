@@ -1,3 +1,6 @@
+import type { NoticeOrigin, NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
+export type { ChildBoundNoticeMetadata, NoticeOrigin, NoticeQueueMetadata, UnboundNoticeMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
+
 /**
  * t-fb1453 — WHY a queued notice names a child decides whether it survives that child.
  *
@@ -11,8 +14,6 @@
  * since been dismissed. Measured on 2026-08-01: a coordinator killed `codex-revisor` minutes after it
  * rang, and the kill destroyed the queued report the kill was a response to.
  */
-export type NoticeOrigin = "host-poke" | "agent-authored";
-
 export const DEFAULT_NOTICE_TTL_MS = 10 * 60_000;
 
 /**
@@ -21,25 +22,6 @@ export const DEFAULT_NOTICE_TTL_MS = 10 * 60_000;
  * because there is no answer that is safe to guess. Guessing "host-poke" loses completion reports;
  * guessing "agent-authored" resurrects dead-child pokes.
  */
-export interface ChildBoundNoticeMetadata {
-  origin: NoticeOrigin;
-  sourceChild: string;
-  sourceIncarnation?: number;
-}
-
-/** A notice that names no child (approval relays, task-assignee wakeups): never incarnation-filtered. */
-export interface UnboundNoticeMetadata {
-  origin?: undefined;
-  sourceChild?: undefined;
-  sourceIncarnation?: undefined;
-}
-
-/**
- * The union is the enforcement. `{}` still type-checks (an unbound relay), but `{ sourceChild: "x" }`
- * does NOT — the compiler demands the origin from anyone who reaches for a child's identity.
- */
-export type NoticeQueueMetadata = ChildBoundNoticeMetadata | UnboundNoticeMetadata;
-
 export interface NoticeQueueItem {
   target: string;
   line: string;

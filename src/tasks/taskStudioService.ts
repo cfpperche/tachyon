@@ -6,13 +6,13 @@ import {
   type TaskStudioPrototypePayloadV1,
   type TaskStudioSketchPayloadV1,
 } from "../runtime-api/taskStudioCommands.js";
-import type { RichDocAttachment } from "../richDoc/types.js";
-import { docToMarkdown } from "./docMarkdown.js";
+import type { RichDocAttachment } from "@tachyon/shared/richDoc/types.js";
+import { docToMarkdown } from "@tachyon/shared/tasks/docMarkdown.js";
 import { TaskAttachmentStore, TASK_BLOB_SOFT_LIMIT_BYTES } from "./TaskAttachmentStore.js";
 import { TaskDetailStore, hashBody, type TaskDetail } from "./TaskDetailStore.js";
 import { TaskPrototypeStore } from "./TaskPrototypeStore.js";
 import type { TaskStore } from "./TaskStore.js";
-import type { Task } from "./types.js";
+import type { Task } from "@tachyon/shared/tasks/types.js";
 import { composeDirtyPatch, isEmptyPatch } from "./studioModel.js";
 
 export type TaskStudioSaveServiceResult =

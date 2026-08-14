@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { classifyTail, classifyAttentionTail, compileExtraPatterns, parseRateLimitInfo, TAIL_WINDOW } from "../../src/attention/patterns.js";
+import { classifyTail, classifyAttentionTail, compileExtraPatterns, parseRateLimitInfo, TAIL_WINDOW } from "@tachyon/shared/attention/patterns.js";
 import {
   AttentionMonitor,
   PATTERN_STABLE_MS,
@@ -10,7 +10,7 @@ import {
   extractAwaitingHumanQuestion,
   type AttentionSettings,
   type AgentAttention,
-} from "../../src/attention/AttentionMonitor.js";
+} from "@tachyon/shared/attention/AttentionMonitor.js";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { LifecycleMonitor } from "../../src/agents/LifecycleMonitor.js";
 

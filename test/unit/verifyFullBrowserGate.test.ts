@@ -39,6 +39,14 @@ function browserSuite(cwd: string, files: Record<string, string>) {
   }
 }
 
+function workspace(cwd: string, slug: string, name: string) {
+  fs.writeFileSync(path.join(cwd, "package.json"), '{"private":true,"workspaces":["packages/*"]}\n');
+  const directory = path.join(cwd, "packages", slug);
+  fs.mkdirSync(path.join(directory, "src"), { recursive: true });
+  fs.writeFileSync(path.join(directory, "package.json"), `${JSON.stringify({ name })}\n`);
+  return directory;
+}
+
 describe("verify:full conditional browser gate (t-6e929b)", () => {
   it("skips, visibly, when the diff touches nothing the browser suite reads", () => {
     const cwd = repo();
@@ -160,6 +168,24 @@ describe("the trigger set is DERIVED from what the browser suite reads (t-e2c8a2
     expect(browserGateDecision({ cwd }).webviewPaths).toContain("src/sidebar/cardTemplate.ts");
   });
 
+  it("derives a named workspace import from the root workspace declaration", () => {
+    const cwd = repo();
+    const engine = workspace(cwd, "engine", "@tachyon/engine");
+    browserSuite(cwd, { "card.test.ts": 'import { row } from "@tachyon/engine/sidebar/cardTemplate.js";\n' });
+    fs.mkdirSync(path.join(engine, "src", "sidebar"), { recursive: true });
+    fs.writeFileSync(path.join(engine, "src", "sidebar", "cardTemplate.ts"), "export const row = {};\n");
+
+    expect(browserSuiteRoots({ cwd })).toContain("packages/engine/");
+  });
+
+  it("fails closed on an unknown Tachyon workspace import", () => {
+    const cwd = repo();
+    workspace(cwd, "shared", "@tachyon/shared");
+    browserSuite(cwd, { "card.test.ts": 'import { row } from "@tachyon/engine/sidebar/cardTemplate.js";\n' });
+
+    expect(() => browserSuiteRoots({ cwd })).toThrow(/unknown Tachyon workspace/);
+  });
+
   it("resolves each import from ITS OWN directory, so a nested helper's `../../../` is not read as the suite root's", () => {
     const cwd = repo();
     browserSuite(cwd, { "support/gate.ts": 'import { p } from "../../../scripts/webview-preview/pluginFrameGate.js";\n' });
@@ -183,8 +209,8 @@ describe("the trigger set is DERIVED from what the browser suite reads (t-e2c8a2
     expect(roots).toEqual(expect.arrayContaining([
       "test/browser/", "vitest.browser.config.ts",
       "src/webview/", "src/sidebar/", "src/agents/", "src/sections/", "scripts/webview-preview/",
-      // t-fbd2ce: the board rendered by the live suite imports this through src/webview/board/App.tsx.
-      "src/tasks/",
+      // SDD 506 slice 1: browser imports now cross the workspace by package name.
+      "packages/shared/",
     ]));
   });
 });

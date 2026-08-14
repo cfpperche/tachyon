@@ -1,5 +1,5 @@
 import { parse as parseYaml } from "yaml";
-import { admitAgentRuntimeCommand } from "../agents/agentRuntimeAdmission.js";
+import { admitAgentRuntimeCommand } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 
 /**
  * spec 230 — pure loader + validator for a one-shot agent pipeline (`.tachyon/pipelines/<name>.yml`).

@@ -7,7 +7,7 @@
  * `default` is `sample-derived` (the real `SAMPLE`), the rest are `synthetic-edge`.
  */
 
-import { SAMPLE, type FleetVM } from "../../../src/sidebar/types";
+import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types";
 import type { Fixture } from "../routes";
 
 // a complete FleetVM minus `agents` — every required array present.

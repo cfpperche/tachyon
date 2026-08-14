@@ -18,6 +18,8 @@
  * to what was dropped brings the record back.
  */
 import { createHash } from "node:crypto";
+import type { ConfigDiscardsVM } from "@tachyon/shared/config/configDiscards.js";
+export type { ConfigDiscardsVM } from "@tachyon/shared/config/configDiscards.js";
 
 /**
  * Bound on the rows carried to the UI. The parser can emit one discard per malformed key, and an
@@ -36,17 +38,6 @@ export interface ConfigDiscards {
   entries: string[];
   at: string;
   /** digest of `file` + `entries`; the identity a human's dismissal is keyed by */
-  signature: string;
-}
-
-/** Webview payload for the discard banner. */
-export interface ConfigDiscardsVM {
-  file: string;
-  path: string;
-  entries: string[];
-  /** first entry, pre-truncated for the banner */
-  summary: string;
-  /** echoed back by the dismiss gesture, so a dismissal can never land on a set the human never saw */
   signature: string;
 }
 

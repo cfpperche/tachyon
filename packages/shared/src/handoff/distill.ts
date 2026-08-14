@@ -1,4 +1,4 @@
-import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../resume/SessionLedger.js";
+import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../resume/agentInstance.js";
 export type HandoffDistillRuntime = "codex" | "claude";
 
 export interface HandoffDistillProfileVM {

@@ -1,23 +1,23 @@
 import { z } from "zod";
 import type { AgentProfileLifecycleSnapshot } from "./agentProfileLifecycle.js";
-import { agentNativeConfigSchemaV1 } from "./agentNativeConfigSchema.js";
-import type { AgentProfileV1 } from "./agentProfileSchema.js";
-import { AGENT_PROFILE_REFUSAL_CODE_RE, AgentProfileRefusal } from "./agentProfileRefusal.js";
+import { agentNativeConfigSchemaV1 } from "@tachyon/shared/config/agentNativeConfigSchema.js";
+import type { AgentProfileV1 } from "./agentProfile.js";
+import { AGENT_PROFILE_REFUSAL_CODE_RE, AgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
 import {
   previewAgentNativeConfigPolicy,
   resolveAgentNativeConfigSupport,
   validateAgentNativeConfigPolicy,
 } from "./agentNativeConfigPolicy.js";
-import { adapterForRuntime, forkable, runtimeOf } from "../resume/adapters.js";
-import { runtimeProfile, type CanonicalRuntimeLimitation } from "../runtime/runtimeProfile.js";
-import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../runtime/attestedRuntimes.js";
-import { studioOwnsWorkspaceCommands, studioWorkspaceCommandIds } from "./agentWorkspaceCommands.js";
+import { adapterForRuntime, forkable, runtimeOf } from "@tachyon/shared/resume/adapters.js";
+import { runtimeProfile, type CanonicalRuntimeLimitation } from "@tachyon/shared/runtime/runtimeProfile.js";
+import { ATTESTED_RUNTIMES, isAttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
+import { studioOwnsWorkspaceCommands, studioWorkspaceCommandIds } from "@tachyon/shared/config/agentWorkspaceCommands.js";
 import {
   PERSISTENT_INSTRUCTIONS_MAX_CHARS,
   persistentInstructionsRefusal,
   studioOwnsPersistentInstructions,
   studioPersistentInstructionsId,
-} from "./agentInstructionsDocument.js";
+} from "@tachyon/shared/config/agentInstructionsDocument.js";
 
 const ID = /^[A-Za-z][A-Za-z0-9._-]{0,127}$/;
 const REVISION = /^[a-f0-9]{64}$/;

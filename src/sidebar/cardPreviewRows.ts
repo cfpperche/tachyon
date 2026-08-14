@@ -11,7 +11,7 @@
  * card — only from the fleet, which is the point (a preview that depended on a live agent would be a
  * second failure mode for no gain).
  */
-import type { AgentVM } from "./types.js";
+import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 export interface CardPreviewRow {
   /** stable id for keys and for a test to name the row that changed */

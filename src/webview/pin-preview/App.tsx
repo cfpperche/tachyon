@@ -1,4 +1,4 @@
-import type { PinPreviewVM } from "../../sidebar/types";
+import type { PinPreviewVM } from "@tachyon/shared/sidebar/types";
 import { toEditorDoc } from "../rich-doc/document";
 import { StaticDoc } from "../rich-doc/StaticDoc";
 import { Button } from "../shared/ui";

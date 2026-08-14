@@ -5,7 +5,7 @@ import {
   THROTTLE_NOTIFY_DELAY_MS,
   type AgentAttention,
   type AttentionSettings,
-} from "../../src/attention/AttentionMonitor.js";
+} from "@tachyon/shared/attention/AttentionMonitor.js";
 
 /**
  * t-64f501 — a modal permission prompt was read as "working" because a parallel tool in the

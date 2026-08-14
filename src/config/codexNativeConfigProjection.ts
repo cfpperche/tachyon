@@ -9,7 +9,7 @@ import {
   CODEX_FULL_ACCESS_AUTHORIZATION,
   CODEX_NEVER_APPROVAL_AUTHORIZATION,
   type ResolvedAgentNativeConfigProjection,
-} from "./agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 import { getCodexMcpServerBlock, removeCodexMcpServer } from "../registration/adapters.js";
 

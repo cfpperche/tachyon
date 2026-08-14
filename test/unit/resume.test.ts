@@ -13,7 +13,7 @@ import {
   encodeGrokCwd,
   grokTranscriptPath,
   type ResumeRuntime,
-} from "../../src/resume/adapters.js";
+} from "@tachyon/shared/resume/adapters.js";
 import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
 import { EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence } from "../../src/worktree/evidence.js";
 import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";

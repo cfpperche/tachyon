@@ -20,7 +20,7 @@ import {
   SUPPORTED_AGENT_RUNTIMES,
   SUPPORTED_AGENT_RUNTIME_NAMES,
   TERMINAL_OPERATION,
-} from "../../src/agents/agentRuntimeAdmission.js";
+} from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 
 /** The flag each declared brief channel actually rides on, for the runtimes that use argv. */
 const BRIEF_FLAG: Partial<Record<string, string>> = {

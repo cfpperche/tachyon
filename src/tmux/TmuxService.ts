@@ -7,9 +7,9 @@ import {
   classifyComposerSubmission,
   stripAnsi,
   type ComposerSubmissionState,
-} from "../runtime/composerRegion.js";
-import type { ComposerRegionProfile } from "../runtime/runtimeProfile.js";
-import { parseSessionClients, type SessionClientInfo } from "../presentation/foreignTmuxClient.js";
+} from "@tachyon/shared/runtime/composerRegion.js";
+import type { ComposerRegionProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
+import { parseSessionClients, type SessionClientInfo } from "@tachyon/shared/presentation/foreignTmuxClient.js";
 
 /**
  * Env seam for the dedicated tmux server socket name (`t-05097f`).

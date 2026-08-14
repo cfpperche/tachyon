@@ -22,20 +22,20 @@ import {
   type CanonicalAgentProfileSource,
 } from "./agentProfileReader.js";
 import { AgentCapabilitySourceError, captureCapabilitySourceAtRoot } from "./agentCapabilitySource.js";
-import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "../runtime/attestedRuntimes.js";
-import { parseWorkspaceCommandLines } from "./agentWorkspaceCommands.js";
+import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
+import { parseWorkspaceCommandLines } from "@tachyon/shared/config/agentWorkspaceCommands.js";
 import { MATERIALIZED_PROFILE_REFERENCE_KINDS } from "./agentProfileMaterialization.js";
-import { PERSISTENT_INSTRUCTIONS_FILE_NAME } from "./agentInstructionsDocument.js";
+import { PERSISTENT_INSTRUCTIONS_FILE_NAME } from "@tachyon/shared/config/agentInstructionsDocument.js";
 import { inspectRuntimeWorkspaceInput, readRuntimeProjectionClaims } from "../plugins/projectedInputs.js";
 import {
   projectAgentNativeConfig,
   resolveAgentNativeConfigSupport,
   validateAgentNativeConfigPolicy,
-} from "./agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type {
   AgentNativeConfigFamily,
   ResolvedAgentNativeConfigProjection,
-} from "./agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import { projectCodexScalarNativeConfig } from "./codexNativeConfigProjection.js";
 import { projectClaudeNativeConfig } from "./claudeNativeConfigProjection.js";
 import { projectGrokNativeConfig } from "./grokNativeConfigProjection.js";

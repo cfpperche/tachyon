@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { nextTask } from "../../src/tasks/nextTask.js";
-import type { Task } from "../../src/tasks/types.js";
+import { nextTask } from "@tachyon/shared/tasks/nextTask.js";
+import type { Task } from "@tachyon/shared/tasks/types.js";
 
 function task(overrides: Partial<Task>): Task {
   return {

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import type { ExternalToolConfidence, ExternalToolItemVM, ExternalToolKind, ExternalToolSession, ExternalToolsSummaryVM } from "./types.js";
+import type { ExternalToolConfidence, ExternalToolItemVM, ExternalToolKind, ExternalToolSession, ExternalToolsSummaryVM } from "@tachyon/shared/externalTools/types.js";
 
 export const EXTERNAL_TOOL_STALE_MS = 45_000;
 const CONFIDENCE_RANK: Record<ExternalToolConfidence, number> = { weak: 0, medium: 1, strong: 2 };

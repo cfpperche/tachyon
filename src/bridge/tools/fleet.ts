@@ -3,16 +3,16 @@ import { z } from "zod";
 import { cancelSavedAgentProposal, readLiveSavedAgentProposalQueue, recordSavedAgentProposal } from "../../agents/savedAgentProposalStore.js";
 import { cancelSavedAgentRemovalProposal, readLiveSavedAgentRemovalProposalQueue, recordSavedAgentRemovalProposal } from "../../agents/savedAgentRemovalProposalStore.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../../config/agentProfileGrants.js";
-import type { AgentOwnershipRosterV1 } from "../../config/agentProfileStudio.js";
+import type { AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import { parentCwdRefusalFor } from "../spawnContract.js";
-import type { Task } from "../../tasks/types.js";
+import type { Task } from "@tachyon/shared/tasks/types.js";
 import { NO_QUOTA_CHANNEL } from "../../runtimeOps/runtimeCondition.js";
 import { validateSpawnContract, composeSpawnContractBrief, notifyParentGuidance, noInteractivePromptGuidance, identityLine, idleSpawnGuidance, normalizeField } from "../spawnContract.js";
 import type { SpawnContract } from "../spawnContract.js";
 import { decideSpawnTaskClaim } from "../spawnTaskClaim.js";
 import type { SpawnTaskClaimDecision } from "../spawnTaskClaim.js";
 import { collectAgentTouchedFiles } from "../../worktree/agentTouchedFiles.js";
-import { admitAgentRuntimeCommand, SUPPORTED_AGENT_RUNTIME_NAMES } from "../../agents/agentRuntimeAdmission.js";
+import { admitAgentRuntimeCommand, SUPPORTED_AGENT_RUNTIME_NAMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import { type BridgeDeps, AGENT_NAME, TASK_ID, dismissOwnedWorktree, dismissReceipt, emitTaskNotification, fail, lifecycleScopeGuard, managedEntry, ok, outputCapabilities, releaseSpawnClaim, resolveDeclaredActor, taskNotificationActor } from "./shared.js";
 
 export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {

@@ -6,7 +6,7 @@
 
 import type { BoardVM } from "../../../src/webview/board/messages";
 import type { BoardSnapshot } from "../../../src/tasks/boardSnapshot";
-import type { Task, TaskView } from "../../../src/tasks/types";
+import type { Task, TaskView } from "@tachyon/shared/tasks/types";
 import type { ValidationSummary } from "../../../src/validations/ValidationStore";
 import type { ValidationCandidate } from "../../../src/validations/types";
 import type { Fixture } from "../routes";

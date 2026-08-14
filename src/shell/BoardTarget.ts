@@ -4,7 +4,7 @@ import type { NoticeDeliveryResult } from "../bridge/tools.js";
 import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 import { buildBoardSnapshot, type BoardSnapshot } from "../tasks/boardSnapshot.js";
 import type { ReorderLaneInput, TaskStore } from "../tasks/TaskStore.js";
-import type { TaskPriority, TaskStatus } from "../tasks/types.js";
+import type { TaskPriority, TaskStatus } from "@tachyon/shared/tasks/types.js";
 import { restoreBoardSnapshot } from "../runtime-api/boardProjection.js";
 import type { BoardTaskPatchV1 } from "../runtime-api/boardCommands.js";
 import { EDITOR_HUMAN_ACTOR, type Validation, type ValidationCloseInput, type ValidationUpdateExpect } from "../validations/types.js";
@@ -12,7 +12,7 @@ import { wakeValidationClosedAuthors, type ValidationCloseLiveEntry } from "../v
 import { ValidationStore } from "../validations/ValidationStore.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
-import { isAgentRow } from "../sidebar/types.js";
+import { isAgentRow } from "@tachyon/shared/sidebar/types.js";
 
 export interface BoardAgentRow {
   name: string;

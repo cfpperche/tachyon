@@ -10,14 +10,14 @@ import {
   parseLaunchCommand,
   RuntimeLaunchPreflightError,
   RuntimeLaunchPreflightRegistry,
-} from "../../src/runtime/launchPreflight.js";
+} from "@tachyon/shared/runtime/launchPreflight.js";
 import {
   RUNTIME_AUTH_PREFLIGHT,
   RUNTIME_AUTH_PROFILES,
   authRequiredFromPreflight,
   classifyAuthRequired,
   describeAuthRequired,
-} from "../../src/runtime/authRequired.js";
+} from "@tachyon/shared/runtime/authRequired.js";
 
 /**
  * SDD 477 / `t-0338fc` — OpenCode is the runtime that fails authentication invisibly: with no

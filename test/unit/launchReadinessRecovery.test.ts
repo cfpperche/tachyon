@@ -5,7 +5,7 @@ import {
   matchCodexBootstrapInput,
 } from "../../src/runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness } from "../../src/runtime/launchReadiness.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("CodexLaunchReadiness", () => {
   it("t-914be3: ignores replayed startup refusals when a live composer is in the tail", () => {

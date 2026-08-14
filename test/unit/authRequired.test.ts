@@ -6,7 +6,7 @@ import {
   RUNTIME_AUTH_PROFILES,
   classifyAuthRequired,
   describeAuthRequired,
-} from "../../src/runtime/authRequired.js";
+} from "@tachyon/shared/runtime/authRequired.js";
 
 /**
  * SDD 477 / t-16cd93 — every string below is verbatim from driving that CLI against an isolated,

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ExternalToolInput } from "./registry.js";
-import type { ExternalToolKind } from "./types.js";
+import type { ExternalToolKind } from "@tachyon/shared/externalTools/types.js";
 
 export interface ProcEntry {
   pid: number;

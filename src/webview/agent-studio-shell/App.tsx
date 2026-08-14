@@ -51,20 +51,20 @@ import {
 } from "./messages";
 import { RuntimeLogo } from "./runtimeLogos";
 import { ForgetPlanView } from "./ForgetPlanView";
-import type { AgentForgetPlanResultV1 } from "../../config/agentForgetPlan";
+import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan";
 import type {
   AgentStudioEntity,
   AgentStudioFields,
   AgentStudioHostMessage,
   AgentStudioPatch,
 } from "./types";
-import type { AgentOwnershipViewV1 } from "../../config/agentProfileStudio";
+import type { AgentOwnershipViewV1 } from "@tachyon/shared/config/agentProfileStudio";
 import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates";
 // Node-free by construction — same reason domain.ts may import it into this browser bundle.
-import { ATTESTED_RUNTIMES } from "../../runtime/attestedRuntimes";
+import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes";
 // Node-free for the same reason: these are the limits the host writer enforces at the door, shared
 // so the form cannot accept text the transaction would refuse.
-import { persistentInstructionsRefusal } from "../../config/agentInstructionsDocument";
+import { persistentInstructionsRefusal } from "@tachyon/shared/config/agentInstructionsDocument";
 
 /**
  * spec 350 Phase 3 T3 — the Agent-kind studio's webview surface: quick-add chips, name,

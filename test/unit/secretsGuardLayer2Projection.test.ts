@@ -19,7 +19,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import TOML from "@iarna/toml";
 import { HarnessManager, bridgeGrokHome, harnessHome } from "../../src/harness/HarnessManager.js";
-import { adapterForRuntime } from "../../src/resume/adapters.js";
+import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 import { spawnSettingsPath, type OwnershipHookGroup } from "../../src/activity/sessionOwners.js";
 import {
   planProjectedPluginHooks,

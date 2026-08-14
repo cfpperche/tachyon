@@ -13,12 +13,12 @@ export {
   PERSISTENT_INSTRUCTIONS_FILE_NAME,
   PERSISTENT_INSTRUCTIONS_MAX_BYTES,
   PERSISTENT_INSTRUCTIONS_MAX_CHARS,
-} from "../config/agentInstructionsDocument.js";
+} from "@tachyon/shared/config/agentInstructionsDocument.js";
 import {
   PERSISTENT_INSTRUCTIONS_FILE_NAME,
   PERSISTENT_INSTRUCTIONS_MAX_BYTES,
   PERSISTENT_INSTRUCTIONS_MAX_CHARS,
-} from "../config/agentInstructionsDocument.js";
+} from "@tachyon/shared/config/agentInstructionsDocument.js";
 
 export class PersistentInstructionsError extends Error {
   constructor(readonly code: "instructions/invalid" | "instructions/unauthorized" | "instructions/cas" | "instructions/unsafe" | "instructions/missing", message: string) {

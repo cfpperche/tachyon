@@ -5,7 +5,7 @@ import {
   GROK_ALWAYS_APPROVE_AUTHORIZATION,
   type GrokScalarNativeConfigFamily,
   type ResolvedAgentNativeConfigProjection,
-} from "./agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 
 /**

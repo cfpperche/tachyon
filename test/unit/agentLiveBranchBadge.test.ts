@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { CARD_CATALOG, DEFAULT_CARD_TEMPLATE } from "../../src/sidebar/cardTemplate.js";
+import { CARD_CATALOG, DEFAULT_CARD_TEMPLATE } from "@tachyon/shared/sidebar/cardTemplate.js";
 
 /** spec 384 — structural guarantees for the live branch badge (order + styles + mapping surface). */
 const appTsx = readFileSync(path.join(__dirname, "../../src/webview/sidebar/App.tsx"), "utf8");

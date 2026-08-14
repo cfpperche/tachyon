@@ -4,7 +4,7 @@ import path from "node:path";
 import { parse } from "@iarna/toml";
 import { asAgent, type AgentDef } from "../config/loadConfig.js";
 import { codexNativeConfigRevision, type CodexEditableSettingKey } from "../config/codexNativeConfigProjection.js";
-import { binaryOf } from "../resume/adapters.js";
+import { binaryOf } from "@tachyon/shared/resume/adapters.js";
 import type {
   RuntimeConfigDocumentInventory,
   RuntimeConfigRuntimeInventory,

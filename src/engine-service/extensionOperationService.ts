@@ -1,18 +1,18 @@
 import fs from "node:fs";
 import net from "node:net";
 import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
-import { createProfileFromStudioMutation } from "../config/agentProfileStudio.js";
+import { createProfileFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
-import { isAgentProfileRefusal } from "../config/agentProfileRefusal.js";
-import type { AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
+import { isAgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
+import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan.js";
 import { executeWait, type BridgeDeps } from "../bridge/tools.js";
 import { APPROVAL_CHANNEL_VSCODE_COMMAND, resolveApproval } from "../bridge/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
-import { projectAgentProfileStudioSnapshot } from "../config/agentProfileStudio.js";
+import { projectAgentProfileStudioSnapshot } from "@tachyon/shared/config/agentProfileStudio.js";
 import {
   deleteCommand,
   deleteRunbook,
@@ -24,7 +24,7 @@ import {
 import { isResumable } from "../resume/SessionLedger.js";
 import { PromptStore } from "../prompts/PromptStore.js";
 import { injectTargets, submitRefuseReason } from "../prompts/injectFlow.js";
-import { composerProfileFor } from "../runtime/composerRegion.js";
+import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 import {
   isJsonValue,
   scheduleDefFromExtensionCommand,

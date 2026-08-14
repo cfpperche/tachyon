@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agentAncestorNames, agentGroupParent, agentHierarchyRows, agentIsNested } from "../../src/webview/sidebar/grouping";
 import { groupByParent, sortRows } from "../../src/sidebar/sortRows";
-import type { AgentVM } from "../../src/sidebar/types";
+import type { AgentVM } from "@tachyon/shared/sidebar/types";
 
 const agent = (name: string, extra: Partial<AgentVM> = {}): AgentVM => ({ name, status: "running", kind: "agent", ...extra });
 

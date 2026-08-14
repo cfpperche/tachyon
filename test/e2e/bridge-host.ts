@@ -11,7 +11,7 @@ import { parseConfig } from "../../src/config/loadConfig.js";
 import { PinStore } from "../../src/pins/PinStore.js";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { AttentionMonitor } from "../../src/attention/AttentionMonitor.js";
+import { AttentionMonitor } from "@tachyon/shared/attention/AttentionMonitor.js";
 import { LifecycleMonitor } from "../../src/agents/LifecycleMonitor.js";
 import { Waiters } from "../../src/bridge/Waiters.js";
 import { ControlModeClient } from "../../src/tmux/ControlModeClient.js";

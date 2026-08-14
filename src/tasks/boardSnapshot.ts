@@ -1,6 +1,6 @@
-import { nextTask } from "./nextTask.js";
+import { nextTask } from "@tachyon/shared/tasks/nextTask.js";
 import { allowedTransitions, type TaskStore } from "./TaskStore.js";
-import type { NextTaskResult, Task, TaskDerived, TaskStatus, TaskView } from "./types.js";
+import type { NextTaskResult, Task, TaskDerived, TaskStatus, TaskView } from "@tachyon/shared/tasks/types.js";
 import { discoverValidationCandidates } from "../validations/discovery.js";
 import { validationSummary, type ValidationSummary, type ValidationStore } from "../validations/ValidationStore.js";
 import type { ValidationCandidate } from "../validations/types.js";

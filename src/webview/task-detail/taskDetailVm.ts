@@ -10,7 +10,7 @@
  */
 import type { TaskDetailProjectionV1 } from "../../runtime-api/taskDetailProjection.js";
 import type { WorkspaceTaskDetailTarget } from "../../shell/TaskDetailTarget.js";
-import { assembleUntrustedSrcdoc } from "../shared/untrustedSrcdoc.js";
+import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 import type { TaskDetailVM } from "./messages.js";
 
 /** Resolves `panel.webview.asWebviewUri` — injected so this module stays vscode-free. */

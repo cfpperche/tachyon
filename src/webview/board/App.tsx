@@ -3,10 +3,10 @@ import { Button, Icon, Input, IconButton, PageChrome, Select, useToastOptional }
 import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
-import { compareTasksByPriorityRank } from "../../tasks/nextTask";
+import { compareTasksByPriorityRank } from "@tachyon/shared/tasks/nextTask";
 import type { BoardVM } from "./messages";
 import { applyAwaitingHumanFilter, assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, resolveReorder, isStaleError, shouldShowAwaitingFilterButton, type DragSession } from "./interactions";
-import type { TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
+import type { TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "@tachyon/shared/tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
 // spec 335 — Board. The webview NEVER computes affordances/ordering itself: every column, card

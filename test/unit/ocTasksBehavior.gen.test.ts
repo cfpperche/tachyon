@@ -4,7 +4,7 @@ import os from "node:os";
 import nodePath from "node:path";
 import { TaskStore, taskSummary } from "../../src/tasks/TaskStore.js";
 import { orderTaskViewsForListing, LISTING_STATUS_ORDER } from "../../src/tasks/listOrder.js";
-import { TASK_STATUSES, type TaskStatus, type TaskView } from "../../src/tasks/types.js";
+import { TASK_STATUSES, type TaskStatus, type TaskView } from "@tachyon/shared/tasks/types.js";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
 
 /** A fake MCP server that just captures tool handlers (mirrors test/unit/probeBridge.test.ts). */

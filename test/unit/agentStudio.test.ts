@@ -18,7 +18,7 @@ import {
   type FormState,
 } from "../../src/webview/formLogic.js";
 import { detectInstalledClis } from "../../src/webview/cliDetect.js";
-import { isAttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
+import { isAttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 import { composeCommand, shellQuote, instructionsDeliverable, parseConfig } from "../../src/config/loadConfig.js";
 import { upsertAgent } from "../../src/config/YamlConfigEditor.js";
 

@@ -4,7 +4,7 @@ import { MarkdownView } from "../activity/markdown";
 import { assigneePatch, priorityPatch } from "../board/interactions";
 import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, type DetailField } from "./interactions";
 import type { TaskDetailVM } from "./messages";
-import type { TaskPriority, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
+import type { TaskPriority, TaskUpdateExpect, TaskUpdateInput } from "@tachyon/shared/tasks/types";
 import { PrototypePreview } from "../shared/PrototypePreview";
 import { refDisplay } from "./refDisplay";
 

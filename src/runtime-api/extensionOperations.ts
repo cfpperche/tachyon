@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { MAX_IDLE_NOTIFY_MINUTES, type ScheduleDef } from "../config/loadConfig.js";
 import { isStagedPayloadRefV1, type StagedPayloadRefV1 } from "./stagedPayload.js";
-import { agentProfileStudioLifecycleMutationSchemaV1, agentProfileStudioMutationSchemaV1 } from "../config/agentProfileStudio.js";
+import { agentProfileStudioLifecycleMutationSchemaV1, agentProfileStudioMutationSchemaV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 
 const name = z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/);

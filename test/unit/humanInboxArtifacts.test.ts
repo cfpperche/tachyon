@@ -4,7 +4,7 @@ import {
   summarizeInboxArtifacts,
   type InboxArtifactContent,
 } from "../../src/humanInbox/artifacts.js";
-import type { ArtifactRef } from "../../src/tasks/types.js";
+import type { ArtifactRef } from "@tachyon/shared/tasks/types.js";
 
 /**
  * Human Inbox — the artifact states the detail route has to survive (t-e76acc).

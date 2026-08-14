@@ -13,7 +13,7 @@ import { CommandStudioAdapter } from "../../src/webview/CommandStudioAdapter.js"
 import { blankCommandFields } from "../../src/webview/command-studio-shell/domain.js";
 import type { StudioDeps } from "../../src/webview/studioSubmit.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
-import type { AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
+import type { AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 
 const roots: string[] = [];
 

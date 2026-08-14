@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { toAgentVM } from "../../src/sidebar/agentModel.js";
-import { DEFAULT_CARD_TEMPLATE } from "../../src/sidebar/cardTemplate.js";
+import { DEFAULT_CARD_TEMPLATE } from "@tachyon/shared/sidebar/cardTemplate.js";
 
 const appTsx = readFileSync(path.join(__dirname, "../../src/webview/sidebar/App.tsx"), "utf8");
 const css = readFileSync(path.join(__dirname, "../../src/webview/sidebar/sidebar.css"), "utf8");

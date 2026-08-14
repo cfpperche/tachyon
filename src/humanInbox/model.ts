@@ -29,7 +29,7 @@
  */
 import type { ApprovalViewItem } from "../webview/approval/viewModel.js";
 import type { ValidationViewItem } from "../webview/validations/viewModel.js";
-import type { ArtifactRef } from "../tasks/types.js";
+import type { ArtifactRef } from "@tachyon/shared/tasks/types.js";
 import type { SavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
 import type { SavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview.js";
 import type { ScheduleProposal } from "../schedule/ProposalStore.js";

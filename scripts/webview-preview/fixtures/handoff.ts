@@ -4,7 +4,7 @@
  */
 
 import type { HandoffViewModel } from "../../../src/webview/handoff/handoffViewModel";
-import { HANDOFF_DISTILL_PROFILES } from "../../../src/handoff/distill";
+import { HANDOFF_DISTILL_PROFILES } from "@tachyon/shared/handoff/distill";
 import type { Fixture } from "../routes";
 
 const populated: HandoffViewModel = {

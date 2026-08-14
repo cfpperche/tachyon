@@ -21,7 +21,7 @@ import {
   CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
 } from "../../src/config/agentProfileProjection.js";
-import { carryNativeConfigSources } from "../../src/config/agentNativeConfigPolicy.js";
+import { carryNativeConfigSources } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";

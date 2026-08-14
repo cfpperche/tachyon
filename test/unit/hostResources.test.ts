@@ -6,8 +6,8 @@ import {
   recommendVitestMaxWorkers,
   type HostMemorySnapshot,
 } from "../../src/host/hostResources.js";
-import hostResourceSizing from "../../shared/host-resource-sizing.cjs";
-import hostResourceCostInputs from "../../shared/host-resource-cost-inputs.cjs";
+import hostResourceSizing from "@tachyon/shared/host-resource-sizing.cjs";
+import hostResourceCostInputs from "@tachyon/shared/host-resource-cost-inputs.cjs";
 
 const SAMPLE = `
 MemTotal:       16384000 kB

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
-import { assembleUntrustedSrcdoc } from "../../src/webview/shared/untrustedSrcdoc";
+import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc";
 
 describe("task prototype static-only frame", () => {
   let browser: Browser;

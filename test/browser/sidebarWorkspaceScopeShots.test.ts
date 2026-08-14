@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, type FleetVM, type TabId } from "../../src/sidebar/types.js";
+import { SAMPLE, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 // t-5f2b5b — the tile count below is DERIVED from the launcher catalog rather than written out. It was
 // the literal `12` and went red when the Fleet tile was deleted, which is a stale number reporting a
 // deliberate change as a defect. The claim this test owns is "Control keeps its launcher", not how many

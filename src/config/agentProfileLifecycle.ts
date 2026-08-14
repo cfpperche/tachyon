@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import type { AgentProfileLifecycleSnapshot } from "@tachyon/shared/config/agentProfileLifecycle.js";
+export type { AgentProfileLifecycleSnapshot } from "@tachyon/shared/config/agentProfileLifecycle.js";
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -22,18 +24,18 @@ import {
   removeAgentProfileIfExact,
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
-import { AgentProfileRefusal } from "./agentProfileRefusal.js";
+import { AgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
 import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile, verifiedDescriptorPath, type CanonicalAgentProfileSource } from "./agentProfileReader.js";
 import {
   WORKSPACE_SETUP_PATH,
   WORKSPACE_SETUP_REFERENCE_ID,
   parseWorkspaceCommandLines,
-} from "./agentWorkspaceCommands.js";
+} from "@tachyon/shared/config/agentWorkspaceCommands.js";
 import {
   PERSISTENT_INSTRUCTIONS_FILE_NAME,
   PERSISTENT_INSTRUCTIONS_REFERENCE_ID,
   persistentInstructionsFormValue,
-} from "./agentInstructionsDocument.js";
+} from "@tachyon/shared/config/agentInstructionsDocument.js";
 import { isSupersededRuntimeInspector, profileRuntimeInspectorFor } from "./agentProfileProjection.js";
 
 const SCHEMA_VERSION = 1 as const;
@@ -156,43 +158,7 @@ export interface AgentProfileLifecycleJournal {
   degradedReason?: string;
 }
 
-export interface AgentProfileLifecycleSnapshot {
-  schemaVersion: 1;
-  canonicalizationVersion: typeof CANONICALIZATION_VERSION;
-  agentName: string;
-  agentId: string;
-  revision: string;
-  profile: AgentProfileV1;
-  /**
-   * t-afc86e — the BYTES behind the Studio-owned workspace-command references, digest-checked while
-   * the profile directory was open.
-   *
-   * This is not convenience data, it is what makes the fields editable at all. `profile` carries only
-   * the reference IDS, so a form built from the snapshot alone would render an empty setup box for
-   * an agent that has setup commands — and the next save would write that emptiness back.
-   *
-   * Absent when the profile declares no such reference, or when it names one this Studio does not
-   * own (`bindings.foreignWorkspaceCommands` on the projected snapshot).
-   */
-  workspaceCommands?: { setup?: string[] };
-  /**
-   * t-d48775 — the persistent-instructions document's text, read the same way and for the same
-   * reason: `profile.prompt.instructions` is a reference ID, so a form built from `profile` alone
-   * would render an empty box for an agent that HAS instructions, and the next save would write
-   * that emptiness over them.
-   *
-   * Absent when the profile declares no binding, or one this Studio does not own
-   * (`bindings.foreignPersistentInstructions` on the projected snapshot).
-   */
-  persistentInstructions?: string;
-  provenance: {
-    canonical: { scope: "profile"; writable: true; sha256: string };
-    authority: { scope: "host"; writable: false; revision: string; grants: number; /** Content-free IDs of grants eligible for Studio selection. */ capabilityReferenceIds?: string[] };
-    projection: { scope: "runtime"; writable: false; active: boolean };
-  };
-}
-
-export type AgentProfileCanonicalPatch = Partial<Omit<AgentProfileV1, "schemaVersion" | "agentId">>;
+ export type AgentProfileCanonicalPatch = Partial<Omit<AgentProfileV1, "schemaVersion" | "agentId">>;
 
 export interface CommitAgentProfileLifecycleInput {
   workspaceRoot: string;

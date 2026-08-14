@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { findComposerRegion, stripAnsi } from "../../src/runtime/composerRegion.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { findComposerRegion, stripAnsi } from "@tachyon/shared/runtime/composerRegion.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * t-aafa10 — the Grok composer, measured instead of assumed.

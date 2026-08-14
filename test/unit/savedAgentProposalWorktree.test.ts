@@ -9,7 +9,7 @@ import {
   createProfileFromStudioMutation,
   projectAgentProfileStudioSnapshot,
   DEFAULT_NEW_AGENT_WORKTREE_ENABLED,
-} from "../../src/config/agentProfileStudio.js";
+} from "@tachyon/shared/config/agentProfileStudio.js";
 import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
 import { canonicalAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
 import { branchFor, resolveBase } from "../../src/worktree/WorktreeManager.js";

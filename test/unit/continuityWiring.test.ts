@@ -8,7 +8,7 @@ import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/Eng
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
-import type { AttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
+import type { AttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 import { agentLogId } from "../../src/activity/logStore.js";
 
 /**

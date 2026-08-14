@@ -17,8 +17,8 @@ import {
   agentProfileTransactionsRoot,
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
-import { AgentProfileRefusal } from "./agentProfileRefusal.js";
-import { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "./agentForgetPlan.js";
+import { AgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
+import { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "@tachyon/shared/config/agentForgetPlan.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
 
 const SCHEMA_VERSION = 1 as const;
@@ -95,7 +95,7 @@ export interface AgentProfileForgetJournal {
  * dependency is what keeps ONE list: the declaration lives in the node-free module and the
  * transaction imports its own contract, rather than a second copy being typed out for the panel.
  */
-export { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "./agentForgetPlan.js";
+export { AGENT_PROFILE_FORGET_RETAINED_BINDINGS } from "@tachyon/shared/config/agentForgetPlan.js";
 
 export interface CommitAgentProfileForgetInput {
   workspaceRoot: string;

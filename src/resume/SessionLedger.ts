@@ -1,8 +1,10 @@
 import fs from "node:fs";
+import type { AgentInstancePolicy } from "@tachyon/shared/resume/agentInstance.js";
+export type { AgentInstanceLifetime, AgentInstancePolicy, AgentInstanceResumePolicy } from "@tachyon/shared/resume/agentInstance.js";
 import path from "node:path";
 import crypto from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { adapterForRuntime, type ResumeRuntime } from "./adapters.js";
+import { adapterForRuntime, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 import { type EntryKind } from "../config/loadConfig.js";
 import type { WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { appendCapped, EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence, type Severity } from "../worktree/evidence.js";
@@ -116,28 +118,6 @@ export interface BridgeClientBinding {
  * The second axis is RENAMED rather than left alone: it used to be called `lifetime`, and leaving two
  * fields one rename apart is how a reader ends up configuring the one they did not mean.
  */
-export type AgentInstanceLifetime = "saved" | "temporary";
-export type AgentInstanceResumePolicy = "restartable" | "collected";
-
-export interface AgentInstancePolicy {
-  lifetime: AgentInstanceLifetime;
-  resumePolicy: AgentInstanceResumePolicy;
-  /**
-   * A declared CAPABILITY of this instance: were profile-backed lifecycle hooks injected at spawn?
-   * Recorded, never derived from `identity`/`lifetime` — that derivation happens to hold today and
-   * would still be a derivation, which is the habit this whole SDD exists to break.
-   *
-   * It earns its own field because the human's promotion ruling (`j-20febbd260be`) makes the two
-   * genuinely separable in time: promotion creates a Saved Profile while the RUNNING instance keeps
-   * the hooks it launched with. The instance is Temporary-with-a-Profile-waiting, and only the next
-   * execution is born Saved. A reader asking "show me the hook health" must read what this instance
-   * actually got, not what its identity would imply.
-   *
-   * Optional: rows written before this field simply do not say, and nothing invents an answer.
-   */
-  lifecycleHooks?: boolean;
-}
-
 export interface SessionRecord {
   /** present for every Temporary instance; absent for a declared agent's resume-only row. */
   def?: SessionDef;

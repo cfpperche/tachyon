@@ -1,6 +1,6 @@
 import path from "node:path";
 import { isBlobRef, RichDocAttachmentStore, safeDisplayComponent } from "../richDoc/AttachmentStore.js";
-import { TASK_ID_RE } from "./types.js";
+import { TASK_ID_RE } from "@tachyon/shared/tasks/types.js";
 
 export {
   ALLOWED_IMAGE_TYPES as TASK_ALLOWED_IMAGE_TYPES,
@@ -9,7 +9,7 @@ export {
   EXCALIDRAW_SCENE_MEDIA_TYPE as TASK_EXCALIDRAW_SCENE_MEDIA_TYPE,
 } from "../richDoc/AttachmentStore.js";
 export type { PutExcalidrawInput as PutTaskExcalidrawInput, PutImageInput as PutTaskImageInput } from "../richDoc/AttachmentStore.js";
-export type { RichDocAttachment as TaskAttachment, ResolvedRichDocAttachment as ResolvedTaskAttachment } from "../richDoc/types.js";
+export type { RichDocAttachment as TaskAttachment, ResolvedRichDocAttachment as ResolvedTaskAttachment } from "@tachyon/shared/richDoc/types.js";
 
 /**
  * spec 339 (T2) — the task-entity namespace over the shared rich-doc blob/scene mechanics. Every instance

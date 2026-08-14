@@ -26,8 +26,8 @@ import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import dependencyLockfileValidity from "../shared/dependency-lockfile-validity.cjs";
-import validityContract from "../shared/verify-record-validity.cjs";
+import dependencyLockfileValidity from "@tachyon/shared/dependency-lockfile-validity.cjs";
+import validityContract from "@tachyon/shared/verify-record-validity.cjs";
 
 const { fingerprintLockfiles, lockfileDivergenceReason } = dependencyLockfileValidity;
 const { DEFAULT_MAX_RECORD_AGE_MS, verificationRecordValidity } = validityContract;

@@ -5,7 +5,7 @@ import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../src/webview/human-inbox/viewModel.js";
-import { assembleUntrustedSrcdoc } from "../../src/webview/shared/untrustedSrcdoc.js";
+import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 import type { ApprovalViewItem } from "../../src/webview/approval/viewModel.js";
 import type { ValidationViewItem } from "../../src/webview/validations/viewModel.js";
 import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview.js";
