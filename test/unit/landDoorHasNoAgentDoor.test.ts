@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { nonEmpty } from "../helpers/repositorySourceScan.js";
+import { workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 const SRC = path.join(__dirname, "../../src");
+const ENGINE_SRC = path.join(workspaceRoot("@tachyon/engine"), "src");
+const PRODUCT_SOURCE_ROOTS = [
+  SRC,
+  ENGINE_SRC,
+  path.join(workspaceRoot("@tachyon/shared"), "src"),
+  path.join(workspaceRoot("@tachyon/webview-ui"), "src"),
+];
 
 /**
  * SDD 498 (t-7cb971) — the governed land door is reachable from the INTERFACE and from nowhere else.
@@ -21,7 +30,7 @@ const SRC = path.join(__dirname, "../../src");
  */
 
 function sourceFiles(dir: string): string[] {
-  if (!fs.existsSync(dir)) return [];
+  if (!fs.existsSync(dir)) throw new Error(`land-door source root is missing: ${dir}`);
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) return sourceFiles(full);
@@ -48,6 +57,7 @@ function argumentArrays(source: string): string[][] {
  * registered there would be reachable ONLY by agents and by no human at all.
  */
 const AGENT_REACHABLE = ["bridge", "host-action", "agent-vscode"];
+const agentReachableRoot = (dir: string): string => path.join(ENGINE_SRC, dir);
 
 const LAND_ACTION = "worktree.land";
 
@@ -55,7 +65,7 @@ describe("the land door has no agent-facing door", () => {
   it("no agent-reachable surface names the land operation", () => {
     const offenders: string[] = [];
     for (const dir of AGENT_REACHABLE) {
-      for (const file of sourceFiles(path.join(SRC, dir))) {
+      for (const file of nonEmpty(sourceFiles(agentReachableRoot(dir)), `land-door ${dir} source scan`)) {
         if (fs.readFileSync(file, "utf8").includes(LAND_ACTION)) {
           offenders.push(path.relative(SRC, file));
         }
@@ -70,7 +80,7 @@ describe("the land door has no agent-facing door", () => {
    * registry at all. A future tool that wanted to proxy one would have to import this module first.
    */
   it("no Bridge tool can dispatch extension operations at all", () => {
-    const offenders = sourceFiles(path.join(SRC, "bridge"))
+    const offenders = nonEmpty(sourceFiles(path.join(ENGINE_SRC, "bridge")), "land-door bridge source scan")
       .filter((file) => /runtime-api\/extensionOperations/.test(fs.readFileSync(file, "utf8")))
       .map((file) => path.relative(SRC, file));
     expect(offenders).toEqual([]);
@@ -90,7 +100,7 @@ describe("the land door has no agent-facing door", () => {
   it("only landAct.ts passes the mutating verb to git", () => {
     const mutating = new Set(["merge", "--ff-only"]);
     const offenders: string[] = [];
-    for (const file of sourceFiles(SRC)) {
+    for (const file of nonEmpty(PRODUCT_SOURCE_ROOTS.flatMap(sourceFiles), "land-door repository source scan")) {
       const relative = path.relative(SRC, file);
       if (relative === path.join("worktree", "landAct.ts")) continue;
       for (const args of argumentArrays(fs.readFileSync(file, "utf8"))) {

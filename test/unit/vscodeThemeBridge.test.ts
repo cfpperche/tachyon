@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseRootDeclarations, resolveChain } from "./support/cssVarResolver.js";
+import { nonEmpty } from "../helpers/repositorySourceScan.js";
 
 // spec 342 T2 — the token-bridge completeness check. Two layers:
 //  1. the CANONICAL set spec.md enumerates (what shadcn's generated config emits) must be defined in
@@ -70,10 +71,10 @@ describe("vscode-theme.css token bridge", () => {
   });
 
   it("has no unbridged variable reference in vendored/kit source", () => {
-    const files = [
+    const files = nonEmpty([
       ...walk(path.join(ROOT, "packages/webview-ui/src/webview/shared/ui/vendor"), [".css", ".ts", ".tsx"]),
       ...walk(path.join(ROOT, "packages/webview-ui/src/webview/shared/ui/kit"), [".css", ".ts", ".tsx"]),
-    ];
+    ], "VS Code theme bridge source scan");
     const unbridged = new Set<string>();
     const varRe = /var\(\s*--([a-z0-9-]+)/gi;
     for (const file of files) {

@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { cx } from "../../packages/webview-ui/src/webview/shared/ui/cx.js";
+import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
+
+const WEBVIEW_ROOT = `${workspaceRoot("@tachyon/webview-ui")}/src/webview`;
 
 // spec 282 — the component-kit ENFORCEMENT guard (the product, not a nice-to-have): a MIGRATED view's *.tsx may not
 // hand-apply the design-system component classes the kit owns (ds-btn*/ds-tab/ds-chip/chip) — use <Button>/<Tabs>/
@@ -46,9 +49,9 @@ describe("component-kit enforcement guard (spec 282)", () => {
   it("no migrated view hand-applies a kit-owned class (ds-btn/ds-tab/ds-chip/chip) — use the component", () => {
     const violations: string[] = [];
     for (const view of MIGRATED_VIEWS) {
-      const dir = `packages/webview-ui/src/webview/${view}`;
+      const dir = `${WEBVIEW_ROOT}/${view}`;
       expect(existsSync(dir), `migrated view ${view} missing`).toBe(true);
-      for (const f of readdirSync(dir).filter((x) => x.endsWith(".tsx"))) {
+      for (const f of nonEmpty(readdirSync(dir).filter((x) => /\.tsx?$/.test(x)), `${view} component-kit scan`)) {
         for (const lit of classLiterals(readFileSync(`${dir}/${f}`, "utf8"))) {
           if (BANNED.test(lit)) violations.push(`${view}/${f}: class literal "${lit.slice(0, 40)}" — use the kit component`);
         }

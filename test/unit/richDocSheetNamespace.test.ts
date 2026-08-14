@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 /**
  * `t-61189b` — `rich-doc.css` may not declare a class selector that can match another surface.
@@ -19,7 +20,8 @@ import { describe, expect, it } from "vitest";
  */
 
 const repoRoot = process.cwd();
-const SHEET = "packages/webview-ui/src/webview/rich-doc/rich-doc.css";
+const webviewRoot = path.join(workspaceRoot("@tachyon/webview-ui"), "src", "webview");
+const SHEET = path.relative(repoRoot, path.join(webviewRoot, "rich-doc", "rich-doc.css")).split(path.sep).join("/");
 const css = fs.readFileSync(path.join(repoRoot, ...SHEET.split("/")), "utf8");
 
 /** Prefixes this sheet owns. `rd-` is the namespace; the other two are tiptap's own element classes. */
@@ -90,9 +92,12 @@ describe("t-61189b — rich-doc.css cannot reach outside its own surface", () =>
 
     const offences: string[] = [];
     for (const owner of owners) {
-      const dir = path.join(repoRoot, "src", "webview", owner);
-      for (const entry of fs.readdirSync(dir)) {
-        if (!entry.endsWith(".tsx") && !entry.endsWith(".ts")) continue;
+      const dir = path.join(webviewRoot, owner);
+      const entries = nonEmpty(
+        fs.readdirSync(dir).filter((entry) => entry.endsWith(".tsx") || entry.endsWith(".ts")),
+        `${owner} TypeScript owner scan`,
+      );
+      for (const entry of entries) {
         const source = fs.readFileSync(path.join(dir, entry), "utf8");
         // Literal `class="…"` AND every string inside a `class={…}` expression. Reading only the
         // first string of an expression is what let the original miss through: in
@@ -113,7 +118,7 @@ describe("t-61189b — rich-doc.css cannot reach outside its own surface", () =>
   it("leaves Task Detail with no local defense against this sheet", () => {
     // The mitigation from t-5564b4 must not outlive its cause: a defense nobody can trace back to a
     // live bug is the thing that makes the next reader afraid to touch the CSS.
-    const taskDetail = fs.readFileSync(path.join(repoRoot, "packages", "webview-ui", "src", "webview", "task-detail", "task-detail.css"), "utf8");
+    const taskDetail = fs.readFileSync(path.join(webviewRoot, "task-detail", "task-detail.css"), "utf8");
     expect(taskDetail).not.toContain(".ds-badge.err");
   });
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 /**
  * i18n drift guards: every l10n.t() source key must have a pt-BR translation,
@@ -11,11 +12,13 @@ const root = path.resolve(__dirname, "../..");
 
 function sourceKeys(): Set<string> {
   const keys = new Set<string>();
+  let examined = 0;
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(p);
       else if (entry.name.endsWith(".ts")) {
+        examined += 1;
         const text = fs.readFileSync(p, "utf8");
         for (const m of text.matchAll(/l10n\.t\(\s*"((?:[^"\\]|\\.)*)"/g)) {
           keys.add(m[1].replace(/\\"/g, '"').replace(/\\\\/g, "\\"));
@@ -23,7 +26,13 @@ function sourceKeys(): Set<string> {
       }
     }
   };
-  walk(path.join(root, "src"));
+  for (const sourceRoot of [
+    path.join(root, "src"),
+    path.join(workspaceRoot("@tachyon/engine"), "src"),
+    path.join(workspaceRoot("@tachyon/shared"), "src"),
+    path.join(workspaceRoot("@tachyon/webview-ui"), "src"),
+  ]) walk(sourceRoot);
+  nonEmpty(Array.from({ length: examined }), "i18n TypeScript source scan");
   return keys;
 }
 

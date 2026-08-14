@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
+import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 /**
  * A module the bundler cannot SEE is a module the VSIX does not ship.
@@ -23,6 +24,12 @@ import path from "node:path";
  */
 
 const SRC = path.resolve(__dirname, "../../src");
+const SOURCE_ROOTS = [
+  SRC,
+  path.join(workspaceRoot("@tachyon/engine"), "src"),
+  path.join(workspaceRoot("@tachyon/shared"), "src"),
+  path.join(workspaceRoot("@tachyon/webview-ui"), "src"),
+];
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -42,7 +49,7 @@ describe("no module hides itself from the bundler (t-ws-bundle)", () => {
     const stripComments = (text: string) =>
       text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
-    const hidden = sourceFiles(SRC)
+    const hidden = nonEmpty(SOURCE_ROOTS.flatMap(sourceFiles), "runtime-import source scan")
       .map((file) => ({ file, text: stripComments(readFileSync(file, "utf8")) }))
       .filter(({ text }) => /(?:new\s+Function|Function|eval)\s*\([^)]*\bimport\s*\(/.test(text))
       .map(({ file }) => path.relative(path.resolve(SRC, ".."), file));
