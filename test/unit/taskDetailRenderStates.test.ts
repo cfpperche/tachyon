@@ -10,7 +10,7 @@ import type { TaskDetailVM } from "../../src/webview/task-detail/messages.js";
  * reachable state of the task-detail view renders nothing.* That is what moved the search above the
  * view — a blank surface cannot be a task-detail state, so the shell must never have mounted the
  * route — and a headless Dev Host then confirmed it exactly: `#root` held the SHELL's strings-less
- * `<div class="ds-empty"></div>` (pinned in the second describe below), with the detail nowhere in
+ * `<EmptyState>` (pinned in the second describe below), with the detail nowhere in
  * it. `cockpitTaskDetailShellHandshake.test.ts` holds the fix itself.
  *
  * This file fixes the PREMISE, by rendering the real `App` from `src/` through SDD 479's static

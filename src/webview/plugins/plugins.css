@@ -18,7 +18,6 @@
   max-width: none;
   margin: 0;
 }
-.ds-head { margin: 0; padding: 0; }
 /* spec 278 — Plugins view panel-specific styles, extracted from PluginsPanel.ts's inline <style> (spec 252)
    into one shared source linked by BOTH the real webview panel AND the dev preview harness (no drift).
    Shared tokens + components live in design-system.css (.ds-*); these are panel-specific deltas only. */

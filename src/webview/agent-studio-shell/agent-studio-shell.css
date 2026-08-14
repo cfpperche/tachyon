@@ -48,7 +48,6 @@
 @media (max-width: 760px) {
   .ash-native-config-row { grid-template-columns: 1fr; }
 }
-.ash-profile-notice .ds-button { margin-left: var(--ds-2); }
 .ash-identity-heading { display: flex; gap: var(--ds-3); align-items: flex-start; justify-content: space-between; }
 .ash-identity-actions { display: flex; flex-wrap: wrap; gap: var(--ds-1); }
 .ash-runtime-readiness { display: grid; gap: var(--ds-2); padding: var(--ds-2); border-left: 3px solid var(--vscode-focusBorder); background: color-mix(in srgb, var(--vscode-focusBorder) 7%, transparent); font-size: var(--ds-small); }

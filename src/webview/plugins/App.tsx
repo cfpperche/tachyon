@@ -692,17 +692,11 @@ export function App({ vm, consent, busy, dispatch }: { vm?: PluginsViewModel; co
           </div>
         )}
         {tab === "market" ? (
-          <div class="ds-empty">
-            <div class="ds-big">A curated registry is coming in v2.</div>
-            <div>For now, install any plugin by its git source above — <span class="ds-mono">github:owner/repo@ref</span>.</div>
-          </div>
+          <EmptyState message={<>A curated registry is coming in v2.<br />For now, install any plugin by its git source above — <span class="ds-mono">github:owner/repo@ref</span>.</>} />
         ) : vm.parseError ? (
           <div class="ds-banner"><Icon name="error" /> Lockfile is corrupt — list suppressed. {vm.parseError}</div>
         ) : vm.empty ? (
-          <div class="ds-empty">
-            <div class="ds-big">No plugins installed.</div>
-            <div>Install one by its git source above — <span class="ds-mono">github:owner/repo@ref</span>.</div>
-          </div>
+          <EmptyState message={<>No plugins installed.<br />Install one by its git source above — <span class="ds-mono">github:owner/repo@ref</span>.</>} />
         ) : (
           <div class="list">
             {vm.appliedError && (
@@ -711,10 +705,7 @@ export function App({ vm, consent, busy, dispatch }: { vm?: PluginsViewModel; co
             {visibleInstalled.length > 0
               ? visibleInstalled.map((p) => <Card key={p.name} p={p} dispatch={dispatch} mcpLocked={!!vm.appliedError} />)
               : (
-                <div class="ds-empty filtered-empty">
-                  <div class="ds-big">No installed plugins match.</div>
-                  <div>Clear the filter or try another search term.</div>
-                </div>
+                <EmptyState class="filtered-empty" message={<>No installed plugins match.<br />Clear the filter or try another search term.</>} />
               )}
           </div>
         )}
