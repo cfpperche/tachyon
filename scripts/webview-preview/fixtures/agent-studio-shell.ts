@@ -6,10 +6,10 @@
 
 import type { AgentStudioEntity } from "../../../src/webview/agent-studio-shell/domain";
 import { blankAgentFields, canonicalAgentFields, createAgentProfileLabels } from "../../../src/webview/agent-studio-shell/domain";
-import type { AgentProfileStudioSnapshotV1 } from "../../../src/config/agentProfileStudio";
-import type { AgentForgetPlanResultV1 } from "../../../src/config/agentForgetPlan";
+import type { AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio";
+import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan";
 import type { Fixture, Route } from "../routes";
-import { ATTESTED_RUNTIMES } from "../../../src/runtime/attestedRuntimes";
+import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes";
 
 interface AgentStudioShellFixtureVM {
   entity: AgentStudioEntity;

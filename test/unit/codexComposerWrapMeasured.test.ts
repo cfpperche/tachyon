@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { composeBoundedAgentNotice } from "../../src/bridge/notifyAgent.js";
-import { classifyComposerSubmission, composerText, isComposerOccupied } from "../../src/runtime/composerRegion.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { classifyComposerSubmission, composerText, isComposerOccupied } from "@tachyon/shared/runtime/composerRegion.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * t-7a297f — the Codex composer wraps, and the wrap used to make every submit report success.

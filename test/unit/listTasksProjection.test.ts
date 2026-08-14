@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "../../src/tasks/TaskStore.js";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import type { TaskStatus } from "../../src/tasks/types.js";
+import type { TaskStatus } from "@tachyon/shared/tasks/types.js";
 
 class FakeMcp {
   handlers = new Map<

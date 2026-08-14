@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/config/loadConfig.js";
-import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, parseCardTemplate } from "../../src/sidebar/cardTemplate.js";
+import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, parseCardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
 
 /**
  * SDD 479 phase 2 — writing a card template in `tachyon.yml`.

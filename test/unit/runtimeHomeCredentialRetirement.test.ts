@@ -12,7 +12,7 @@ import {
   listBridgeRuntimeHomes,
   measureDirUsage,
 } from "../../src/harness/HarnessManager.js";
-import { RESUME_RUNTIMES, adapterForRuntime } from "../../src/resume/adapters.js";
+import { RESUME_RUNTIMES, adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 function fixture() {

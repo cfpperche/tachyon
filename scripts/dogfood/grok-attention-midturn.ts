@@ -28,7 +28,7 @@ import os from "node:os";
 import path from "node:path";
 import { Workspace } from "../../src/workspace/Workspace.js";
 import { TmuxService, defaultExecutor } from "../../src/tmux/TmuxService.js";
-import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
+import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../../test/helpers/savedAgentFixture.js";
 
 const AGENT = "grokProbe";

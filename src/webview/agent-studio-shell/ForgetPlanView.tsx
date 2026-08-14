@@ -14,7 +14,7 @@ import type {
   AgentForgetPlanResultV1,
   AgentForgetPlanStepId,
   AgentForgetPlanV1,
-} from "../../config/agentForgetPlan";
+} from "@tachyon/shared/config/agentForgetPlan";
 
 const STEP_TITLES: Record<AgentForgetPlanStepId, string> = {
   "stop-session": "Stop the session",

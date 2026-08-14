@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { statusOf } from "../../src/sidebar/agentModel.js";
-import type { AgentStatus } from "../../src/sidebar/types.js";
+import type { AgentStatus } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * t-0d689f — a live process is not a working agent.

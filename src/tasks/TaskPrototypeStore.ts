@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { TASK_ID_RE } from "./types.js";
+import { TASK_ID_RE } from "@tachyon/shared/tasks/types.js";
 import { PROTOTYPE_HTML_POLICY_VERSION, validatePrototypeHtml } from "./prototypeHtmlPolicy.js";
 
 export const TASK_PROTOTYPE_SCHEMA_VERSION = 1;

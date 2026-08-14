@@ -1,6 +1,6 @@
-import { MAX_WORKING_STALL_MS, type AgentAttention } from "../attention/AttentionMonitor.js";
-import type { ManagedEntryInfo } from "../agents/AgentManager.js";
-import type { NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
+import { MAX_WORKING_STALL_MS, type AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
+import type { ManagedEntryInfo } from "../agents/managedEntry.js";
+import type { NoticeQueueMetadata } from "../bridge/noticeQueue.js";
 
 export const DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS = 10 * 60_000;
 

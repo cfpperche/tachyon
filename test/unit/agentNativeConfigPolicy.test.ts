@@ -3,7 +3,7 @@ import {
   previewAgentNativeConfigPolicy,
   validateAgentNativeConfigPolicy,
   type AgentNativeConfigSupportResolver,
-} from "../../src/config/agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentNativeConfigPolicyV1, AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
 
 const permissions: AgentNativeConfigPolicyV1 = {

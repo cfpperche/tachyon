@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { ActivityLogManager, sessionIdFromTranscriptPath } from "../../src/activity/ActivityLogManager.js";
 import { ActivityLog, agentLogId } from "../../src/activity/logStore.js";
 import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
-import { encodeClaudeCwd } from "../../src/resume/adapters.js";
+import { encodeClaudeCwd } from "@tachyon/shared/resume/adapters.js";
 
 const dirs: string[] = [];
 const freshDir = (): string => { const d = fs.mkdtempSync(path.join(os.tmpdir(), "alm-")); dirs.push(d); return d; };

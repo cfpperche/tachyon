@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import type { AgentProfileReferenceV1, AgentProfileV1 } from "./agentProfileSchema.js";
-import type { AgentProfileStudioEditableV1 } from "./agentProfileStudio.js";
+import type { AgentProfileStudioEditableV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import {
   PERSISTENT_INSTRUCTIONS_FILE_NAME,
   PERSISTENT_INSTRUCTIONS_REFERENCE_ID,
   persistentInstructionsRefusal,
   persistentInstructionsText,
   studioOwnsPersistentInstructions,
-} from "./agentInstructionsDocument.js";
+} from "@tachyon/shared/config/agentInstructionsDocument.js";
 
 /**
  * t-d48775 — the HOST half of authoring an agent's persistent instructions: the bytes, their digest,

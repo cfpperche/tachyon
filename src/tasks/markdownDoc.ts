@@ -1,5 +1,5 @@
 import MarkdownIt from "markdown-it";
-import type { TiptapJSON } from "../richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 
 type Token = ReturnType<MarkdownIt["parse"]>[number];
 

@@ -15,7 +15,7 @@ import {
   isExplicitCodexModelCommand,
   parseLaunchCommand,
   RuntimeLaunchPreflightRegistry,
-} from "../../src/runtime/launchPreflight.js";
+} from "@tachyon/shared/runtime/launchPreflight.js";
 
 const catalogSlugs = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"];
 const output = (slugs: readonly string[] = catalogSlugs, extra: Partial<CodexProbeResult> = {}): CodexProbeResult => ({ code: 0, slugs, ...extra });

@@ -4,8 +4,8 @@ import path from "node:path";
 import { sliceJournal, TaskJournalStore } from "./TaskJournalStore.js";
 import { TaskAttemptStore } from "./TaskAttemptStore.js";
 import { compareTasksForListing } from "./listOrder.js";
-import { nextTask } from "./nextTask.js";
-import { rebalancedRanks } from "./rank.js";
+import { nextTask } from "@tachyon/shared/tasks/nextTask.js";
+import { rebalancedRanks } from "@tachyon/shared/tasks/rank.js";
 import {
   codePointLength,
   TASK_AUTHORING_LIMITS,
@@ -34,7 +34,7 @@ import {
   type TaskUpdateInput,
   type TaskView,
   type JournalMode,
-} from "./types.js";
+} from "@tachyon/shared/tasks/types.js";
 
 /** t-ab7708 — a journal read is either whole (`includeJournal`) or windowed (`journalWindow`). */
 export interface TaskViewOptions {

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "../../dist/types/shared",
+    "rootDir": "../.."
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.json", "*.d.cts"]
+}

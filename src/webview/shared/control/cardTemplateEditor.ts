@@ -13,7 +13,7 @@
  */
 // The PURE document module, not the file-backed store: this file is bundled for the webview, and
 // the store pulls in node:fs/os/path.
-import { GLOBAL_SETTINGS_SCHEMA_VERSION } from "../../../config/globalSettingsDocument.js";
+import { GLOBAL_SETTINGS_SCHEMA_VERSION } from "@tachyon/shared/config/globalSettingsDocument.js";
 import {
   CARD_CATALOG,
   CARD_REGIONS,
@@ -23,7 +23,7 @@ import {
   type CardComponentId,
   type CardRegion,
   type CardTemplate,
-} from "../../../sidebar/cardTemplate.js";
+} from "@tachyon/shared/sidebar/cardTemplate.js";
 
 /** One component in the composer: where it sits, and whether the template shows it. */
 export interface CardEditorEntry {

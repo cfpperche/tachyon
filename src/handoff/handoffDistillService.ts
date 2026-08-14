@@ -10,7 +10,7 @@ import {
   resolveHandoffDistillProfile,
   type HandoffDistillRuntime,
   type HandoffDistillTargetRow,
-} from "./distill.js";
+} from "@tachyon/shared/handoff/distill.js";
 
 export interface WorkspaceHandoffDistillSource extends ManagedAgentInputSource {
   manager: ManagedAgentInputSource["manager"] & {

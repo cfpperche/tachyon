@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Terminal, type IDecoration, type IMarker } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { AgentPaneFontMetrics, AgentPaneFromHost, AgentPaneInjectKind, AgentPaneToHost } from "./protocol";
-import { foreignClientBannerText } from "../../presentation/foreignTmuxClient";
+import { foreignClientBannerText } from "@tachyon/shared/presentation/foreignTmuxClient";
 import { gridChanged, sanitizeFontMetrics, type GridSize } from "./geometry";
 import { QuickPicker } from "../shared/ui/QuickPicker";
 import { terminalThemeFromComputedStyle } from "./terminalTheme";

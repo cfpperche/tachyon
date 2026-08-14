@@ -6,7 +6,7 @@ import { FORMATION_GOVERNED_LANES } from "../../src/agents/formation/sessionPoli
 import { AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES } from "../../src/webview/agent-studio-shell/domain.js";
 import { canonicalWorkspaceStudioFormV1 } from "../../src/engine-service/protocol.js";
 import { composeAgentPrompt } from "../../src/agents/promptLayers.js";
-import { AGENT_FORGET_PLAN_STEP_IDS } from "../../src/config/agentForgetPlan.js";
+import { AGENT_FORGET_PLAN_STEP_IDS } from "@tachyon/shared/config/agentForgetPlan.js";
 
 /**
  * t-8ea8e0 — the product does not know self-evolution any more.

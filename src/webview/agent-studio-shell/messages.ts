@@ -2,9 +2,9 @@ import { envelope } from "../shared/studio/protocol";
 import {
   type AgentStudioPatch,
 } from "./domain";
-import type { AgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio";
-import type { AgentOwnershipViewV1, AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "../../config/agentProfileStudio";
-import type { AgentForgetPlanResultV1 } from "../../config/agentForgetPlan";
+import type { AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio";
+import type { AgentOwnershipViewV1, AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "@tachyon/shared/config/agentProfileStudio";
+import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan";
 
 /** t-610705 (Phase D, D1b) — routeKey/mountNonce identify WHICH Control-hosted binding this ready is
  *  for (the retired studioHost.ts mount handshake, round-2 F3); undefined off the Control host.

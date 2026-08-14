@@ -4,7 +4,7 @@
  * attachment name) to PROVE preact renders them as inert TEXT (the security contract for flipping scripts on).
  */
 
-import type { PinPreviewVM } from "../../../src/sidebar/types";
+import type { PinPreviewVM } from "@tachyon/shared/sidebar/types";
 import type { Fixture } from "../routes";
 
 export const HOSTILE_TITLE = `<img src=x onerror="alert(1)">`;

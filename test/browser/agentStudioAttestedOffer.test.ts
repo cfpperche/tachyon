@@ -4,7 +4,7 @@ import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 import { openPreview } from "./support/preview";
-import { ATTESTED_RUNTIMES } from "../../src/runtime/attestedRuntimes";
+import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes";
 
 /**
  * t-d68b8b — what the Agent form OFFERS and what it SAYS when it refuses, read off the shipped

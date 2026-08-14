@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { HarnessManager, HarnessUnavailableError } from "../../src/harness/HarnessManager.js";
-import { adapterForRuntime } from "../../src/resume/adapters.js";
-import { authRequiredOf } from "../../src/runtime/authRequired.js";
+import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
+import { authRequiredOf } from "@tachyon/shared/runtime/authRequired.js";
 import type { HarnessDef } from "../../src/config/loadConfig.js";
 
 /**

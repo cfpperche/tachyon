@@ -1,4 +1,4 @@
-import type { FleetVM, NoticeVM } from "./types.js";
+import type { FleetVM, NoticeVM } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * t-8aeaac follow-up — display-only split of the author baked into `notice.message` text

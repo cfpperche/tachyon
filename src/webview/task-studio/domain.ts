@@ -1,7 +1,7 @@
-import type { ArtifactRef, TaskPriority } from "../../tasks/types.js";
-import type { RichDocAttachment } from "../../richDoc/types.js";
+import type { ArtifactRef, TaskPriority } from "@tachyon/shared/tasks/types.js";
+import type { RichDocAttachment } from "@tachyon/shared/richDoc/types.js";
 import type { RichDocAttachmentVM, TiptapJSON } from "../rich-doc/types.js";
-import { docToMarkdown } from "../../tasks/docMarkdown.js";
+import { docToMarkdown } from "@tachyon/shared/tasks/docMarkdown.js";
 import type { TaskPrototypeListVM } from "../task-prototype/types.js";
 
 /**

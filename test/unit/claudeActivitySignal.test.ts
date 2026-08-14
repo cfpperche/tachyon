@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * t-30ff0d — the sidebar said idle while a canonical Claude agent was mid-turn.

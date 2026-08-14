@@ -9,7 +9,7 @@ import {
   resolveActivityShare,
   withActivityShareKeys,
 } from "../../src/activity/activityShare.js";
-import type { AgentVM } from "../../src/sidebar/types.js";
+import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 const baseSummary = {
   messages: 0,

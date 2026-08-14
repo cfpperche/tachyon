@@ -340,7 +340,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
    * separate action (no autostart written, no spawn port on this path).
    */
   it("creates the agent ENABLED without autostart, asserted through the canonical helper (t-ca9086)", async () => {
-    const { createProfileFromStudioMutation } = await import("../../src/config/agentProfileStudio.js");
+    const { createProfileFromStudioMutation } = await import("@tachyon/shared/config/agentProfileStudio.js");
     // Exactly what the extension's port sends for Approve and create.
     const profile = createProfileFromStudioMutation({
       schemaVersion: 1,
@@ -380,7 +380,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
   });
 
   it("verifies the capability rule against the canonical helper, which now owns it", async () => {
-    const { createProfileFromStudioMutation } = await import("../../src/config/agentProfileStudio.js");
+    const { createProfileFromStudioMutation } = await import("@tachyon/shared/config/agentProfileStudio.js");
     // The exact refusal this module defers to. If the canonical rule ever relaxes, this fails and the
     // drop above becomes a deliberate re-decision instead of stale caution.
     expect(() => createProfileFromStudioMutation({

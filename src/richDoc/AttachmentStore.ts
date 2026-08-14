@@ -8,7 +8,7 @@ import type {
   ResolvedRichDocAttachment,
   RichDocAttachment,
   SketchSource,
-} from "./types.js";
+} from "@tachyon/shared/richDoc/types.js";
 
 /**
  * spec 339 — the shared content-addressed blob/scene mechanics for rich-doc visual attachments, extracted

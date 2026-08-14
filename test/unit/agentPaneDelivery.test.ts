@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { deliverAgentPaneText } from "../../src/webview/agentPaneDelivery.js";
 import { TmuxService, type ExecResult, type SubmitReceipt } from "../../src/tmux/TmuxService.js";
 import { looksLikeStrandedSubmittedLine } from "../../src/tmux/TmuxService.js";
-import { composerProfileFor } from "../../src/runtime/composerRegion.js";
+import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 
 /**
  * t-2c2384 — Agent pane freeform submit must pass the measured composer profile.

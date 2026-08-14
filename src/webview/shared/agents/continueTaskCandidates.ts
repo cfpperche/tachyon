@@ -2,7 +2,7 @@
  * t-41117e — pure candidate rule for "Continue task in…".
  * No preact — unit tests and the picker UI share this filter.
  */
-import { isAgentRow, isTemporaryAgentRow, type AgentVM } from "../../../sidebar/types";
+import { isAgentRow, isTemporaryAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types";
 
 /** Live enough that the destination cannot accept a new session yet. */
 export function destinationBusy(a: AgentVM): boolean {

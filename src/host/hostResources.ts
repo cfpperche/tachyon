@@ -1,4 +1,4 @@
-import hostResourceSizing from "../../shared/host-resource-sizing.cjs";
+import hostResourceSizing from "@tachyon/shared/host-resource-sizing.cjs";
 
 /**
  * t-019dac — host memory awareness for heavy gates (verify:full / verify_task full).

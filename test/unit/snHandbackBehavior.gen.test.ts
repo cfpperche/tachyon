@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
+import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
 import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
 
 /**

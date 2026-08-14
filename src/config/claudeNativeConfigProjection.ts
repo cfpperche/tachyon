@@ -3,7 +3,7 @@ import {
   nativeConfigAuthorizations,
   CLAUDE_BYPASS_PERMISSIONS_AUTHORIZATION,
   type ResolvedAgentNativeConfigProjection,
-} from "./agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentProfileV1 } from "./agentProfileSchema.js";
 
 type ClaudeScalarFamily = "permissions" | "interface" | "featureFlags";

@@ -1,4 +1,4 @@
-import type { ExternalToolKind } from "./types.js";
+import type { ExternalToolKind } from "@tachyon/shared/externalTools/types.js";
 
 const HOST_UI_ACTION_SUBSTRINGS = [
   "open",

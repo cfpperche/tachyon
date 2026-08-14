@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { continueTaskCandidates } from "../../src/webview/shared/agents/continueTaskCandidates";
-import { SAMPLE, type AgentVM } from "../../src/sidebar/types";
+import { SAMPLE, type AgentVM } from "@tachyon/shared/sidebar/types";
 
 const A = (o: Partial<AgentVM> & { name: string; status: AgentVM["status"] }): AgentVM => ({
   kind: "agent",

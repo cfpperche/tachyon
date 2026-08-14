@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { asAgent, type AgentDef } from "../config/loadConfig.js";
-import { binaryOf } from "../resume/adapters.js";
+import { binaryOf } from "@tachyon/shared/resume/adapters.js";
 import { withRuntimeConfigSourceLock, type RuntimeConfigSourceLockOptions } from "./sourceLock.js";
 import type {
   RuntimeConfigChange,

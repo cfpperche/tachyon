@@ -3,7 +3,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { withProcessLockSync } from "../locks/processLock.js";
 import type { HostMemorySnapshot } from "./hostResources.js";
-import hostResourceCostInputs from "../../shared/host-resource-cost-inputs.cjs";
+import hostResourceCostInputs from "@tachyon/shared/host-resource-cost-inputs.cjs";
 
 /**
  * t-3ad4af — one HOST-WIDE budget for vitest, instead of N processes each dividing the same RAM.

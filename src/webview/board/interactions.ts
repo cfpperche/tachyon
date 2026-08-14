@@ -4,9 +4,9 @@
  * (which session is open, what's being dragged); every actual DECISION funnels through here.
  */
 
-import { between } from "../../tasks/rank";
+import { between } from "@tachyon/shared/tasks/rank";
 import type { BoardCardVM, BoardColumnVM } from "../../tasks/boardModel";
-import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "../../tasks/types";
+import type { Task, TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "@tachyon/shared/tasks/types";
 
 /** dueto F5 — a priority quick-edit always composes `rank:null` so a rank minted in another priority lane
  *  never leaks into the new one (board-side composition; no store change needed). */

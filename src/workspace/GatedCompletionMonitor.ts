@@ -5,7 +5,7 @@
  * waits a grace window for a real doorbell, then delivers one host-fallback/unverified notice
  * to the delegator via deliverNotice. Never writes doorbells.jsonl (protocol_doorbell_missed stays).
  */
-import type { AgentAttention } from "../attention/AttentionMonitor.js";
+import type { AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
 import type { ManagedWorktreeEntry } from "../worktree/managedWorktree.js";
 import type { NoticeQueueMetadata } from "../bridge/NoticeQueue.js";

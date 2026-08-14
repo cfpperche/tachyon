@@ -5,7 +5,7 @@
  * `continueTaskCandidates.ts` is separate from `ContinuePicker.tsx`: the candidate rule is the part
  * worth testing, and a unit test cannot import a `.tsx` under the gate's typecheck config.
  */
-import type { FleetVM } from "../../sidebar/types.js";
+import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * The subset of `QuickPickerItem` these rows fill in. Declared here rather than imported because

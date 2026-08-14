@@ -7,7 +7,7 @@ import {
   taskToastFor,
   type TaskNotificationSettings,
 } from "../../src/tasks/taskNotificationPolicy.js";
-import type { Task } from "../../src/tasks/types.js";
+import type { Task } from "@tachyon/shared/tasks/types.js";
 
 const task: Task = {
   id: "t-abc123",

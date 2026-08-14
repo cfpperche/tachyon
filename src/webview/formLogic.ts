@@ -1,5 +1,5 @@
 import { asAgent, parseEvery, parseAt, resolveBinary, type AgentDef, type ScheduleDef } from "../config/loadConfig.js";
-import { isAttestedRuntime } from "../runtime/attestedRuntimes.js";
+import { isAttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 
 /**
  * Pure logic shared by the config-backed Studio forms — everything testable lives here;

@@ -7,7 +7,7 @@ import { listSavedAgentProposals, readSavedAgentProposalWitness, recordSavedAgen
 import { proposedWorktreeEnabled, REFUSED_PROPOSAL_WORKSPACE_KEYS } from "../../src/agents/savedAgentProposal.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "../../src/config/agentProfileGrants.js";
 import { commitAgentProfileLifecycle, inspectAgentProfileLifecycle } from "../../src/config/agentProfileLifecycle.js";
-import { proposeSavedAgentGrantPatchFromStudioMutation } from "../../src/config/agentProfileStudio.js";
+import { proposeSavedAgentGrantPatchFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 slice B (`t-5e1113`) — the only agent-facing door, and what it refuses.

@@ -8,7 +8,7 @@ import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import type { TerminalPresentationOptions } from "../../src/workspace/TerminalPresentation.js";
 import { Terminals } from "../../src/presentation/Terminals.js";
-import { encodeClaudeCwd } from "../../src/resume/adapters.js";
+import { encodeClaudeCwd } from "@tachyon/shared/resume/adapters.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";

@@ -1,5 +1,5 @@
-import type { RichDocAttachment } from "../../richDoc/types.js";
-import type { TiptapJSON } from "../../richDoc/types.js";
+import type { RichDocAttachment } from "@tachyon/shared/richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import type { RichDocAttachmentVM } from "./types.js";
 
 export const EMPTY_DOC: TiptapJSON = { type: "doc", content: [{ type: "paragraph" }] };

@@ -1,4 +1,4 @@
-import type { AuthRequiredEvidence } from "./authRequired.js";
+import type { AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
 
 /**
  * t-d501fc — each runtime refuses an unrecognized model in its OWN words; this is not one shared

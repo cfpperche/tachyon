@@ -28,7 +28,7 @@ import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileA
 import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
 import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoader.js";
 import { CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
-import { defaultClaudeScalarNativeConfigPolicy } from "../../src/config/agentNativeConfigPolicy.js";
+import { defaultClaudeScalarNativeConfigPolicy } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 
 const AGENT = "claude";
 

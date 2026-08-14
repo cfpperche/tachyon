@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { TASK_ID_RE, type TaskAttemptEndType, type TaskAttemptEvent } from "./types.js";
+import { TASK_ID_RE, type TaskAttemptEndType, type TaskAttemptEvent } from "@tachyon/shared/tasks/types.js";
 
 interface AttemptInput {
   agent: string;

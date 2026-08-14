@@ -1,13 +1,15 @@
 import path from "node:path";
 import { z } from "zod";
 import { containsUnsafeFramingCharacter } from "./framingSafety.js";
-import { agentNativeConfigSchemaV1 } from "./agentNativeConfigSchema.js";
+import { agentNativeConfigSchemaV1 } from "@tachyon/shared/config/agentNativeConfigSchema.js";
+import type { AgentProfileV1 } from "@tachyon/shared/config/agentProfile.js";
+export type { AgentProfileV1 } from "@tachyon/shared/config/agentProfile.js";
 export {
   AGENT_NATIVE_CONFIG_FAMILIES,
   agentNativeConfigPolicySchemaV1,
   agentNativeConfigSchemaV1,
   type AgentNativeConfigPolicyV1,
-} from "./agentNativeConfigSchema.js";
+} from "@tachyon/shared/config/agentNativeConfigSchema.js";
 
 export const AGENT_PROFILE_SCHEMA_VERSION = 1 as const;
 export const AGENT_PROFILE_MAX_BYTES = 256 * 1024;
@@ -266,4 +268,10 @@ export const agentProfileSchemaV1 = z.object({
 });
 
 export type AgentProfileReferenceV1 = z.infer<typeof agentProfileReferenceSchema>;
-export type AgentProfileV1 = z.infer<typeof agentProfileSchemaV1>;
+type InferredAgentProfileV1 = z.infer<typeof agentProfileSchemaV1>;
+type Assert<T extends true> = T;
+export type AgentProfileSchemaMatchesShared = Assert<
+  InferredAgentProfileV1 extends AgentProfileV1
+    ? AgentProfileV1 extends InferredAgentProfileV1 ? true : false
+    : false
+>;

@@ -1,13 +1,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
+import {
+  countRelativeSpecifierOccurrences,
+  resolveSource,
+  resolveWorkspaceSource,
+  unresolvedReason,
+  visitSpecifiers,
+  walk,
+} from "./monorepo-imports.mjs";
 
 const root = process.cwd();
 const srcRoot = path.join(root, "src");
-const sharedRoot = path.join(root, "shared");
+const sharedRoot = path.join(root, "packages", "shared");
 const srcFiles = walk(srcRoot).filter((file) => /\.tsx?$/.test(file)).sort();
+const packageSharedFiles = walk(path.join(sharedRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
 const sharedRuntimeFiles = walk(sharedRoot).filter((file) => /\.cjs$/.test(file)).sort();
-const files = [...srcFiles, ...sharedRuntimeFiles].sort();
+const files = [...srcFiles, ...packageSharedFiles, ...sharedRuntimeFiles].sort();
 const fileSet = new Set(files);
 const nodes = new Map();
 const relativeSpecifiers = new Map();
@@ -23,12 +32,14 @@ for (const file of files) {
   visitSpecifiers(source, (specifier, kind) => {
     const bucket = kind === "type" ? type : value;
     if (specifier === "vscode") bucket.add("vscode");
+    const workspaceTarget = resolveWorkspaceSource(root, specifier, fileSet);
+    if (workspaceTarget) bucket.add(workspaceTarget);
     if (specifier.startsWith(".")) {
       const specifierKey = `${file}\0${specifier}`;
       const observedKinds = relativeSpecifiers.get(specifierKey) ?? new Set();
       observedKinds.add(kind);
       relativeSpecifiers.set(specifierKey, observedKinds);
-      const resolved = resolveSource(file, specifier);
+      const resolved = resolveSource(file, specifier, fileSet);
       if (resolved) bucket.add(resolved);
       else unresolvedRelative.set(specifierKey, {
         importer: rel(file),
@@ -101,6 +112,7 @@ const output = {
     files: files.length,
     srcFiles: srcFiles.length,
     sharedRuntimeFiles: sharedRuntimeFiles.length,
+    packageSharedRuntimeFiles: packageSharedFiles.length + sharedRuntimeFiles.length,
     runtimePortable: files.length - valueCoupled.size,
     runtimeCoupled: valueCoupled.size,
     typeAwareCoupled: typeAwareCoupled.size,
@@ -209,73 +221,6 @@ function forwardClosure(entries, mode) {
   return visited;
 }
 
-function visitSpecifiers(source, emit) {
-  const visit = (node) => {
-    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
-      const clause = node.importClause;
-      if (clause?.isTypeOnly) emit(node.moduleSpecifier.text, "type");
-      else if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
-        const elements = clause.namedBindings.elements;
-        const values = elements.filter((element) => !element.isTypeOnly);
-        const types = elements.filter((element) => element.isTypeOnly);
-        if (values.length || clause.name) emit(node.moduleSpecifier.text, "value");
-        if (types.length) emit(node.moduleSpecifier.text, "type");
-      } else emit(node.moduleSpecifier.text, "value");
-    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-      emit(node.moduleSpecifier.text, node.isTypeOnly ? "type" : "value");
-    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
-      emit(node.argument.literal.text, "type");
-    } else if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isStringLiteral(node.arguments[0])) {
-      if (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require")) {
-        emit(node.arguments[0].text, "value");
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-}
-
-function countRelativeSpecifierOccurrences(source) {
-  let count = 0;
-  const visit = (node) => {
-    let specifier;
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
-      && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
-      specifier = node.moduleSpecifier.text;
-    } else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) {
-      specifier = node.argument.literal.text;
-    } else if (ts.isCallExpression(node) && node.arguments.length === 1 && ts.isStringLiteral(node.arguments[0])
-      && (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require"))) {
-      specifier = node.arguments[0].text;
-    }
-    if (specifier?.startsWith(".")) count++;
-    ts.forEachChild(node, visit);
-  };
-  visit(source);
-  return count;
-}
-
-function resolveSource(importer, specifier) {
-  const raw = path.resolve(path.dirname(importer), specifier);
-  const candidates = [
-    raw,
-    raw.replace(/\.js$/, ".ts"),
-    raw.replace(/\.js$/, ".tsx"),
-    raw.replace(/\.jsx$/, ".tsx"),
-    `${raw}.ts`,
-    `${raw}.tsx`,
-    path.join(raw, "index.ts"),
-    path.join(raw, "index.tsx"),
-  ];
-  return candidates.find((candidate) => fileSet.has(candidate));
-}
-
-function unresolvedReason(importer, specifier) {
-  const raw = path.resolve(path.dirname(importer), specifier);
-  if (path.extname(raw) === ".json" && fs.existsSync(raw)) return "JSON asset intentionally outside the TS/CJS runtime graph";
-  return "no matching TS/TSX/CJS runtime source";
-}
-
 function sharedConsumers() {
   const consumers = [];
   for (const scope of ["src", "scripts", "test"]) {
@@ -294,11 +239,4 @@ function sharedConsumers() {
     }
   }
   return consumers.sort((a, b) => a.importer.localeCompare(b.importer) || a.target.localeCompare(b.target));
-}
-
-function walk(directory) {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(directory, entry.name);
-    return entry.isDirectory() ? walk(full) : [full];
-  });
 }

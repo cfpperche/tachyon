@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import type { ArtifactRef, Task, TaskPriority, TaskUpdateInput } from "./types.js";
+import type { ArtifactRef, Task, TaskPriority, TaskUpdateInput } from "@tachyon/shared/tasks/types.js";
 import type { TaskDetailReadResult } from "./TaskDetailStore.js";
 
 /**

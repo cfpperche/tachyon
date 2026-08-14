@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { PinAttachment, ResolvedPinAttachment } from "../pins/types.js";
 import type { PinStore } from "../pins/PinStore.js";
-import type { TiptapJSON } from "../richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import {
   isTiptapDoc,
   persistedRichDocAttachmentV1Schema,

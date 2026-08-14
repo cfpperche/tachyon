@@ -1,4 +1,4 @@
-import type { ArtifactRef, TaskPriority } from "../tasks/types.js";
+import type { ArtifactRef, TaskPriority } from "@tachyon/shared/tasks/types.js";
 
 export const VALIDATION_STATUSES = ["pending", "triaged", "running", "closed"] as const;
 export type ValidationStatus = (typeof VALIDATION_STATUSES)[number];

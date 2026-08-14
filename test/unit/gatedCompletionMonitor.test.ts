@@ -9,7 +9,7 @@ import {
   type GatedCandidateRecord,
   type GatedCompletionFacts,
 } from "../../src/workspace/GatedCompletionMonitor.js";
-import type { AgentAttention } from "../../src/attention/AttentionMonitor.js";
+import type { AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
 
 const GRACE = 45_000;

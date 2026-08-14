@@ -6,7 +6,7 @@ import {
   type ParsedLaunchCommand,
   type RuntimeLaunchPreflight,
   type RuntimeLaunchPreflightPort,
-} from "../launchPreflight.js";
+} from "@tachyon/shared/runtime/launchPreflight.js";
 import { CodexCatalogStreamParser } from "./codexCatalogStream.js";
 
 export interface CodexProbeResult {

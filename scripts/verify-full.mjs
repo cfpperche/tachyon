@@ -3,7 +3,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { cpus, tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import hostResourceSizing from "../shared/host-resource-sizing.cjs";
+import hostResourceSizing from "@tachyon/shared/host-resource-sizing.cjs";
 import { UNHANDLED_OUTPUT_ENV } from "./vitest-unhandled-reporter.mjs";
 import { auditTrunk, formatTrunkAudit, recordVerification, reuseDecision, verifiableTree, verifierFingerprint } from "./verify-record.mjs";
 
@@ -62,7 +62,7 @@ export const VERIFY_FULL_LOCK_PATH = process.env.TACHYON_VERIFY_FULL_LOCK_PATH |
  * still in front of `check:engine-boundary` and `typecheck`. The rule lives in
  * `scripts/check-webview-tokens.mjs`; the test imports it rather than restating it.
  */
-export const STATIC_GATES = ["check:source-diffable", "check:theme-tokens", "check:webview-tokens", "check:engine-boundary", "typecheck"];
+export const STATIC_GATES = ["check:source-diffable", "check:theme-tokens", "check:webview-tokens", "check:engine-boundary", "check:package-boundary", "typecheck"];
 
 function gitOutput(args, cwd = process.cwd()) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -105,6 +105,32 @@ const SOURCE_EXTENSIONS = Object.freeze([".ts", ".tsx", ".mts", ".js", ".mjs", "
 export function browserSuiteRoots({ cwd = process.cwd() } = {}) {
   const roots = new Set(BROWSER_SUITE_OWN);
   const suiteFiles = [];
+  const workspaceSources = new Map();
+  let rootManifest = {};
+  try { rootManifest = JSON.parse(readFileSync(path.join(cwd, "package.json"), "utf8")); } catch { /* fixture/repository without workspaces */ }
+  const workspacePatterns = Array.isArray(rootManifest.workspaces)
+    ? rootManifest.workspaces
+    : rootManifest.workspaces?.packages ?? [];
+  for (const pattern of workspacePatterns) {
+    const wildcard = pattern.endsWith("/*");
+    const parent = path.join(cwd, wildcard ? pattern.slice(0, -2) : path.dirname(pattern));
+    const directories = wildcard
+      ? readdirSync(parent, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => path.join(parent, entry.name))
+      : [path.join(cwd, pattern)];
+    for (const directory of directories) {
+      const manifest = JSON.parse(readFileSync(path.join(directory, "package.json"), "utf8"));
+      workspaceSources.set(manifest.name, path.join(directory, "src"));
+    }
+  }
+  const workspaceBase = (spec) => {
+    const name = [...workspaceSources.keys()].find((candidate) => spec === candidate || spec.startsWith(`${candidate}/`));
+    if (!name) {
+      if (spec.startsWith("@tachyon/")) throw new Error(`browser suite import '${spec}' names an unknown Tachyon workspace`);
+      return undefined;
+    }
+    const subpath = spec === name ? "index" : spec.slice(name.length + 1);
+    return path.join(workspaceSources.get(name), subpath);
+  };
   const walkSuite = (dir) => {
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
@@ -116,7 +142,7 @@ export function browserSuiteRoots({ cwd = process.cwd() } = {}) {
     }
   };
   const resolveImport = (file, spec) => {
-    const base = path.resolve(path.dirname(file), spec);
+    const base = workspaceBase(spec) ?? path.resolve(path.dirname(file), spec);
     const parsed = path.parse(base);
     const stem = path.join(parsed.dir, parsed.name);
     const candidates = [base,
@@ -135,8 +161,11 @@ export function browserSuiteRoots({ cwd = process.cwd() } = {}) {
     for (const full of frontier) {
       let source;
       try { source = readFileSync(full, "utf8"); } catch { continue; }
-      for (const [, spec] of source.matchAll(/\bfrom\s+["'](\.\.?\/[^"']+)["']/g)) {
-        const resolved = path.relative(cwd, path.resolve(path.dirname(full), spec));
+      for (const [, spec] of source.matchAll(/\bfrom\s+["']([^"']+)["']/g)) {
+        const workspace = workspaceBase(spec);
+        if (!spec.startsWith(".") && !workspace) continue;
+        const absolute = workspace ?? path.resolve(path.dirname(full), spec);
+        const resolved = path.relative(cwd, absolute);
         if (resolved.startsWith("..") || path.isAbsolute(resolved)) continue;
         const segments = resolved.split(path.sep);
         if (segments.length < 2) continue;

@@ -5,8 +5,8 @@ import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { CARD_PREVIEW_ROWS } from "../../src/sidebar/cardPreviewRows.js";
-import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, type CardTemplate } from "../../src/sidebar/cardTemplate.js";
-import type { AgentVM } from "../../src/sidebar/types.js";
+import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, type CardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
+import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * SDD 479 phase 4 — the DURABLE visual evidence.

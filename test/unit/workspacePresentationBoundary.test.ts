@@ -97,7 +97,7 @@ describe("persistent workspace presentation boundary", () => {
     for (const relative of [
       "src/activity/attributionGap.ts",
       "src/agents/agentInputService.ts",
-      "src/handoff/distill.ts",
+      "packages/shared/src/handoff/distill.ts",
       "src/handoff/handoffDistillService.ts",
       "src/handoff/handoffFileService.ts",
       "src/handoff/handoffPath.ts",

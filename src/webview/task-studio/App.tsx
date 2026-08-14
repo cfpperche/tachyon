@@ -16,8 +16,8 @@ import { SketchModal, VisualsPanel, uriToDataURL, type RichDocExcalidrawSaveResu
 import { ImageImportPicker } from "../rich-doc/ImageImportPicker";
 import { createTaskStudioAdapter } from "../rich-doc/adapter";
 import type { RichDocAssets, RichDocAttachmentVM } from "../rich-doc/types";
-import type { ArtifactRef, TaskPriority } from "../../tasks/types";
-import { TASK_ID_RE } from "../../tasks/types";
+import type { ArtifactRef, TaskPriority } from "@tachyon/shared/tasks/types";
+import { TASK_ID_RE } from "@tachyon/shared/tasks/types";
 import { computeTaskDirty, taskStudioTitleFor, TASK_STUDIO_HOST_MESSAGE_NAMES, type TaskDetailEntity, type TaskFields, type TaskFieldsDirty } from "./domain";
 import {
   attachImageMessage,

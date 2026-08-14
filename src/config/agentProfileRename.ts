@@ -16,7 +16,7 @@ import {
   agentProfileTransactionsRoot,
   type AgentProfileAuthorityPort,
 } from "./agentProfileTransactions.js";
-import { AgentProfileRefusal } from "./agentProfileRefusal.js";
+import { AgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
 import { assertValidAgentName, asciiFoldAgentName } from "./nameValidation.js";
 
 const SCHEMA_VERSION = 1 as const;

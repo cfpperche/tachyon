@@ -3,7 +3,7 @@
  * Pure helpers (no preact/vscode). Filter Hides rows; it does NOT re-group by status
  * (spec 242 sort stability still applies after filtering).
  */
-import type { AgentStatus, AgentVM } from "../../sidebar/types";
+import type { AgentStatus, AgentVM } from "@tachyon/shared/sidebar/types";
 
 /** Single-select filter mode. `all` shows every agent. */
 export type AgentStatusFilter = "all" | "live" | "attention" | "stopped" | "ontask" | "hasfocus";

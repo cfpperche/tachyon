@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TachyonConfig } from "../../src/config/loadConfig.js";
-import type { Task } from "../../src/tasks/types.js";
+import type { Task } from "@tachyon/shared/tasks/types.js";
 import type { EngineHost } from "../../src/workspace/EngineHost.js";
 import { TaskNotificationService } from "../../src/workspace/TaskNotificationService.js";
 

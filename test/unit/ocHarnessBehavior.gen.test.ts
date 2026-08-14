@@ -8,7 +8,7 @@ import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/Tmux
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { HarnessManager, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
 import { expectedAgentOpencodeEntry, expectedAgentClaudeEntry } from "../../src/registration/adapters.js";
-import { adapterForRuntime } from "../../src/resume/adapters.js";
+import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 
 /** spec t-e2ebe3 — behavior: a Tachyon-spawned opencode HARNESS agent gets per-agent XDG config/data/state
  *  dirs (an isolation layer independent of cwd, mirroring CLAUDE_CONFIG_DIR/CODEX_HOME parity) AND seeded

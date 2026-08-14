@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
+export type { ManagedEntryInfo } from "@tachyon/shared/agents/managedEntry.js";
 import { withPostCutAttestation } from "./legacyFleetGate.js";
 import { hasLifecycleHooks, isTemporaryInstance } from "./agentInstancePolicy.js";
 import fs from "node:fs";
@@ -8,7 +10,7 @@ import { asAgent, codexConfigCmd, composeCommand, codexBridgeCmd, piBridgeCmd, s
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
-import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "../resume/adapters.js";
+import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../bridge/redact.js";
 import { RELEASE_LOCK_HINT, resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
@@ -17,9 +19,6 @@ import {
   type SessionLedger,
   type SessionRecord,
   type SessionResume,
-  type AgentInstanceLifetime,
-  type AgentInstancePolicy,
-  type AgentInstanceResumePolicy,
 } from "../resume/SessionLedger.js";
 import {
   captureActivityRenameSnapshot,
@@ -28,11 +27,11 @@ import {
   moveActivityLog,
   type ActivityRenameSnapshot,
 } from "../activity/logStore.js";
-import { composerProfileFor, composerText, findComposerRegion, isComposerOccupied } from "../runtime/composerRegion.js";
+import { composerProfileFor, composerText, findComposerRegion, isComposerOccupied } from "@tachyon/shared/runtime/composerRegion.js";
 import { sessionOwnersFile } from "../activity/sessionOwners.js";
 import { spawnContractCompletion, type SpawnContract } from "../bridge/spawnContract.js";
 import type { ResolvedCaptureSession } from "../resume/resolvers.js";
-import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, projectScopedTranscriptWarning, runtimeProfile } from "../runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, projectScopedTranscriptWarning, runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
 import { removeDerivedAgentFiles } from "./derivedFile.js";
@@ -52,7 +51,7 @@ import {
   parseLaunchCommand,
   RuntimeLaunchPreflightError,
   type RuntimeLaunchPreflightPort,
-} from "../runtime/launchPreflight.js";
+} from "@tachyon/shared/runtime/launchPreflight.js";
 import { createDefaultLaunchPreflightRegistry } from "../runtime/defaultLaunchPreflight.js";
 import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
 import {
@@ -61,11 +60,11 @@ import {
   type CodexBootstrapInputMatch,
 } from "../runtime/adapters/codexLaunchReadiness.js";
 import { GenericLaunchReadiness, LaunchReadiness, RuntimeLaunchReadinessError, type LaunchReadinessPort, type RuntimeLaunchReadinessAdapter } from "../runtime/launchReadiness.js";
-import { AgentRuntimeAdmissionError, admitAgentRuntimeCommand } from "./agentRuntimeAdmission.js";
-import { authRequiredFromPreflight, authRequiredOf, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { AgentRuntimeAdmissionError, admitAgentRuntimeCommand } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
+import { authRequiredFromPreflight, authRequiredOf, classifyAuthRequired, describeAuthRequired, type AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
 import { loadAndRenderProjectGuidanceBundle, type RenderedProjectGuidanceBundle } from "../config/projectGuidance.js";
-import { carryNativeConfigSources } from "../config/agentNativeConfigPolicy.js";
-import { AgentProfileRefusal, type AgentProfileRefusalCode } from "../config/agentProfileRefusal.js";
+import { carryNativeConfigSources } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
+import { AgentProfileRefusal, type AgentProfileRefusalCode } from "@tachyon/shared/config/agentProfileRefusal.js";
 import { composeAgentPrompt } from "./promptLayers.js";
 import { renderSessionWorkRecord, type SessionLaunchKind, type SessionWorkRecord } from "./sessionWorkRecord.js";
 import { selectAssignedWork, staleContractReferences, type BoardAssignmentRow } from "./assignmentSelection.js";
@@ -269,82 +268,7 @@ export class ForkUnavailableError extends Error {
   }
 }
 
-export interface ManagedEntryInfo {
-  name: string;
-  session: string;
-  /** alive process (a crashed dead-pane session is NOT running) */
-  running: boolean;
-  /** t-8168a7 — true/false when Attention knows; absent when reload left the turn history unknown. */
-  hasStartedTurn?: boolean;
-  /** graceful Stop is in flight; user actions that contend for the pane should be held */
-  stopping?: boolean;
-  /** graceful Stop timed out while the pane stayed alive; retry is allowed */
-  stopFailed?: boolean;
-  /**
-   * t-b103c5 — when `stopFailed`, the stage that timed out, a measured reason, and the next
-   * deliberate action. Opaque "stop failed" taught the human nothing; this is what the subline shows.
-   */
-  stopFailure?: { stage: "await-exit"; reason: string; nextAction: string };
-  /**
-   * t-04052d — replaces `declared`, which said "config owns this definition" and was read as though it
-   * said "what kind of worker is this". This says the latter, and only the latter.
-   *
-   * Resolved once, in `list()`, from the declared policy where an instance exists and from the ROSTER
-   * where none does — see the comment at that site for why the second half is an observation rather
-   * than the inference this cut removes.
-   */
-  lifetime: AgentInstanceLifetime;
-  /**
-   * t-04052d — the SECOND axis, resolved the same way and carried beside the first because the two do
-   * not imply each other. A FORK is `temporary` + `restartable`: no durable Profile, but it owns a
-   * resume block. A reader that has only `lifetime` cannot tell it apart from a plain Temporary instance, and any
-   * rule that tries collapses the axes this cut exists to keep apart.
-   */
-  resumePolicy: AgentInstanceResumePolicy;
-  /**
-   * t-0ad300 — declared in tachyon.yml and refused, carrying WHY. Present only on those rows.
-   *
-   * A refused agent has no definition, so without this it is indistinguishable from a name that was
-   * never written down, and the row silently disappears. The reason travels with it because a row
-   * that says only "refused" sends the human back to a banner two surfaces away to find out what
-   * broke.
-   */
-  refused?: string;
-  /**
-   * SDD 482 phase 3 — the DECLARED instance policy of a recorded instance; absent when this row is a
-   * roster entry with no session ledger row behind it. Readers ask their question through the
-   * `agentInstancePolicy` helpers rather than reading this directly.
-   */
-  instance?: AgentInstancePolicy;
-  /** dead pane present (process ended on its own; postmortem kept until dismiss/restart) */
-  dead: boolean;
-  /**
-   * t-9d76b1 — died and NOBODY ASKED IT TO. Two independent facts, never one:
-   * `stopRequested` answers "did Tachyon ask?", the exit code answers "did it exit cleanly?".
-   *
-   * It used to be `dead && exitCode !== 0` alone, which answered the intent question with the code —
-   * so a runtime that honours Ctrl-C by exiting 130 (128+SIGINT: the CORRECT exit for the interrupt
-   * Tachyon itself sent) was reported as a crash. Measured: grok and hermes return 130, codex,
-   * opencode and pi return 0, so no exit code — and no special case for one of them — could have
-   * carried the intent.
-   */
-  crashed: boolean;
-  /** t-9d76b1 — Tachyon requested this exit (graceful Stop / restart / rebind), so it is not a crash. */
-  stopRequested?: boolean;
-  exitCode?: number;
-  /** process exited 0 and Tachyon already cleared the tmux postmortem pane */
-  cleanExited?: boolean;
-  /** agent = AI CLI; terminal = server/shell/build. Inferred or declared in tachyon.yml. */
-  kind: EntryKind;
-  /** who spawned this instance; persisted uniformly for Saved and Temporary lifetimes */
-  parent?: string;
-  /** Bridge-resolved agent that requested a gated delegation; display metadata, not runtime lineage. */
-  delegator?: string;
-  /** config-declared owner from tachyon.yml subagents; durable roster authority, not runtime lineage */
-  declaredOwner?: string;
-}
-
-/** Compatibility name for the unified managed-entry listing row. Prefer `ManagedEntryInfo`
+ /** Compatibility name for the unified managed-entry listing row. Prefer `ManagedEntryInfo`
  *  in new code; `AgentInfo` remains exported for existing imports and public surfaces. */
 export type AgentInfo = ManagedEntryInfo;
 

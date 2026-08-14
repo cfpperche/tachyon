@@ -7,11 +7,11 @@ import {
   SUPPORTED_AGENT_RUNTIMES,
   SUPPORTED_AGENT_RUNTIME_NAMES,
   TERMINAL_OPERATION,
-} from "../../src/agents/agentRuntimeAdmission.js";
-import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
-import { RESUME_RUNTIMES, runtimeOf } from "../../src/resume/adapters.js";
+} from "@tachyon/shared/agents/agentRuntimeAdmission.js";
+import { ATTESTED_RUNTIMES, isAttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
+import { RESUME_RUNTIMES, runtimeOf } from "@tachyon/shared/resume/adapters.js";
 import { instructionsDeliverable, KNOWN_AI_CLIS } from "../../src/config/loadConfig.js";
-import { runtimePromptAdapter } from "../../src/agents/runtimePromptAdapters.js";
+import { runtimePromptAdapter } from "@tachyon/shared/agents/runtimePromptAdapters.js";
 
 /**
  * SDD 478 M9 (`t-8f3f7d`) — Agent Instance admission stops inferring what it creates.

@@ -5,7 +5,7 @@ import {
   type GrokCatalogProbe,
   type GrokProbeResult,
 } from "../../src/runtime/adapters/grokLaunchPreflight.js";
-import { parseLaunchCommand } from "../../src/runtime/launchPreflight.js";
+import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 
 /**
  * t-85c586 — Grok pins used to fail preflight for catalog reasons: the registry had claude/codex

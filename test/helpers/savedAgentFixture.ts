@@ -14,7 +14,7 @@ import {
   PI_PRIVATE_CAPABILITY_INPUT_INSPECTOR,
 } from "../../src/config/agentProfileProjection.js";
 import { workspaceHash } from "../../src/tmux/TmuxService.js";
-import type { AttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
+import type { AttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 
 /**
  * SDD 478 M7 — declare a REAL agent in a headless test workspace.

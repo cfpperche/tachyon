@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { between, MAX_RANK_LENGTH, rebalancedRanks } from "../../src/tasks/rank.js";
+import { between, MAX_RANK_LENGTH, rebalancedRanks } from "@tachyon/shared/tasks/rank.js";
 
 describe("between — append/prepend edges", () => {
   it("mints a default first-ever rank when neither neighbor exists", () => {

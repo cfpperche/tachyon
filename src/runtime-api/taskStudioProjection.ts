@@ -1,10 +1,10 @@
 import { z } from "zod";
-import type { RichDocAttachment, TiptapJSON } from "../richDoc/types.js";
+import type { RichDocAttachment, TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import { TaskDetailStore } from "../tasks/TaskDetailStore.js";
 import { markdownToDoc } from "../tasks/markdownDoc.js";
 import { decideAnchor } from "../tasks/studioModel.js";
 import type { TaskStore } from "../tasks/TaskStore.js";
-import { TASK_PRIORITIES } from "../tasks/types.js";
+import { TASK_PRIORITIES } from "@tachyon/shared/tasks/types.js";
 import {
   projectTaskPrototypeList,
   taskPrototypeListProjectionV1Schema,

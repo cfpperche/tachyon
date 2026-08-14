@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { classifyComposerSubmission, composerText } from "../../src/runtime/composerRegion.js";
-import type { ResumeRuntime } from "../../src/resume/adapters.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { classifyComposerSubmission, composerText } from "@tachyon/shared/runtime/composerRegion.js";
+import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * t-ba5357 — real `capture-pane` bytes from 220-column panes, one runtime at a time, driven through

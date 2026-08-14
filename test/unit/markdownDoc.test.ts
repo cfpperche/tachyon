@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { markdownToDoc } from "../../src/tasks/markdownDoc.js";
-import { docToMarkdown } from "../../src/tasks/docMarkdown.js";
+import { docToMarkdown } from "@tachyon/shared/tasks/docMarkdown.js";
 
 describe("markdownToDoc — per-construct import", () => {
   it("imports a plain paragraph", () => {

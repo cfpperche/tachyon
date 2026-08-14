@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { CARD_COMPONENT_IDS, CARD_TEMPLATE_VERSION, type CardComponentId } from "../sidebar/cardTemplate.js";
-import type { FleetVM, HandoffVM, PinVM, ProposalVM, WorkspaceRef } from "../sidebar/types.js";
+import { CARD_COMPONENT_IDS, CARD_TEMPLATE_VERSION, type CardComponentId } from "@tachyon/shared/sidebar/cardTemplate.js";
+import type { FleetVM, HandoffVM, PinVM, ProposalVM, WorkspaceRef } from "@tachyon/shared/sidebar/types.js";
 import { fitSidebarWireText, SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "../sidebar/wireText.js";
 import { AGENT_NAME_PATTERN } from "../config/nameValidation.js";
 import { CONFIG_DISCARD_ENTRY_LIMIT } from "../config/configDiscards.js";

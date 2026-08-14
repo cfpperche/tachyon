@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "../../src/runtime/runtimeProfile.js";
+import { assertVerifiedTranscriptIsolation, isolationMechanismForCommand } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("container-generated delegation behavior", () => {
   it("opencode runtime profile permits ungated delegation (t-e2ebe3 private-home harness upgrade)", () => {

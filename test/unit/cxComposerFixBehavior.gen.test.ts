@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
+import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
 
 const SETTINGS: AttentionSettings = { enabled: true, silenceSec: 1, patterns: [] };
 const CODEX_PLACEHOLDER_ESCAPED = "\x1b[1m›\x1b[0m \x1b[2mWrite tests for @filename\x1b[0m";

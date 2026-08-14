@@ -19,7 +19,7 @@
  * Framework-agnostic on purpose (same contract as `types.ts`): no preact, no vscode. The webview owns
  * the fragments; this module owns which fragments exist, where they may sit, and in what order.
  */
-import { SUPPORTED_AGENT_RUNTIME_NAMES } from "../agents/agentRuntimeAdmission.js";
+import { SUPPORTED_AGENT_RUNTIME_NAMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import { isAgentRow, type AgentVM } from "./types.js";
 
 /**

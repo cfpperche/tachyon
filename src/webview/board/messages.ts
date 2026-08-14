@@ -5,7 +5,7 @@
  */
 
 import type { BoardSnapshot } from "../../tasks/boardSnapshot";
-import type { TaskPriority, TaskStatus, TaskUpdateInput } from "../../tasks/types";
+import type { TaskPriority, TaskStatus, TaskUpdateInput } from "@tachyon/shared/tasks/types";
 import type { ValidationOutcome } from "../../validations/types";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";

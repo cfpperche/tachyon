@@ -35,7 +35,7 @@ import {
   setHermesMcpServer,
   opencodeHarnessDirs,
 } from "../../src/harness/HarnessManager.js";
-import { adapterForRuntime } from "../../src/resume/adapters.js";
+import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 import type { HarnessDef } from "../../src/config/loadConfig.js";
 import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentProfileResolver.js";
 

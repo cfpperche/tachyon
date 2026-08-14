@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import type { AgentProfileReferenceV1, AgentProfileV1 } from "./agentProfileSchema.js";
-import type { AgentProfileStudioEditableV1 } from "./agentProfileStudio.js";
+import type { AgentProfileStudioEditableV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import {
   WORKSPACE_SETUP_PATH,
   WORKSPACE_SETUP_REFERENCE_ID,
   studioOwnsWorkspaceCommands,
   workspaceCommandLinesText,
-} from "./agentWorkspaceCommands.js";
+} from "@tachyon/shared/config/agentWorkspaceCommands.js";
 
 /**
  * t-afc86e — the HOST half of authoring an agent's workspace commands: the bytes, their digests, and

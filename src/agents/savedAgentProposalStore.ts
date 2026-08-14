@@ -9,7 +9,7 @@ import {
   type SavedAgentProposalAdmission,
 } from "./savedAgentProposal.js";
 import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
-import type { AgentOwnershipRosterV1 } from "../config/agentProfileStudio.js";
+import type { AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 slice B (`t-5e1113`) — where a proposal LIVES, and what a restart does to it.

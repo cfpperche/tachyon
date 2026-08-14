@@ -59,7 +59,7 @@ import { resolveToolPlaceholders, containsToolPlaceholder } from "./toolPlacehol
 import { physicalToolKey, toolReferenceCounts, physicalDataKey, dataReferenceCounts, type ToolLock, type DataLock, type ExternalToolReqLock, type LauncherLock } from "./lockfile.js";
 import { dependencyStates, type DependencyState } from "./pluginDeps.js";
 import { agentEntriesOfLkg, readConfigLkg } from "../config/configLkg.js";
-import { runtimeOf } from "../resume/adapters.js";
+import { runtimeOf } from "@tachyon/shared/resume/adapters.js";
 import { AppliedStateError, AppliedStateStore, type ContributionRef } from "./appliedState.js";
 
 /** spec 265 — the repo-root-RELATIVE launcher path baked into a resolved git-hook leaf (clone-safe; git runs

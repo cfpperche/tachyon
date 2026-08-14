@@ -13,4 +13,4 @@ export type {
   ResolvedExcalidrawAttachment as ResolvedPinExcalidrawAttachment,
   ResolvedRichDocAttachment as ResolvedPinAttachment,
   TiptapJSON,
-} from "../richDoc/types.js";
+} from "@tachyon/shared/richDoc/types.js";

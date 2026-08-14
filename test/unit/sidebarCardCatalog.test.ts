@@ -14,7 +14,7 @@ import {
   type CardComponentId,
   type CardTemplate,
   type CardTemplateConfig,
-} from "../../src/sidebar/cardTemplate.js";
+} from "@tachyon/shared/sidebar/cardTemplate.js";
 
 /**
  * SDD 479 phase 1 — the catalog's own invariants.

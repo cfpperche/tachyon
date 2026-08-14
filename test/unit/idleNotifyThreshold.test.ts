@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { type AgentAttention } from "../../src/attention/AttentionMonitor.js";
+import { type AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 import {
   TemporaryBackstopMonitor,
   DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS,
   idleNotifyThresholdMs,
-} from "../../src/workspace/TemporaryBackstopMonitor.js";
+} from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
 import { parseConfig, MAX_IDLE_NOTIFY_MINUTES } from "../../src/config/loadConfig.js";
 import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
 

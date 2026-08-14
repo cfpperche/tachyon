@@ -1,7 +1,7 @@
 import path from "node:path";
 import * as vscode from "vscode";
 import { sharedGlobalSettings } from "../config/globalSettings.js";
-import { isAgentRow, type FleetVM, type AgentVM } from "../sidebar/types.js";
+import { isAgentRow, type FleetVM, type AgentVM } from "@tachyon/shared/sidebar/types.js";
 import { fleetMessage } from "./sidebar/messages.js";
 import { isSectionId } from "../sections/resolveSection.js";
 import { renderWebviewShell } from "./shared/shell.js";
@@ -10,7 +10,7 @@ import { agentContextValue } from "../presentation/contextValue.js";
 import { notify } from "../workspace/notify.js";
 import { showNotification } from "../workspace/NotificationService.js";
 import { recordShellFailure, SHELL_DIAGNOSTIC_CHANNEL } from "../workspace/shellDiagnosticLog.js";
-import type { TiptapJSON } from "../richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import type { WorkspaceSidebarTarget, SidebarShellCommandContext } from "../shell/SidebarTarget.js";
 import { controlWorkspaceScope } from "./shared/ControlWorkspaceScope.js";
 import {
@@ -18,7 +18,7 @@ import {
   parseCardTemplate,
   DEFAULT_CARD_TEMPLATE,
   type CardTemplateConfig,
-} from "../sidebar/cardTemplate.js";
+} from "@tachyon/shared/sidebar/cardTemplate.js";
 
 /**
  * SDD 479 phase 5 — the personal card-template override's key; t-aaad95 moved its home from VS Code

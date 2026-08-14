@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "../../src/runtime/attestedRuntimes.js";
-import { RESUME_RUNTIMES, adapterForRuntime, runtimeOf, type ResumeRuntime } from "../../src/resume/adapters.js";
+import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
+import { RESUME_RUNTIMES, adapterForRuntime, runtimeOf, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 import { KNOWN_AI_CLIS, suggestKindForCommand } from "../../src/config/loadConfig.js";
 import { profileRuntimeInspectorFor } from "../../src/config/agentProfileProjection.js";
 

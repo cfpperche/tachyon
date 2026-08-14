@@ -8,8 +8,8 @@ import {
   resolveCardTemplateFor,
   resolveCardTemplate,
   type CardTemplateConfig,
-} from "../../src/sidebar/cardTemplate.js";
-import type { AgentVM } from "../../src/sidebar/types.js";
+} from "@tachyon/shared/sidebar/cardTemplate.js";
+import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * SDD 479 phase 5 — the personal override (ratified fork 1).

@@ -6,8 +6,8 @@ import {
   DEFAULT_CARD_TEMPLATE,
   parseCardTemplate,
   type CardTemplate,
-} from "../../src/sidebar/cardTemplate.js";
-import type { AgentVM } from "../../src/sidebar/types.js";
+} from "@tachyon/shared/sidebar/cardTemplate.js";
+import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * `t-045d44` (SDD 479) — per-component options, which phase 2 refused by name rather than accept and

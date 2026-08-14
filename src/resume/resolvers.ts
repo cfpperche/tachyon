@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { encodeClaudeCwd, type ResumeRuntime } from "./adapters.js";
+import { encodeClaudeCwd, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 
 /**
  * Capture-runtime session-id resolvers (spec 209 / F29 task 6): for runtimes that

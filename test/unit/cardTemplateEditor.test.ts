@@ -16,7 +16,7 @@ import {
   DEFAULT_CARD_TEMPLATE,
   parseCardTemplate,
   type CardComponentId,
-} from "../../src/sidebar/cardTemplate.js";
+} from "@tachyon/shared/sidebar/cardTemplate.js";
 import { CARD_PREVIEW_ROWS, CARD_PREVIEW_WIDTHS } from "../../src/sidebar/cardPreviewRows.js";
 
 /**

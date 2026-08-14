@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { MAX_WORKING_STALL_MS, type AgentAttention } from "../../src/attention/AttentionMonitor.js";
+import { MAX_WORKING_STALL_MS, type AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 import {
   TemporaryBackstopMonitor,
   ACKNOWLEDGED_ESCALATION_MULTIPLES,
   acknowledgedCheckInMs,
-} from "../../src/workspace/TemporaryBackstopMonitor.js";
+} from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
 import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
 
 const agent = (name: string, opts: Partial<ManagedEntryInfo> = {}): ManagedEntryInfo => ({

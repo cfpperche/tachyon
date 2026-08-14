@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { wakeTaskAssignee } from "../../src/tasks/taskNotificationPolicy.js";
-import type { Task } from "../../src/tasks/types.js";
+import type { Task } from "@tachyon/shared/tasks/types.js";
 
 /**
  * t-c3c0c2 — the assignee wake-up hangs off `TaskStore`'s mutation sink, and that sink is OPTIONAL.

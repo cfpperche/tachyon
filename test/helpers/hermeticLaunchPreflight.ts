@@ -1,6 +1,6 @@
 import { OpencodeLaunchPreflight } from "../../src/runtime/adapters/opencodeLaunchPreflight.js";
 import { createDefaultLaunchPreflightRegistry } from "../../src/runtime/defaultLaunchPreflight.js";
-import type { RuntimeLaunchPreflightPort } from "../../src/runtime/launchPreflight.js";
+import type { RuntimeLaunchPreflightPort } from "@tachyon/shared/runtime/launchPreflight.js";
 
 /**
  * `t-0338fc` — the production launch preflight, with the one adapter that EXECUTES a runtime stubbed.

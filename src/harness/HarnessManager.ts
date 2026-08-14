@@ -22,14 +22,14 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { HarnessDef } from "../config/loadConfig.js";
-import type { ResolvedAgentNativeConfigProjection } from "../config/agentNativeConfigPolicy.js";
+import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import { GROK_PROJECTED_KEY_ORDER } from "../config/grokNativeConfigProjection.js";
 import { withGrokProjectSkillsIgnored } from "../config/grokSkillIsolation.js";
 import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileResolver.js";
 import type { CapturedCapabilitySource } from "../config/agentCapabilitySource.js";
 import { GROK_CANONICAL_MEMORY_POLICY, grokMemoryArgs, grokMemoryEnv } from "../runtime/adapters/grokMemory.js";
-import { authRequiredFromHarness, type AuthRequiredEvidence } from "../runtime/authRequired.js";
-import type { ResumeAdapter } from "../resume/adapters.js";
+import { authRequiredFromHarness, type AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
+import type { ResumeAdapter } from "@tachyon/shared/resume/adapters.js";
 import {
   buildCodexSessionStartHookConfig,
   buildOwnershipSettings,

@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart, type AgentManagerOptions, type SpawnReveal } from "../../src/agents/AgentManager.js";
 import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { RuntimeLaunchPreflightRegistry } from "../../src/runtime/launchPreflight.js";
+import { RuntimeLaunchPreflightRegistry } from "@tachyon/shared/runtime/launchPreflight.js";
 import { GrokLaunchPreflight } from "../../src/runtime/adapters/grokLaunchPreflight.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { asAgent, parseConfig, type AgentPermissionProjectionEntry, type TachyonConfig } from "../../src/config/loadConfig.js";
@@ -20,15 +20,15 @@ import {
   withPostCutAttestation,
 } from "../../src/agents/legacyFleetGate.js";
 import { HarnessManager, bridgeGrokHome, bridgeHermesHome, bridgeMcpPath, bridgeOpencodeMcpPath, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
-import { adapterFor, harnessable } from "../../src/resume/adapters.js";
+import { adapterFor, harnessable } from "@tachyon/shared/resume/adapters.js";
 import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
 import { briefFilePath } from "../../src/agents/briefFile.js";
 import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "../../src/bridge/spawnContract.js";
 import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
 import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentProfileResolver.js";
-import type { ResolvedAgentNativeConfigProjection } from "../../src/config/agentNativeConfigPolicy.js";
+import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import { agentGroupParent, agentIsNested } from "../../src/webview/sidebar/grouping.js";
-import type { AgentVM } from "../../src/sidebar/types.js";
+import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 const WS = "/repo";
 const HASH = workspaceHash(WS);

@@ -7,7 +7,7 @@ import type { PinStudioPatchV1 } from "../runtime-api/pinStudioCommands.js";
 import { PinAttachmentStore, PIN_BLOB_SOFT_LIMIT_BYTES } from "./PinAttachmentStore.js";
 import type { PinStore } from "./PinStore.js";
 import type { PinAttachment } from "./types.js";
-import { isEmptyPinDoc } from "./pinStudioModel.js";
+import { isEmptyPinDoc } from "@tachyon/shared/pins/pinStudioModel.js";
 
 export type PinStudioSaveServiceResult =
   | { status: "ok"; pinId: string }

@@ -13,7 +13,7 @@ import {
   type ControlInspectorModel,
   type ControlInspectorWorkspaceInput,
 } from "../control-inspector/model.js";
-import { DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS } from "../workspace/TemporaryBackstopMonitor.js";
+import { DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
 import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
 
 /**

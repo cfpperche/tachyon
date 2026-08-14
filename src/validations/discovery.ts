@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { ArtifactRef } from "../tasks/types.js";
+import type { ArtifactRef } from "@tachyon/shared/tasks/types.js";
 import type { ValidationCandidate } from "./types.js";
 
 const VALIDATION_PATTERNS = [

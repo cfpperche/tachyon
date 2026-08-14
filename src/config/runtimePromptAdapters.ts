@@ -2,4 +2,4 @@ export {
   resolveRuntimeBinary,
   runtimePromptAdapter,
   type PromptAdapter,
-} from "../agents/runtimePromptAdapters.js";
+} from "@tachyon/shared/agents/runtimePromptAdapters.js";

@@ -3,10 +3,10 @@ import type {
   AgentOwnershipViewV1,
   AgentProfileStudioMutationV1,
   AgentProfileStudioSnapshotV1,
-} from "../../config/agentProfileStudio.js";
-import { AGENT_OWNERSHIP_MAX_SUBAGENTS, DEFAULT_NEW_AGENT_WORKTREE_ENABLED, isAgentProfileStudioSnapshotV1 } from "../../config/agentProfileStudio.js";
-import { agentOwnershipViewSchemaV1, agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "../../config/agentProfileStudio.js";
-import { agentForgetPlanResultSchemaV1 } from "../../config/agentForgetPlan.js";
+} from "@tachyon/shared/config/agentProfileStudio.js";
+import { AGENT_OWNERSHIP_MAX_SUBAGENTS, DEFAULT_NEW_AGENT_WORKTREE_ENABLED, isAgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
+import { agentOwnershipViewSchemaV1, agentProfileStudioBundleCreatedResultSchemaV1, agentProfileStudioBundleExportResultSchemaV1 } from "@tachyon/shared/config/agentProfileStudio.js";
+import { agentForgetPlanResultSchemaV1 } from "@tachyon/shared/config/agentForgetPlan.js";
 import {
   claudeScalarNativeConfigPolicy,
   claudeSelectorNativeConfigPolicy,
@@ -21,9 +21,9 @@ import {
   GROK_ALWAYS_APPROVE_AUTHORIZATION,
   type CodexScalarNativeConfigChoice,
   type CodexScalarNativeConfigFamily,
-} from "../../config/agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 // Node-free by construction (a frozen list + a predicate) — safe for this browser bundle.
-import { ATTESTED_RUNTIMES, isAttestedRuntime } from "../../runtime/attestedRuntimes.js";
+import { ATTESTED_RUNTIMES, isAttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 
 /**
  * spec 350 Phase 3 T1 — the Agent-kind studio's vscode-free AND node-free domain: pure entity/fields/patch

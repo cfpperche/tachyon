@@ -2,9 +2,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { TaskAttachmentStore } from "./TaskAttachmentStore.js";
-import { TASK_ID_RE, type ArtifactRef, type Task, type TaskPriority } from "./types.js";
+import { TASK_ID_RE, type ArtifactRef, type Task, type TaskPriority } from "@tachyon/shared/tasks/types.js";
 import type { TaskStore } from "./TaskStore.js";
-import type { ResolvedRichDocAttachment, RichDocAttachment, TiptapJSON } from "../richDoc/types.js";
+import type { ResolvedRichDocAttachment, RichDocAttachment, TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 
 /**
  * spec 339 (T3) — the Task Studio sidecar: `.tachyon/tasks/details/<id>.json`, the rich-doc companion to

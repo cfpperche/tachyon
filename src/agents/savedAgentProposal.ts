@@ -10,14 +10,14 @@ import {
   claudeSelectorNativeConfigPolicy,
   codexSelectorNativeConfigPolicy,
   grokSelectorNativeConfigPolicy,
-} from "../config/agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import {
   assertOwnershipTargets,
   createProfileFromStudioMutation,
   DEFAULT_NEW_AGENT_WORKTREE_ENABLED,
   type AgentOwnershipRosterV1,
   type AgentProfileStudioMutationV1,
-} from "../config/agentProfileStudio.js";
+} from "@tachyon/shared/config/agentProfileStudio.js";
 
 /**
  * SDD 482 phase 4 (`t-5e1113`) — a Saved Agent proposal is INERT DATA.

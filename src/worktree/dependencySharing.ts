@@ -41,7 +41,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import dependencyLockfileValidity from "../../shared/dependency-lockfile-validity.cjs";
+import dependencyLockfileValidity from "@tachyon/shared/dependency-lockfile-validity.cjs";
 
 const { LOCKFILES, fingerprintLockfiles, lockfileDivergenceReason } = dependencyLockfileValidity;
 export { LOCKFILES, fingerprintLockfiles };

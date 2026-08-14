@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { actionsFor } from "../../src/sidebar/actions.js";
-import { isAgentRow, type AgentVM } from "../../src/sidebar/types.js";
+import { isAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types.js";
 import { toAgentVM } from "../../src/sidebar/agentModel.js";
 import { resolveAgentFocus } from "../../src/sidebar/agentFocus.js";
 import { internalShareTargets } from "../../src/activity/activityShare.js";
@@ -84,7 +84,7 @@ describe("t-6ebdc8 — the sidebar reads the managed-entry arm", () => {
     // beside the arm, which is exactly the state this milestone exists to end.
     const root = path.resolve(__dirname, "..", "..");
     const sources = [
-      "src/sidebar/types.ts",
+      "packages/shared/src/sidebar/types.ts",
       "src/sidebar/actions.ts",
       "src/sidebar/agentModel.ts",
       "src/sidebar/agentFocus.ts",

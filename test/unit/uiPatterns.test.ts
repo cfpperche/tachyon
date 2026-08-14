@@ -54,9 +54,9 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
     expect(roster).not.toMatch(/\ba\.running\b/);
     // and the union is genuinely nine wide. Without this, forbidding `a.running` alone would still pass
     // if AgentStatus itself collapsed back to two values — the defect, not the spelling of it.
-    const types = readFileSync("src/sidebar/types.ts", "utf8");
+    const types = readFileSync("packages/shared/src/sidebar/types.ts", "utf8");
     const union = /export type AgentStatus =([^;]+);/.exec(types);
-    expect(union, "AgentStatus must be a declared union in src/sidebar/types.ts").toBeTruthy();
+    expect(union, "AgentStatus must be a declared union in packages/shared/src/sidebar/types.ts").toBeTruthy();
     const statuses = union![1].split("|").map((s) => s.trim()).filter(Boolean);
     expect(statuses, `AgentStatus must keep its nine states, got ${statuses.join(", ")}`).toHaveLength(9);
     const approvals = readFileSync("src/webview/approval/App.tsx", "utf8");

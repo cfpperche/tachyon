@@ -6,7 +6,7 @@
  * the next start is a fresh conversation on the new runtime.
  */
 
-import { binaryOf, runtimeOf } from "../resume/adapters.js";
+import { binaryOf, runtimeOf } from "@tachyon/shared/resume/adapters.js";
 
 /** Stable identity for "which CLI family is this cmd?" — runtime when known, else binary basename. */
 export function cmdRuntimeIdentity(cmd: string): string {

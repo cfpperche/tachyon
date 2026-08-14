@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { docToMarkdown, truncateBody, TASK_BODY_MAX_CODEPOINTS, TRUNCATION_MARKER } from "../../src/tasks/docMarkdown.js";
-import type { TiptapJSON } from "../../src/richDoc/types.js";
+import { docToMarkdown, truncateBody, TASK_BODY_MAX_CODEPOINTS, TRUNCATION_MARKER } from "@tachyon/shared/tasks/docMarkdown.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 
 const doc = (...content: TiptapJSON[]): TiptapJSON => ({ type: "doc", content });
 const p = (...content: TiptapJSON[]): TiptapJSON => ({ type: "paragraph", content });

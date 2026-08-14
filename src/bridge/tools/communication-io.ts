@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { AgentManager } from "../../agents/AgentManager.js";
 import { readPaneTranscript } from "../../agents/paneTranscript.js";
-import { composerProfileFor } from "../../runtime/composerRegion.js";
+import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 import { isEvidencedWorking } from "../../prompts/injectFlow.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "../notifyAgent.js";
 import { appendDoorbellEvent, findDoorbellDelivery, readDoorbellEventsFor, READ_NOTICES_MAX } from "../doorbell.js";

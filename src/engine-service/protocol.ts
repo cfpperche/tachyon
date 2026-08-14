@@ -402,7 +402,7 @@ export type WorkspaceCommandResultV1 =
       action: TaskStudioApplyActionV1;
       outcome: "saved" | "conflict" | "attachment-stored" | "prototype-imported";
       message?: string;
-      attachment?: import("../richDoc/types.js").RichDocAttachment;
+      attachment?: import("@tachyon/shared/richDoc/types.js").RichDocAttachment;
       overSoftLimit?: boolean;
     }
   | {
@@ -412,7 +412,7 @@ export type WorkspaceCommandResultV1 =
       action: PinStudioApplyActionV1;
       outcome: "saved" | "attachment-stored";
       pinId?: string;
-      attachment?: import("../richDoc/types.js").RichDocAttachment;
+      attachment?: import("@tachyon/shared/richDoc/types.js").RichDocAttachment;
       overSoftLimit?: boolean;
     }
   | {
@@ -1310,7 +1310,7 @@ export function workspaceTaskStudioApplySuccessV1(
   outcome:
     | { outcome: "saved" }
     | { outcome: "conflict"; message: string }
-    | { outcome: "attachment-stored"; attachment: import("../richDoc/types.js").RichDocAttachment; overSoftLimit: boolean }
+    | { outcome: "attachment-stored"; attachment: import("@tachyon/shared/richDoc/types.js").RichDocAttachment; overSoftLimit: boolean }
     | { outcome: "prototype-imported" },
 ): WorkspaceCommandResultV1 {
   const candidate: WorkspaceCommandResultV1 = {
@@ -1328,7 +1328,7 @@ export function workspacePinStudioApplySuccessV1(
   command: Extract<WorkspaceCommandV1, { method: "pin.studio.apply" }>,
   outcome:
     | { outcome: "saved"; pinId: string }
-    | { outcome: "attachment-stored"; attachment: import("../richDoc/types.js").RichDocAttachment; overSoftLimit: boolean },
+    | { outcome: "attachment-stored"; attachment: import("@tachyon/shared/richDoc/types.js").RichDocAttachment; overSoftLimit: boolean },
 ): WorkspaceCommandResultV1 {
   if (command.input.action === "save" && command.input.pinId !== undefined
     && outcome.outcome === "saved" && outcome.pinId !== command.input.pinId) {

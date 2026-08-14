@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
-import { evaluateAttentionManifest } from "../../src/attention/manifestEngine.js";
-import { attentionManifestForRuntime, BASE_MANIFEST, NEUTRAL_OVERLAY } from "../../src/attention/manifests.js";
-import { classifyAttentionTail } from "../../src/attention/patterns.js";
+import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
+import { evaluateAttentionManifest } from "@tachyon/shared/attention/manifestEngine.js";
+import { attentionManifestForRuntime, BASE_MANIFEST, NEUTRAL_OVERLAY } from "@tachyon/shared/attention/manifests.js";
+import { classifyAttentionTail } from "@tachyon/shared/attention/patterns.js";
 
 /**
  * t-c59600 — an entry that declares NO runtime is classified against a NEUTRAL set, never against

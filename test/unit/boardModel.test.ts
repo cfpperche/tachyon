@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { agentFilterOptions, buildBoardModel, colorTokenFor, matchesBoardSearch, HUMAN_COLOR_VAR } from "../../src/tasks/boardModel.js";
 import type { BoardChip, BoardSnapshot } from "../../src/tasks/boardSnapshot.js";
-import type { Task, TaskView } from "../../src/tasks/types.js";
+import type { Task, TaskView } from "@tachyon/shared/tasks/types.js";
 
 function task(overrides: Partial<Task>): Task {
   return {

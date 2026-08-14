@@ -6,10 +6,10 @@
  */
 import type { CardTemplateConfig } from "./cardTemplate.js";
 import type { ConfigDiscardsVM } from "../config/configDiscards.js";
-import type { EntryKind } from "../config/loadConfig.js";
-import type { ResumeRuntime } from "../resume/adapters.js";
-import type { TiptapJSON } from "../richDoc/types.js";
-import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
+import type { EntryKind } from "../config/entry.js";
+import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
+import type { ExternalToolsSummaryVM } from "@tachyon/shared/externalTools/types.js";
 
 export type AgentStatus = "running" | "needs" | "throttled" | "done" | "idle" | "stopping" | "stop-failed" | "stopped" | "crashed";
 /** spec 378 — where `AgentVM.model` came from: a live transcript observation, an explicit `--model` flag,

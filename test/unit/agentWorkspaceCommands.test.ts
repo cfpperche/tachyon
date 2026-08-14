@@ -6,9 +6,9 @@ import {
   parseWorkspaceCommandLines,
   studioOwnsWorkspaceCommands,
   studioWorkspaceCommandIds,
-} from "../../src/config/agentWorkspaceCommands.js";
+} from "@tachyon/shared/config/agentWorkspaceCommands.js";
 import { mergedWorkspaceCommandReferences, workspaceCommandWriteFor } from "../../src/config/agentWorkspaceCommandWrite.js";
-import type { AgentProfileStudioEditableV1 } from "../../src/config/agentProfileStudio.js";
+import type { AgentProfileStudioEditableV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
 const digest = (value: string): string => crypto.createHash("sha256").update(value).digest("hex");

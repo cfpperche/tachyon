@@ -1,5 +1,5 @@
 import type { Pin } from "../pins/PinStore.js";
-import type { Task } from "../tasks/types.js";
+import type { Task } from "@tachyon/shared/tasks/types.js";
 import type { ContinuityBrief, ContinuityMeta } from "./ContinuityStore.js";
 import { CONTINUITY_STALE_LAG } from "./classifier.js";
 

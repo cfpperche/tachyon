@@ -17,7 +17,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
+import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
 
 const SOCKET = "tachyon-t-c5f29b-dogfood";
 const SESSION = "composer-probe";

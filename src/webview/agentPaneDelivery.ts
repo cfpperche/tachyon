@@ -1,5 +1,5 @@
-import { composerProfileFor } from "../runtime/composerRegion.js";
-import type { ComposerRegionProfile } from "../runtime/runtimeProfile.js";
+import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
+import type { ComposerRegionProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * t-2c2384 — Agent pane freeform delivery (path H in t-a5b186 inventory).

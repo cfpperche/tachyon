@@ -4,7 +4,7 @@ import { TaskAttachmentStore } from "../tasks/TaskAttachmentStore.js";
 import { TaskDetailStore } from "../tasks/TaskDetailStore.js";
 import { TaskPrototypeStore } from "../tasks/TaskPrototypeStore.js";
 import type { TaskStore } from "../tasks/TaskStore.js";
-import { TASK_PRIORITIES, TASK_STATUSES } from "../tasks/types.js";
+import { TASK_PRIORITIES, TASK_STATUSES } from "@tachyon/shared/tasks/types.js";
 
 const taskId = z.string().regex(/^t-[0-9a-f]{6}$/);
 const prototypeId = z.string().regex(/^p-[0-9a-f]{12}$/);

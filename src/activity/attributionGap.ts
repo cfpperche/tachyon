@@ -1,6 +1,6 @@
 import * as nodePath from "node:path";
 import { isResumable, type SessionRecord } from "../resume/SessionLedger.js";
-import type { ResumeRuntime } from "../resume/adapters.js";
+import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 
 type LedgerLike = {
   get(name: string): SessionRecord | undefined;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
-import { classifyAttentionTail } from "../../src/attention/patterns.js";
+import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
+import { classifyAttentionTail } from "@tachyon/shared/attention/patterns.js";
 
 /**
  * t-4e6ba5 — Grok's native tool-authorization prompt left the agent classified `working`: no

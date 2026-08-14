@@ -71,10 +71,10 @@ export class CompletionHintStore {
  * unseen stays true until CompletionHintStore.markSeen / AttentionMonitor.markSeen.
  */
 export function applyCompletionHint(
-  attention: import("./AttentionMonitor.js").AgentAttention | undefined,
+  attention: import("@tachyon/shared/attention/AttentionMonitor.js").AgentAttention | undefined,
   hinted: boolean,
   seenAfterHint = false,
-): import("./AttentionMonitor.js").AgentAttention | undefined {
+): import("@tachyon/shared/attention/AttentionMonitor.js").AgentAttention | undefined {
   if (!attention || !hinted) return attention;
   if (attention.state === "needs-input" || attention.state === "throttled") return attention;
   if (attention.composerOccupied) return attention;

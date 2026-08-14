@@ -17,7 +17,7 @@ import { TmuxService, workspaceHash, SESSION_PREFIX, type SubmitReceipt } from "
 import { ControlModeClient } from "../tmux/ControlModeClient.js";
 import { agentsOf, asAgent, CONFIG_FILENAMES, suggestKindForCommand, terminalsOf, type TachyonConfig } from "../config/loadConfig.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
-import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "../config/agentForgetPlan.js";
+import { projectAgentForgetPlan, type AgentForgetPlanV1 } from "@tachyon/shared/config/agentForgetPlan.js";
 import {
   loadProfileAwareConfig,
   parseProfileAwareConfigSyntax,
@@ -90,7 +90,7 @@ import {
   type AgentProfileStudioLifecycleResultV1,
   type AgentProfileStudioMutationV1,
   type AgentProfileStudioSnapshotV1,
-} from "../config/agentProfileStudio.js";
+} from "@tachyon/shared/config/agentProfileStudio.js";
 import {
   POST_CUT_SESSION_ATTESTATION_ENV,
   describeLegacyFleetRefusal,
@@ -98,7 +98,7 @@ import {
   isTransientLegacyRefusal,
 } from "../agents/legacyFleetGate.js";
 import { scanAgentRosterDirectory } from "../config/agentRosterDirectory.js";
-import { AgentProfileRefusal, isAgentProfileRefusal } from "../config/agentProfileRefusal.js";
+import { AgentProfileRefusal, isAgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
 import { snapshotFromConfig, writeConfigLkg, readConfigLkg, type ConfigLkgSnapshot } from "../config/configLkg.js";
 import {
   type ConfigFailure,
@@ -142,7 +142,7 @@ import { HarnessManager, defaultRealOpencodeDataHome, measureDirUsage, realConfi
 import { humanBytes } from "../humanInbox/loadArtifact.js";
 import { materializePiSessionDir, removePiSessionDir } from "../agents/piSession.js";
 import { expectedAgentClaudeEntry, expectedAgentOpencodeEntry } from "../registration/adapters.js";
-import { adapterFor, binaryOf, harnessable, managesOwnSession, runtimeOf } from "../resume/adapters.js";
+import { adapterFor, binaryOf, harnessable, managesOwnSession, runtimeOf } from "@tachyon/shared/resume/adapters.js";
 import { nodeCanSignal, nodeRuntimeOf } from "../pipeline/preflight.js";
 import os from "node:os";
 import { EVIDENCE_SCHEMA_VERSION, summarizeEvidence, viewEvidence, isSafeArtifactRef, type WorktreeEvidence, type EvidenceSummary, type EvidenceView } from "../worktree/evidence.js";
@@ -151,14 +151,14 @@ import type { AttachEvidenceInput } from "../bridge/tools.js";
 import { resolveCaptureId, resolveCaptureSession, resolveCurrentSession } from "../resume/resolvers.js";
 import { planResume, autoResumes, offers, type ResumePlanItem } from "../resume/planResume.js";
 import { LifecycleMonitor } from "../agents/LifecycleMonitor.js";
-import { AttentionMonitor, type AgentAttention } from "../attention/AttentionMonitor.js";
+import { AttentionMonitor, type AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 import { isEvidencedWorking } from "../prompts/injectFlow.js";
-import { contextRenewalGesture, type ContextRenewalMode } from "../anchor/compaction.js";
-import { authRequiredOf, describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { contextRenewalGesture, type ContextRenewalMode } from "@tachyon/shared/anchor/compaction.js";
+import { authRequiredOf, describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
 import { authRequiredLaunchNotice, loginFinishedNotice } from "./authRequiredNotice.js";
 import { LoginRunner } from "../commands/LoginRunner.js";
 import { applyCompletionHint, CompletionHintStore } from "../attention/completionHint.js";
-import { TemporaryBackstopMonitor, idleNotifyThresholdMs } from "./TemporaryBackstopMonitor.js";
+import { TemporaryBackstopMonitor, idleNotifyThresholdMs } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
 import {
   GatedCompletionMonitor,
   assignedCompletionFacts,
@@ -170,7 +170,7 @@ import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
 import { appendDoorbellOverflowEvent, hasDoorbellRung } from "../bridge/doorbell.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
-import { compileExtraPatterns } from "../attention/patterns.js";
+import { compileExtraPatterns } from "@tachyon/shared/attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters } from "../bridge/Waiters.js";
 import {
@@ -267,8 +267,8 @@ import { detectInstalledClis } from "../webview/cliDetect.js";
 import { validateForm, validateTerminalForm, blockingErrors, toEntry, toTerminalEntry } from "../webview/formLogic.js";
 import type { StudioSubmit, StudioDeps } from "../webview/studioSubmit.js";
 import type { EngineHost, HostDisposable, ViewKind } from "./EngineHost.js";
-import { composerProfileFor } from "../runtime/composerRegion.js";
-import type { RuntimeLaunchPreflightPort } from "../runtime/launchPreflight.js";
+import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
+import type { RuntimeLaunchPreflightPort } from "@tachyon/shared/runtime/launchPreflight.js";
 import type { NoticeDeliveryResult, NotifyLevel } from "../bridge/tools.js";
 import { resolveOpencodeStorageSession } from "./opencodeStorage.js";
 import { createGitExec, type GitExec } from "../worktree/WorktreeManager.js";

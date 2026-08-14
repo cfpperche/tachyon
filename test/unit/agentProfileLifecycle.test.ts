@@ -14,7 +14,7 @@ import {
 import {
   createProfileFromStudioMutation,
   proposeSavedAgentGrantPatchFromStudioMutation,
-} from "../../src/config/agentProfileStudio.js";
+} from "@tachyon/shared/config/agentProfileStudio.js";
 import { readAgentProfileGrants } from "../../src/config/agentProfileGrants.js";
 import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
 import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";

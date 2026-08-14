@@ -43,10 +43,10 @@ describe("t-a4ac02 — Bridge tool next_task removed; function nextTask kept", (
   it("boardSnapshot still imports and uses the nextTask function for chip spotlight", () => {
     const root = path.resolve(__dirname, "../..");
     const snapshotSrc = fs.readFileSync(path.join(root, "src/tasks/boardSnapshot.ts"), "utf8");
-    const fnSrc = fs.readFileSync(path.join(root, "src/tasks/nextTask.ts"), "utf8");
+    const fnSrc = fs.readFileSync(path.join(root, "packages/shared/src/tasks/nextTask.ts"), "utf8");
 
     expect(fnSrc).toMatch(/export function nextTask\b/);
-    expect(snapshotSrc).toMatch(/from ["']\.\/nextTask\.js["']/);
+    expect(snapshotSrc).toMatch(/from ["']@tachyon\/shared\/tasks\/nextTask\.js["']/);
     expect(snapshotSrc).toMatch(/next:\s*nextTask\s*\(/);
   });
 });

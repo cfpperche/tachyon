@@ -6,8 +6,8 @@ import { __resetVscodeMock, __fireFileWatch, __getExecutedCommands } from "../mo
 import { globalSettingsPath, useGlobalSettingsHome } from "../../src/config/globalSettings.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
-import { SAMPLE, type FleetVM } from "../../src/sidebar/types.js";
-import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, parseCardTemplate, resolveCardTemplate } from "../../src/sidebar/cardTemplate.js";
+import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types.js";
+import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, parseCardTemplate, resolveCardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
 import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
 
 /**

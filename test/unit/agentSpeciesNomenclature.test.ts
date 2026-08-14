@@ -44,12 +44,12 @@ const BOUNDARY = {
   // the `mode: "adhoc"` handoff discriminant, end to end
   "src/runtime-api/handoffCommands.ts": "wire discriminant literal",
   "src/engine-service/protocol.ts": "wire validation of that discriminant",
-  "src/handoff/distill.ts": "HandoffDistillMode, the discriminant's type",
+  "packages/shared/src/handoff/distill.ts": "HandoffDistillMode, the discriminant's type",
   "src/webview/handoff/messages.ts": "webview action carrying the discriminant",
   "src/webview/handoff/App.tsx": "<option value> IS the discriminant; its label already reads Temporary",
   // the sidebar row's `adhoc` capability flag, produced and consumed across the engine/shell wire
   "src/runtime-api/sidebarProjection.ts": "strict() wire schema field",
-  "src/sidebar/types.ts": "the row VM that schema validates",
+  "packages/shared/src/sidebar/types.ts": "the row VM that schema validates",
   "src/sidebar/sidebarFleetService.ts": "produces the flag from lifetime",
   "src/sidebar/agentModel.ts": "carries the flag through the VM",
   "src/sidebar/actions.ts": "gates actions on the flag",
@@ -61,7 +61,7 @@ const BOUNDARY = {
 
 describe("the canonical/ad-hoc species is gone from product language", () => {
   it("only boundary-crossing files may still say adhoc/ad-hoc", () => {
-    const actual = grepFiles("\\badhoc\\b|ad-hoc", ["src"]);
+    const actual = grepFiles("\\badhoc\\b|ad-hoc", ["src", "packages/shared/src"]);
     const allowed = Object.keys(BOUNDARY).sort();
     const reintroduced = actual.filter((f) => !(f in BOUNDARY));
     expect(reintroduced, "these files put the species back into product language").toEqual([]);

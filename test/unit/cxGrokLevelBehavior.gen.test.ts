@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { adapterForRuntime } from "../../src/resume/adapters.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("container-generated delegation behavior", () => {
   it("grok has a resume/fork adapter and profile, and opencode gains a fork command", () => {

@@ -3,7 +3,7 @@ import type {
   ParsedLaunchCommand,
   RuntimeLaunchPreflight,
   RuntimeLaunchPreflightPort,
-} from "../launchPreflight.js";
+} from "@tachyon/shared/runtime/launchPreflight.js";
 
 /**
  * Claude exposes no bounded account-aware model catalog command. Explicit model

@@ -24,9 +24,9 @@ import {
   type GlobalSettingsDocument,
   type GlobalSettingsField,
   type GlobalSettingsState,
-} from "./globalSettingsDocument.js";
+} from "@tachyon/shared/config/globalSettingsDocument.js";
 
-export * from "./globalSettingsDocument.js";
+export * from "@tachyon/shared/config/globalSettingsDocument.js";
 
 export const GLOBAL_SETTINGS_DIRNAME = ".tachyon";
 export const GLOBAL_SETTINGS_FILENAME = "settings.json";

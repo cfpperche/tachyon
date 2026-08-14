@@ -7,7 +7,7 @@
 import * as vscode from "vscode";
 import { TmuxAttachClient, type PtySpawn } from "../presentation/TmuxAttachClient.js";
 import type { SessionViewportRegistry } from "../presentation/sessionViewport.js";
-import { probeForeignClients, type SessionClientInfo } from "../presentation/foreignTmuxClient.js";
+import { probeForeignClients, type SessionClientInfo } from "@tachyon/shared/presentation/foreignTmuxClient.js";
 import { resolveAgentPaneFontMetrics } from "../presentation/agentPaneFont.js";
 import { renderWebviewShell } from "./shared/shell.js";
 import { panelIcon } from "./shared/panelIcon.js";

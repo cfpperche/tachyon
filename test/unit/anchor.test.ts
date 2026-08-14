@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { contextRenewalGesture, detectCompaction, compactionRuntimes } from "../../src/anchor/compaction.js";
+import { contextRenewalGesture, detectCompaction, compactionRuntimes } from "@tachyon/shared/anchor/compaction.js";
 
 describe("compaction detection (spec 216 Part C)", () => {
   it("covers claude + codex only (D-C)", () => {

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
-import { assembleUntrustedSrcdoc } from "../../src/webview/shared/untrustedSrcdoc.js";
+import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((dir) => fs.rmSync(dir, { recursive: true, force: true })));

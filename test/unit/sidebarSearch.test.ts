@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { searchIndex, type FleetVM } from "../../src/sidebar/types.js";
+import { searchIndex, type FleetVM } from "@tachyon/shared/sidebar/types.js";
 
 const baseFleet: FleetVM = {
   bridge: { port: "0", connected: true },

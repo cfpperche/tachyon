@@ -2,15 +2,15 @@ import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
 import { parseConfig } from "../../src/config/loadConfig.js";
 import { toAgentVM } from "../../src/sidebar/agentModel.js";
-import { SUPPORTED_AGENT_RUNTIME_NAMES } from "../../src/agents/agentRuntimeAdmission.js";
+import { SUPPORTED_AGENT_RUNTIME_NAMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import {
   CARD_TEMPLATE_VERSION,
   DEFAULT_CARD_TEMPLATE,
   parseCardTemplate,
   resolveCardTemplate,
-} from "../../src/sidebar/cardTemplate.js";
+} from "@tachyon/shared/sidebar/cardTemplate.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import type { AgentVM } from "../../src/sidebar/types.js";
+import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * SDD 479 phase 3 — per-runtime overrides, ratified fork 2: an override DECLARES its inheritance and

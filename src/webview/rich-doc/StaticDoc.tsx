@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import type { TiptapJSON } from "../../richDoc/types.js";
+import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 
 /**
  * t-321e9d — a read-only renderer for a (already `toEditorDoc`-resolved) Tiptap doc, for `preact-static`

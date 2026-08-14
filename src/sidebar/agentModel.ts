@@ -6,11 +6,11 @@ import type {
   EvidenceBadge,
   PersistenceHookBadge,
   ModelSource,
-} from "./types";
+} from "@tachyon/shared/sidebar/types";
 import type { EntryKind } from "../config/loadConfig.js";
-import type { ExternalToolsSummaryVM } from "../externalTools/types.js";
-import { runtimeOf } from "../resume/adapters.js";
-import { modelLabelForRuntime } from "../runtime/runtimeProfile.js";
+import type { ExternalToolsSummaryVM } from "@tachyon/shared/externalTools/types.js";
+import { runtimeOf } from "@tachyon/shared/resume/adapters.js";
+import { modelLabelForRuntime } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * spec 237 — pure agent-model mapper (no vscode, no preact). The provider gathers raw fleet state from

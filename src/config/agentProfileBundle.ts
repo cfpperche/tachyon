@@ -9,12 +9,12 @@ import {
 } from "./agentProfileLifecycle.js";
 import { closeCanonicalAgentProfile, readAgentProfileReference, readCanonicalAgentProfile } from "./agentProfileReader.js";
 import type { AgentProfileLifecycleSnapshot } from "./agentProfileLifecycle.js";
-import { DEFAULT_NEW_AGENT_WORKTREE_ENABLED } from "./agentProfileStudio.js";
+import { DEFAULT_NEW_AGENT_WORKTREE_ENABLED } from "@tachyon/shared/config/agentProfileStudio.js";
 import type { AgentProfileReferenceV1, AgentProfileV1 } from "./agentProfileSchema.js";
 import {
   PERSISTENT_INSTRUCTIONS_FILE_NAME,
   PERSISTENT_INSTRUCTIONS_REFERENCE_ID,
-} from "./agentInstructionsDocument.js";
+} from "@tachyon/shared/config/agentInstructionsDocument.js";
 
 export const PORTABLE_AGENT_PROFILE_BUNDLE_VERSION = 1 as const;
 export const PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES = 256 * 1024;

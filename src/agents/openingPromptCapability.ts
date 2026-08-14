@@ -4,7 +4,7 @@ export type OpeningPromptCapability =
   | { status: "native-external"; runtime: "hermes"; detail: string }
   | { status: "unsupported"; runtime: string; detail: string };
 
-import { resolveRuntimeBinary, runtimePromptAdapter } from "./runtimePromptAdapters.js";
+import { resolveRuntimeBinary, runtimePromptAdapter } from "@tachyon/shared/agents/runtimePromptAdapters.js";
 
 export function resolveBinary(cmd: string): string {
   return resolveRuntimeBinary(cmd);

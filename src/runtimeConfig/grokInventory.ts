@@ -5,7 +5,7 @@ import path from "node:path";
 import { parse } from "@iarna/toml";
 import type { AgentDef } from "../config/loadConfig.js";
 import { isTachyonManagedGrokHome } from "../harness/HarnessManager.js";
-import { binaryOf } from "../resume/adapters.js";
+import { binaryOf } from "@tachyon/shared/resume/adapters.js";
 import { withRuntimeConfigSourceLock, type RuntimeConfigSourceLockOptions } from "./sourceLock.js";
 import type {
   RuntimeConfigChange,

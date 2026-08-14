@@ -9,8 +9,8 @@ import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/
 import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
 import type { NotifyLevel } from "../../src/bridge/tools.js";
 import type { NoticeQueueMetadata } from "../../src/bridge/NoticeQueue.js";
-import { RUNTIME_PROFILES } from "../../src/runtime/runtimeProfile.js";
-import { ATTESTED_RUNTIMES } from "../../src/runtime/attestedRuntimes.js";
+import { RUNTIME_PROFILES } from "@tachyon/shared/runtime/runtimeProfile.js";
+import { ATTESTED_RUNTIMES } from "@tachyon/shared/runtime/attestedRuntimes.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 
 /**

@@ -5,7 +5,7 @@ import path from "node:path";
 // The production runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- importing the owned .mjs runner directly is the behavior under test.
 import { acquireVerifyFullLock, awaitVerifyFullLock, resolveHeavyGate } from "../../scripts/verify-full.mjs";
-import hostResourceCostInputs from "../../shared/host-resource-cost-inputs.cjs";
+import hostResourceCostInputs from "@tachyon/shared/host-resource-cost-inputs.cjs";
 
 /**
  * t-0b7aa7 — these used to read `VITEST_MAX_WORKERS`, a bare number resolved at import time from

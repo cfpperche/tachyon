@@ -38,7 +38,7 @@
  * has to be edited, and there is no name in this file to fall out of step.
  */
 
-import { SUPPORTED_AGENT_RUNTIMES } from "../agents/agentRuntimeAdmission.js";
+import { SUPPORTED_AGENT_RUNTIMES } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import {
   MEMORY_EVIDENCE_AXES,
   RUNTIME_NATIVE_MEMORY_REGISTRY,
@@ -67,7 +67,7 @@ export interface RuntimeConditionOriginV1 {
 
 const MANAGEABLE_ORIGIN: RuntimeConditionOriginV1 = {
   registry: "SUPPORTED_AGENT_RUNTIMES",
-  module: "src/agents/agentRuntimeAdmission.ts",
+  module: "packages/shared/src/agents/agentRuntimeAdmission.ts",
 };
 
 const MEASURED_ORIGIN: RuntimeConditionOriginV1 = {

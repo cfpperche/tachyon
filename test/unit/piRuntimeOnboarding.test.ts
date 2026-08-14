@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import { openingPromptCapability } from "../../src/agents/openingPromptCapability.js";
-import { runtimePromptAdapter } from "../../src/agents/runtimePromptAdapters.js";
+import { runtimePromptAdapter } from "@tachyon/shared/agents/runtimePromptAdapters.js";
 import { piBridgeCmd } from "../../src/config/loadConfig.js";
 
 const EXTENSION = "/immutable/engine/pi-bridge-extension.mjs";

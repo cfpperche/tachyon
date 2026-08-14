@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { AttentionMonitor, type AttentionSettings } from "../../src/attention/AttentionMonitor.js";
-import { runtimeProfile } from "../../src/runtime/runtimeProfile.js";
+import { AttentionMonitor, type AttentionSettings } from "@tachyon/shared/attention/AttentionMonitor.js";
+import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 /**
  * t-3eaa8b — measuring the peer runtimes' composers turned up a defect in the SHARED dim rule.

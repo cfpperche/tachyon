@@ -5,7 +5,7 @@ import {
   patchProfileFromStudioMutation,
   projectAgentProfileStudioSnapshot,
   type AgentProfileStudioMutationV1,
-} from "../../src/config/agentProfileStudio.js";
+} from "@tachyon/shared/config/agentProfileStudio.js";
 import { agentProfileSchemaV1 } from "../../src/config/agentProfileSchema.js";
 import { canonicalAgentFields, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
 import { savedAgentCreateMutation } from "../../src/agents/savedAgentProposal.js";

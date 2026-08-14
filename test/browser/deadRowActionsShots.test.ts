@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, type FleetVM, type TabId } from "../../src/sidebar/types.js";
+import { SAMPLE, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * t-c515c0 — headless Visual QA for the ACTION BAR of a row whose process is gone.

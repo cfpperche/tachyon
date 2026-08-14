@@ -13,8 +13,8 @@ import {
   permissionAuthorizationChoices,
   setNativeConfigAuthorized,
 } from "../../src/webview/agent-studio-shell/domain.js";
-import { validateAgentNativeConfigPolicy } from "../../src/config/agentNativeConfigPolicy.js";
-import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "../../src/config/agentProfileStudio.js";
+import { validateAgentNativeConfigPolicy } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
+import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
 import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
 

@@ -1,6 +1,6 @@
 import type { NotifyLevel } from "../bridge/tools.js";
 import type { NoticeAction } from "./EngineHost.js";
-import { describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "../runtime/authRequired.js";
+import { describeAuthRequired, runtimeLoginCommand, type AuthRequiredEvidence } from "@tachyon/shared/runtime/authRequired.js";
 
 /**
  * t-2656d7 (SDD 495, first slice) — how a launch refused for credentials is presented.

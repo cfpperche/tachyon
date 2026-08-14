@@ -24,7 +24,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { assembleUntrustedSrcdoc } from "../webview/shared/untrustedSrcdoc.js";
+import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 import type { InboxArtifactContent } from "./artifacts.js";
 
 /** Inline budget per artifact. Images travel base64 (≈ +33%), so this is generous but bounded. */

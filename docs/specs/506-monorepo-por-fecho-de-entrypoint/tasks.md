@@ -14,16 +14,16 @@ do pacote com o que a fatia declarou ter movido. Divergência é defeito da fati
 
 A menor e a mais importante. 36 módulos, zero alcançam `vscode`, direção já medida.
 
-- [ ] `package.json` da raiz declara `workspaces: ["packages/*"]`. Nenhum código de produto sai da raiz nesta fatia além dos 36.
-- [ ] `packages/shared/` recebe os 32 da interseção engine/navegador (Apêndice B do baseline) e os 4 `.cjs` de `shared/` na raiz, cada um com seu `.d.cts`.
-- [ ] Os consumidores medidos passam a importar `shared` pelo NOME do pacote, não por caminho relativo: 4 arquivos de `src/`, 3 scripts operacionais, 4 testes.
-- [ ] `tsconfig` do pacote existe e a raiz o referencia (project references).
-- [ ] **Novo gate `scripts/check-package-boundary.mjs`**, entrando em `STATIC_GATES`: dentro de `packages/`, um import relativo não pode escapar da raiz do próprio pacote. Reusa o resolvedor de `scripts/research/measure-monorepo-graph.mjs` — não escreva um segundo resolvedor.
-- [ ] O gate **conta e reporta** o que não conseguiu resolver, em vez de descartar em silêncio. Hoje são 3 JSON de manifesto, e eles ficam listados com o motivo.
-- [ ] O gate nasce com **lista de exceções VAZIA**. Se precisar de exceção para a fatia passar, a fatia está errada.
-- [ ] `test/unit/ciWorkflowSingleSource.test.ts` atualizado para incluir o gate novo — a lista de gates é revisada por quem a muda, não cresce sozinha.
-- [ ] Existe um teste que prova que o gate FALHA num import que atravessa a fronteira. Um guarda sem prova de que ele barra alguma coisa é um guarda que falha aberto.
-- [ ] Medido e registrado em `notes.md`: tempo de `npm ci` e tamanho do `package-lock.json`, antes e depois.
+- [x] `package.json` da raiz declara `workspaces: ["packages/*"]`. Nenhum código de produto sai da raiz nesta fatia além dos 36.
+- [x] `packages/shared/` recebe os 32 da interseção engine/navegador (Apêndice B do baseline), os 4 `.cjs` de `shared/` com seus `.d.cts`, e os 9 módulos de tipo exigidos pelo fecho de compilação medido durante a fatia.
+- [x] Os consumidores medidos passam a importar `shared` pelo NOME do pacote, não por caminho relativo: 4 arquivos de `src/`, 3 scripts operacionais, 4 testes.
+- [x] `tsconfig` do pacote existe, compila sozinho e a raiz o referencia (project references).
+- [x] **Novo gate `scripts/check-package-boundary.mjs`**, entrando em `STATIC_GATES`: dentro de `packages/`, um import relativo não pode escapar da raiz do próprio pacote. Reusa o resolvedor de `scripts/research/measure-monorepo-graph.mjs` — não escreva um segundo resolvedor.
+- [x] O gate **conta e reporta** o que não conseguiu resolver, em vez de descartar em silêncio. Os 3 JSON de manifesto ficam listados com o motivo.
+- [x] O gate nasce com **lista de exceções VAZIA**.
+- [x] `test/unit/ciWorkflowSingleSource.test.ts` atualizado para incluir o gate novo — a lista de gates é revisada por quem a muda, não cresce sozinha.
+- [x] Existe um teste que prova que o gate FALHA num import que atravessa a fronteira.
+- [x] Medido e registrado em `notes.md`: tempo de `npm ci` e tamanho do `package-lock.json`, antes e depois.
 
 ---
 

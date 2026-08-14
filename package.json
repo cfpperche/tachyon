@@ -9,6 +9,9 @@
     "url": "https://github.com/sponsors/cfpperche"
   },
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/cfpperche/tachyon.git"
@@ -920,7 +923,8 @@
     "build": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs dev",
     "build:stable": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs stable",
     "watch": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs dev --watch",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
+    "typecheck": "tsc -b packages/shared --pretty false && tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
+    "check:package-boundary": "node scripts/check-package-boundary.mjs",
     "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
     "check:source-diffable": "node scripts/check-source-diffable.mjs",
     "check:webview-tokens": "node scripts/check-webview-tokens.mjs",

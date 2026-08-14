@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, type FleetVM, type NoticeVM } from "../../src/sidebar/types.js";
+import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * t-2656d7 (SDD 495 first slice) — headless Visual QA for the notice that replaces the status bar.

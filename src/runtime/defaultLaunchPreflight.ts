@@ -2,7 +2,7 @@ import { ClaudeLaunchPreflight } from "./adapters/claudeLaunchPreflight.js";
 import { CodexLaunchPreflight } from "./adapters/codexLaunchPreflight.js";
 import { GrokLaunchPreflight } from "./adapters/grokLaunchPreflight.js";
 import { OpencodeLaunchPreflight } from "./adapters/opencodeLaunchPreflight.js";
-import { RuntimeLaunchPreflightRegistry, type RuntimeLaunchPreflightPort } from "./launchPreflight.js";
+import { RuntimeLaunchPreflightRegistry, type RuntimeLaunchPreflightPort } from "@tachyon/shared/runtime/launchPreflight.js";
 
 /**
  * The production launch-preflight wiring, in one place.

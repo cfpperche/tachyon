@@ -9,7 +9,7 @@ import {
   validateAgentNativeConfigPolicy,
   GROK_ALWAYS_APPROVE_AUTHORIZATION,
   type ResolvedAgentNativeConfigProjection,
-} from "../../src/config/agentNativeConfigPolicy.js";
+} from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import {
   projectGrokNativeConfig,
   GROK_NATIVE_CONFIG_FAMILY_KEYS,

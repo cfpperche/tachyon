@@ -10,7 +10,7 @@ import { PluginActionBroker, type PluginActionBrokerResult } from "../../src/plu
 import { PluginFleetProjectionProvider } from "../../src/plugins/ui/projectionProvider.js";
 import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap } from "../../src/webview/plugin-host/relay.js";
 import { renderWebviewShell } from "../../src/webview/shared/shell.js";
-import type { FleetVM } from "../../src/sidebar/types.js";
+import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const dirs: string[] = [];

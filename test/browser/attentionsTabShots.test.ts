@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { SAMPLE, type FleetVM, type NoticeVM } from "../../src/sidebar/types.js";
+import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
 
 /**
  * t-37f554 — headless Visual QA for the Attentions tab at three sidebar widths.

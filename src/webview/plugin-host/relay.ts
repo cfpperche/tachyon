@@ -1,6 +1,6 @@
 import { READY, readyMessage } from "../shared/ready.js";
 import { PLUGIN_FLEET_PROJECTION } from "../../plugins/ui/messages.js";
-import { assembleUntrustedSrcdoc, escapeHtmlAttr } from "../shared/untrustedSrcdoc.js";
+import { assembleUntrustedSrcdoc, escapeHtmlAttr } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 
 export const PLUGIN_UI_ACTION = "pluginUiAction" as const;
 export const PLUGIN_UI_ACTION_RESULT = "pluginUiActionResult" as const;

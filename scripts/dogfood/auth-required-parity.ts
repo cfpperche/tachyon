@@ -20,10 +20,10 @@ import {
   authRequiredFromPreflight,
   classifyAuthRequired,
   describeAuthRequired,
-} from "../../src/runtime/authRequired.js";
+} from "@tachyon/shared/runtime/authRequired.js";
 import { OpencodeLaunchPreflight } from "../../src/runtime/adapters/opencodeLaunchPreflight.js";
-import { parseLaunchCommand } from "../../src/runtime/launchPreflight.js";
-import type { ResumeRuntime } from "../../src/resume/adapters.js";
+import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
+import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-authreq-dogfood-"));
 const cwd = path.join(scratch, "ws");

@@ -17,7 +17,7 @@ import {
   projectAgentForgetPlan,
   type AgentForgetPlanFactsV1,
   type AgentForgetPlanStepId,
-} from "../../src/config/agentForgetPlan.js";
+} from "@tachyon/shared/config/agentForgetPlan.js";
 
 const REVISION = "a".repeat(64);
 

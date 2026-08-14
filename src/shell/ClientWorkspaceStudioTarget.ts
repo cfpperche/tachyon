@@ -8,7 +8,7 @@ import {
   type TachyonConfig,
 } from "../config/loadConfig.js";
 import type { AuthorizableCapabilities } from "../config/agentCapabilityCandidates.js";
-import { agentForgetPlanResultSchemaV1, type AgentForgetPlanResultV1 } from "../config/agentForgetPlan.js";
+import { agentForgetPlanResultSchemaV1, type AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan.js";
 import { parseProfileAwareConfigSyntax } from "../config/agentProfileConfigLoader.js";
 import { scanAgentRosterDirectory } from "../config/agentRosterDirectory.js";
 import { detectInstalledClis } from "../webview/cliDetect.js";
@@ -30,7 +30,7 @@ import {
   type AgentProfileStudioLifecycleResultV1,
   type AgentProfileStudioMutationV1,
   type AgentProfileStudioSnapshotV1,
-} from "../config/agentProfileStudio.js";
+} from "@tachyon/shared/config/agentProfileStudio.js";
 
 export interface ClientWorkspaceStudioTargetOptions {
   extensionUri: StudioDeps["extensionUri"];

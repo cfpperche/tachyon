@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { modelLabelForRuntime } from "../../src/runtime/runtimeProfile.js";
+import { modelLabelForRuntime } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("container-generated delegation behavior", () => {
   it("model label fallback title-cases unknown model ids", () => {

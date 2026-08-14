@@ -1,7 +1,7 @@
 import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { App, type GlobalOp } from "./App";
-import { SAMPLE, type FleetVM } from "../../sidebar/types";
+import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types";
 import { FLEET, readyMessage, type SidebarHostMessage } from "./messages";
 
 // The webview iframe entry. The host (SidebarPrototypeProvider) pushes the live fleet via postMessage
