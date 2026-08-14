@@ -264,7 +264,7 @@ export async function executeExtensionCommand(
     activityLog,
     onViewsChanged,
     stagedPayloads,
-    approvalResolutionChannel: APPROVAL_CHANNEL_VSCODE_COMMAND,
+    approvalResolutionChannel,
   } = context;
   switch (command.action) {
     case "pipeline.seed":
@@ -308,7 +308,7 @@ export async function executeExtensionCommand(
         decision: command.decision,
         // t-86e59a — the CHANNEL, not an actor. This action is reachable by anything that can speak the
         // control socket (door 1, t-6edd70), so "a human clicked in VS Code" is not a fact this site has.
-        resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND,
+        resolvedBy: approvalResolutionChannel,
         ...approvalResolutionPorts({
           listEntries: () => workspace.manager.list(),
           // t-d79534 — queue-aware delivery; see the twin note in Workspace.ts.

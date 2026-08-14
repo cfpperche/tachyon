@@ -96,6 +96,10 @@ const repoRoot = process.cwd();
 const RESOLVER_MODULE = "packages/engine/src/approvals/approvalRequest.ts";
 /** The only values a write door may name. Identifiers, never literals — that is the whole rule. */
 const ALLOWED_CHANNEL_CONSTANTS = ["APPROVAL_CHANNEL_VSCODE_COMMAND", "APPROVAL_CHANNEL_COMPANION_HTTP"];
+/** Adapter-supplied channel values accepted only at their named, typed composition seam. */
+const INJECTED_CHANNEL_SEAMS = new Map([
+  ["packages/engine/src/engine-service/extensionOperationService.ts", "approvalResolutionChannel"],
+]);
 /**
  * Spreads that may appear in a `resolveApproval` argument without hiding a `resolvedBy`. Accepting one
  * by name is only honest because "the named seams are real" below CALLS it and checks the field is absent.
@@ -227,7 +231,8 @@ export function scanResolvedBy(relPath: string, text: string): { doors: Resoluti
     // A shorthand `{ resolvedBy }` names a local of that name, never an exported channel constant.
     const named = value && ts.isIdentifier(value) ? value.text : undefined;
     doors.push({ at: where(property), value: value ? snippet(value) : snippet(property) });
-    if (!named || !ALLOWED_CHANNEL_CONSTANTS.includes(named)) {
+    const injectedSeam = named !== undefined && INJECTED_CHANNEL_SEAMS.get(relPath) === named;
+    if (!named || (!ALLOWED_CHANNEL_CONSTANTS.includes(named) && !injectedSeam)) {
       findings.push({ at: where(property), code: snippet(property), problem: LITERAL_ACTOR });
     }
   };
@@ -323,7 +328,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
       live.doors.map((d) => `${doorFile(d.at)} -> ${d.value}`).sort(),
       `write doors found at: ${live.doors.map((d) => `${d.at} -> ${d.value}`).sort().join(", ")}`,
     ).toEqual([
-      "packages/engine/src/engine-service/extensionOperationService.ts -> APPROVAL_CHANNEL_VSCODE_COMMAND",
+      "packages/engine/src/engine-service/extensionOperationService.ts -> approvalResolutionChannel",
       "packages/engine/src/workspace/Workspace.ts -> APPROVAL_CHANNEL_COMPANION_HTTP",
     ]);
   });
@@ -334,7 +339,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     const door1 = scanSrc(
       withInjection(
         "packages/engine/src/engine-service/extensionOperationService.ts",
-        "resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND,",
+        "resolvedBy: approvalResolutionChannel,",
         'resolvedBy: "alguem",',
       ),
     );
@@ -410,6 +415,10 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     expect(withImport("await resolveApproval(buildInput());")).toEqual([UNRESOLVED_INPUT]);
     expect(withImport("await resolveApproval({ id, decision, ...somewhereElse });")).toEqual([OPAQUE_SPREAD]);
     expect(withImport("await resolveApproval({ id, decision, resolvedBy });"), "a shorthand names a local, not a channel").toEqual([LITERAL_ACTOR]);
+    expect(
+      withImport("await resolveApproval({ id, decision, resolvedBy: approvalResolutionChannel });"),
+      "the injected seam is permitted only in its typed production module",
+    ).toEqual([LITERAL_ACTOR]);
     // A const in the same file IS resolvable, so requiring inline objects is not the rule.
     expect(withImport("const input = { id, resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND };\nawait resolveApproval(input);")).toEqual([]);
     // The named seam is accepted; omitting the optional field entirely attributes nothing and is legal.

@@ -17,6 +17,10 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
   re-exports that adapter-owned value for its exhaustive channel list and existing consumers.
 - Slice measurement: **29 bindings · 12 imports · 3 consumers → 27 bindings · 10 imports · 2 consumers**.
   No behavioral assertion changed; the only test edit supplies the new composition value.
+- Review correction: the use case keeps the injected value named `approvalResolutionChannel`; it does
+  not alias it to the adapter-specific constant name. The static channel guard accepts that identifier
+  only in this typed composition seam, while its real-file red injection still proves a literal actor is
+  rejected at the door.
 
 ## Deviations
 
