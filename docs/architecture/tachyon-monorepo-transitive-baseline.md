@@ -20,6 +20,67 @@ em valor**. O primeiro corte seguro é por fecho de entrypoint, não por diretó
 **18 arquivos operacionais** que codificam raiz única, manifesto único ou `dist/` plano; o primeiro a
 quebrar é `package.json#main`/`vsce`, antes do código da engine.
 
+## Medição final — depois das seis fatias da SDD 506
+
+_Medição de 2026-08-14 na árvore final da SDD 506, reproduzida por
+`node scripts/research/measure-monorepo-graph.mjs`. Os números iniciais acima permanecem intactos para
+que previsão e resultado possam ser comparados._
+
+O primeiro ensaio final encontrou uma falha na própria régua: depois de a fatia 5 mover 164 fontes
+para `apps/vscode-extension/src`, o script ainda varria apenas `src/` e `packages/`. Ele reportava 642
+arquivos e dez imports relativos falsamente não resolvidos porque **não havia lido o app**. A régua
+agora deriva os workspaces do `package.json` da raiz, identifica apps VS Code por `engines.vscode` e
+recusa esse apagamento silencioso pela própria contagem: **164 fontes do app** entram no relatório.
+
+### Inicial e final, lado a lado
+
+| medida | antes das fatias | árvore final | por que divergiu |
+|---|---:|---:|---|
+| universo físico medido (`.ts`/`.tsx` + quatro `.cjs`) | **777** | **805** | o plano contou membros pelo grafo de valor; os compiladores independentes revelaram tipos que esse grafo não emite. As extrações adicionaram 29 módulos de tipo/conceito e o órfão `VsCodeHost.ts` foi apagado: `777 + 29 - 1 = 805` |
+| fontes sob `src/` na raiz | **773** | **25** | 164 foram para o app e os fechos mais os tipos necessários foram para os três pacotes; ficam 17 apoios de dev/teste/medição e oito shims de endereço |
+| fontes do app VS Code | **0** | **164** | a previsão dizia 212 “aplicação/adaptadores”; ela errou por tratar todo residual como produto. A medição da fatia 4 separou 17 apoios, oito shims e um órfão |
+| `shared` físico, incluindo quatro `.cjs` | **4** | **45** | a previsão de 36 era de runtime; nove módulos de tipo puro/conceito foram necessários para o pacote compilar sozinho (D7) |
+| `engine` físico | **0** | **368** | a previsão de 355 era de runtime; sete tipos puros e seis módulos de conceito acrescentaram 13 endereços de compilação |
+| `webview-ui` físico | **0** | **203** | a previsão de 174 era de runtime; 29 tipos puros/conceitos foram necessários para fechar a compilação sem importar hosts |
+| acoplados a `vscode` por valor transitivo | **50** | **49** | 47 pertencem ao app, dois são hosts de fixture em `src/`; o quinquagésimo era o órfão sem importador e foi apagado |
+| imports diretos de `vscode` em valor | **42** | **41** | a única queda é o mesmo órfão apagado |
+| imports diretos somente de tipo | **9** | **9** | todos pertencem ao app; continuam apagados do JavaScript |
+| acoplados se tipos forem propagados | **88** | **78** | a extração de vocabulário removeu dez implementações host do fecho de tipos; não houve ganho fictício no fecho de valor |
+| especificadores relativos não resolvidos | **3/2.544 pares** | **3/1.916 pares** | permanecem exatamente os três assets JSON nominais; os dez falsos não resolvidos do primeiro ensaio final desapareceram quando o app entrou no universo |
+
+As três células de runtime previstas permaneceram numericamente estáveis: engine **391 = 355 próprios
++ 36 compartilhados**, navegador **206 = 174 próprios + 32 compartilhados**, e interseção de runtime
+**32**. Isso não confirma a previsão inteira: confirma apenas o grafo de **valor**. A forma física é
+maior porque cada pacote precisa também do vocabulário que o JavaScript não carrega.
+
+### Os 26 residuais, depois da decisão sobre o órfão
+
+Antes desta fatia havia exatamente **26** fontes sob `src/`, nos mesmos três grupos medidos na fatia
+4. A revisão final encontrou os mesmos 17 apoios e oito shims; o único arquivo sem importador era
+`src/workspace/VsCodeHost.ts`.
+
+- **17 apoios de dev/teste/medição:** permanecem definitivamente no `src/` da raiz. São código do
+  repositório (fixtures, fakes, parsers e instrumentos), não pertencem a nenhum dos quatro artefatos
+  enviados e não formam um runtime que justifique pacote.
+- **8 shims de compatibilidade:** são dívida de endereço, não arquitetura definitiva. O cartão
+  `t-31bedf` enumera os oito consumidores a reendereçar e exige apagar os shims sem criar pacote.
+- **1 órfão:** apagado. Busca nominal encontrou zero importadores de produção e teste; typecheck,
+  build e os dois gates de fronteira são a prova mecânica da remoção. A raiz fica com **25** fontes.
+
+### Onde o plano errou
+
+1. **Fecho de runtime não fecha compilação.** Os números 36/355/174 eram corretos para JavaScript e
+   insuficientes para pacotes TypeScript. D7 registra a correção: tipo puro ganha endereço junto do
+   conceito, sem arrastar a implementação host.
+2. **“212 aplicação/adaptadores” era uma célula residual, não um app.** Só 164 pertenciam a
+   entrypoints enviados. Os outros 48 da diferença são explicados por 23 módulos de tipo absorvidos
+   pelos pacotes e pelos 25 apoios/shims que continuam na raiz depois de apagar o órfão.
+3. **A régua não acompanhou a última mudança de layout.** Sem derivar `apps/*`, a primeira medição
+   final examinou um conjunto incompleto e ainda assim saiu verde. O número de membros, não apenas o
+   exit code, revelou a perda de cobertura.
+4. **O quinto pacote continuou sem número.** Os 25 residuais finais se dividem em 17 apoios e oito
+   endereços temporários; ausência comum de entrypoint não é coesão.
+
 ## Método e semântica
 
 O script reproduzível é `scripts/research/measure-monorepo-graph.mjs`. Ele parseia os 773 `.ts`/`.tsx`

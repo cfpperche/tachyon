@@ -5,7 +5,7 @@ import type { LegacySettingValues } from "../config/settingsImport.js";
  * t-aaad95 — the ONLY place left that reads a `tachyon.*` VS Code configuration section, and it exists
  * to read them for the last time.
  *
- * It lives beside `VsCodeHost` — the other file whose whole job is reading VS Code — and in a file of
+ * It lives in the VS Code app beside the notification adapter, and in a file of
  * its own so the inventory guard can allow exactly one site by NAME rather than by a pattern that would also wave through a reader somebody adds later. When every install has run
  * the one-time import, this file and `settingsImport.ts` go together — until then it is migration
  * surface, not a fallback: nothing consults it after the marker is written.

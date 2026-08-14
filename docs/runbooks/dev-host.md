@@ -10,6 +10,28 @@ fleet window.
 **Canonical F5 config:** `Tachyon: Dev Host` (pointer under `.tachyon/dev-host/`)
 **Scripts:** `scripts/dev-host/`
 
+## Comece por aqui — F5 não funciona antes de armar
+
+**O dev-host precisa ser ARMADO no checkout de onde você vai apertar F5.** Sem isso a
+`preLaunchTask` falha e o VS Code mostra só `terminated with exit code 1`; a explicação real fica no
+terminal, fora do diálogo, e é fácil não achar.
+
+```bash
+cd /caminho/do/seu/checkout
+scripts/dev-host/cli.sh point --fixture <slug> --spec <NNN> --slug <slug>
+scripts/dev-host/cli.sh point-status     # deve dizer "armed"
+# então: Run and Debug → "Tachyon: Dev Host" → F5
+scripts/dev-host/cli.sh point-clear      # quando terminar
+```
+
+`point-status` num checkout não armado responde
+`unarmed — no meta.json — run: scripts/dev-host/cli.sh point …`. **Rode ele primeiro sempre que o
+F5 falhar** — é a resposta mais rápida e é a causa mais comum.
+
+O detalhe completo de fixtures, mirror e multi-root está adiante; esta seção existe porque a ordem
+"armar, depois F5" estava documentada só na página 8 e um dogfood real tropeçou nisso
+(2026-08-14, fatia 5 da SDD 506). Aspereza no harness a gente conserta — veja a diretriz logo abaixo.
+
 ## Maintaining the harness (read this if you dogfood)
 
 **Everything under `scripts/dev-host/` is FIRST-PARTY, living code — ours to keep sharp.** The harness
