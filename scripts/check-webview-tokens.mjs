@@ -58,12 +58,9 @@ export const HEX_EXCEPTIONS = Object.freeze([
   {
     file: "src/webview/agent-pane/App.tsx",
     values: [
-      "#000000", "#0dbc79", "#11a8cd", "#1e1e1e", "#23d18b", "#2472c8", "#264f78",
-      "#29b8db", "#3b8eea", "#4ec9b0", "#569cd6", "#666666", "#aeafad", "#bc3fbc",
-      "#c586c0", "#cccccc", "#cd3131", "#d670d6", "#e5e510", "#e5e5e5", "#f14c4c",
-      "#f5f543",
+      "#4ec9b0", "#569cd6", "#c586c0",
     ],
-    reason: "xterm.js ANSI 16-color palette plus inject-mark colors; terminal cells are not product chrome and have no --ds equivalent.",
+    reason: "Non-PTY inject marker colors identify stage/submit/template events; xterm itself reads the VS Code terminal theme.",
   },
   {
     file: "src/webview/agent-pane/agent-pane.css",
@@ -103,9 +100,9 @@ export const HEX_EXCEPTIONS = Object.freeze([
       "#006ab1", "#0078d4", "#007fd4", "#0090f1", "#026ec1", "#0e639c", "#1177bb",
       "#1a85ff", "#1e1e1e", "#252526", "#3794ff", "#388a34", "#3b3b3b", "#3c3c3c",
       "#6c6c6c", "#75beff", "#89d185", "#9d9d9d", "#a1260d", "#bf8803", "#cca700",
-      "#cccccc", "#f14c4c", "#f3f3f3", "#fff", "#ffffff",
+      "#000", "#cccccc", "#f14c4c", "#f3f3f3", "#fff", "#ffffff",
     ],
-    reason: "Host-side vscode-var pick() defaults plus the light/dark tables used when the IDE browser has no theme payload. Not surface CSS; shrink by reading --ds-* once the overlay cutover lands.",
+    reason: "Generated copies of tokens.css literals, light/dark VS Code fallback tables, and the runtime pure-white input guard; not independently authored surface colors.",
   },
   {
     file: "src/webview/pin-preview/pin-preview.css",

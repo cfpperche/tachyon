@@ -13,6 +13,72 @@
 
 import * as vscode from "vscode";
 
+// BEGIN GENERATED TOKEN DEFINITIONS — do not edit; run npm run generate:theme-tokens
+export const TOKEN_DEFINITIONS = {
+  "--ds-fg": "var(--vscode-foreground)",
+  "--ds-muted": "var(--vscode-descriptionForeground)",
+  "--ds-border": "var(--vscode-widget-border, var(--vscode-editorWidget-border, color-mix(in srgb, var(--vscode-foreground) 22%, transparent)))",
+  "--ds-focus": "var(--vscode-focusBorder)",
+  "--ds-ok": "var(--vscode-charts-green, var(--vscode-testing-iconPassed, var(--vscode-terminal-ansiGreen)))",
+  "--ds-warn": "var(--vscode-charts-yellow, var(--vscode-list-warningForeground, var(--vscode-terminal-ansiYellow)))",
+  "--ds-err": "var(--vscode-errorForeground, var(--vscode-list-errorForeground, var(--vscode-terminal-ansiRed)))",
+  "--ds-hover": "var(--vscode-toolbar-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 12%, transparent))",
+  "--ds-disabled-opacity": "0.5",
+  "--ds-scrim": "color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%)",
+  "--ds-link": "var(--vscode-textLink-foreground)",
+  "--ds-info": "var(--vscode-charts-blue, var(--vscode-textLink-foreground))",
+  "--ds-card": "var(--vscode-editorWidget-background, color-mix(in srgb, var(--vscode-foreground) 6%, transparent))",
+  "--ds-input-bg": "var(--vscode-input-background)",
+  "--ds-input-fg": "var(--vscode-input-foreground)",
+  "--ds-dropdown-bg": "var(--vscode-dropdown-background, var(--vscode-input-background))",
+  "--ds-dropdown-fg": "var(--vscode-dropdown-foreground, var(--vscode-input-foreground))",
+  "--ds-btn-bg": "var(--vscode-button-background)",
+  "--ds-btn-fg": "var(--vscode-button-foreground)",
+  "--ds-btn-hover": "var(--vscode-button-hoverBackground, var(--vscode-button-background))",
+  "--ds-accent": "var(--vscode-button-background, var(--vscode-focusBorder, var(--vscode-textLink-foreground)))",
+  "--ds-shadow-1": "0 1px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18))",
+  "--ds-shadow-2": "0 10px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18))",
+  "--ds-duration-1": "120ms",
+  "--ds-duration-2": "200ms",
+  "--ds-ease": "cubic-bezier(0.2, 0, 0, 1)",
+  "--ds-z-popover": "20",
+  "--ds-z-dialog": "40",
+  "--ds-z-toast": "50",
+  "--tachyon-font-mono": "\"Tachyon Mono\", ui-monospace, \"SFMono-Regular\", Consolas, \"Liberation Mono\", monospace",
+  "--tachyon-font-reading": "var(--vscode-font-family, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif)",
+  "--tachyon-weight-regular": "400",
+  "--tachyon-weight-medium": "500",
+  "--tachyon-weight-semibold": "600",
+  "--tachyon-weight-bold": "700",
+  "--tachyon-tracking-label": ".06em",
+  "--ds-mono": "var(--tachyon-font-mono)",
+  "--ds-title": "16px",
+  "--ds-section": "11px",
+  "--ds-body": "var(--vscode-font-size, 13px)",
+  "--ds-small": "12px",
+  "--ds-micro": "11px",
+  "--ds-1": "4px",
+  "--ds-2": "8px",
+  "--ds-3": "12px",
+  "--ds-4": "16px",
+  "--ds-5": "24px",
+  "--ds-6": "32px",
+  "--ds-page-pad-x": "var(--ds-4)",
+  "--ds-page-pad-y": "var(--ds-3)",
+  "--ds-page-pad-bottom": "var(--ds-5)",
+  "--ds-page-chrome-gap": "var(--ds-3)",
+  "--ds-page-chrome-margin-bottom": "var(--ds-4)",
+  "--ds-page-chrome-actions-gap": "var(--ds-2)",
+  "--ds-border-width": "1px",
+  "--ds-radius": "6px",
+  "--ds-icon-gap": "6px",
+  "--ds-control-pad-y": "var(--ds-2)",
+  "--ds-control-pad-x": "var(--ds-3)",
+  "--ds-control-line": "calc(4 / 3)",
+  "--ds-control-h": "34px"
+} as const;
+// END GENERATED TOKEN DEFINITIONS
+
 /** Final CSS custom properties to inject into the Design Mode chrome. */
 export type DmThemeCssVars = Record<string, string>;
 
@@ -58,124 +124,46 @@ function themeCacheKey(): string {
   return String(vscode.window.activeColorTheme?.kind ?? 2);
 }
 
-function pick(v: Record<string, string>, keys: string[], fallback: string): string {
-  for (const k of keys) {
-    const val = v[k]?.trim();
-    if (val) return val;
+function resolveCssVars(value: string, values: Record<string, string>): string {
+  let out = value;
+  for (let guard = 0; guard < 30; guard += 1) {
+    const start = out.lastIndexOf("var(");
+    if (start < 0) return out;
+    const close = out.indexOf(")", start);
+    if (close < 0) return out;
+    const [name, ...fallbackParts] = out.slice(start + 4, close).split(",");
+    const replacement = values[name!.trim()]?.trim() || fallbackParts.join(",").trim();
+    out = out.slice(0, start) + replacement + out.slice(close + 1);
   }
-  return fallback;
+  throw new Error(`theme token reference cycle: ${value}`);
 }
 
-/** Map probed --vscode-* values → --ds-* (mirrors design-system.css). */
+/** Resolve the generated CSS declarations against sampled VS Code custom properties. */
 export function mapVscodeVarsToDs(v: Record<string, string>): DmThemeCssVars {
-  const fg = pick(v, ["--vscode-foreground"], "#cccccc");
-  const muted = pick(v, ["--vscode-descriptionForeground"], "#9d9d9d");
-  const editorBg = pick(v, ["--vscode-editor-background"], "#1e1e1e");
-  const sideBg = pick(v, ["--vscode-sideBar-background", "--vscode-editor-background"], "#252526");
-  const card = pick(v, ["--vscode-editorWidget-background", "--vscode-sideBar-background"], sideBg);
-  const border = pick(
-    v,
-    ["--vscode-widget-border", "--vscode-editorWidget-border", "--vscode-panel-border"],
-    "rgba(128,128,128,0.35)",
-  );
-  const separator = pick(
-    v,
-    ["--vscode-panel-border", "--vscode-widget-border"],
-    border,
-  );
-  const focus = pick(v, ["--vscode-focusBorder"], "#007fd4");
-  const sashHover = pick(
-    v,
-    ["--vscode-sash-hoverBorder", "--vscode-focusBorder"],
-    focus,
-  );
-  const link = pick(v, ["--vscode-textLink-foreground"], focus);
-  const btnBg = pick(v, ["--vscode-button-background"], "#0e639c");
-  const btnFg = pick(v, ["--vscode-button-foreground"], "#ffffff");
-  const btnHover = pick(v, ["--vscode-button-hoverBackground", "--vscode-button-background"], btnBg);
-  const inputBg = pick(v, ["--vscode-input-background"], "#3c3c3c");
-  const inputFg = pick(v, ["--vscode-input-foreground", "--vscode-foreground"], fg);
-  const hover = pick(v, ["--vscode-toolbar-hoverBackground"], "rgba(128,128,128,0.15)");
-  const ok = pick(v, ["--vscode-charts-green", "--vscode-testing-iconPassed", "--vscode-terminal-ansiGreen"], "#89d185");
-  const warn = pick(v, ["--vscode-charts-yellow", "--vscode-list-warningForeground", "--vscode-terminal-ansiYellow"], "#cca700");
-  const err = pick(v, ["--vscode-errorForeground", "--vscode-list-errorForeground", "--vscode-terminal-ansiRed"], "#f14c4c");
-  const info = pick(v, ["--vscode-charts-blue", "--vscode-textLink-foreground"], link);
-  const shadow = pick(v, ["--vscode-widget-shadow"], "rgba(0,0,0,0.36)");
-  const fontSize = pick(v, ["--vscode-font-size"], "13px");
-  const fontFamily = pick(v, ["--vscode-font-family"], "system-ui, sans-serif");
-
-  // Nested chrome surfaces (code blocks, chips) should match panel chrome — not raw page/UA white.
-  // Prefer widget/sidebar over pure input (input is often #fff even when the shell is dark-tinted glass).
-  const surface = card || sideBg || editorBg;
-  const surfaceRaised = inputBg && inputBg !== "#ffffff" && inputBg !== "#fff" ? inputBg : sideBg || card || editorBg;
-
-  // Rough luminance for form-control color-scheme (prevents UA white <pre>/<textarea> on dark shells).
-  const scheme = (() => {
-    const m = editorBg.replace(/#/, "").trim();
-    if (/^[0-9a-fA-F]{6}$/.test(m)) {
-      const r = parseInt(m.slice(0, 2), 16);
-      const g = parseInt(m.slice(2, 4), 16);
-      const b = parseInt(m.slice(4, 6), 16);
-      const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-      return L > 0.55 ? "light" : "dark";
-    }
-    if (/rgb\s*\(/i.test(editorBg)) {
-      const nums = editorBg.match(/\d+/g)?.map(Number) ?? [];
-      if (nums.length >= 3) {
-        const L = (0.2126 * nums[0]! + 0.7152 * nums[1]! + 0.0722 * nums[2]!) / 255;
-        return L > 0.55 ? "light" : "dark";
-      }
-    }
-    return "dark";
-  })();
-
+  const resolved: DmThemeCssVars = {};
+  for (const [name, value] of Object.entries(TOKEN_DEFINITIONS)) {
+    resolved[name] = resolveCssVars(value, { ...v, ...resolved });
+  }
+  const read = (...names: string[]): string => names.map((name) => v[name]?.trim()).find(Boolean) ?? "";
+  const editorBg = read("--vscode-editor-background");
+  const inputBg = read("--vscode-input-background");
+  const hex = editorBg.replace("#", "");
+  const channels = /^[\da-f]{6}$/i.test(hex)
+    ? [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)]
+    : /rgb\s*\(/i.test(editorBg) ? editorBg.match(/\d+/g)?.slice(0, 3).map(Number) : undefined;
+  const light = !!channels && (0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!) / 255 > 0.55;
+  // Input can be pure white inside dark-tinted glass themes; keep raised chrome on the shell surface.
+  const surfaceRaised = inputBg && inputBg !== "#ffffff" && inputBg !== "#fff"
+    ? inputBg
+    : read("--vscode-sideBar-background", "--vscode-editorWidget-background") || editorBg;
   return {
-    "--ds-fg": fg,
-    "--ds-muted": muted,
-    "--ds-border": border,
-    "--ds-separator": separator,
-    "--ds-sash-hover": sashHover,
-    "--ds-focus": focus,
-    "--ds-link": link,
-    "--ds-ok": ok,
-    "--ds-warn": warn,
-    "--ds-err": err,
-    "--ds-info": info,
-    "--ds-card": card,
-    "--ds-input-bg": inputBg,
-    "--ds-input-fg": inputFg,
-    "--ds-surface": surface,
+    ...resolved,
+    // Design Mode overlay-only roles. Q4 keeps these out of the shared product token sheet.
+    "--ds-separator": read("--vscode-panel-border", "--vscode-widget-border") || resolved["--ds-border"]!,
     "--ds-surface-raised": surfaceRaised,
-    "--ds-color-scheme": scheme,
-    "--ds-btn-bg": btnBg,
-    "--ds-btn-fg": btnFg,
-    "--ds-btn-hover": btnHover,
-    "--ds-hover": hover,
-    "--ds-accent": btnBg,
     "--ds-editor-bg": editorBg,
-    "--ds-sidebar-bg": sideBg,
-    "--ds-disabled-opacity": "0.5",
-    "--ds-shadow-1": `0 1px 2px ${shadow}`,
-    "--ds-shadow-2": `0 10px 24px ${shadow}`,
-    "--ds-radius": "6px",
-    "--ds-border-width": "1px",
-    "--ds-1": "4px",
-    "--ds-2": "8px",
-    "--ds-3": "12px",
-    "--ds-4": "16px",
-    "--ds-5": "24px",
-    "--ds-title": "16px",
-    "--ds-section": "11px",
-    "--ds-body": fontSize,
-    "--ds-small": "12px",
-    "--ds-micro": "11px",
-    "--ds-mono": `"Tachyon Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace`,
-    "--ds-font-ui": fontFamily,
-    "--ds-icon-gap": "6px",
-    "--ds-control-pad-y": "8px",
-    "--ds-control-pad-x": "12px",
-    "--tachyon-weight-semibold": "600",
-    "--tachyon-tracking-label": ".06em",
+    "--ds-font-ui": read("--vscode-font-family") || "system-ui, sans-serif",
+    "--ds-color-scheme": light ? "light" : "dark",
   };
 }
 

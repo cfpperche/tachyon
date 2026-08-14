@@ -5,6 +5,7 @@ import type { AgentPaneFontMetrics, AgentPaneFromHost, AgentPaneInjectKind, Agen
 import { foreignClientBannerText } from "../../presentation/foreignTmuxClient";
 import { gridChanged, sanitizeFontMetrics, type GridSize } from "./geometry";
 import { QuickPicker } from "../shared/ui/QuickPicker";
+import { terminalThemeFromComputedStyle } from "./terminalTheme";
 
 export interface AgentPaneAppProps {
   postMessage: (msg: AgentPaneToHost) => void;
@@ -131,28 +132,7 @@ export function App({ postMessage, onHostMessage }: AgentPaneAppProps) {
       lineHeight: 1,
       letterSpacing: 0,
       overviewRulerWidth: 14,
-      theme: {
-        background: "#1e1e1e",
-        foreground: "#cccccc",
-        cursor: "#aeafad",
-        selectionBackground: "#264f78",
-        black: "#000000",
-        red: "#cd3131",
-        green: "#0dbc79",
-        yellow: "#e5e510",
-        blue: "#2472c8",
-        magenta: "#bc3fbc",
-        cyan: "#11a8cd",
-        white: "#e5e5e5",
-        brightBlack: "#666666",
-        brightRed: "#f14c4c",
-        brightGreen: "#23d18b",
-        brightYellow: "#f5f543",
-        brightBlue: "#3b8eea",
-        brightMagenta: "#d670d6",
-        brightCyan: "#29b8db",
-        brightWhite: "#e5e5e5",
-      },
+      theme: terminalThemeFromComputedStyle(getComputedStyle(document.documentElement)),
       allowProposedApi: true,
       convertEol: false,
       scrollback: 5000,
