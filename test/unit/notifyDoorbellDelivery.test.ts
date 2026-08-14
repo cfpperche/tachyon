@@ -8,8 +8,8 @@ import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
-import type { NoticeQueueMetadata } from "@tachyon/engine/bridge/NoticeQueue.js";
-import { readDoorbellTrailEvents } from "@tachyon/engine/bridge/doorbell.js";
+import type { NoticeQueueMetadata } from "@tachyon/engine/workspace/NoticeQueue.js";
+import { readDoorbellTrailEvents } from "@tachyon/engine/workspace/doorbell.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 
 /**

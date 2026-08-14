@@ -168,7 +168,7 @@ import {
 } from "./GatedCompletionMonitor.js";
 import { isVerifiedSince } from "./verifyRecordReader.js";
 import { defaultGitExec } from "../worktree/WorktreeManager.js";
-import { appendDoorbellOverflowEvent, hasDoorbellRung } from "../bridge/doorbell.js";
+import { appendDoorbellOverflowEvent, hasDoorbellRung } from "./doorbell.js";
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "@tachyon/shared/attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
@@ -179,7 +179,7 @@ import {
   type NoticeOrigin,
   type NoticeQueueItem,
   type NoticeQueueMetadata,
-} from "../bridge/NoticeQueue.js";
+} from "./NoticeQueue.js";
 import { Bridge, derivePort } from "../bridge/Bridge.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";

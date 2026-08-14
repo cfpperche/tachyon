@@ -5,7 +5,7 @@ import { readPaneTranscript } from "../../agents/paneTranscript.js";
 import { composerProfileFor } from "@tachyon/shared/runtime/composerRegion.js";
 import { isEvidencedWorking } from "../../prompts/injectFlow.js";
 import { agentSummaryRefusal, composeBoundedAgentNotice, prepareAgentSummary } from "../notifyAgent.js";
-import { appendDoorbellEvent, findDoorbellDelivery, readDoorbellEventsFor, READ_NOTICES_MAX } from "../doorbell.js";
+import { appendDoorbellEvent, findDoorbellDelivery, readDoorbellEventsFor, READ_NOTICES_MAX } from "../../workspace/doorbell.js";
 import { redactSecrets } from "../../utils/redactSecrets.js";
 import { type BridgeDeps, AGENT_NAME, deliverNoticeFallback, fail, lifecycleScopeGuard, limitText, managedEntry, ok, resolveDeclaredActor } from "./shared.js";
 

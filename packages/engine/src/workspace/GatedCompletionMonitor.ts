@@ -8,7 +8,7 @@
 import type { AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
 import type { ManagedEntryInfo } from "../agents/AgentManager.js";
 import type { ManagedWorktreeEntry } from "../worktree/managedWorktree.js";
-import type { NoticeQueueMetadata } from "../bridge/NoticeQueue.js";
+import type { NoticeQueueMetadata } from "./NoticeQueue.js";
 
 export const DEFAULT_GATED_COMPLETION_GRACE_MS = 45_000;
 
