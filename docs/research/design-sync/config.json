@@ -1,0 +1,29 @@
+{
+  "pkg": "tachyon",
+  "globalName": "TachyonDS",
+  "shape": "package",
+  "tsconfig": "tsconfig.webview.json",
+  "cssEntry": "dist/webview/_ds-sync-entry.css",
+  "extraFonts": [
+    "dist/webview/faces.css"
+  ],
+  "componentSrcMap": {
+    "Icon": "src/webview/shared/ui/Icon.tsx",
+    "Button": "src/webview/shared/ui/Button.tsx",
+    "IconButton": "src/webview/shared/ui/IconButton.tsx",
+    "Tabs": "src/webview/shared/ui/Tabs.tsx",
+    "Chip": "src/webview/shared/ui/Chip.tsx",
+    "Input": "src/webview/shared/ui/Field.tsx",
+    "Textarea": "src/webview/shared/ui/Field.tsx",
+    "Select": "src/webview/shared/ui/Field.tsx",
+    "FieldRow": "src/webview/shared/ui/Field.tsx",
+    "Badge": "src/webview/shared/ui/Field.tsx",
+    "PageChrome": "src/webview/shared/ui/patterns.tsx",
+    "ListRow": "src/webview/shared/ui/patterns.tsx",
+    "DenseRow": "src/webview/shared/ui/patterns.tsx",
+    "EmptyState": "src/webview/shared/ui/patterns.tsx",
+    "QuickPicker": "src/webview/shared/ui/QuickPicker.tsx",
+    "ConfirmForm": "src/webview/shared/ui/ConfirmForm.tsx",
+    "ToastProvider": "src/webview/shared/ui/Toast.tsx"
+  }
+}
