@@ -8,10 +8,8 @@ import type { ActivityLogManager } from "../activity/ActivityLogManager.js";
 import { removeAgentWorktree, stopAgentSessionForDelete } from "../agents/agentRemovalCascade.js";
 import { isAgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
 import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan.js";
-import type { BridgeDeps } from "../bridge/tools.js";
 import { executeWait } from "../workspace/Waiters.js";
-import { resolveApproval } from "../approvals/approvalRequest.js";
-import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "../bridge/approvalChannels.js";
+import { resolveApproval, type ApprovalResolutionChannel } from "../approvals/approvalRequest.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 import { projectAgentProfileStudioSnapshot } from "@tachyon/shared/config/agentProfileStudio.js";
@@ -56,6 +54,8 @@ export interface ExtensionOperationContext {
   activityLog: ActivityLogManager;
   providerObservations: ProviderObservationService;
   stagedPayloads?: StagedPayloadStore;
+  /** Channel owned by the adapter that received this operation; the use case does not choose its door. */
+  approvalResolutionChannel: ApprovalResolutionChannel;
   onViewsChanged(view: ViewKind): void;
 }
 
@@ -247,7 +247,7 @@ export async function executeExtensionQuery(
           manager: workspace.manager,
           attentionOf: (agent) => workspace.monitor.stateOf(agent)?.state,
           waiters: workspace.waiters,
-        } as Pick<BridgeDeps, "manager" | "attentionOf" | "waiters">,
+        },
         query.agent,
         query.until,
         query.timeoutSec,
@@ -259,7 +259,13 @@ export async function executeExtensionCommand(
   context: ExtensionOperationContext,
   command: ExtensionCommandV1,
 ): Promise<JsonValue> {
-  const { workspace, activityLog, onViewsChanged, stagedPayloads } = context;
+  const {
+    workspace,
+    activityLog,
+    onViewsChanged,
+    stagedPayloads,
+    approvalResolutionChannel: APPROVAL_CHANNEL_VSCODE_COMMAND,
+  } = context;
   switch (command.action) {
     case "pipeline.seed":
       return json({ runId: workspace.seedPipelineRun(command.name) });
