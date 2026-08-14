@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 .vscode-test/
 *.vsix
@@ -52,4 +52,3 @@ test/fixtures/**/.tachyon/*
 # Canonical agent profiles shipped with dogfood fixtures (SDD 478 pointers under agents:).
 !test/fixtures/**/.tachyon/agents/
 !test/fixtures/**/.tachyon/agents/**
-

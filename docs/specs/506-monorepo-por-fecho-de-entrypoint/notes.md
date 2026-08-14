@@ -645,3 +645,37 @@ owner-visible risk.
 
 ### 2026-08-14T18:48:20Z — pass (1/1) — source: tasks.md
 - `npm run verify:full` — pass
+
+## Slice 6 — final measurement and closure
+
+The first final run of `measure-monorepo-graph.mjs` reported **642** files and ten relative imports
+to `apps/vscode-extension` as unresolved. That was not the final repository graph: the script still
+read root `src/` plus packages and omitted all **164** app sources moved in slice 5. The measurement
+now derives VS Code app roots from root workspaces (`engines.vscode`), measures **805** physical
+source/runtime files, and has exactly the original three nominal unresolved JSON assets. Final
+counts and every forecast divergence are recorded beside the initial numbers in
+`docs/architecture/tachyon-monorepo-transitive-baseline.md`.
+
+The 26 residual root sources reproduced slice 4's groups exactly. Their disposition is:
+
+- **17** dev/test/measurement support modules stay in root `src/` as their definitive repository
+  owner; no shipped entrypoint reaches them and they do not form one runtime.
+- **8** compatibility addresses are temporary debt. Task `t-31bedf` names all eight, requires their
+  consumers to use the owning workspace address, and forbids inventing a package for the union.
+- **1** orphan, `src/workspace/VsCodeHost.ts`, had zero production and test importers and was deleted.
+  The final typecheck, build and boundary gates prove no missing consumer; root `src/` now has **25**
+  files and runtime `vscode` coupling falls from 50 to **49**.
+
+The generic ignore rule is now `node_modules` rather than `node_modules/`. A real symlink created at
+`apps/vscode-extension/node_modules` is matched by `.gitignore:1`; `git status` reports no untracked
+path. This applies at any depth and does not name the current app.
+
+The coordinator reconciled historical task `t-e4348c` from triaged to done, pointing to SDD 506 and
+preserving the July assessment as historical evidence. The slice agent deliberately did not triage
+the inbox task merely because it was adjacent to this work.
+
+## Dogfood log
+
+### 2026-08-14T18:48:20Z — pass (1/1) — source: slice 5 release evidence
+- `npm run smoke:vsix` — pass as the smoke phase of `npm run release`: VS Code 1.133.0 installed the
+  VSIX, the engine answered, 99/99 commands registered and both contributed views focused.

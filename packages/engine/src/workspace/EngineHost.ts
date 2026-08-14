@@ -3,7 +3,7 @@ import type { TerminalPresentation, TerminalPresentationOptions } from "@tachyon
 
 /**
  * spec 233 — the host port the engine depends on instead of `vscode`. The VS Code shell implements it
- * (`VsCodeHost`); a CLI/daemon/other-IDE shell implements its own. The engine (Workspace + managers) must
+ * (`DaemonEngineHost` today); a CLI/other-IDE shell can implement its own. The engine (Workspace + managers) must
  * never import `vscode` — it calls these small, composed ports. See `docs/system-design.md`.
  */
 

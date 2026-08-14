@@ -25,7 +25,7 @@ cd "$(dirname "$0")/.."
 # panel entry, created by `vscode.window`, and a port over it would be a port with exactly one possible
 # implementation and no second caller. The engine already has its own way to report; this is where the
 # shell writes what a toast cannot hold.
-SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runtimeOps/openRuntimeOps\.ts|workspace/(VsCodeHost|notify|legacyVsCodeSettings|shellDiagnosticLog)\.ts|cockpit/(studioRegistry|taskStudioDomain|pinStudioDomain|agentStudioDomain)\.ts)'
+SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runtimeOps/openRuntimeOps\.ts|workspace/(notify|legacyVsCodeSettings|shellDiagnosticLog)\.ts|cockpit/(studioRegistry|taskStudioDomain|pinStudioDomain|agentStudioDomain)\.ts)'
 
 # Match every way to pull in vscode: static import (either quote style), require, and dynamic import().
 VSCODE_IMPORT='from ['"'"'"]vscode['"'"'"]|require\(['"'"'"]vscode['"'"'"]\)|import\(['"'"'"]vscode['"'"'"]\)'

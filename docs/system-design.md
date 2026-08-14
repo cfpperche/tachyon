@@ -1,4 +1,4 @@
-# Tachyon — System Design: decoupling the engine from the UI
+# Tachyon — System Design: monorepo, engine e shell
 
 _Originated in a 2026-06-18 Claude Code ↔ Codex deliberation (pin `p-3ccfd1`). Status: **IMPLEMENTED
 AND LIVING** — specs 233/234 established the host boundary and spec 382 shipped the persistent engine /
@@ -22,16 +22,17 @@ via each CLI’s **native** mechanisms (MCP, resume, harness, hooks), not byte-i
 
 ## 2. Current state (verified, not assumed)
 
-The split is shipped:
+The split is shipped and its source ownership is represented by npm workspaces:
 
-- `src/engine-service/daemonMain.ts` boots the persistent engine process; `engineService.ts`,
+- `packages/engine/src/engine-service/daemonMain.ts` boots the persistent engine process; `engineService.ts`,
   `controlServer.ts` and the event journal expose its lifecycle and state.
-- `src/workspace/Workspace.ts` is the engine composition root and imports no `vscode`.
-- `src/workspace/EngineHost.ts` is the host contract. `DaemonEngineHost.ts` supplies headless behavior;
-  `VsCodeHost.ts` adapts editor facilities without moving their ownership into the engine.
-- `src/shell/WorkspaceClient.ts` and `WorkspaceShellHandle.ts` are client-side shell boundaries. The handle
+- `packages/engine/src/workspace/Workspace.ts` is the engine composition root and imports no `vscode`.
+- `packages/engine/src/workspace/EngineHost.ts` is the shell-neutral host contract;
+  `DaemonEngineHost.ts` supplies headless behavior. The former `src/workspace/VsCodeHost.ts` had no
+  importer and was removed; VS Code services are owned directly by the app modules that consume them.
+- `apps/vscode-extension/src/shell/WorkspaceClient.ts` and `WorkspaceShellHandle.ts` are client-side shell boundaries. The handle
   is intentionally ephemeral and does not own managers, stores, the Bridge or agent lifecycle.
-- `src/engine-service/protocol.ts` plus `controlClient.ts`/`controlServer.ts` form the typed engine-shell
+- `packages/engine/src/engine-service/protocol.ts` plus `controlClient.ts`/`controlServer.ts` form the typed engine-shell
   transport; editor-only requests are brokered explicitly.
 - tmux, agents, tasks, Delivery/worktrees, validation, schedules, Activity and the Bridge remain engine
   state. Closing or reloading the editor does not transfer ownership back to the shell.
@@ -39,6 +40,22 @@ The split is shipped:
 The current packaging still ships engine and shell together in the VSIX, and VS Code remains the only
 distributed human shell. Engine-first describes the ownership boundary, not a claim that a standalone
 Tachyon CLI or web product already ships.
+
+### 2.1 Workspace layout
+
+```text
+package.json                         orchestration, workspaces, gates; no product manifest
+apps/vscode-extension/               extension manifest, activation, VS Code hosts, shipped auxiliary entries
+packages/engine/                     persistent engine and shell-neutral protocols
+packages/shared/                     runtime vocabulary used by engine and browser
+packages/webview-ui/                 the 27 browser entrypoints and their UI dependencies
+src/                                 17 repository-support modules + 8 compatibility shims
+```
+
+The root declares `apps/*` and `packages/*`; scripts discover workspaces from that declaration. Package
+imports use workspace names. A relative import may not escape its workspace, and a named workspace import
+must be declared in the importing manifest. `check:package-boundary` enforces both rules with an empty
+exception list. `check:engine-boundary` separately forbids `vscode` from `packages/engine`.
 
 ## 3. The boundary — engine / host-port / shell
 
@@ -67,12 +84,12 @@ objects:
 - **Settings** — effective values plus optional scope inspection.
 - **Storage + secrets** — host-owned durable paths/state and machine-local secret custody. Token *path/custody*
   is host policy; Bridge authentication semantics remain engine policy.
-- **Terminal presentation** — optional. A daemon can run with no editor tabs; `VsCodeHost` supplies the native
-  terminal adapter.
+- **Terminal presentation** — optional. A daemon can run with no editor tabs; the VS Code app owns the native
+  terminal presentation in `apps/vscode-extension/src/presentation/Terminals.ts`.
 - **Workspace events** — typed invalidation signals consumed by shell projections.
 
-`VsCodeHost` implements the editor adapter and `DaemonEngineHost` the headless one. Consumers still depend on
-the smallest methods they use even though TypeScript exposes the composed contract as one interface.
+`DaemonEngineHost` implements the headless port. The shipped app uses the control protocol and focused VS Code
+services instead of constructing the retired, unconsumed `VsCodeHost` aggregate.
 
 ## 5. The Bridge contract — the loose seam that already ships
 
@@ -142,19 +159,26 @@ startPipeline` unit-testable without Electron — retiring the "re-compose Works
 duplication in the integration tests. Rule: **engine logic → unit tests with `FakeHost`; VS Code
 integration tests only for genuine shell behavior** (tree rendering, terminal focus, layout).
 
-## 11. Packaging boundary
+## 11. Packaging and package boundaries
 
-The Marketplace VSIX currently packages the VS Code shell, engine bundle and engine bootstrap together. At
-runtime the engine is a separate persistent process, but there is **no published `@tachyon/engine` package and
-no standalone human CLI shell**. A package split should be earned by a second real consumer rather than used
-as evidence of decoupling by itself; the import guard and process/protocol boundary provide that evidence now.
+The Marketplace VSIX is built from `apps/vscode-extension/package.json` and packages the VS Code shell,
+engine bundle and engine bootstrap together. The root remains the install/build/gate unit and the product keeps
+one version and one VSIX. At runtime the engine is a separate persistent process. The npm workspaces are
+private source/build boundaries, not independently published products; there is no standalone human CLI shell.
+
+The measured ownership is 368 TypeScript sources in `packages/engine`, 45 runtime/source files in
+`packages/shared` (including four `.cjs`), 203 TypeScript sources in `packages/webview-ui`, and 164
+TypeScript sources in the VS Code app. These physical counts exceed the original runtime closures because
+type-only concept modules do not emit JavaScript but are required for each package to compile independently.
 
 ## 12. Remaining product-boundary work
 
 1. Keep protocol compatibility and engine-bundle migration safe across extension upgrades.
 2. Continue replacing editor-shaped payloads with typed shell-neutral events/requests.
-3. Prove a second human shell (CLI, another IDE or web) before adding public packaging ceremony.
+3. Prove a second human shell (CLI, another IDE or web) before adding independent publication/versioning.
 4. Preserve headless test coverage and the `vscode` import boundary as engine capabilities grow.
+5. Retire the eight root compatibility shims tracked by `t-31bedf`; the other 17 root sources are
+   repository-only dev/test/measurement support, not a latent product package.
 
 ## 13. Risks
 

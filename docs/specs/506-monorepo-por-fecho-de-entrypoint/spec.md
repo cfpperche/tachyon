@@ -1,6 +1,6 @@
 # SDD 506 — Monorepo por fecho de entrypoint
 
-**Status:** draft
+**Status:** shipped
 **Criada:** 2026-08-14
 **Base de medição:** [`docs/architecture/tachyon-monorepo-transitive-baseline.md`](../../architecture/tachyon-monorepo-transitive-baseline.md)
 
@@ -76,28 +76,32 @@ explicitamente sem suporte.
 
 ## 3. Critérios de aceite
 
-- [ ] **Cenário: o import errado é recusado pelo build**
+- [x] **Cenário: o import errado é recusado pelo build**
   - **Dado** um pacote que não declara dependência de outro
   - **Quando** um arquivo dele importa um módulo daquele outro pacote
   - **Então** o gate falha nomeando o arquivo, o alvo e a fronteira violada, antes de qualquer teste
 
-- [ ] **Cenário: o produto continua sendo um VSIX instalável a cada fatia**
+- [x] **Cenário: o produto continua sendo um VSIX instalável a cada fatia**
   - **Dado** qualquer fatia desta SDD já mergeada
   - **Quando** se roda `npm run release` e `npm run smoke:vsix`
   - **Então** o VSIX é produzido e instala, com a mesma identidade de versão de antes
 
-- [ ] **Cenário: a medição volta a rodar e o número anda**
+- [x] **Cenário: a medição volta a rodar e o número anda**
   - **Dado** uma fatia que moveu módulos para um pacote
   - **Quando** se roda `node scripts/research/measure-monorepo-graph.mjs`
   - **Então** a contagem daquele pacote bate com o que a fatia declarou ter movido
 
-- [ ] O `package.json` da raiz declara workspaces e **não contém código de produto**.
-- [ ] `engine`, `shared` e `webview-ui` existem como pacotes com fronteira imposta.
-- [ ] Nenhum módulo de `packages/engine` ou `packages/webview-ui` importa `vscode`, e o gate prova.
-- [ ] O produto continua com **uma versão e um VSIX**.
-- [ ] Os 212 residuais estão classificados por escrito, com o número de cada grupo.
-- [ ] `docs/architecture/tachyon-monorepo-transitive-baseline.md` foi re-rodado ao final e os números
+- [x] O `package.json` da raiz declara workspaces e **não contém código de produto**.
+- [x] `engine`, `shared` e `webview-ui` existem como pacotes com fronteira imposta.
+- [x] Nenhum módulo de `packages/engine` ou `packages/webview-ui` importa `vscode`, e o gate prova.
+- [x] O produto continua com **uma versão e um VSIX**.
+- [x] Os 212 residuais estão classificados por escrito, com o número de cada grupo.
+- [x] `docs/architecture/tachyon-monorepo-transitive-baseline.md` foi re-rodado ao final e os números
       do documento batem com a árvore.
+
+**Closure:** A árvore usa quatro workspaces de produto/fonte (`apps/vscode-extension` e três
+`packages/*`), mantém uma versão e um VSIX, impõe fronteiras sem exceções, e registra no baseline a
+medição final de 805 fontes/runtime, incluindo as divergências causadas pelo fecho de tipos.
 
 ## 4. Fora de escopo
 
