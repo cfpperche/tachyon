@@ -11,7 +11,7 @@ import {
 import type { Validation } from "@tachyon/engine/validations/types.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { legacyBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
-import { composeFixedApprovalResponse } from "@tachyon/engine/bridge/approvalRequest.js";
+import { composeFixedApprovalResponse } from "@tachyon/engine/approvals/approvalRequest.js";
 import type { NoticeDeliveryResult } from "@tachyon/engine/bridge/tools.js";
 
 /**

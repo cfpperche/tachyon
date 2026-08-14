@@ -15,7 +15,7 @@ import {
   resolveApproval,
   writeApprovalRequest,
   type ApprovalRequest,
-} from "@tachyon/engine/bridge/approvalRequest.js";
+} from "@tachyon/engine/approvals/approvalRequest.js";
 import { listPendingApprovalViewItems } from "../../apps/vscode-extension/src/webview/approval/viewModel.js";
 
 /**

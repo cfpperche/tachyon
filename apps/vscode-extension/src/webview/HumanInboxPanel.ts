@@ -20,7 +20,7 @@ import {
 import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "./human-inbox/viewModel";
 import { makeInboxArtifactLoader } from "@tachyon/engine/humanInbox/loadArtifact.js";
 import type { HumanInboxKind, StaleAfter } from "@tachyon/webview-ui/humanInbox/model";
-import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
+import type { ApprovalDecision } from "@tachyon/engine/approvals/approvalRequest.js";
 import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
 import type { WorkspaceBoardTarget } from "../shell/BoardTarget.js";

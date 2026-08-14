@@ -1,4 +1,7 @@
-import type { NoticeDeliveryResult } from "./tools.js";
+type ApprovalNoticeDeliveryResult = {
+  status: "notified" | "queued" | "submit-unconfirmed";
+  submitReason?: string;
+};
 
 /**
  * t-a77fe6 — the ports an approval resolution needs, built once.
@@ -38,7 +41,7 @@ export interface ApprovalResolutionSources {
   /** Running managed entries, for attributing a session to its agent. */
   listEntries: () => Promise<Array<{ session: string; running: boolean; name: string }>>;
   /** Queue-aware delivery (`Workspace.deliverNotice`): submits to an idle recipient, queues a busy one. */
-  deliverNotice: (agent: string, line: string) => Promise<NoticeDeliveryResult>;
+  deliverNotice: (agent: string, line: string) => Promise<ApprovalNoticeDeliveryResult>;
 }
 
 export interface ApprovalResolutionPorts {

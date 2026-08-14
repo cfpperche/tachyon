@@ -9,7 +9,7 @@ import {
   readApprovalRequest,
   type ApprovalPayload,
   type ApprovalRequest,
-} from "@tachyon/engine/bridge/approvalRequest.js";
+} from "@tachyon/engine/approvals/approvalRequest.js";
 import type { ApprovalRow } from "@tachyon/webview-ui/sections/model";
 
 const emptyPayload = (): ApprovalPayload => ({ reason: "", proposedAction: "", risk: "", exactPrompt: "" });

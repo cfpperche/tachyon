@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
+import type { ApprovalDecision } from "@tachyon/engine/approvals/approvalRequest.js";
 import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import {
   filterHumanInboxItems,

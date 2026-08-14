@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  APPROVAL_CHANNEL_VSCODE_COMMAND,
   appendApprovalWitnessEvent,
   buildApprovalRequest,
   approvalRequestPath,
@@ -18,7 +17,8 @@ import {
   resolveApproval,
   writeApprovalRequest,
   type ApprovalRequest,
-} from "@tachyon/engine/bridge/approvalRequest.js";
+} from "@tachyon/engine/approvals/approvalRequest.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/bridge/approvalChannels.js";
 
 /**
  * spec t-7d8bdf Phase 1 — the human-approval protocol BACKBONE, proven at the level the security

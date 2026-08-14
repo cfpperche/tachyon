@@ -62,17 +62,19 @@ import path from "node:path";
 import { nonEmpty, productSourceRoots } from "../helpers/repositorySourceScan.js";
 import ts from "typescript";
 import {
-  APPROVAL_CHANNEL_COMPANION_HTTP,
-  APPROVAL_CHANNEL_VSCODE_COMMAND,
-  APPROVAL_RESOLUTION_CHANNELS,
   APPROVALS_WITNESS_REL_PATH,
   buildApprovalRequest,
   composeFixedApprovalResponse,
   readApprovalRequest,
   resolveApproval,
   writeApprovalRequest,
-} from "@tachyon/engine/bridge/approvalRequest.js";
-import { approvalResolutionPorts } from "@tachyon/engine/bridge/approvalResolutionPorts.js";
+} from "@tachyon/engine/approvals/approvalRequest.js";
+import {
+  APPROVAL_CHANNEL_COMPANION_HTTP,
+  APPROVAL_CHANNEL_VSCODE_COMMAND,
+  APPROVAL_RESOLUTION_CHANNELS,
+} from "@tachyon/engine/bridge/approvalChannels.js";
+import { approvalResolutionPorts } from "@tachyon/engine/approvals/approvalResolutionPorts.js";
 
 /** The values the product used to write. They are history in old records, and never legal again. */
 const RETIRED_ACTOR_CLAIMS = ["vscode", "companion", "vscode-user", "human", "user"];
@@ -91,7 +93,7 @@ function tempWorkspace(): string {
 
 const repoRoot = process.cwd();
 /** The module that DECLARES the field and persists it. Net A excludes it; Net B does not. */
-const RESOLVER_MODULE = "packages/engine/src/bridge/approvalRequest.ts";
+const RESOLVER_MODULE = "packages/engine/src/approvals/approvalRequest.ts";
 /** The only values a write door may name. Identifiers, never literals — that is the whole rule. */
 const ALLOWED_CHANNEL_CONSTANTS = ["APPROVAL_CHANNEL_VSCODE_COMMAND", "APPROVAL_CHANNEL_COMPANION_HTTP"];
 /**
@@ -402,7 +404,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
 
   it("fails closed where it cannot see: an unreadable input object or spread is a finding, not a pass", () => {
     const withImport = (code: string): string[] =>
-      scanResolvedBy("src/probe.ts", `import { resolveApproval } from "../bridge/approvalRequest.js";\n${code}`)
+      scanResolvedBy("src/probe.ts", `import { resolveApproval } from "../approvals/approvalRequest.js";\n${code}`)
         .findings.map((f) => f.problem);
     expect(withImport("await resolveApproval(input);")).toEqual([UNRESOLVED_INPUT]);
     expect(withImport("await resolveApproval(buildInput());")).toEqual([UNRESOLVED_INPUT]);
@@ -414,7 +416,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     expect(withImport("await resolveApproval({ id, decision, ...approvalResolutionPorts(sources) });")).toEqual([]);
     // A namespace import is still the resolver.
     expect(
-      scanResolvedBy("src/probe.ts", 'import * as approvals from "../bridge/approvalRequest.js";\napprovals.resolveApproval({ id, resolvedBy: "alguem" });')
+      scanResolvedBy("src/probe.ts", 'import * as approvals from "../approvals/approvalRequest.js";\napprovals.resolveApproval({ id, resolvedBy: "alguem" });')
         .findings.map((f) => f.problem),
     ).toEqual([LITERAL_ACTOR, HARD_CODED]);
   });
@@ -509,7 +511,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     // The line stored alongside it is the OPERATIVE claim — the requesting agent reads this one to
     // decide whether to proceed. `resolvedBy` had NO reader in src/ when t-86e59a measured it; since
     // t-cede16 the Human Inbox history projects it onto a screen a human reads, which makes the same
-    // rule matter on both. (`packages/engine/src/bridge/approvalRequest.ts:535` still asserts the old "no reader".)
+    // rule matter on both. (`packages/engine/src/approvals/approvalRequest.ts` still asserts the old "no reader".)
     const line = record.resolution?.injectedText ?? "";
     expect(line).toContain(`approval request a-ddd444 is APPROVED`);
     expect(line).toContain(channel);

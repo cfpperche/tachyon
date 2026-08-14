@@ -11,7 +11,7 @@ import { routeHumanInboxItem } from "@tachyon/engine/engine-service/engineServic
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "@tachyon/webview-ui/humanInbox/model";
 import { decodeHumanInboxDeepLink } from "../../apps/vscode-extension/src/humanInbox/deepLink.js";
 import { DURABLE_NOTICE_COMMANDS } from "@tachyon/engine/workspace/noticeInbox.js";
-import { buildApprovalRequest, writeApprovalRequest } from "@tachyon/engine/bridge/approvalRequest.js";
+import { buildApprovalRequest, writeApprovalRequest } from "@tachyon/engine/approvals/approvalRequest.js";
 import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
 import { savedAgentProposalPath } from "@tachyon/engine/agents/savedAgentProposalStore.js";
 import { computeSavedAgentRemovalProposalDigest } from "@tachyon/engine/agents/savedAgentRemovalProposal.js";

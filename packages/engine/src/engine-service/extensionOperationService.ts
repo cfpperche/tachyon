@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import net from "node:net";
-import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
+import { approvalResolutionPorts } from "../approvals/approvalResolutionPorts.js";
 import { createProfileFromStudioMutation } from "@tachyon/shared/config/agentProfileStudio.js";
 import path from "node:path";
 import { createHash } from "node:crypto";
@@ -10,7 +10,8 @@ import { isAgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusa
 import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan.js";
 import type { BridgeDeps } from "../bridge/tools.js";
 import { executeWait } from "../workspace/Waiters.js";
-import { APPROVAL_CHANNEL_VSCODE_COMMAND, resolveApproval } from "../bridge/approvalRequest.js";
+import { resolveApproval } from "../approvals/approvalRequest.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "../bridge/approvalChannels.js";
 import { degradedRosterExtras } from "../config/configFailure.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 import { projectAgentProfileStudioSnapshot } from "@tachyon/shared/config/agentProfileStudio.js";
