@@ -169,6 +169,61 @@ live-model tests skipped, and 175 browser tests passed**. Main was integrated on
 already identical to the slice base (`770f165a`). A clean committed-tree run follows this log entry
 to provide the final verification attestation.
 
+## P0 t-54450c — disk-source scan audit after slice 3
+
+The reported set of 27 was reproduced exactly, but it was the result of a lexical grep, not a useful
+boundary: 67 unit-test files both use an `fs` read API and contain a `src` path, while only **12** had
+a repository-source enumeration that could still produce a green assertion after examining zero
+matching files. Two of those 12 actually named addresses already moved by this SDD at audit start:
+`richDocSheetNamespace` named slice 3's old rich-doc directory and failed loudly; two
+`landDoorHasNoAgentDoor` cases named slice 2's deleted `src/{bridge,agent-vscode}` directories and
+had been silently examining **zero** files because `existsSync` returned `[]`.
+
+The chosen boundary is therefore behavioral: a specific-file `readFileSync` already refuses absence;
+a directory/glob/filter enumeration must explicitly refuse an empty filtered result. The 12 changed
+enumerators and the number of files they examine on `8b4c3303` plus this fix are:
+
+| test | files examined now | audit result |
+|---|---:|---|
+| `approvalResolvedByChannel` | 802 TS/TSX | root + all three workspace sources, non-empty |
+| `cxWedgeBehavior.gen` | 709 TS | root + all three workspace sources, non-empty |
+| `devHostNoSlots` | 1,765 eligible source/docs files | root + all three workspace sources, non-empty |
+| `i18n` | 709 TS | root + all three workspace sources, non-empty |
+| `landDoorHasNoAgentDoor` | 802 TS/TSX overall; 0 in two stale pre-fix arms | engine actor roots derived; all-product scan non-empty |
+| `richDocSheetNamespace` | 17 TS/TSX owner files | webview workspace derived; non-empty per owner |
+| `runtimeImportVisibility` | 802 TS/TSX | root + all three workspace sources, non-empty |
+| `vscodeThemeBridge` | 14 CSS/TS/TSX | vendor + kit scan non-empty |
+| `webviewComponentKit` | 57 TS/TSX | non-empty per declared migrated view |
+| `webviewConvention` | 317 host/package TS/TSX/CSS | each semantic subscan refuses empty |
+| `webviewCssScope` | 46 CSS | webview workspace derived; non-empty |
+| `webviewPreviewCatalog` | 27 host candidates | filtered converted-host scan non-empty |
+
+The original grep's other 23 files are specific-file reads or enumerators whose assertions already
+require a known non-empty member/count; they fail loudly and retain their rule unchanged:
+`taskDocumentEditPolicy`, `designModeCutoverStructure`, `richDocSketchHostContract`,
+`controlRendererRatchet`, `panelTabIcons`, `cxApproval2Behavior.gen`, `activityLayout`, `uiPatterns`,
+`workspacePresentationBoundary`, `sidebarPrototype`, `onboardingTemplate`, `singleModeStudioApps`,
+`panelWorkGate`, `agentInstanceReaderConvergence`, `probesCutover`, `controlWorkspaceScope`,
+`activityCutover`, `sidebarActions`, `quickPickerPackaging`, `appPagePad`,
+`settingsScopeCopy`, `systemPanel`, and `panelSourceForm`. The four overlapping changed enumerators
+are `approvalResolvedByChannel`, `richDocSheetNamespace`, `webviewConvention`, and
+`webviewPreviewCatalog`, yielding the original 27 exactly.
+
+### Slice 5 readdressing inventory
+
+Slice 5 moves the remaining app/host sources under `apps/vscode-extension`; it must readdress these
+tests that still deliberately read root `src/` (specific-file reads included):
+
+`taskDocumentEditPolicy`, `designModeCutoverStructure`, `richDocSketchHostContract`,
+`controlRendererRatchet`, `panelTabIcons`, `webviewConvention`, `cxApproval2Behavior.gen`,
+`webviewPreviewCatalog`, `activityLayout`, `uiPatterns`, `workspacePresentationBoundary`,
+`sidebarPrototype`, `onboardingTemplate`, `singleModeStudioApps`, `panelWorkGate`,
+`agentInstanceReaderConvergence`, `probesCutover`, `controlWorkspaceScope`, `activityCutover`,
+`sidebarActions`, `quickPickerPackaging`, `appPagePad`, `settingsScopeCopy`, `systemPanel`,
+`panelSourceForm`, plus the root-source arms of `approvalResolvedByChannel`, `cxWedgeBehavior.gen`,
+`devHostNoSlots`, `i18n`, `landDoorHasNoAgentDoor`, and `runtimeImportVisibility`. The latter six must
+derive the new app workspace alongside package workspaces; they must not drop the app root from their
+non-empty union.
 ## Slice 4 — residual ownership and slice-5 operational cost
 
 Measured on 2026-08-14 with `node scripts/research/measure-monorepo-graph.mjs` after slices 1–3.

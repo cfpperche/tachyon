@@ -6,6 +6,7 @@ import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from 
 import { SHELL_BASE_STYLESHEETS, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
 import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
+import { nonEmpty } from "../helpers/repositorySourceScan.js";
 
 // spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
 // tsx dependency, and more robust than a grep script). It asserts the inline-HTML panel class can't recur:
@@ -181,7 +182,7 @@ function ownStylesheets(view: string): Array<{ file: string; css: string }> {
     }
   };
   walk(`packages/webview-ui/src/webview/${view}`);
-  return out;
+  return nonEmpty(out, `${view} stylesheet scan`);
 }
 
 const cssNamesIn = (block: string): string[] => {
@@ -243,7 +244,7 @@ function shellEmitterFiles(): string[] {
     }
   };
   walk("src/webview/shared");
-  return [...out];
+  return nonEmpty([...out], "webview shell-emitter scan");
 }
 
 /** the stylesheet basenames a surface links, in link order. Three shapes exist, all of them ending at the
@@ -280,7 +281,7 @@ function sharedMountModules(): string[] {
     }
   };
   walk("src/webview/shared");
-  return out;
+  return nonEmpty(out, "shared webview mount-module scan");
 }
 
 /** the extension points a surface's shipped code ACTUALLY exercises, with the evidence that proves each. */
@@ -367,6 +368,7 @@ function stylesheetSourcesByName(): Map<string, string[]> {
     }
   };
   walk("packages/webview-ui/src/webview");
+  nonEmpty([...out.values()].flat(), "webview stylesheet source scan");
   return out;
 }
 

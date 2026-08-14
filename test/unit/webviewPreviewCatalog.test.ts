@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { ROUTES, PREVIEW_ROUTE_OPTOUTS, buildCatalog } from "../../scripts/webview-preview/routes.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
+import { nonEmpty } from "../helpers/repositorySourceScan.js";
 
 // spec 278 Lane D — the route CATALOG smoke. routes.json is GENERATED from the route table (buildCatalog); this
 // test keeps the committed file in sync AND asserts every catalog route is structurally renderable (its view +
@@ -34,13 +35,13 @@ describe("webview preview route catalog (spec 278)", () => {
 
   it("the webview surface manifest includes every converted shell host", () => {
     const manifestHosts = new Set(WEBVIEW_SURFACES.map((s) => s.hostFile));
-    const convertedShellHosts = readdirSync("src/webview")
+    const convertedShellHosts = nonEmpty(readdirSync("src/webview")
       .filter((name) => /(?:Panel|Prototype|Form|Inspector)\.ts$/.test(name))
       .map((name) => `src/webview/${name}`)
       .filter((file) => {
         const source = readFileSync(file, "utf8");
         return source.includes("renderWebviewShell(");
-      });
+      }), "converted webview shell-host scan");
     for (const host of convertedShellHosts) {
       expect(manifestHosts.has(host), `converted webview host '${host}' is missing from WEBVIEW_SURFACES`).toBe(true);
     }

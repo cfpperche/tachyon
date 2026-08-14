@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxError, TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 const repoRoot = path.resolve(__dirname, "../..");
 
@@ -31,7 +32,12 @@ const SYNC_CHILD_PROCESS_ALLOWLIST: Record<string, string> = {
 };
 
 function syncChildProcessOffenders(textOverrides: Record<string, string> = {}): string[] {
-  const files = [...sourceFiles("src"), ...sourceFiles("packages/engine/src")];
+  const files = nonEmpty([
+    ...sourceFiles("src"),
+    ...sourceFiles(path.relative(repoRoot, path.join(workspaceRoot("@tachyon/engine"), "src"))),
+    ...sourceFiles(path.relative(repoRoot, path.join(workspaceRoot("@tachyon/shared"), "src"))),
+    ...sourceFiles(path.relative(repoRoot, path.join(workspaceRoot("@tachyon/webview-ui"), "src"))),
+  ], "wedge source scan");
   return files.flatMap((file) => {
     const rel = path.relative(repoRoot, file).split(path.sep).join(path.posix.sep);
     if (rel in SYNC_CHILD_PROCESS_ALLOWLIST) return [];

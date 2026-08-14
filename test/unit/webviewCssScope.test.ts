@@ -14,8 +14,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
-const WEBVIEW_ROOT = path.resolve("packages/webview-ui/src/webview");
+const WEBVIEW_ROOT = path.join(workspaceRoot("@tachyon/webview-ui"), "src", "webview");
 
 /** Sheets that legitimately own bare document elements, with the reason. */
 const BARE_ELEMENT_OWNERS: Record<string, string> = {
@@ -87,7 +88,7 @@ function bareDocumentOffenders(selectorList: string): string[] {
 describe("webview CSS scope guard (t-e085bc / t-ca31c2)", () => {
   it("no co-loadable webview sheet styles bare document elements", () => {
     const offenders: string[] = [];
-    for (const file of cssFiles(WEBVIEW_ROOT)) {
+    for (const file of nonEmpty(cssFiles(WEBVIEW_ROOT), "webview CSS source scan")) {
       const rel = path.relative(WEBVIEW_ROOT, file).split(path.sep).join("/");
       if (rel in BARE_ELEMENT_OWNERS) continue;
       const css = fs.readFileSync(file, "utf8");

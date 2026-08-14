@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 /**
  * spec 448 structural guard — the dev-host belongs to the checkout that owns it.
@@ -31,7 +32,15 @@ const ALLOWED = [
 ];
 
 function sourceFiles(): string[] {
-  const roots = ["scripts", "src", "test", path.join("docs", "runbooks")];
+  const roots = [
+    path.join(repoRoot, "scripts"),
+    path.join(repoRoot, "src"),
+    path.join(repoRoot, "test"),
+    path.join(repoRoot, "docs", "runbooks"),
+    path.join(workspaceRoot("@tachyon/engine"), "src"),
+    path.join(workspaceRoot("@tachyon/shared"), "src"),
+    path.join(workspaceRoot("@tachyon/webview-ui"), "src"),
+  ];
   const out: string[] = [];
   const walk = (dir: string) => {
     if (!fs.existsSync(dir)) return;
@@ -45,8 +54,8 @@ function sourceFiles(): string[] {
       if (/\.(mjs|mts|js|ts|tsx|sh|md|json)$/.test(entry.name)) out.push(full);
     }
   };
-  for (const r of roots) walk(path.join(repoRoot, r));
-  return out;
+  for (const r of roots) walk(r);
+  return nonEmpty(out, "dev-host retired-slot source scan");
 }
 
 describe("dev-host has no slots and no active pointer (spec 448)", () => {
