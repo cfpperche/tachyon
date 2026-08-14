@@ -68,7 +68,7 @@ Page title size: **16px** via `.ds-page-chrome-title` — do not invent 20px pan
 | Text / textarea / native select | `Input`, `Textarea`, `Select`, `FieldRow` |
 | Tabs | `Tabs` |
 | Chip | `Chip` (non-status labels only) |
-| Page title + hint + actions | **`PageChrome`** — title=`--ds-title` (16) mono semibold; hint=`--ds-small` muted; **no title icon**. |
+| Page title + hint + actions | **`PageChrome`** — title uses `.ds-page-chrome-title` (16px) mono semibold; hint=`--ds-small` muted; **no title icon**. |
 | Dense list (Control cards) | **`ListRow`** |
 | Sidebar-density row (name + status dot + hover actions) | **`DenseRow`** (`.row` DOM; surface CSS) |
 | Empty / loading | **`EmptyState`** |
@@ -100,7 +100,7 @@ Reference: **Fleet** tab.
 
 Surface CSS must not invent alternate header padding (`20px`, `8px 12px`, …) for the page chrome.
 
-**Fleet spacing parity:** editor pages share one outer pad (`--ds-page-pad-*`). Do not add a second horizontal pad on `.ds-wrap` or embed hosts. Board header is **not** a separate widget bar (no `editorWidget` background strip / full-width hairline under tools) — only `PageChrome` + body.
+**Fleet spacing parity:** editor pages share one outer pad (`--ds-page-pad-*`). Do not add a second horizontal pad on embed hosts. Board header is **not** a separate widget bar (no `editorWidget` background strip / full-width hairline under tools) — only `PageChrome` + body.
 
 ### Visual gate (before package / done on UI)
 

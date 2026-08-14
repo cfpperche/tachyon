@@ -57,7 +57,6 @@
   --ds-z-popover: 20;
   --ds-z-dialog:  40;
   --ds-z-toast:   50;
-  --ds-z-overlay: 60;
   /* product toast stack (t-963b66) — bottom-center, above section chrome */
   --tachyon-font-mono: "Tachyon Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --tachyon-font-reading: var(--vscode-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
@@ -124,17 +123,6 @@ a { color: var(--ds-link); }
 /* ── helpers ── */
 .ds-dim { color: var(--ds-muted); }
 .ds-mono { font-family: var(--ds-mono); font-size: var(--ds-small); }
-.ds-reading { font-family: var(--tachyon-font-reading); line-height: 1.55; }
-
-/* ── layout ── */
-/* Horizontal page pad lives on .ds-page / Control .ck-main / panel roots — not on .ds-wrap (avoids 12/16/24 drift). */
-.ds-wrap { max-width: 920px; margin: 0 auto; padding: 0; width: 100%; box-sizing: border-box; }
-/* Legacy sticky strip — do NOT wrap PageChrome pages in .ds-head (Plugins used to; looked unlike Fleet). */
-.ds-head { position: sticky; top: 0; z-index: var(--ds-z-popover); background: var(--vscode-editor-background); border-bottom: var(--ds-border-width) solid var(--ds-border); }
-.ds-head-row { display: flex; align-items: center; gap: var(--ds-3); padding: var(--ds-4) 0 var(--ds-3); }
-.ds-title { font-size: var(--ds-title); font-weight: var(--tachyon-weight-semibold); display: flex; align-items: center; gap: var(--ds-2); margin: 0; }
-/* title ↔ subtitle: a tight intra-group gap (internal ≤ external, Gestalt proximity) — NOT a negative overlap */
-.ds-sub { color: var(--ds-muted); font-size: var(--ds-small); margin: var(--ds-1) 0 0; }
 .ds-actions { margin-left: auto; display: flex; gap: var(--ds-2); }
 .ds-section { font-size: var(--ds-section); font-weight: var(--tachyon-weight-semibold); text-transform: uppercase; letter-spacing: var(--tachyon-tracking-label); color: var(--ds-muted); margin: 0 0 var(--ds-2); }
 
@@ -198,7 +186,7 @@ a { color: var(--ds-link); }
 }
 .ds-btn-primary:hover { background: var(--ds-btn-hover); }
 .ds-btn-primary:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
-.ds-btn-primary.ds-danger, .ds-btn-danger {
+.ds-btn-danger {
   background: var(--ds-err);
   color: #fff;
   border-color: transparent;
@@ -211,25 +199,6 @@ a { color: var(--ds-link); }
   padding: 0;
 }
 .ds-btn .codicon, .ds-tab .codicon, .ds-chip .codicon { font-size: var(--ds-small); line-height: 1; flex: none; }
-/* t-bf3498 — compact back-link theme for a .ds-btn used as a subtitle-style breadcrumb (Fleet subroutes,
-   studio routes): same Button component/a11y, borderless + tighter box so it reads as a link, not a button. */
-.ds-link-btn.ds-btn {
-  min-height: auto;
-  padding: 1px 4px 1px 2px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--ds-muted);
-}
-.ds-link-btn.ds-btn:hover {
-  background: transparent;
-  color: var(--ds-fg);
-  text-decoration: underline;
-}
-/* Wrapper kept only to give the back-link a stable data-testid scope — no layout/box of its own. */
-.ds-backlink-slot {
-  display: contents;
-}
-
 /* ── badges ── */
 .ds-badge { font-size: var(--ds-micro); line-height: 1.6; padding: 1px 9px; border-radius: 10px; border: 1px solid var(--ds-border); color: var(--ds-muted); white-space: nowrap; }
 .ds-badge.ok   { color: var(--ds-ok);   border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); }
@@ -307,8 +276,6 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
 
 /* ── states ── */
 .ds-banner { margin: var(--ds-4) 0; padding: var(--ds-3) var(--ds-4); border-radius: var(--ds-radius); border: 1px solid color-mix(in srgb, var(--ds-err) 45%, transparent); background: color-mix(in srgb, var(--ds-err) 8%, transparent); color: var(--ds-err); font-size: 12.5px; }
-.ds-empty { text-align: center; color: var(--ds-muted); padding: 56px var(--ds-5); }
-.ds-empty .ds-big { font-size: var(--ds-body); color: var(--ds-fg); margin-bottom: var(--ds-1); }
 .ds-degrade { padding: 56px var(--ds-5); text-align: center; color: var(--ds-muted); }
 /* t-bf3498 — the route's back-link, shown ABOVE a loading/degrade block that has no title row of its
    own to hang it under (a studio still loading its entity, Activity/Probes before their vm arrives). */
@@ -321,24 +288,6 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
     --ds-duration-2: 0ms;
   }
 }
-
-/* Product Toast (t-963b66): one shared in-webview stack for Control. */
-.ds-toast-host { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: var(--ds-z-toast, 50); pointer-events: none; max-width: min(420px, calc(100% - 24px)); width: max-content; }
-.ds-toast-stack { display: flex; flex-direction: column-reverse; align-items: stretch; gap: var(--ds-2, 8px); pointer-events: none; }
-.ds-toast { pointer-events: auto; display: flex; align-items: flex-start; gap: var(--ds-2, 8px); padding: 8px 12px; border-radius: var(--ds-radius, 4px); font-size: 12.5px; line-height: 1.35; border: 1px solid var(--ds-border); background: var(--ds-card, var(--vscode-editorWidget-background, var(--vscode-editor-background))); color: var(--ds-fg); box-shadow: var(--ds-shadow-2); }
-.ds-toast > .codicon { flex: none; margin-top: 1px; opacity: .95; }
-.ds-toast-msg { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
-.ds-toast-ctx { display: block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--ds-muted); margin-bottom: 2px; }
-.ds-toast-dismiss { flex: none; border: 0; background: transparent; color: inherit; opacity: .65; cursor: pointer; padding: 0; line-height: 1; border-radius: 3px; }
-.ds-toast-dismiss:hover { opacity: 1; background: var(--ds-hover); }
-.ds-toast--info { border-color: color-mix(in srgb, var(--ds-info, var(--vscode-textLink-foreground)) 45%, var(--ds-border)); }
-.ds-toast--info > .codicon { color: var(--ds-info, var(--vscode-textLink-foreground)); }
-.ds-toast--ok { border-color: color-mix(in srgb, var(--ds-ok) 55%, transparent); }
-.ds-toast--ok > .codicon { color: var(--ds-ok); }
-.ds-toast--warn { border-color: color-mix(in srgb, var(--ds-warn) 55%, transparent); }
-.ds-toast--warn > .codicon { color: var(--ds-warn); }
-.ds-toast--err { border-color: color-mix(in srgb, var(--ds-err) 55%, transparent); }
-.ds-toast--err > .codicon { color: var(--ds-err); }
 
 /* ── product patterns (STYLEGUIDE — PageChrome / ListRow / EmptyState) ── */
 /* Page shell: wrap editor bodies so pad is identical (Fleet reference). Sidebar must NOT use .ds-page. */
@@ -358,12 +307,6 @@ select:disabled { opacity: var(--ds-disabled-opacity); cursor: default; }
   padding: 0;
   border: 0;
   box-sizing: border-box;
-}
-/* Optional hairline under chrome (sticky panels). Default Fleet has none. */
-.ds-page-chrome--ruled {
-  border-bottom: var(--ds-border-width) solid var(--ds-border);
-  padding-bottom: var(--ds-3);
-  margin-bottom: var(--ds-page-chrome-margin-bottom);
 }
 .ds-page-chrome-text {
   min-width: 0;

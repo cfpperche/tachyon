@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "preact/hooks";
-import { Badge, Button, Chip, Input, PageChrome, Select } from "../shared/ui";
+import { Badge, Button, Chip, EmptyState, Input, PageChrome, Select } from "../shared/ui";
 import { MarkdownView } from "../activity/markdown";
 import { assigneePatch, priorityPatch } from "../board/interactions";
 import { reduceDetailStale, INITIAL_STALE_STATE, selectedReviewablePrototype, type DetailField } from "./interactions";
@@ -63,7 +63,7 @@ export function App({ vm, errorSeq, errorMessage, dispatch }: { vm?: TaskDetailV
     return <div class="ds-degrade"><span class="codicon codicon-loading" /><div>Loading task…</div></div>;
   }
   if (!vm.task) {
-    return <div class="ds-empty"><div class="ds-big">Task {vm.id}</div><div>never found on disk</div></div>;
+    return <EmptyState kind="error" message={<>Task {vm.id}<br />never found on disk</>} />;
   }
   const t = vm.task;
   const controlsDisabled = vm.tombstone;

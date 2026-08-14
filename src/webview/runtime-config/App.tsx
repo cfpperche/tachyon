@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { Button, Badge, PageChrome } from "../shared/ui";
+import { Button, Badge, EmptyState, PageChrome } from "../shared/ui";
 import {
   KitDropdown,
   KitDropdownContent,
@@ -79,7 +79,7 @@ export function App({
     return (
       <div class="rcp-root ds-page" data-testid="control-runtime-config">
         <PageChrome title={s.runtimeConfigTitle} hint={s.runtimeConfigHint} />
-        <div class="ds-empty">{unavailable ? s.runtimeConfigUnavailable : "Loading runtime configuration…"}</div>
+        <EmptyState kind={unavailable ? "error" : "loading"} message={unavailable ? s.runtimeConfigUnavailable : "Loading runtime configuration…"} />
       </div>
     );
   }

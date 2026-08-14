@@ -10,7 +10,6 @@
   .activity-chrome.ds-page-chrome { position: sticky; top: 0; z-index: 2; margin: 0 0 var(--ds-page-chrome-margin-bottom); padding: var(--ds-page-pad-y) var(--ds-page-pad-x) var(--ds-3); background: var(--vscode-editor-background); border-bottom: var(--ds-border-width) solid var(--ds-border); align-items: flex-start; box-sizing: border-box; }
 .activity-head-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: var(--ds-3); flex-wrap: wrap; padding: var(--ds-3) var(--ds-4); background: var(--vscode-editor-background); border-bottom: 1px solid var(--ds-border); }
-  .head .ds-title { gap: 7px; }
   .head .stat { color: var(--ds-muted); font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
   .head .stat.err { color: var(--ds-err); }
   .head .term { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--ds-border); border-radius: 4px; }

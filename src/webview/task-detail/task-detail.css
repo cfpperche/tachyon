@@ -10,7 +10,7 @@
    so ONE long unbreakable string re-opens the horizontal scrollbar for the whole page. Every
    long-string carrier below repeats it for the same reason. */
 /* t-cf477f — centred reading column, same principle as Pin Detail (`pin-preview` main) and the
-   design-system `.ds-wrap`: max measure + auto horizontal margins + width:100% so narrow viewports
+   former design-system wrapper: max measure + auto horizontal margins + width:100% so narrow viewports
    still fill. Breadcrumb lives in Control fullpage chrome OUTSIDE this root, so centering no longer
    detaches navigation from content (supersedes the t-5564b4 left-align choice). Pin Detail's 880px
    measure is the visual reference; page pad stays on --ds-page-pad-* tokens. */
