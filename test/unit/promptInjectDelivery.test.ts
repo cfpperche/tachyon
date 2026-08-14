@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeExtensionCommand } from "@tachyon/engine/engine-service/extensionOperationService.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/engine-service/extensionOperationChannels.js";
 import { TmuxService, type ExecResult, type SubmitReceipt } from "@tachyon/engine/tmux/TmuxService.js";
 
 const roots: string[] = [];
@@ -54,6 +55,7 @@ describe("t-344fa6 — prompt.inject submits through the measured composer", () 
       workspace: workspace as never,
       activityLog: {} as never,
       providerObservations: {} as never,
+      approvalResolutionChannel: APPROVAL_CHANNEL_VSCODE_COMMAND,
       onViewsChanged: () => {},
     }, {
       action: "prompt.inject",
