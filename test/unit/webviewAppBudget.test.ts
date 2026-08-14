@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { WEBVIEW_APPS, WEBVIEW_APP_REACHABLE_BUDGET_BYTES } from "../../apps/vscode-extension/src/webview/webviewApps.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
+import { workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 /**
  * SDD 485 C3 — successor to `cockpitBundleBudget.test.ts`, which measured ONE hardcoded filename
@@ -22,7 +23,7 @@ import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
  * measurements below are real in every gate that matters.
  */
 
-const WEBVIEW_DIR = "dist/webview";
+const WEBVIEW_DIR = join(workspaceRoot("tachyon"), "dist", "webview");
 /**
  * t-a12966 — this probe was `existsSync("dist/webview/cockpit.js")`, the exact hardcoded filename
  * the header above mocks its predecessor for. `t-5a0c1c` retired the cockpit bundle, so the probe

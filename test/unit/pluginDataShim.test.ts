@@ -6,8 +6,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { workspaceRoot } from "../helpers/repositorySourceScan.js";
 
-const BUNDLE = path.resolve("dist/data-resolver.cjs");
+const BUNDLE = path.join(workspaceRoot("tachyon"), "dist", "data-resolver.cjs");
 const haveBundle = fs.existsSync(BUNDLE);
 
 let ws: string;
