@@ -22,7 +22,7 @@ export class ScheduleStudioPanelManager extends SingleModeStudioPanelManager {
         app: webviewApp("schedule-studio-shell"),
         styleFiles: [
           "codicon.css",
-          "design-system.css", "quick-picker.css",
+          "tokens.css", "faces.css", "design-system.css", "quick-picker.css",
           "vscode-theme.css",
           "studio-frame.css",
           "schedule-studio-shell.css",

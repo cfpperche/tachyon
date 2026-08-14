@@ -95,13 +95,16 @@ export interface Route<VM = unknown> {
 }
 
 const CODICON = "/dist/webview/codicon.css";
+const TOKENS = "/dist/webview/tokens.css";
+const FACES = "/dist/webview/faces.css";
 const DESIGN_SYSTEM = "/dist/webview/design-system.css";
 const QUICK_PICKER = "/dist/webview/quick-picker.css";
+const BASE_STYLESHEETS = [CODICON, TOKENS, FACES, DESIGN_SYSTEM, QUICK_PICKER] as const;
 
 export const ROUTES: Record<string, Route> = {
   sidebar: {
     bundle: "/dist/webview/sidebar.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/sidebar.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/sidebar.css"],
     frame: { w: 340, h: 760 },
     fixtures: sidebarFixtures as Record<string, Fixture>,
     // the sidebar host message wraps a single FleetVM in a one-fleet push (matches the real provider).
@@ -114,8 +117,7 @@ export const ROUTES: Record<string, Route> = {
   activity: {
     bundle: "/dist/webview/activity.js",
     cssLinks: [
-      CODICON,
-      DESIGN_SYSTEM, QUICK_PICKER,
+      ...BASE_STYLESHEETS,
       "/dist/webview/highlight.css",
       "/dist/webview/katex.min.css",
       "/dist/webview/mermaid-block.css",
@@ -135,7 +137,7 @@ export const ROUTES: Record<string, Route> = {
   // SDD 485 D18 — both Probes identities use the same standalone bundle and model envelope.
   probes: {
     bundle: "/dist/webview/probes.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/probes.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/probes.css"],
     frame: { w: 880, h: 900 },
     fixtures: probesFixtures as Record<string, Fixture>,
     module: true,
@@ -144,8 +146,7 @@ export const ROUTES: Record<string, Route> = {
   "pin-preview": {
     bundle: "/dist/webview/pin-preview.js",
     cssLinks: [
-      CODICON,
-      DESIGN_SYSTEM, QUICK_PICKER,
+      ...BASE_STYLESHEETS,
       "/dist/webview/vscode-theme.css",
       "/dist/webview/rich-doc.css",
       "/dist/webview/studio-frame.css",
@@ -185,7 +186,7 @@ export const ROUTES: Record<string, Route> = {
   // command contribution) — reachable only through this route and its own host-side tests.
   "pipeline-studio": {
     bundle: "/dist/webview/pipeline-studio.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/studio-frame.css", "/dist/webview/pipeline-studio.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/studio-frame.css", "/dist/webview/pipeline-studio.css"],
     frame: { w: 900, h: 760 },
     fixtures: pipelineStudioFixtures as Record<string, Fixture>,
     makeMessage: (vm) => pipelineStudioMakeMessage(vm as never),
@@ -194,7 +195,7 @@ export const ROUTES: Record<string, Route> = {
   // instructions, worktree section). Dev-flag-hidden, same status as pipeline-studio above.
   "agent-studio-fixture": {
     bundle: "/dist/webview/agent-studio-fixture.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-fixture.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-fixture.css"],
     frame: { w: 720, h: 980 },
     fixtures: agentStudioFixtureFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioFixtureMakeMessage(vm as never),
@@ -204,7 +205,7 @@ export const ROUTES: Record<string, Route> = {
   "agent-studio-shell": {
     bundle: "/dist/webview/agent-studio-shell.js",
     module: true,
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/vscode-theme.css", "/dist/webview/agent-studio-shell.tailwind.css", "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-shell.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/vscode-theme.css", "/dist/webview/agent-studio-shell.tailwind.css", "/dist/webview/studio-frame.css", "/dist/webview/agent-studio-shell.css"],
     frame: { w: 900, h: 900 },
     fixtures: agentStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => agentStudioShellMakeMessage(vm as never),
@@ -212,7 +213,7 @@ export const ROUTES: Record<string, Route> = {
   "terminal-studio-shell": {
     bundle: "/dist/webview/terminal-studio-shell.js",
     module: true,
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/terminal-studio-shell.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/terminal-studio-shell.css"],
     frame: { w: 900, h: 760 },
     fixtures: terminalStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never),
@@ -220,7 +221,7 @@ export const ROUTES: Record<string, Route> = {
   "command-studio-shell": {
     bundle: "/dist/webview/command-studio-shell.js",
     module: true,
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/command-studio-shell.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/command-studio-shell.css"],
     frame: { w: 760, h: 640 },
     fixtures: commandStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => commandStudioShellMakeMessage(vm as never),
@@ -228,7 +229,7 @@ export const ROUTES: Record<string, Route> = {
   "runbook-studio-shell": {
     bundle: "/dist/webview/runbook-studio-shell.js",
     module: true,
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/runbook-studio-shell.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/runbook-studio-shell.css"],
     frame: { w: 760, h: 760 },
     fixtures: runbookStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never),
@@ -236,7 +237,7 @@ export const ROUTES: Record<string, Route> = {
   "schedule-studio-shell": {
     bundle: "/dist/webview/schedule-studio-shell.js",
     module: true,
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/schedule-studio-shell.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/schedule-studio-shell.css"],
     frame: { w: 760, h: 760 },
     fixtures: scheduleStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => scheduleStudioShellMakeMessage(vm as never),
@@ -248,7 +249,7 @@ export const ROUTES: Record<string, Route> = {
   "task-detail": {
     bundle: "/dist/webview/task-detail.js",
     cssLinks: [
-      CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/vscode-theme.css", "/dist/webview/task-studio.tailwind.css",
+      ...BASE_STYLESHEETS, "/dist/webview/vscode-theme.css", "/dist/webview/task-studio.tailwind.css",
       "/dist/webview/rich-doc.css", "/dist/webview/studio-frame.css", "/dist/webview/task-studio.css",
       "/dist/webview/mermaid-block.css", "/dist/webview/task-detail.css",
     ],
@@ -288,8 +289,7 @@ export const ROUTES: Record<string, Route> = {
   "board": {
     bundle: "/dist/webview/board.js",
     cssLinks: [
-      CODICON,
-      DESIGN_SYSTEM, QUICK_PICKER,
+      ...BASE_STYLESHEETS,
       // t-32c872 — the shared page frame, exactly where `BoardPanel.ts` links it. It is what makes
       // `.col-body { overflow-y: auto }` scroll per column instead of the whole page.
       "/dist/webview/page-frame.css",
@@ -316,7 +316,7 @@ export const ROUTES: Record<string, Route> = {
   // model of what a real webview gives it.
   inspector: {
     bundle: "/dist/webview/inspector.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/inspector.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/inspector.css"],
     frame: { w: 880, h: 900 },
     fixtures: inspectorFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
@@ -337,7 +337,7 @@ export const ROUTES: Record<string, Route> = {
   // that the frame is a viewport rather than a div (t-b24282).
   plugins: {
     bundle: "/dist/webview/plugins.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/plugins.tailwind.css", "/dist/webview/plugins.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/plugins.tailwind.css", "/dist/webview/plugins.css"],
     frame: { w: 880, h: 900 },
     fixtures: pluginsFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
@@ -369,7 +369,7 @@ export const ROUTES: Record<string, Route> = {
    */
   "human-inbox": {
     bundle: "/dist/webview/human-inbox.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/human-inbox.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/human-inbox.css"],
     frame: { w: 880, h: 900 },
     fixtures: humanInboxFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
@@ -381,7 +381,7 @@ export const ROUTES: Record<string, Route> = {
   },
   "runtime-ops": {
     bundle: "/dist/webview/runtime-ops.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/runtime-ops.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/runtime-ops.css"],
     frame: { w: 880, h: 900 },
     fixtures: runtimeOpsFixtures as Record<string, Fixture>,
     // an entry of the code-split invocation, so the bundle is an ES module (same reason cockpit.js is).
@@ -393,7 +393,7 @@ export const ROUTES: Record<string, Route> = {
   },
   "runtime-config": {
     bundle: "/dist/webview/runtime-config.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/runtime-config.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/runtime-config.css"],
     frame: { w: 880, h: 900 },
     fixtures: { default: { provenance: "unit-fixture-derived", vm: runtimeConfigFixtureSnapshot } },
     module: true,
@@ -404,7 +404,7 @@ export const ROUTES: Record<string, Route> = {
   // standalone Worktrees bundle, with both shared sheets its production panel declares.
   worktrees: {
     bundle: "/dist/webview/worktrees.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/worktrees.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/worktrees.css"],
     frame: { w: 880, h: 900 },
     // t-f3ded3 — `pr-draft` wraps the model with a host draft so ConfirmForm opens over the land block.
     fixtures: {
@@ -428,7 +428,7 @@ export const ROUTES: Record<string, Route> = {
   // "fleet" resolves there rather than to nothing.
   settings: {
     bundle: "/dist/webview/settings.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/settings.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/control-typography.css", "/dist/webview/engine-workspace.css", "/dist/webview/settings.css"],
     frame: { w: 880, h: 900 },
     fixtures: { default: cockpitFixtures.settings },
     module: true,
@@ -440,7 +440,7 @@ export const ROUTES: Record<string, Route> = {
   // still draws ONE card (the only multi-root shape this product produces — see the fixture's comment).
   system: {
     bundle: "/dist/webview/system.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/engine-workspace.css", "/dist/webview/system.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/engine-workspace.css", "/dist/webview/system.css"],
     frame: { w: 880, h: 900 },
     fixtures: {
       default: cockpitFixtures.default,
@@ -453,7 +453,7 @@ export const ROUTES: Record<string, Route> = {
   },
   handoff: {
     bundle: "/dist/webview/handoff.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/mermaid-block.css", "/dist/webview/activity.css", "/dist/webview/handoff.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/mermaid-block.css", "/dist/webview/activity.css", "/dist/webview/handoff.css"],
     frame: { w: 880, h: 900 },
     fixtures: handoffFixtures,
     module: true,
@@ -463,7 +463,7 @@ export const ROUTES: Record<string, Route> = {
   // status as the two spec-350 fakes above.
   "section-app-fixture": {
     bundle: "/dist/webview/section-app-fixture.js",
-    cssLinks: [CODICON, DESIGN_SYSTEM, QUICK_PICKER, "/dist/webview/section-app-fixture.css"],
+    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/section-app-fixture.css"],
     frame: { w: 880, h: 520 },
     fixtures: sectionAppFixtureFixtures as Record<string, Fixture>,
     // SDD 485 C2 — an entry of the code-split invocation, so the bundle is an ES module (same reason

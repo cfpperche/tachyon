@@ -1,0 +1,75 @@
+/*
+ * SDD 505 Slice 1 — shared design tokens only.
+ * This sheet intentionally contains no @font-face and no selector other than :root, so every
+ * surface, including the xterm-backed Agent Pane, can consume the same values.
+ */
+
+:root {
+  /* semantic tokens (mapped from VS Code theme vars; theme-neutral fallbacks only) */
+  --ds-fg: var(--vscode-foreground);
+  --ds-muted: var(--vscode-descriptionForeground);
+  --ds-border: var(--vscode-widget-border, var(--vscode-editorWidget-border, color-mix(in srgb, var(--vscode-foreground) 22%, transparent)));
+  --ds-focus: var(--vscode-focusBorder);
+  --ds-ok: var(--vscode-charts-green, var(--vscode-testing-iconPassed, var(--vscode-terminal-ansiGreen)));
+  --ds-warn: var(--vscode-charts-yellow, var(--vscode-list-warningForeground, var(--vscode-terminal-ansiYellow)));
+  --ds-err: var(--vscode-errorForeground, var(--vscode-list-errorForeground, var(--vscode-terminal-ansiRed)));
+  --ds-hover: var(--vscode-toolbar-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
+  --ds-disabled-opacity: 0.5;
+  --ds-scrim: color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%);
+  --ds-link: var(--vscode-textLink-foreground);
+  --ds-info: var(--vscode-charts-blue, var(--vscode-textLink-foreground));
+  --ds-card: var(--vscode-editorWidget-background, color-mix(in srgb, var(--vscode-foreground) 6%, transparent));
+  --ds-input-bg: var(--vscode-input-background);
+  --ds-input-fg: var(--vscode-input-foreground);
+  --ds-dropdown-bg: var(--vscode-dropdown-background, var(--vscode-input-background));
+  --ds-dropdown-fg: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+  --ds-btn-bg: var(--vscode-button-background);
+  --ds-btn-fg: var(--vscode-button-foreground);
+  --ds-btn-hover: var(--vscode-button-hoverBackground, var(--vscode-button-background));
+  --ds-accent: var(--vscode-button-background, var(--vscode-focusBorder, var(--vscode-textLink-foreground)));
+
+  /* elevation / motion / stacking */
+  --ds-shadow-1: 0 1px 2px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
+  --ds-shadow-2: 0 10px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
+  --ds-duration-1: 120ms;
+  --ds-duration-2: 200ms;
+  --ds-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ds-z-popover: 20;
+  --ds-z-dialog: 40;
+  --ds-z-toast: 50;
+
+  /* locked font families and weights; faces.css only supplies the bundled Tachyon Mono files */
+  --tachyon-font-mono: "Tachyon Mono", ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --tachyon-font-reading: var(--vscode-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --tachyon-weight-regular: 400;
+  --tachyon-weight-medium: 500;
+  --tachyon-weight-semibold: 600;
+  --tachyon-weight-bold: 700;
+  --tachyon-tracking-label: .06em;
+  --ds-mono: var(--tachyon-font-mono);
+
+  /* type scale */
+  --ds-title: 16px;
+  --ds-section: 11px;
+  --ds-body: var(--vscode-font-size, 13px);
+  --ds-small: 12px;
+  --ds-micro: 11px;
+
+  /* spacing scale and page shell */
+  --ds-1: 4px; --ds-2: 8px; --ds-3: 12px; --ds-4: 16px; --ds-5: 24px; --ds-6: 32px;
+  --ds-page-pad-x: var(--ds-4);
+  --ds-page-pad-y: var(--ds-3);
+  --ds-page-pad-bottom: var(--ds-5);
+  --ds-page-chrome-gap: var(--ds-3);
+  --ds-page-chrome-margin-bottom: var(--ds-4);
+  --ds-page-chrome-actions-gap: var(--ds-2);
+  --ds-border-width: 1px;
+  --ds-radius: 6px;
+  --ds-icon-gap: 6px;
+
+  /* control box */
+  --ds-control-pad-y: var(--ds-2);
+  --ds-control-pad-x: var(--ds-3);
+  --ds-control-line: calc(4 / 3);
+  --ds-control-h: 34px;
+}

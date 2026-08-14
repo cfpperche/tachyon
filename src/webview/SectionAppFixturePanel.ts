@@ -71,7 +71,7 @@ export class SectionAppFixturePanelManager {
     const cardinality = app.host === "section" ? app.cardinality : "dashboard";
     return {
       app,
-      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "section-app-fixture.css"],
+      styleFiles: ["codicon.css", "tokens.css", "faces.css", "design-system.css", "quick-picker.css", "section-app-fixture.css"],
       title: (target) => (target.identity ? `Section app · ${target.identity}` : "Section app"),
       refreshKindFor: sectionFixtureRefreshKind,
       bind: (session) => {

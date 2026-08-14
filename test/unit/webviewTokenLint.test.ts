@@ -237,7 +237,7 @@ describe("t-c8e2bd — one implementation, wired as a static gate", () => {
   });
 
   it("teaches the fix rather than only reporting a position", () => {
-    expect(FIX_HINT).toContain("design-system.css");
+    expect(FIX_HINT).toContain("tokens.css");
     expect(FIX_HINT).toContain("--ds-");
     expect(FIX_HINT).toContain("fallback");
     expect(FIX_HINT).toContain("--ds-err");

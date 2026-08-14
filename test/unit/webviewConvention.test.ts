@@ -287,7 +287,10 @@ function sharedMountModules(): string[] {
 function observedExtensionPoints(s: WebviewSurface): Map<ShellExtensionPoint, string> {
   const found = new Map<ShellExtensionPoint, string>();
   const linked = linkedStylesheets(s);
-  const missingBase = SHELL_BASE_STYLESHEETS.filter((stylesheet) => !linked.includes(stylesheet));
+  // SDD 505 Slice 1 — every surface consumes the complete nature-split baseline except Agent Pane,
+  // whose measured xterm constraint applies to bundled faces only. Tokens and components remain mandatory.
+  const missingBase = SHELL_BASE_STYLESHEETS.filter((stylesheet) =>
+    !linked.includes(stylesheet) && !(s.view === "agent-pane" && stylesheet === "faces.css"));
   if (missingBase.length > 0) {
     found.set("base-style", `${s.hostFile} links [${linked.join(", ")}] — missing shared baseline [${missingBase.join(", ")}]`);
   }

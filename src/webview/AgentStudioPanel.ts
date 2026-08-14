@@ -22,7 +22,7 @@ export class AgentStudioPanelManager extends SingleModeStudioPanelManager {
         app: webviewApp("agent-studio-shell"),
         styleFiles: [
           "codicon.css",
-          "design-system.css", "quick-picker.css",
+          "tokens.css", "faces.css", "design-system.css", "quick-picker.css",
           "vscode-theme.css",
           "agent-studio-shell.tailwind.css",
           "studio-frame.css",

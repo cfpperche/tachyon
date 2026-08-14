@@ -1,31 +1,12 @@
 /**
  * Agent pane layout — identity chrome + xterm host + stage bar.
  * Cell metrics come ONLY from xterm options (not CSS font on body).
- * Do NOT load design-system.css (Tachyon Mono @font-face breaks cell metrics).
- * Spacing tokens below mirror design-system.css --ds-* literals.
+ * Shared tokens and components load normally. Only faces.css is omitted because its bundled
+ * Tachyon Mono face changes xterm cell metrics.
  *
  * t-953471 / t-e085bc: never style bare `html`/`body` — Control co-loads sheets and never
  * unloads them. Scope everything under `#root` / `.agent-pane`.
  */
-
-:root {
-  --ds-1: 4px;
-  --ds-2: 8px;
-  --ds-3: 12px;
-  --ds-4: 16px;
-  --agent-pane-pad: var(--ds-2);
-  --agent-pane-bg: var(--vscode-editor-background, #1e1e1e);
-  --agent-pane-fg: var(--vscode-editor-foreground, #cccccc);
-  --agent-pane-muted: var(--vscode-descriptionForeground, #858585);
-  --agent-pane-border: var(--vscode-widget-border, color-mix(in srgb, var(--agent-pane-fg) 18%, transparent));
-  --agent-pane-input-bg: var(--vscode-input-background, #3c3c3c);
-  --agent-pane-input-fg: var(--vscode-input-foreground, #cccccc);
-  --agent-pane-btn-bg: var(--vscode-button-secondaryBackground, #3a3d41);
-  --agent-pane-btn-fg: var(--vscode-button-secondaryForeground, #cccccc);
-  --agent-pane-btn-primary-bg: var(--vscode-button-background, #0e639c);
-  --agent-pane-btn-primary-fg: var(--vscode-button-foreground, #ffffff);
-  --agent-pane-focus: var(--vscode-focusBorder, #007fd4);
-}
 
 /* Standalone webview document root — class/id scoped (not bare html/body). */
 #root {
@@ -34,12 +15,12 @@
   overflow: hidden;
   margin: 0;
   padding: 0;
-  background: var(--agent-pane-bg);
+  background: var(--vscode-editor-background, #1e1e1e);
   font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
   font-size: 12px;
   letter-spacing: 0;
   word-spacing: 0;
-  color: var(--agent-pane-fg);
+  color: var(--ds-fg);
 }
 
 .agent-pane {
@@ -48,15 +29,15 @@
   display: flex;
   flex-direction: column;
   gap: var(--ds-1);
-  padding: var(--agent-pane-pad);
+  padding: var(--ds-2);
   box-sizing: border-box;
   overflow: hidden;
-  background: var(--agent-pane-bg);
+  background: var(--vscode-editor-background, #1e1e1e);
   font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
   font-size: 12px;
   letter-spacing: 0;
   word-spacing: 0;
-  color: var(--agent-pane-fg);
+  color: var(--ds-fg);
 }
 
 /* ── identity strip (Slice 1) ── */
@@ -68,14 +49,14 @@
   gap: var(--ds-2);
   min-height: 22px;
   padding: 0 var(--ds-1);
-  color: var(--agent-pane-muted);
+  color: var(--ds-muted);
   font-size: 11px;
   letter-spacing: 0.02em;
   user-select: none;
 }
 
 .agent-pane__agent {
-  color: var(--agent-pane-fg);
+  color: var(--ds-fg);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -101,10 +82,10 @@
   justify-content: space-between;
   gap: var(--ds-2);
   padding: var(--ds-1) var(--ds-2);
-  border: 1px solid var(--agent-pane-border);
+  border: 1px solid var(--ds-border);
   border-left: 2px solid var(--vscode-notificationsWarningIcon-foreground, #cca700);
   border-radius: 4px;
-  background: var(--vscode-inputValidation-warningBackground, color-mix(in srgb, var(--agent-pane-fg) 8%, transparent));
+  background: var(--vscode-inputValidation-warningBackground, color-mix(in srgb, var(--ds-fg) 8%, transparent));
   font-size: 11px;
   line-height: 1.35;
 }
@@ -123,10 +104,10 @@
   align-items: flex-start;
   gap: var(--ds-2);
   padding: var(--ds-1) var(--ds-2);
-  border: 1px solid var(--agent-pane-border);
+  border: 1px solid var(--ds-border);
   border-left: 2px solid var(--vscode-notificationsInfoIcon-foreground, #3794ff);
   border-radius: 4px;
-  background: var(--vscode-inputValidation-infoBackground, color-mix(in srgb, var(--agent-pane-fg) 6%, transparent));
+  background: var(--vscode-inputValidation-infoBackground, color-mix(in srgb, var(--ds-fg) 6%, transparent));
   font-size: 11px;
   line-height: 1.35;
 }
@@ -162,7 +143,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--ds-1);
-  border-top: 1px solid var(--agent-pane-border);
+  border-top: 1px solid var(--ds-border);
   padding-top: var(--ds-2);
 }
 
@@ -174,10 +155,10 @@
   max-height: 8em;
   margin: 0;
   padding: var(--ds-2);
-  border: 1px solid var(--agent-pane-border);
+  border: 1px solid var(--ds-border);
   border-radius: 4px;
-  background: var(--agent-pane-input-bg);
-  color: var(--agent-pane-input-fg);
+  background: var(--ds-input-bg);
+  color: var(--ds-input-fg);
   font: inherit;
   font-family: "DejaVu Sans Mono", "Liberation Mono", Menlo, Monaco, Consolas, "Courier New", monospace;
   letter-spacing: 0;
@@ -185,7 +166,7 @@
 }
 
 .agent-pane__draft:focus {
-  outline: 1px solid var(--agent-pane-focus);
+  outline: 1px solid var(--ds-focus);
   outline-offset: 0;
 }
 
@@ -202,10 +183,10 @@
 
 .agent-pane__btn {
   appearance: none;
-  border: 1px solid var(--agent-pane-border);
+  border: 1px solid var(--ds-border);
   border-radius: 4px;
-  background: var(--agent-pane-btn-bg);
-  color: var(--agent-pane-btn-fg);
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #cccccc);
   font: inherit;
   font-size: 11px;
   padding: var(--ds-1) var(--ds-2);
@@ -222,8 +203,8 @@
 }
 
 .agent-pane__btn--primary {
-  background: var(--agent-pane-btn-primary-bg);
-  color: var(--agent-pane-btn-primary-fg);
+  background: var(--ds-btn-bg);
+  color: var(--ds-btn-fg);
   border-color: transparent;
 }
 
@@ -235,7 +216,7 @@
 
 .agent-pane__flash {
   font-size: 11px;
-  color: var(--agent-pane-muted);
+  color: var(--ds-muted);
   padding: 0 var(--ds-1);
 }
 

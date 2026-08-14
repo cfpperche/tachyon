@@ -42,7 +42,7 @@ export class SettingsPanelManager {
   private configFor(app: WebviewAppEntry): SectionAppConfig<RefreshKind> {
     return {
       app,
-      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "control-typography.css", "engine-workspace.css", "settings.css"],
+      styleFiles: ["codicon.css", "tokens.css", "faces.css", "design-system.css", "quick-picker.css", "control-typography.css", "engine-workspace.css", "settings.css"],
       title: () => vscode.l10n.t("Settings"),
       bootstrapGlobals: (_target, uri) => ({
         __TACHYON_STRINGS__: cockpitStrings(),

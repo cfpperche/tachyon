@@ -1,24 +1,6 @@
 /*
- * t-de3dfc — font-free QuickPicker layer.
- * Loaded after design-system.css by ordinary product surfaces, and directly by the Agent Pane,
- * whose xterm cell metrics prohibit design-system.css's Tachyon Mono font declarations.
+ * SDD 505 Slice 1 — QuickPicker component rules only. Shared values live in tokens.css.
  */
-:root {
-  --ds-fg: var(--vscode-foreground);
-  --ds-muted: var(--vscode-descriptionForeground);
-  --ds-border: var(--vscode-widget-border, var(--vscode-editorWidget-border, color-mix(in srgb, var(--vscode-foreground) 22%, transparent)));
-  --ds-focus: var(--vscode-focusBorder);
-  --ds-ok: var(--vscode-charts-green, var(--vscode-testing-iconPassed, var(--vscode-terminal-ansiGreen)));
-  --ds-warn: var(--vscode-charts-yellow, var(--vscode-list-warningForeground, var(--vscode-terminal-ansiYellow)));
-  --ds-err: var(--vscode-errorForeground, var(--vscode-list-errorForeground, var(--vscode-terminal-ansiRed)));
-  --ds-hover: var(--vscode-toolbar-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 12%, transparent));
-  --ds-disabled-opacity: 0.5;
-  --ds-z-dialog: 40;
-  --ds-scrim: color-mix(in srgb, var(--vscode-editor-background) 55%, #000 45%);
-  --tachyon-weight-medium: 500;
-  --tachyon-weight-semibold: 600;
-}
-
 /* ── QuickPicker (product in-webview pick list; replaces vscode showQuickPick) ── */
 .ds-qp {
   display: none;
