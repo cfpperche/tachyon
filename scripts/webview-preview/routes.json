@@ -487,7 +487,10 @@
     "title": "Pin Preview",
     "aliases": [
       "pin preview",
-      "pin readonly"
+      "pin readonly",
+      "pin studio",
+      "pin editor",
+      "sketch"
     ]
   },
   {
@@ -504,7 +507,10 @@
     "title": "Pin Preview",
     "aliases": [
       "pin preview",
-      "pin readonly"
+      "pin readonly",
+      "pin studio",
+      "pin editor",
+      "sketch"
     ]
   },
   {
@@ -521,7 +527,10 @@
     "title": "Pin Preview",
     "aliases": [
       "pin preview",
-      "pin readonly"
+      "pin readonly",
+      "pin studio",
+      "pin editor",
+      "sketch"
     ]
   },
   {
@@ -538,7 +547,10 @@
     "title": "Pin Preview",
     "aliases": [
       "pin preview",
-      "pin readonly"
+      "pin readonly",
+      "pin studio",
+      "pin editor",
+      "sketch"
     ]
   },
   {
@@ -1169,7 +1181,9 @@
       "task detail",
       "task",
       "task document",
-      "detail tab"
+      "detail tab",
+      "task studio",
+      "task editor"
     ]
   },
   {
@@ -1188,7 +1202,9 @@
       "task detail",
       "task",
       "task document",
-      "detail tab"
+      "detail tab",
+      "task studio",
+      "task editor"
     ]
   },
   {
@@ -1207,7 +1223,9 @@
       "task detail",
       "task",
       "task document",
-      "detail tab"
+      "detail tab",
+      "task studio",
+      "task editor"
     ]
   },
   {
@@ -1226,7 +1244,9 @@
       "task detail",
       "task",
       "task document",
-      "detail tab"
+      "detail tab",
+      "task studio",
+      "task editor"
     ]
   },
   {
@@ -1245,7 +1265,9 @@
       "task detail",
       "task",
       "task document",
-      "detail tab"
+      "detail tab",
+      "task studio",
+      "task editor"
     ]
   },
   {
@@ -1492,7 +1514,10 @@
       "inbox",
       "human inbox",
       "waiting on you",
-      "approvals queue"
+      "approvals queue",
+      "approvals",
+      "human approvals",
+      "validations"
     ]
   },
   {
@@ -1511,7 +1536,10 @@
       "inbox",
       "human inbox",
       "waiting on you",
-      "approvals queue"
+      "approvals queue",
+      "approvals",
+      "human approvals",
+      "validations"
     ]
   },
   {
@@ -1530,7 +1558,10 @@
       "inbox",
       "human inbox",
       "waiting on you",
-      "approvals queue"
+      "approvals queue",
+      "approvals",
+      "human approvals",
+      "validations"
     ]
   },
   {
@@ -1549,7 +1580,10 @@
       "inbox",
       "human inbox",
       "waiting on you",
-      "approvals queue"
+      "approvals queue",
+      "approvals",
+      "human approvals",
+      "validations"
     ]
   },
   {
@@ -1568,7 +1602,10 @@
       "inbox",
       "human inbox",
       "waiting on you",
-      "approvals queue"
+      "approvals queue",
+      "approvals",
+      "human approvals",
+      "validations"
     ]
   },
   {
