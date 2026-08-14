@@ -8,6 +8,10 @@ agentes. Obrigatório em qualquer fatia que toque `launch.json`, `tasks.json` ou
 Cada fatia termina rodando `node scripts/research/measure-monorepo-graph.mjs` e comparando a contagem
 do pacote com o que a fatia declarou ter movido. Divergência é defeito da fatia.
 
+**Antes de mover, cada fatia mede o fecho de TIPO dos seus membros** (plan.md D7). O número de
+runtime não enxerga módulo de tipo puro, porque tipo puro não emite JavaScript. A diferença entre os
+dois números é resultado esperado; o pacote tem de compilar sozinho.
+
 ---
 
 ## Fatia 1 — workspaces ligados, `packages/shared`, e o gate de fronteira nasce
@@ -75,6 +79,7 @@ A mais arriscada. Vem por último de propósito.
 - [ ] `npm run release` produz um VSIX e `npm run smoke:vsix` passa.
 - [ ] A versão do produto **não muda** por causa desta fatia.
 - [ ] A raiz não contém mais código de produto.
+- [ ] **Nada assume um app único.** Build, scripts e `tsconfig` tratam `apps/` como plural — derivado, nunca com o nome do app cravado como literal. Um teste prova que um segundo diretório em `apps/` é enxergado sem editar script nenhum.
 
 ---
 

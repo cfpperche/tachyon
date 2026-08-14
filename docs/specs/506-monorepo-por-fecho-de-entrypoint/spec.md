@@ -54,6 +54,26 @@ tachyon/
 Os **212 residuais** — app do VS Code, hosts de webview, entradas auxiliares, validadores — **não
 viram um quinto pacote nesta SDD**. Eles serão classificados por medição, não batizados por nome.
 
+### `apps/` é plural desde o primeiro dia
+
+Nada em build, script ou `tsconfig` pode assumir que existe um app único. Não porque um segundo app
+esteja planejado — não está, e desenhar para ele seria especulação. É porque assumir singular custa
+zero agora e custa uma semana depois, e o repositório já tem histórico de caminho cravado como
+literal (a fatia 1 quase deixou `@tachyon/shared` fixo em quatro pontos de um varredor de gate).
+
+O dono perguntou se a estrutura suportaria um segundo app — Electron, ou Tauri com casca em Rust. A
+resposta medida: **a peça que torna isso possível já existe e não é o monorepo.** A engine já roda
+como processo próprio atrás de um socket Unix por workspace (spec 382, entregue), com `protocol.ts` e
+`controlClient.ts`. É exatamente o formato que um sidecar de Tauri consome.
+
+O que esta SDD acrescenta é manter isso vivo: `packages/engine` com zero `vscode` e um gate que
+impede a portabilidade de apodrecer em silêncio.
+
+O que NÃO vem de graça, e fica registrado para não virar surpresa: os 212 residuais são o app do VS
+Code e seus hosts, e não transferem; os 61 tokens do design system resolvem todos para `--vscode-*`,
+então fora do VS Code alguém precisa fornecer cor; e a spec 382 declara Linux/WSL, com macOS
+explicitamente sem suporte.
+
 ## 3. Critérios de aceite
 
 - [ ] **Cenário: o import errado é recusado pelo build**
