@@ -11,7 +11,6 @@ import type { ResolvedAgentCapabilityProjection } from "../config/agentProfileRe
 import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.js";
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
-import { URL_ENV_VAR } from "../bridge/token.js";
 import { redactSecrets } from "../utils/redactSecrets.js";
 import { RELEASE_LOCK_HINT, resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { bridgeGrokHome, defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
@@ -511,6 +510,8 @@ export interface AgentManagerOptions {
   formation?: FormationLifecyclePort;
   /** Env injected into every spawned session (e.g. TACHYON_BRIDGE_URL/TOKEN); agent-declared env wins on conflict. */
   getExtraEnv?: () => Record<string, string>;
+  /** Bridge URL supplied as data for runtime MCP wiring; the manager does not know its env-var name. */
+  bridgeUrl?: () => string | undefined;
   /** spec 351 — mint a fresh per-agent Bridge token for `name` (TACHYON_AGENT_BRIDGE_TOKEN), returning the
    *  env var(s) to merge; `{}` when no registry is wired (e.g. auth disabled). Called exactly ONCE per
    *  spawn/restart/resume — minting is NOT idempotent (each call revokes the prior live token for this
@@ -2743,7 +2744,7 @@ export class AgentManager {
     // the workspace Bridge is up. Non-AI commands may still use kind:agent for lifecycle grouping.
     const spawnedAgent = asAgent(def);
     if (spawnedAgent && (adapter || binaryOf(spawnedAgent.cmd) === "pi") && !spawnBridge.wired) {
-      const bridgeUrl = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
+      const bridgeUrl = this.opts.bridgeUrl?.();
       if (bridgeUrl) {
         throw new Error(
           `agent '${name}' spawn refused: Tachyon Bridge tools could not be materialized for this session ` +
@@ -3113,7 +3114,7 @@ export class AgentManager {
         TACHYON_PI_SESSION_OWNER_FILE: sessionOwnersFile(this.opts.workspaceRoot),
       };
     }
-    const url = this.opts.getExtraEnv?.()?.[URL_ENV_VAR];
+    const url = this.opts.bridgeUrl?.();
     if (def.harness && binary !== "pi") {
       // Bridge is folded into the materialized harness MCP file (Workspace passes bridgeEntry when up).
       // SDD 406: Pi's harness contains resources only; its immutable Bridge extension stays additive.
@@ -5246,7 +5247,7 @@ export class AgentManager {
         src.runtime === "pi",
         forkBuild.env.GROK_HOME,
       );
-      if (src.runtime === "pi" && this.opts.getExtraEnv?.()?.[URL_ENV_VAR] && !forkBridge.wired) {
+      if (src.runtime === "pi" && this.opts.bridgeUrl?.() && !forkBridge.wired) {
         throw new ForkUnavailableError(source, "Pi Bridge tools could not be materialized for the fork");
       }
       sessionAttempted = true;

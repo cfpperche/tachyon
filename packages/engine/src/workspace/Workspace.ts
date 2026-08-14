@@ -1103,6 +1103,7 @@ export class Workspace {
         if (this.token) env[TOKEN_ENV_VAR] = this.token;
         return env;
       },
+      bridgeUrl: () => this.bridge.url,
       // spec 351 — a fresh per-agent token at spawn/restart/resume; `{}` until the HMAC key has loaded
       // (a short transient window at extension activation — a spawn in it just gets no per-agent token,
       // same self-healing shape as the Bridge URL/token above before the Bridge itself has bound a port).
