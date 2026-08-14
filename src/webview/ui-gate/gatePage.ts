@@ -2,7 +2,7 @@ import { renderWebviewShell, SHELL_BASE_STYLESHEETS } from "../shared/shell";
 
 // spec 342 — the ui-gate page HTML, factored out of the browser-test HTTP server so a PLAIN unit test
 // (test/unit/cssOrderSnapshot.test.ts) can assert the stylesheet order without launching a browser. The
-// required order (spec.md): design-system.css → vscode-theme.css → Tailwind layers → surface CSS. This
+// required order (spec.md): tokens.css → faces.css → design-system.css → vscode-theme.css → Tailwind. This
 // surface has no surface-specific CSS of its own yet, so the chain ends at the Tailwind bundle.
 export function renderGatePage(cspSource: string): string {
   return renderWebviewShell({

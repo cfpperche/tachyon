@@ -26,22 +26,24 @@ const NONCE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456
  *                   baseline already owns those (`design-system.css` sets body font/colour/background/margin),
  *                   so a surface restyling them is composing its own page chrome over the shared one. The dual
  *                   pad of 2026-07-18 arrived exactly here.
- *  - `base-style`   the surface does not link the design-system baseline at all and brings its own base layer
- *                   (agent-pane: Tachyon Mono's `@font-face` breaks xterm cell metrics).
- *  - `token-scale`  the surface defines its OWN values for shared `--ds-*` tokens rather than reading them.
- *
  * NOT extension points, deliberately: the CSP options below (`imgBlob`, `connectSrc`, `workerSrc`, `childSrc`,
  * `frameSrc`, `scriptCspSource`). They are a security axis, orthogonal to design-system conformance — folding
  * them in here would make almost every surface `extend` and drain the word of meaning.
  */
-export const SHELL_EXTENSION_POINTS = ["page-chrome", "base-style", "token-scale"] as const;
+export const SHELL_EXTENSION_POINTS = ["page-chrome"] as const;
 export type ShellExtensionPoint = (typeof SHELL_EXTENSION_POINTS)[number];
 
-/** The baseline stylesheet layer a CONFORMING surface links first, in this order: the icon font, then the
- *  sheet that carries the design system itself. A surface missing the latter declares `base-style`. */
-export const SHELL_BASE_STYLESHEETS = ["codicon.css", "design-system.css", "quick-picker.css"] as const;
+/** The baseline stylesheet layer a CONFORMING surface links first, split by nature: icons, tokens, bundled
+ *  faces, shared components, then the QuickPicker component. Agent Pane is the sole face-sheet exception. */
+export const SHELL_BASE_STYLESHEETS = ["codicon.css", "tokens.css", "faces.css", "design-system.css", "quick-picker.css"] as const;
 
-/** The one baseline sheet that CARRIES the design system (tokens + base components + the body baseline). */
+/** Every surface, including Agent Pane, must link this token-only sheet. */
+export const SHELL_DESIGN_TOKEN_STYLESHEET = "tokens.css";
+
+/** Agent Pane skips only this sheet because the bundled Tachyon Mono face changes xterm cell metrics. */
+export const SHELL_DESIGN_FACE_STYLESHEET = "faces.css";
+
+/** The baseline sheet that carries shared components and the body baseline. */
 export const SHELL_DESIGN_SYSTEM_STYLESHEET = "design-system.css";
 
 /**

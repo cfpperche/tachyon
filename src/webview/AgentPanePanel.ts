@@ -162,12 +162,11 @@ export class AgentPanePanelManager {
     panel.webview.html = renderWebviewShell({
       cspSource: panel.webview.cspSource,
       title,
-      // Font-free picker layer only: design-system.css's Tachyon Mono @font-face breaks xterm metrics.
-      styles: [uri("xterm.css"), uri("quick-picker.css"), uri("agent-pane.css")],
+      // Shared tokens + components are safe; only faces.css is omitted because Tachyon Mono changes xterm metrics.
+      styles: [uri("codicon.css"), uri("xterm.css"), uri("tokens.css"), uri("design-system.css"), uri("quick-picker.css"), uri("agent-pane.css")],
       bundle: uri("agent-pane.js"),
       mode: "live",
       surface: AGENT_PANE_VIEW_TYPE,
-      extend: ["base-style", "token-scale"],
       persistedState: {
         schemaVersion: 1,
         view: AGENT_PANE_VIEW_TYPE,

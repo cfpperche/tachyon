@@ -4,6 +4,7 @@ import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { renderGatePage } from "../../../src/webview/ui-gate/gatePage.js";
 import { PREFLIGHT_FIXTURE_HTML } from "../../../src/webview/ui-gate/preflightFixture.js";
+import { SHELL_BASE_STYLESHEETS } from "../../../src/webview/shared/shell.js";
 import { renderPluginFrameGatePage } from "../../../scripts/webview-preview/pluginFrameGate.js";
 
 // spec 342 — a tiny static server for the ui-gate browser tests, modeled on scripts/webview-preview/serve.mjs
@@ -28,7 +29,7 @@ const TYPES: Record<string, string> = {
 export interface GateServer {
   url: string;
   /** the SAME `PREFLIGHT_FIXTURE_HTML` markup as the `/ui-gate` page's own fixture section, on a bare page
-   *  linking ONLY design-system.css — no vscode-theme.css, no Tailwind. The before/after comparison in
+   *  linking only the shared baseline — no vscode-theme.css, no Tailwind. The before/after comparison in
    *  test/browser/preflightFixture.test.ts diffs this page's computed styles against the real gate page's. */
   preflightFixtureNoTailwindUrl: string;
   /** spec 349 T1 — the opaque-origin iframe contract gate page. */
@@ -65,7 +66,7 @@ export async function startGateServer(): Promise<GateServer> {
     if (urlPath === "/preflight-fixture-no-tailwind") {
       const cspSource = `http://${req.headers.host}`;
       const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<link rel="stylesheet" href="${cspSource}/dist/webview/design-system.css">
+${SHELL_BASE_STYLESHEETS.map((sheet) => `<link rel="stylesheet" href="${cspSource}/dist/webview/${sheet}">`).join("\n")}
 <title>preflight fixture (no Tailwind)</title></head><body>${PREFLIGHT_FIXTURE_HTML}</body></html>`;
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;

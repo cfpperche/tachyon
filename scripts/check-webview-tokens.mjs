@@ -2,12 +2,12 @@
 /**
  * t-c8e2bd — raw hex colors and numeric z-index in src/webview/ stop passing in silence.
  *
- * The design system already exists (`src/webview/shared/design-system.css`). This gate is the
+ * The design token source already exists (`src/webview/shared/tokens.css`). This gate is the
  * thing that refuses a new loose value. Existing debt is listed below, each row with a reason;
  * a new distinct hex or a new numeric z-index in an excepted file still fails. Paying a value
  * down means deleting it from the list — a stale row fails the same way an anonymous one does.
  *
- * Hex inside design-system.css is the allowed token source. Missing a token for a color that
+ * Hex inside tokens.css is the allowed token source. Missing a token for a color that
  * new code needs means ADDING it there, not adding an exception here. Exception is for what
  * already shipped, not for what is written next.
  *
@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const SCAN_ROOT = "src/webview";
-export const TOKEN_SOURCE = "src/webview/shared/design-system.css";
+export const TOKEN_SOURCE = "src/webview/shared/tokens.css";
 export const EXTENSIONS = Object.freeze([".css", ".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 export const MIN_REASON = 20;
 
@@ -68,10 +68,14 @@ export const HEX_EXCEPTIONS = Object.freeze([
   {
     file: "src/webview/agent-pane/agent-pane.css",
     values: [
-      "#007fd4", "#0e639c", "#1e1e1e", "#3794ff", "#3a3d41", "#3c3c3c", "#4ec9b0",
-      "#858585", "#cca700", "#cccccc", "#ffffff",
+      "#1e1e1e", "#3794ff", "#3a3d41", "#4ec9b0", "#cca700", "#cccccc",
     ],
-    reason: "Agent pane cannot load design-system.css (Tachyon Mono breaks xterm metrics); vscode-var fallbacks plus two raw stage-mark teals.",
+    reason: "Agent pane skips only bundled faces.css for xterm metrics; remaining literals are scoped vscode-var fallbacks and stage/notice colors.",
+  },
+  {
+    file: "src/webview/shared/design-system.css",
+    values: ["#000", "#1e1e1e", "#cca700", "#fff"],
+    reason: "Shared component fallbacks already shipped here; tokens.css is now the only declaration source, so component literals remain explicit debt rather than becoming token declarations.",
   },
   {
     file: "src/webview/agent-studio-shell/runtimeLogos.tsx",
@@ -161,7 +165,7 @@ export const HEX_EXCEPTIONS = Object.freeze([
   {
     file: "src/webview/shared/quick-picker.css",
     values: ["#000", "#1e1e1e"],
-    reason: "Font-free picker sheet (cannot load design-system.css) restates the --ds-scrim mix and a dialog fallback hex.",
+    reason: "QuickPicker component fallbacks keep its scrim/dialog readable if a host stylesheet fails to load.",
   },
   {
     file: "src/webview/shared/vscode-theme.css",
@@ -575,7 +579,7 @@ export function scanRepo(root = ROOT) {
 }
 
 export const FIX_HINT =
-  "New hex belongs in src/webview/shared/design-system.css as a --ds-* token, not as a literal and not as an exception. " +
+  "New hex belongs in src/webview/shared/tokens.css as a --ds-* token, not as a literal and not as an exception. " +
   "New stacking belongs on --ds-z-popover / --ds-z-dialog / --ds-z-toast / --ds-z-overlay. " +
   "A var(--ds-*|--tachyon-*) must name a token declared in src/webview or carry a fallback; " +
   "do not invent a synonym (--ds-danger is --ds-err) and do not add an exception for a token the design system is missing. " +

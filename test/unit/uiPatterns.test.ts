@@ -152,7 +152,7 @@ describe("shared UI product patterns (STYLEGUIDE)", () => {
   // the button drifted 2px away from the fields beside it. This one asserts the STRUCTURE that makes
   // drift impossible instead of a number that merely happens to be in the file.
   it("button/input/select-trigger share ONE control box (t-b8b85c: the 2px regression cannot come back)", () => {
-    const ds = readFileSync("src/webview/shared/design-system.css", "utf8");
+    const ds = `${readFileSync("src/webview/shared/tokens.css", "utf8")}\n${readFileSync("src/webview/shared/design-system.css", "utf8")}`;
 
     // 1. The three selectors are declared TOGETHER, in one rule. Split them and this fails — which is
     //    what 7be4265a did when it folded t-6da5f0's copy into `.ds-btn` alone and dropped a term.

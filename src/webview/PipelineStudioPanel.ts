@@ -23,7 +23,7 @@ export type PipelineStudioPanelState = {
 const surface: StudioSurfaceConfig = {
   viewType: PIPELINE_STUDIO_VIEW_TYPE,
   bundleFile: "pipeline-studio.js",
-  styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "studio-frame.css", "pipeline-studio.css"],
+  styleFiles: ["codicon.css", "tokens.css", "faces.css", "design-system.css", "quick-picker.css", "studio-frame.css", "pipeline-studio.css"],
 };
 
 export class PipelineStudioPanelManager {

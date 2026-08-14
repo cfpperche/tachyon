@@ -4,26 +4,43 @@ import { renderGatePage } from "../../src/webview/ui-gate/gatePage.js";
 
 const read = (path: string) => readFileSync(path, "utf8");
 
-describe("QuickPicker font-free packaging (t-de3dfc)", () => {
-  it("owns every ds-qp rule in one font-free sheet", () => {
+describe("SDD 505 Slice 1 — tokens, faces, and components are separate", () => {
+  it("keeps each shared sheet limited to its declared nature", () => {
     const design = read("src/webview/shared/design-system.css");
     const picker = read("src/webview/shared/quick-picker.css");
+    const tokens = read("src/webview/shared/tokens.css");
+    const faces = read("src/webview/shared/faces.css");
     expect(design).not.toContain(".ds-qp");
+    expect(design).not.toContain("@font-face");
     expect(picker).toContain(".ds-qp-panel");
     expect(picker).not.toContain("@font-face");
+    expect(picker).not.toMatch(/(?:^|[;{])\s*--ds-[a-z0-9-]+\s*:/m);
+    expect(tokens).toContain("--ds-fg:");
+    expect(tokens.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain("@font-face");
+    const tokenRules = tokens.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(tokenRules.match(/{/g)).toHaveLength(1);
+    expect(tokenRules.trimStart()).toMatch(/^:root\s*\{/);
+    expect(faces).toContain("@font-face");
+    expect(faces).not.toContain(":root");
   });
 
-  it("links the picker layer in the shared baseline and the xterm-safe Agent Pane", () => {
+  it("links the full baseline normally while Agent Pane skips only faces", () => {
     const gate = renderGatePage("https://example.test");
     const pluginHost = read("src/plugins/ui/host.ts");
     const pane = read("src/webview/AgentPanePanel.ts");
-    expect(gate).toContain('href="https://example.test/dist/webview/quick-picker.css"');
+    for (const sheet of ["tokens.css", "faces.css", "design-system.css", "quick-picker.css"]) {
+      expect(gate).toContain(`href="https://example.test/dist/webview/${sheet}"`);
+    }
     expect(pluginHost).toContain("...SHELL_BASE_STYLESHEETS.map(uri)");
-    expect(pane).toContain('styles: [uri("xterm.css"), uri("quick-picker.css"), uri("agent-pane.css")]');
-    expect(pane).not.toContain('uri("design-system.css")');
+    expect(pane).toContain('uri("tokens.css")');
+    expect(pane).toContain('uri("design-system.css")');
+    expect(pane).toContain('uri("quick-picker.css")');
+    expect(pane).not.toContain('uri("faces.css")');
   });
 
-  it("copies the new sheet into the shipped webview assets", () => {
+  it("copies the split sheets into the shipped webview assets", () => {
+    expect(read("esbuild.mjs")).toContain('copyFileSync("src/webview/shared/tokens.css", "dist/webview/tokens.css")');
+    expect(read("esbuild.mjs")).toContain('copyFileSync("src/webview/shared/faces.css", "dist/webview/faces.css")');
     expect(read("esbuild.mjs")).toContain('copyFileSync("src/webview/shared/quick-picker.css", "dist/webview/quick-picker.css")');
   });
 });

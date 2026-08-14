@@ -6,7 +6,7 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 // spec 342 T4 — "Tailwind v4 pipeline, preflight off" acceptance fixture: a mixed .ds-* fixture (button,
 // input, select, table, list, heading) must compute IDENTICAL styles whether or not Tailwind's compiled CSS
 // is linked on the page. The gate page (`/ui-gate`) links vscode-theme.css + Tailwind; the twin
-// (`/preflight-fixture-no-tailwind`) links only design-system.css — both render the SAME
+// (`/preflight-fixture-no-tailwind`) links only the shared baseline — both render the SAME
 // PREFLIGHT_FIXTURE_HTML string (see src/webview/ui-gate/preflightFixture.ts), so any computed-style diff is
 // attributable to Tailwind's inclusion, not to markup drift between two hand-copies.
 const PROPERTIES = [

@@ -155,11 +155,9 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   { viewId: "tachyonScheduleStudioShell", view: "schedule-studio-shell", hostFile: "src/webview/ScheduleStudioPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   { viewId: "tachyonAgentStudioShell", view: "agent-studio-shell", hostFile: "src/webview/AgentStudioPanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // t-610355 — layer-2 first-party agent pane (runtime TUI in Tachyon webview + xterm; additive to integrated terminal)
-  // spec 485 A1 — the ONLY live standalone editor panel today, and the sharpest departure in the manifest: it
-  // links NO design-system.css (AgentPanePanel.ts: "Tachyon Mono @font-face breaks xterm cell metrics") and
-  // therefore mints its own `--ds-1..4` spacing values in agent-pane.css. Both were code comments until now —
-  // which is precisely the silence this contract exists to end. Shared shell, own base layer → `extend`.
-  { viewId: "tachyonAgentPane", view: "agent-pane", hostFile: "src/webview/AgentPanePanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "extend", extensionPoints: ["base-style", "token-scale"] },
+  // SDD 505 Slice 1 — Agent Pane consumes the shared token and component sheets and skips only faces.css,
+  // because the bundled Tachyon Mono face changes xterm cell metrics. It mints no private token scale.
+  { viewId: "tachyonAgentPane", view: "agent-pane", hostFile: "src/webview/AgentPanePanel.ts", mode: "live", converted: true, hostKind: "standalone", posture: "conform" },
   // spec 335/339 panels — always preact, just predated this manifest; added on spec 342 dogfood round 2 (#4)
   // when they gained a webview-preview harness route (this list is what the catalog-completeness test spans).
   // SDD 485 C5 (2026-08-03) — the Board is a STANDALONE APP again, and SDD 410's app-count decision is the

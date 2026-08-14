@@ -123,7 +123,7 @@ export class TmuxPanelManager {
       // and this surface never used a rule from. `inspector.css` styles no page frame, mints no `--ds-*`
       // and gives `#root` no height, so this app `conform`s and links no `page-frame.css`: the inspector
       // is a page-scrolling document like the task detail, not a full-bleed board.
-      styleFiles: ["codicon.css", "design-system.css", "quick-picker.css", "inspector.css"],
+      styleFiles: ["codicon.css", "tokens.css", "faces.css", "design-system.css", "quick-picker.css", "inspector.css"],
       title: () => vscode.l10n.t("tmux"),
       refreshKindFor: tmuxRefreshKind,
       bind: (session) => {

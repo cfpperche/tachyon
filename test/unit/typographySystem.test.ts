@@ -5,7 +5,9 @@ const read = (path: string) => readFileSync(path, "utf8");
 
 describe("Tachyon webview typography system", () => {
   it("declares the bundled Tachyon mono faces and reading role", () => {
-    const css = read("src/webview/shared/design-system.css");
+    const css = ["faces.css", "tokens.css", "design-system.css"]
+      .map((file) => read(`src/webview/shared/${file}`))
+      .join("\n");
     expect(css).toContain('font-family: "Tachyon Mono"');
     expect(css).toContain('url("fonts/tachyon/JetBrainsMono-Regular.woff2")');
     expect(css).toContain('url("fonts/tachyon/JetBrainsMono-Medium.woff2")');
