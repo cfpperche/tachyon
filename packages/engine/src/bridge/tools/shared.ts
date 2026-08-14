@@ -33,7 +33,7 @@ import type { ProbeService } from "../../probe/ProbeService.js";
 import type { NoticeQueueMetadata } from "../NoticeQueue.js";
 import { resolveActor } from "../callerIdentity.js";
 import type { CallerSnapshot, CallerIdentityRegistry, CallerScope } from "../callerIdentity.js";
-import { redactSecrets } from "../redact.js";
+import { redactSecrets } from "../../utils/redactSecrets.js";
 import type { HostActionBrokerResult } from "../../host-action/index.js";
 import type { ManagedWorktreeService } from "../../worktree/ManagedWorktreeService.js";
 import type { ChangedFile } from "../../worktree/review.js";

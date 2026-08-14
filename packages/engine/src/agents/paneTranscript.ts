@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { redactSecrets } from "../bridge/redact.js";
+import { redactSecrets } from "../utils/redactSecrets.js";
 
 /**
  * Durable per-agent pane transcript (t-6a6a00): `tmux pipe-pane` streams a pane's raw output

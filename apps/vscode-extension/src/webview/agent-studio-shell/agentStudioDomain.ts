@@ -19,7 +19,7 @@
 import * as vscode from "vscode";
 import type { WorkspaceAgentStudioTarget } from "../../shell/WorkspacePresentation.js";
 import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "@tachyon/shared/config/agentProfileRefusal.js";
-import { redactSecrets } from "@tachyon/engine/bridge/redact.js";
+import { redactSecrets } from "@tachyon/engine/utils/redactSecrets.js";
 import { envelope } from "@tachyon/webview-ui/webview/shared/studio/protocol";
 import { validateAgentStudioInboundMessage } from "@tachyon/webview-ui/webview/agent-studio-shell/domain";
 import {
@@ -436,4 +436,3 @@ async function browse(ws: WorkspaceAgentStudioTarget, ctx: StudioDomainContext):
   });
   if (picked?.[0]) ctx.post(envelope({ type: "cwd" as const, value: picked[0].fsPath }));
 }
-

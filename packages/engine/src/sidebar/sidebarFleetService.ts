@@ -26,7 +26,7 @@ import type { TmuxService } from "../tmux/TmuxService.js";
 import { evidenceBadge, type EvidenceSummary } from "../worktree/evidence.js";
 import type { WorktreeManager } from "../worktree/WorktreeManager.js";
 import type { ResourceSampler } from "../attention/resourceSample.js";
-import { truncateByCodePoint } from "../bridge/notifyAgent.js";
+import { truncateByCodePoint } from "../utils/truncateByCodePoint.js";
 
 /** Display-only cap for a notice row; the inbox keeps the whole line. */
 const NOTICE_MESSAGE_RENDER_CAP = 240;

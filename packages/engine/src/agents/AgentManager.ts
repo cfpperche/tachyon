@@ -12,7 +12,7 @@ import { applyManagedHookTrust, managedHookRuntimeOf } from "./managedHookTrust.
 import { TmuxService, sessionName, agentFromSession, SESSION_PREFIX } from "../tmux/TmuxService.js";
 import { adapterFor, adapterForRuntime, binaryOf, forkable, managesOwnSession, type ResumeAdapter, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 import { URL_ENV_VAR } from "../bridge/token.js";
-import { redactSecrets } from "../bridge/redact.js";
+import { redactSecrets } from "../utils/redactSecrets.js";
 import { RELEASE_LOCK_HINT, resolveBase as resolveWorktreeBase, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { bridgeGrokHome, defaultRealOpencodeDataHome, harnessHome, type MaterializedHarness } from "../harness/HarnessManager.js";
 import {
