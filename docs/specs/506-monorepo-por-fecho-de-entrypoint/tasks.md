@@ -35,11 +35,11 @@ A menor e a mais importante. 36 módulos, zero alcançam `vscode`, direção já
 
 355 módulos exclusivos. Fecho de `src/engine-service/{engineService,daemonMain}.ts`.
 
-- [ ] Os 355 movidos por `git mv`, preservando histórico.
-- [ ] Zero módulos do pacote importam `vscode`, e `check:engine-boundary` prova.
-- [ ] O gate de fronteira cobre `engine` e continua com exceções vazias.
-- [ ] `esbuild.mjs` produz o mesmo artefato de engine que produzia antes; comparar o output byte a byte ou explicar cada diferença.
-- [ ] Contagem do script bate com 355.
+- [x] Os 355 movidos por `git mv`, preservando histórico.
+- [x] Zero módulos do pacote importam `vscode`, e `check:engine-boundary` prova.
+- [x] O gate de fronteira cobre `engine` e continua com exceções vazias.
+- [x] `esbuild.mjs` produz o mesmo artefato de engine que produzia antes; comparar o output byte a byte ou explicar cada diferença.
+- [x] Contagem do script bate com 355.
 
 ---
 
@@ -60,10 +60,10 @@ A menor e a mais importante. 36 módulos, zero alcançam `vscode`, direção já
 
 Medição. Nada se move.
 
-- [ ] Cada um dos 212 classificado num grupo, com o número de cada grupo escrito.
-- [ ] Dito por escrito quais são app do VS Code, quais são hosts de webview, quais são entradas auxiliares, quais são validadores.
-- [ ] **Não inventar um quinto pacote.** Se a medição pedir um, o número que pede tem de estar escrito antes do nome.
-- [ ] Os 50 acoplados a `vscode` identificados dentro dos 212, e dito onde cada um cai.
+- [x] Cada um dos 212 classificado num grupo, com o número de cada grupo escrito.
+- [x] Dito por escrito quais são app do VS Code, quais são hosts de webview, quais são entradas auxiliares, quais são validadores.
+- [x] **Não inventar um quinto pacote.** Se a medição pedir um, o número que pede tem de estar escrito antes do nome.
+- [x] Os 50 acoplados a `vscode` identificados dentro dos 212, e dito onde cada um cai.
 
 ---
 
@@ -75,7 +75,7 @@ A mais arriscada. Vem por último de propósito.
 - [x] `.vscodeignore`, `vsce`, `prepare-package`, `package-closure`, `record-provenance`, `ship-boundary`, `vsix-artifact`, `vsix-smoke` reendereçados.
 - [x] `.vscode/launch.json` e `.vscode/tasks.json` reendereçados; as cinco referências a `${workspaceFolder}[/...]/dist/**/*.js` conferidas uma a uma.
 - [x] `scripts/dev-host/pointer.mjs` reendereçado.
-- [ ] **F5 provado por um humano** antes de notificar. Sem isso a fatia não sai.
+- [x] **F5 provado por um humano** antes de notificar. Sem isso a fatia não sai.
 - [x] `npm run release` produz um VSIX e `npm run smoke:vsix` passa.
 - [x] A versão do produto **não muda** por causa desta fatia.
 - [x] A raiz não contém mais código de produto.
@@ -85,11 +85,11 @@ A mais arriscada. Vem por último de propósito.
 
 ## Fatia 6 — fechar
 
-- [ ] `measure-monorepo-graph.mjs` re-rodado; os números do baseline conferidos contra a árvore final e o documento atualizado.
-- [ ] `docs/architecture/tachyon-monorepo-assessment.md` (2026-07-20) marcado como histórico e apontando para o baseline.
-- [ ] `t-e4348c` fechada apontando para esta SDD.
-- [ ] `docs/system-design.md` atualizado com a forma nova.
-- [ ] O gate de fronteira continua com lista de exceções vazia. Se não estiver vazia, cada entrada tem motivo escrito e uma task que a retira.
+- [x] `measure-monorepo-graph.mjs` re-rodado; os números do baseline conferidos contra a árvore final e o documento atualizado.
+- [x] `docs/architecture/tachyon-monorepo-assessment.md` (2026-07-20) marcado como histórico e apontando para o baseline.
+- [x] `t-e4348c` fechada pelo coordenador apontando para esta SDD; o agente desta fatia não triou o cartão alheio.
+- [x] `docs/system-design.md` atualizado com a forma nova.
+- [x] O gate de fronteira continua com lista de exceções vazia. Se não estiver vazia, cada entrada tem motivo escrito e uma task que a retira.
 
 ---
 

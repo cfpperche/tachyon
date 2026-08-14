@@ -1,6 +1,8 @@
 # Assessment: monorepoizing the Tachyon ADE repo
 
-_Status: product/engineering assessment (not an active migration program)._  
+_Status: **histórico** — retrato da 0.56.x, não descreve a árvore atual. A medição que decidiu e
+registrou a migração está em
+[`tachyon-monorepo-transitive-baseline.md`](./tachyon-monorepo-transitive-baseline.md)._
 _Recorded 2026-07-20 from maintainer + agent discussion (browser/mobile companion packaging)._  
 _Board task: `t-e4348c` (design, inbox)._
 

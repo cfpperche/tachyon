@@ -9,18 +9,28 @@ import {
   visitSpecifiers,
   walk,
 } from "./monorepo-imports.mjs";
+import { workspaceDirectories } from "../workspace-layout.mjs";
 
 const root = process.cwd();
 const srcRoot = path.join(root, "src");
 const sharedRoot = path.join(root, "packages", "shared");
 const engineRoot = path.join(root, "packages", "engine");
 const webviewUiRoot = path.join(root, "packages", "webview-ui");
+const appRoots = workspaceDirectories(root).filter((workspaceRoot) => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(workspaceRoot, "package.json"), "utf8"));
+  return typeof manifest.engines?.vscode === "string";
+});
+if (appRoots.length === 0) throw new Error("monorepo measurement found zero VS Code app workspaces");
+const appFiles = appRoots.flatMap((appRoot) => walk(path.join(appRoot, "src")))
+  .filter((file) => /\.tsx?$/.test(file))
+  .sort();
+if (appFiles.length === 0) throw new Error("monorepo measurement found zero VS Code app source files");
 const srcFiles = walk(srcRoot).filter((file) => /\.tsx?$/.test(file)).sort();
 const packageSharedFiles = walk(path.join(sharedRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
 const packageEngineFiles = walk(path.join(engineRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
 const packageWebviewUiFiles = walk(path.join(webviewUiRoot, "src")).filter((file) => /\.tsx?$/.test(file)).sort();
 const sharedRuntimeFiles = walk(sharedRoot).filter((file) => /\.cjs$/.test(file)).sort();
-const files = [...srcFiles, ...packageSharedFiles, ...packageEngineFiles, ...packageWebviewUiFiles, ...sharedRuntimeFiles].sort();
+const files = [...srcFiles, ...appFiles, ...packageSharedFiles, ...packageEngineFiles, ...packageWebviewUiFiles, ...sharedRuntimeFiles].sort();
 const fileSet = new Set(files);
 const nodes = new Map();
 const relativeSpecifiers = new Map();
@@ -58,9 +68,9 @@ for (const file of files) {
 
 const valueCoupled = closureToVscode("value");
 const typeAwareCoupled = closureToVscode("both");
-const directValue = srcFiles.filter((file) => nodes.get(file).value.has("vscode"));
-const directType = srcFiles.filter((file) => nodes.get(file).type.has("vscode"));
-const surprising = srcFiles.filter((file) => valueCoupled.has(file) && !nodes.get(file).value.has("vscode"));
+const directValue = files.filter((file) => nodes.get(file).value.has("vscode"));
+const directType = files.filter((file) => nodes.get(file).type.has("vscode"));
+const surprising = files.filter((file) => valueCoupled.has(file) && !nodes.get(file).value.has("vscode"));
 
 const webviewRoot = files.filter((file) => path.dirname(file) === path.join(srcRoot, "webview"));
 const webviewBrowser = files.filter((file) => file.startsWith(path.join(srcRoot, "webview") + path.sep)
@@ -118,6 +128,7 @@ const output = {
   totals: {
     files: files.length,
     srcFiles: srcFiles.length,
+    appSourceFiles: appFiles.length,
     sharedRuntimeFiles: sharedRuntimeFiles.length,
     packageSharedRuntimeFiles: packageSharedFiles.length + sharedRuntimeFiles.length,
     packageEngineSourceFiles: packageEngineFiles.length,
@@ -151,6 +162,10 @@ const output = {
     browser: { ...summarize([...browserProgram]), entries: browserEntries.length },
     boundary,
   },
+  apps: Object.fromEntries(appRoots.map((appRoot) => {
+    const members = appFiles.filter((file) => file.startsWith(`${appRoot}${path.sep}`));
+    return [rel(appRoot), summarize(members)];
+  })),
   programs: {
     engine: { ...programSummary(engineProgram), members: [...engineProgram].map(rel).sort() },
     engineTypeAware: { ...programSummary(engineTypeProgram), members: [...engineTypeProgram].map(rel).sort() },
