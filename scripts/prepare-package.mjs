@@ -14,6 +14,26 @@ function walk(dir) {
   });
 }
 
+function stageNativeDependency(sourceRoot, targetRoot) {
+  const shipped = ["package.json"];
+  for (const file of walk(path.join(sourceRoot, "lib"))) {
+    shipped.push(path.relative(sourceRoot, file));
+  }
+  for (const relative of ["build/Release", "prebuilds"]) {
+    const directory = path.join(sourceRoot, relative);
+    if (!fs.existsSync(directory)) continue;
+    for (const file of walk(directory)) {
+      const rel = path.relative(sourceRoot, file).split(path.sep).join("/");
+      if (rel.endsWith(".node") || /\/conpty\//.test(rel)) shipped.push(rel);
+    }
+  }
+  for (const relative of shipped) {
+    const target = path.join(targetRoot, relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(path.join(sourceRoot, relative), target);
+  }
+}
+
 export function preparePackage(repositoryRoot = process.cwd()) {
   const root = extensionWorkspace(repositoryRoot).directory;
   const dist = path.join(root, "dist");
@@ -35,7 +55,8 @@ export function preparePackage(repositoryRoot = process.cwd()) {
   const nativeDependencySource = path.join(repositoryRoot, "node_modules", "node-pty");
   const nativeDependencyTarget = path.join(dist, "node_modules", "node-pty");
   if (!fs.existsSync(nativeDependencySource)) throw new Error("node-pty is missing; install dependencies before packaging");
-  fs.cpSync(nativeDependencySource, nativeDependencyTarget, { recursive: true, force: true });
+  fs.rmSync(nativeDependencyTarget, { recursive: true, force: true });
+  stageNativeDependency(nativeDependencySource, nativeDependencyTarget);
 
   for (const file of walk(dist)) {
     const rel = path.relative(root, file).split(path.sep).join("/");
