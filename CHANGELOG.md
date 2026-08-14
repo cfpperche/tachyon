@@ -4,6 +4,76 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.91.0 — two screens were rendering without the design system, and nothing could tell
+
+The maintainer asked why Tachyon's UI looks worse than what other agents produce. The answer was not
+taste. An audit of the design system found that `--ds-*` tokens were minted in four separate files,
+that `design-system.css` referenced thirteen tokens it never declared, and that two surfaces linked
+it without the sheet those tokens actually lived in. Those two rendered with black body text, no
+button borders, no focus ring and no status colour — and three green tests were guarding the gap.
+
+This release fixes that, gives the tokens a home of their own, and adds the checks that would have
+caught each defect.
+
+### Fixed
+
+- **`ui-gate` and `plugin-host` render with the design system again** (`t-df3c88`). Measured in
+  Chrome, the only difference between the two pages being one stylesheet: body text `rgb(0,0,0)`
+  instead of `rgb(204,204,204)`, `border-width: 0` on buttons, no focus outline, disabled controls at
+  full opacity, badges with no status colour. An unresolvable `var()` with no fallback is invalid at
+  computed-value time and resolves to `unset`, so no theme could correct it.
+
+  Nothing detected it because `SHELL_BASE_STYLESHEETS` — the constant naming the correct sheet list —
+  had **zero consumers**; every host repeated the list by hand. The test that "proved" it asserted
+  that the constant's *text* appeared in the source, and a CSS-order snapshot had frozen the wrong
+  list as correct. Hosts now read the constant, and both surfaces are proven by rendering, not by
+  matching source text.
+
+- **Four error affordances are red again** (`t-f45320`). `--ds-danger` is not a token — the system's
+  error token is `--ds-err` — so four rules using it silently dropped the property and rendered error
+  text in the inherited colour. A comment in a fifth file already said the token did not exist; the
+  comment was written, the live rules were not fixed. Five more of the same class went with them: a
+  modal with square corners in a 6px-radius product, a page title outside the type ramp, a discarded
+  `font` shorthand, an invalid `inherit` inside a shorthand, and a typo that was invisible because
+  its fallback matched.
+
+- **Design Mode's overlay follows your theme** (`t-f5b467`). It was 23 hardcoded hex colours and no
+  stylesheet — because an overlay injected into someone else's page cannot load one, and must not
+  inherit the host's CSS. It now mounts in a shadow root with `all: initial` and one stylesheet built
+  from the 44 tokens the host already resolved. Zero hex literals remain. Proven against a hostile
+  page that forces `font-size: 62.5%` and `!important` colour, background, radius and padding on
+  every element.
+
+### Changed
+
+- **The design system has a home of its own** (`t-64acc7`). The shared sheets are split by what they
+  *are* — `tokens.css`, `faces.css`, components — rather than by which surface can load which. Every
+  surface links the token sheet; the agent pane skips only the faces, which was the actual
+  restriction all along (Tachyon Mono's `@font-face` breaks xterm cell metrics — a statement about
+  type, not about tokens).
+
+  The pane had rebuilt sixteen private declarations by hand because it could not reach the shared
+  ones, and they had drifted: its border mixed at 18 % where the shared token mixes at 22 %, and it
+  anchored foreground to a different VS Code variable. All sixteen are gone.
+
+- **Dead design-system code removed** (`t-1c075a`). The Toast block was written twice in one file and
+  the copies had already diverged; 32 declarations became 16. `.ds-button` and `.ds-empty` are gone,
+  with the latter's three call sites moved to the shared `EmptyState`.
+
+### Internal
+
+- A static gate now refuses **raw hex colours and numeric z-index** in `src/webview/`, and a second
+  one refuses a `var()` on a token that is declared nowhere without a fallback (`t-c8e2bd`,
+  `t-f45320`). The first was born with the existing debt declared — 208 hex literals and 22 numeric
+  z-index, each with a written reason — and it also **fails when an exception is no longer needed**,
+  so the list can only shrink. The second was born with an empty exception list: nothing was
+  forgiven, everything was fixed.
+- The Bridge's two conditionally-registered tool families now have an exact by-name inventory
+  (`t-8e0366`). With both enabled the Bridge exposes 113 tools, 33 of them from those families —
+  29 % of the surface the canonical inventory could not see, and adding one used to turn nothing red.
+- Two design-system audits are recorded as specs rather than as memory: the boot-state plan
+  (`SDD 504`) and the design-system census with its ten open questions and their answers (`SDD 505`).
+
 ## 0.90.0 — the Design Mode tab is gone; the whole thing lives in the page
 
 0.89.0 gave the page everything it needed to work on its own. This release removes what it replaced.
