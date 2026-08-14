@@ -24,13 +24,13 @@ import {
   type InstallProvenance,
   type ApplyContributionResult,
   type UnapplyContributionResult,
-} from "../../src/plugins/engine.js";
-import { AppliedStateStore, type ContributionRef } from "../../src/plugins/appliedState.js";
+} from "../../apps/vscode-extension/src/plugins/engine.js";
+import { AppliedStateStore, type ContributionRef } from "../../apps/vscode-extension/src/plugins/appliedState.js";
 import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "@tachyon/engine/plugins/adapters/claude.js";
 import { renderCodexMcpBlock } from "@tachyon/engine/plugins/adapters/codex.js";
 import { loadMcpPayload, type McpServer } from "@tachyon/engine/plugins/mcp.js";
-import type { GitHookState } from "../../src/plugins/gitHookState.js";
-import type { GitRun } from "../../src/plugins/fetcher.js";
+import type { GitHookState } from "../../apps/vscode-extension/src/plugins/gitHookState.js";
+import type { GitRun } from "../../apps/vscode-extension/src/plugins/fetcher.js";
 import { planProjectedPluginHooks, readHookProjectionCandidates } from "@tachyon/engine/plugins/agentHookProjection.js";
 import { HarnessManager } from "@tachyon/engine/harness/HarnessManager.js";
 
@@ -1199,7 +1199,7 @@ describe("git-hook target — load + preview + fingerprint (spec 264)", () => {
     fs.writeFileSync(humanHook, "#!/bin/sh\necho human\n", { mode: 0o755 });
     const humanMode = fs.statSync(humanHook).mode & 0o777;
     const { plugin } = loadPlugin(makeGitHookPlugin());
-    const preview = previewInstall(plugin!, ws, new Set(), await import("../../src/plugins/gitHookState.js").then((m) => m.gatherGitHookState(ws, ["pre-commit"])));
+    const preview = previewInstall(plugin!, ws, new Set(), await import("../../apps/vscode-extension/src/plugins/gitHookState.js").then((m) => m.gatherGitHookState(ws, ["pre-commit"])));
     expect((await applyInstall(plugin!, preview, ws, new Set(), { gitHookConfirmed: true })).installed).toBe(true);
     expect(fs.readFileSync(path.join(ws, ".git/config"), "utf8")).not.toContain("hooksPath");
     expect(fs.existsSync(path.join(ws, ".tachyon/githooks/pre-commit"))).toBe(false);
@@ -1897,7 +1897,7 @@ describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-t
     // the fetcher at the local repo through a GitRun that maps the parsed https remote to the local path.
     const localGit = async (args: string[], cwd?: string) => {
       const mapped = args.map((a) => (a === "https://github.com/o/remote-sdd.git" ? repo : a));
-      return await import("../../src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
+      return await import("../../apps/vscode-extension/src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
     };
     const loaded = await loadPluginFromSource("github:o/remote-sdd@v1", localGit, { cacheRoot: tmp("cache-") });
     expect(loaded.errors).toEqual([]);
@@ -1931,7 +1931,7 @@ describe.skipIf(!gitOk())("loadPluginFromSource → install (remote source end-t
     const remote = `https://github.com/o/${name}.git`;
     const git = async (args: string[], cwd?: string) => {
       const mapped = args.map((a) => (a === remote ? repo : a));
-      return await import("../../src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
+      return await import("../../apps/vscode-extension/src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
     };
     return { repo, git };
   }
@@ -2059,7 +2059,7 @@ describe("t-4e5f11 freshness oracle (version primary + payload when equal)", () 
     const remote = "https://github.com/o/mono3.git";
     const git: GitRun = async (args, cwd) => {
       const mapped = args.map((a) => (a === remote ? repo : a));
-      return await import("../../src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
+      return await import("../../apps/vscode-extension/src/plugins/fetcher.js").then((m) => m.defaultGitRun(mapped, cwd));
     };
     const ws = makeWorkspace();
     const cacheRoot = tmp("cache-");

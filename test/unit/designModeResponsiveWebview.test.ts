@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
-import { IdeBrowserBridgeManager } from "../../src/webview/ide-browser-bridge/manager.js";
+import { IdeBrowserBridgeManager } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/manager.js";
 
 // Private production collaborators are replaced deliberately so this test enters through
 // the same page-overlay binding door as production.

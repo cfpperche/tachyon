@@ -3,8 +3,8 @@ import { Uri } from "vscode";
 import fs from "node:fs";
 import path from "node:path";
 import { __createdPanels, __resetVscodeMock, __getShownDocuments, __setPanelVisible } from "../mocks/vscode.js";
-import { HandoffPanelManager } from "../../src/webview/HandoffPanel.js";
-import type { WorkspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
+import { HandoffPanelManager } from "../../apps/vscode-extension/src/webview/HandoffPanel.js";
+import type { WorkspaceHandoffTarget } from "../../apps/vscode-extension/src/shell/HandoffTarget.js";
 import type { HandoffProjectionV1 } from "@tachyon/engine/runtime-api/handoffProjection.js";
 
 beforeEach(() => __resetVscodeMock());
@@ -35,7 +35,7 @@ describe("Project Handoff standalone dashboard (SDD 485 D19)", () => {
   });
 
   it("keeps command, legacy restore and fan-out wired to HandoffPanelManager", () => {
-    const extension = fs.readFileSync(path.resolve(process.cwd(), "src/extension.ts"), "utf8");
+    const extension = fs.readFileSync(path.resolve(process.cwd(), "apps/vscode-extension/src/extension.ts"), "utf8");
     expect(extension).toMatch(/registerCommand\("tachyon\.openProjectHandoff"[\s\S]*?hash \? byHash\(hash\) : await pickWorkspace\(\)[\s\S]*?openHandoffTab\(ws\.wsHash\)/);
     expect(extension).toMatch(/registerTrustedPanelSerializer<SectionPanelState \| HandoffPanelState>[\s\S]*?handoffPanels\.deserialize\(panel, state\)/);
     expect(extension).toMatch(/view === "handoff"\) handoffPanels\.refresh\(\)/);

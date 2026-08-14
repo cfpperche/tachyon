@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { applyContribution, applyInstall, loadPlugin, previewInstall } from "../../src/plugins/engine.js";
+import { applyContribution, applyInstall, loadPlugin, previewInstall } from "../../apps/vscode-extension/src/plugins/engine.js";
 
 describe("spec 301 SDD dogfood materialization", () => {
   it("materializes the dogfood helper and contract docs into claude and codex skill dirs", async () => {

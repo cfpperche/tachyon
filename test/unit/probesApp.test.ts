@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
-import { PROBES_VIEW_TYPE, ProbeResultPanelManager } from "../../src/webview/ProbeResultPanel.js";
-import type { WorkspaceProbePresentationTarget } from "../../src/shell/WorkspacePresentation.js";
+import { PROBES_VIEW_TYPE, ProbeResultPanelManager } from "../../apps/vscode-extension/src/webview/ProbeResultPanel.js";
+import type { WorkspaceProbePresentationTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 
 beforeEach(() => __resetVscodeMock());
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));

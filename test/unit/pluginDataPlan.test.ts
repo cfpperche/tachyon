@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { gatherDataPlan, DATA_ANY_PLATFORM } from "../../src/plugins/dataPlan.js";
-import type { LoadedPlugin } from "../../src/plugins/engine.js";
+import { gatherDataPlan, DATA_ANY_PLATFORM } from "../../apps/vscode-extension/src/plugins/dataPlan.js";
+import type { LoadedPlugin } from "../../apps/vscode-extension/src/plugins/engine.js";
 import type { PluginManifest, DataDecl } from "@tachyon/engine/plugins/manifest.js";
-import type { PlatformResolution } from "../../src/plugins/toolPlatform.js";
+import type { PlatformResolution } from "../../apps/vscode-extension/src/plugins/toolPlatform.js";
 
 function pluginWithData(data: Record<string, DataDecl>): LoadedPlugin {
   const manifest = { name: "tr", version: "1.0.0", description: "d", runtimes: [], dependencies: [], blocks: {}, gitHooks: {}, tools: {}, data, externalTools: {} } as PluginManifest;

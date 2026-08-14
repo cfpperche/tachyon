@@ -15,7 +15,7 @@
  * (hex = 0). Leftover numeric z-index is excepted per file with a reason; it is not a skip.
  *
  * t-f45320 — a `var(--ds-*|--tachyon-*)` whose name is declared nowhere in
- * `src/webview` and that carries no fallback is the same class of silence as a
+ * `apps/vscode-extension/src/webview` and that carries no fallback is the same class of silence as a
  * raw hex: the declaration is invalid at computed-value time and the property
  * vanishes. Cross every such `var()` against the declared set (CSS `--name:`
  * plus JS/TS `"--name":` keys, so runtime-injected overlay tokens in
@@ -32,10 +32,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { extensionWorkspace } from "./workspace-layout.mjs";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const SCAN_ROOT = "packages/webview-ui/src/webview";
 export const TOKEN_SOURCE = "packages/webview-ui/src/webview/shared/tokens.css";
+const appSourceRelative = path.relative(ROOT, path.join(extensionWorkspace(ROOT).directory, "src")).split(path.sep).join("/");
 export const EXTENSIONS = Object.freeze([".css", ".ts", ".tsx", ".js", ".jsx", ".mjs"]);
 export const MIN_REASON = 20;
 
@@ -95,7 +97,7 @@ export const HEX_EXCEPTIONS = Object.freeze([
     reason: "QR/image plate background so a dark-on-dark code does not vanish; no --ds inverted-plate token yet — add one to the DS rather than keep extending this.",
   },
   {
-    file: "src/webview/ide-browser-bridge/themeTokens.ts",
+    file: `${appSourceRelative}/webview/ide-browser-bridge/themeTokens.ts`,
     values: [
       "#006ab1", "#0078d4", "#007fd4", "#0090f1", "#026ec1", "#0e639c", "#1177bb",
       "#1a85ff", "#1e1e1e", "#252526", "#3794ff", "#388a34", "#3b3b3b", "#3c3c3c",
@@ -110,7 +112,7 @@ export const HEX_EXCEPTIONS = Object.freeze([
     reason: "Sketch-image plate so a transparent PNG does not sit on the editor background; same inverted-plate gap as human-inbox.",
   },
   {
-    file: "src/webview/pin-studio/excalidraw-entry.tsx",
+    file: `${appSourceRelative}/webview/pin-studio/excalidraw-entry.tsx`,
     values: ["#ffffff"],
     reason: "Excalidraw export/view default canvas; the vendor scene expects a literal page color, not a --ds token.",
   },
@@ -418,7 +420,7 @@ export function evaluateUndeclaredTokens(hits, declared, exceptions = UNDECLARED
         rule: "undeclared-token",
         file,
         value: name,
-        message: `${file}:${where} — ${name} is not declared in src/webview and has no fallback`,
+        message: `${file}:${where} — ${name} is not declared in apps/vscode-extension/src/webview and has no fallback`,
       });
     }
   }
@@ -554,8 +556,8 @@ export function scanRepo(root = ROOT) {
   const tokenRel = TOKEN_SOURCE;
   const files = [
     ...sourceFiles(path.join(root, SCAN_ROOT)),
-    path.join(root, "src/webview/ide-browser-bridge/themeTokens.ts"),
-    path.join(root, "src/webview/pin-studio/excalidraw-entry.tsx"),
+    path.join(root, appSourceRelative, "webview/ide-browser-bridge/themeTokens.ts"),
+    path.join(root, appSourceRelative, "webview/pin-studio/excalidraw-entry.tsx"),
   ];
   const hexHits = [];
   const zHits = [];
@@ -582,7 +584,7 @@ export function scanRepo(root = ROOT) {
 export const FIX_HINT =
   "New hex belongs in packages/webview-ui/src/webview/shared/tokens.css as a --ds-* token, not as a literal and not as an exception. " +
   "New stacking belongs on --ds-z-popover / --ds-z-dialog / --ds-z-toast / --ds-z-overlay. " +
-  "A var(--ds-*|--tachyon-*) must name a token declared in src/webview or carry a fallback; " +
+  "A var(--ds-*|--tachyon-*) must name a token declared in apps/vscode-extension/src/webview or carry a fallback; " +
   "do not invent a synonym (--ds-danger is --ds-err) and do not add an exception for a token the design system is missing. " +
   "Exceptions are only for values that already shipped — each row needs its own reason.";
 

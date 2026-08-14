@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateEntryHtml } from "../../src/plugins/entryHtmlValidator.js";
+import { validateEntryHtml } from "../../apps/vscode-extension/src/plugins/entryHtmlValidator.js";
 
 function expectRejected(html: string, reason: RegExp): void {
   const result = validateEntryHtml(html);

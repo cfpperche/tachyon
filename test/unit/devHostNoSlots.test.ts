@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
+import { nonEmpty, productSourceRoots } from "../helpers/repositorySourceScan.js";
 
 /**
  * spec 448 structural guard — the dev-host belongs to the checkout that owns it.
@@ -34,12 +34,9 @@ const ALLOWED = [
 function sourceFiles(): string[] {
   const roots = [
     path.join(repoRoot, "scripts"),
-    path.join(repoRoot, "src"),
+    ...productSourceRoots(),
     path.join(repoRoot, "test"),
     path.join(repoRoot, "docs", "runbooks"),
-    path.join(workspaceRoot("@tachyon/engine"), "src"),
-    path.join(workspaceRoot("@tachyon/shared"), "src"),
-    path.join(workspaceRoot("@tachyon/webview-ui"), "src"),
   ];
   const out: string[] = [];
   const walk = (dir: string) => {

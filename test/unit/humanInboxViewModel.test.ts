@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../src/webview/human-inbox/viewModel.js";
+import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../apps/vscode-extension/src/webview/human-inbox/viewModel.js";
 import type { ApprovalViewItem } from "../../packages/webview-ui/src/webview/approval/viewModel.js";
 import type { ValidationViewItem } from "../../packages/webview-ui/src/webview/validations/viewModel.js";
 

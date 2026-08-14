@@ -36,16 +36,16 @@ const { FakeManager, managerInstances } = vi.hoisted(() => {
   return { FakeManager: Manager, managerInstances: instances };
 });
 
-vi.mock("../../src/webview/ide-browser-bridge/manager.js", () => ({
+vi.mock("../../apps/vscode-extension/src/webview/ide-browser-bridge/manager.js", () => ({
   IdeBrowserBridgeManager: FakeManager,
 }));
-vi.mock("../../src/webview/ide-browser-bridge/themeTokens.js", () => ({
+vi.mock("../../apps/vscode-extension/src/webview/ide-browser-bridge/themeTokens.js", () => ({
   invalidateDmThemeTokenCache: () => {},
   seedDmThemeTokensFromKind: () => {},
   warmDmThemeTokensInBackground: () => {},
 }));
 
-import { registerIdeBrowserBridge } from "../../src/webview/ide-browser-bridge/register.js";
+import { registerIdeBrowserBridge } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/register.js";
 
 type Settings = { ideBrowser?: { enabled?: boolean } } | undefined;
 

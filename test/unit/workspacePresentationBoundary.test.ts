@@ -16,11 +16,11 @@ describe("persistent workspace presentation boundary", () => {
       .filter((line) => line && !line.startsWith("#"))
       .sort();
     const candidates = [
-      path.join(root, "src/extension.ts"),
-      ...walkTypeScript(path.join(root, "src/webview")),
-      ...walkTypeScript(path.join(root, "src/plugins", "ui")),
-      ...walkTypeScript(path.join(root, "src/runtimeOps")),
-      ...walkTypeScript(path.join(root, "src/presentation")),
+      path.join(root, "apps/vscode-extension/src/extension.ts"),
+      ...walkTypeScript(path.join(root, "apps/vscode-extension/src/webview")),
+      ...walkTypeScript(path.join(root, "apps/vscode-extension/src/plugins", "ui")),
+      ...walkTypeScript(path.join(root, "apps/vscode-extension/src/runtimeOps")),
+      ...walkTypeScript(path.join(root, "apps/vscode-extension/src/presentation")),
     ];
     const actual = candidates
       .filter((file) => /workspace\/Workspace\.js/.test(fs.readFileSync(file, "utf8")))
@@ -31,12 +31,12 @@ describe("persistent workspace presentation boundary", () => {
 
   it("keeps migrated presentation surfaces off the concrete Workspace class", () => {
     const migrated = [
-      "src/webview/PluginsPanel.ts",
-      "src/webview/AgentStudioAdapter.ts",
-      "src/webview/CommandStudioAdapter.ts",
-      "src/webview/RunbookStudioAdapter.ts",
-      "src/webview/ScheduleStudioAdapter.ts",
-      "src/webview/TerminalStudioAdapter.ts",
+      "apps/vscode-extension/src/webview/PluginsPanel.ts",
+      "apps/vscode-extension/src/webview/AgentStudioAdapter.ts",
+      "apps/vscode-extension/src/webview/CommandStudioAdapter.ts",
+      "apps/vscode-extension/src/webview/RunbookStudioAdapter.ts",
+      "apps/vscode-extension/src/webview/ScheduleStudioAdapter.ts",
+      "apps/vscode-extension/src/webview/TerminalStudioAdapter.ts",
       // BoardPanel.ts left this list on t-610705 Phase B #6: the panel host was retired and the
       // file is types-only now (no Workspace, no Target) — the board is hosted by Cockpit.ts, which was
       // born on WorkspaceBoardTarget.
@@ -70,11 +70,11 @@ describe("persistent workspace presentation boundary", () => {
       // (VIEW_TYPE + PanelState only); Pin Studio domain lives in pinStudioDomain.ts /
       // STUDIO_REGISTRY. PinStudioAdapter.ts stays in this list (unchanged — still legitimately
       // typed against WorkspacePinStudioTarget).
-      "src/webview/TaskStudioAdapter.ts",
-      "src/webview/PinStudioAdapter.ts",
-      "src/webview/SidebarPrototype.ts",
-      "src/presentation/items.ts",
-      "src/plugins/ui/host.ts",
+      "apps/vscode-extension/src/webview/TaskStudioAdapter.ts",
+      "apps/vscode-extension/src/webview/PinStudioAdapter.ts",
+      "apps/vscode-extension/src/webview/SidebarPrototype.ts",
+      "apps/vscode-extension/src/presentation/items.ts",
+      "apps/vscode-extension/src/plugins/ui/host.ts",
     ];
     for (const relative of migrated) {
       const source = fs.readFileSync(path.join(root, relative), "utf8");
@@ -84,7 +84,7 @@ describe("persistent workspace presentation boundary", () => {
   });
 
   it("keeps production activation on shell attach/detach only", () => {
-    const source = fs.readFileSync(path.join(root, "src/extension.ts"), "utf8");
+    const source = fs.readFileSync(path.join(root, "apps/vscode-extension/src/extension.ts"), "utf8");
     expect(source).not.toMatch(/workspace\/Workspace(?:\.js)?/);
     expect(source).not.toMatch(/\bWorkspace\.(?:create|start|dispose)\b/);
     expect(source).not.toMatch(/\b(?:ws|workspace)\.(?:start|dispose)\s*\(/);
@@ -101,7 +101,7 @@ describe("persistent workspace presentation boundary", () => {
       "packages/engine/src/handoff/handoffDistillService.ts",
       "packages/engine/src/handoff/handoffFileService.ts",
       "packages/engine/src/handoff/handoffPath.ts",
-      "src/runtime-api/workspaceProjection.ts",
+      "apps/vscode-extension/src/runtime-api/workspaceProjection.ts",
       "packages/engine/src/runtime-api/activityProjection.ts",
       "packages/engine/src/runtime-api/agentInputCommands.ts",
       "packages/engine/src/runtime-api/handoffCommands.ts",
@@ -119,14 +119,14 @@ describe("persistent workspace presentation boundary", () => {
       "packages/engine/src/runtime-api/taskStudioCommands.ts",
       "packages/engine/src/runtime-api/taskStudioProjection.ts",
       "src/shell/FakeWorkspaceClient.ts",
-      "src/shell/ActivityTarget.ts",
-      "src/shell/HandoffTarget.ts",
-      "src/shell/BoardTarget.ts",
-      "src/shell/SidebarTarget.ts",
-      "src/shell/PinStudioTarget.ts",
-      "src/shell/TaskDetailTarget.ts",
-      "src/shell/TaskStudioTarget.ts",
-      "src/shell/WorkspacePresentation.ts",
+      "apps/vscode-extension/src/shell/ActivityTarget.ts",
+      "apps/vscode-extension/src/shell/HandoffTarget.ts",
+      "apps/vscode-extension/src/shell/BoardTarget.ts",
+      "apps/vscode-extension/src/shell/SidebarTarget.ts",
+      "apps/vscode-extension/src/shell/PinStudioTarget.ts",
+      "apps/vscode-extension/src/shell/TaskDetailTarget.ts",
+      "apps/vscode-extension/src/shell/TaskStudioTarget.ts",
+      "apps/vscode-extension/src/shell/WorkspacePresentation.ts",
       "packages/engine/src/sidebar/sidebarFleetService.ts",
       "packages/engine/src/sidebar/sidebarMutationService.ts",
     ]) {

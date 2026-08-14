@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../src/webview/human-inbox/viewModel.js";
+import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../apps/vscode-extension/src/webview/human-inbox/viewModel.js";
 import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 import type { ApprovalViewItem } from "../../packages/webview-ui/src/webview/approval/viewModel.js";
 import type { ValidationViewItem } from "../../packages/webview-ui/src/webview/validations/viewModel.js";
-import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview";
+import { buildSavedAgentProposalReview } from "../../apps/vscode-extension/src/agents/savedAgentProposalReview";
 import type { SavedAgentProposalReview } from "@tachyon/webview-ui/agents/savedAgentProposalReview";
 
 /**
@@ -30,7 +31,7 @@ import type { SavedAgentProposalReview } from "@tachyon/webview-ui/agents/savedA
  *     npm run build && npx vitest run --config vitest.browser.config.ts test/browser/humanInboxShots.test.ts
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/e76acc-human-inbox");
-const DIST = path.resolve(__dirname, "../../dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 /** Control's comfortable width, and the narrowest a person plausibly drags the panel to. */
 const WIDTHS = [
   { id: "880", px: 880 },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildActivityView, createActivityBuilder } from "../../src/activity/activityView";
+import { buildActivityView, createActivityBuilder } from "../../apps/vscode-extension/src/activity/activityView";
 import { normalizeClaude } from "@tachyon/engine/activity/claudeNormalizer.js";
 import { hasSharedCwdAttributionGap } from "@tachyon/engine/activity/attributionGap.js";
 

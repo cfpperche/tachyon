@@ -10,7 +10,7 @@ describe("rich-doc image Import shares the paste/drop content path (t-cdab51)", 
       const messages = readFileSync(`packages/webview-ui/src/webview/${studio}/messages.ts`, "utf8");
       const types = readFileSync(`packages/webview-ui/src/webview/${studio}/types.ts`, "utf8");
       const domain = readFileSync(
-        `src/${studio === "pin-studio" ? "webview/pin-studio/pinStudioDomain" : "webview/task-detail/taskStudioDomain"}.ts`,
+        `apps/vscode-extension/src/${studio === "pin-studio" ? "webview/pin-studio/pinStudioDomain" : "webview/task-detail/taskStudioDomain"}.ts`,
         "utf8",
       );
 

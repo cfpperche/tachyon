@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { assessBuildProvenance, type BuildStamp } from "../../src/provenance/verify.js";
-import { embeddedProvenancePath, readEmbeddedProvenanceRecord, type ReadFile } from "../../src/provenance/record.js";
+import { assessBuildProvenance, type BuildStamp } from "../../apps/vscode-extension/src/provenance/verify.js";
+import { embeddedProvenancePath, readEmbeddedProvenanceRecord, type ReadFile } from "../../apps/vscode-extension/src/provenance/record.js";
 
 const cleanStamp: BuildStamp = { commit: "abc123", treeSha: "tree123", dirty: false };
 
@@ -73,7 +73,7 @@ describe("container-generated delegation behavior", () => {
   });
 
   it(".vscodeignore keeps the embedded record allowlisted, or it silently never ships in the vsix", () => {
-    const raw = fs.readFileSync(path.join(__dirname, "../../.vscodeignore"), "utf8");
+    const raw = fs.readFileSync(path.join(__dirname, "../../apps/vscode-extension/.vscodeignore"), "utf8");
     const lines = raw.split("\n").map((l) => l.trim());
     expect(lines).toContain("!provenance.json");
   });

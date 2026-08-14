@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
-import { StudioPanelManagerBase, type StudioSurfaceConfig } from "../../src/webview/shared/studio/StudioPanelManagerBase.js";
+import { StudioPanelManagerBase, type StudioSurfaceConfig } from "../../apps/vscode-extension/src/webview/shared/studio/StudioPanelManagerBase.js";
 import type { StudioHostAdapter, StudioLoadResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { DaemonEngineHost, type DaemonHostEvent } from "@tachyon/engine/workspace/DaemonEngineHost.js";
 

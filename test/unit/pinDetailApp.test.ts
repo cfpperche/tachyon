@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
-import { PinDetailPanelManager } from "../../src/webview/PinDetailPanel.js";
-import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
-import type { WorkspacePinStudioTarget } from "../../src/shell/PinStudioTarget.js";
+import { PinDetailPanelManager } from "../../apps/vscode-extension/src/webview/PinDetailPanel.js";
+import type { WorkspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
+import type { WorkspacePinStudioTarget } from "../../apps/vscode-extension/src/shell/PinStudioTarget.js";
 
 const reader = {
   wsHash: "ws-a",

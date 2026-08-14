@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, buildContributionStatuses, type UpdateCheck } from "../../src/plugins/viewModel";
+import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, buildContributionStatuses, type UpdateCheck } from "../../apps/vscode-extension/src/plugins/viewModel";
 import type { PluginLock } from "@tachyon/engine/plugins/lockfile.js";
 import { serializeLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import type { Runtime } from "@tachyon/engine/plugins/manifest.js";

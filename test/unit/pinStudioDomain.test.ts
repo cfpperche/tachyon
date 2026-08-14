@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { handlePinStudioDomainMessage } from "../../src/webview/pin-studio/pinStudioDomain.js";
-import type { StudioDomainContext } from "../../src/webview/shared/studio/studioRegistry.js";
-import type { WorkspacePinStudioTarget, PinStudioAttachmentResult } from "../../src/shell/PinStudioTarget.js";
+import { handlePinStudioDomainMessage } from "../../apps/vscode-extension/src/webview/pin-studio/pinStudioDomain.js";
+import type { StudioDomainContext } from "../../apps/vscode-extension/src/webview/shared/studio/studioRegistry.js";
+import type { WorkspacePinStudioTarget, PinStudioAttachmentResult } from "../../apps/vscode-extension/src/shell/PinStudioTarget.js";
 
 /**
  * t-610705 (SDD 410 Phase D, D3) — the import/attach/sketch domain-message DISPATCH+error-mapping

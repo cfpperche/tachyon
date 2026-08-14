@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -39,7 +40,7 @@ import { landSuggestion, type LandFacts } from "@tachyon/engine/worktree/land.js
  *   npm run build && npx vitest run --config vitest.browser.config.ts test/browser/landDoorActionsShots.test.ts
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/t-3eaf77-land-door");
-const DIST = path.resolve(__dirname, "../../dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 const shotPage = path.join(DIST, "land-door-shot.html");
 
 const WIDTHS = [

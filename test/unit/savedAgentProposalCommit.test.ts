@@ -7,7 +7,7 @@ import {
   denySavedAgentProposal,
   readSavedAgentProposalReceipt,
   type SavedAgentCommitPorts,
-} from "../../src/agents/savedAgentProposalCommit.js";
+} from "../../apps/vscode-extension/src/agents/savedAgentProposalCommit.js";
 import {
   listSavedAgentProposals,
   readSavedAgentProposalWitness,
@@ -226,7 +226,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
       approvedBy: "human", nowMs: NOW, ports: p,
     });
     expect(Object.keys(p).filter((k) => /spawn|start|launch|run/i.test(k))).toEqual([]);
-    const source = fs.readFileSync(path.resolve(__dirname, "../../src/agents/savedAgentProposalCommit.ts"), "utf8");
+    const source = fs.readFileSync(path.resolve(__dirname, "../../apps/vscode-extension/src/agents/savedAgentProposalCommit.ts"), "utf8");
     expect(source).not.toMatch(/\bspawn\w*\(/);
   });
 
@@ -479,7 +479,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
   });
 
   it("has no intermediate outcome at all", () => {
-    const source = fs.readFileSync(path.resolve(__dirname, "../../src/agents/savedAgentProposalCommit.ts"), "utf8");
+    const source = fs.readFileSync(path.resolve(__dirname, "../../apps/vscode-extension/src/agents/savedAgentProposalCommit.ts"), "utf8");
     expect(source).not.toContain('"owning"');
     expect(source).not.toContain("adoptSubagent");
   });
@@ -551,7 +551,7 @@ describe("approval is unreachable from the Bridge (SDD 482 phase 4C)", () => {
  * bump. The assertions below are what keep that statement honest.
  */
 describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () => {
-  const extension = fs.readFileSync(path.resolve(__dirname, "../../src/extension.ts"), "utf8");
+  const extension = fs.readFileSync(path.resolve(__dirname, "../../apps/vscode-extension/src/extension.ts"), "utf8");
 
   it("supplies the port from the extension host, and nowhere else", () => {
     // SDD 485 D4 — the port is a named const in `activate()` rather than an inline property of

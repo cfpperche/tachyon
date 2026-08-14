@@ -1,17 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { nonEmpty } from "../helpers/repositorySourceScan.js";
-import { workspaceRoot } from "../helpers/repositorySourceScan.js";
+import { nonEmpty, productSourceRoots, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 const SRC = path.join(__dirname, "../../src");
 const ENGINE_SRC = path.join(workspaceRoot("@tachyon/engine"), "src");
-const PRODUCT_SOURCE_ROOTS = [
-  SRC,
-  ENGINE_SRC,
-  path.join(workspaceRoot("@tachyon/shared"), "src"),
-  path.join(workspaceRoot("@tachyon/webview-ui"), "src"),
-];
+const PRODUCT_SOURCE_ROOTS = productSourceRoots();
 
 /**
  * SDD 498 (t-7cb971) — the governed land door is reachable from the INTERFACE and from nowhere else.

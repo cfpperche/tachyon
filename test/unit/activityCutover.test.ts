@@ -5,7 +5,7 @@ const read = (file: string): string => fs.readFileSync(file, "utf8");
 
 describe("SDD 485 D17 — Activity cutover doors and renderer inventory", () => {
   it("the command door opens the standalone document with the measured pair", () => {
-    const extension = read("src/extension.ts");
+    const extension = read("apps/vscode-extension/src/extension.ts");
     const start = extension.indexOf('registerCommand("tachyon.openAgentActivity"');
     expect(start).toBeGreaterThan(0);
     const block = extension.slice(start, start + 500);
@@ -14,7 +14,7 @@ describe("SDD 485 D17 — Activity cutover doors and renderer inventory", () => 
   });
 
   it("the legacy serializer door revives through the same standalone manager", () => {
-    const extension = read("src/extension.ts");
+    const extension = read("apps/vscode-extension/src/extension.ts");
     const start = extension.indexOf("registerTrustedPanelSerializer<ActivityPanelState | SectionPanelState>");
     expect(start).toBeGreaterThan(0);
     // The end anchor is the NEXT registration, not a named one: this originally pointed at
@@ -36,6 +36,6 @@ describe("SDD 485 D17 — Activity cutover doors and renderer inventory", () => 
 
   it("the standalone root consumes shared page chrome", () => {
     expect(read("packages/webview-ui/src/webview/activity/main.tsx")).toContain('class="ds-page activity-page"');
-    expect(read("src/webview/ActivityPanel.ts")).toContain('"design-system.css"');
+    expect(read("apps/vscode-extension/src/webview/ActivityPanel.ts")).toContain('"design-system.css"');
   });
 });

@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { fetchSource, defaultGitRun, defaultCacheRoot, resolveLatestSemverTag, type GitRun } from "../../src/plugins/fetcher.js";
-import type { GitSource } from "../../src/plugins/source.js";
+import { fetchSource, defaultGitRun, defaultCacheRoot, resolveLatestSemverTag, type GitRun } from "../../apps/vscode-extension/src/plugins/fetcher.js";
+import type { GitSource } from "../../apps/vscode-extension/src/plugins/source.js";
 
 const dirs: string[] = [];
 afterEach(() => {

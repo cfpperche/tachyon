@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import * as vscode from "vscode";
 import { __getOutputChannels, __getStatusBarMessages, __resetVscodeMock } from "../mocks/vscode.js";
-import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
-import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
-import { SHELL_DIAGNOSTIC_CHANNEL, __resetShellDiagnosticLog, describeFailure, formatIssuePath } from "../../src/workspace/shellDiagnosticLog.js";
-import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
+import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
+import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
+import { SHELL_DIAGNOSTIC_CHANNEL, __resetShellDiagnosticLog, describeFailure, formatIssuePath } from "../../apps/vscode-extension/src/workspace/shellDiagnosticLog.js";
+import type { WorkspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
 
 /**
  * t-74274c — the failure the owner actually hit, reproduced at the schema that produced it.

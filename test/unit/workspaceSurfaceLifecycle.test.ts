@@ -9,7 +9,7 @@ import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.j
 import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
 import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
 import type { TerminalPresentationOptions } from "@tachyon/engine/workspace/TerminalPresentation.js";
-import { Terminals } from "../../src/presentation/Terminals.js";
+import { Terminals } from "../../apps/vscode-extension/src/presentation/Terminals.js";
 import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
 
 /**

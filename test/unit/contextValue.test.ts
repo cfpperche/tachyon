@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { agentContextValue, isTemporaryItem, type AgentContextParts, type AgentItemStateName } from "../../src/presentation/contextValue.js";
+import { agentContextValue, isTemporaryItem, type AgentContextParts, type AgentItemStateName } from "../../apps/vscode-extension/src/presentation/contextValue.js";
 
 /** Every combination the builder can emit. */
 function allParts(): AgentContextParts[] {

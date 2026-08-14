@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderWebviewShell, parseShellCsp, type WebviewShellOptions } from "../../src/webview/shared/shell.js";
+import { renderWebviewShell, parseShellCsp, type WebviewShellOptions } from "../../apps/vscode-extension/src/webview/shared/shell.js";
 import { readyMessage, browseMessage } from "../../packages/webview-ui/src/webview/agent-studio-shell/messages.js";
 import { decodeStudioMessage, STUDIO_PROTOCOL_VERSION } from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
 

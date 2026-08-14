@@ -4,9 +4,10 @@ import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { restoreDevelopmentManifest, withProductManifest } from "./prepare-package.mjs";
+import { extensionWorkspace } from "./workspace-layout.mjs";
 
-function runCommand(command, args) {
-  execFileSync(command, args, { cwd: process.cwd(), stdio: "inherit" });
+function runCommand(command, args, cwd = process.cwd()) {
+  execFileSync(command, args, { cwd, stdio: "inherit" });
 }
 
 /**
@@ -16,10 +17,15 @@ function runCommand(command, args) {
  * precondition exits non-zero, execFileSync throws and neither `vsce package` nor the smoke can run.
  */
 export function runRelease({ args = [], run = runCommand, root = process.cwd() } = {}) {
-  restoreDevelopmentManifest(root);
+  const extensionRoot = extensionWorkspace(root).directory;
+  restoreDevelopmentManifest(extensionRoot);
   run("npm", ["run", "build:stable"]);
   run("npm", ["run", "package:assert"]);
-  withProductManifest(root, () => run("vsce", ["package", ...args]));
+  withProductManifest(
+    extensionRoot,
+    () => run("vsce", ["package", "--no-dependencies", ...args], extensionRoot),
+    { repositoryRoot: root },
+  );
   run("npm", ["run", "smoke:vsix"]);
 }
 

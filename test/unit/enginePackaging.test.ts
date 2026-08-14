@@ -12,7 +12,8 @@ import {
   type EngineBundleManifestV1,
 } from "@tachyon/engine/engine-service/protocol.js";
 
-const engineRoot = path.resolve("dist/engine");
+const extensionRoot = path.resolve("apps/vscode-extension");
+const engineRoot = path.join(extensionRoot, "dist/engine");
 let builtManifest: EngineBundleManifestV1;
 
 beforeAll(async () => {
@@ -38,17 +39,17 @@ describe("persistent engine packaging", () => {
     const root = engineRoot;
     const parsed = builtManifest;
     expect(parsed.channel).toBe("dev");
-    expect(parsed.engineVersion).toBe(JSON.parse(fs.readFileSync("package.json", "utf8")).version);
+    expect(parsed.engineVersion).toBe(JSON.parse(fs.readFileSync(path.join(extensionRoot, "package.json"), "utf8")).version);
     expect(parsed.protocol).toEqual({ min: ENGINE_SHELL_PROTOCOL, max: ENGINE_SHELL_PROTOCOL });
     expect(parsed.entrypoint).toBe("engine-daemon.cjs");
     // Core daemon + clipboard helper + companion-mobile PWA (SDD 422; full tree so app.js is not 404).
     // t-05a0b0: sourcemaps are NEVER staged — the ship boundary prunes .map from the VSIX, so a
     // staged map would leave the installed manifest promising a file the package lacks.
     const companionMobile = fs
-      .readdirSync("media/companion-mobile")
+      .readdirSync(path.join(extensionRoot, "media/companion-mobile"))
       .filter((name) => !name.startsWith("."))
       .filter((name) => !name.endsWith(".map"))
-      .filter((name) => fs.statSync(path.join("media/companion-mobile", name)).isFile())
+      .filter((name) => fs.statSync(path.join(extensionRoot, "media/companion-mobile", name)).isFile())
       .sort()
       .map((name) => `media/companion-mobile/${name}`);
     expect(parsed.files.map((file) => file.path)).toEqual([
@@ -60,10 +61,10 @@ describe("persistent engine packaging", () => {
     expect(engineBundleId(parsed)).toMatch(/^[a-f0-9]{64}$/);
     expect(() => verifyStagedBundle(root, parsed)).not.toThrow();
     expect(fs.readFileSync(path.join(root, "media", "clipboard-copy.sh"))).toEqual(
-      fs.readFileSync("media/clipboard-copy.sh"),
+      fs.readFileSync(path.join(extensionRoot, "media/clipboard-copy.sh")),
     );
     expect(fs.readFileSync(path.join(root, "media", "companion-mobile", "index.html"))).toEqual(
-      fs.readFileSync("media/companion-mobile/index.html"),
+      fs.readFileSync(path.join(extensionRoot, "media/companion-mobile/index.html")),
     );
     expect(fs.existsSync(path.join(root, "media", "companion-mobile", "app.js"))).toBe(true);
     const piExtension = fs.readFileSync(path.join(root, "pi-bridge-extension.mjs"), "utf8");

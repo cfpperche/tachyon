@@ -5,7 +5,7 @@ import {
   workspacePluginPresentationTarget,
   workspacePresentationTarget,
   workspaceProbePresentationTarget,
-} from "../../src/shell/WorkspacePresentation.js";
+} from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 import { workspaceCommandSuccessV1, workspaceProbeViewSuccessV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 

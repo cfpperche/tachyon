@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -27,7 +28,7 @@ import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
  * usually shows up first when the card is squeezed.
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/479-card-templates");
-const DIST = path.resolve(__dirname, "../../dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 const WIDTHS = [
   { id: "320", px: 320 },
   { id: "narrow-220", px: 220 },

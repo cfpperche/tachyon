@@ -13,10 +13,10 @@ import {
   ACTIVITY_VIEW_TYPE,
   ActivityPanelManager,
   type ActivityPanelState,
-} from "../../src/webview/ActivityPanel.js";
-import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
-import type { SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
-import type { WorkspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
+} from "../../apps/vscode-extension/src/webview/ActivityPanel.js";
+import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
+import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
+import type { WorkspaceActivityTarget } from "../../apps/vscode-extension/src/shell/ActivityTarget.js";
 
 const roots: string[] = [];
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));

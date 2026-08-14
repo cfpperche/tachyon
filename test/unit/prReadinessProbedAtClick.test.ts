@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SRC = path.join(__dirname, "../../src");
+const EXTENSION_SRC = path.join(__dirname, "../../apps/vscode-extension/src");
 const ENGINE_SRC = path.join(__dirname, "../../packages/engine/src");
 const WEBVIEW_UI_SRC = path.join(__dirname, "../../packages/webview-ui/src");
 
@@ -52,10 +53,12 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const rel = (file: string): string => path.relative(file.startsWith(ENGINE_SRC) ? ENGINE_SRC : file.startsWith(WEBVIEW_UI_SRC) ? WEBVIEW_UI_SRC : SRC, file).split(path.sep).join("/");
+const rel = (file: string): string => path.relative(file.startsWith(ENGINE_SRC) ? ENGINE_SRC : file.startsWith(WEBVIEW_UI_SRC) ? WEBVIEW_UI_SRC : file.startsWith(EXTENSION_SRC) ? EXTENSION_SRC : SRC, file).split(path.sep).join("/");
 const sourcePath = (relative: string): string => {
   const shell = path.join(SRC, relative);
   if (fs.existsSync(shell)) return shell;
+  const extension = path.join(EXTENSION_SRC, relative);
+  if (fs.existsSync(extension)) return extension;
   const engine = path.join(ENGINE_SRC, relative);
   return fs.existsSync(engine) ? engine : path.join(WEBVIEW_UI_SRC, relative);
 };
@@ -65,14 +68,14 @@ const occurrences = (source: string, word: string): number =>
 
 describe("SDD 501 — `gh` is spawned at click, never at render", () => {
   it("names the gh binary in exactly one source file", () => {
-    const callers = [...sourceFiles(SRC), ...sourceFiles(ENGINE_SRC), ...sourceFiles(WEBVIEW_UI_SRC)]
+    const callers = [...sourceFiles(SRC), ...sourceFiles(EXTENSION_SRC), ...sourceFiles(ENGINE_SRC), ...sourceFiles(WEBVIEW_UI_SRC)]
       .filter((file) => /["'`]gh["'`]\s*,/.test(fs.readFileSync(file, "utf8")))
       .map(rel);
     expect(callers).toEqual([PR_HOME]);
   });
 
   it("references the gh-spawning exports from exactly one file besides their own module", () => {
-    const callers = [...sourceFiles(SRC), ...sourceFiles(ENGINE_SRC), ...sourceFiles(WEBVIEW_UI_SRC)]
+    const callers = [...sourceFiles(SRC), ...sourceFiles(EXTENSION_SRC), ...sourceFiles(ENGINE_SRC), ...sourceFiles(WEBVIEW_UI_SRC)]
       .filter((file) => {
         const source = fs.readFileSync(file, "utf8");
         return GH_SPAWNERS.some((word) => occurrences(source, word) > 0);

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import { __getWarningMessageCalls, __resetVscodeMock, __setWarningMessageResult } from "../mocks/vscode.js";
-import { confirmDocumentStudioCancel } from "../../src/webview/shared/studio/documentStudioCancel.js";
+import { confirmDocumentStudioCancel } from "../../apps/vscode-extension/src/webview/shared/studio/documentStudioCancel.js";
 
 describe("document studio Cancel", () => {
   beforeEach(() => __resetVscodeMock());

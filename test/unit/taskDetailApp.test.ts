@@ -8,12 +8,12 @@ import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
 import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore.js";
 import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
-import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE } from "../../src/webview/TaskDetailPanel.js";
-import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
-import { legacyTaskDetailTarget, type WorkspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
+import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE } from "../../apps/vscode-extension/src/webview/TaskDetailPanel.js";
+import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
+import { legacyTaskDetailTarget, type WorkspaceTaskDetailTarget } from "../../apps/vscode-extension/src/shell/TaskDetailTarget.js";
 import { readyMessage } from "../../packages/webview-ui/src/webview/shared/ready.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
-import { ControlWorkspaceScope } from "../../src/webview/shared/ControlWorkspaceScope.js";
+import { ControlWorkspaceScope } from "../../apps/vscode-extension/src/webview/shared/ControlWorkspaceScope.js";
 
 /**
  * SDD 485 C4 — the Task Detail as a standalone `document` app.
@@ -612,7 +612,7 @@ describe("New Task cancels back to the Board, not onto a task that never existed
       }),
       saveTaskStudio: async () => ({ status: "ok" as const }),
       cancelTaskStudio: async () => {},
-    } as unknown as import("../../src/shell/TaskStudioTarget.js").WorkspaceTaskStudioTarget;
+    } as unknown as import("../../apps/vscode-extension/src/shell/TaskStudioTarget.js").WorkspaceTaskStudioTarget;
     return new TaskDetailPanelManager(extensionUri, () => [detail], {
       onTasksChanged: () => {}, openTaskStudio: () => {},
     }, undefined, undefined, () => [studio]);

@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { RunbookStudioAdapter } from "../../src/webview/RunbookStudioAdapter.js";
+import { RunbookStudioAdapter } from "../../apps/vscode-extension/src/webview/RunbookStudioAdapter.js";
 import { blankRunbookFields } from "../../packages/webview-ui/src/webview/runbook-studio-shell/domain.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
-import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
+import type { StudioSubmit } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 
 type RunbookDef = { steps: string[] };
 

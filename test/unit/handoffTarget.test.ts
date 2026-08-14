@@ -8,7 +8,7 @@ import {
   workspaceHandoffViewSuccessV1,
 } from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
-import { workspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
+import { workspaceHandoffTarget } from "../../apps/vscode-extension/src/shell/HandoffTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 const roots: string[] = [];

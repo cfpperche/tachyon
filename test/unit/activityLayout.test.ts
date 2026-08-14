@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const activityCss = fs.readFileSync(path.join(process.cwd(), "packages/webview-ui/src/webview/activity/activity.css"), "utf8");
-const activityPanel = fs.readFileSync(path.join(process.cwd(), "src/webview/ActivityPanel.ts"), "utf8");
+const activityPanel = fs.readFileSync(path.join(process.cwd(), "apps/vscode-extension/src/webview/ActivityPanel.ts"), "utf8");
 
 describe("Activity page layout", () => {
   it("keeps bottom page spacing on the feed without making the document auto-scroll", () => {

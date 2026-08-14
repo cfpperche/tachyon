@@ -604,3 +604,44 @@ verification record no longer need a new execution unit, because slices 1–3 ma
 workspace orchestrator; they need discovery/coverage updates, not relocation. The highest immediate
 cost remains the manifest boundary plus `esbuild.mjs`, while the five F5 paths remain a separate
 owner-visible risk.
+
+### Slice 5 implementation record
+
+- The measured move was executed as exactly **164/164** byte-identical source relocations. The
+  residual root `src/` remains exactly **26** TypeScript files, including the intentionally orphaned
+  `src/workspace/VsCodeHost.ts`.
+- The root manifest is now orchestration-only and discovers `apps/*` plus `packages/*`; the extension
+  manifest remains version `0.91.0` with `main: ./dist/extension.js`.
+- Build, package, provenance, VSIX smoke and dev-host paths discover the extension workspace by its
+  `engines.vscode` manifest contract. `workspaceLayout.test.ts` proves another `apps/*` child is
+  discovered without changing the resolver.
+- `vsce` cannot walk npm's hoisted monorepo tree without reporting unrelated development packages as
+  extraneous. The release therefore stages the sole native external (`node-pty`) under
+  `dist/node_modules`, records it in provenance, and calls `vsce --no-dependencies`; README and LICENSE
+  are staged beside the app manifest only for the packaging callback.
+- Headless build, TypeScript, focused relocation tests, package-boundary and engine-boundary checks
+  are green. The human F5 proof remains an explicit exit condition and is not represented as complete here.
+
+### Slice 5 stable artifact comparison
+
+- A standalone clean clone of pre-slice commit `a42f2358` produced a stable `0.91.0` VSIX; a clean
+  clone of post-slice commit `571b8214` produced another. Both unpack to exactly **346 files**.
+- After normalizing the deliberate native dependency relocation
+  `node_modules/node-pty/** -> dist/node_modules/node-pty/**`, the file inventories differ only in the
+  eleven content-hashed webview chunk names. Those names and their import references changed because
+  esbuild's physical entrypoint/source addresses changed; payload byte sizes are unchanged.
+- Of the same-address files, **329 are byte-identical** after normalizing the source prefix and chunk
+  hash names. The four expected semantic differences are: product `package.json` drops the former
+  root `workspaces` field; `extension.js` embeds the new commit/tree attestation; the engine manifest
+  carries that same attestation (and the derived Pi bundle hash); and `provenance.json` records the
+  new tree plus relocated dist dependency paths.
+- The post-slice `npm run release` completed its real VSIX smoke: closure passed, VS Code `1.133.0`
+  installed the package, the persistent engine answered, all **99/99** declared commands registered,
+  both contributed views focused, and the node-missing run refused by `EngineBundleError`.
+- The only remaining slice-5 checkbox is the maintainer-owned F5 proof in the real development host.
+
+### 2026-08-14T18:41:03Z — fail (0/1) — source: tasks.md
+- `npm run verify:full` — fail
+
+### 2026-08-14T18:48:20Z — pass (1/1) — source: tasks.md
+- `npm run verify:full` — pass

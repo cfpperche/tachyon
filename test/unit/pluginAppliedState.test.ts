@@ -25,7 +25,7 @@ import {
   serializeAppliedState,
   emptyAppliedState,
   type ContributionRef,
-} from "../../src/plugins/appliedState.js";
+} from "../../apps/vscode-extension/src/plugins/appliedState.js";
 
 const SKILL: ContributionRef = { kind: "skill", name: "pdf-processing" };
 const OTHER_SKILL: ContributionRef = { kind: "skill", name: "code-review" };

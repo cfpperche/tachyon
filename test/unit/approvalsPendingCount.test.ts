@@ -8,7 +8,7 @@ import {
   writeApprovalRequest,
   type ApprovalRequest,
 } from "@tachyon/engine/bridge/approvalRequest.js";
-import { buildApprovalViewModel, listApprovalViewItems, pendingApprovalRows } from "../../src/webview/approval/viewModel.js";
+import { buildApprovalViewModel, listApprovalViewItems, pendingApprovalRows } from "../../apps/vscode-extension/src/webview/approval/viewModel.js";
 import { buildSectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 
 const roots: string[] = [];
@@ -147,7 +147,7 @@ describe("Overview's pending-approval counter (t-d85857)", () => {
     // host to run, so this pins the wiring at the one place it can be pinned headlessly.
     // Cockpit.ts's own `approvals: []` is deliberately NOT covered: that is the synthetic bundle
     // built when collection FAILS, where an empty list is the honest answer.
-    const source = fs.readFileSync(path.join(__dirname, "..", "..", "src", "extension.ts"), "utf8");
+    const source = fs.readFileSync(path.join(__dirname, "..", "..", "apps", "vscode-extension", "src", "extension.ts"), "utf8");
     expect(source).toContain("approvals: pendingApprovalRows(ws.workspaceRoot)");
     expect(source).not.toMatch(/approvals:\s*\[\]/);
   });

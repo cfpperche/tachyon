@@ -5,7 +5,7 @@ import {
   quoteFontFamily,
   resolveAgentPaneFontMetrics,
   type TerminalFontConfigSource,
-} from "../../src/presentation/agentPaneFont.js";
+} from "../../apps/vscode-extension/src/presentation/agentPaneFont.js";
 
 function cfg(map: Record<string, unknown>): TerminalFontConfigSource {
   return {

@@ -26,8 +26,8 @@ describe("SDD 505 Slice 1 — tokens, faces, and components are separate", () =>
 
   it("links the full baseline normally while Agent Pane skips only faces", () => {
     const gate = renderGatePage("https://example.test");
-    const pluginHost = read("src/plugins/ui/host.ts");
-    const pane = read("src/webview/AgentPanePanel.ts");
+    const pluginHost = read("apps/vscode-extension/src/plugins/ui/host.ts");
+    const pane = read("apps/vscode-extension/src/webview/AgentPanePanel.ts");
     for (const sheet of ["tokens.css", "faces.css", "design-system.css", "quick-picker.css"]) {
       expect(gate).toContain(`href="https://example.test/dist/webview/${sheet}"`);
     }

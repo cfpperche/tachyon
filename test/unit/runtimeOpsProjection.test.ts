@@ -12,7 +12,7 @@ import {
 import type { RuntimeOpsSnapshotV1, RuntimeOpsSnapshotV2 } from "@tachyon/webview-ui/runtimeOps/types";
 import { isWorkspaceQueryV1, workspaceRuntimeOpsViewSuccessV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
-import { runtimeOpsFleetView, workspaceRuntimeOpsTarget } from "../../src/shell/RuntimeOpsTarget.js";
+import { runtimeOpsFleetView, workspaceRuntimeOpsTarget } from "../../apps/vscode-extension/src/shell/RuntimeOpsTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 const roots: string[] = [];

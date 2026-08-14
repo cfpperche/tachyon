@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { AgentStudioAdapter } from "../../src/webview/AgentStudioAdapter.js";
+import { AgentStudioAdapter } from "../../apps/vscode-extension/src/webview/AgentStudioAdapter.js";
 import {
   blankAgentFields,
   canonicalAgentFields,
@@ -15,8 +15,8 @@ import {
 } from "../../packages/webview-ui/src/webview/agent-studio-shell/domain.js";
 import { validateAgentNativeConfigPolicy } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import type { AgentProfileStudioMutationV1, AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
-import type { WorkspaceAgentStudioTarget } from "../../src/shell/WorkspacePresentation.js";
-import type { StudioSubmit } from "../../src/webview/studioSubmit.js";
+import type { WorkspaceAgentStudioTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
+import type { StudioSubmit } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 
 /** spec 350 Phase 3 T1 — AgentStudioAdapter in isolation: no vscode, no panel, no protocol — just the
  *  StudioHostAdapter<AgentStudioEntity,AgentStudioFields,AgentStudioPatch> contract WRAPPING formLogic.ts

@@ -5,10 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import * as esbuild from "esbuild";
-import { loadPlugin, previewInstall, applyInstall, applyRemove, previewRemove } from "../../src/plugins/engine.js";
-import { gatherDataPlan } from "../../src/plugins/dataPlan.js";
-import { rehydrateData } from "../../src/plugins/toolProvisionRun.js";
-import { buildInstallConsent } from "../../src/plugins/consentViewModel";
+import { loadPlugin, previewInstall, applyInstall, applyRemove, previewRemove } from "../../apps/vscode-extension/src/plugins/engine.js";
+import { gatherDataPlan } from "../../apps/vscode-extension/src/plugins/dataPlan.js";
+import { rehydrateData } from "../../apps/vscode-extension/src/plugins/toolProvisionRun.js";
+import { buildInstallConsent } from "../../apps/vscode-extension/src/plugins/consentViewModel";
 import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
 
@@ -29,7 +29,7 @@ describe.skipIf(!kp)("engine — data-artifact install/remove (spec 284 Lane C)"
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     base = `https://127.0.0.1:${(server.address() as { port: number }).port}`;
     bundle = path.join(os.tmpdir(), `tach-data-resolver-${process.pid}.cjs`);
-    esbuild.buildSync({ entryPoints: ["src/dataResolverEntry.ts"], bundle: true, outfile: bundle, platform: "node", format: "cjs", target: "node20", logLevel: "silent" });
+    esbuild.buildSync({ entryPoints: ["apps/vscode-extension/src/dataResolverEntry.ts"], bundle: true, outfile: bundle, platform: "node", format: "cjs", target: "node20", logLevel: "silent" });
   });
   afterAll(async () => { await new Promise<void>((r) => server.close(() => r())); fs.rmSync(bundle, { force: true }); });
 

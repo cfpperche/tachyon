@@ -9,9 +9,9 @@ import {
   HumanInboxPanelManager,
   humanInboxRefreshKind,
   type HumanInboxDeps,
-} from "../../src/webview/HumanInboxPanel.js";
-import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
-import { sectionPanelKey, type SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
+} from "../../apps/vscode-extension/src/webview/HumanInboxPanel.js";
+import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
+import { sectionPanelKey, type SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import {
   closeInboxItemAction,
   openInboxItemAction,
@@ -23,7 +23,7 @@ import { buildApprovalRequest, writeApprovalRequest } from "@tachyon/engine/brid
 import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
 import { savedAgentProposalPath } from "@tachyon/engine/agents/savedAgentProposalStore.js";
 import { workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
-import type { WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
+import type { WorkspaceBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
 import type { Validation } from "@tachyon/engine/validations/types.js";
 
 /**
@@ -706,7 +706,7 @@ describe("SDD 485 D4 — actions route to each kind's own path", () => {
     // Static contract, moved with the surface: `HumanInboxPanel.ts` must not reintroduce the tombstone
     // message on the success path. The client still understands the wire type for legacy reloads; the
     // host must not emit it when the product itself completed the item (that was the dogfood bug).
-    const host = fs.readFileSync(path.resolve(__dirname, "../../src/webview/HumanInboxPanel.ts"), "utf8");
+    const host = fs.readFileSync(path.resolve(__dirname, "../../apps/vscode-extension/src/webview/HumanInboxPanel.ts"), "utf8");
     expect(host).toMatch(/open = undefined;/);
     expect(host).not.toMatch(/session\.post\(humanInboxItemMissingMessage/);
   });
@@ -805,7 +805,7 @@ describe("SDD 485 D4 — restore, and the viewType that had no legacy id to reus
     // `createWebviewPanel` call and never wrote a record under any id. `tachyonApprovals` is a LIVE
     // redirect naming a DIFFERENT surface that spec.md keeps as a compatibility route.
     expect(HUMAN_INBOX_VIEW_TYPE).toBe("tachyonHumanInbox");
-    const host = fs.readFileSync(path.resolve(__dirname, "../../src/webview/HumanInboxPanel.ts"), "utf8");
+    const host = fs.readFileSync(path.resolve(__dirname, "../../apps/vscode-extension/src/webview/HumanInboxPanel.ts"), "utf8");
     // No shim, because there is no legacy record: C4's and D2's reuses each cost a `migrateLegacy`, and
     // this one has nothing to migrate FROM.
     expect(host).not.toContain("migrateLegacy");

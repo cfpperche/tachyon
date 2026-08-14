@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSkillFrontmatter } from "../../src/plugins/skill.js";
+import { parseSkillFrontmatter } from "../../apps/vscode-extension/src/plugins/skill.js";
 
 const md = (fm: string, body = "\n# Skill body\n") => `---\n${fm}\n---${body}`;
 

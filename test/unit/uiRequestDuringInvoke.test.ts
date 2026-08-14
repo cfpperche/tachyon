@@ -9,7 +9,7 @@ import {
   type EngineServiceIdentityV1,
   type WorkspaceSnapshotEnvelopeV1,
 } from "@tachyon/engine/engine-service/protocol.js";
-import { connectRemoteWorkspaceClient } from "../../src/shell/WorkspaceClient.js";
+import { connectRemoteWorkspaceClient } from "../../apps/vscode-extension/src/shell/WorkspaceClient.js";
 import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
 import { workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";

@@ -1,12 +1,37 @@
 import * as esbuild from "esbuild";
 import { createHash } from "node:crypto";
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync as rawCopyFileSync, cpSync as rawCpSync, existsSync as rawExistsSync, mkdirSync as rawMkdirSync, readdirSync as rawReaddirSync, readFileSync as rawReadFileSync, rmSync as rawRmSync, statSync as rawStatSync, writeFileSync as rawWriteFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertStableBuildSource, resolveEngineReleaseChannel } from "./scripts/engine-release-channel.mjs";
 import { readEngineShellProtocol } from "./scripts/engine-protocol.mjs";
 import { pruneUnreachableWebviewChunks } from "./scripts/webview-chunk-hygiene.mjs";
+import { extensionWorkspace } from "./scripts/workspace-layout.mjs";
+
+const repositoryRoot = path.dirname(fileURLToPath(import.meta.url));
+const extensionRoot = extensionWorkspace(repositoryRoot).directory;
+const outputRoot = path.join(extensionRoot, "dist");
+const appSource = (relative) => path.join(extensionRoot, "src", relative);
+const outputPath = (value) => {
+  if (typeof value !== "string" || path.isAbsolute(value)) return value;
+  if (value === "dist") return outputRoot;
+  return value.startsWith(`dist${path.sep}`) || value.startsWith("dist/")
+    ? path.join(outputRoot, value.slice(5))
+    : value;
+};
+
+// Keep the build's many deliberately-flat `dist/` declarations readable. One derived resolver owns
+// their physical app workspace instead of duplicating the workspace name across 94 call sites.
+const copyFileSync = (source, destination, ...args) => rawCopyFileSync(outputPath(source), outputPath(destination), ...args);
+const cpSync = (source, destination, ...args) => rawCpSync(outputPath(source), outputPath(destination), ...args);
+const existsSync = (value) => rawExistsSync(outputPath(value));
+const mkdirSync = (value, ...args) => rawMkdirSync(outputPath(value), ...args);
+const readdirSync = (value, ...args) => rawReaddirSync(outputPath(value), ...args);
+const readFileSync = (value, ...args) => rawReadFileSync(outputPath(value), ...args);
+const rmSync = (value, ...args) => rawRmSync(outputPath(value), ...args);
+const statSync = (value, ...args) => rawStatSync(outputPath(value), ...args);
+const writeFileSync = (value, ...args) => rawWriteFileSync(outputPath(value), ...args);
 
 const watch = process.argv.includes("--watch");
 const engineReleaseChannel = resolveEngineReleaseChannel();
@@ -28,7 +53,7 @@ function buildStamp() {
 }
 
 const buildStampSnapshot = buildStamp();
-const packageVersion = JSON.parse(readFileSync("package.json", "utf8")).version;
+const packageVersion = JSON.parse(readFileSync(path.join(extensionRoot, "package.json"), "utf8")).version;
 const engineShellProtocol = readEngineShellProtocol();
 
 function sha256File(file) {
@@ -110,7 +135,7 @@ const kitDefines = {
 
 // The extension host bundle (Node; vscode external).
 const extension = {
-  entryPoints: ["src/extension.ts"],
+  entryPoints: [appSource("extension.ts")],
   bundle: true,
   outfile: "dist/extension.js",
   platform: "node",
@@ -126,7 +151,7 @@ const extension = {
 // spec 265 — the standalone tool LAUNCHER bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-tool.js
 // and exec'd by a git pre-commit hook with no VS Code running, so it must be self-contained.
 const toolLauncher = {
-  entryPoints: ["src/toolLauncherEntry.ts"],
+  entryPoints: [appSource("toolLauncherEntry.ts")],
   bundle: true,
   outfile: "dist/tool-launcher.cjs",
   platform: "node",
@@ -144,7 +169,7 @@ const toolLauncher = {
 // parser is to bundle it. Reimplementing the schema over there would drift, and a drifting validator
 // reports green while the real loader refuses.
 const pluginValidate = {
-  entryPoints: ["src/pluginValidateEntry.ts"],
+  entryPoints: [appSource("pluginValidateEntry.ts")],
   bundle: true,
   outfile: "dist/plugin-validate.cjs",
   platform: "node",
@@ -156,7 +181,7 @@ const pluginValidate = {
 };
 
 const dataResolver = {
-  entryPoints: ["src/dataResolverEntry.ts"],
+  entryPoints: [appSource("dataResolverEntry.ts")],
   bundle: true,
   outfile: "dist/data-resolver.cjs",
   platform: "node",
@@ -169,7 +194,7 @@ const dataResolver = {
 
 // spec 285 — the standalone EXTERNAL-tool resolver bundle (Node; NO vscode). Copied to .tachyon/bin/_tachyon-external.js.
 const externalResolver = {
-  entryPoints: ["src/externalResolverEntry.ts"],
+  entryPoints: [appSource("externalResolverEntry.ts")],
   bundle: true,
   outfile: "dist/external-resolver.cjs",
   platform: "node",
@@ -187,7 +212,7 @@ const engineDaemon = {
   absWorkingDir: path.resolve("packages/engine"),
   entryPoints: ["src/engine-service/daemonMain.ts"],
   bundle: true,
-  outfile: path.resolve("dist/engine/engine-daemon.cjs"),
+  outfile: outputPath("dist/engine/engine-daemon.cjs"),
   platform: "node",
   format: "cjs",
   target: "node20",
@@ -201,7 +226,7 @@ const engineDaemon = {
 // It runs inside Pi, not the engine, but ships in the authenticated immutable engine bundle so its
 // path survives extension upgrades and never depends on project/global Pi configuration.
 const piBridgeExtension = {
-  entryPoints: ["src/pi-bridge-extension/index.ts"],
+  entryPoints: [appSource("pi-bridge-extension/index.ts")],
   bundle: true,
   outfile: "dist/engine/pi-bridge-extension.mjs",
   platform: "node",
@@ -295,7 +320,7 @@ const webviewChunkHygienePlugin = {
   setup(build) {
     build.onEnd((result) => {
       if (result.errors.length > 0) return;
-      const { pruned } = pruneUnreachableWebviewChunks("dist/webview");
+      const { pruned } = pruneUnreachableWebviewChunks(outputPath("dist/webview"));
       if (pruned.length > 0) {
         console.log(`webview chunks: pruned ${pruned.length} unreferenced file(s)`);
       }
@@ -389,7 +414,7 @@ const pluginHost = {
 // Preact-only by aliasing those peers at the bundle boundary and loading this file only for sketch editing.
 const excalidraw = {
   ...sidebar,
-  entryPoints: ["src/webview/pin-studio/excalidraw-entry.tsx"],
+  entryPoints: [appSource("webview/pin-studio/excalidraw-entry.tsx")],
   outfile: "dist/webview/excalidraw.js",
   alias: preactCompat,
   define: {
@@ -401,7 +426,7 @@ const excalidraw = {
 // spec 238 (inc 16) — mermaid as its OWN on-demand iife bundle (~3MB). NOT loaded with the activity panel;
 // the webview injects it as a <script> only when a ```mermaid block first appears, then caches it.
 const mermaid = {
-  entryPoints: ["src/webview/activity/mermaid-entry.ts"],
+  entryPoints: [appSource("webview/activity/mermaid-entry.ts")],
   bundle: true,
   outfile: "dist/webview/mermaid.js",
   platform: "browser",
@@ -414,7 +439,7 @@ const mermaid = {
 // spec 238 (inc 17) — KaTeX as its OWN on-demand iife bundle (+ its CSS/fonts copied below). Loaded only
 // when a math span first appears, like mermaid; no-math chats never fetch it.
 const katex = {
-  entryPoints: ["src/webview/activity/katex-entry.ts"],
+  entryPoints: [appSource("webview/activity/katex-entry.ts")],
   bundle: true,
   outfile: "dist/webview/katex.js",
   platform: "browser",
@@ -467,7 +492,7 @@ const tailwindCli = fileURLToPath(new URL("./node_modules/@tailwindcss/cli/dist/
 
 function buildTailwind() {
   for (const { input, output } of tailwindSurfaces) {
-    const args = [tailwindCli, "-i", input, "-o", output];
+    const args = [tailwindCli, "-i", input, "-o", outputPath(output)];
     if (!watch) args.push("--minify");
     execFileSync(process.execPath, args, { stdio: "inherit" });
   }
@@ -485,13 +510,13 @@ rmSync("dist/webview/chunks", { recursive: true, force: true });
 rmSync("dist/persistent-bridge-daemon.cjs", { force: true });
 rmSync("dist/engine", { recursive: true, force: true });
 mkdirSync("dist/engine/media", { recursive: true });
-copyFileSync("media/clipboard-copy.sh", "dist/engine/media/clipboard-copy.sh");
+copyFileSync(path.join(extensionRoot, "media/clipboard-copy.sh"), "dist/engine/media/clipboard-copy.sh");
 // SDD 422 — Companion Mobile PWA served by Bridge at /companion/app/*
 // t-05a0b0: never stage sourcemaps — the ship boundary prunes .map from the VSIX, so a staged
 // map would enter the engine manifest and leave the installed bundle failing closed on a
 // promised file the package no longer contains (0.56.102 activation crash).
-if (existsSync("media/companion-mobile/index.html")) {
-  cpSync("media/companion-mobile", "dist/engine/media/companion-mobile", {
+if (existsSync(path.join(extensionRoot, "media/companion-mobile/index.html"))) {
+  cpSync(path.join(extensionRoot, "media/companion-mobile"), "dist/engine/media/companion-mobile", {
     recursive: true,
     filter: (src) => !src.endsWith(".map"),
   });
@@ -573,6 +598,8 @@ if (existsSync(excalidrawAssets)) {
 const targets = [extension, toolLauncher, pluginValidate, dataResolver, externalResolver, engineDaemon, piBridgeExtension, sidebar, designModeOverlay, webviewApps, agentPane, pipelineStudio, agentStudioFixture, pluginHost, excalidraw, mermaid, katex, preview, previewShell, uiGate]
   .map((target) => ({
     ...target,
+    ...(target.outfile ? { outfile: outputPath(target.outfile) } : {}),
+    ...(target.outdir ? { outdir: outputPath(target.outdir) } : {}),
     alias: {
       ...target.alias,
       "@tachyon/webview-ui": path.resolve("packages/webview-ui/src"),

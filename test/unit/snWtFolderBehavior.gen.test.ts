@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeWorkspaceFolderOps } from "../../src/workspace/workspaceFolderOps.js";
+import { computeWorkspaceFolderOps } from "../../apps/vscode-extension/src/workspace/workspaceFolderOps.js";
 
 const BASE = "/home/goat/.cache/tachyon/worktrees/ws1";
 

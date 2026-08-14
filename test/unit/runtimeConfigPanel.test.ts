@@ -5,7 +5,7 @@ import {
   RUNTIME_CONFIG_VIEW_TYPE,
   RuntimeConfigPanelManager,
   type RuntimeConfigDeps,
-} from "../../src/webview/RuntimeConfigPanel.js";
+} from "../../apps/vscode-extension/src/webview/RuntimeConfigPanel.js";
 import { readyMessage } from "../../packages/webview-ui/src/webview/runtime-config/messages.js";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
 

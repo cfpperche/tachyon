@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildDesignModeInjectExpression, themeDesignModeOverlayBundle } from "../../src/webview/ide-browser-bridge/designModeInject.js";
-import { fallbackDsTokens, formatDmThemeCssBlock, mapVscodeVarsToDs } from "../../src/webview/ide-browser-bridge/themeTokens.js";
+import { buildDesignModeInjectExpression, themeDesignModeOverlayBundle } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/designModeInject.js";
+import { fallbackDsTokens, formatDmThemeCssBlock, mapVscodeVarsToDs } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/themeTokens.js";
 
 describe("buildDesignModeInjectExpression — compiled page app boundary", () => {
   it("ratchets the page expression to a thin wrapper", () => {

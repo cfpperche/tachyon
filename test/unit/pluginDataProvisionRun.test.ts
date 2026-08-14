@@ -4,10 +4,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { provisionData } from "../../src/plugins/toolProvisionRun.js";
-import { gatherDataPlan } from "../../src/plugins/dataPlan.js";
+import { provisionData } from "../../apps/vscode-extension/src/plugins/toolProvisionRun.js";
+import { gatherDataPlan } from "../../apps/vscode-extension/src/plugins/dataPlan.js";
 import { emptyLockfile } from "@tachyon/engine/plugins/lockfile.js";
-import type { LoadedPlugin } from "../../src/plugins/engine.js";
+import type { LoadedPlugin } from "../../apps/vscode-extension/src/plugins/engine.js";
 import type { PluginManifest, DataDecl } from "@tachyon/engine/plugins/manifest.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
 

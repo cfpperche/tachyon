@@ -3,8 +3,8 @@ import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import path from "node:path";
 import * as esbuild from "esbuild";
 import { resolveChromeExecutable } from "./support/chrome";
-import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../src/webview/human-inbox/viewModel.js";
-import { buildSavedAgentProposalReview } from "../../src/agents/savedAgentProposalReview";
+import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "../../apps/vscode-extension/src/webview/human-inbox/viewModel.js";
+import { buildSavedAgentProposalReview } from "../../apps/vscode-extension/src/agents/savedAgentProposalReview";
 
 /**
  * t-58f9e9 point 4 — drive the REAL click, not an injected prop.

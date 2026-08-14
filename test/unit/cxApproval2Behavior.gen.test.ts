@@ -11,7 +11,7 @@ import {
   resolveApproval,
   writeApprovalRequest,
 } from "@tachyon/engine/bridge/approvalRequest.js";
-import { buildApprovalViewModel } from "../../src/webview/approval/viewModel.js";
+import { buildApprovalViewModel } from "../../apps/vscode-extension/src/webview/approval/viewModel.js";
 import { renderPrimer } from "@tachyon/engine/bridge/primer.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
@@ -46,7 +46,7 @@ describe("container-generated delegation behavior", () => {
     expect(appSource).toContain("<pre>{value}</pre>");
     expect(appSource).not.toContain("dangerouslySetInnerHTML");
 
-    const extensionSource = fs.readFileSync(path.join(process.cwd(), "src/extension.ts"), "utf8");
+    const extensionSource = fs.readFileSync(path.join(process.cwd(), "apps/vscode-extension/src/extension.ts"), "utf8");
     expect(extensionSource).toContain('vscode.commands.registerCommand("tachyon.resolveApproval"');
     expect(extensionSource).toContain('await extensionInvoke(ws, { action: "approval.resolve"');
     expect(extensionSource).not.toContain("await resolveApproval({");
@@ -132,14 +132,14 @@ describe("container-generated delegation behavior", () => {
   });
 
   it("contributes a localized open-approvals fallback without exposing the resolver", () => {
-    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8")) as {
+    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "apps/vscode-extension/package.json"), "utf8")) as {
       contributes: {
         commands: Array<{ command: string; title: string }>;
         menus?: { commandPalette?: Array<{ command: string; when?: string }> };
       };
     };
-    const en = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.nls.json"), "utf8")) as Record<string, string>;
-    const ptBr = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.nls.pt-br.json"), "utf8")) as Record<string, string>;
+    const en = JSON.parse(fs.readFileSync(path.join(process.cwd(), "apps/vscode-extension/package.nls.json"), "utf8")) as Record<string, string>;
+    const ptBr = JSON.parse(fs.readFileSync(path.join(process.cwd(), "apps/vscode-extension/package.nls.pt-br.json"), "utf8")) as Record<string, string>;
 
     expect(pkg.contributes.commands.find((entry) => entry.command === "tachyon.openApprovals")).toEqual({
       command: "tachyon.openApprovals",

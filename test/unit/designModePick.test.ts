@@ -6,7 +6,7 @@ import {
   formatDesignModePickForAgent,
   selectorHintFromIdentity,
   subsetComputedStyles,
-} from "../../src/webview/ide-browser-bridge/pick.js";
+} from "../../apps/vscode-extension/src/webview/ide-browser-bridge/pick.js";
 
 describe("subsetComputedStyles", () => {
   it("keeps only allowlisted keys from a fuller style map", () => {
@@ -146,7 +146,7 @@ describe("Design Mode shell entry points (shipped source)", () => {
 
   it("exposes Design Mode on IdeBrowserCdpSession", async () => {
     const { IdeBrowserCdpSession } = await import(
-      "../../src/webview/ide-browser-bridge/cdpSession.js"
+      "../../apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.js"
     );
     const session = new IdeBrowserCdpSession();
     expect(typeof session.setDesignMode).toBe("function");
@@ -158,7 +158,7 @@ describe("Design Mode shell entry points (shipped source)", () => {
   it("does not starve an armed re-inject when the presence watch reports missing chrome again", async () => {
     vi.useFakeTimers();
     const { IdeBrowserCdpSession } = await import(
-      "../../src/webview/ide-browser-bridge/cdpSession.js"
+      "../../apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.js"
     );
     const session = new IdeBrowserCdpSession() as unknown as {
       scheduleInternalReinject(log: (message: string) => void, reason: string): void;
@@ -177,7 +177,7 @@ describe("Design Mode shell entry points (shipped source)", () => {
   it("turns Design Mode off and invalidates host state when re-inject attempts are exhausted", async () => {
     vi.useFakeTimers();
     const { IdeBrowserCdpSession } = await import(
-      "../../src/webview/ide-browser-bridge/cdpSession.js"
+      "../../apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.js"
     );
     const session = new IdeBrowserCdpSession() as unknown as {
       designModeOn: boolean;

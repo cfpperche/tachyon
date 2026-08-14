@@ -4,7 +4,7 @@ import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
-import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "../../src/webview/SystemPanel.js";
+import { SYSTEM_VIEW_TYPE, SystemPanelManager } from "../../apps/vscode-extension/src/webview/SystemPanel.js";
 import { readyMessage } from "../../packages/webview-ui/src/webview/system/messages.js";
 import { summariseWorkspaceRows } from "../../packages/webview-ui/src/webview/system/summary.js";
 import { buildControlInspectorModel, type ControlInspectorWorkspaceInput } from "@tachyon/webview-ui/control-inspector/model";
@@ -223,7 +223,7 @@ describe("SDD 500 — every action both pages carried is on the merged screen", 
   });
 
   it("and the host answers every one of them", () => {
-    const host = readFileSync("src/webview/SystemPanel.ts", "utf8");
+    const host = readFileSync("apps/vscode-extension/src/webview/SystemPanel.ts", "utf8");
     for (const action of ["openDoctor", "openSection", "copyText", "engineLogJournal", "engineLogClear", "copyDiagnostics"]) {
       expect(host, `SystemPanel has no arm for ${action}`).toContain(`m.type === "${action}"`);
     }

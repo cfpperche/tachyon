@@ -20,7 +20,7 @@ import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
  * WHAT MAKES AN INVOCATION SAFE. Four forms, all measured against tmux 3.6 from inside a fleet pane:
  *   1. `-L <own socket>` first — `tmux -L nonexistent list-sessions` errors on the private path.
  *   2. `-S <own path>` first — same precedence; this is the form production ships
- *      (`src/presentation/Terminals.ts`, `src/presentation/TmuxAttachClient.ts`), and the task's
+ *      (`apps/vscode-extension/src/presentation/Terminals.ts`, `apps/vscode-extension/src/presentation/TmuxAttachClient.ts`), and the task's
  *      "-L or clear TMUX" rule omits it.
  *   3. an env with `TMUX` REMOVED (`tmuxChildEnv(...)`, or `{ ...process.env, TMUX: undefined }`).
  *   4. an invocation that never opens a socket at all (`tmux -V`).
@@ -35,7 +35,7 @@ import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
  *     and is the single most destructive line in the repository. `test/unit/gateSocketIsolation.test.ts`
  *     already bans that literal in the three gate files; the second assertion below extends the ban to
  *     `src/` and `scripts/`, but only for commands that DESTROY, so the product may still attach to and
- *     drive its own fleet (`src/extension.ts`, `scripts/screenshots/runner.js`).
+ *     drive its own fleet (`apps/vscode-extension/src/extension.ts`, `scripts/screenshots/runner.js`).
  *
  * WHY THE SYNTAX TREE AND NOT A REGEX. The mold for this guard —
  * `test/unit/cxWedgeBehavior.gen.test.ts` — matches its identifiers in ANY text, including comments,
@@ -440,9 +440,9 @@ describe("t-6ef951 no source under src/ or scripts/ can reach the fleet's tmux s
     expect(scanRepository({ "scripts/dogfood/stunt-double-remeasure.ts": REMEASURE_AFTER })).toEqual([]);
     // …and RED again when the same line is injected into a file the walk really visits, so a green scan
     // is evidence the walk ran and not evidence it skipped everything.
-    const injected = `${fs.readFileSync(path.join(repoRoot, "src/presentation/Terminals.ts"), "utf8")}\nspawnSync("tmux", ["kill-server"]);\n`;
-    expect(scanRepository({ "src/presentation/Terminals.ts": injected }).map((f) => f.at)).toEqual([
-      expect.stringMatching(/^src\/presentation\/Terminals\.ts:\d+$/),
+    const injected = `${fs.readFileSync(path.join(repoRoot, "apps/vscode-extension/src/presentation/Terminals.ts"), "utf8")}\nspawnSync("tmux", ["kill-server"]);\n`;
+    expect(scanRepository({ "apps/vscode-extension/src/presentation/Terminals.ts": injected }).map((f) => f.at)).toEqual([
+      expect.stringMatching(/^apps\/vscode-extension\/src\/presentation\/Terminals\.ts:\d+$/),
     ]);
 
     const problems = (source: string): string[] => tmuxInvocationFindings("scripts/probe.ts", source).map((f) => f.problem);
@@ -469,7 +469,7 @@ describe("t-6ef951 no source under src/ or scripts/ can reach the fleet's tmux s
     expect(problems('// never write execFileSync("tmux", ["kill-server"]) — it kills the fleet\nconst x = 1;')).toEqual([]);
     expect(problems('/** @example spawnSync("tmux", ["kill-server"]) */\nexport const doc = 1;')).toEqual([]);
     // …and neither is a string that merely starts with the word, nor a UI label that happens to be "tmux"
-    // (`src/webview/TmuxPanel.ts`, `src/webview/controlStrings.ts` — the first three false positives this
+    // (`apps/vscode-extension/src/webview/TmuxPanel.ts`, `apps/vscode-extension/src/webview/controlStrings.ts` — the first three false positives this
     // guard produced, and the reason a lone string argument is not treated as an invocation).
     expect(problems('throw new Error("tmux session is gone");')).toEqual([]);
     expect(problems('vscode.l10n.t("tmux");\nthis.manager.refresh("tmux");')).toEqual([]);
@@ -480,7 +480,7 @@ describe("t-6ef951 no source under src/ or scripts/ can reach the fleet's tmux s
     // Passing `-L` proves the server was CHOSEN, not that it is yours. This is the deadliest line possible.
     expect(problems(`execFileSync("tmux", ["-L", "${DEFAULT_SOCKET_NAME}", "kill-server"]);`)).toEqual([FLEET_DESTRUCTION]);
     expect(problems(`execFileSync("tmux", ["-S", "/tmp/tmux-1000/${DEFAULT_SOCKET_NAME}", "kill-session", "-t", s]);`)).toEqual([FLEET_DESTRUCTION]);
-    // Driving the live fleet is the product's job — attach and send-keys stay legal (src/extension.ts,
+    // Driving the live fleet is the product's job — attach and send-keys stay legal (apps/vscode-extension/src/extension.ts,
     // scripts/screenshots/runner.js), and a socket read from the run's env is nobody's literal.
     expect(problems(`execFileSync("tmux", ["-L", "${DEFAULT_SOCKET_NAME}", "send-keys", "-t", target, "C-m"]);`)).toEqual([]);
     expect(problems('execFileSync("tmux", ["-L", SOCKET_NAME, "kill-server"]);')).toEqual([]);

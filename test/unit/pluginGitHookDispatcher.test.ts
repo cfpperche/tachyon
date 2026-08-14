@@ -12,7 +12,7 @@ import {
   dispatcherTemplateFingerprint,
   readDispatcherTemplateVersion,
   dispatcherScript,
-} from "../../src/plugins/gitHookRegistry.js";
+} from "../../apps/vscode-extension/src/plugins/gitHookRegistry.js";
 import { GIT_HOOK_EVENTS } from "@tachyon/engine/plugins/manifest.js";
 
 const dirs: string[] = [];

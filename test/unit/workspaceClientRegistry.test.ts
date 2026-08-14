@@ -3,7 +3,7 @@ import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import {
   WorkspaceClientRegistry,
   type ConnectWorkspaceClient,
-} from "../../src/shell/WorkspaceClientRegistry.js";
+} from "../../apps/vscode-extension/src/shell/WorkspaceClientRegistry.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 describe("WorkspaceClientRegistry", () => {

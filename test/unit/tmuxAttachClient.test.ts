@@ -6,8 +6,8 @@ import {
   TmuxAttachClient,
   type PtyProcess,
   type PtySpawn,
-} from "../../src/presentation/TmuxAttachClient.js";
-import { isAgentPaneToHost, AGENT_PANE_READY } from "../../src/webview/agent-pane/protocol.js";
+} from "../../apps/vscode-extension/src/presentation/TmuxAttachClient.js";
+import { isAgentPaneToHost, AGENT_PANE_READY } from "../../apps/vscode-extension/src/webview/agent-pane/protocol.js";
 
 describe("buildAttachArgv", () => {
   it("matches integrated-terminal attach shape (exclusive -d)", () => {

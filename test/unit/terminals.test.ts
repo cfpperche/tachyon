@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { attachSocketPath, Terminals, type TerminalRestoreEntry } from "../../src/presentation/Terminals.js";
+import { attachSocketPath, Terminals, type TerminalRestoreEntry } from "../../apps/vscode-extension/src/presentation/Terminals.js";
 import { __createdTerminals, __resetVscodeMock, ViewColumn } from "../mocks/vscode.js";
 
 describe("attachSocketPath", () => {

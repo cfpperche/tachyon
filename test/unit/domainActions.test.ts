@@ -90,7 +90,7 @@ describe("domainActions", () => {
   });
 
   it("routes matching VS Code command handlers through the persistent sidebar mutation contract", async () => {
-    const source = fs.readFileSync("src/extension.ts", "utf8");
+    const source = fs.readFileSync("apps/vscode-extension/src/extension.ts", "utf8");
 
     for (const [command, action] of [
       ["tachyon.approveProposalItem", 'action: "proposal.approve"'],

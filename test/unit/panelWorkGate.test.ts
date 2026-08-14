@@ -5,7 +5,7 @@ import {
   PanelWorkGate,
   DEFAULT_CATCH_UP_WINDOW,
   type VisibilitySource,
-} from "../../src/webview/shared/panelWorkGate.js";
+} from "../../apps/vscode-extension/src/webview/shared/panelWorkGate.js";
 
 /**
  * SDD 485 B1/B2 — the gate that makes a hidden panel do no work, and the catch-up that makes that
@@ -235,7 +235,7 @@ describe("SDD 485 B1 — no push door bypasses the gate (static, so a NEW door c
   // SDD 485 C1 — the same guard, pointed at the class every future app's doors will be built on. Control is
   // one surface with a known set of pushes; `SectionPanelManager` is the shape ten more will arrive in, so a
   // door added there is a door added to all of them at once.
-  const manager = readFileSync("src/webview/shared/SectionPanelManager.ts", "utf8");
+  const manager = readFileSync("apps/vscode-extension/src/webview/shared/SectionPanelManager.ts", "utf8");
 
   it("SectionPanelManager reaches the domain ONLY through the gate", () => {
     // The three sanctioned sites are the gate's own option callbacks (the reveal's catch-up, which runs

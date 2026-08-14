@@ -36,17 +36,17 @@ describe("t-77607a — panel hosts stay line-broken enough to hold their reasons
    */
   const GRANDFATHERED: ReadonlySet<string> = new Set(["PluginsPanel.ts"]);
 
-  const panels = readdirSync("src/webview").filter((n) => n.endsWith("Panel.ts"));
+  const panels = readdirSync("apps/vscode-extension/src/webview").filter((n) => n.endsWith("Panel.ts"));
 
   it("there are panel hosts to check — the guard is not vacuous", () => {
-    expect(panels.length, "no *Panel.ts under src/webview — did the naming convention change?").toBeGreaterThan(5);
+    expect(panels.length, "no *Panel.ts under apps/vscode-extension/src/webview — did the naming convention change?").toBeGreaterThan(5);
   });
 
   it("no panel host collapses a config object or a strings table onto one line", () => {
     const offenders: string[] = [];
     for (const name of panels) {
       if (GRANDFATHERED.has(name)) continue;
-      const lines = readFileSync(`src/webview/${name}`, "utf8").split("\n");
+      const lines = readFileSync(`apps/vscode-extension/src/webview/${name}`, "utf8").split("\n");
       lines.forEach((line, i) => {
         if (line.length > MAX_LINE) offenders.push(`${name}:${i + 1} (${line.length} chars)`);
       });

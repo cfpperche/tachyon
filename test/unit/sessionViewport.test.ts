@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SessionViewportRegistry } from "../../src/presentation/sessionViewport.js";
+import { SessionViewportRegistry } from "../../apps/vscode-extension/src/presentation/sessionViewport.js";
 
 /**
  * t-feaaea — the arbiter that keeps ONE exclusive tmux client per session. Measured on tmux 3.6:

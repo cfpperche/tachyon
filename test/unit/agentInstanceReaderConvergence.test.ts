@@ -63,7 +63,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
 
   /** Reader 2. Board's live-Temporary filter, and its second guard which is NOT the same question. */
   it("Board filters live Temporary instances by policy, keeping the config-ownership guard separate", () => {
-    const src = SOURCE("src/webview/board/boardVm.ts");
+    const src = SOURCE("apps/vscode-extension/src/webview/board/boardVm.ts");
     expect(src).toMatch(/\.filter\(\(a\) => a\.lifetime === "temporary" && !declared\.has\(a\.name\)\)/);
     // `declared.has(name)` is a set of CONFIG-OWNED NAMES — a different question, correctly kept.
     expect(src).toMatch(/const declared = new Set\(ws\.declaredAgentNames\(\)\)/);
@@ -138,7 +138,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
   it("keeps `declared` OFF the wire — the freeze is discharged, not merely lifted", () => {
     for (const rel of [
       "packages/engine/src/runtime-api/handoffProjection.ts",
-      "src/runtime-api/workspaceProjection.ts",
+      "apps/vscode-extension/src/runtime-api/workspaceProjection.ts",
       "packages/engine/src/runtime-api/activityProjection.ts",
       "packages/engine/src/engine-service/engineService.ts",
     ]) {

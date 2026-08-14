@@ -4,12 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { Uri } from "vscode";
 import { __createdPanels, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
-import { PluginsPanelManager, PLUGINS_VIEW_TYPE, pluginsRefreshKind, sourceSpecAtCommit, type PluginsPanelState } from "../../src/webview/PluginsPanel.js";
-import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
-import type { SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
+import { PluginsPanelManager, PLUGINS_VIEW_TYPE, pluginsRefreshKind, sourceSpecAtCommit, type PluginsPanelState } from "../../apps/vscode-extension/src/webview/PluginsPanel.js";
+import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
+import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import { serializeLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 import { pollAction, readyMessage } from "../../packages/webview-ui/src/webview/plugins/messages.js";
-import type { WorkspaceGitPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
+import type { WorkspaceGitPresentationTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 
 /**
  * SDD 485 D2 — Plugins as a standalone DASHBOARD app.

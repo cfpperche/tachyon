@@ -12,7 +12,7 @@
  *  · `vscode.diff` is executed from ONE place. That is the whole "opening a diff" question — VS Code's
  *    native diff editor is the product's only diff viewer, and a second caller is a second flow.
  *  · The changed-file primitives (`packages/engine/src/worktree/review.ts`) are consumed from ONE place, and inside
- *    `src/extension.ts` every use of them sits inside `reviewWorktreeDiff`. This is the "picking a
+ *    `apps/vscode-extension/src/extension.ts` every use of them sits inside `reviewWorktreeDiff`. This is the "picking a
  *    changed file" question: a new picker cannot be built without them, and building one WITHOUT them
  *    would mean a second parser too — which claim 3 catches.
  *  · `parseNameStatus` / `mergeChanges` are called from ONE place. A second changed-file list, however
@@ -34,6 +34,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SRC = path.join(__dirname, "../../src");
+const EXTENSION_SRC = path.join(__dirname, "../../apps/vscode-extension/src");
 const ENGINE_SRC = path.join(__dirname, "../../packages/engine/src");
 
 /** The pure changed-file/diff primitives. A picker or a diff pair is built out of these. */
@@ -53,7 +54,7 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const rel = (file: string): string => path.relative(file.startsWith(ENGINE_SRC) ? ENGINE_SRC : SRC, file).split(path.sep).join("/");
+const rel = (file: string): string => path.relative(file.startsWith(ENGINE_SRC) ? ENGINE_SRC : file.startsWith(EXTENSION_SRC) ? EXTENSION_SRC : SRC, file).split(path.sep).join("/");
 
 /** Whole-word occurrences, so `diffTitle` never matches inside `myDiffTitleThing`. */
 function occurrences(source: string, word: string): number {
@@ -63,7 +64,7 @@ function occurrences(source: string, word: string): number {
 /** Files (repo-relative, `/`-joined) naming any of `words`, with a per-file count. */
 function filesNaming(words: readonly string[]): Map<string, number> {
   const hits = new Map<string, number>();
-  for (const file of [...sourceFiles(SRC), ...sourceFiles(ENGINE_SRC)]) {
+  for (const file of [...sourceFiles(SRC), ...sourceFiles(EXTENSION_SRC), ...sourceFiles(ENGINE_SRC)]) {
     const source = fs.readFileSync(file, "utf8");
     const count = words.reduce((sum, word) => sum + occurrences(source, word), 0);
     if (count > 0) hits.set(rel(file), count);
@@ -97,7 +98,7 @@ function registrationRegion(source: string, opener: string, nextOpener: string):
 describe("SDD 501 — one diff-review implementation, reached by several doors", () => {
   it("executes vscode.diff from exactly one place", () => {
     const callers = new Map<string, number>();
-    for (const file of sourceFiles(SRC)) {
+    for (const file of [...sourceFiles(SRC), ...sourceFiles(EXTENSION_SRC)]) {
       const count = (fs.readFileSync(file, "utf8").match(/executeCommand\(\s*["'`]vscode\.diff["'`]/g) ?? []).length;
       if (count > 0) callers.set(rel(file), count);
     }
@@ -112,7 +113,7 @@ describe("SDD 501 — one diff-review implementation, reached by several doors",
    */
   it("mentions the vscode.diff command in exactly one file, exactly twice", () => {
     const mentions = new Map<string, number>();
-    for (const file of sourceFiles(SRC)) {
+    for (const file of [...sourceFiles(SRC), ...sourceFiles(EXTENSION_SRC)]) {
       const count = (fs.readFileSync(file, "utf8").match(/["'`]vscode\.diff["'`]/g) ?? []).length;
       if (count > 0) mentions.set(rel(file), count);
     }
@@ -125,7 +126,7 @@ describe("SDD 501 — one diff-review implementation, reached by several doors",
   });
 
   it("keeps every primitive use inside the one flow (plus its import and its content provider)", () => {
-    const source = fs.readFileSync(path.join(SRC, FLOW_HOME), "utf8");
+    const source = fs.readFileSync(path.join(EXTENSION_SRC, FLOW_HOME), "utf8");
     const flow = topLevelRegion(source, "async function reviewWorktreeDiff(");
     const provider = registrationRegion(
       source,

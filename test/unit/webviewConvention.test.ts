@@ -3,9 +3,9 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 import { WEBVIEW_SURFACES, postureDeclarationErrors, type WebviewSurface } from "../../src/webview/surfaces.js";
-import { SHELL_BASE_STYLESHEETS, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../src/webview/shared/shell.js";
+import { SHELL_BASE_STYLESHEETS, SHELL_EXTENSION_POINTS, SHELL_PAGE_FRAME_STYLESHEET, type ShellExtensionPoint } from "../../apps/vscode-extension/src/webview/shared/shell.js";
 import { buildsWebviewEntry } from "../helpers/webviewEntries.js";
-import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
+import { WEBVIEW_APPS } from "../../apps/vscode-extension/src/webview/webviewApps.js";
 import { nonEmpty } from "../helpers/repositorySourceScan.js";
 
 // spec 279 — the webview CONVENTION GUARD (a unit test, so it rides the existing CI suite — no extra runner or
@@ -48,15 +48,15 @@ describe("webview convention (spec 279)", () => {
 
   it("no host emitter hand-rolls a <!DOCTYPE> — only the shared shell may (spec 280)", () => {
     // every top-level packages/webview-ui/src/webview/*.ts is a vscode-bound host emitter; the one sanctioned <!DOCTYPE> site is
-    // src/webview/shared/shell.ts (a subdir → naturally excluded here). A host that hand-rolls a page reintroduces
+    // apps/vscode-extension/src/webview/shared/shell.ts (a subdir → naturally excluded here). A host that hand-rolls a page reintroduces
     // the duplicated-shell + CSP-drift problem this spec closed.
     // spec 485 A4 — a surface that DECLARES `replace` is allowed its own page: that is what the posture buys.
     // Silence is what fails, here and in the conformance block below.
     const replaceHosts = new Set(WEBVIEW_SURFACES.filter((s) => s.posture === "replace").map((s) => s.hostFile));
-    const offenders = readdirSync("src/webview")
+    const offenders = readdirSync("apps/vscode-extension/src/webview")
       .filter((f) => f.endsWith(".ts"))
-      .filter((f) => !replaceHosts.has(`src/webview/${f}`))
-      .filter((f) => /<!DOCTYPE/i.test(readFileSync(`src/webview/${f}`, "utf8")));
+      .filter((f) => !replaceHosts.has(`apps/vscode-extension/src/webview/${f}`))
+      .filter((f) => /<!DOCTYPE/i.test(readFileSync(`apps/vscode-extension/src/webview/${f}`, "utf8")));
     expect(offenders, `host files hand-rolling <!DOCTYPE> (use renderWebviewShell, or declare posture "replace"): ${offenders.join(", ")}`).toEqual([]);
   });
 
@@ -80,7 +80,7 @@ describe("webview convention (spec 279)", () => {
   });
 
   it("every editor-area Tachyon panel has an explicit reload serializer policy", () => {
-    const extension = readFileSync("src/extension.ts", "utf8");
+    const extension = readFileSync("apps/vscode-extension/src/extension.ts", "utf8");
     const pkg = JSON.parse(readFileSync("package.json", "utf8")) as { contributes?: { views?: Record<string, Array<{ id: string }>> } };
     const contributedViews = new Set(Object.values(pkg.contributes?.views ?? {}).flat().map((view) => view.id));
     const restored: Record<string, string> = {
@@ -243,7 +243,7 @@ function shellEmitterFiles(): string[] {
       else if (entry.endsWith(".ts") && shellCallOptions(readFileSync(file, "utf8")).length > 0) out.add(file);
     }
   };
-  walk("src/webview/shared");
+  walk("apps/vscode-extension/src/webview/shared");
   return nonEmpty([...out], "webview shell-emitter scan");
 }
 
@@ -280,7 +280,7 @@ function sharedMountModules(): string[] {
       else if (entry.endsWith(".ts") && readFileSync(p, "utf8").includes("renderWebviewShell(")) out.push(entry.replace(/\.ts$/, ""));
     }
   };
-  walk("src/webview/shared");
+  walk("apps/vscode-extension/src/webview/shared");
   return nonEmpty(out, "shared webview mount-module scan");
 }
 
@@ -568,7 +568,7 @@ describe("webview design-system conformance contract (spec 485 Phase A)", () => 
   it("the System app consumes its linked shared workspace sheet (SDD 485 D5, SDD 500)", () => {
     // The sheet outlived the app that motivated it: Engine merged into System, and the workspace/log
     // contract it linked came across whole. Still LINKED and not copied — Worktrees links it too.
-    const host = readFileSync("src/webview/SystemPanel.ts", "utf8");
+    const host = readFileSync("apps/vscode-extension/src/webview/SystemPanel.ts", "utf8");
     const consumers = readFileSync("packages/webview-ui/src/webview/system/App.tsx", "utf8")
       + readFileSync("packages/webview-ui/src/webview/shared/control/EngineLogPanel.tsx", "utf8");
     const shared = readFileSync("packages/webview-ui/src/webview/shared/engine-workspace.css", "utf8");

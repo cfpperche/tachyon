@@ -5,7 +5,7 @@ import { actionsFor } from "@tachyon/webview-ui/sidebar/actions";
 import { isAgentRow, type AgentVM } from "@tachyon/shared/sidebar/types.js";
 import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
 import { resolveAgentFocus } from "@tachyon/engine/sidebar/agentFocus.js";
-import { internalShareTargets } from "../../src/activity/activityShare.js";
+import { internalShareTargets } from "../../apps/vscode-extension/src/activity/activityShare.js";
 
 /**
  * SDD 478 M5 (`t-6ebdc8`) — the Agent/Terminal distinction had a SECOND copy living in the view
@@ -89,7 +89,7 @@ describe("t-6ebdc8 — the sidebar reads the managed-entry arm", () => {
       "packages/engine/src/sidebar/agentModel.ts",
       "packages/engine/src/sidebar/agentFocus.ts",
       "packages/engine/src/sidebar/sidebarFleetService.ts",
-      "src/activity/activityShare.ts",
+      "apps/vscode-extension/src/activity/activityShare.ts",
     ];
     // Comments are stripped first: the doc that RECORDS the removal legitimately names the old bit.
     const stripComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");

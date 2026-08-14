@@ -51,8 +51,10 @@ import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { packageClosureViolations } from "./package-closure.mjs";
+import { extensionWorkspace } from "./workspace-layout.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const extensionRoot = extensionWorkspace(root).directory;
 const PROBE = path.join(root, "test", "vsix-smoke", "probe");
 /** A host that has not answered in this long is not going to; the measured run is ~2s. */
 const ACTIVATION_TIMEOUT_MS = 180_000;
@@ -91,11 +93,11 @@ function fail(message) {
 
 function newestVsix() {
   const candidates = fs
-    .readdirSync(root)
+    .readdirSync(extensionRoot)
     .filter((name) => name.endsWith(".vsix"))
-    .map((name) => ({ name, at: fs.statSync(path.join(root, name)).mtimeMs }))
+    .map((name) => ({ name, at: fs.statSync(path.join(extensionRoot, name)).mtimeMs }))
     .sort((a, b) => b.at - a.at);
-  return candidates[0] ? path.join(root, candidates[0].name) : undefined;
+  return candidates[0] ? path.join(extensionRoot, candidates[0].name) : undefined;
 }
 
 const vsix = explicitVsix ? path.resolve(explicitVsix) : newestVsix();

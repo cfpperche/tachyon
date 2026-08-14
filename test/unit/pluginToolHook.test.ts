@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadPlugin } from "../../src/plugins/engine.js";
+import { loadPlugin } from "../../apps/vscode-extension/src/plugins/engine.js";
 
 const SHA = "a".repeat(64);
 

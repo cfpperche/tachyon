@@ -33,7 +33,7 @@ describe("release command", () => {
     expect(calls).toEqual([
       ["npm", ["run", "build:stable"]],
       ["npm", ["run", "package:assert"]],
-      ["vsce", ["package", "--out", "tachyon.vsix"]],
+      ["vsce", ["package", "--no-dependencies", "--out", "tachyon.vsix"]],
       ["npm", ["run", "smoke:vsix"]],
     ]);
   });

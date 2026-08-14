@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { syncToolLauncher, rehydrateTools } from "../../src/plugins/toolProvisionRun.js";
+import { syncToolLauncher, rehydrateTools } from "../../apps/vscode-extension/src/plugins/toolProvisionRun.js";
 import { parseLockfile, serializeLockfile, type Lockfile } from "@tachyon/engine/plugins/lockfile.js";
 
 const sha = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");

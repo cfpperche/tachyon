@@ -10,7 +10,7 @@ import {
 } from "@tachyon/engine/validations/validationCloseNotify.js";
 import type { Validation } from "@tachyon/engine/validations/types.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
-import { legacyBoardTarget } from "../../src/shell/BoardTarget.js";
+import { legacyBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
 import { composeFixedApprovalResponse } from "@tachyon/engine/bridge/approvalRequest.js";
 import type { NoticeDeliveryResult } from "@tachyon/engine/bridge/tools.js";
 

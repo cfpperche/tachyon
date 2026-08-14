@@ -5,10 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import * as esbuild from "esbuild";
-import { loadPlugin, previewInstall, applyInstall, previewRemove, applyRemove } from "../../src/plugins/engine.js";
-import { rehydrateTools } from "../../src/plugins/toolProvisionRun.js";
-import { gatherToolPlan } from "../../src/plugins/toolPlan.js";
-import { resolveHostPlatform } from "../../src/plugins/toolPlatform.js";
+import { loadPlugin, previewInstall, applyInstall, previewRemove, applyRemove } from "../../apps/vscode-extension/src/plugins/engine.js";
+import { rehydrateTools } from "../../apps/vscode-extension/src/plugins/toolProvisionRun.js";
+import { gatherToolPlan } from "../../apps/vscode-extension/src/plugins/toolPlan.js";
+import { resolveHostPlatform } from "../../apps/vscode-extension/src/plugins/toolPlatform.js";
 import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
 
@@ -34,7 +34,7 @@ describe.skipIf(!kp || !HOST_KEY)("applyInstall — tool provisioning (10b, real
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
     base = `https://127.0.0.1:${(server.address() as { port: number }).port}`;
     bundle = path.join(os.tmpdir(), `tach-launcher-10b-${process.pid}.cjs`);
-    esbuild.buildSync({ entryPoints: ["src/toolLauncherEntry.ts"], bundle: true, outfile: bundle, platform: "node", format: "cjs", target: "node20", logLevel: "silent" });
+    esbuild.buildSync({ entryPoints: ["apps/vscode-extension/src/toolLauncherEntry.ts"], bundle: true, outfile: bundle, platform: "node", format: "cjs", target: "node20", logLevel: "silent" });
   });
   afterAll(async () => {
     await new Promise<void>((r) => server.close(() => r()));

@@ -18,7 +18,7 @@ import {
   GROK_WORKSPACE_CONFIG_DOCUMENT,
   applyGrokRuntimeConfigChange,
   inspectGrokRuntimeConfig,
-} from "../../src/runtimeConfig/grokInventory.js";
+} from "../../apps/vscode-extension/src/runtimeConfig/grokInventory.js";
 
 const checks: boolean[] = [];
 

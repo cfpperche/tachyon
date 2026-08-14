@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -13,7 +14,7 @@ import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/typ
  *   npm run build && npx vitest run --config vitest.browser.config.ts test/browser/attentionsTabShots.test.ts
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/t-37f554-attentions-tab");
-const DIST = path.resolve(__dirname, "../../dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 
 const WIDTHS = [
   { id: "220", px: 220 },

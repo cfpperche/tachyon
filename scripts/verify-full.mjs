@@ -88,7 +88,7 @@ const SOURCE_EXTENSIONS = Object.freeze([".ts", ".tsx", ".mts", ".js", ".mjs", "
  *
  * The gate this replaces triggered on `packages/webview-ui/src/webview/` alone, which was the ONE input someone
  * remembered when t-6e929b wrote it. Measured against the suite: it also imports `src/sidebar`
- * (six files), `src/agents`, `src/cockpit` and `scripts/webview-preview` — and, worst of all, it
+ * (six files), `apps/vscode-extension/src/agents`, `src/cockpit` and `scripts/webview-preview` — and, worst of all, it
  * did not trigger on `test/browser/` itself, so the person writing a browser test was the one
  * person guaranteed not to run it. A hand-written list is what this repo has watched drift before
  * (SDD 485 D15: nine entries copied against a launcher that had grown to twelve), so this walks
@@ -758,8 +758,8 @@ export async function main() {
       }
       browserSummary = `${browserCount.total} browser tests (${browserDecision.webviewPaths.length} change${browserDecision.webviewPaths.length === 1 ? "" : "s"} under ${browserDecision.roots.length} browser-suite root${browserDecision.roots.length === 1 ? "" : "s"})`;
     } else {
-      // t-e2c8a2 — the skip names the derived roots, not "src/webview": a reader who edited
-      // `src/sidebar` and saw "no src/webview change" had no way to tell whether the gate had
+      // t-e2c8a2 — the skip names the derived roots, not "apps/vscode-extension/src/webview": a reader who edited
+      // `src/sidebar` and saw "no apps/vscode-extension/src/webview change" had no way to tell whether the gate had
       // considered their diff and declined, or never looked at it. It never looked.
       browserSummary = browserDecision.reason
         ? `0 browser tests (${browserDecision.reason})`

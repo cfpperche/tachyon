@@ -3,10 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as esbuild from "esbuild";
-import { loadPlugin, previewInstall, applyInstall } from "../../src/plugins/engine.js";
-import { buildInstallConsent } from "../../src/plugins/consentViewModel";
+import { loadPlugin, previewInstall, applyInstall } from "../../apps/vscode-extension/src/plugins/engine.js";
+import { buildInstallConsent } from "../../apps/vscode-extension/src/plugins/consentViewModel";
 import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
-import { resolveExternalTool } from "../../src/plugins/externalTool.js";
+import { resolveExternalTool } from "../../apps/vscode-extension/src/plugins/externalTool.js";
 
 let bundle: string;
 let pluginDir: string;
@@ -14,7 +14,7 @@ let ws: string;
 
 beforeAll(() => {
   bundle = path.join(os.tmpdir(), `tach-ext-resolver-${process.pid}.cjs`);
-  esbuild.buildSync({ entryPoints: ["src/externalResolverEntry.ts"], bundle: true, outfile: bundle, platform: "node", format: "cjs", target: "node20", logLevel: "silent" });
+  esbuild.buildSync({ entryPoints: ["apps/vscode-extension/src/externalResolverEntry.ts"], bundle: true, outfile: bundle, platform: "node", format: "cjs", target: "node20", logLevel: "silent" });
 });
 afterAll(() => fs.rmSync(bundle, { force: true }));
 

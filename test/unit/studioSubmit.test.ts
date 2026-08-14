@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mapStudioSubmitResult } from "../../src/webview/studioSubmit.js";
+import { mapStudioSubmitResult } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 
 describe("mapStudioSubmitResult (t-610705, D1d entityId threading)", () => {
   it("carries newEntityId through on a clean (no-error) result", () => {

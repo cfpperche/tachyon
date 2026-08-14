@@ -5,11 +5,11 @@ import path from "node:path";
 import { readFileSync } from "node:fs";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
-import { HumanInboxPanelManager, type HumanInboxDeps } from "../../src/webview/HumanInboxPanel.js";
+import { HumanInboxPanelManager, type HumanInboxDeps } from "../../apps/vscode-extension/src/webview/HumanInboxPanel.js";
 import { readyMessage } from "../../packages/webview-ui/src/webview/human-inbox/messages.js";
 import { routeHumanInboxItem } from "@tachyon/engine/engine-service/engineService.js";
 import { HUMAN_INBOX_KINDS, type HumanInboxKind } from "@tachyon/webview-ui/humanInbox/model";
-import { decodeHumanInboxDeepLink } from "../../src/humanInbox/deepLink.js";
+import { decodeHumanInboxDeepLink } from "../../apps/vscode-extension/src/humanInbox/deepLink.js";
 import { DURABLE_NOTICE_COMMANDS } from "@tachyon/engine/workspace/noticeInbox.js";
 import { buildApprovalRequest, writeApprovalRequest } from "@tachyon/engine/bridge/approvalRequest.js";
 import { computeSavedAgentProposalDigest, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
@@ -17,7 +17,7 @@ import { savedAgentProposalPath } from "@tachyon/engine/agents/savedAgentProposa
 import { computeSavedAgentRemovalProposalDigest } from "@tachyon/engine/agents/savedAgentRemovalProposal.js";
 import { savedAgentRemovalProposalPath } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
 import { workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
-import type { WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
+import type { WorkspaceBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
 import type { Validation } from "@tachyon/engine/validations/types.js";
 import { ProposalStore } from "@tachyon/engine/schedule/ProposalStore.js";
 
@@ -289,7 +289,7 @@ describe("t-d16698 — the receiver is pinned to the kind inventory, not to lite
  * same convention `studioCutoverRouting.test.ts` uses for extension.ts command bodies.
  */
 describe("t-d16698 — the command the doorbell names is the command the shell registers", () => {
-  const source = readFileSync("src/extension.ts", "utf8");
+  const source = readFileSync("apps/vscode-extension/src/extension.ts", "utf8");
   /** Tolerates both registration layouts in this file: one-liner and argument-per-line. */
   const registrationOf = (command: string): number =>
     source.search(new RegExp(`registerCommand\\(\\s*"${command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`));

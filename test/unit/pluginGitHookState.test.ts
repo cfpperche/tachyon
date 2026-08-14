@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { gatherGitHookState, capturePriorHook } from "../../src/plugins/gitHookState.js";
+import { gatherGitHookState, capturePriorHook } from "../../apps/vscode-extension/src/plugins/gitHookState.js";
 
 function gitOk(): boolean {
   try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }

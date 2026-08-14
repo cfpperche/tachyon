@@ -3,7 +3,7 @@ import {
   IDE_BROWSER_HOME_URL_FALLBACK,
   normalizeIdeBrowserHomeUrl,
   normalizeIdeBrowserNavigationUrl,
-} from "../../src/webview/ide-browser-bridge/homeUrl.js";
+} from "../../apps/vscode-extension/src/webview/ide-browser-bridge/homeUrl.js";
 
 describe("normalizeIdeBrowserHomeUrl", () => {
   it("falls back to about:blank when empty", () => {

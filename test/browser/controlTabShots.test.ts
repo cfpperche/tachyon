@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -20,7 +21,7 @@ import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sideb
  *   npm run build && npx vitest run --config vitest.browser.config.ts test/browser/controlTabShots.test.ts
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/t-6e2952-control-tab");
-const DIST = path.resolve(__dirname, "../../dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 /** build artifact, not a source file: the shot page lives beside the CSS it links (see the goto below). */
 const shotPage = path.join(DIST, "control-tab-shot.html");
 

@@ -3,7 +3,7 @@ import {
   AGENT_PANE_READY,
   isAgentPaneToHost,
   pinTitleFromSelection,
-} from "../../src/webview/agent-pane/protocol.js";
+} from "../../apps/vscode-extension/src/webview/agent-pane/protocol.js";
 
 describe("isAgentPaneToHost", () => {
   it("accepts ready, input, resize", () => {

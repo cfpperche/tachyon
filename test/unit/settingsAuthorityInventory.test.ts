@@ -44,12 +44,12 @@ function withoutSelfAndDocs(lines: string[]): string[] {
 
 describe("Tachyon contributes no settings", () => {
   it("package.json has no contributes.configuration at all", () => {
-    const contributes = readJson("package.json").contributes as Record<string, unknown>;
+    const contributes = readJson("apps/vscode-extension/package.json").contributes as Record<string, unknown>;
     expect(Object.keys(contributes)).not.toContain("configuration");
   });
 
   it("no tachyon.* configuration key is contributed under any other contribution point", () => {
-    const text = fs.readFileSync(path.join(repoRoot, "package.json"), "utf8");
+    const text = fs.readFileSync(path.join(repoRoot, "apps/vscode-extension/package.json"), "utf8");
     for (const key of [
       "tachyon.maxAgents",
       "tachyon.agentMemoryMax",
@@ -68,15 +68,15 @@ describe("Tachyon contributes no settings", () => {
   });
 
   it("both localization bundles dropped every config.* string", () => {
-    for (const bundle of ["package.nls.json", "package.nls.pt-br.json"]) {
+    for (const bundle of ["apps/vscode-extension/package.nls.json", "apps/vscode-extension/package.nls.pt-br.json"]) {
       const orphans = Object.keys(readJson(bundle)).filter((key) => key.startsWith("config."));
       expect(orphans, `${bundle} has orphan localization strings`).toEqual([]);
     }
   });
 
   it("the two bundles still declare the same keys", () => {
-    expect(Object.keys(readJson("package.nls.pt-br.json")).sort())
-      .toEqual(Object.keys(readJson("package.nls.json")).sort());
+    expect(Object.keys(readJson("apps/vscode-extension/package.nls.pt-br.json")).sort())
+      .toEqual(Object.keys(readJson("apps/vscode-extension/package.nls.json")).sort());
   });
 });
 
@@ -85,16 +85,16 @@ describe("no reader of the retired surface survives", () => {
     // Named, not pattern-matched. The one-time import must read the retired keys a final time or
     // anyone who had configured them silently drops to a default; allowing that ONE file by name is
     // what stops the exception from quietly becoming a permanent VS Code fallback somewhere else.
-    const readers = withoutSelfAndDocs(grep('getConfiguration("tachyon"', ["src", "test", "scripts"]))
+    const readers = withoutSelfAndDocs(grep('getConfiguration("tachyon"', ["src", "apps", "test", "scripts"]))
       .map((line) => line.split(":")[0]);
-    expect([...new Set(readers)]).toEqual(["src/workspace/legacyVsCodeSettings.ts"]);
+    expect([...new Set(readers)]).toEqual(["apps/vscode-extension/src/workspace/legacyVsCodeSettings.ts"]);
   });
 
   it("the generic settings port is gone from EngineHost and every implementation", () => {
     // `getSetting`/`getSettingInspect` are what let eight readers grow around the abstraction. The
     // one surviving external setting has its own named port instead — see EngineHost.gitExtensionPath.
-    expect(withoutSelfAndDocs(grep("getSettingInspect", ["src", "test", "scripts"]))).toEqual([]);
-    expect(withoutSelfAndDocs(grep("getSetting<", ["src", "test", "scripts"]))).toEqual([]);
+    expect(withoutSelfAndDocs(grep("getSettingInspect", ["src", "apps", "test", "scripts"]))).toEqual([]);
+    expect(withoutSelfAndDocs(grep("getSetting<", ["src", "apps", "test", "scripts"]))).toEqual([]);
   });
 
   it("the shell hands the engine exactly one setting, and it is somebody else's", async () => {
@@ -122,14 +122,14 @@ describe("no reader of the retired surface survives", () => {
       "tachyon.openSettings",
     ];
     const offenders = retired.flatMap((id) => [
-      ...withoutSelfAndDocs(grep(`"${id}`, ["src", "test", "scripts"])),
-      ...withoutSelfAndDocs(grep(`'${id}`, ["src", "test", "scripts"])),
+      ...withoutSelfAndDocs(grep(`"${id}`, ["src", "apps", "test", "scripts"])),
+      ...withoutSelfAndDocs(grep(`'${id}`, ["src", "apps", "test", "scripts"])),
     ]);
     expect(offenders).toEqual([]);
   });
 
   it("no `maxAgents` duplication is left between the shell and tachyon.yml", () => {
-    expect(withoutSelfAndDocs(grep("getMaxAgents", ["src", "test", "scripts"]))).toEqual([]);
-    expect(withoutSelfAndDocs(grep("getAgentMemoryMax", ["src", "test", "scripts"]))).toEqual([]);
+    expect(withoutSelfAndDocs(grep("getMaxAgents", ["src", "apps", "test", "scripts"]))).toEqual([]);
+    expect(withoutSelfAndDocs(grep("getAgentMemoryMax", ["src", "apps", "test", "scripts"]))).toEqual([]);
   });
 });

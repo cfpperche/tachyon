@@ -26,13 +26,13 @@ const DS_CSS = join(ROOT, "packages/webview-ui/src/webview/shared/design-system.
 // that mounts <App> with a fixture) OR a static body fragment (`body`: an .html file of representative markup)
 // for the vanilla-JS panels whose DOM is built host-side via postMessage and can't be mounted standalone.
 const PANELS = {
-  plugins: { harness: "harness/plugins.tsx", styleFrom: "src/webview/PluginsPanel.ts" },
+  plugins: { harness: "harness/plugins.tsx", styleFrom: "apps/vscode-extension/src/webview/PluginsPanel.ts" },
   "plugins-consent": { harness: "harness/plugins-consent.tsx", styleFile: "packages/webview-ui/src/webview/plugins/plugins.css", width: 880 },
-  handoff: { harness: "harness/handoff.tsx", styleFrom: "src/webview/HandoffPanel.ts" },
-  inspector: { body: "harness/inspector.body.html", styleFrom: "src/webview/ServerInspector.ts" },
-  studio: { body: "harness/studio.body.html", styleFrom: "src/webview/AgentStudioPanel.ts" },
-  activity: { harness: "harness/activity.tsx", styleFrom: "src/webview/ActivityPanel.ts" },
-  sidebar: { harness: "harness/sidebar.tsx", styleFrom: "src/webview/SidebarPrototype.ts", width: 340 },
+  handoff: { harness: "harness/handoff.tsx", styleFrom: "apps/vscode-extension/src/webview/HandoffPanel.ts" },
+  inspector: { body: "harness/inspector.body.html", styleFrom: "apps/vscode-extension/src/webview/ServerInspector.ts" },
+  studio: { body: "harness/studio.body.html", styleFrom: "apps/vscode-extension/src/webview/AgentStudioPanel.ts" },
+  activity: { harness: "harness/activity.tsx", styleFrom: "apps/vscode-extension/src/webview/ActivityPanel.ts" },
+  sidebar: { harness: "harness/sidebar.tsx", styleFrom: "apps/vscode-extension/src/webview/SidebarPrototype.ts", width: 340 },
 };
 
 /** Pull the FIRST `<style> … </style>` block's inner CSS out of a host .ts source (the panel's deltas). */

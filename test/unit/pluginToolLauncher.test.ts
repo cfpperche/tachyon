@@ -5,7 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import * as esbuild from "esbuild";
-import { resolveToolForLaunch, launchTool, type ResolveOk } from "../../src/plugins/toolLauncher.js";
+import { resolveToolForLaunch, launchTool, type ResolveOk } from "../../apps/vscode-extension/src/plugins/toolLauncher.js";
 
 const sha = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
 const ECHO = ["/usr/bin/echo", "/bin/echo"].find((p) => fs.existsSync(p));
@@ -170,7 +170,7 @@ describe.skipIf(!ECHO)("launcher CLI end-to-end (bundled _tachyon-tool.js)", () 
   let ws: string;
   beforeAll(() => {
     bundle = path.join(os.tmpdir(), `tach-launcher-bundle-${process.pid}.cjs`);
-    esbuild.buildSync({ entryPoints: ["src/toolLauncherEntry.ts"], bundle: true, outfile: bundle, platform: "node", format: "cjs", target: "node20", logLevel: "silent" });
+    esbuild.buildSync({ entryPoints: ["apps/vscode-extension/src/toolLauncherEntry.ts"], bundle: true, outfile: bundle, platform: "node", format: "cjs", target: "node20", logLevel: "silent" });
   });
   afterAll(() => fs.rmSync(bundle, { force: true }));
   beforeEach(() => (ws = makeWorkspace()));

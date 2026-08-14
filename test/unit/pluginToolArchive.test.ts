@@ -5,7 +5,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import crypto from "node:crypto";
 import * as tarStream from "tar-stream";
-import { extractArchiveMember } from "../../src/plugins/toolProvisioning.js";
+import { extractArchiveMember } from "../../apps/vscode-extension/src/plugins/toolProvisioning.js";
 
 const sha = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
 

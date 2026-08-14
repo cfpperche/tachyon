@@ -10,7 +10,7 @@ import {
   loadAndRenderProjectGuidance,
 } from "@tachyon/engine/config/projectGuidance.js";
 import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
-import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
+import { buildStarterYaml, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
 import { PRIMER_OPEN, renderPrimer, type PrimerInput } from "@tachyon/engine/bridge/primer.js";
 import { bridgeGuidanceTail } from "@tachyon/engine/agents/bridgeGuidance.js";
 import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";

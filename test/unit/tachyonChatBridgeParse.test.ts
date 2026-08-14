@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   formatAgentListMarkdown,
   parseTachyonChat,
-} from "../../src/webview/chat-bridge/parse.js";
-import { normalizeAgentRows, preferredRunnableAgents } from "../../src/webview/chat-bridge/ops.js";
+} from "../../apps/vscode-extension/src/webview/chat-bridge/parse.js";
+import { normalizeAgentRows, preferredRunnableAgents } from "../../apps/vscode-extension/src/webview/chat-bridge/ops.js";
 
 describe("parseTachyonChat", () => {
   it("parses /list and bare list", () => {

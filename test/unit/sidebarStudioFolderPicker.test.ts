@@ -13,7 +13,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import * as vscode from "vscode";
 import { __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
-import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
+import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
 import { studioFolderItems } from "../../packages/webview-ui/src/webview/sidebar/studioFolders.js";
 import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 

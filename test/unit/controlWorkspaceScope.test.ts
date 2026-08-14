@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
  * way, then exercised for real by the router/board suites.
  */
 const WEBVIEW = path.resolve(__dirname, "..", "..", "packages", "webview-ui", "src", "webview");
-const HOST_WEBVIEW = path.resolve(__dirname, "..", "..", "src", "webview");
+const HOST_WEBVIEW = path.resolve(__dirname, "..", "..", "apps", "vscode-extension", "src", "webview");
 
 function webviewSources(dir = WEBVIEW): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

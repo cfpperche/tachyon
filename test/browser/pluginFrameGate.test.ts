@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
-import { parseShellCsp } from "../../src/webview/shared/shell";
+import { parseShellCsp } from "../../apps/vscode-extension/src/webview/shared/shell";
 
 // spec 349 T1 — THE CONTRACT GATE for the opaque-origin plugin iframe (plan.md D4, tasks.md T1). This is the
 // hard gate the rest of the plugin-ui-surfaces spec depends on: no downstream task (T2+) starts until every

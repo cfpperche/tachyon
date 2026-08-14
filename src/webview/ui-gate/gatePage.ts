@@ -1,4 +1,4 @@
-import { renderWebviewShell, SHELL_BASE_STYLESHEETS } from "../shared/shell";
+import { renderWebviewShell, SHELL_BASE_STYLESHEETS } from "../../../apps/vscode-extension/src/webview/shared/shell";
 
 // spec 342 — the ui-gate page HTML, factored out of the browser-test HTTP server so a PLAIN unit test
 // (test/unit/cssOrderSnapshot.test.ts) can assert the stylesheet order without launching a browser. The

@@ -6,10 +6,10 @@ import { Uri } from "vscode";
 import { __createdPanels, __getClipboardText, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
-import { BOARD_VIEW_TYPE, BoardPanelManager, boardRefreshKind, type BoardPanelDeps } from "../../src/webview/BoardPanel.js";
-import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
-import type { SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
-import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
+import { BOARD_VIEW_TYPE, BoardPanelManager, boardRefreshKind, type BoardPanelDeps } from "../../apps/vscode-extension/src/webview/BoardPanel.js";
+import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
+import type { SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
+import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
 import { readyMessage, requestSnapshotAction } from "../../packages/webview-ui/src/webview/board/messages.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 

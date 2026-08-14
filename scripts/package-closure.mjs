@@ -23,7 +23,7 @@
  * resolve inside the package. Third-party ones are the libraries' own business.
  *
  * Measured against the artifacts this task exists because of:
- *   tachyon-0.57.0.vsix -> ws <= src/webview/ide-browser-bridge/cdpSession.ts   (the shipped defect)
+ *   tachyon-0.57.0.vsix -> ws <= apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.ts   (the shipped defect)
  *   tachyon-0.57.1.vsix -> no first-party violation
  * and zero first-party false positives in either.
  *
@@ -72,6 +72,7 @@ export function packagedNodeBundles(extensionRoot) {
   return walk(path.join(extensionRoot, "dist"))
     .filter((rel) => /\.(?:c|m)?js$/.test(rel))
     .filter((rel) => !rel.startsWith("webview/") && !rel.startsWith("webview-preview/"))
+    .filter((rel) => !rel.startsWith("node_modules/"))
     .map((rel) => `dist/${rel}`)
     .sort();
 }
@@ -114,7 +115,7 @@ export function bundleImports(bundleFile) {
 
 /** An import is ours when the module that wrote it is not a third-party package. */
 function isFirstParty(origin) {
-  return !origin.startsWith("node_modules/");
+  return !origin.replace(/^(?:\.\.\/)+/, "").startsWith("node_modules/");
 }
 
 /**
@@ -135,6 +136,7 @@ export function importClosureViolations(extensionRoot) {
     }
     for (const [pkg, origins] of wanted) {
       if (fs.existsSync(path.join(extensionRoot, "node_modules", pkg, "package.json"))) continue;
+      if (fs.existsSync(path.join(extensionRoot, "dist", "node_modules", pkg, "package.json"))) continue;
       problems.push(
         `${rel} loads '${pkg}' from ${[...origins].join(", ")}, but the package contains no ` +
         `node_modules/${pkg} — the extension fails at first use with "Cannot find package '${pkg}'".`,

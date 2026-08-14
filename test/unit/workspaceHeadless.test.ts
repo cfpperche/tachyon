@@ -24,7 +24,7 @@ import { __createdTerminals, __resetVscodeMock } from "../mocks/vscode.js";
  * they did before; every other adapter stays the real, non-executing one.
  */
 const HERMETIC_PREFLIGHT = hermeticLaunchPreflight();
-import { Terminals } from "../../src/presentation/Terminals.js";
+import { Terminals } from "../../apps/vscode-extension/src/presentation/Terminals.js";
 import type { TerminalPresentationOptions } from "@tachyon/engine/workspace/TerminalPresentation.js";
 import { harnessHome, harnessRoot } from "@tachyon/engine/harness/HarnessManager.js";
 import { parse as parseYaml, stringify } from "yaml";
