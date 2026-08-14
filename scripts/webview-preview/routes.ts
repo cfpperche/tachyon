@@ -167,17 +167,12 @@ export const ROUTES: Record<string, Route> = {
       ? [pinDocumentModeMessage("edit"), ...pinStudioMakeMessage(vm as never)]
       : pinPreviewMessage(vm as never),
   },
-  // t-610705 (SDD 410 Phase A/B pilot, found + closed in the Phase E audit, 2026-07-22) — the
-  // standalone "approval" route previewed the retired Approvals panel; Approvals is a cockpit-only
-  // section now — use ?view=cockpit&fixture=approvals (same App.tsx, same fixture VM, via the
-  // cockpit route's section injection above).
-  // t-610705 (SDD 410 Phase B #6) — the standalone "board" route previewed the retired
-  // Board panel; the Board is a cockpit-only section now — use ?view=cockpit&fixture=mission
-  // (same App.tsx, same fixture VM via the cockpit route's board injection below).
-  // t-610705 (SDD 410 Phase D, D2) — the standalone "task-studio" route previewed the retired
-  // TaskStudioPanel.ts webview; Task Studio is a cockpit-only studio route now — use
-  // ?view=cockpit&fixture=studio-task-edit (same App.tsx, same fixture VMs, via the cockpit route's
-  // byStudio fixture injection above).
+  // t-610705 retired the standalone Approvals panel. SDD 485 later removed Control too; approvals now
+  // render in the standalone Human Inbox (`?view=human-inbox`), whose fixtures exercise both queue and item.
+  // t-610705 retired the standalone Board panel. SDD 485 restored it as its own app; use
+  // `?view=board&fixture=default` (or `multi-workspace`) to render the shipped Board bundle.
+  // t-610705 retired TaskStudioPanel.ts. SDD 485 restored editing inside the standalone task document;
+  // use `?view=task-detail&fixture=edit` to render TaskStudio's real App through the shipped task-detail bundle.
   // t-610705 (SDD 410 Phase C.1) — the standalone "task-detail" route previewed the retired Task
   // Detail panel; Task Detail is a cockpit-only subroute now — use
   // ?view=cockpit&fixture=task-detail (same App.tsx, same fixture VM, via the cockpit route's
@@ -483,6 +478,12 @@ export const PREVIEW_ROUTE_OPTOUTS: Record<string, string> = {
   "plugin-host": "Spec 349 T10 relay needs a runtime-installed plugin payload and nonce-stamped srcdoc; covered by focused relay tests until T13 fixtures land.",
   // t-953471 / t-610355 — live xterm + node-pty tmux attach; no static fixture VM without a PTY host.
   "agent-pane": "Layer-2 agent pane needs a live node-pty attach to a tmux session; not renderable as a static preview fixture. Covered by unit (agentPane*) + Dev Host dogfood (t-610355).",
+  "approval": "The standalone Approvals host and bundle were retired; approvals now render in Human Inbox. Covered by the human-inbox queue/item preview fixtures and approval App/view-model unit tests.",
+  "pin-studio": "Pin Studio has no standalone host or bundle; the shipped Pin Detail document mounts it in edit mode. Covered by ?view=pin-preview&fixture=edit, which sends the real document-mode and studio load envelopes.",
+  "rich-doc": "Rich Doc is a shared editor component and stylesheet, not a webview entry point. Its live consumers are covered by ?view=pin-preview&fixture=edit and ?view=task-detail&fixture=edit plus focused rich-doc unit tests.",
+  "task-prototype": "Task Prototype is a shared read-only component/type with no host or bundle. It renders inside Task Detail and Board, covered by their preview fixtures and task-prototype interaction unit tests.",
+  "task-studio": "Task Studio has no standalone host or bundle; the shipped Task Detail document mounts it in edit mode. Covered by ?view=task-detail&fixture=edit, which sends the real document-mode and studio load envelopes.",
+  "validations": "The standalone Validations identity was folded into Human Inbox and has no host or bundle. Covered by human-inbox validation queue/item fixtures and validations view-model/action unit tests.",
 };
 
 /** spec 281 — human label + alias match keys per view, for catalog-assisted RESOLUTION (the visual-qa skill
@@ -492,20 +493,17 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   sidebar: { title: "Tachyon Sidebar", aliases: ["sidebar", "fleet", "control tab", "control launcher"] },
   activity: { title: "Activity", aliases: ["activity", "agent activity", "chat", "transcript", "studio chat"] },
   probes: { title: "Probes", aliases: ["probes", "probe inspector"] },
-  "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly"] },
+  "pin-preview": { title: "Pin Preview", aliases: ["pin preview", "pin readonly", "pin studio", "pin editor", "sketch"] },
   handoff: { title: "Project Handoff", aliases: ["handoff", "project handoff"] },
-  approval: { title: "Human Approvals", aliases: ["approvals", "human approvals", "approval view"] },
-  "pin-studio": { title: "Pin Studio", aliases: ["pin studio", "pin editor", "sketch"] },
-  "task-studio": { title: "Task Studio", aliases: ["task studio", "task editor"] },
   "pipeline-studio": { title: "Pipeline Studio (shell fake)", aliases: ["pipeline studio", "studio shell fake", "spec 350"] },
   "agent-studio-fixture": { title: "Agent fixture (shell fake)", aliases: ["agent fixture", "agent shell fixture", "spec 350"] },
   "section-app-fixture": { title: "Section app (mechanism proof)", aliases: ["section app", "section panel", "standalone app", "spec 485"] },
   "board": { title: "Board", aliases: ["board", "board view", "task board", "kanban"] },
-  "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab"] },
+  "task-detail": { title: "Task Detail", aliases: ["task detail", "task", "task document", "detail tab", "task studio", "task editor"] },
   inspector: { title: "tmux", aliases: ["tmux", "server inspector", "tmux server inspector", "sessions"] },
   plugins: { title: "Plugins", aliases: ["plugins", "plugin manager", "install plugin", "marketplace"] },
   "runtime-ops": { title: "Runtime Ops", aliases: ["runtime ops", "runtime", "quota", "provider capacity", "rate limit"] },
-  "human-inbox": { title: "Human Inbox", aliases: ["inbox", "human inbox", "waiting on you", "approvals queue"] },
+  "human-inbox": { title: "Human Inbox", aliases: ["inbox", "human inbox", "waiting on you", "approvals queue", "approvals", "human approvals", "validations"] },
   // SDD 500 — the merged surface answers to both retired names, so a named lookup for "overview" or
   // "engine" resolves HERE instead of to nothing (the same courtesy `sidebar` does for "fleet").
   system: { title: "System", aliases: ["system", "overview", "engine", "bridge", "control plane", "health"] },
