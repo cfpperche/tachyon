@@ -17,10 +17,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { stringify } from "yaml";
-import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoader.js";
-import { CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import { HarnessManager } from "../../src/harness/HarnessManager.js";
+import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR } from "@tachyon/engine/config/agentProfileProjection.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
+import { HarnessManager } from "@tachyon/engine/harness/HarnessManager.js";
 import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";

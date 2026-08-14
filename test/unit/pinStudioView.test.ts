@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { attachmentFromVM, attachmentsForSave, attachmentsUsedByDoc, toEditorDoc, toStoredDoc, upsertAttachment } from "../../src/webview/pin-studio/document.js";
 import { dataURLWithMediaType } from "../../src/webview/pin-studio/data-url.js";
 import type { PinStudioAttachmentVM } from "../../src/webview/pin-studio/types.js";
-import type { TiptapJSON } from "../../src/pins/types.js";
+import type { TiptapJSON } from "@tachyon/engine/pins/types.js";
 
 const attachment: PinStudioAttachmentVM = {
   id: "att-abc123",

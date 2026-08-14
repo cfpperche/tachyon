@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { seedPrivateHomeGitIdentity } from "../../src/harness/HarnessManager.js";
+import { seedPrivateHomeGitIdentity } from "@tachyon/engine/harness/HarnessManager.js";
 
 /**
  * t-076a28 — SDD 456 co-binds `HOME` to the private `GROK_HOME` for canonical Grok so the runtime

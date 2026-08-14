@@ -8,7 +8,7 @@ import {
   statusForReason,
   type ProbeResult,
   type TerminationReason,
-} from "../../src/probe/taxonomy.js";
+} from "@tachyon/engine/probe/taxonomy.js";
 
 /** A minimal valid result for a given reason — every other field plausible-but-fixed. */
 function resultFor(reason: TerminationReason): ProbeResult {

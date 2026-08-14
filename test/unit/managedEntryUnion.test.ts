@@ -6,7 +6,7 @@ import {
   type AgentEntry,
   type ManagedEntryDef,
   type TerminalEntry,
-} from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/config/loadConfig.js";
 
 /**
  * SDD 478 M2 — `ManagedEntryDef` is a discriminated union, so an agent-only capability on a terminal

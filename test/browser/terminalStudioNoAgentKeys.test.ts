@@ -4,7 +4,7 @@ import { resolveChromeExecutable } from "./support/chrome";
 import { startGateServer, type GateServer } from "./support/gateServer";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 import { openPreview } from "./support/preview";
-import { TERMINAL_STRIPPED_AGENT_KEYS } from "../../src/config/YamlConfigEditor";
+import { TERMINAL_STRIPPED_AGENT_KEYS } from "@tachyon/engine/config/YamlConfigEditor.js";
 
 /**
  * t-b54ead — what the Terminal Studio OFFERS, read off the shipped bundle's DOM.

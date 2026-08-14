@@ -4,10 +4,10 @@ import { describe, expect, it, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Workspace } from "../../src/workspace/Workspace.js";
-import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "../../src/workspace/EngineHost.js";
-import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
-import type { NotifyLevel } from "../../src/bridge/tools.js";
+import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import type { EngineHost, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
+import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 
 /**

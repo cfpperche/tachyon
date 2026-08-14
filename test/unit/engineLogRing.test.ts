@@ -8,7 +8,7 @@ import {
   formatEventsAsLogLines,
   getEngineLogRing,
   installEngineLogRing,
-} from "../../src/engine-service/engineLogRing.js";
+} from "@tachyon/engine/engine-service/engineLogRing.js";
 import { buildControlInspectorModel } from "../../src/control-inspector/model.js";
 
 describe("t-cd3626 engine log ring V1–V2.5", () => {

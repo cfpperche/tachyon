@@ -8,9 +8,9 @@ import {
   mergeRuntimeOpsSnapshotsV1,
   parseRuntimeOpsSnapshot,
   parseRuntimeOpsSnapshotV1,
-} from "../../src/runtime-api/runtimeOpsProjection.js";
+} from "@tachyon/engine/runtime-api/runtimeOpsProjection.js";
 import type { RuntimeOpsSnapshotV1, RuntimeOpsSnapshotV2 } from "../../src/runtimeOps/types.js";
-import { isWorkspaceQueryV1, workspaceRuntimeOpsViewSuccessV1 } from "../../src/engine-service/protocol.js";
+import { isWorkspaceQueryV1, workspaceRuntimeOpsViewSuccessV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { runtimeOpsFleetView, workspaceRuntimeOpsTarget } from "../../src/shell/RuntimeOpsTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
@@ -212,8 +212,8 @@ function snapshotV2(
 
 describe("t-019dac/t-e3bae0 Runtime Ops summary host mem + agent resources", () => {
   it("accepts hostMem fields and per-agent resources on V2 snapshots", async () => {
-    const { parseRuntimeOpsSnapshot } = await import("../../src/runtime-api/runtimeOpsProjection.js");
-    const { buildRuntimeOpsSnapshot } = await import("../../src/runtimeOps/model.js");
+    const { parseRuntimeOpsSnapshot } = await import("@tachyon/engine/runtime-api/runtimeOpsProjection.js");
+    const { buildRuntimeOpsSnapshot } = await import("@tachyon/engine/runtimeOps/model.js");
     const snap = buildRuntimeOpsSnapshot({
       generatedAt: "2026-07-18T15:00:00.000Z",
       detectedRuntimes: ["codex"],

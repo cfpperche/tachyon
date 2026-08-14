@@ -8,8 +8,8 @@ import {
   formatNoticePointer,
   prepareAgentSummary,
   truncateByCodePoint,
-} from "../../src/bridge/notifyAgent.js";
-import { truncateFocusText } from "../../src/sidebar/agentFocus.js";
+} from "@tachyon/engine/bridge/notifyAgent.js";
+import { truncateFocusText } from "@tachyon/engine/sidebar/agentFocus.js";
 
 /**
  * t-b15872 — a bounded envelope is right; silently eating the tail of a delivery is not.

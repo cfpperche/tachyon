@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { workspaceCommandSuccessV1, workspaceBoardViewSuccessV1 } from "../../src/engine-service/protocol.js";
+import { workspaceCommandSuccessV1, workspaceBoardViewSuccessV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { workspaceBoardTarget } from "../../src/shell/BoardTarget.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createPiNormalizer, normalizePi } from "../../src/activity/piNormalizer.js";
+import { createPiNormalizer, normalizePi } from "@tachyon/engine/activity/piNormalizer.js";
 
 const line = (value: unknown) => JSON.stringify(value);
 const header = line({ type: "session", version: 3, id: "sess-pi", timestamp: "2026-07-18T00:00:00.000Z", cwd: "/repo" });

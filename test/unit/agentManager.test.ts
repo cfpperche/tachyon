@@ -1,31 +1,31 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import crypto from "node:crypto";
-import { PARENT_CWD_REFUSAL } from "../../src/bridge/spawnContract.js";
+import { PARENT_CWD_REFUSAL } from "@tachyon/engine/bridge/spawnContract.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart, type AgentManagerOptions, type SpawnReveal } from "../../src/agents/AgentManager.js";
-import { TmuxService, workspaceHash, sessionName, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { AgentManager, MaxAgentsError, ResumeUnavailableError, ForkUnavailableError, WatchController, newlyDeclaredAutostart, type AgentManagerOptions, type SpawnReveal } from "@tachyon/engine/agents/AgentManager.js";
+import { TmuxService, workspaceHash, sessionName, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { RuntimeLaunchPreflightRegistry } from "@tachyon/shared/runtime/launchPreflight.js";
-import { GrokLaunchPreflight } from "../../src/runtime/adapters/grokLaunchPreflight.js";
+import { GrokLaunchPreflight } from "@tachyon/engine/runtime/adapters/grokLaunchPreflight.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
-import { asAgent, parseConfig, type AgentPermissionProjectionEntry, type TachyonConfig } from "../../src/config/loadConfig.js";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { agentLogId } from "../../src/activity/logStore.js";
-import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "../../src/activity/sessionOwners.js";
-import { FORGET_AGENT_FOOTPRINTS, forgetAgent } from "../../src/agents/forgetAgent.js";
+import { asAgent, parseConfig, type AgentPermissionProjectionEntry, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { agentLogId } from "@tachyon/engine/activity/logStore.js";
+import { readSessionOwners, sessionOwnersFile, spawnSettingsPath } from "@tachyon/engine/activity/sessionOwners.js";
+import { FORGET_AGENT_FOOTPRINTS, forgetAgent } from "@tachyon/engine/agents/forgetAgent.js";
 import {
   POST_CUT_SESSION_ATTESTATION,
   POST_CUT_SESSION_ATTESTATION_ENV,
   withPostCutAttestation,
-} from "../../src/agents/legacyFleetGate.js";
-import { HarnessManager, bridgeGrokHome, bridgeHermesHome, bridgeMcpPath, bridgeOpencodeMcpPath, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
+} from "@tachyon/engine/agents/legacyFleetGate.js";
+import { HarnessManager, bridgeGrokHome, bridgeHermesHome, bridgeMcpPath, bridgeOpencodeMcpPath, harnessHome, opencodeHarnessDirs } from "@tachyon/engine/harness/HarnessManager.js";
 import { adapterFor, harnessable } from "@tachyon/shared/resume/adapters.js";
-import { CallerIdentityRegistry } from "../../src/bridge/callerIdentity.js";
-import { briefFilePath } from "../../src/agents/briefFile.js";
-import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "../../src/bridge/spawnContract.js";
-import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "../../src/agents/paneTranscript.js";
-import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentProfileResolver.js";
+import { CallerIdentityRegistry } from "@tachyon/engine/bridge/callerIdentity.js";
+import { briefFilePath } from "@tachyon/engine/agents/briefFile.js";
+import { identityLine, notifyParentGuidance, noInteractivePromptGuidance } from "@tachyon/engine/bridge/spawnContract.js";
+import { paneTranscriptPath, paneTranscriptExists, ensurePaneTranscriptFile } from "@tachyon/engine/agents/paneTranscript.js";
+import type { ResolvedAgentCapabilityProjection } from "@tachyon/engine/config/agentProfileResolver.js";
 import type { ResolvedAgentNativeConfigProjection } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 import { agentGroupParent, agentIsNested } from "../../src/webview/sidebar/grouping.js";
 import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
@@ -1358,7 +1358,7 @@ describe("AgentManager", () => {
     workspaceRoot = WS,
   ): Promise<string> => {
     const calls: string[][] = [];
-    const recording = new (await import("../../src/tmux/TmuxService.js")).TmuxService(async (args) => {
+    const recording = new (await import("@tachyon/engine/tmux/TmuxService.js")).TmuxService(async (args) => {
       calls.push(args);
       if (args[2] === "has-session" || args[2] === "list-panes") throw new Error("none");
       return { stdout: "", stderr: "" };

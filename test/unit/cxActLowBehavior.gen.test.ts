@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ActivityLog } from "../../src/activity/logStore.js";
-import { ActivityLogWriter } from "../../src/activity/logWriter.js";
-import { resolveOpencodeStorageSession } from "../../src/workspace/opencodeStorage.js";
+import { ActivityLog } from "@tachyon/engine/activity/logStore.js";
+import { ActivityLogWriter } from "@tachyon/engine/activity/logWriter.js";
+import { resolveOpencodeStorageSession } from "@tachyon/engine/workspace/opencodeStorage.js";
 
 const roots: string[] = [];
 function freshRoot(): string { const d = fs.mkdtempSync(path.join(os.tmpdir(), "cx-act-low-")); roots.push(d); return d; }

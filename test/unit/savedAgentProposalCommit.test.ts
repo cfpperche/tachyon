@@ -13,10 +13,10 @@ import {
   readSavedAgentProposalWitness,
   recordSavedAgentProposal,
   savedAgentProposalPath,
-} from "../../src/agents/savedAgentProposalStore.js";
+} from "@tachyon/engine/agents/savedAgentProposalStore.js";
 import {
-  savedAgentCreateMutation, SAVED_AGENT_PROPOSAL_TTL_MS } from "../../src/agents/savedAgentProposal.js";
-import { extensionCommandSchema } from "../../src/runtime-api/extensionOperations.js";
+  savedAgentCreateMutation, SAVED_AGENT_PROPOSAL_TTL_MS } from "@tachyon/engine/agents/savedAgentProposal.js";
+import { extensionCommandSchema } from "@tachyon/engine/runtime-api/extensionOperations.js";
 
 /**
  * SDD 482 phase 4 slice C (`t-5e1113`) — the commit path, which is the first thing in this whole
@@ -306,7 +306,7 @@ describe("approving a Saved Agent proposal (SDD 482 phase 4C)", () => {
     const file = savedAgentProposalPath(ws, proposal.id);
     const record = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
     const spec = { ...(record.spec as Record<string, unknown>), grants: { proposeSavedAgent: true } };
-    const { computeSavedAgentProposalDigest } = await import("../../src/agents/savedAgentProposal.js");
+    const { computeSavedAgentProposalDigest } = await import("@tachyon/engine/agents/savedAgentProposal.js");
     const digest = computeSavedAgentProposalDigest({ proposer: record.proposer as string, spec: spec as never, base: record.base as never });
     fs.writeFileSync(file, JSON.stringify({ ...record, spec, digest }), "utf8");
 
@@ -522,7 +522,7 @@ describe("denying a Saved Agent proposal (SDD 482 phase 4C)", () => {
 describe("approval is unreachable from the Bridge (SDD 482 phase 4C)", () => {
   it("no Bridge tool references the commit path", () => {
     // t-3b47ad — scan the tools surface (orchestrator + capability modules), not only tools.ts.
-    const root = path.resolve(__dirname, "../../src/bridge");
+    const root = path.resolve(__dirname, "../../packages/engine/src/bridge");
     const tools = [
       fs.readFileSync(path.join(root, "tools.ts"), "utf8"),
       ...fs.readdirSync(path.join(root, "tools")).filter((f) => f.endsWith(".ts")).map((f) =>
@@ -576,7 +576,7 @@ describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () =>
    * `.strict()` — the shape that broke 0.56.110 D1.
    */
   it("crosses the seam by a NEW action rather than a widened payload", () => {
-    const operations = fs.readFileSync(path.resolve(__dirname, "../../src/runtime-api/extensionOperations.ts"), "utf8");
+    const operations = fs.readFileSync(path.resolve(__dirname, "../../packages/engine/src/runtime-api/extensionOperations.ts"), "utf8");
     expect(operations).toContain('"agent-profile.saved-agent-create-v2"');
     // The pre-existing create payload is untouched.
     expect(operations).toContain('z.object({ action: z.literal("agent-profile.studio-commit"), mutation: agentProfileStudioMutationSchemaV1 }).strict()');
@@ -620,7 +620,7 @@ describe("the commit port is wired to ONE transaction (SDD 482 phase 4C)", () =>
    * is precisely the race the single transaction removes.
    */
   it("reads the owner's subagents inside the transaction, not in the caller", () => {
-    const workspaceSource = fs.readFileSync(path.resolve(__dirname, "../../src/workspace/Workspace.ts"), "utf8");
+    const workspaceSource = fs.readFileSync(path.resolve(__dirname, "../../packages/engine/src/workspace/Workspace.ts"), "utf8");
     expect(workspaceSource).toMatch(/new Set\(\[\.\.\.\(ownerSnapshot\.profile\.ownership\?\.subagents \?\? \[\]\), input\.agentName\]\)/);
     expect(workspaceSource).toContain("companion: { agentName: input.owner, ownership: { subagents } }");
   });

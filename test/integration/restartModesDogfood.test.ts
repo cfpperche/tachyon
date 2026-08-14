@@ -5,16 +5,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { isWorkspaceCommandV1 } from "../../src/engine-service/protocol.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { isWorkspaceCommandV1 } from "@tachyon/engine/engine-service/protocol.js";
 import {
   TmuxService,
   defaultExecutor,
   sessionName,
   workspaceHash,
-} from "../../src/tmux/TmuxService.js";
+} from "@tachyon/engine/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 
 const EVIDENCE_DIR = path.resolve(".tachyon/evidence/restart-modes-dogfood");

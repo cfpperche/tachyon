@@ -75,7 +75,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
   });
 
   it("binds the Bridge to the stable derived port (spec 189)", async () => {
-    // Same derivation as src/bridge/Bridge.ts.
+    // Same derivation as packages/engine/src/bridge/Bridge.ts.
     const derived = 41000 + (parseInt(wsHash.slice(0, 4), 16) % 2000);
     await vscode.commands.executeCommand("tachyon.copyBridgeUrl");
     const url = await vscode.env.clipboard.readText();

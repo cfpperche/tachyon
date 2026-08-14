@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 function tmpWs(): string {
@@ -100,7 +100,7 @@ describe("SessionLedger — kind is read back, never re-derived (SDD 478 M4)", (
     // renamed-but-still-called helper would pass a behavioral test on today's binary list and fail
     // the moment the list changes — which is exactly the failure mode M4 removes.
     const source = fs.readFileSync(
-      path.join(__dirname, "..", "..", "src", "resume", "SessionLedger.ts"),
+      path.join(__dirname, "..", "..", "packages", "engine", "src", "resume", "SessionLedger.ts"),
       "utf8",
     );
     const imports = source.split("\n").filter((line) => line.startsWith("import "));

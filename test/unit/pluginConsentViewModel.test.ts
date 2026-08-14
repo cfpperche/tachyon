@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck } from "../../src/plugins/consentViewModel.js";
 import type { InstallPreview, InstallProvenance, UpdatePreview, RemovePreview, InstallStep, McpPlanItem } from "../../src/plugins/engine.js";
-import type { McpServer } from "../../src/plugins/mcp.js";
+import type { McpServer } from "@tachyon/engine/plugins/mcp.js";
 
 const PROV: InstallProvenance = {
   source: { type: "git", spec: "github:acme/tdd-guard@v1.3.0", remote: "https://github.com/acme/tdd-guard.git", ref: "v1.3.0", resolvedCommit: "c".repeat(40) },

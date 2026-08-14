@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLockfile, serializeLockfile, physicalDataKey, dataReferenceCounts, type Lockfile, type DataLock } from "../../src/plugins/lockfile.js";
+import { parseLockfile, serializeLockfile, physicalDataKey, dataReferenceCounts, type Lockfile, type DataLock } from "@tachyon/engine/plugins/lockfile.js";
 
 const SHA = "a".repeat(64);
 const SHA2 = "b".repeat(64);

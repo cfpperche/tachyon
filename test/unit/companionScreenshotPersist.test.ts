@@ -7,7 +7,7 @@ import {
   modelFacingScreenshotResult,
   parseScreenshotDataUrl,
   persistCompanionScreenshot,
-} from "../../src/companion/screenshotPersist.js";
+} from "@tachyon/engine/companion/screenshotPersist.js";
 
 /** Minimal valid 1x1 JPEG (raw base64). */
 const JPEG_B64 =

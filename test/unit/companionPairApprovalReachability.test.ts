@@ -52,13 +52,13 @@ import {
   type EngineControlResponseV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 import {
   APPROVAL_CHANNEL_COMPANION_HTTP,
   buildApprovalRequest,
   readApprovalRequest,
   writeApprovalRequest,
-} from "../../src/bridge/approvalRequest.js";
+} from "@tachyon/engine/bridge/approvalRequest.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";

@@ -8,9 +8,9 @@ import {
   resolveAssignedCompletionWorktree,
   type GatedCandidateRecord,
   type GatedCompletionFacts,
-} from "../../src/workspace/GatedCompletionMonitor.js";
+} from "@tachyon/engine/workspace/GatedCompletionMonitor.js";
 import type { AgentAttention } from "@tachyon/shared/attention/AttentionMonitor.js";
-import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
+import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
 
 const GRACE = 45_000;
 

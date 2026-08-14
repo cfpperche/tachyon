@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { SingleModeStudioPanelManager } from "../../src/webview/shared/studio/SingleModeStudioPanelManager.js";
-import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "../../src/webview/shared/studio/adapter.js";
+import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { CORE_MESSAGE_TYPES, envelope } from "../../src/webview/shared/studio/protocol.js";
 import { acceptsWhileVanished, decideVanishedDraft, isTombstone, readTombstoneMessage } from "../../src/webview/shared/studio/tombstone.js";
 import { TaskDocumentEditPolicy } from "../../src/webview/task-detail/editPolicy.js";

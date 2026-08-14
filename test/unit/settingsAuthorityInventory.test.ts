@@ -98,7 +98,7 @@ describe("no reader of the retired surface survives", () => {
   });
 
   it("the shell hands the engine exactly one setting, and it is somebody else's", async () => {
-    const { DAEMON_SETTING_KEYS } = await import("../../src/workspace/DaemonEngineHost.js");
+    const { DAEMON_SETTING_KEYS } = await import("@tachyon/engine/workspace/DaemonEngineHost.js");
     expect([...DAEMON_SETTING_KEYS]).toEqual(["git.path"]);
   });
 

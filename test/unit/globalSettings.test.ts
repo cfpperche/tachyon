@@ -11,7 +11,7 @@ import {
   resolveGlobalSettings,
   toGlobalSettingsDocument,
   writeGlobalSettingsFile,
-} from "../../src/config/globalSettings.js";
+} from "@tachyon/engine/config/globalSettings.js";
 
 function tempHome(): string {
   return makeTempDir("tachyon-global-settings-");

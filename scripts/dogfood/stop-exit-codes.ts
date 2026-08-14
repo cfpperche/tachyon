@@ -38,13 +38,13 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { materializePiSessionDir } from "../../src/agents/piSession.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { materializePiSessionDir } from "@tachyon/engine/agents/piSession.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
 import { findComposerRegion } from "@tachyon/shared/runtime/composerRegion.js";
 import { gracefulStopForCommand, runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
-import { SOCKET_NAME, TmuxService, defaultExecutor, sessionName, workspaceHash } from "../../src/tmux/TmuxService.js";
+import { SOCKET_NAME, TmuxService, defaultExecutor, sessionName, workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
 import type { ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
 
 const ALL_RUNTIMES: ResumeRuntime[] = ["claude", "codex", "grok", "opencode", "hermes", "pi"];

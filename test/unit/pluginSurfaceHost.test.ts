@@ -5,7 +5,7 @@ import path from "node:path";
 import * as vscode from "vscode";
 import { __createdPanels, __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
 import { applyInstall, detectRuntimes, loadPlugin, previewInstall } from "../../src/plugins/engine.js";
-import { LOCKFILE_REL_PATH } from "../../src/plugins/lockfile.js";
+import { LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 import { legacyPluginSurfaceTarget, PluginSurfaceHost } from "../../src/plugins/ui/host.js";
 import { PLUGIN_UI_ACTION } from "../../src/webview/plugin-host/relay.js";
 import type { WorkspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";

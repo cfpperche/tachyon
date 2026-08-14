@@ -4,18 +4,18 @@ import os from "node:os";
 import path from "node:path";
 import { stringify } from "yaml";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoader.js";
+import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import {
   CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
   GROK_PRIVATE_HOME_INPUT_INSPECTOR,
-} from "../../src/config/agentProfileProjection.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import { Workspace } from "../../src/workspace/Workspace.js";
-import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
-import { TmuxService } from "../../src/tmux/TmuxService.js";
-import type { NotifyLevel } from "../../src/bridge/tools.js";
-import { asAgent } from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/config/agentProfileProjection.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
+import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import type { EngineHost, NoticeAction, ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
+import { TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import { asAgent } from "@tachyon/engine/config/loadConfig.js";
 
 /**
  * t-59a11b — `sources` is deliberately non-enumerable so it never widens the serialized projection

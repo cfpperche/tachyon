@@ -29,7 +29,7 @@ import {
   type InstallPreview,
   type InstallProvenance,
 } from "../plugins/engine.js";
-import { loadManifest, SUPPORTED_RUNTIMES, type Runtime, type PackageManager, type ExternalToolInstall } from "../plugins/manifest.js";
+import { loadManifest, SUPPORTED_RUNTIMES, type Runtime, type PackageManager, type ExternalToolInstall } from "@tachyon/engine/plugins/manifest.js";
 import { pluginsMessage, consentMessage, busyMessage, resultMessage, POLL, READY, type PluginsActionType } from "./plugins/messages.js";
 import { gatherGitHookState } from "../plugins/gitHookState.js";
 import type { GitRun } from "../plugins/fetcher.js";
@@ -38,7 +38,7 @@ import { gatherDataPlan } from "../plugins/dataPlan.js";
 import { buildAssistedInstall, shellQuoteForDisplay, detectExternalToolPresence, adaptLockedInstall } from "../plugins/externalTool.js";
 import { rehydrateTools, rehydrateData, rehydrateExternalResolver, type ProvisionProgress } from "../plugins/toolProvisionRun.js";
 import { notify, showNotification } from "../workspace/NotificationService.js";
-import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReqLock } from "../plugins/lockfile.js";
+import { parseLockfile, LOCKFILE_REL_PATH, type PluginLock, type ExternalToolReqLock } from "@tachyon/engine/plugins/lockfile.js";
 import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, buildContributionStatuses, type PluginsViewModel, type UpdateCheck, type ExternalToolVM, type ExternalPresenceResult } from "../plugins/viewModel.js";
 import { AppliedStateError, AppliedStateStore } from "../plugins/appliedState.js";
 import { buildInstallConsent, buildReinstallConsent, buildUpdateConsent, buildRemoveConsent, deriveUpdateCheck, type ConsentVM } from "../plugins/consentViewModel.js";

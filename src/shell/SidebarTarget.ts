@@ -3,17 +3,17 @@ import type { TiptapJSON } from "@tachyon/shared/richDoc/types.js";
 import {
   parseSidebarMutationInputV1,
   type SidebarMutationInputV1,
-} from "../runtime-api/sidebarCommands.js";
+} from "@tachyon/engine/runtime-api/sidebarCommands.js";
 import {
   projectSidebarView,
   type SidebarFleetV1,
-} from "../runtime-api/sidebarProjection.js";
-import type { ObservedModelInput } from "../sidebar/agentModel.js";
-import type { SidebarFleetSource } from "../sidebar/sidebarFleetService.js";
+} from "@tachyon/engine/runtime-api/sidebarProjection.js";
+import type { ObservedModelInput } from "@tachyon/engine/sidebar/agentModel.js";
+import type { SidebarFleetSource } from "@tachyon/engine/sidebar/sidebarFleetService.js";
 import {
   applySidebarMutation,
   type SidebarMutationResult,
-} from "../sidebar/sidebarMutationService.js";
+} from "@tachyon/engine/sidebar/sidebarMutationService.js";
 import type { PinStudioAttachmentVM } from "../webview/pin-studio/types.js";
 import {
   legacyPinStudioTarget,
@@ -23,8 +23,8 @@ import {
 } from "./PinStudioTarget.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
-import { runStatus } from "../pipeline/runState.js";
-import type { DomainActionSource } from "../workspace/domainActions.js";
+import { runStatus } from "@tachyon/engine/pipeline/runState.js";
+import type { DomainActionSource } from "@tachyon/engine/workspace/domainActions.js";
 
 export interface SidebarPinPreview {
   id: string;

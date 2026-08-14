@@ -2,12 +2,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AgentManager } from "../../src/agents/AgentManager.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
-import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import type { WorktreeRecord } from "../../src/worktree/WorktreeManager.js";
+import { asAgent, parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import type { WorktreeRecord } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 const dirs: string[] = [];
 

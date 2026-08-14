@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parsePromptMarkdown, PromptStore } from "../../src/prompts/PromptStore.js";
+import { parsePromptMarkdown, PromptStore } from "@tachyon/engine/prompts/PromptStore.js";
 
 describe("parsePromptMarkdown", () => {
   it("parses frontmatter title and body", () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { readTailWindow } from "../../src/activity/tailReader.js";
+import { readTailWindow } from "@tachyon/engine/activity/tailReader.js";
 
 const tmp: string[] = [];
 function write(content: string | Buffer): string {

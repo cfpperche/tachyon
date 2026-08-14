@@ -6,15 +6,15 @@ import {
   parseTaskDetailProjectionV1,
   projectTaskDetail,
   type TaskDetailProjectionV1,
-} from "../../src/runtime-api/taskDetailProjection.js";
+} from "@tachyon/engine/runtime-api/taskDetailProjection.js";
 import {
   TASK_DETAIL_RESPONSE_MAX_BYTES,
   workspaceTaskDetailViewSuccessV1,
-} from "../../src/engine-service/protocol.js";
-import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
-import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
-import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
+} from "@tachyon/engine/engine-service/protocol.js";
+import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
+import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore.js";
+import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 
 const roots: string[] = [];
 

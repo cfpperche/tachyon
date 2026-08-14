@@ -1,12 +1,8 @@
+import type { StudioSubmit } from "@tachyon/engine/webview/studioSubmit.js";
+export type { StudioSubmit } from "@tachyon/engine/webview/studioSubmit.js";
 import type * as vscode from "vscode";
-import type { EntryKind } from "../config/loadConfig.js";
-import type { FormState } from "./formLogic.js";
-import type { StudioSaveResult } from "./shared/studio/adapter.js";
-
-export interface StudioSubmit {
-  state: FormState;
-  editingName?: string;
-}
+import type { EntryKind } from "@tachyon/engine/config/loadConfig.js";
+import type { StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 
 export interface StudioDeps {
   extensionUri: vscode.Uri;

@@ -2,8 +2,8 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
 
 /**
  * t-1339a8 — "Awaiting you": a first-class, AUTHORED (never derived) signal that a task is blocked on the

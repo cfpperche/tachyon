@@ -1,11 +1,11 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
-import { TaskStore, mintTaskId } from "../../src/tasks/TaskStore.js";
-import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
-import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
+import { TaskStore, mintTaskId } from "@tachyon/engine/tasks/TaskStore.js";
+import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore.js";
+import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
 import { legacyTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
 import { TaskStudioAdapter } from "../../src/webview/TaskStudioAdapter.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
+import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import { computeTaskDirty, serializeTaskPatch, canDiscardTaskFields, type TaskFields } from "../../src/webview/task-studio/domain.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 

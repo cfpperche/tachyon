@@ -1,4 +1,4 @@
-import { utf8LocaleEnv } from "../../src/tmux/TmuxService.js";
+import { utf8LocaleEnv } from "@tachyon/engine/tmux/TmuxService.js";
 
 /**
  * spec 218 — child env for real-tmux tests with `$TMUX`/`$TMUX_PANE` STRIPPED.

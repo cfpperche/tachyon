@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { codexBridgeCmd, codexConfigCmd, codexFlagCmd } from "../../src/config/loadConfig";
+import { codexBridgeCmd, codexConfigCmd, codexFlagCmd } from "@tachyon/engine/config/loadConfig.js";
 
 const URL = "http://127.0.0.1:42086/mcp";
 const expected = `-c 'mcp_servers.tachyon_bridge={url="${URL}", bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"}'`;

@@ -12,9 +12,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { HYGIENE_AUDIT_REL, ManagedWorktreeService } from "../../src/worktree/ManagedWorktreeService.js";
-import { WorktreeManager, type WorktreeOccupancy } from "../../src/worktree/WorktreeManager.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { HYGIENE_AUDIT_REL, ManagedWorktreeService } from "@tachyon/engine/worktree/ManagedWorktreeService.js";
+import { WorktreeManager, type WorktreeOccupancy } from "@tachyon/engine/worktree/WorktreeManager.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 function git(args: string[], cwd: string): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });

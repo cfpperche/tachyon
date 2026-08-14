@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Validation } from "../../src/validations/types.js";
-import { nextValidation } from "../../src/validations/nextValidation.js";
+import type { Validation } from "@tachyon/engine/validations/types.js";
+import { nextValidation } from "@tachyon/engine/validations/nextValidation.js";
 
 const validation = (id: string, over: Partial<Validation> = {}): Validation => ({
   id,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { CompanionTabChannel } from "../../src/companion/CompanionTabChannel.js";
-import { envelopeFromTabResult } from "../../src/companion/tabEnvelope.js";
-import { COMPANION_PROTOCOL_VERSION } from "../../src/companion/protocol.js";
+import { CompanionTabChannel } from "@tachyon/engine/companion/CompanionTabChannel.js";
+import { envelopeFromTabResult } from "@tachyon/engine/companion/tabEnvelope.js";
+import { COMPANION_PROTOCOL_VERSION } from "@tachyon/engine/companion/protocol.js";
 
 describe("SDD 420 CompanionTabChannel", () => {
   it("requires tabId on snapshot", () => {

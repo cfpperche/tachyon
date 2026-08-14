@@ -3,8 +3,8 @@
  * Regression: 0.56.57 emitted done(unseen) without the enum → "Could not refresh Sidebar".
  */
 import { describe, expect, it } from "vitest";
-import { isSidebarViewV1, parseSidebarViewV1 } from "../../src/runtime-api/sidebarProjection.js";
-import { SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "../../src/sidebar/wireText.js";
+import { isSidebarViewV1, parseSidebarViewV1 } from "@tachyon/engine/runtime-api/sidebarProjection.js";
+import { SIDEBAR_FOCUS_FULL_MAX, SIDEBAR_PIN_TEXT_MAX } from "@tachyon/engine/sidebar/wireText.js";
 
 function minimalFleet(agentStatus: string) {
   return {

@@ -18,7 +18,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { GlobalSettings, GlobalSettingsField } from "./globalSettings.js";
+import type { GlobalSettings, GlobalSettingsField } from "@tachyon/engine/config/globalSettings.js";
 
 /** Values as authored under the retired keys. `undefined` = the person never wrote that key. */
 export interface LegacySettingValues {

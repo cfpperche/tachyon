@@ -5,8 +5,8 @@ import {
   DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS,
   idleNotifyThresholdMs,
 } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
-import { parseConfig, MAX_IDLE_NOTIFY_MINUTES } from "../../src/config/loadConfig.js";
-import type { ManagedEntryInfo } from "../../src/agents/AgentManager.js";
+import { parseConfig, MAX_IDLE_NOTIFY_MINUTES } from "@tachyon/engine/config/loadConfig.js";
+import type { ManagedEntryInfo } from "@tachyon/engine/agents/AgentManager.js";
 
 /**
  * `t-585d5c` — the idle-notification threshold is configurable per workspace.
@@ -166,7 +166,7 @@ describe("t-585d5c — the config surface, fail-closed", () => {
 
 describe("t-585d5c — writing it from Control → Settings", () => {
   it("writes minutes, writes `never`, and REMOVES the key on reset", async () => {
-    const { setIdleAfterMinutes } = await import("../../src/config/YamlConfigEditor.js");
+    const { setIdleAfterMinutes } = await import("@tachyon/engine/config/YamlConfigEditor.js");
     const base = "agents:\n  a:\n    cmd: claude\n";
 
     expect(setIdleAfterMinutes(base, 3).text).toContain("idleAfterMinutes: 3");
@@ -180,7 +180,7 @@ describe("t-585d5c — writing it from Control → Settings", () => {
   });
 
   it("keeps the rest of the file intact, comments included", async () => {
-    const { setIdleAfterMinutes } = await import("../../src/config/YamlConfigEditor.js");
+    const { setIdleAfterMinutes } = await import("@tachyon/engine/config/YamlConfigEditor.js");
     const withComment = "# keep me\nagents:\n  a:\n    cmd: claude\nsettings:\n  maxAgents: 4\n";
     const out = setIdleAfterMinutes(withComment, 7).text;
     expect(out).toContain("# keep me");
@@ -188,12 +188,12 @@ describe("t-585d5c — writing it from Control → Settings", () => {
   });
 
   it("refuses to write into a workspace with no tachyon.yml yet", async () => {
-    const { setIdleAfterMinutes } = await import("../../src/config/YamlConfigEditor.js");
+    const { setIdleAfterMinutes } = await import("@tachyon/engine/config/YamlConfigEditor.js");
     expect(() => setIdleAfterMinutes(undefined, 5)).toThrow(/create an agent first/);
   });
 
   it("bounds the runtime-api operation too, since it is a separate entrance", async () => {
-    const { extensionCommandSchema } = await import("../../src/runtime-api/extensionOperations.js");
+    const { extensionCommandSchema } = await import("@tachyon/engine/runtime-api/extensionOperations.js");
     const parse = (minutes: unknown) =>
       extensionCommandSchema.safeParse({ action: "config.notifications.idleAfterMinutes", minutes });
 
@@ -209,7 +209,7 @@ describe("t-585d5c — writing it from Control → Settings", () => {
   });
 
   it("round-trips through the loader, so what Settings writes is what the engine reads", async () => {
-    const { setIdleAfterMinutes } = await import("../../src/config/YamlConfigEditor.js");
+    const { setIdleAfterMinutes } = await import("@tachyon/engine/config/YamlConfigEditor.js");
     const written = setIdleAfterMinutes("agents:\n  a:\n    cmd: claude\n", 4).text;
     const reloaded = parseConfig(written);
     expect(reloaded.errors).toEqual([]);

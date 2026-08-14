@@ -17,7 +17,7 @@ import * as vscode from "vscode";
 import {
   IDE_BROWSER_FIRST_USE_TIPS,
   isIdeBrowserEnabled,
-} from "../../ide-browser/settings.js";
+} from "@tachyon/engine/ide-browser/settings.js";
 import type { WorkspaceShellHandle } from "../../shell/WorkspaceShellHandle.js";
 import { resolveIdeBrowserHomeUrl } from "./homeUrl.js";
 import { IdeBrowserBridgeManager } from "./manager.js";

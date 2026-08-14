@@ -13,8 +13,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ProbeStore } from "../../src/probe/ProbeStore.js";
-import { buildProbeView } from "../../src/probe/probeView.js";
+import { ProbeStore } from "@tachyon/engine/probe/ProbeStore.js";
+import { buildProbeView } from "@tachyon/engine/probe/probeView.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-probes-col-"));
 

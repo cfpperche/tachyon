@@ -2,11 +2,11 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ActivityLogWriter } from "../../src/activity/logWriter.js";
-import { ActivityLog, LOG_SCHEMA_VERSION } from "../../src/activity/logStore.js";
-import { RuntimeOpsSnapshotService, type RuntimeOpsWorkspaceSource } from "../../src/runtimeOps/snapshotService.js";
-import { resolveModelFact, toAgentVM, type AgentRaw } from "../../src/sidebar/agentModel.js";
-import type { SessionRecord } from "../../src/resume/SessionLedger.js";
+import { ActivityLogWriter } from "@tachyon/engine/activity/logWriter.js";
+import { ActivityLog, LOG_SCHEMA_VERSION } from "@tachyon/engine/activity/logStore.js";
+import { RuntimeOpsSnapshotService, type RuntimeOpsWorkspaceSource } from "@tachyon/engine/runtimeOps/snapshotService.js";
+import { resolveModelFact, toAgentVM, type AgentRaw } from "@tachyon/engine/sidebar/agentModel.js";
+import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
 
 /**
  * spec 378 — live model in the sidebar, with honest provenance. End-to-end behavior suite: real transcript

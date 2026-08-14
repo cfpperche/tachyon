@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { landAct } from "../../src/worktree/landAct";
-import type { GitExec } from "../../src/worktree/WorktreeManager";
+import { landAct } from "@tachyon/engine/worktree/landAct.js";
+import type { GitExec } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 /**
  * SDD 498 (t-7cb971) — the act reports what it OBSERVED, never what it intended.

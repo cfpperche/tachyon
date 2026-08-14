@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import fs from "node:fs";
 import path from "node:path";
 import { __resetVscodeMock, __fireFileWatch, __getExecutedCommands } from "../mocks/vscode.js";
-import { globalSettingsPath, useGlobalSettingsHome } from "../../src/config/globalSettings.js";
+import { globalSettingsPath, useGlobalSettingsHome } from "@tachyon/engine/config/globalSettings.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
 import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types.js";

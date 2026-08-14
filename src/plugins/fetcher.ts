@@ -25,7 +25,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { parseSemverTag, compareSemver, type GitSource } from "./source.js";
-import { resolveGitBinary, gitNotFoundError } from "../worktree/gitBinary.js";
+import { resolveGitBinary, gitNotFoundError } from "@tachyon/engine/worktree/gitBinary.js";
 
 const CLONE_TIMEOUT_MS = 120_000;
 const MARKER_NAME = "marker.json";

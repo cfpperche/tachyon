@@ -5,9 +5,9 @@
  * whose `patchesAllInBase` this ports).
  */
 import { describe, expect, it } from "vitest";
-import { classifyManagedWorktree, type ClassifyWorktreeDeps } from "../../src/worktree/classify.js";
-import type { ManagedWorktreeEntry } from "../../src/worktree/managedWorktree.js";
-import type { GitExec, GitResult, WorktreeOccupancy, WorktreeStatus } from "../../src/worktree/WorktreeManager.js";
+import { classifyManagedWorktree, type ClassifyWorktreeDeps } from "@tachyon/engine/worktree/classify.js";
+import type { ManagedWorktreeEntry } from "@tachyon/engine/worktree/managedWorktree.js";
+import type { GitExec, GitResult, WorktreeOccupancy, WorktreeStatus } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 function entry(overrides: Partial<ManagedWorktreeEntry> = {}): ManagedWorktreeEntry {
   return {

@@ -1,5 +1,5 @@
-import { OpencodeLaunchPreflight } from "../../src/runtime/adapters/opencodeLaunchPreflight.js";
-import { createDefaultLaunchPreflightRegistry } from "../../src/runtime/defaultLaunchPreflight.js";
+import { OpencodeLaunchPreflight } from "@tachyon/engine/runtime/adapters/opencodeLaunchPreflight.js";
+import { createDefaultLaunchPreflightRegistry } from "@tachyon/engine/runtime/defaultLaunchPreflight.js";
 import type { RuntimeLaunchPreflightPort } from "@tachyon/shared/runtime/launchPreflight.js";
 
 /**

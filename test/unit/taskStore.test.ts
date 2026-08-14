@@ -2,8 +2,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { allowedTransitions, TaskStore } from "../../src/tasks/TaskStore.js";
-import { taskAssigneeWakeFor } from "../../src/tasks/taskNotificationPolicy.js";
+import { allowedTransitions, TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { taskAssigneeWakeFor } from "@tachyon/engine/tasks/taskNotificationPolicy.js";
 import { TASK_STATUSES } from "@tachyon/shared/tasks/types.js";
 
 let root: string;

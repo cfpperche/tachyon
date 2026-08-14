@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeHermesRows, type HermesMessageRow } from "../../src/activity/hermesNormalizer.js";
+import { normalizeHermesRows, type HermesMessageRow } from "@tachyon/engine/activity/hermesNormalizer.js";
 
 const row = (partial: Partial<HermesMessageRow> & Pick<HermesMessageRow, "id" | "role">): HermesMessageRow => ({
   session_id: "20260713_185208_da5df2",

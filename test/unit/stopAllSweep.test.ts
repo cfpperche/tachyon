@@ -16,7 +16,7 @@
  * "there was nothing".
  */
 import { describe, it, expect } from "vitest";
-import { sweepSessions, DEFAULT_MAX_PASSES, type SessionSweepPort } from "../../src/tmux/sessionSweep.js";
+import { sweepSessions, DEFAULT_MAX_PASSES, type SessionSweepPort } from "@tachyon/engine/tmux/sessionSweep.js";
 
 type States = Map<string, { dead: boolean; exitCode?: number }>;
 

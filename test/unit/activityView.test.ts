@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildActivityView, createActivityBuilder } from "../../src/activity/activityView.js";
-import { normalizeClaude } from "../../src/activity/claudeNormalizer.js";
-import { hasSharedCwdAttributionGap } from "../../src/activity/attributionGap.js";
+import { normalizeClaude } from "@tachyon/engine/activity/claudeNormalizer.js";
+import { hasSharedCwdAttributionGap } from "@tachyon/engine/activity/attributionGap.js";
 
 const base = { sessionId: "s1", cwd: "/repo", timestamp: "2026-06-20T00:00:00Z", version: "2.1.183" };
 const line = (o: unknown): string => JSON.stringify(o);

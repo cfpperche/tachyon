@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { degradedRosterExtras } from "../../src/config/configFailure.js";
-import type { SessionRecord } from "../../src/resume/SessionLedger.js";
+import { degradedRosterExtras } from "@tachyon/engine/config/configFailure.js";
+import type { SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
 
 /**
  * SDD 482 phase 3 (`t-5e1113`) — per-reader proof for the GROUPED delivery.
@@ -35,7 +35,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
    */
   it("the Bridge dismiss family asks the roster's resolved lifetime, and nothing beside it asks `declared`", () => {
     // t-3b47ad — capability helpers live in tools/shared.ts; dismiss/kill handlers in tools/fleet.ts.
-    const src = SOURCE("src/bridge/tools/shared.ts") + "\n" + SOURCE("src/bridge/tools/fleet.ts");
+    const src = SOURCE("packages/engine/src/bridge/tools/shared.ts") + "\n" + SOURCE("packages/engine/src/bridge/tools/fleet.ts");
     expect(src).toMatch(/const canDismiss = info\.lifetime === "temporary" && !info\.running;/);
     // t-28bf8f narrowed this hint with a further conjunct (it must not answer a worktree-release
     // refusal with "use dismiss_agent"), so the pin stops at the reader it is actually about. What it
@@ -57,7 +57,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
    * refusal was removed.
    */
   it("renames the refusal to the ratified vocabulary while keeping the old term findable", () => {
-    const source = SOURCE("src/bridge/tools/fleet.ts");
+    const source = SOURCE("packages/engine/src/bridge/tools/fleet.ts");
     expect(source).toContain("is a Saved Agent (declared in tachyon.yml)");
   });
 
@@ -117,7 +117,7 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
   });
 
   it("the sidebar's degraded rows go through the resolver too", () => {
-    const src = SOURCE("src/sidebar/sidebarFleetService.ts");
+    const src = SOURCE("packages/engine/src/sidebar/sidebarFleetService.ts");
     expect(src).not.toMatch(/adhoc: !extra\.declared/);
     expect((src.match(/adhoc: extra\.lifetime === "temporary"/g) ?? []).length).toBe(2);
   });
@@ -137,10 +137,10 @@ describe("reader convergence, grouped delivery (SDD 482 phase 3)", () => {
    */
   it("keeps `declared` OFF the wire — the freeze is discharged, not merely lifted", () => {
     for (const rel of [
-      "src/runtime-api/handoffProjection.ts",
+      "packages/engine/src/runtime-api/handoffProjection.ts",
       "src/runtime-api/workspaceProjection.ts",
-      "src/runtime-api/activityProjection.ts",
-      "src/engine-service/engineService.ts",
+      "packages/engine/src/runtime-api/activityProjection.ts",
+      "packages/engine/src/engine-service/engineService.ts",
     ]) {
       const src = SOURCE(rel);
       // Match the FIELD, not the English word — the prose above these projections still discusses

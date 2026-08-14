@@ -6,9 +6,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { provisionData } from "../../src/plugins/toolProvisionRun.js";
 import { gatherDataPlan } from "../../src/plugins/dataPlan.js";
-import { emptyLockfile } from "../../src/plugins/lockfile.js";
+import { emptyLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import type { LoadedPlugin } from "../../src/plugins/engine.js";
-import type { PluginManifest, DataDecl } from "../../src/plugins/manifest.js";
+import type { PluginManifest, DataDecl } from "@tachyon/engine/plugins/manifest.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
 
 const kp = tlsKeypair();

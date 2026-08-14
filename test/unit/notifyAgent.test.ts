@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeAgentSummary, prepareAgentSummary, composeAgentNotice } from "../../src/bridge/notifyAgent.js";
+import { sanitizeAgentSummary, prepareAgentSummary, composeAgentNotice } from "@tachyon/engine/bridge/notifyAgent.js";
 
 describe("sanitizeAgentSummary (spec 332 dueto F2 -- allowlist sanitizer)", () => {
   it("passes ordinary printable text through untouched", () => {

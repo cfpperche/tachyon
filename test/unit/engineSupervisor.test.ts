@@ -4,14 +4,14 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import net from "node:net";
-import { EngineControlClient } from "../../src/engine-service/controlClient.js";
-import { bridgeTokenFileName } from "../../src/bridge/token.js";
+import { EngineControlClient } from "@tachyon/engine/engine-service/controlClient.js";
+import { bridgeTokenFileName } from "@tachyon/engine/bridge/token.js";
 import {
   stageEngineBundle,
   stageEngineRuntime,
   type StagedEngineBundle,
   type StagedEngineRuntime,
-} from "../../src/engine-service/engineBundleStore.js";
+} from "@tachyon/engine/engine-service/engineBundleStore.js";
 import {
   buildEngineSystemdRunArgs,
   decodeEngineDaemonOptions,
@@ -27,12 +27,12 @@ import {
   type EngineDaemonLauncher,
   type EngineDaemonOptionsV1,
   type EngineDaemonStopper,
-} from "../../src/engine-service/engineSupervisor.js";
-import { DaemonStateStore, engineDaemonStateRoot } from "../../src/engine-service/daemonStateStore.js";
-import type { EngineStateMigrationV1 } from "../../src/engine-service/stateMigration.js";
-import { workspaceVersionStateKey } from "../../src/workspace/operationalStateKeys.js";
-import { ENGINE_SHELL_PROTOCOL, type EngineBundleManifestV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "../../src/engine-service/protocol.js";
-import { TmuxService, workspaceHash } from "../../src/tmux/TmuxService.js";
+} from "@tachyon/engine/engine-service/engineSupervisor.js";
+import { DaemonStateStore, engineDaemonStateRoot } from "@tachyon/engine/engine-service/daemonStateStore.js";
+import type { EngineStateMigrationV1 } from "@tachyon/engine/engine-service/stateMigration.js";
+import { workspaceVersionStateKey } from "@tachyon/engine/workspace/operationalStateKeys.js";
+import { ENGINE_SHELL_PROTOCOL, type EngineBundleManifestV1, type EngineServiceIdentityV1, type EngineShellHelloV1 } from "@tachyon/engine/engine-service/protocol.js";
+import { TmuxService, workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";
 import { bundledDaemonFixture } from "../helpers/daemonFixtureBundle.js";

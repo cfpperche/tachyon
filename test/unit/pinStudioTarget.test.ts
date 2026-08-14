@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   workspacePinStudioApplySuccessV1,
   workspacePinStudioViewSuccessV1,
-} from "../../src/engine-service/protocol.js";
-import { parsePinStudioStagedPayloadV1 } from "../../src/runtime-api/pinStudioCommands.js";
-import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
+} from "@tachyon/engine/engine-service/protocol.js";
+import { parsePinStudioStagedPayloadV1 } from "@tachyon/engine/runtime-api/pinStudioCommands.js";
+import { PinAttachmentStore } from "@tachyon/engine/pins/PinAttachmentStore.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { workspacePinStudioTarget } from "../../src/shell/PinStudioTarget.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";

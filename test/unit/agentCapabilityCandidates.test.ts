@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { annotateAuthorized, listAuthorizableCapabilities, type AuthorizableCapabilities, type AuthorizedState } from "../../src/config/agentCapabilityCandidates.js";
+import { annotateAuthorized, listAuthorizableCapabilities, type AuthorizableCapabilities, type AuthorizedState } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 
 /**
  * t-5498a6 — the two candidate lists a human chooses from.

@@ -410,8 +410,8 @@ describe("quiet full verification", () => {
 
   it("keeps the governed quiet runner in package scripts without declaring project verify config", () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
-    expect(packageJson.scripts["verify:full"]).toBe("node scripts/verify-full.mjs");
-    expect(packageJson.scripts["verify:full:quiet"]).toBe("node scripts/verify-full.mjs");
+    expect(packageJson.scripts["verify:full"]).toBe("node scripts/run-workspace-script.mjs scripts/verify-full.mjs");
+    expect(packageJson.scripts["verify:full:quiet"]).toBe("node scripts/run-workspace-script.mjs scripts/verify-full.mjs");
     const config = fs.readFileSync(path.join(repoRoot, "tachyon.yml.example"), "utf8");
     expect(config).not.toContain("full: npm run verify:full:quiet");
   });

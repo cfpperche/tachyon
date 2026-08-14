@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { registerTools } from "../../src/bridge/tools.js";
+import { registerTools } from "@tachyon/engine/bridge/tools.js";
 
 /**
  * t-a4ac02 — remove the Bridge tool `next_task`; keep the pure function `nextTask()`.
@@ -42,7 +42,7 @@ describe("t-a4ac02 — Bridge tool next_task removed; function nextTask kept", (
 
   it("boardSnapshot still imports and uses the nextTask function for chip spotlight", () => {
     const root = path.resolve(__dirname, "../..");
-    const snapshotSrc = fs.readFileSync(path.join(root, "src/tasks/boardSnapshot.ts"), "utf8");
+    const snapshotSrc = fs.readFileSync(path.join(root, "packages/engine/src/tasks/boardSnapshot.ts"), "utf8");
     const fnSrc = fs.readFileSync(path.join(root, "packages/shared/src/tasks/nextTask.ts"), "utf8");
 
     expect(fnSrc).toMatch(/export function nextTask\b/);

@@ -3,8 +3,8 @@ import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 
 describe("host-action core architecture", () => {
-  it("keeps src/host-action host-neutral", async () => {
-    const files = await listTsFiles("src/host-action");
+  it("keeps packages/engine/src/host-action host-neutral", async () => {
+    const files = await listTsFiles("packages/engine/src/host-action");
     expect(files.length).toBeGreaterThan(0);
 
     for (const file of files) {

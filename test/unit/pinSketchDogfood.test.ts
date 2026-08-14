@@ -2,11 +2,11 @@ import { afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { PinAttachmentStore } from "../../src/pins/PinAttachmentStore.js";
-import { PinStore } from "../../src/pins/PinStore.js";
+import { PinAttachmentStore } from "@tachyon/engine/pins/PinAttachmentStore.js";
+import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import { attachmentsForSave, attachmentsUsedByDoc } from "../../src/webview/pin-studio/document.js";
 import type { PinStudioAttachmentVM } from "../../src/webview/pin-studio/types.js";
-import type { TiptapJSON } from "../../src/pins/types.js";
+import type { TiptapJSON } from "@tachyon/engine/pins/types.js";
 
 const roots: string[] = [];
 

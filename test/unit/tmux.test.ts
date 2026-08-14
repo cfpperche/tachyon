@@ -12,7 +12,7 @@ import {
   parseSessionEnvironmentKeys,
   TMUX_CONTROL_CONCURRENCY,
   type ExecResult,
-} from "../../src/tmux/TmuxService.js";
+} from "@tachyon/engine/tmux/TmuxService.js";
 
 function recordingExecutor(results: Record<string, ExecResult | Error> = {}) {
   const calls: string[][] = [];
@@ -410,7 +410,7 @@ describe("TmuxService argument construction", () => {
   });
 
   it("prefersBracketedPaste: newlines or length > 400", async () => {
-    const { prefersBracketedPaste, SEND_KEYS_LITERAL_MAX_CHARS } = await import("../../src/tmux/TmuxService.js");
+    const { prefersBracketedPaste, SEND_KEYS_LITERAL_MAX_CHARS } = await import("@tachyon/engine/tmux/TmuxService.js");
     expect(prefersBracketedPaste("short")).toBe(false);
     expect(prefersBracketedPaste("a\nb")).toBe(true);
     expect(prefersBracketedPaste("x".repeat(SEND_KEYS_LITERAL_MAX_CHARS))).toBe(false);
@@ -483,7 +483,7 @@ describe("TmuxService argument construction", () => {
 });
 
 describe("wedged-server detection (zombie: holds the socket, fails every command)", async () => {
-  const { probeServer, findServerPids, recoverWedgedServer, socketPath } = await import("../../src/tmux/TmuxService.js");
+  const { probeServer, findServerPids, recoverWedgedServer, socketPath } = await import("@tachyon/engine/tmux/TmuxService.js");
   const noSleep = async () => {};
 
   it("healthy when list-sessions answers", async () => {
@@ -568,7 +568,7 @@ describe("wedged-server detection (zombie: holds the socket, fails every command
   });
 
   it("snapshotServerPids returns the ps text, empty for no pids, '' on failure (spec 217)", async () => {
-    const { snapshotServerPids } = await import("../../src/tmux/TmuxService.js");
+    const { snapshotServerPids } = await import("@tachyon/engine/tmux/TmuxService.js");
     expect(await snapshotServerPids([])).toBe("");
     let gotPids: number[] = [];
     expect(await snapshotServerPids([7, 9], async (p) => { gotPids = p; return "  PID %CPU\n7 99.0\n"; })).toContain("99.0");
@@ -579,7 +579,7 @@ describe("wedged-server detection (zombie: holds the socket, fails every command
 
 describe("renameSession", () => {
   it("renames with exact-match targeting", async () => {
-    const { TmuxService: T } = await import("../../src/tmux/TmuxService.js");
+    const { TmuxService: T } = await import("@tachyon/engine/tmux/TmuxService.js");
     const calls: string[][] = [];
     const tmux = new T(async (args: string[]) => {
       calls.push(args);

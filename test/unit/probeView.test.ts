@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { buildProbeView, relativeAge } from "../../src/probe/probeView.js";
-import { ProbeStore, mintRunId } from "../../src/probe/ProbeStore.js";
-import { envelopeFor, runningEnvelope } from "../../src/probe/taxonomy.js";
-import type { ProbeRunRecord } from "../../src/probe/ProbeStore.js";
+import { buildProbeView, relativeAge } from "@tachyon/engine/probe/probeView.js";
+import { ProbeStore, mintRunId } from "@tachyon/engine/probe/ProbeStore.js";
+import { envelopeFor, runningEnvelope } from "@tachyon/engine/probe/taxonomy.js";
+import type { ProbeRunRecord } from "@tachyon/engine/probe/ProbeStore.js";
 
 const NOW = Date.parse("2026-06-24T12:00:00Z");
 

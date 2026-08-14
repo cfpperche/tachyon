@@ -2,13 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoader.js";
+import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import {
   cloneTerminalDeclaration,
   deleteTerminalDeclaration,
   renameTerminalDeclaration,
   upsertTerminalDeclaration,
-} from "../../src/config/terminalDeclarations.js";
+} from "@tachyon/engine/config/terminalDeclarations.js";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }); });

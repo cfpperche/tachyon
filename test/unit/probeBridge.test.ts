@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { DEFAULT_CLAUDE_REVIEW_TIMEOUT_MS, DEFAULT_PROBE_TIMEOUT_MS, ProbeService } from "../../src/probe/ProbeService.js";
-import { ProbeStore } from "../../src/probe/ProbeStore.js";
-import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "../../src/probe/adapters/types.js";
-import type { ProbeResult } from "../../src/probe/taxonomy.js";
+import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { DEFAULT_CLAUDE_REVIEW_TIMEOUT_MS, DEFAULT_PROBE_TIMEOUT_MS, ProbeService } from "@tachyon/engine/probe/ProbeService.js";
+import { ProbeStore } from "@tachyon/engine/probe/ProbeStore.js";
+import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "@tachyon/engine/probe/adapters/types.js";
+import type { ProbeResult } from "@tachyon/engine/probe/taxonomy.js";
 
 /** A fake MCP server that just captures tool handlers. */
 class FakeMcp {

@@ -3,9 +3,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { WorktreeManager, resolveWorktreeCwd } from "../../src/worktree/WorktreeManager.js";
-import { DEPENDENCY_DIR, shareDependencies } from "../../src/worktree/dependencySharing.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { WorktreeManager, resolveWorktreeCwd } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { DEPENDENCY_DIR, shareDependencies } from "@tachyon/engine/worktree/dependencySharing.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 /**
  * t-3f93b4 — the wiring, on real git.

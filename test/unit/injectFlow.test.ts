@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { injectTargets, isEvidencedWorking, previewBody, submitRefuseReason } from "../../src/prompts/injectFlow.js";
+import { injectTargets, isEvidencedWorking, previewBody, submitRefuseReason } from "@tachyon/engine/prompts/injectFlow.js";
 
 describe("injectTargets", () => {
   it("keeps the running member of the supplied agent collection", () => {

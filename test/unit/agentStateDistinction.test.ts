@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { statusOf } from "../../src/sidebar/agentModel.js";
+import { statusOf } from "@tachyon/engine/sidebar/agentModel.js";
 import type { AgentStatus } from "@tachyon/shared/sidebar/types.js";
 
 /**

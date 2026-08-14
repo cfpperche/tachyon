@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadManifest } from "../../src/plugins/manifest.js";
+import { loadManifest } from "@tachyon/engine/plugins/manifest.js";
 
 // spec 285 — externalTools declaration parsing (declare + detect + per-PM assisted-install argv).
 

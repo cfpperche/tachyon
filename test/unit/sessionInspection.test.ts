@@ -10,7 +10,7 @@ import {
   isTachyonAuthoredHookCommand,
   redactCommand,
   type InspectedSetting,
-} from "../../src/runtimeOps/sessionInspection.js";
+} from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /**
  * t-283149 — the session inspector shows what Tachyon handed the runtime. Two of its decisions are the

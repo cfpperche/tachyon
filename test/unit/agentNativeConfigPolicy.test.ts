@@ -4,7 +4,7 @@ import {
   validateAgentNativeConfigPolicy,
   type AgentNativeConfigSupportResolver,
 } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
-import type { AgentNativeConfigPolicyV1, AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
+import type { AgentNativeConfigPolicyV1, AgentProfileV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 
 const permissions: AgentNativeConfigPolicyV1 = {
   source: "workspace",

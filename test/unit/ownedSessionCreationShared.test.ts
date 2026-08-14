@@ -14,7 +14,7 @@ import path from "node:path";
  * The ordering being protected is the post-cut attestation applied by the shared door.
  */
 const SOURCE = fs.readFileSync(
-  path.resolve(__dirname, "../../src/agents/AgentManager.ts"),
+  path.resolve(__dirname, "../../packages/engine/src/agents/AgentManager.ts"),
   "utf8",
 );
 

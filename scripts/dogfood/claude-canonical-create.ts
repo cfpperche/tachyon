@@ -23,11 +23,11 @@ import { stringify } from "yaml";
 import {
   commitAgentProfileLifecycle,
   type AgentProfileLifecycleConfigPort,
-} from "../../src/config/agentProfileLifecycle.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
-import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoader.js";
-import { CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR } from "../../src/config/agentProfileProjection.js";
+} from "@tachyon/engine/config/agentProfileLifecycle.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
+import type { AgentProfileAuthorityPort } from "@tachyon/engine/config/agentProfileTransactions.js";
+import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfigLoader.js";
+import { CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR } from "@tachyon/engine/config/agentProfileProjection.js";
 import { defaultClaudeScalarNativeConfigPolicy } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
 
 const AGENT = "claude";

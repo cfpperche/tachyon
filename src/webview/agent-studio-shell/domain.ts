@@ -1,4 +1,4 @@
-import type { AgentFormState, QuickAddChip } from "../formLogic.js";
+import type { AgentFormState, QuickAddChip } from "@tachyon/engine/webview/formLogic.js";
 import type {
   AgentOwnershipViewV1,
   AgentProfileStudioMutationV1,

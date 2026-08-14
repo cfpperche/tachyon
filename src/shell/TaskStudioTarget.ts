@@ -9,22 +9,22 @@ import {
   type TaskStudioPrototypePayloadV1,
   type TaskStudioSketchPayloadV1,
   type TaskStudioStagedPayloadV1,
-} from "../runtime-api/taskStudioCommands.js";
+} from "@tachyon/engine/runtime-api/taskStudioCommands.js";
 import {
   projectTaskStudio,
   type TaskStudioProjectionV1,
-} from "../runtime-api/taskStudioProjection.js";
-import { TaskAttachmentStore } from "../tasks/TaskAttachmentStore.js";
+} from "@tachyon/engine/runtime-api/taskStudioProjection.js";
+import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
 import {
   cancelTaskStudio,
   importTaskStudioPrototype,
   putTaskStudioImage,
   putTaskStudioSketch,
   saveTaskStudio,
-} from "../tasks/taskStudioService.js";
-import { TaskPrototypeStore } from "../tasks/TaskPrototypeStore.js";
-import type { TaskStore } from "../tasks/TaskStore.js";
-import type { StudioSaveResult } from "../webview/shared/studio/adapter.js";
+} from "@tachyon/engine/tasks/taskStudioService.js";
+import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
+import type { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import type { StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { assembleUntrustedSrcdoc } from "@tachyon/shared/webview/shared/untrustedSrcdoc.js";
 import type { RichDocAttachmentVM } from "../webview/rich-doc/types.js";
 import type { TaskDetailEntity, TaskPatch } from "../webview/task-studio/domain.js";

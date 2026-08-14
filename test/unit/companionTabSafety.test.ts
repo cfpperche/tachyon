@@ -5,8 +5,8 @@ import {
   hostAllowed,
   isLikelyFileDownloadUrl,
   redactSecrets,
-} from "../../src/companion/tabSafety.js";
-import { TabRefCache } from "../../src/companion/tabRefCache.js";
+} from "@tachyon/engine/companion/tabSafety.js";
+import { TabRefCache } from "@tachyon/engine/companion/tabRefCache.js";
 
 describe("SDD 420 tabSafety", () => {
   it("classifies delete/buy/submit heuristics", () => {

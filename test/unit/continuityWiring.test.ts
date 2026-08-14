@@ -3,13 +3,13 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Workspace } from "../../src/workspace/Workspace.js";
-import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
-import { TmuxService, type ExecResult } from "../../src/tmux/TmuxService.js";
-import type { NotifyLevel } from "../../src/bridge/tools.js";
+import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import type { EngineHost, NoticeAction, ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
+import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml } from "../helpers/savedAgentFixture.js";
 import type { AttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
-import { agentLogId } from "../../src/activity/logStore.js";
+import { agentLogId } from "@tachyon/engine/activity/logStore.js";
 
 /**
  * spec 241 — headless validation of the continuity WIRING (not just the pure classifier): drive the real

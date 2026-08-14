@@ -11,7 +11,7 @@ import {
   prepareCodexHome,
   PRIVATE_HOME_DIRNAME,
   removeCodexHome,
-} from "../../src/probe/adapters/codexSessionEvidence.js";
+} from "@tachyon/engine/probe/adapters/codexSessionEvidence.js";
 
 const THREAD = "019fa07e-f2a7-7da1-a3b9-fe2cebc3884c";
 const temporary: string[] = [];

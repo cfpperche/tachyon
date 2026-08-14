@@ -15,7 +15,7 @@
  * Evidence: `docs/research/native-lane-suppression-sdd490-fatia-c.md`.
  */
 
-import { nativeMemoryCapability } from "./nativeMemory.js";
+import { nativeMemoryCapability } from "@tachyon/engine/runtime/nativeMemory.js";
 
 export type LaneSuppressionEvidence = "unsupported" | "declared" | "verified" | "refuted";
 

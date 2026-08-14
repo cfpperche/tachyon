@@ -3,7 +3,7 @@ import {
   type RuntimeOpsProviderV2,
   type RuntimeOpsSnapshot,
 } from "../../runtimeOps/types";
-import type { InspectedSession } from "../../runtimeOps/sessionInspection";
+import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 

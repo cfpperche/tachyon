@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { isVerifiedSince, readVerificationRecord } from "../../src/workspace/verifyRecordReader.js";
-import type { GitExec } from "../../src/worktree/WorktreeManager.js";
+import { isVerifiedSince, readVerificationRecord } from "@tachyon/engine/workspace/verifyRecordReader.js";
+import type { GitExec } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 const TREE = "a".repeat(40);
 const SINCE = "2026-07-01T00:00:00.000Z";

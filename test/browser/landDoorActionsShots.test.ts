@@ -6,7 +6,7 @@ import { resolveChromeExecutable } from "./support/chrome";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
 import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "../../src/sections/model.js";
-import { landSuggestion, type LandFacts } from "../../src/worktree/land.js";
+import { landSuggestion, type LandFacts } from "@tachyon/engine/worktree/land.js";
 
 /**
  * SDD 501 — headless Visual QA for the two doors added to the land block.

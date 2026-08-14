@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SOCKET_NAME, TmuxService, isolatedArgs, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { DEFAULT_SOCKET_NAME, TmuxService, isolatedArgs, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 
 /**
@@ -71,7 +71,7 @@ const UNRESOLVABLE_ARGV_ALLOWLIST: Record<string, string> = {
   // `serverScopeArgv(tmuxArgs)` splices its caller's argv after `systemd-run … --`. The only caller is
   // `createTmuxExecutor`, which passes `isolatedArgs(args)` where `args` already begins `-L <socket>`
   // (asserted by "the two compliance seams are real", below).
-  "src/tmux/TmuxService.ts": "systemd-run wrapper splices the executor's already -L-pinned argv",
+  "packages/engine/src/tmux/TmuxService.ts": "systemd-run wrapper splices the executor's already -L-pinned argv",
 };
 
 /** tmux 3.6 global flags: `tmux [-2CDlNuVv] [-c cmd] [-f file] [-L name] [-S path] [-T features]`. */

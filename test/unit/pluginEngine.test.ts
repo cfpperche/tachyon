@@ -26,13 +26,13 @@ import {
   type UnapplyContributionResult,
 } from "../../src/plugins/engine.js";
 import { AppliedStateStore, type ContributionRef } from "../../src/plugins/appliedState.js";
-import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "../../src/plugins/adapters/claude.js";
-import { renderCodexMcpBlock } from "../../src/plugins/adapters/codex.js";
-import { loadMcpPayload, type McpServer } from "../../src/plugins/mcp.js";
+import { PLUGIN_ROOT_PLACEHOLDER, renderClaudeMcpEntry } from "@tachyon/engine/plugins/adapters/claude.js";
+import { renderCodexMcpBlock } from "@tachyon/engine/plugins/adapters/codex.js";
+import { loadMcpPayload, type McpServer } from "@tachyon/engine/plugins/mcp.js";
 import type { GitHookState } from "../../src/plugins/gitHookState.js";
 import type { GitRun } from "../../src/plugins/fetcher.js";
-import { planProjectedPluginHooks, readHookProjectionCandidates } from "../../src/plugins/agentHookProjection.js";
-import { HarnessManager } from "../../src/harness/HarnessManager.js";
+import { planProjectedPluginHooks, readHookProjectionCandidates } from "@tachyon/engine/plugins/agentHookProjection.js";
+import { HarnessManager } from "@tachyon/engine/harness/HarnessManager.js";
 
 const dirs: string[] = [];
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { parseGlobalSettings } from "../../src/config/globalSettings.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { parseGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 import {
   editorStateFrom,
   moveComponent,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig, type AgentDef } from "../../src/config/loadConfig.js";
-import { upsertAgent } from "../../src/config/YamlConfigEditor.js";
-import { fromTerminalDef, toTerminalEntry, type FormState } from "../../src/webview/formLogic.js";
+import { parseConfig, type AgentDef } from "@tachyon/engine/config/loadConfig.js";
+import { upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
+import { fromTerminalDef, toTerminalEntry, type FormState } from "@tachyon/engine/webview/formLogic.js";
 import schema from "../../src/config/tachyon.schema.json";
 import { canonicalAgentFields, serializeAgentPatch } from "../../src/webview/agent-studio-shell/domain.js";
 import {
@@ -9,7 +9,7 @@ import {
   projectAgentProfileStudioSnapshot,
   type AgentProfileStudioMutationV1,
 } from "@tachyon/shared/config/agentProfileStudio.js";
-import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
+import type { AgentProfileLifecycleSnapshot } from "@tachyon/engine/config/agentProfileLifecycle.js";
 
 /**
  * t-26ba8f — saving through a Studio must not delete what the form does not author.

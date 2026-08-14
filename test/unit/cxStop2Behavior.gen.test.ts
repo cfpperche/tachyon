@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { parseConfig, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 
 describe("container-generated delegation behavior", () => {
   it("graceful stop uses each runtime's measured exit sequence", async () => {

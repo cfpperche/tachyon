@@ -2,8 +2,8 @@ import { beforeEach, afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { sliceJournal, TaskJournalStore } from "../../src/tasks/TaskJournalStore.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
+import { sliceJournal, TaskJournalStore } from "@tachyon/engine/tasks/TaskJournalStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { JournalEntry } from "@tachyon/shared/tasks/types.js";
 
 let root: string;

@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   isPinStudioApplyInputV1,
   parsePinStudioStagedPayloadV1,
-} from "../../src/runtime-api/pinStudioCommands.js";
-import { parsePinStudioProjectionV1 } from "../../src/runtime-api/pinStudioProjection.js";
+} from "@tachyon/engine/runtime-api/pinStudioCommands.js";
+import { parsePinStudioProjectionV1 } from "@tachyon/engine/runtime-api/pinStudioProjection.js";
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 const ref = {

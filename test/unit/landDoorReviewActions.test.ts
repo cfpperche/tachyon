@@ -20,7 +20,7 @@ import path from "node:path";
 import { loadWebviewModule, renderStaticWithElements, type RenderedElement } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
 import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "../../src/sections/model.js";
-import { landSuggestion, type LandFacts } from "../../src/worktree/land.js";
+import { landSuggestion, type LandFacts } from "@tachyon/engine/worktree/land.js";
 import type { WorktreesAction } from "../../src/webview/worktrees/messages.js";
 
 const SHELL_TSX = path.join(__dirname, "../../src/webview/worktrees/App.tsx");

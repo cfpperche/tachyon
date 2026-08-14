@@ -7,8 +7,8 @@ import {
   resolvePrimaryCheckout,
   type LandCheckId,
   type LandFacts,
-} from "../../src/worktree/land.js";
-import type { GitExec } from "../../src/worktree/WorktreeManager.js";
+} from "@tachyon/engine/worktree/land.js";
+import type { GitExec } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 const HEAD = "9f3c1ab27d5e408b6c1d90ffae2b7c1d4e88a021";
 const TREE = "41d0c7a9be2201fe3b6c8d47a05e91cc73b2f8de";

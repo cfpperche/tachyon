@@ -8,12 +8,12 @@ import {
   IDE_BROWSER_INSTANCE_HEADER,
   IDE_BROWSER_INSTANCES_DIR_NAME,
   type IdeBrowserInstanceFile,
-} from "../../src/ide-browser/protocol.js";
+} from "@tachyon/engine/ide-browser/protocol.js";
 import {
   findIdeBrowserInstances,
   ideBrowserRequest,
   isIdeBrowserBridgeAvailable,
-} from "../../src/ide-browser/client.js";
+} from "@tachyon/engine/ide-browser/client.js";
 
 const cleanup: Array<() => void | Promise<void>> = [];
 

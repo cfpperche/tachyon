@@ -11,8 +11,8 @@ import {
   convergeActivityRename,
   deleteActivityLog,
   moveActivityLog,
-} from "../../src/activity/logStore.js";
-import type { NormalizedEvent } from "../../src/activity/types.js";
+} from "@tachyon/engine/activity/logStore.js";
+import type { NormalizedEvent } from "@tachyon/engine/activity/types.js";
 
 const dirs: string[] = [];
 function freshDir(): string {

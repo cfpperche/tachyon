@@ -9,8 +9,8 @@ import {
   TmuxService,
   type ExecResult,
   type TmuxExecutor,
-} from "../../src/tmux/TmuxService.js";
-import { ControlModeClient } from "../../src/tmux/ControlModeClient.js";
+} from "@tachyon/engine/tmux/TmuxService.js";
+import { ControlModeClient } from "@tachyon/engine/tmux/ControlModeClient.js";
 
 function deferredExecutor(): {
   exec: TmuxExecutor;

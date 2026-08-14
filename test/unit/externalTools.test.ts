@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { hostActionTouchesHostUi, isLauncherExternalToolKind } from "../../src/externalTools/filters.js";
-import { ExternalToolRegistry } from "../../src/externalTools/registry.js";
-import { scanExternalToolProcesses, type ProcEntry } from "../../src/externalTools/procScanner.js";
-import { toAgentVM } from "../../src/sidebar/agentModel.js";
+import { hostActionTouchesHostUi, isLauncherExternalToolKind } from "@tachyon/engine/externalTools/filters.js";
+import { ExternalToolRegistry } from "@tachyon/engine/externalTools/registry.js";
+import { scanExternalToolProcesses, type ProcEntry } from "@tachyon/engine/externalTools/procScanner.js";
+import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
 
 describe("ExternalToolRegistry", () => {
   it("summarizes one active browser session for the sidebar VM", () => {

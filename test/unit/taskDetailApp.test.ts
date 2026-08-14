@@ -4,15 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
 import { __createdPanels, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
-import { TaskDetailStore, hashBody } from "../../src/tasks/TaskDetailStore.js";
-import { TaskPrototypeStore } from "../../src/tasks/TaskPrototypeStore.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
+import { TaskDetailStore, hashBody } from "@tachyon/engine/tasks/TaskDetailStore.js";
+import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js";
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE } from "../../src/webview/TaskDetailPanel.js";
 import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
 import { legacyTaskDetailTarget, type WorkspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
 import { readyMessage } from "../../src/webview/shared/ready.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
+import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import { ControlWorkspaceScope } from "../../src/webview/shared/ControlWorkspaceScope.js";
 
 /**

@@ -3,26 +3,26 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { scanAgentRosterDirectory } from "../../src/config/agentRosterDirectory.js";
+import { scanAgentRosterDirectory } from "@tachyon/engine/config/agentRosterDirectory.js";
 import {
   commitAgentProfileLifecycle as commitLifecycleKernel,
   agentProfileLifecycleBlocked,
   inspectAgentProfileLifecycle,
   reconcileAgentProfileLifecycle as reconcileLifecycleKernel,
   type CommitAgentProfileLifecycleInput,
-} from "../../src/config/agentProfileLifecycle.js";
+} from "@tachyon/engine/config/agentProfileLifecycle.js";
 import {
   createProfileFromStudioMutation,
   proposeSavedAgentGrantPatchFromStudioMutation,
 } from "@tachyon/shared/config/agentProfileStudio.js";
-import { readAgentProfileGrants } from "../../src/config/agentProfileGrants.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
-import { acquireAgentProfileTransactionLock } from "../../src/config/agentProfileTransactions.js";
+import { readAgentProfileGrants } from "@tachyon/engine/config/agentProfileGrants.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
+import type { AgentProfileAuthorityPort } from "@tachyon/engine/config/agentProfileTransactions.js";
+import { acquireAgentProfileTransactionLock } from "@tachyon/engine/config/agentProfileTransactions.js";
 import {
   CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   GROK_PRIVATE_HOME_INPUT_INSPECTOR,
-} from "../../src/config/agentProfileProjection.js";
+} from "@tachyon/engine/config/agentProfileProjection.js";
 
 const roots: string[] = [];
 

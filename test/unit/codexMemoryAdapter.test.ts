@@ -12,9 +12,9 @@ import {
   memoryEnablingKeys,
   parseCodexFeatures,
 } from "../../src/runtime/adapters/codexMemory.js";
-import { nativeMemoryCapability, resolveMemoryPolicy } from "../../src/runtime/nativeMemory.js";
-import { CODEX_EDITABLE_SETTING_KEYS, projectCodexScalarNativeConfig } from "../../src/config/codexNativeConfigProjection.js";
-import type { AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
+import { nativeMemoryCapability, resolveMemoryPolicy } from "@tachyon/engine/runtime/nativeMemory.js";
+import { CODEX_EDITABLE_SETTING_KEYS, projectCodexScalarNativeConfig } from "@tachyon/engine/config/codexNativeConfigProjection.js";
+import type { AgentProfileV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 
 /**
  * t-c46aad — what Codex CLI's memory can be held to without billing anyone.

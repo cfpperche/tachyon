@@ -6,7 +6,7 @@ import {
   CODEX_CATALOG_MAX_SLUGS,
   CodexCatalogStreamParser,
   type CodexCatalogStreamResult,
-} from "../../src/runtime/adapters/codexCatalogStream.js";
+} from "@tachyon/engine/runtime/adapters/codexCatalogStream.js";
 
 function parseBuffer(input: Buffer, chunkSize = input.length || 1): CodexCatalogStreamResult {
   const parser = new CodexCatalogStreamParser();

@@ -34,10 +34,10 @@ import {
   isTachyonManagedHermesHome,
   setHermesMcpServer,
   opencodeHarnessDirs,
-} from "../../src/harness/HarnessManager.js";
+} from "@tachyon/engine/harness/HarnessManager.js";
 import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
-import type { HarnessDef } from "../../src/config/loadConfig.js";
-import type { ResolvedAgentCapabilityProjection } from "../../src/config/agentProfileResolver.js";
+import type { HarnessDef } from "@tachyon/engine/config/loadConfig.js";
+import type { ResolvedAgentCapabilityProjection } from "@tachyon/engine/config/agentProfileResolver.js";
 
 const claude = adapterForRuntime("claude")!;
 const codex = adapterForRuntime("codex")!;

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { parseConfig, type TachyonConfig } from "../../src/config/loadConfig.js";
-import { BRIEF_FILE_THRESHOLD, briefFilePath, deliverableBody } from "../../src/agents/briefFile.js";
-import { composeSpawnContractBrief, type SpawnContract } from "../../src/bridge/spawnContract.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { parseConfig, type TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
+import { BRIEF_FILE_THRESHOLD, briefFilePath, deliverableBody } from "@tachyon/engine/agents/briefFile.js";
+import { composeSpawnContractBrief, type SpawnContract } from "@tachyon/engine/bridge/spawnContract.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 function configOf(yaml: string): TachyonConfig {

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { AgentPromptManifest } from "../../src/agents/promptLayers.js";
+import type { AgentPromptManifest } from "@tachyon/engine/agents/promptLayers.js";
 import {
   MAX_STARTUP_BRIEF_INVENTORY_BYTES,
   MAX_STARTUP_BRIEF_SUMMARY_BYTES,
   renderStartupBriefInventory,
   renderStartupBriefSummary,
   type StartupBriefManifest,
-} from "../../src/agents/startupBrief.js";
+} from "@tachyon/engine/agents/startupBrief.js";
 
 const emptyPrompt: AgentPromptManifest = {
   persistentInstructions: false,

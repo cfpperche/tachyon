@@ -16,7 +16,7 @@
  * can never be tricked into `git fetch --upload-pack=…`-style argument injection).
  */
 
-import { checkContainedRelPath } from "./paths.js";
+import { checkContainedRelPath } from "@tachyon/engine/plugins/paths.js";
 
 const MAX_SPEC_LEN = 2048;
 const SHA_RE = /^[0-9a-fA-F]{40}$/; // a full git commit SHA (case-insensitive; normalized to lowercase on output)

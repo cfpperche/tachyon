@@ -2,7 +2,7 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { codexSessionReader } from "../../src/runtimeOps/codexSessionReader.js";
+import { codexSessionReader } from "@tachyon/engine/runtimeOps/codexSessionReader.js";
 
 /**
  * t-0c963d — the Codex reader, driven by the argv and files a real session actually has.
@@ -195,12 +195,12 @@ describe("t-0c963d — reading what a Codex session was given", () => {
  */
 describe("t-0c963d — the Codex projectable-key list matches the projector", () => {
   it("lists exactly what codexNativeConfigProjection projects", () => {
-    const source = fs.readFileSync(path.join(process.cwd(), "src/config/codexNativeConfigProjection.ts"), "utf8");
+    const source = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/config/codexNativeConfigProjection.ts"), "utf8");
     const block = /const FAMILY_KEYS[^=]*=\s*\{([\s\S]*?)\n\};/.exec(source);
     expect(block).toBeTruthy();
     const projected = new Set([...block![1].matchAll(/"([a-z_.]+)"/g)].map((match) => match[1]));
 
-    const reader = fs.readFileSync(path.join(process.cwd(), "src/runtimeOps/codexSessionReader.ts"), "utf8");
+    const reader = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/runtimeOps/codexSessionReader.ts"), "utf8");
     const listed = /projectableKeys:\s*\[([\s\S]*?)\]/.exec(reader);
     expect(listed).toBeTruthy();
     const mirrored = new Set([...listed![1].matchAll(/"([a-z_.]+)"/g)].map((match) => match[1]));

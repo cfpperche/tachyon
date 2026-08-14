@@ -15,7 +15,7 @@ import path from "node:path";
 import { loadWebviewModule, renderStatic, renderStaticWithElements, type RenderedElement } from "../helpers/staticPreact.js";
 import { strings as fixtureStrings } from "../../scripts/webview-preview/fixtures/cockpit.js";
 import { buildSectionsModel, type WorkspaceBundle, type WorktreeRow } from "../../src/sections/model.js";
-import { landSuggestion, type LandFacts } from "../../src/worktree/land.js";
+import { landSuggestion, type LandFacts } from "@tachyon/engine/worktree/land.js";
 
 const SHELL_TSX = path.join(__dirname, "../../src/webview/worktrees/App.tsx");
 const HEAD = "9f3c1ab27d5e408b6c1d90ffae2b7c1d4e88a021";

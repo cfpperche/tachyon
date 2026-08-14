@@ -4,8 +4,8 @@ import {
   selectAssignedWork,
   staleContractReferences,
   type BoardAssignmentRow,
-} from "../../src/agents/assignmentSelection.js";
-import { renderSessionWorkRecord } from "../../src/agents/sessionWorkRecord.js";
+} from "@tachyon/engine/agents/assignmentSelection.js";
+import { renderSessionWorkRecord } from "@tachyon/engine/agents/sessionWorkRecord.js";
 
 /**
  * t-9d250c — the two measured incidents, as fixtures.

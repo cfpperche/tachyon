@@ -6,7 +6,7 @@ import {
   workspaceCommandSuccessV1,
   workspaceExtensionCommandSuccessV1,
   workspaceExtensionQuerySuccessV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { CommandStudioAdapter } from "../../src/webview/CommandStudioAdapter.js";

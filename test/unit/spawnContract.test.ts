@@ -12,7 +12,7 @@ import {
   normalizeField,
   spawnContractCompletion,
   type SpawnContract,
-} from "../../src/bridge/spawnContract.js";
+} from "@tachyon/engine/bridge/spawnContract.js";
 
 const good: SpawnContract = {
   task: "Add a retry to the upload client",

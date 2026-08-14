@@ -4,7 +4,7 @@ import {
   parseGrokModelCatalog,
   type GrokCatalogProbe,
   type GrokProbeResult,
-} from "../../src/runtime/adapters/grokLaunchPreflight.js";
+} from "@tachyon/engine/runtime/adapters/grokLaunchPreflight.js";
 import { parseLaunchCommand } from "@tachyon/shared/runtime/launchPreflight.js";
 
 /**

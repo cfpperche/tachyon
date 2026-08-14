@@ -4,8 +4,8 @@ import { execFileSync, execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TmuxService, isolatedArgs, utf8LocaleEnv, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { ControlModeClient, type DeadMapEntry } from "../../src/tmux/ControlModeClient.js";
+import { TmuxService, isolatedArgs, utf8LocaleEnv, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { ControlModeClient, type DeadMapEntry } from "@tachyon/engine/tmux/ControlModeClient.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 
 /**

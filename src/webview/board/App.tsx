@@ -2,12 +2,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { Button, Icon, Input, IconButton, PageChrome, Select, useToastOptional } from "../shared/ui";
 import { KitSelect } from "../shared/ui/kit";
 import { agentFilterOptions, buildBoardModel, type BoardCardVM, type BoardColumnVM } from "../../tasks/boardModel";
-import type { BoardSnapshot } from "../../tasks/boardSnapshot";
+import type { BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
 import { compareTasksByPriorityRank } from "@tachyon/shared/tasks/nextTask";
 import type { BoardVM } from "./messages";
 import { applyAwaitingHumanFilter, assigneePatch, canSubmitEdit, cardMenuActions, priorityPatch, resolveDrop, resolveReorder, isStaleError, shouldShowAwaitingFilterButton, type DragSession } from "./interactions";
 import type { TaskPriority, TaskStatus, TaskUpdateExpect, TaskUpdateInput } from "@tachyon/shared/tasks/types";
-import type { ValidationOutcome } from "../../validations/types";
+import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 
 // spec 335 — Board. The webview NEVER computes affordances/ordering itself: every column, card
 // order, drag legality, and spotlight comes straight out of `boardModel.ts` (pure, shared with tests), fed by

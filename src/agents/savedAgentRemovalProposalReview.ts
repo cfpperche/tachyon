@@ -1,5 +1,5 @@
-import type { SavedAgentRemovalProposal } from "./savedAgentRemovalProposal.js";
-import { savedAgentRemovalProposalIsExpired } from "./savedAgentRemovalProposal.js";
+import type { SavedAgentRemovalProposal } from "@tachyon/engine/agents/savedAgentRemovalProposal.js";
+import { savedAgentRemovalProposalIsExpired } from "@tachyon/engine/agents/savedAgentRemovalProposal.js";
 
 /**
  * t-afe120 — what the human sees before approving a Saved Agent removal.

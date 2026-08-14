@@ -7,7 +7,7 @@ import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSe
 import { sectionPanelKey, type SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
 import { readyMessage, refreshAction } from "../../src/webview/inspector/messages.js";
 import type { InspectorDeps } from "../../src/webview/ServerInspector.js";
-import type { PaneSnapshot } from "../../src/tmux/TmuxService.js";
+import type { PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 
 /**
  * SDD 485 D1 — the tmux Server Inspector as a standalone `window` app.

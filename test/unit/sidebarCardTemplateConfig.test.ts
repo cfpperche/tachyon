@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, parseCardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { modelFromCommand, toAgentVM, statusOf, resolveModelFact, declaredModelFromCommand, validatedObservedModelId, type AgentRaw, type ObservedModelInput } from "../../src/sidebar/agentModel";
+import { modelFromCommand, toAgentVM, statusOf, resolveModelFact, declaredModelFromCommand, validatedObservedModelId, type AgentRaw, type ObservedModelInput } from "@tachyon/engine/sidebar/agentModel.js";
 
 const raw = (o: Partial<AgentRaw> & { name: string }): AgentRaw => ({ running: false, dead: false, crashed: false, ...o });
 

@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { buildPluginsViewModel, buildExternalStatuses, buildMcpStatuses, buildContributionStatuses, type UpdateCheck } from "../../src/plugins/viewModel.js";
-import type { PluginLock } from "../../src/plugins/lockfile.js";
-import { serializeLockfile } from "../../src/plugins/lockfile.js";
-import type { Runtime } from "../../src/plugins/manifest.js";
+import type { PluginLock } from "@tachyon/engine/plugins/lockfile.js";
+import { serializeLockfile } from "@tachyon/engine/plugins/lockfile.js";
+import type { Runtime } from "@tachyon/engine/plugins/manifest.js";
 
 const ws = (...rt: Runtime[]): ReadonlySet<Runtime> => new Set(rt);
 

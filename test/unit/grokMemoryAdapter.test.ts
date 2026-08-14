@@ -11,8 +11,8 @@ import {
   grokMemoryCapability,
   grokMemoryEnv,
   grokMemoryVerificationPlan,
-} from "../../src/runtime/adapters/grokMemory.js";
-import { nativeMemoryCapability, resolveMemoryPolicy } from "../../src/runtime/nativeMemory.js";
+} from "@tachyon/engine/runtime/adapters/grokMemory.js";
+import { nativeMemoryCapability, resolveMemoryPolicy } from "@tachyon/engine/runtime/nativeMemory.js";
 
 /**
  * t-0e88f3 — the task that withdrew t-c46c35's guarantee.

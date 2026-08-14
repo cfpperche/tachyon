@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isAgentInputCommandV1 } from "../../src/runtime-api/agentInputCommands.js";
+import { isAgentInputCommandV1 } from "@tachyon/engine/runtime-api/agentInputCommands.js";
 import {
   parseActivityContextViewV1,
   projectActivityContext,
-} from "../../src/runtime-api/activityProjection.js";
+} from "@tachyon/engine/runtime-api/activityProjection.js";
 
 describe("Activity Runtime API", () => {
   it("projects one bounded context with live share targets and attention", async () => {

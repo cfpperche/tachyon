@@ -1,8 +1,8 @@
-import type { BoardChip, BoardSnapshot } from "./boardSnapshot.js";
+import type { BoardChip, BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
 import { compareTasksByPriorityRank } from "@tachyon/shared/tasks/nextTask.js";
 import type { Task, TaskAttention, TaskAwaitingHumanKind, TaskEmptyReason, TaskPriority, TaskStatus } from "@tachyon/shared/tasks/types.js";
-import type { ValidationExecutor, ValidationOutcome, ValidationStatus } from "../validations/types.js";
-import type { ValidationSummary } from "../validations/ValidationStore.js";
+import type { ValidationExecutor, ValidationOutcome, ValidationStatus } from "@tachyon/engine/validations/types.js";
+import type { ValidationSummary } from "@tachyon/engine/validations/ValidationStore.js";
 
 /** spec 335/360 — the always-on board columns, in display order. Dropped is a toggle-reveal bucket, never an
  *  always-on column. */

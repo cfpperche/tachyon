@@ -27,7 +27,7 @@ import type { ApprovalViewItem } from "../approval/viewModel.js";
 import type { ValidationViewItem } from "../validations/viewModel.js";
 import type { SavedAgentProposalReview } from "../../agents/savedAgentProposalReview.js";
 import type { SavedAgentRemovalProposalReview } from "../../agents/savedAgentRemovalProposalReview.js";
-import type { ScheduleProposal } from "../../schedule/ProposalStore.js";
+import type { ScheduleProposal } from "@tachyon/engine/schedule/ProposalStore.js";
 
 export interface HumanInboxViewModel {
   folder: string;

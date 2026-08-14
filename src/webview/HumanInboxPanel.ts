@@ -18,25 +18,25 @@ import {
   type HumanInboxAction,
 } from "./human-inbox/messages.js";
 import { buildHumanInboxViewModel, buildHumanInboxItemViewModel } from "./human-inbox/viewModel.js";
-import { makeInboxArtifactLoader } from "../humanInbox/loadArtifact.js";
+import { makeInboxArtifactLoader } from "@tachyon/engine/humanInbox/loadArtifact.js";
 import type { HumanInboxKind, StaleAfter } from "../humanInbox/model.js";
-import type { ApprovalDecision } from "../bridge/approvalRequest.js";
-import type { ValidationOutcome } from "../validations/types.js";
+import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
+import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import type { WorkspacePresentationTarget } from "../shell/WorkspacePresentation.js";
 import type { WorkspaceBoardTarget } from "../shell/BoardTarget.js";
 import { buildValidationsViewModel } from "./validations/viewModel.js";
 import { listApprovalViewItems } from "./approval/viewModel.js";
-import { readLiveSavedAgentProposalQueue } from "../agents/savedAgentProposalStore.js";
+import { readLiveSavedAgentProposalQueue } from "@tachyon/engine/agents/savedAgentProposalStore.js";
 import { buildSavedAgentProposalReview } from "../agents/savedAgentProposalReview.js";
 import { denySavedAgentProposal, type SavedAgentCommitResult } from "../agents/savedAgentProposalCommit.js";
-import { readLiveSavedAgentRemovalProposalQueue } from "../agents/savedAgentRemovalProposalStore.js";
+import { readLiveSavedAgentRemovalProposalQueue } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
 import { buildSavedAgentRemovalProposalReview } from "../agents/savedAgentRemovalProposalReview.js";
 import {
   denySavedAgentRemovalProposal,
   type SavedAgentRemovalCommitResult,
 } from "../agents/savedAgentRemovalProposalCommit.js";
-import { workspaceConfigSha256 } from "../config/agentProfileGrants.js";
-import { ProposalStore } from "../schedule/ProposalStore.js";
+import { workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
+import { ProposalStore } from "@tachyon/engine/schedule/ProposalStore.js";
 
 /**
  * The viewType, and it is NEW for a reason none of the five previous calls in this spec met: **there is no

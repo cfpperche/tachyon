@@ -9,7 +9,7 @@ import { auditTrunk, formatTrunkAudit, recordVerification, reuseDecision, verifi
 
 /**
  * t-da6b78 — the sizing rules come from `shared/host-resource-sizing.cjs`, the SAME module
- * `src/host/hostResources.ts` re-exports. They used to live twice: here (via a hand-kept ESM twin
+ * `packages/engine/src/host/hostResources.ts` re-exports. They used to live twice: here (via a hand-kept ESM twin
  * at `scripts/host-resources.mjs`) and in the TypeScript module, synchronised by human memory.
  */
 const { decideHeavyGate } = hostResourceSizing;

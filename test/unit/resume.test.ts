@@ -14,10 +14,10 @@ import {
   grokTranscriptPath,
   type ResumeRuntime,
 } from "@tachyon/shared/resume/adapters.js";
-import { SessionLedger, isResumable, type SessionRecord } from "../../src/resume/SessionLedger.js";
-import { EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence } from "../../src/worktree/evidence.js";
-import { planResume, autoResumes, offers } from "../../src/resume/planResume.js";
-import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveAntigravityId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession, resolveHermesId } from "../../src/resume/resolvers.js";
+import { SessionLedger, isResumable, type SessionRecord } from "@tachyon/engine/resume/SessionLedger.js";
+import { EVIDENCE_SCHEMA_VERSION, type WorktreeEvidence } from "@tachyon/engine/worktree/evidence.js";
+import { planResume, autoResumes, offers } from "@tachyon/engine/resume/planResume.js";
+import { resolveCodexId, resolveCodexSession, resolveOpencodeId, resolveAntigravityId, resolveCaptureId, resolveCaptureSession, resolveClaudeId, resolveClaudeIdByTitle, resolveCurrentSession, resolveHermesId } from "@tachyon/engine/resume/resolvers.js";
 
 describe("runtimeOf / binaryOf", () => {
   it("detects each supported runtime by binary", () => {

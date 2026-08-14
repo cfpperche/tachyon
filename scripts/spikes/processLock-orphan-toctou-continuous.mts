@@ -26,7 +26,7 @@ const overlapPath = path.join(scratch, "overlaps.jsonl");
 const killsPath = path.join(scratch, "kills.jsonl");
 const stopPath = path.join(scratch, "STOP");
 const workerPath = path.join(scratch, "contender.ts");
-const lockUrl = pathToFileURL(path.join(repoRoot, "src/locks/processLock.ts")).href;
+const lockUrl = pathToFileURL(path.join(repoRoot, "packages/engine/src/locks/processLock.ts")).href;
 const viteNode = path.join(repoRoot, "node_modules", ".bin", "vite-node");
 
 fs.writeFileSync(csLog, "", "utf8");

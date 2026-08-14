@@ -4,7 +4,7 @@ import fs from "node:fs";
 // esbuild uses is the point of this regression test.
 // @ts-expect-error -- plain build-script module, exercised directly
 import { parseEngineShellProtocol, readEngineShellProtocol } from "../../scripts/engine-protocol.mjs";
-import { ENGINE_SHELL_PROTOCOL } from "../../src/engine-service/protocol.js";
+import { ENGINE_SHELL_PROTOCOL } from "@tachyon/engine/engine-service/protocol.js";
 
 describe("engine manifest protocol source", () => {
   it("derives the build value from the runtime protocol authority", () => {

@@ -12,8 +12,8 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
 import type { TaskStatus } from "@tachyon/shared/tasks/types.js";
 
 class FakeMcp {
@@ -56,7 +56,7 @@ async function seedRealisticBoard(store: TaskStore, n: number): Promise<void> {
       kind: i % 2 === 0 ? "bug" : "feature",
       body: "Body is never part of list_tasks, but create still accepts it.",
       artifact_refs: [
-        { type: "path", ref: `src/bridge/tools/tasks.ts`, role: "deliverable" },
+        { type: "path", ref: `packages/engine/src/bridge/tools/tasks.ts`, role: "deliverable" },
         { type: "path", ref: `src/tasks/boardModel.ts`, role: "relation" },
         { type: "task", ref: "t-ab7708", role: "relation" },
       ],

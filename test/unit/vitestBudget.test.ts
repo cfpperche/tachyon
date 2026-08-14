@@ -15,8 +15,8 @@ import {
   vitestBudgetTrailPath,
   type VitestBudgetTrailEvent,
   type VitestClaim,
-} from "../../src/host/vitestBudget.js";
-import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "../../src/host/hostResources.js";
+} from "@tachyon/engine/host/vitestBudget.js";
+import { recommendVitestMaxWorkers, type HostMemorySnapshot } from "@tachyon/engine/host/hostResources.js";
 import hostResourceCostInputs from "@tachyon/shared/host-resource-cost-inputs.cjs";
 
 /**
@@ -428,7 +428,7 @@ describe("vitest host budget (t-3ad4af)", () => {
     const bundle = path.join(dir, "budget.mjs");
     const esbuild = await import("esbuild");
     await esbuild.build({
-      entryPoints: [path.resolve(__dirname, "../../src/host/vitestBudget.ts")],
+      entryPoints: [path.resolve(__dirname, "../../packages/engine/src/host/vitestBudget.ts")],
       outfile: bundle,
       bundle: true,
       platform: "node",

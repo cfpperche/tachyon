@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { parseLockfile, LOCKFILE_REL_PATH } from "./lockfile.js";
+import { parseLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 
 /** content-addressed DATA store + the resolver shim path (sha-first per dueto D1; workspace-relative, clone-safe). */
 export const DATA_STORE_REL = ".tachyon/data/sha256";

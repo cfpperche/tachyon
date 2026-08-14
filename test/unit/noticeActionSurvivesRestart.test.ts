@@ -2,13 +2,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DaemonEngineHost, type DaemonUiRequest } from "../../src/workspace/DaemonEngineHost.js";
+import { DaemonEngineHost, type DaemonUiRequest } from "@tachyon/engine/workspace/DaemonEngineHost.js";
 import {
   DURABLE_NOTICE_COMMANDS,
   restoreNoticeInbox,
   restoreNoticeRoute,
-} from "../../src/workspace/noticeInbox.js";
-import { routeHumanInboxItem } from "../../src/engine-service/engineService.js";
+} from "@tachyon/engine/workspace/noticeInbox.js";
+import { routeHumanInboxItem } from "@tachyon/engine/engine-service/engineService.js";
 import { HUMAN_INBOX_KINDS } from "../../src/humanInbox/model.js";
 
 /**

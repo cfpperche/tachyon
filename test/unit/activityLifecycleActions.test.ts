@@ -5,7 +5,7 @@ import {
   startAgentWithActivity,
   type ActivityLifecycleRecorder,
   type ActivityLifecycleWorkspace,
-} from "../../src/activity/ActivityLogManager.js";
+} from "@tachyon/engine/activity/ActivityLogManager.js";
 
 describe("persistent engine activity lifecycle actions", () => {
   it("preserves the complete manual restart order before executing in the engine", async () => {

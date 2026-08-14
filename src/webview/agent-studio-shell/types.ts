@@ -3,7 +3,7 @@ import type {
   AgentStudioEntity,
   AgentStudioPatch,
 } from "./domain";
-import type { AuthorizableCapabilities } from "../../config/agentCapabilityCandidates.js";
+import type { AuthorizableCapabilities } from "@tachyon/engine/config/agentCapabilityCandidates.js";
 import type { AgentOwnershipViewV1, AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio";
 import type { AgentProfileStudioBundleCreatedResultV1, AgentProfileStudioBundleExportResultV1 } from "@tachyon/shared/config/agentProfileStudio";
 import type { AgentForgetPlanResultV1 } from "@tachyon/shared/config/agentForgetPlan";

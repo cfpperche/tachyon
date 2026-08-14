@@ -1,4 +1,4 @@
-import type { PaneSnapshot } from "../tmux/TmuxService.js";
+import type { PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 import type { TmuxServerSnapshot } from "../inspector/model.js";
 
 /**

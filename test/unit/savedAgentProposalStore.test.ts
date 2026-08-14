@@ -14,8 +14,8 @@ import {
   recordSavedAgentProposal,
   savedAgentProposalPath,
   sweepExpiredSavedAgentProposals,
-} from "../../src/agents/savedAgentProposalStore.js";
-import { SAVED_AGENT_PROPOSAL_PENDING_CEILING, SAVED_AGENT_PROPOSAL_TTL_MS } from "../../src/agents/savedAgentProposal.js";
+} from "@tachyon/engine/agents/savedAgentProposalStore.js";
+import { SAVED_AGENT_PROPOSAL_PENDING_CEILING, SAVED_AGENT_PROPOSAL_TTL_MS } from "@tachyon/engine/agents/savedAgentProposal.js";
 
 /**
  * SDD 482 phase 4 slice B (`t-5e1113`) — durability is where ratified decision 4 can actually fail.

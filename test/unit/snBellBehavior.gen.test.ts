@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
-import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
-import { readDoorbellEvents } from "../../src/bridge/doorbell.js";
-import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxService } from "../../src/tmux/TmuxService.js";
+import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
+import { readDoorbellEvents } from "@tachyon/engine/bridge/doorbell.js";
+import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 /** A fake MCP server that just captures tool handlers (mirrors test/unit/probeBridge.test.ts). */

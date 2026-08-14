@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decideAnchor, composeDirtyPatch, isEmptyPatch, hashBody } from "../../src/tasks/studioModel.js";
+import { decideAnchor, composeDirtyPatch, isEmptyPatch, hashBody } from "@tachyon/engine/tasks/studioModel.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {

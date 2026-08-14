@@ -16,12 +16,12 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ProbeService } from "../../src/probe/ProbeService.js";
-import { ProbeStore } from "../../src/probe/ProbeStore.js";
-import { codexAdapter, createCodexAdapter } from "../../src/probe/adapters/codex.js";
-import { collectCodexSessionEvidence, humanCodexHome, PRIVATE_HOME_DIRNAME } from "../../src/probe/adapters/codexSessionEvidence.js";
-import { resolveModelProof } from "../../src/probe/modelProof.js";
-import type { HeadlessCaptureAdapter } from "../../src/probe/adapters/types.js";
+import { ProbeService } from "@tachyon/engine/probe/ProbeService.js";
+import { ProbeStore } from "@tachyon/engine/probe/ProbeStore.js";
+import { codexAdapter, createCodexAdapter } from "@tachyon/engine/probe/adapters/codex.js";
+import { collectCodexSessionEvidence, humanCodexHome, PRIVATE_HOME_DIRNAME } from "@tachyon/engine/probe/adapters/codexSessionEvidence.js";
+import { resolveModelProof } from "@tachyon/engine/probe/modelProof.js";
+import type { HeadlessCaptureAdapter } from "@tachyon/engine/probe/adapters/types.js";
 
 /** The model this dogfood asks for. Requested explicitly — never inferred, never defaulted. */
 const MODEL = "gpt-5.6-luna";

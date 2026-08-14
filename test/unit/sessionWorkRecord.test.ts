@@ -9,7 +9,7 @@ import {
   sessionRecordManifest,
   type AssignedTaskRecord,
   type SessionWorkRecord,
-} from "../../src/agents/sessionWorkRecord.js";
+} from "@tachyon/engine/agents/sessionWorkRecord.js";
 
 const worktree = { kind: "worktree", path: "/wt/agent", branch: "tachyon/change/t-5bfb72" } as const;
 const shared = { kind: "shared", cwd: "/repo" } as const;

@@ -1,12 +1,12 @@
-import { composeAgentPrompt } from "../promptLayers.js";
-import type { ResolvedFormationPayload } from "./authorityStore.js";
-import { formationDigest, validateFormationAuthorityVector, type FormationAuthorityVector } from "./domain.js";
+import { composeAgentPrompt } from "@tachyon/engine/agents/promptLayers.js";
+import type { ResolvedFormationPayload } from "@tachyon/engine/agents/formation/authorityStore.js";
+import { formationDigest, validateFormationAuthorityVector, type FormationAuthorityVector } from "@tachyon/engine/agents/formation/domain.js";
 import {
   HUMAN_FORMATION_RENDERER_CONTRACTS_SHA256,
   type HumanLaneSuppressionAuthority,
   type HumanLaneSuppressionReceipt,
   resolveHumanFormationPayload,
-} from "./humanLanes.js";
+} from "@tachyon/engine/agents/formation/humanLanes.js";
 import { SELECTED_MEMORY_RENDERER_SHA256 } from "./memoryLane.js";
 
 export const COMPLETE_FORMATION_RENDERER_CONTRACT = "tachyon-complete-agent-formation-v1";

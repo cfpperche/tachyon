@@ -4,7 +4,7 @@
  * (`ProbeResultPanelManager`), the webview listener (`probes/main.tsx`), and the dev preview harness.
  */
 
-import type { ProbeView } from "../../probe/probeView";
+import type { ProbeView } from "@tachyon/engine/probe/probeView.js";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 

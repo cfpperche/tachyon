@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildRuntimeOpsSnapshot, projectBridgeHealth } from "../../src/runtimeOps/model.js";
-import { buildWorkspaceLabels } from "../../src/runtimeOps/workspaceLabels.js";
+import { buildRuntimeOpsSnapshot, projectBridgeHealth } from "@tachyon/engine/runtimeOps/model.js";
+import { buildWorkspaceLabels } from "@tachyon/engine/runtimeOps/workspaceLabels.js";
 
 describe("Runtime Ops projection", () => {
   it("unions PATH and managed runtimes, deduplicates, and sorts by display label", () => {

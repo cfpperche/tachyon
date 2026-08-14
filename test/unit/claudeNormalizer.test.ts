@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { normalizeClaude, createClaudeNormalizer } from "../../src/activity/claudeNormalizer.js";
-import type { NormalizedEvent } from "../../src/activity/types.js";
+import { normalizeClaude, createClaudeNormalizer } from "@tachyon/engine/activity/claudeNormalizer.js";
+import type { NormalizedEvent } from "@tachyon/engine/activity/types.js";
 
 /**
  * Synthetic-but-faithful fixtures (spec 238 fold): the SHAPES mirror a real claude JSONL

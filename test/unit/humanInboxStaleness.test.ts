@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { DEFAULT_STALE_AFTER_HOURS, buildHumanInbox, humanInboxCounts } from "../../src/humanInbox/model.js";
 import { buildHumanInboxViewModel } from "../../src/webview/human-inbox/viewModel.js";
 import type { ApprovalViewItem } from "../../src/webview/approval/viewModel.js";

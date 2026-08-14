@@ -7,9 +7,9 @@ import {
   readSavedAgentProposal,
   savedAgentProposalPath,
   appendSavedAgentProposalWitness,
-} from "./savedAgentProposalStore.js";
-import { proposedWorktreeEnabled, savedAgentProposalIsExpired, type SavedAgentProposal } from "./savedAgentProposal.js";
-import type { AgentProfileGrants } from "../config/agentProfileGrants.js";
+} from "@tachyon/engine/agents/savedAgentProposalStore.js";
+import { proposedWorktreeEnabled, savedAgentProposalIsExpired, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
+import type { AgentProfileGrants } from "@tachyon/engine/config/agentProfileGrants.js";
 
 /**
  * SDD 482 phase 4 slice C (`t-5e1113`) — the only path from an approved proposal to a Saved Agent.

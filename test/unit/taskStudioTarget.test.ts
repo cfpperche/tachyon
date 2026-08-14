@@ -6,11 +6,11 @@ import {
   workspaceCommandSuccessV1,
   workspaceTaskStudioApplySuccessV1,
   workspaceTaskStudioViewSuccessV1,
-} from "../../src/engine-service/protocol.js";
-import { parseTaskStudioStagedPayloadV1 } from "../../src/runtime-api/taskStudioCommands.js";
+} from "@tachyon/engine/engine-service/protocol.js";
+import { parseTaskStudioStagedPayloadV1 } from "@tachyon/engine/runtime-api/taskStudioCommands.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
 import { workspaceTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
-import { TaskAttachmentStore } from "../../src/tasks/TaskAttachmentStore.js";
+import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
 import { TaskStudioAdapter } from "../../src/webview/TaskStudioAdapter.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 

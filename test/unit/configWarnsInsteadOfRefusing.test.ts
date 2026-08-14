@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { asAgent, parseConfig } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig } from "@tachyon/engine/config/loadConfig.js";
 
 /**
  * t-48dd8d — tachyon.yml warns instead of refusing, and it does exactly that and nothing more.

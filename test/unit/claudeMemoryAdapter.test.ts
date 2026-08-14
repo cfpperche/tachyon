@@ -9,7 +9,7 @@ import {
   claudePurgePlanArgv,
   parseClaudePurgePlan,
 } from "../../src/runtime/adapters/claudeMemory.js";
-import { nativeMemoryCapability, resolveMemoryPolicy } from "../../src/runtime/nativeMemory.js";
+import { nativeMemoryCapability, resolveMemoryPolicy } from "@tachyon/engine/runtime/nativeMemory.js";
 
 /**
  * t-f22211 — what Claude Code's memory can be held to without billing anyone.

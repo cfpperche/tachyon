@@ -1,4 +1,4 @@
-import type { ApprovalDecision } from "../../bridge/approvalRequest";
+import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
 import type { ApprovalViewModel, ApprovalViewItem } from "./viewModel";
 import { Button, EmptyState, PageChrome } from "../shared/ui";
 

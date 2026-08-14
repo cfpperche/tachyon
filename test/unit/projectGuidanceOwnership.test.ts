@@ -3,17 +3,17 @@ import os from "node:os";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { beforeEach, describe, expect, it } from "vitest";
-import { AgentManager } from "../../src/agents/AgentManager.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import {
   PROJECT_GUIDANCE_END,
   PROJECT_GUIDANCE_START,
   loadAndRenderProjectGuidance,
-} from "../../src/config/projectGuidance.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
+} from "@tachyon/engine/config/projectGuidance.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
-import { PRIMER_OPEN, renderPrimer, type PrimerInput } from "../../src/bridge/primer.js";
-import { bridgeGuidanceTail } from "../../src/agents/bridgeGuidance.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
+import { PRIMER_OPEN, renderPrimer, type PrimerInput } from "@tachyon/engine/bridge/primer.js";
+import { bridgeGuidanceTail } from "@tachyon/engine/agents/bridgeGuidance.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 
 // Promoted out of the Product Invariant registry on 2026-07-25 (maintainer decision: the ceremony
 // slowed a beta project; the coverage did not). The promise is unchanged and still what this file

@@ -5,7 +5,7 @@ import {
   parseAgentMemoryMax,
   posixShellQuote,
   wrapAgentMemoryScopeCommand,
-} from "../../src/agents/agentMemoryScope.js";
+} from "@tachyon/engine/agents/agentMemoryScope.js";
 
 describe("agentMemoryScope (t-0d0152)", () => {
   it("parses MemoryMax forms and treats off as unset", () => {

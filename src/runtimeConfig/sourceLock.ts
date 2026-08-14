@@ -1,4 +1,4 @@
-import { acquireProcessLock, ProcessLockBusyError } from "../locks/processLock.js";
+import { acquireProcessLock, ProcessLockBusyError } from "@tachyon/engine/locks/processLock.js";
 
 /**
  * The advisory lock a Runtime Config save takes on a native source file.

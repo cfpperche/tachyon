@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { readVerificationRecord } from "../../src/workspace/verifyRecordReader.js";
-import type { GitExec } from "../../src/worktree/WorktreeManager.js";
+import { readVerificationRecord } from "@tachyon/engine/workspace/verifyRecordReader.js";
+import type { GitExec } from "@tachyon/engine/worktree/WorktreeManager.js";
 // The verification runner is intentionally plain ESM and has no separate declaration surface.
 // @ts-expect-error -- exercising the real recorder the verify path uses is the point.
 import { recordVerification, readRecord, verifiableTree, treeOf } from "../../scripts/verify-record.mjs";

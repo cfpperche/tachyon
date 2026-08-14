@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { EDITOR_HUMAN_ACTOR as HUMAN } from "../../src/validations/types.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
+import { EDITOR_HUMAN_ACTOR as HUMAN } from "@tachyon/engine/validations/types.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 const fresh = (): string => makeTempDir("tachyon-validation-store-");

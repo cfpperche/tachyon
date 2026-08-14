@@ -4,9 +4,9 @@
  * preview harness. Mirrors the handoff/pin-studio message-envelope convention (spec 278/280).
  */
 
-import type { BoardSnapshot } from "../../tasks/boardSnapshot";
+import type { BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
 import type { TaskPriority, TaskStatus, TaskUpdateInput } from "@tachyon/shared/tasks/types";
-import type { ValidationOutcome } from "../../validations/types";
+import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 
 export { READY, readyMessage, type ReadyMessage } from "../shared/ready";
 

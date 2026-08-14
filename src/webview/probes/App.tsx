@@ -1,5 +1,5 @@
 import type { ComponentChildren } from "preact";
-import type { ProbeViewRow } from "../../probe/probeView";
+import type { ProbeViewRow } from "@tachyon/engine/probe/probeView.js";
 import type { ProbesVM } from "./messages";
 
 // spec 279 — the Probes view (converted from ProbeResultPanel's inline HTML). Read-only: renders the engine's

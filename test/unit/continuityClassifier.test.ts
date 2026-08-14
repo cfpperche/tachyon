@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "../../src/continuity/classifier.js";
-import { ContinuityState } from "../../src/continuity/ContinuityState.js";
+import { classifyInjection, injectionText, reminderText, coldStartReminderText, type Transition } from "@tachyon/engine/continuity/classifier.js";
+import { ContinuityState } from "@tachyon/engine/continuity/ContinuityState.js";
 
 describe("continuity classifier (spec 241 D3/D9)", () => {
   const base = { hasBrief: true, discontinuitySinceRestore: false } as const;

@@ -3,11 +3,11 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createClaudeAdapter } from "../../src/probe/adapters/claude.js";
-import { createCodexAdapter } from "../../src/probe/adapters/codex.js";
-import { createGrokAdapter } from "../../src/probe/adapters/grok.js";
-import { ProbeService } from "../../src/probe/ProbeService.js";
-import { ProbeStore } from "../../src/probe/ProbeStore.js";
+import { createClaudeAdapter } from "@tachyon/engine/probe/adapters/claude.js";
+import { createCodexAdapter } from "@tachyon/engine/probe/adapters/codex.js";
+import { createGrokAdapter } from "@tachyon/engine/probe/adapters/grok.js";
+import { ProbeService } from "@tachyon/engine/probe/ProbeService.js";
+import { ProbeStore } from "@tachyon/engine/probe/ProbeStore.js";
 import { requireMachineDependency } from "../helpers/machineDependency.js";
 
 /**

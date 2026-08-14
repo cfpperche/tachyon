@@ -11,7 +11,7 @@
  *
  *  · `vscode.diff` is executed from ONE place. That is the whole "opening a diff" question — VS Code's
  *    native diff editor is the product's only diff viewer, and a second caller is a second flow.
- *  · The changed-file primitives (`src/worktree/review.ts`) are consumed from ONE place, and inside
+ *  · The changed-file primitives (`packages/engine/src/worktree/review.ts`) are consumed from ONE place, and inside
  *    `src/extension.ts` every use of them sits inside `reviewWorktreeDiff`. This is the "picking a
  *    changed file" question: a new picker cannot be built without them, and building one WITHOUT them
  *    would mean a second parser too — which claim 3 catches.
@@ -34,6 +34,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const SRC = path.join(__dirname, "../../src");
+const ENGINE_SRC = path.join(__dirname, "../../packages/engine/src");
 
 /** The pure changed-file/diff primitives. A picker or a diff pair is built out of these. */
 const REVIEW_PRIMITIVES = ["emptySides", "baseSidePath", "diffTitle", "WT_DIFF_SCHEME"] as const;
@@ -52,7 +53,7 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const rel = (file: string): string => path.relative(SRC, file).split(path.sep).join("/");
+const rel = (file: string): string => path.relative(file.startsWith(ENGINE_SRC) ? ENGINE_SRC : SRC, file).split(path.sep).join("/");
 
 /** Whole-word occurrences, so `diffTitle` never matches inside `myDiffTitleThing`. */
 function occurrences(source: string, word: string): number {
@@ -62,7 +63,7 @@ function occurrences(source: string, word: string): number {
 /** Files (repo-relative, `/`-joined) naming any of `words`, with a per-file count. */
 function filesNaming(words: readonly string[]): Map<string, number> {
   const hits = new Map<string, number>();
-  for (const file of sourceFiles(SRC)) {
+  for (const file of [...sourceFiles(SRC), ...sourceFiles(ENGINE_SRC)]) {
     const source = fs.readFileSync(file, "utf8");
     const count = words.reduce((sum, word) => sum + occurrences(source, word), 0);
     if (count > 0) hits.set(rel(file), count);

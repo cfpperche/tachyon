@@ -2,9 +2,9 @@
 // in node, the "logic in the vscode layer escapes CI" lesson). The host (HandoffPanel.ts) assembles a
 // HandoffViewModel from the engine snapshot + notes and posts it; the Preact App renders it as-is.
 
-import type { StalenessState } from "../../handoff/ProjectHandoffStore.js";
+import type { StalenessState } from "@tachyon/engine/handoff/ProjectHandoffStore.js";
 import type { HandoffDistillProfileVM } from "@tachyon/shared/handoff/distill.js";
-import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "../../resume/SessionLedger.js";
+import type { AgentInstanceLifetime, AgentInstanceResumePolicy } from "@tachyon/engine/resume/SessionLedger.js";
 
 /** A pending note as the panel renders it (the engine's HandoffNote shape, kept local so the webview bundle
  *  doesn't drag the engine's fs types). */

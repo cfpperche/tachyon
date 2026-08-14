@@ -1,14 +1,14 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import path from "node:path";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import { buildRuntimeOpsSnapshot } from "../../src/runtimeOps/model.js";
+import { buildRuntimeOpsSnapshot } from "@tachyon/engine/runtimeOps/model.js";
 import {
   isRuntimeOpsInspectSessionAction,
   runtimeOpsInspectSessionAction,
   runtimeOpsSessionInspectionMessage,
   type SessionInspectionState,
 } from "../../src/webview/runtime-ops/messages.js";
-import type { InspectedSession } from "../../src/runtimeOps/sessionInspection.js";
+import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /**
  * t-283149 — the session inspector's UI, rendered from the real `App`.

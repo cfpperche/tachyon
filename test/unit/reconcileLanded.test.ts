@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { reconcileLanded, type LandedGit } from "../../src/tasks/reconcileLanded.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { reconcileLanded, type LandedGit } from "@tachyon/engine/tasks/reconcileLanded.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 const SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

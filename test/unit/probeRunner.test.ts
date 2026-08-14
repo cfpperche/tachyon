@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { runProbe, type ProbeChild, type ProbeExit, type ReadFileFn, type SpawnFn } from "../../src/probe/ProbeRunner.js";
-import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "../../src/probe/adapters/types.js";
-import type { ProbeResult } from "../../src/probe/taxonomy.js";
+import { runProbe, type ProbeChild, type ProbeExit, type ReadFileFn, type SpawnFn } from "@tachyon/engine/probe/ProbeRunner.js";
+import type { HeadlessCaptureAdapter, ProbeSpec, RawOutcome } from "@tachyon/engine/probe/adapters/types.js";
+import type { ProbeResult } from "@tachyon/engine/probe/taxonomy.js";
 
 function mk(reason: ProbeResult["reason"], lastMessage: string, raw: RawOutcome): ProbeResult {
   return { reason, lastMessage, exitCode: raw.exitCode, timedOut: raw.timedOut, native: { runtime: "fake" } };

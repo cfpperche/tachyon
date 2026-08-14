@@ -2,11 +2,11 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SessionLedger } from "../../src/resume/SessionLedger.js";
-import { planResume, type ResumeWorld } from "../../src/resume/planResume.js";
-import { RunLedger } from "../../src/pipeline/RunLedger.js";
-import { loadPipeline } from "../../src/pipeline/loadPipeline.js";
-import { initRun, startNode } from "../../src/pipeline/runState.js";
+import { SessionLedger } from "@tachyon/engine/resume/SessionLedger.js";
+import { planResume, type ResumeWorld } from "@tachyon/engine/resume/planResume.js";
+import { RunLedger } from "@tachyon/engine/pipeline/RunLedger.js";
+import { loadPipeline } from "@tachyon/engine/pipeline/loadPipeline.js";
+import { initRun, startNode } from "@tachyon/engine/pipeline/runState.js";
 
 const dirs: string[] = [];
 const mkws = () => {

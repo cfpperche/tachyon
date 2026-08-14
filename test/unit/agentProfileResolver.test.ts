@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { stringify } from "yaml";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { asAgent, parseConfig, type AgentEntry } from "../../src/config/loadConfig.js";
+import { asAgent, parseConfig, type AgentEntry } from "@tachyon/engine/config/loadConfig.js";
 import {
   agentProfileRuntimeSelectorsSha256,
   resolveAgentProfile,
@@ -13,8 +13,8 @@ import {
   type NormalizedAgentDefinition,
   type ResolveAgentProfileInput,
   type ResolveAgentProfileResult,
-} from "../../src/config/agentProfileResolver.js";
-import { digestCapturedCapability, type CapturedCapabilityEntry } from "../../src/config/agentCapabilitySource.js";
+} from "@tachyon/engine/config/agentProfileResolver.js";
+import { digestCapturedCapability, type CapturedCapabilityEntry } from "@tachyon/engine/config/agentCapabilitySource.js";
 
 const roots: string[] = [];
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";

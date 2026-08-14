@@ -17,8 +17,8 @@ import {
   settingsImportAlreadyRan,
   settingsImportMarkerPath,
 } from "../../src/config/settingsImport.js";
-import { setSettingsValue } from "../../src/config/YamlConfigEditor.js";
-import { loadConfigFile } from "../../src/config/loadConfig.js";
+import { setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
+import { loadConfigFile } from "@tachyon/engine/config/loadConfig.js";
 
 const nothingSet = (): boolean => false;
 

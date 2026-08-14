@@ -5,7 +5,7 @@
  * cost / open the referenced file. Everything else stays in the raw escape hatch.
  */
 
-import type { CapabilityTier, NormalizedEvent, RuntimeId } from "./types.js";
+import type { CapabilityTier, NormalizedEvent, RuntimeId } from "@tachyon/engine/activity/types.js";
 
 /** One render-ready feed entry. `kind` drives the icon/treatment; `path` (when set) is clickable. */
 export interface ActivityItem {

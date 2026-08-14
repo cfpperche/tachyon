@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { deleteActivityLog, agentLogId } from "../../src/activity/logStore.js";
+import { deleteActivityLog, agentLogId } from "@tachyon/engine/activity/logStore.js";
 import {
   gcOrphanAgentFootprints,
   isOrphanAgent,
   listContinuityAgentNames,
-} from "../../src/continuity/orphanGc.js";
+} from "@tachyon/engine/continuity/orphanGc.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 function tmpRoot(): string {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TaskAttachmentStore, TASK_IMAGE_MAX_BYTES } from "../../src/tasks/TaskAttachmentStore.js";
+import { TaskAttachmentStore, TASK_IMAGE_MAX_BYTES } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-task-blobs-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

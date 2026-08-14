@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ContinuityStore, parseBrief, serializeBrief, CONTINUITY_SOFT_CAP_BYTES } from "../../src/continuity/ContinuityStore.js";
+import { ContinuityStore, parseBrief, serializeBrief, CONTINUITY_SOFT_CAP_BYTES } from "@tachyon/engine/continuity/ContinuityStore.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-continuity-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { AgentManager } from "../../src/agents/AgentManager.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import {
   CodexLaunchReadiness,
   matchCodexBootstrapInput,
-} from "../../src/runtime/adapters/codexLaunchReadiness.js";
-import { GenericLaunchReadiness, LaunchReadiness } from "../../src/runtime/launchReadiness.js";
+} from "@tachyon/engine/runtime/adapters/codexLaunchReadiness.js";
+import { GenericLaunchReadiness, LaunchReadiness } from "@tachyon/engine/runtime/launchReadiness.js";
 import { runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 
 describe("CodexLaunchReadiness", () => {

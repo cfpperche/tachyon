@@ -2,11 +2,11 @@ import { randomUUID } from "node:crypto";
 import {
   isBoardTaskUpdateInputV1,
   type BoardTaskPatchV1,
-} from "../runtime-api/boardCommands.js";
+} from "@tachyon/engine/runtime-api/boardCommands.js";
 import {
   isTaskPrototypeReviewInputV1,
   type TaskPrototypeReviewInputV1,
-} from "../runtime-api/taskDetailCommands.js";
+} from "@tachyon/engine/runtime-api/taskDetailCommands.js";
 import {
   projectTaskDetail,
   readTaskDetailPrototypeHtml,
@@ -14,9 +14,9 @@ import {
   taskDetailAttachmentBlobRoot,
   taskDetailAttachmentsRoot,
   type TaskDetailProjectionV1,
-} from "../runtime-api/taskDetailProjection.js";
-import { reviewTaskPrototype } from "../tasks/taskPrototypeReview.js";
-import type { TaskStore } from "../tasks/TaskStore.js";
+} from "@tachyon/engine/runtime-api/taskDetailProjection.js";
+import { reviewTaskPrototype } from "@tachyon/engine/tasks/taskPrototypeReview.js";
+import type { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
 

@@ -1,6 +1,6 @@
-import type { SavedAgentProposal } from "./savedAgentProposal.js";
-import { proposedWorktreeEnabled } from "./savedAgentProposal.js";
-import { savedAgentProposalIsExpired } from "./savedAgentProposal.js";
+import type { SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
+import { proposedWorktreeEnabled } from "@tachyon/engine/agents/savedAgentProposal.js";
+import { savedAgentProposalIsExpired } from "@tachyon/engine/agents/savedAgentProposal.js";
 
 /**
  * SDD 482 phase 4 slice C (`t-5e1113`) — what the human actually sees before approving.

@@ -7,9 +7,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { WorktreeManager } from "../../src/worktree/WorktreeManager.js";
-import { toAgentVM } from "../../src/sidebar/agentModel.js";
-import type { TachyonConfig } from "../../src/config/loadConfig.js";
+import { WorktreeManager } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { toAgentVM } from "@tachyon/engine/sidebar/agentModel.js";
+import type { TachyonConfig } from "@tachyon/engine/config/loadConfig.js";
 
 describe("spec 384 dogfood — live branch (real git)", () => {
   const dirs: string[] = [];

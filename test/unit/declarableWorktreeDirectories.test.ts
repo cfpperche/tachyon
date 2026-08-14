@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { renderPrimer, type PrimerInput } from "../../src/bridge/primer.js";
-import { shareDependencies } from "../../src/worktree/dependencySharing.js";
+import { renderPrimer, type PrimerInput } from "@tachyon/engine/bridge/primer.js";
+import { shareDependencies } from "@tachyon/engine/worktree/dependencySharing.js";
 
 describe("t-5ac1df — worktree directories are declared by the project", () => {
   const roots: string[] = [];

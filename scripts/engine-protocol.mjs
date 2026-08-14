@@ -24,6 +24,6 @@ export function parseEngineShellProtocol(source) {
   return value;
 }
 
-export function readEngineShellProtocol(file = "src/engine-service/protocol.ts") {
+export function readEngineShellProtocol(file = "packages/engine/src/engine-service/protocol.ts") {
   return parseEngineShellProtocol(readFileSync(file, "utf8"));
 }

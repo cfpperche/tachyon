@@ -9,8 +9,8 @@ import {
   revokeAgentSkill,
   skillOriginFor,
   type SkillAuthorizationPorts,
-} from "../../src/config/agentSkillAuthorizationService.js";
-import type { AgentProfileV1 } from "../../src/config/agentProfileSchema.js";
+} from "@tachyon/engine/config/agentSkillAuthorizationService.js";
+import type { AgentProfileV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 
 /**
  * t-5498a6 — the fs half of the authorization door, and the ONE function both callers reach.
@@ -296,7 +296,7 @@ describe("t-5498a6 — the digest is the one delivery will verify", () => {
   it("matches what the resolver's own reader computes for the same tree", async () => {
     // If these ever diverge, every grant this door mints is dead on arrival, and the symptom appears
     // as a capability refusal with no connection to this file.
-    const { captureCapabilitySourceAtRoot } = await import("../../src/config/agentCapabilitySource.js");
+    const { captureCapabilitySourceAtRoot } = await import("@tachyon/engine/config/agentCapabilitySource.js");
     const root = workspace();
     writeSkill(root, ".claude/skills/house-style", "# house\n");
     fs.writeFileSync(path.join(root, ".claude/skills/house-style/extra.txt"), crypto.randomBytes(32).toString("hex"));
@@ -320,7 +320,7 @@ describe("t-5498a6 — the digest is the one delivery will verify", () => {
  */
 describe("t-4a2a6f — classifying what the agent already holds", () => {
   it("agrees with the reader delivery uses, in both directions", async () => {
-    const { captureCapabilitySourceAtRoot } = await import("../../src/config/agentCapabilitySource.js");
+    const { captureCapabilitySourceAtRoot } = await import("@tachyon/engine/config/agentCapabilitySource.js");
     const root = workspace();
     writeSkill(root, ".claude/skills/house-style", "# v1\n");
     const { port, state } = ports(profile());

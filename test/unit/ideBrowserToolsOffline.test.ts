@@ -15,12 +15,12 @@
  * Write-up: docs/research/design-mode-chat-reply-runtime-matrix-t-dd46a4.md
  */
 import { describe, expect, it } from "vitest";
-import { registerIdeBrowserTools } from "../../src/bridge/tools/ide-browser.js";
-import type { BridgeDeps } from "../../src/bridge/tools/shared.js";
+import { registerIdeBrowserTools } from "@tachyon/engine/bridge/tools/ide-browser.js";
+import type { BridgeDeps } from "@tachyon/engine/bridge/tools/shared.js";
 import {
   ideBrowserRequest as clientIdeBrowserRequest,
   isIdeBrowserBridgeAvailable,
-} from "../../src/ide-browser/client.js";
+} from "@tachyon/engine/ide-browser/client.js";
 import { IDE_BROWSER_TOOL_NAMES } from "../helpers/bridgeConditionalToolNames.js";
 
 /** Exact MCP tool-result text returned to every runtime when the bridge is offline. */

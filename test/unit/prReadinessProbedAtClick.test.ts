@@ -13,13 +13,14 @@
  *
  * PROVED RED BEFORE GREEN: adding `import { probePrReadiness } from "../worktree/pr.js"` to
  * `src/cockpit/model.ts` fails the render-path claim naming that file, and a `gh("gh", ["--version"])`
- * anywhere outside `src/worktree/pr.ts` fails the first one.
+ * anywhere outside `packages/engine/src/worktree/pr.ts` fails the first one.
  */
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
 const SRC = path.join(__dirname, "../../src");
+const ENGINE_SRC = path.join(__dirname, "../../packages/engine/src");
 
 /** The two exports that spawn `gh`. `isWorktreeDirty`/`composePr*` are git-only or pure — not these. */
 const GH_SPAWNERS = ["probePrReadiness", "createWorktreePr"] as const;
@@ -50,21 +51,25 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-const rel = (file: string): string => path.relative(SRC, file).split(path.sep).join("/");
-const read = (relative: string): string => fs.readFileSync(path.join(SRC, relative), "utf8");
+const rel = (file: string): string => path.relative(file.startsWith(ENGINE_SRC) ? ENGINE_SRC : SRC, file).split(path.sep).join("/");
+const sourcePath = (relative: string): string => {
+  const shell = path.join(SRC, relative);
+  return fs.existsSync(shell) ? shell : path.join(ENGINE_SRC, relative);
+};
+const read = (relative: string): string => fs.readFileSync(sourcePath(relative), "utf8");
 const occurrences = (source: string, word: string): number =>
   source.match(new RegExp(`\\b${word}\\b`, "g"))?.length ?? 0;
 
 describe("SDD 501 — `gh` is spawned at click, never at render", () => {
   it("names the gh binary in exactly one source file", () => {
-    const callers = sourceFiles(SRC)
+    const callers = [...sourceFiles(SRC), ...sourceFiles(ENGINE_SRC)]
       .filter((file) => /["'`]gh["'`]\s*,/.test(fs.readFileSync(file, "utf8")))
       .map(rel);
     expect(callers).toEqual([PR_HOME]);
   });
 
   it("references the gh-spawning exports from exactly one file besides their own module", () => {
-    const callers = sourceFiles(SRC)
+    const callers = [...sourceFiles(SRC), ...sourceFiles(ENGINE_SRC)]
       .filter((file) => {
         const source = fs.readFileSync(file, "utf8");
         return GH_SPAWNERS.some((word) => occurrences(source, word) > 0);
@@ -98,7 +103,7 @@ describe("SDD 501 — `gh` is spawned at click, never at render", () => {
   it("reports a probe that escaped, so the claims above are not vacuous", () => {
     expect(/["'`]gh["'`]\s*,/.test('await gh("gh", ["auth", "status"], cwd)')).toBe(true);
     expect(occurrences('import { probePrReadiness } from "../worktree/pr.js";', "probePrReadiness")).toBe(1);
-    expect(RENDER_PATH.every((file) => fs.existsSync(path.join(SRC, file)))).toBe(true);
+    expect(RENDER_PATH.every((file) => fs.existsSync(sourcePath(file)))).toBe(true);
   });
 
   /**

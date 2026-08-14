@@ -1,7 +1,7 @@
 import type { WorkspaceStudioTarget } from "../shell/WorkspacePresentation.js";
 import { mapStudioSubmitResult } from "./studioSubmit.js";
-import { fromScheduleDef } from "./formLogic.js";
-import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "./shared/studio/adapter.js";
+import { fromScheduleDef } from "@tachyon/engine/webview/formLogic.js";
+import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { NO_VALIDATION_ERRORS, type StudioValidationResult } from "./shared/studio/errorTaxonomy.js";
 import {
   blankScheduleFields,

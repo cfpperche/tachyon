@@ -2,7 +2,7 @@ import path from "node:path";
 import type {
   EngineServiceIdentityV1,
   WorkspaceSnapshotEnvelopeV1,
-} from "../../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 import type { WorkspaceAgentProjectionV1 } from "../../../src/runtime-api/workspaceProjection.js";
 
 export function projectionIdentity(

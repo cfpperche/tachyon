@@ -3,8 +3,8 @@ import {
   composeHygieneLineageSource,
   resolveHygieneAuthority,
   type HygieneLineageSource,
-} from "../../src/worktree/hygieneAuthority.js";
-import type { ManagedWorktreeEntry } from "../../src/worktree/managedWorktree.js";
+} from "@tachyon/engine/worktree/hygieneAuthority.js";
+import type { ManagedWorktreeEntry } from "@tachyon/engine/worktree/managedWorktree.js";
 
 /**
  * t-e74631 — WHO may ask for a change worktree to be cleaned up.

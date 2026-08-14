@@ -14,8 +14,8 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { isTrustedExecPath } from "./toolProvisioning.js";
-import { parseLockfile, LOCKFILE_REL_PATH } from "./lockfile.js";
-import { PACKAGE_MANAGERS, type PackageManager, type ExternalToolDecl, type ExternalToolInstall } from "./manifest.js";
+import { parseLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
+import { PACKAGE_MANAGERS, type PackageManager, type ExternalToolDecl, type ExternalToolInstall } from "@tachyon/engine/plugins/manifest.js";
 
 /** the `_tachyon-external` resolver shim path (sibling of `_tachyon-data`/`_tachyon-tool`; workspace-relative). */
 export const EXTERNAL_RESOLVER_REL = ".tachyon/bin/_tachyon-external";

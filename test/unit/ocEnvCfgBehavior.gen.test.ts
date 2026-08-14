@@ -4,11 +4,11 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AgentManager } from "../../src/agents/AgentManager.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { HarnessManager } from "../../src/harness/HarnessManager.js";
-import { expectedAgentOpencodeEntry } from "../../src/registration/adapters.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { HarnessManager } from "@tachyon/engine/harness/HarnessManager.js";
+import { expectedAgentOpencodeEntry } from "@tachyon/engine/registration/adapters.js";
 
 /** spec 236 — behavior: a Tachyon-spawned opencode agent reaches the Bridge MCP with ZERO
  *  workspace-file config of its own. opencode honors the OPENCODE_CONFIG env var (verified 1.17.15)
@@ -18,7 +18,7 @@ import { expectedAgentOpencodeEntry } from "../../src/registration/adapters.js";
  *      header `Authorization: Bearer {env:TACHYON_AGENT_BRIDGE_TOKEN}` (token stays a ref → no
  *      secret on disk or argv),
  *    - injects the file's path into the spawn env as OPENCODE_CONFIG.
- *  This behavior test mirrors `src/agents/AgentManager.ts` spec-236 path: the materializer is
+ *  This behavior test mirrors `packages/engine/src/agents/AgentManager.ts` spec-236 path: the materializer is
  *  `materializeBridgeMcpOpencode(name, cwd)` and is folded into spawnBuild.env as OPENCODE_CONFIG.
  */
 /**

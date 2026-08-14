@@ -1,21 +1,21 @@
 import { randomUUID } from "node:crypto";
-import type { ProjectHandoffStore } from "../handoff/ProjectHandoffStore.js";
+import type { ProjectHandoffStore } from "@tachyon/engine/handoff/ProjectHandoffStore.js";
 import {
   startHandoffDistillation,
   workspaceHandoffDistillOperations,
   type HandoffDistillResult,
   type WorkspaceHandoffDistillSource,
-} from "../handoff/handoffDistillService.js";
-import { ensureProjectHandoffFile } from "../handoff/handoffFileService.js";
-import { resolveHandoffFilePath } from "../handoff/handoffPath.js";
+} from "@tachyon/engine/handoff/handoffDistillService.js";
+import { ensureProjectHandoffFile } from "@tachyon/engine/handoff/handoffFileService.js";
+import { resolveHandoffFilePath } from "@tachyon/engine/handoff/handoffPath.js";
 import {
   parseHandoffDistillInputV1,
   type HandoffDistillInputV1,
-} from "../runtime-api/handoffCommands.js";
+} from "@tachyon/engine/runtime-api/handoffCommands.js";
 import {
   projectHandoffView,
   type HandoffProjectionV1,
-} from "../runtime-api/handoffProjection.js";
+} from "@tachyon/engine/runtime-api/handoffProjection.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
 import { workspacePresentationTarget, type WorkspacePresentationTarget } from "./WorkspacePresentation.js";
 

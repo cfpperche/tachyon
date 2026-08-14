@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { markdownToDoc } from "../../src/tasks/markdownDoc.js";
+import { markdownToDoc } from "@tachyon/engine/tasks/markdownDoc.js";
 import { docToMarkdown } from "@tachyon/shared/tasks/docMarkdown.js";
 
 describe("markdownToDoc — per-construct import", () => {

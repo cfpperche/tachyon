@@ -6,9 +6,9 @@ import {
   CodexLaunchPreflight,
   probeCodexCatalog,
   type CodexProbeResult,
-} from "../../src/runtime/adapters/codexLaunchPreflight.js";
-import { ClaudeLaunchPreflight } from "../../src/runtime/adapters/claudeLaunchPreflight.js";
-import { CODEX_CATALOG_MAX_BYTES } from "../../src/runtime/adapters/codexCatalogStream.js";
+} from "@tachyon/engine/runtime/adapters/codexLaunchPreflight.js";
+import { ClaudeLaunchPreflight } from "@tachyon/engine/runtime/adapters/claudeLaunchPreflight.js";
+import { CODEX_CATALOG_MAX_BYTES } from "@tachyon/engine/runtime/adapters/codexCatalogStream.js";
 import {
   boundedCloseMatches,
   hasExplicitModelSelection,

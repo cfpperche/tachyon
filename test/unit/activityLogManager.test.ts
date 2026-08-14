@@ -2,9 +2,9 @@ import { describe, it, expect, afterEach } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { ActivityLogManager, sessionIdFromTranscriptPath } from "../../src/activity/ActivityLogManager.js";
-import { ActivityLog, agentLogId } from "../../src/activity/logStore.js";
-import { readSessionOwners, sessionOwnersFile } from "../../src/activity/sessionOwners.js";
+import { ActivityLogManager, sessionIdFromTranscriptPath } from "@tachyon/engine/activity/ActivityLogManager.js";
+import { ActivityLog, agentLogId } from "@tachyon/engine/activity/logStore.js";
+import { readSessionOwners, sessionOwnersFile } from "@tachyon/engine/activity/sessionOwners.js";
 import { encodeClaudeCwd } from "@tachyon/shared/resume/adapters.js";
 
 const dirs: string[] = [];

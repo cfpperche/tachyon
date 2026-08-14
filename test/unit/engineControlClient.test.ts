@@ -3,10 +3,10 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { EngineControlClient, requestEngineControl } from "../../src/engine-service/controlClient.js";
-import { startEngineControlServer, type RunningEngineControlServer } from "../../src/engine-service/controlServer.js";
-import { createControlNonce } from "../../src/engine-service/controlPeerAuth.js";
-import { EngineEventJournal } from "../../src/engine-service/eventJournal.js";
+import { EngineControlClient, requestEngineControl } from "@tachyon/engine/engine-service/controlClient.js";
+import { startEngineControlServer, type RunningEngineControlServer } from "@tachyon/engine/engine-service/controlServer.js";
+import { createControlNonce } from "@tachyon/engine/engine-service/controlPeerAuth.js";
+import { EngineEventJournal } from "@tachyon/engine/engine-service/eventJournal.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import {
   workspaceCommandSuccessV1,
@@ -21,7 +21,7 @@ import {
   workspaceTaskStudioViewSuccessV1,
   type EngineServiceIdentityV1,
   type EngineShellHelloV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 
 const roots: string[] = [];
 const servers: RunningEngineControlServer[] = [];

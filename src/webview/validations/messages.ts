@@ -1,4 +1,4 @@
-import type { ValidationExecutor, ValidationOutcome } from "../../validations/types";
+import type { ValidationExecutor, ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import type { ValidationsViewModel } from "./viewModel";
 
 export const VALIDATIONS = "validations" as const;

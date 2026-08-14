@@ -39,7 +39,7 @@
  *   NET A — THE DOORS. `resolveApproval` is the only function that persists a resolution: both durable
  *   places take their value from `input.resolvedBy` (approvalRequest.ts). So a write is a `resolvedBy`
  *   property in the argument of a call to THAT function, and the callee is matched through the IMPORT of
- *   the resolver module rather than by name — `src/companion/CompanionHttp.ts` calls `ops.resolveApproval`,
+ *   the resolver module rather than by name — `packages/engine/src/companion/CompanionHttp.ts` calls `ops.resolveApproval`,
  *   a protocol port that persists nothing, and name-matching alone would have re-invented the false
  *   positive this task is fixing. Fails closed: an argument object the source cannot resolve, or a spread
  *   that could smuggle the field in, is a finding rather than a pass.
@@ -70,8 +70,8 @@ import {
   readApprovalRequest,
   resolveApproval,
   writeApprovalRequest,
-} from "../../src/bridge/approvalRequest.js";
-import { approvalResolutionPorts } from "../../src/bridge/approvalResolutionPorts.js";
+} from "@tachyon/engine/bridge/approvalRequest.js";
+import { approvalResolutionPorts } from "@tachyon/engine/bridge/approvalResolutionPorts.js";
 
 /** The values the product used to write. They are history in old records, and never legal again. */
 const RETIRED_ACTOR_CLAIMS = ["vscode", "companion", "vscode-user", "human", "user"];
@@ -90,7 +90,7 @@ function tempWorkspace(): string {
 
 const repoRoot = process.cwd();
 /** The module that DECLARES the field and persists it. Net A excludes it; Net B does not. */
-const RESOLVER_MODULE = "src/bridge/approvalRequest.ts";
+const RESOLVER_MODULE = "packages/engine/src/bridge/approvalRequest.ts";
 /** The only values a write door may name. Identifiers, never literals — that is the whole rule. */
 const ALLOWED_CHANNEL_CONSTANTS = ["APPROVAL_CHANNEL_VSCODE_COMMAND", "APPROVAL_CHANNEL_COMPANION_HTTP"];
 /**
@@ -255,6 +255,7 @@ function sourceFiles(dir: string): string[] {
 function scanSrc(textOverrides: Record<string, string> = {}): { doors: ResolutionWriteDoor[]; findings: ResolvedByFinding[] } {
   const relatives = new Set([
     ...sourceFiles(path.join(repoRoot, "src")).map((f) => path.relative(repoRoot, f).split(path.sep).join("/")),
+    ...sourceFiles(path.join(repoRoot, "packages", "engine", "src")).map((f) => path.relative(repoRoot, f).split(path.sep).join("/")),
     ...Object.keys(textOverrides),
   ]);
   const doors: ResolutionWriteDoor[] = [];
@@ -320,8 +321,8 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
       live.doors.map((d) => `${doorFile(d.at)} -> ${d.value}`).sort(),
       `write doors found at: ${live.doors.map((d) => `${d.at} -> ${d.value}`).sort().join(", ")}`,
     ).toEqual([
-      "src/engine-service/extensionOperationService.ts -> APPROVAL_CHANNEL_VSCODE_COMMAND",
-      "src/workspace/Workspace.ts -> APPROVAL_CHANNEL_COMPANION_HTTP",
+      "packages/engine/src/engine-service/extensionOperationService.ts -> APPROVAL_CHANNEL_VSCODE_COMMAND",
+      "packages/engine/src/workspace/Workspace.ts -> APPROVAL_CHANNEL_COMPANION_HTTP",
     ]);
   });
 
@@ -330,7 +331,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     // files, at the real call sites. Both doors, because a guard proven on one is a guard that covers one.
     const door1 = scanSrc(
       withInjection(
-        "src/engine-service/extensionOperationService.ts",
+        "packages/engine/src/engine-service/extensionOperationService.ts",
         "resolvedBy: APPROVAL_CHANNEL_VSCODE_COMMAND,",
         'resolvedBy: "alguem",',
       ),
@@ -339,13 +340,13 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
       door1.findings.map((f) => ({ at: doorFile(f.at), problem: f.problem })),
       `door 1 findings at: ${door1.findings.map((f) => f.at).join(", ")}`,
     ).toEqual([
-      { at: "src/engine-service/extensionOperationService.ts", problem: LITERAL_ACTOR },
-      { at: "src/engine-service/extensionOperationService.ts", problem: HARD_CODED },
+      { at: "packages/engine/src/engine-service/extensionOperationService.ts", problem: LITERAL_ACTOR },
+      { at: "packages/engine/src/engine-service/extensionOperationService.ts", problem: HARD_CODED },
     ]);
 
     const door2 = scanSrc(
       withInjection(
-        "src/workspace/Workspace.ts",
+        "packages/engine/src/workspace/Workspace.ts",
         "resolvedBy: APPROVAL_CHANNEL_COMPANION_HTTP,",
         'resolvedBy: "alguem",',
       ),
@@ -354,14 +355,14 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
       door2.findings.map((f) => ({ at: doorFile(f.at), problem: f.problem })),
       `door 2 findings at: ${door2.findings.map((f) => f.at).join(", ")}`,
     ).toEqual([
-      { at: "src/workspace/Workspace.ts", problem: LITERAL_ACTOR },
-      { at: "src/workspace/Workspace.ts", problem: HARD_CODED },
+      { at: "packages/engine/src/workspace/Workspace.ts", problem: LITERAL_ACTOR },
+      { at: "packages/engine/src/workspace/Workspace.ts", problem: HARD_CODED },
     ]);
 
     // A cast is the thing the TYPE cannot stop and this scan exists for.
     const cast = scanSrc(
       withInjection(
-        "src/workspace/Workspace.ts",
+        "packages/engine/src/workspace/Workspace.ts",
         "resolvedBy: APPROVAL_CHANNEL_COMPANION_HTTP,",
         'resolvedBy: "alguem" as ApprovalResolutionChannel,',
       ),
@@ -395,7 +396,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     expect(probe('// never write resolvedBy: "vscode" — it claims an actor\nconst x = 1;')).toEqual([]);
     expect(probe('/** @example resolvedBy: "companion" */\nexport const doc = 1;')).toEqual([]);
     expect(probe("export interface Row { resolvedBy?: string }")).toEqual([]);
-    // And the port that merely SHARES the name persists nothing (src/companion/CompanionHttp.ts).
+    // And the port that merely SHARES the name persists nothing (packages/engine/src/companion/CompanionHttp.ts).
     expect(probe("await ops.resolveApproval(body.id, body.decision);")).toEqual([]);
   });
 
@@ -508,7 +509,7 @@ describe("t-86e59a — `resolvedBy` names a channel, never an actor", () => {
     // The line stored alongside it is the OPERATIVE claim — the requesting agent reads this one to
     // decide whether to proceed. `resolvedBy` had NO reader in src/ when t-86e59a measured it; since
     // t-cede16 the Human Inbox history projects it onto a screen a human reads, which makes the same
-    // rule matter on both. (`src/bridge/approvalRequest.ts:535` still asserts the old "no reader".)
+    // rule matter on both. (`packages/engine/src/bridge/approvalRequest.ts:535` still asserts the old "no reader".)
     const line = record.resolution?.injectedText ?? "";
     expect(line).toContain(`approval request a-ddd444 is APPROVED`);
     expect(line).toContain(channel);

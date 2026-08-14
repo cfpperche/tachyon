@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { loadPipeline } from "../../src/pipeline/loadPipeline.js";
-import { PipelineManager, type PipelineDeps, type SpawnNodeArgs } from "../../src/pipeline/PipelineManager.js";
-import { runStatus, initRun } from "../../src/pipeline/runState.js";
+import { loadPipeline } from "@tachyon/engine/pipeline/loadPipeline.js";
+import { PipelineManager, type PipelineDeps, type SpawnNodeArgs } from "@tachyon/engine/pipeline/PipelineManager.js";
+import { runStatus, initRun } from "@tachyon/engine/pipeline/runState.js";
 
 const AGENTS = new Set(["researcher", "coder", "reviewer"]);
 

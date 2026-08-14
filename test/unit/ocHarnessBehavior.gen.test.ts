@@ -2,12 +2,12 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AgentManager } from "../../src/agents/AgentManager.js";
+import { AgentManager } from "@tachyon/engine/agents/AgentManager.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
-import { TmuxService, workspaceHash, type ExecResult } from "../../src/tmux/TmuxService.js";
-import { parseConfig } from "../../src/config/loadConfig.js";
-import { HarnessManager, harnessHome, opencodeHarnessDirs } from "../../src/harness/HarnessManager.js";
-import { expectedAgentOpencodeEntry, expectedAgentClaudeEntry } from "../../src/registration/adapters.js";
+import { TmuxService, workspaceHash, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { HarnessManager, harnessHome, opencodeHarnessDirs } from "@tachyon/engine/harness/HarnessManager.js";
+import { expectedAgentOpencodeEntry, expectedAgentClaudeEntry } from "@tachyon/engine/registration/adapters.js";
 import { adapterForRuntime } from "@tachyon/shared/resume/adapters.js";
 
 /** spec t-e2ebe3 — behavior: a Tachyon-spawned opencode HARNESS agent gets per-agent XDG config/data/state

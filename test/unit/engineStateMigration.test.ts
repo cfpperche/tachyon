@@ -2,16 +2,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { bridgeGenerationStateKey } from "../../src/bridge/clientRebind.js";
-import { bridgeTokenFileName, externalBridgeTokenFileName } from "../../src/bridge/token.js";
-import { DaemonStateStore } from "../../src/engine-service/daemonStateStore.js";
+import { bridgeGenerationStateKey } from "@tachyon/engine/bridge/clientRebind.js";
+import { bridgeTokenFileName, externalBridgeTokenFileName } from "@tachyon/engine/bridge/token.js";
+import { DaemonStateStore } from "@tachyon/engine/engine-service/daemonStateStore.js";
 import {
   applyEngineStateMigration,
   collectLegacyEngineStateMigration,
   ensureEngineStateMigration,
   type EngineStateMigrationV1,
-} from "../../src/engine-service/stateMigration.js";
-import { PROVIDER_OBSERVATION_PREFERENCES_STATE_KEY } from "../../src/runtimeObservability/preferences.js";
+} from "@tachyon/engine/engine-service/stateMigration.js";
+import { PROVIDER_OBSERVATION_PREFERENCES_STATE_KEY } from "@tachyon/engine/runtimeObservability/preferences.js";
 import {
   CALLER_IDENTITY_HMAC_SECRET_KEY,
   authorityHeadsSecretKey,
@@ -19,7 +19,7 @@ import {
   callerIdentityRegistryStateKey,
   hostActionSessionEpochStateKey,
   workspaceVersionStateKey,
-} from "../../src/workspace/operationalStateKeys.js";
+} from "@tachyon/engine/workspace/operationalStateKeys.js";
 
 const roots: string[] = [];
 

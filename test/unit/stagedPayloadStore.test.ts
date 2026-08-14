@@ -6,7 +6,7 @@ import {
   MAX_STAGED_PAYLOAD_BYTES,
   StagedPayloadError,
   StagedPayloadStore,
-} from "../../src/engine-service/stagedPayloadStore.js";
+} from "@tachyon/engine/engine-service/stagedPayloadStore.js";
 
 const roots: string[] = [];
 

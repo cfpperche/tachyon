@@ -1,14 +1,14 @@
 import * as vscode from "vscode";
-import { engineSystemdUnitName } from "./engine-service/engineSupervisor.js";
+import { engineSystemdUnitName } from "@tachyon/engine/engine-service/engineSupervisor.js";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
-import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type PaneSnapshot } from "./tmux/TmuxService.js";
-import { subtreeCpuTicks } from "./attention/cpu.js";
+import { doctor, probeServer, TmuxService, workspaceHash, SOCKET_NAME, type PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
+import { subtreeCpuTicks } from "@tachyon/engine/attention/cpu.js";
 import { classifySession } from "./inspector/classify.js";
 import type { TmuxServerSnapshot } from "./inspector/model.js";
-import { asAgent, CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "./config/loadConfig.js";
-import { commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "./config/YamlConfigEditor.js";
+import { asAgent, CONFIG_FILENAMES, loadConfigFile, type ScheduleDef } from "@tachyon/engine/config/loadConfig.js";
+import { commandEntryLine, runbookEntryLine, scheduleEntryLine, setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
 import type { StudioSubmit } from "./webview/studioSubmit.js";
 import { type InspectorDeps } from "./webview/ServerInspector.js";
 import { TMUX_VIEW_TYPE, TmuxPanelManager } from "./webview/TmuxPanel.js";
@@ -34,8 +34,8 @@ import { validationAwaitsHuman } from "./humanInbox/model.js";
 import { decodeHumanInboxDeepLink } from "./humanInbox/deepLink.js";
 import { approveSavedAgentProposal, type SavedAgentCommitResult } from "./agents/savedAgentProposalCommit.js";
 import { approveSavedAgentRemovalProposal, type SavedAgentRemovalCommitResult } from "./agents/savedAgentRemovalProposalCommit.js";
-import { savedAgentCreateMutation } from "./agents/savedAgentProposal.js";
-import { readAgentProfileGrants, workspaceConfigSha256 } from "./config/agentProfileGrants.js";
+import { savedAgentCreateMutation } from "@tachyon/engine/agents/savedAgentProposal.js";
+import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
 import { PROBES_VIEW_TYPE, ProbeResultPanelManager, type ProbesPanelState } from "./webview/ProbeResultPanel.js";
 import { PIN_STUDIO_VIEW_TYPE, type PinStudioPanelState } from "./webview/PinStudioPanel.js";
 import { BOARD_VIEW_TYPE, BoardPanelManager } from "./webview/BoardPanel.js";
@@ -44,8 +44,8 @@ import type { SectionPanelState } from "./webview/shared/SectionPanelManager.js"
 import { TaskDetailPanelManager, TASK_DETAIL_VIEW_TYPE, type TaskDetailPanelState } from "./webview/TaskDetailPanel.js";
 import { PinDetailPanelManager, PIN_DETAIL_VIEW_TYPE, type LegacyPinDetailState } from "./webview/PinDetailPanel.js";
 import { TASK_STUDIO_VIEW_TYPE, type TaskStudioPanelState } from "./webview/TaskStudioPanel.js";
-import { mintTaskId } from "./tasks/TaskStore.js";
-import { mintPinId } from "./pins/PinStore.js";
+import { mintTaskId } from "@tachyon/engine/tasks/TaskStore.js";
+import { mintPinId } from "@tachyon/engine/pins/PinStore.js";
 import { AGENT_STUDIO_SHELL_VIEW_TYPE, AgentStudioPanelManager, type AgentStudioPanelState } from "./webview/AgentStudioPanel.js";
 import { TERMINAL_STUDIO_SHELL_VIEW_TYPE, TerminalStudioPanelManager, type TerminalStudioPanelState } from "./webview/TerminalStudioPanel.js";
 import { COMMAND_STUDIO_SHELL_VIEW_TYPE, CommandStudioPanelManager, type CommandStudioPanelState } from "./webview/CommandStudioPanel.js";
@@ -58,10 +58,10 @@ import { normalizeAgentRows } from "./webview/chat-bridge/ops.js";
 import { PluginSurfaceHost } from "./plugins/ui/host.js";
 import { syncToolLauncher } from "./plugins/toolProvisionRun.js";
 import { reconcileGitHookHarness } from "./plugins/engine.js";
-import { buildOffers, type RegistrationOffer } from "./registration/adapters.js";
+import { buildOffers, type RegistrationOffer } from "@tachyon/engine/registration/adapters.js";
 import { runtimeOpsFleetView } from "./shell/RuntimeOpsTarget.js";
 import { inspectCodexRuntimeConfig } from "./runtimeConfig/codexInventory.js";
-import { applyCodexNativeConfigChange, type CodexEditableSettingKey } from "./config/codexNativeConfigProjection.js";
+import { applyCodexNativeConfigChange, type CodexEditableSettingKey } from "@tachyon/engine/config/codexNativeConfigProjection.js";
 import { applyClaudeRuntimeConfigChange, inspectClaudeRuntimeConfig } from "./runtimeConfig/claudeInventory.js";
 import {
   applyGrokRuntimeConfigChange,
@@ -83,11 +83,11 @@ import type {
 } from "./presentation/items.js";
 import { isTemporaryItem } from "./presentation/contextValue.js";
 import type { WorkspacePresentationTarget } from "./shell/WorkspacePresentation.js";
-import type { WorktreeRecord, WorktreeStatus } from "./worktree/WorktreeManager.js";
-import { previewBody } from "./prompts/injectFlow.js";
-import { createGitExec, worktreeShowFile, resolveBase } from "./worktree/WorktreeManager.js";
-import { resolveGitBinary } from "./worktree/gitBinary.js";
-import { sharedGlobalSettings } from "./config/globalSettings.js";
+import type { WorktreeRecord, WorktreeStatus } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { previewBody } from "@tachyon/engine/prompts/injectFlow.js";
+import { createGitExec, worktreeShowFile, resolveBase } from "@tachyon/engine/worktree/WorktreeManager.js";
+import { resolveGitBinary } from "@tachyon/engine/worktree/gitBinary.js";
+import { sharedGlobalSettings } from "@tachyon/engine/config/globalSettings.js";
 import {
   SETTINGS_IMPORT_MARKER_FILENAME,
   planGlobalImport,
@@ -97,33 +97,33 @@ import {
   settingsImportMarkerPath,
 } from "./config/settingsImport.js";
 import { readLegacyVsCodeSettings } from "./workspace/legacyVsCodeSettings.js";
-import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "./worktree/review.js";
-import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "./worktree/pr.js";
+import { emptySides, baseSidePath, diffTitle, type ChangedFile } from "@tachyon/engine/worktree/review.js";
+import { probePrReadiness, composePrTitle, composePrBody, createWorktreePr, isWorktreeDirty } from "@tachyon/engine/worktree/pr.js";
 import { computeWorkspaceFolderOps, revealableWorktrees, shouldActivateFolder, type WorkspaceWorktrees } from "./workspace/workspaceFolderOps.js";
-import type { ViewKind } from "./workspace/EngineHost.js";
+import type { ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 
 /** spec 213 — URI scheme for the base side of a worktree diff (git show <ref>:<file>). */
 const WT_DIFF_SCHEME = "tachyon-worktree";
 import { initializeVsCodeNotifications, notify } from "./workspace/notify.js";
 import { showNotification } from "./workspace/NotificationService.js";
-import { detectInstalledClis } from "./webview/cliDetect.js";
+import { detectInstalledClis } from "@tachyon/engine/webview/cliDetect.js";
 import { buildStarterYaml, ensureTachyonGitignore, type DetectedProject } from "./init/initLogic.js";
 import { registerDisposePanelSerializer, registerTrustedPanelSerializer } from "./webview/shared/panelSerializer.js";
 import { openRuntimeOps } from "./runtimeOps/openRuntimeOps.js";
-import type { InspectedSession } from "./runtimeOps/sessionInspection.js";
+import type { InspectedSession } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 import { assessBuildProvenance, type BuildStamp } from "./provenance/verify.js";
 import { readEmbeddedProvenanceRecord } from "./provenance/record.js";
 import { Terminals } from "./presentation/Terminals.js";
 import { SessionViewportRegistry } from "./presentation/sessionViewport.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
-import { collectLegacyEngineStateMigration } from "./engine-service/stateMigration.js";
-import { ENGINE_UI_CAPABILITY } from "./engine-service/uiRequestBroker.js";
-import type { WorkspaceCommandResultV1 } from "./engine-service/protocol.js";
+import { collectLegacyEngineStateMigration } from "@tachyon/engine/engine-service/stateMigration.js";
+import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
+import type { WorkspaceCommandResultV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { assertMarkedDevHostWorkspace, engineShellReleasePolicy } from "./engine-service/devHostBoundary.js";
 import { WorkspaceClientRegistry } from "./shell/WorkspaceClientRegistry.js";
 import { WorkspaceShellHandle } from "./shell/WorkspaceShellHandle.js";
-import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "./workspace/DaemonEngineHost.js";
-import { isJsonValue, type ExtensionCommandV1, type ExtensionQueryV1, type JsonValue, type TmuxPaneIdentityV1 } from "./runtime-api/extensionOperations.js";
+import { DAEMON_SETTING_KEYS, type DaemonSettingsSnapshot } from "@tachyon/engine/workspace/DaemonEngineHost.js";
+import { isJsonValue, type ExtensionCommandV1, type ExtensionQueryV1, type JsonValue, type TmuxPaneIdentityV1 } from "@tachyon/engine/runtime-api/extensionOperations.js";
 
 /**
  * Thin multi-root shell: one detachable client handle per Tachyon workspace.

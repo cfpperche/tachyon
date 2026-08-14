@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseConfig } from "../../src/config/loadConfig.js";
+import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 
 const BASE = "agents:\n  a:\n    cmd: claude\n";
 

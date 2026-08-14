@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { gatherToolPlan, type ToolPlan } from "../../src/plugins/toolPlan.js";
 import { loadPlugin, previewInstall, type LoadedPlugin } from "../../src/plugins/engine.js";
-import type { PluginManifest, ToolDecl } from "../../src/plugins/manifest.js";
+import type { PluginManifest, ToolDecl } from "@tachyon/engine/plugins/manifest.js";
 import type { PlatformResolution } from "../../src/plugins/toolPlatform.js";
 
 const SHA = "a".repeat(64);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateCompleteNode, type NodeAuthState, type NodeAuthLookup } from "../../src/pipeline/completeNode.js";
+import { validateCompleteNode, type NodeAuthState, type NodeAuthLookup } from "@tachyon/engine/pipeline/completeNode.js";
 
 function lookupOf(state: NodeAuthState | null): NodeAuthLookup {
   return (runId, nodeId) => (runId === "run-1" && nodeId === "implement" ? state : null);

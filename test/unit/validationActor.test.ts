@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
-import { EDITOR_HUMAN_ACTOR, type ValidationActor } from "../../src/validations/types.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
+import { EDITOR_HUMAN_ACTOR, type ValidationActor } from "@tachyon/engine/validations/types.js";
 
 const roots: string[] = [];
 

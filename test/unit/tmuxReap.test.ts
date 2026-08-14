@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SOCKET_NAME } from "../../src/tmux/TmuxService.js";
+import { DEFAULT_SOCKET_NAME } from "@tachyon/engine/tmux/TmuxService.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { waitUntil } from "../helpers/settle.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";

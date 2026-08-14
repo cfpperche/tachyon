@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { KNOWN_AGENT_ENTRY_KEYS, KNOWN_SETTINGS_KEYS, KNOWN_TOP_LEVEL_KEYS } from "../../src/config/loadConfig.js";
+import { KNOWN_AGENT_ENTRY_KEYS, KNOWN_SETTINGS_KEYS, KNOWN_TOP_LEVEL_KEYS } from "@tachyon/engine/config/loadConfig.js";
 
 interface SchemaNode {
   type?: string;

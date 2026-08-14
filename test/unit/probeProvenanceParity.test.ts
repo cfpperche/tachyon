@@ -2,10 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { claudeAdapter } from "../../src/probe/adapters/claude.js";
-import { codexAdapter } from "../../src/probe/adapters/codex.js";
-import { grokAdapter } from "../../src/probe/adapters/grok.js";
-import type { HeadlessCaptureAdapter, ProbeSpec } from "../../src/probe/adapters/types.js";
+import { claudeAdapter } from "@tachyon/engine/probe/adapters/claude.js";
+import { codexAdapter } from "@tachyon/engine/probe/adapters/codex.js";
+import { grokAdapter } from "@tachyon/engine/probe/adapters/grok.js";
+import type { HeadlessCaptureAdapter, ProbeSpec } from "@tachyon/engine/probe/adapters/types.js";
 
 /**
  * SDD 474 / t-be9405 — the provenance obligations every probe adapter owes, asserted across the

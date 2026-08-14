@@ -4,13 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { verifyStagedBundle } from "../../src/engine-service/engineBundleStore.js";
+import { verifyStagedBundle } from "@tachyon/engine/engine-service/engineBundleStore.js";
 import {
   ENGINE_SHELL_PROTOCOL,
   engineBundleId,
   isEngineBundleManifestV1,
   type EngineBundleManifestV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 
 const engineRoot = path.resolve("dist/engine");
 let builtManifest: EngineBundleManifestV1;

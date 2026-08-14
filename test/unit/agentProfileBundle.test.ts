@@ -10,13 +10,13 @@ import {
   parsePortableAgentProfileBundle,
   readPortableAgentProfileBundleFile,
   renderPortableAgentProfileBundle,
-} from "../../src/config/agentProfileBundle.js";
+} from "@tachyon/engine/config/agentProfileBundle.js";
 import {
   commitAgentProfileLifecycle,
   inspectAgentProfileLifecycle,
-} from "../../src/config/agentProfileLifecycle.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import type { AgentProfileAuthorityPort } from "../../src/config/agentProfileTransactions.js";
+} from "@tachyon/engine/config/agentProfileLifecycle.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
+import type { AgentProfileAuthorityPort } from "@tachyon/engine/config/agentProfileTransactions.js";
 
 const roots: string[] = [];
 

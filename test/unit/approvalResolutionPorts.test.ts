@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { approvalResolutionPorts } from "../../src/bridge/approvalResolutionPorts.js";
-import type { NoticeDeliveryResult } from "../../src/bridge/tools.js";
+import { approvalResolutionPorts } from "@tachyon/engine/bridge/approvalResolutionPorts.js";
+import type { NoticeDeliveryResult } from "@tachyon/engine/bridge/tools.js";
 
 /**
  * t-a77fe6 — the two approval-resolution wirings shared byte-identical closures.

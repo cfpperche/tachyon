@@ -22,12 +22,12 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { parseLockfile, LOCKFILE_REL_PATH } from "./lockfile.js";
+import { parseLockfile, LOCKFILE_REL_PATH } from "@tachyon/engine/plugins/lockfile.js";
 import { sha256File, isTrustedExecPath, type PathStat } from "./toolProvisioning.js";
-import type { ToolLaunchPolicy } from "./manifest.js";
+import type { ToolLaunchPolicy } from "@tachyon/engine/plugins/manifest.js";
 import { runI18nPtbrStagedGate } from "./i18nPtbrGate.js";
 import { appendExternalToolEvent } from "../externalTools/events.js";
-import { isLauncherExternalToolKind } from "../externalTools/filters.js";
+import { isLauncherExternalToolKind } from "@tachyon/engine/externalTools/filters.js";
 import type { ExternalToolKind } from "@tachyon/shared/externalTools/types.js";
 
 export const TACHYON_BIN_REL = ".tachyon/bin";

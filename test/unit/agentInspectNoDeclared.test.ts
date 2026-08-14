@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { executeExtensionQuery } from "../../src/engine-service/extensionOperationService.js";
+import { executeExtensionQuery } from "@tachyon/engine/engine-service/extensionOperationService.js";
 
 /**
  * t-6c8cb4 — `agent.inspect` no longer carries the dead `declared` wire field.
@@ -51,7 +51,7 @@ describe("agent.inspect without declared (t-6c8cb4)", () => {
   it("consumer no longer requires or repasses declared (source pin — both sides of the trap)", () => {
     const consumer = fs.readFileSync(path.join(process.cwd(), "src/extension.ts"), "utf8");
     const producer = fs.readFileSync(
-      path.join(process.cwd(), "src/engine-service/extensionOperationService.ts"),
+      path.join(process.cwd(), "packages/engine/src/engine-service/extensionOperationService.ts"),
       "utf8",
     );
 

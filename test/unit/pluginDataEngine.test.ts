@@ -9,7 +9,7 @@ import { loadPlugin, previewInstall, applyInstall, applyRemove, previewRemove } 
 import { gatherDataPlan } from "../../src/plugins/dataPlan.js";
 import { rehydrateData } from "../../src/plugins/toolProvisionRun.js";
 import { buildInstallConsent } from "../../src/plugins/consentViewModel.js";
-import { parseLockfile } from "../../src/plugins/lockfile.js";
+import { parseLockfile } from "@tachyon/engine/plugins/lockfile.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
 
 const kp = tlsKeypair();

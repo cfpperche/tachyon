@@ -16,17 +16,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { stringify } from "yaml";
-import { loadProfileAwareConfig } from "../../src/config/agentProfileConfigLoader.js";
+import { loadProfileAwareConfig } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import {
   CLAUDE_CLOSED_PRIVATE_HOME_INPUT_INSPECTOR,
   CODEX_EMPTY_NATIVE_INPUT_INSPECTOR,
-} from "../../src/config/agentProfileProjection.js";
+} from "@tachyon/engine/config/agentProfileProjection.js";
 import { carryNativeConfigSources } from "@tachyon/shared/config/agentNativeConfigPolicy.js";
-import type { AgentProfileAuthorityRecord } from "../../src/config/agentProfileAuthority.js";
-import { Workspace } from "../../src/workspace/Workspace.js";
-import type { EngineHost, NoticeAction, ViewKind } from "../../src/workspace/EngineHost.js";
-import { TmuxService } from "../../src/tmux/TmuxService.js";
-import type { NotifyLevel } from "../../src/bridge/tools.js";
+import type { AgentProfileAuthorityRecord } from "@tachyon/engine/config/agentProfileAuthority.js";
+import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
+import type { EngineHost, NoticeAction, ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
+import { TmuxService } from "@tachyon/engine/tmux/TmuxService.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
 
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
 const LIFECYCLE = ["fresh", "restart", "resume", "fork"];

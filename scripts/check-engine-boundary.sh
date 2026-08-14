@@ -29,12 +29,14 @@ SHELL_ALLOW='^src/(extension\.ts|presentation/|webview/|plugins/ui/host\.ts|runt
 
 # Match every way to pull in vscode: static import (either quote style), require, and dynamic import().
 VSCODE_IMPORT='from ['"'"'"]vscode['"'"'"]|require\(['"'"'"]vscode['"'"'"]\)|import\(['"'"'"]vscode['"'"'"]\)'
-offenders="$(grep -rlE "$VSCODE_IMPORT" src --include='*.ts' | grep -vE "$SHELL_ALLOW" || true)"
+shell_offenders="$(grep -rlE "$VSCODE_IMPORT" src --include='*.ts' | grep -vE "$SHELL_ALLOW" || true)"
+package_offenders="$(grep -rlE "$VSCODE_IMPORT" packages/engine/src --include='*.ts' || true)"
+offenders="$(printf '%s\n%s\n' "$shell_offenders" "$package_offenders" | sed '/^$/d')"
 
 if [ -n "$offenders" ]; then
   echo "engine-boundary: FAIL — these ENGINE files import 'vscode' (only the shell may):" >&2
   echo "$offenders" | sed 's/^/  /' >&2
-  echo "Move the vscode touchpoint behind an EngineHost port (src/workspace/EngineHost.ts), or — if the" >&2
+  echo "Move the vscode touchpoint behind an EngineHost port (packages/engine/src/workspace/EngineHost.ts), or — if the" >&2
   echo "file is genuinely shell (UI/activation) — add it to the SHELL_ALLOW list in this script." >&2
   exit 1
 fi

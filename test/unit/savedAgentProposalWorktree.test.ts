@@ -4,15 +4,15 @@ import {
   savedAgentCreateMutation,
   REFUSED_PROPOSAL_WORKSPACE_KEYS,
   type SavedAgentProposalSpec,
-} from "../../src/agents/savedAgentProposal.js";
+} from "@tachyon/engine/agents/savedAgentProposal.js";
 import {
   createProfileFromStudioMutation,
   projectAgentProfileStudioSnapshot,
   DEFAULT_NEW_AGENT_WORKTREE_ENABLED,
 } from "@tachyon/shared/config/agentProfileStudio.js";
-import type { AgentProfileLifecycleSnapshot } from "../../src/config/agentProfileLifecycle.js";
+import type { AgentProfileLifecycleSnapshot } from "@tachyon/engine/config/agentProfileLifecycle.js";
 import { canonicalAgentFields } from "../../src/webview/agent-studio-shell/domain.js";
-import { branchFor, resolveBase } from "../../src/worktree/WorktreeManager.js";
+import { branchFor, resolveBase } from "@tachyon/engine/worktree/WorktreeManager.js";
 
 /**
  * t-4071e4 — a proposed Saved Agent runs in its own governed worktree by default.

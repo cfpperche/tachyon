@@ -1,4 +1,4 @@
-import type { FormState } from "../formLogic.js";
+import type { FormState } from "@tachyon/engine/webview/formLogic.js";
 
 export const TERMINAL_STUDIO_DOMAIN_MESSAGE_NAMES = ["browse", "cwd"] as const;
 

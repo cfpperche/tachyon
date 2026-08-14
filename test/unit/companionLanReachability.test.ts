@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { Bridge, isLoopbackRemote, shouldRejectLanNonCompanion } from "../../src/bridge/Bridge.js";
-import type { BridgeDeps } from "../../src/bridge/tools.js";
+import { Bridge, isLoopbackRemote, shouldRejectLanNonCompanion } from "@tachyon/engine/bridge/Bridge.js";
+import type { BridgeDeps } from "@tachyon/engine/bridge/tools.js";
 import {
   companionListenHost,
   companionPairBaseUrl,
@@ -8,7 +8,7 @@ import {
   isTailscaleIPv4,
   listTailscaleIPv4Addresses,
   resolveTailscaleIPv4,
-} from "../../src/companion/lanReachability.js";
+} from "@tachyon/engine/companion/lanReachability.js";
 
 describe("companion Tailscale reachability (SDD 422)", () => {
   it("listens on loopback by default and all-interfaces when mobile on", () => {

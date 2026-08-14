@@ -1,12 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { CollectorEnvelopeV1 } from "../../src/runtimeObservability/types.js";
+import type { CollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/types.js";
 import {
   validateCollectorEnvelopeV1,
   type CollectorEnvelopeValidationResult,
   type CollectorValidationIssueCode,
-} from "../../src/runtimeObservability/validate.js";
+} from "@tachyon/engine/runtimeObservability/validate.js";
 
 interface FixtureCorpus {
   provenance: {

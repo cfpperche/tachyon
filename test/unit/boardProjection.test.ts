@@ -2,21 +2,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildBoardSnapshot } from "../../src/tasks/boardSnapshot.js";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { EDITOR_HUMAN_ACTOR } from "../../src/validations/types.js";
-import { ValidationStore } from "../../src/validations/ValidationStore.js";
+import { buildBoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { EDITOR_HUMAN_ACTOR } from "@tachyon/engine/validations/types.js";
+import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import {
   isBoardViewV1,
   restoreBoardSnapshot,
   parseBoardProjectionV1,
   projectBoard,
   type BoardProjectionV1,
-} from "../../src/runtime-api/boardProjection.js";
+} from "@tachyon/engine/runtime-api/boardProjection.js";
 import {
   BOARD_RESPONSE_MAX_BYTES,
   workspaceBoardViewSuccessV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 
 const roots: string[] = [];
 

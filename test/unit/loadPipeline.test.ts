@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { loadPipeline, parseDuration, nodeSpawnName } from "../../src/pipeline/loadPipeline.js";
+import { loadPipeline, parseDuration, nodeSpawnName } from "@tachyon/engine/pipeline/loadPipeline.js";
 
-const SRC = path.resolve(__dirname, "..", "..", "src");
+const SRC = path.resolve(__dirname, "..", "..", "packages", "engine", "src");
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

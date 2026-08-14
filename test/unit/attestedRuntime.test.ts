@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { ATTESTED_RUNTIMES, isAttestedRuntime, type AttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 import { RESUME_RUNTIMES, adapterForRuntime, runtimeOf, type ResumeRuntime } from "@tachyon/shared/resume/adapters.js";
-import { KNOWN_AI_CLIS, suggestKindForCommand } from "../../src/config/loadConfig.js";
-import { profileRuntimeInspectorFor } from "../../src/config/agentProfileProjection.js";
+import { KNOWN_AI_CLIS, suggestKindForCommand } from "@tachyon/engine/config/loadConfig.js";
+import { profileRuntimeInspectorFor } from "@tachyon/engine/config/agentProfileProjection.js";
 
 /**
  * SDD 478 M1 — `AttestedRuntime` is the single answer to "which runtimes may operate an Agent".

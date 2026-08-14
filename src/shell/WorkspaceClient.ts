@@ -1,21 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { EngineControlClient, EngineControlClientError } from "../engine-service/controlClient.js";
+import { EngineControlClient, EngineControlClientError } from "@tachyon/engine/engine-service/controlClient.js";
 import {
   stagePackagedEngineBundle,
   resolveEngineRuntimeSource,
   stageEngineRuntime,
   type StagedEngineBundle,
   type StagedEngineRuntime,
-} from "../engine-service/engineBundleStore.js";
-import type { EngineReleaseChannel } from "../engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/engineBundleStore.js";
+import type { EngineReleaseChannel } from "@tachyon/engine/engine-service/protocol.js";
 import { classifyEngineCurrency, type EngineCurrency } from "../engine-service/engineCurrency.js";
 import {
   ensureDaemonEngine,
   type EnsureDaemonEngineOptions,
   type EnsuredDaemonEngine,
-} from "../engine-service/engineSupervisor.js";
+} from "@tachyon/engine/engine-service/engineSupervisor.js";
 import {
   ENGINE_SHELL_PROTOCOL,
   isEngineOperationId,
@@ -30,14 +30,14 @@ import {
   type WorkspaceQueryResultV1,
   type WorkspaceQueryV1,
   type WorkspaceSnapshotEnvelopeV1,
-} from "../engine-service/protocol.js";
-import { ENGINE_UI_CAPABILITY } from "../engine-service/uiRequestBroker.js";
-import { workspaceHash } from "../tmux/TmuxService.js";
-import type { StagedPayloadRefV1 } from "../runtime-api/stagedPayload.js";
-import { StagedPayloadStore } from "../engine-service/stagedPayloadStore.js";
-import type { DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";
-import type { EngineStateMigrationProvider } from "../engine-service/stateMigration.js";
-import { isJsonValue, type JsonValue } from "../runtime-api/extensionOperations.js";
+} from "@tachyon/engine/engine-service/protocol.js";
+import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
+import { workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
+import type { StagedPayloadRefV1 } from "@tachyon/engine/runtime-api/stagedPayload.js";
+import { StagedPayloadStore } from "@tachyon/engine/engine-service/stagedPayloadStore.js";
+import type { DaemonSettingsSnapshot } from "@tachyon/engine/workspace/DaemonEngineHost.js";
+import type { EngineStateMigrationProvider } from "@tachyon/engine/engine-service/stateMigration.js";
+import { isJsonValue, type JsonValue } from "@tachyon/engine/runtime-api/extensionOperations.js";
 import {
   assertWorkspacePresentationIdentity,
   projectWorkspacePresentation,

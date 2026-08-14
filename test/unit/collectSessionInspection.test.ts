@@ -2,8 +2,8 @@ import { describe, expect, it, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { collectSessionInspection } from "../../src/runtimeOps/collectSessionInspection.js";
-import { REDACTED } from "../../src/runtimeOps/sessionInspection.js";
+import { collectSessionInspection } from "@tachyon/engine/runtimeOps/collectSessionInspection.js";
+import { REDACTED } from "@tachyon/engine/runtimeOps/sessionInspection.js";
 
 /**
  * t-283149 — the collector reads a real on-disk session layout and hands it to the pure projection.
@@ -514,7 +514,7 @@ describe("t-0c963d — the collector holds rules, and readers hold paths", () =>
   // Comments MUST be stripped: this file's own doc comment names `config.toml` to explain why Codex
   // gets its own reader, and that sentence is the opposite of the violation. A guard that reads prose
   // measures prose.
-  const RULES = fs.readFileSync(path.join(process.cwd(), "src/runtimeOps/collectSessionInspection.ts"), "utf8")
+  const RULES = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/runtimeOps/collectSessionInspection.ts"), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/\/\/.*$/gm, "");
 
@@ -537,12 +537,12 @@ describe("t-0c963d — the collector holds rules, and readers hold paths", () =>
  */
 describe("t-283149 — the projectable-key list matches the projector", () => {
   it("lists exactly what claudeNativeConfigProjection projects", () => {
-    const source = fs.readFileSync(path.join(process.cwd(), "src/config/claudeNativeConfigProjection.ts"), "utf8");
+    const source = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/config/claudeNativeConfigProjection.ts"), "utf8");
     const block = /const FAMILY_KEYS[^=]*=\s*\{([\s\S]*?)\n\};/.exec(source);
     expect(block).toBeTruthy();
     const projected = new Set([...block![1].matchAll(/"([a-zA-Z]+)"/g)].map((match) => match[1]));
 
-    const reader = fs.readFileSync(path.join(process.cwd(), "src/runtimeOps/claudeSessionReader.ts"), "utf8");
+    const reader = fs.readFileSync(path.join(process.cwd(), "packages/engine/src/runtimeOps/claudeSessionReader.ts"), "utf8");
     const listed = /projectableKeys:\s*\[([\s\S]*?)\]/.exec(reader);
     expect(listed).toBeTruthy();
     const mirrored = new Set([...listed![1].matchAll(/"([a-zA-Z]+)"/g)].map((match) => match[1]));

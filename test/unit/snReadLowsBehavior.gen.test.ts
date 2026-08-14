@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { TaskStore } from "../../src/tasks/TaskStore.js";
-import { registerTools, type BridgeDeps } from "../../src/bridge/tools.js";
+import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
+import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
 
 class FakeMcp {
   handlers = new Map<string, (args: Record<string, unknown>) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>>();
@@ -71,9 +71,9 @@ describe("container-generated delegation behavior", () => {
       // t-5cca25 (2): the actionable/newest-first comparator used to be duplicated between
       // TaskStore's internal read sort and the list_tasks tool's listing sort. Assert both former
       // call sites now import the same exported comparator instead of each keeping their own copy.
-      const taskStoreSrc = fs.readFileSync(path.join(__dirname, "../../src/tasks/TaskStore.ts"), "utf8");
+      const taskStoreSrc = fs.readFileSync(path.join(__dirname, "../../packages/engine/src/tasks/TaskStore.ts"), "utf8");
       // t-3b47ad — list_tasks lives in the tasks capability module.
-      const toolsSrc = fs.readFileSync(path.join(__dirname, "../../src/bridge/tools/tasks.ts"), "utf8");
+      const toolsSrc = fs.readFileSync(path.join(__dirname, "../../packages/engine/src/bridge/tools/tasks.ts"), "utf8");
       expect(taskStoreSrc).toMatch(/import\s*\{[^}]*compareTasksForListing[^}]*\}\s*from\s*["']\.\/listOrder\.js["']/);
       expect(toolsSrc).toMatch(/import\s*\{[^}]*orderTaskViewsForListing[^}]*\}\s*from\s*["']\.\.\/\.\.\/tasks\/listOrder\.js["']/);
       expect(taskStoreSrc).not.toMatch(/TASK_READ_STATUS_ORDER|compareTasksForRead\b/);

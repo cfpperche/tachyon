@@ -86,8 +86,8 @@ describe("plugin package validator (t-d8e772)", () => {
     // A second implementation of the contract would drift, and a drifting validator reports green
     // while the loader refuses — strictly worse than having none. Pin the shared dependency.
     const src = fs.readFileSync(path.resolve(__dirname, "../../src/pluginValidateEntry.ts"), "utf8");
-    expect(src).toMatch(/import \{ loadManifest \} from "\.\/plugins\/manifest\.js"/);
-    const { loadManifest } = await import("../../src/plugins/manifest.js");
+    expect(src).toContain('import { loadManifest } from "@tachyon/engine/plugins/manifest.js"');
+    const { loadManifest } = await import("@tachyon/engine/plugins/manifest.js");
     expect(typeof loadManifest).toBe("function");
   });
 });

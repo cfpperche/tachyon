@@ -9,9 +9,9 @@ import {
   isCompanionAppPath,
   resolveCompanionMobileDist,
   serveCompanionMobileApp,
-} from "../../src/companion/mobileAppStatic.js";
-import { handleCompanionHttp, isCompanionPath } from "../../src/companion/CompanionHttp.js";
-import { CompanionPairingService } from "../../src/companion/CompanionPairingService.js";
+} from "@tachyon/engine/companion/mobileAppStatic.js";
+import { handleCompanionHttp, isCompanionPath } from "@tachyon/engine/companion/CompanionHttp.js";
+import { CompanionPairingService } from "@tachyon/engine/companion/CompanionPairingService.js";
 
 describe("companion mobile static serve (SDD 422 one-QR)", () => {
   const tmpDirs: string[] = [];

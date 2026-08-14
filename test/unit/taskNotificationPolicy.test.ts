@@ -6,7 +6,7 @@ import {
   taskAssigneeWakeFor,
   taskToastFor,
   type TaskNotificationSettings,
-} from "../../src/tasks/taskNotificationPolicy.js";
+} from "@tachyon/engine/tasks/taskNotificationPolicy.js";
 import type { Task } from "@tachyon/shared/tasks/types.js";
 
 const task: Task = {

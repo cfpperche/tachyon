@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { buildTaskDetailVm, emptyTombstoneVm } from "../../src/webview/task-detail/taskDetailVm.js";
 import { legacyTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
-import type { TaskDetailProjectionV1 } from "../../src/runtime-api/taskDetailProjection.js";
-import type { Workspace } from "../../src/workspace/Workspace.js";
+import type { TaskDetailProjectionV1 } from "@tachyon/engine/runtime-api/taskDetailProjection.js";
+import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 
 // t-610705 (SDD 410 Phase C.1) — buildTaskDetailVm/emptyTombstoneVm ported verbatim from the retired
 // TaskDetailPanelManager's private vmFor/resolveAttachmentRefs/prototypeVm. This file carries over

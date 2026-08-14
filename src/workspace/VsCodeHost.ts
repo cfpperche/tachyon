@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
-import type { NotifyLevel } from "../bridge/tools.js";
-import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "./EngineHost.js";
-import type { TerminalPresentationOptions } from "./TerminalPresentation.js";
+import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
+import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
+import type { TerminalPresentationOptions } from "@tachyon/engine/workspace/TerminalPresentation.js";
 import { Terminals } from "../presentation/Terminals.js";
 import { showNotificationActions } from "./NotificationService.js";
 

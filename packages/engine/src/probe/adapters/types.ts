@@ -8,7 +8,7 @@
  * login/update/MCP-startup noise (D5).
  */
 
-import type { ProbeModelEvidence, ProbeResult } from "../taxonomy.js";
+import type { ProbeModelEvidence, ProbeResult } from "@tachyon/engine/probe/taxonomy.js";
 
 /** A runtime-neutral probe request — what to ask, where, under what bounds. */
 export interface ProbeSpec {

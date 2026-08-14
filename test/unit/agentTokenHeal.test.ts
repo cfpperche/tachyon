@@ -3,13 +3,13 @@ import crypto from "node:crypto";
 import {
   CallerIdentityRegistry,
   type CallerScope,
-} from "../../src/bridge/callerIdentity.js";
+} from "@tachyon/engine/bridge/callerIdentity.js";
 import {
   findAgentNameForBridgeToken,
   healUnknownBearerFromProc,
   readProcEnvVar,
   type ProcFs,
-} from "../../src/bridge/agentTokenHeal.js";
+} from "@tachyon/engine/bridge/agentTokenHeal.js";
 
 const SCOPE: CallerScope = { workspaceId: "ws", instanceId: "inst" };
 const KEY = crypto.randomBytes(32);

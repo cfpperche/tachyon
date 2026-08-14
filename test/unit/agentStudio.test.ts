@@ -16,11 +16,11 @@ import {
   parseSteps,
   stepResolutions,
   type FormState,
-} from "../../src/webview/formLogic.js";
-import { detectInstalledClis } from "../../src/webview/cliDetect.js";
+} from "@tachyon/engine/webview/formLogic.js";
+import { detectInstalledClis } from "@tachyon/engine/webview/cliDetect.js";
 import { isAttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
-import { composeCommand, shellQuote, instructionsDeliverable, parseConfig } from "../../src/config/loadConfig.js";
-import { upsertAgent } from "../../src/config/YamlConfigEditor.js";
+import { composeCommand, shellQuote, instructionsDeliverable, parseConfig } from "@tachyon/engine/config/loadConfig.js";
+import { upsertAgent } from "@tachyon/engine/config/YamlConfigEditor.js";
 
 const BASE: FormState = {
   name: "revisor",

@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   decodeTaskStudioBase64,
   parseTaskStudioStagedPayloadV1,
-} from "../../src/runtime-api/taskStudioCommands.js";
+} from "@tachyon/engine/runtime-api/taskStudioCommands.js";
 import {
   isTiptapDoc,
   parseTaskStudioProjectionV1,
-} from "../../src/runtime-api/taskStudioProjection.js";
+} from "@tachyon/engine/runtime-api/taskStudioProjection.js";
 
 const EMPTY_DOC = { type: "doc", content: [{ type: "paragraph" }] };
 

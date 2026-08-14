@@ -79,3 +79,41 @@ assets. No package-boundary exception was added.
   that reviewed list, `verify:full` passed: 732 files, 8,255 tests passed, 4 live-model tests skipped,
   and 175 browser tests passed. This dirty-tree run is functional evidence only; the final commit is
   re-gated below for attestation.
+
+## Slice 2 — engine closure and address migration
+
+Before moving source, the value/runtime closure of
+`src/engine-service/{engineService,daemonMain}.ts` measured **391 modules**: 355 exclusive modules
+under `src/` plus the 36 runtime members already owned by `@tachyon/shared`. The independent
+type-aware closure measured **422 modules**: 377 under `src/` and all 45 shared source/runtime
+modules. Its **31 additional type-only members** were nine shared type modules discovered in slice 1
+and 22 modules still under `src/`.
+
+The 355 runtime-exclusive modules moved with `git mv` to `packages/engine/src/`, preserving their
+relative shape. Of the 22 extra `src/` type addresses, seven pure-type modules moved wholesale. The
+remaining 15 were mixed shell/browser implementations; their exact engine-consumed declarations
+moved into six concept modules and the original implementations import and re-export those types.
+`StudioDeps` was deliberately not moved because its `vscode.Uri` belongs to the shell; only the
+engine-consumed `StudioSubmit` shape moved. The package therefore contains 368 TypeScript source
+files physically (355 runtime modules + 7 pure-type modules + 6 extracted concept modules), while
+the reproduced value closure still reports exactly **355 engine-owned runtime modules**.
+
+After readdressing, the runtime closure remains **391** and the type-aware closure is **411**. The
+20-member difference is now entirely package-owned: 11 type-only modules in `@tachyon/engine` plus
+the nine in `@tachyon/shared`. The apparent 422 → 411 reduction is the intended removal of 11
+implementation addresses from the type graph: consumers now depend on the extracted concept types,
+not on shell/browser implementations.
+
+### Engine artifact comparison
+
+The pre-move daemon was 4,640,240 bytes with SHA-256
+`82481e1aef4ab955a1c2544e58e381f8a97081aabd4adf2b31d23c8a5f9af973`. The post-move raw bundle
+differs because esbuild emits source-path provenance both as comments and as initializer labels; a
+source move necessarily changes those labels. Its SHA-256 is
+`8ffbe599eedd977bb4b26a5c9f105ea4203c1c60115c221d3ce40347fbbdce8c`.
+
+Every byte of that difference was classified by normalizing only the two old physical prefixes
+(`../../../../../tachyon/{packages/shared,node_modules}/`) and their new package-relative forms
+(`../shared/`, `../../node_modules/`). The complete normalized artifacts compare byte-for-byte and
+both hash to `1e605a67306e353093bb0d142761f0bdcfeab8990962dec40b76c5b763a6caad`. Thus emitted executable
+code and data are identical; only esbuild's source-address labels changed.

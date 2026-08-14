@@ -6,8 +6,8 @@ import path from "node:path";
 import {
   GlobalTmuxWatchdog,
   recoverTmuxServer,
-} from "../../src/engine-service/tmuxAuthority.js";
-import type { ObservedProcess } from "../../src/runtime/processIdentity.js";
+} from "@tachyon/engine/engine-service/tmuxAuthority.js";
+import type { ObservedProcess } from "@tachyon/engine/runtime/processIdentity.js";
 
 const roots: string[] = [];
 const servers: net.Server[] = [];

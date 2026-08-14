@@ -19,7 +19,7 @@
 import * as vscode from "vscode";
 import type { WorkspaceAgentStudioTarget } from "../../shell/WorkspacePresentation.js";
 import { AGENT_PROFILE_REVISION_CONFLICT_CODE } from "@tachyon/shared/config/agentProfileRefusal.js";
-import { redactSecrets } from "../../bridge/redact.js";
+import { redactSecrets } from "@tachyon/engine/bridge/redact.js";
 import { envelope } from "../shared/studio/protocol.js";
 import { validateAgentStudioInboundMessage } from "./domain.js";
 import {

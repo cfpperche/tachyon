@@ -7,13 +7,13 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CodexAppServerObservationSource,
   type CodexAppServerSpawn,
-} from "../../src/runtimeObservability/codexAppServerSource.js";
+} from "@tachyon/engine/runtimeObservability/codexAppServerSource.js";
 import {
   PROVIDER_QUOTA_READ_CAPABILITY,
   type ProviderObservationGrantV1,
-} from "../../src/runtimeObservability/source.js";
-import type { CollectorEnvelopeV1 } from "../../src/runtimeObservability/types.js";
-import { validateCollectorEnvelopeV1 } from "../../src/runtimeObservability/validate.js";
+} from "@tachyon/engine/runtimeObservability/source.js";
+import type { CollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/types.js";
+import { validateCollectorEnvelopeV1 } from "@tachyon/engine/runtimeObservability/validate.js";
 
 interface FixtureCorpus {
   provenance: {

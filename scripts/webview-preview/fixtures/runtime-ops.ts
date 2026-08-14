@@ -1,7 +1,7 @@
 import { emptyRuntimeOpsSnapshot, unavailableRuntimeOpsSnapshot } from "../../../src/runtimeOps/types";
 import type { RuntimeOpsSnapshot, RuntimeOpsSnapshotV2 } from "../../../src/runtimeOps/types";
-import { buildRuntimeOpsSnapshot } from "../../../src/runtimeOps/model";
-import { projectRuntimeOpsProviderCapacity } from "../../../src/runtimeOps/providerProjection";
+import { buildRuntimeOpsSnapshot } from "@tachyon/engine/runtimeOps/model.js";
+import { projectRuntimeOpsProviderCapacity } from "@tachyon/engine/runtimeOps/providerProjection.js";
 import type {
   CollectorEnvelopeV1,
   ObservationConfidenceV1,
@@ -9,8 +9,8 @@ import type {
   ProviderQuotaWindowV1,
   ProviderUnavailableReasonV1,
   RuntimeObservabilityProviderV1,
-} from "../../../src/runtimeObservability/types";
-import type { ProviderObservationPreferenceV1 } from "../../../src/runtimeObservability/preferences";
+} from "@tachyon/engine/runtimeObservability/types.js";
+import type { ProviderObservationPreferenceV1 } from "@tachyon/engine/runtimeObservability/preferences.js";
 import type { Fixture } from "../routes";
 
 export type RuntimeOpsPreviewState =

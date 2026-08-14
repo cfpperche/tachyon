@@ -10,7 +10,7 @@ import {
 } from "@tachyon/shared/agents/agentRuntimeAdmission.js";
 import { ATTESTED_RUNTIMES, isAttestedRuntime } from "@tachyon/shared/runtime/attestedRuntimes.js";
 import { RESUME_RUNTIMES, runtimeOf } from "@tachyon/shared/resume/adapters.js";
-import { instructionsDeliverable, KNOWN_AI_CLIS } from "../../src/config/loadConfig.js";
+import { instructionsDeliverable, KNOWN_AI_CLIS } from "@tachyon/engine/config/loadConfig.js";
 import { runtimePromptAdapter } from "@tachyon/shared/agents/runtimePromptAdapters.js";
 
 /**

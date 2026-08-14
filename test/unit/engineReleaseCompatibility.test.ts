@@ -3,7 +3,7 @@ import {
   ENGINE_SHELL_PROTOCOL,
   negotiateEngineShellProtocol,
   type EngineProtocolRangeV1,
-} from "../../src/engine-service/protocol.js";
+} from "@tachyon/engine/engine-service/protocol.js";
 
 /**
  * Last released wire contract before 0.56.110. Keep this fixture immutable: it is the N-1 side of

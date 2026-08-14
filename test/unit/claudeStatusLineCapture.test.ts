@@ -6,11 +6,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   ClaudeStatusLineCaptureTransport,
   resolveEffectiveStatusLine,
-} from "../../src/runtimeObservability/claudeStatusLineCapture.js";
+} from "@tachyon/engine/runtimeObservability/claudeStatusLineCapture.js";
 import {
   ProviderObservationPreferences,
   type ProviderObservationStatePort,
-} from "../../src/runtimeObservability/preferences.js";
+} from "@tachyon/engine/runtimeObservability/preferences.js";
 
 class MemoryState implements ProviderObservationStatePort {
   readonly values = new Map<string, unknown>();

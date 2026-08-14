@@ -6,7 +6,7 @@ import { CARD_CATALOG, DEFAULT_CARD_TEMPLATE } from "@tachyon/shared/sidebar/car
 /** spec 384 — structural guarantees for the live branch badge (order + styles + mapping surface). */
 const appTsx = readFileSync(path.join(__dirname, "../../src/webview/sidebar/App.tsx"), "utf8");
 const css = readFileSync(path.join(__dirname, "../../src/webview/sidebar/sidebar.css"), "utf8");
-const fleetService = readFileSync(path.join(__dirname, "../../src/sidebar/sidebarFleetService.ts"), "utf8");
+const fleetService = readFileSync(path.join(__dirname, "../../packages/engine/src/sidebar/sidebarFleetService.ts"), "utf8");
 
 describe("spec 384 — agent live branch badge", () => {
   it("renders BranchBadge before every other badge in the meta region", () => {

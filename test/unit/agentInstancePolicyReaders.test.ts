@@ -4,7 +4,7 @@ import {
   isTemporaryInstance,
   legacyFallbackUsed,
   mayRestartInstance,
-} from "../../src/agents/agentInstancePolicy.js";
+} from "@tachyon/engine/agents/agentInstancePolicy.js";
 
 /**
  * t-04052d — the reader contract AFTER `declared` is gone.

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { briefFilePath, deliverableBody, BRIEF_FILE_THRESHOLD } from "../../src/agents/briefFile.js";
-import { forgetAgent } from "../../src/agents/forgetAgent.js";
+import { briefFilePath, deliverableBody, BRIEF_FILE_THRESHOLD } from "@tachyon/engine/agents/briefFile.js";
+import { forgetAgent } from "@tachyon/engine/agents/forgetAgent.js";
 import { makeTempDir } from "../helpers/tempDir.js";
 
 describe("T12 private derived agent files", () => {

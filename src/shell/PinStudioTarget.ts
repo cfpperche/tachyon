@@ -7,20 +7,20 @@ import {
   type PinStudioImagePayloadV1,
   type PinStudioSketchPayloadV1,
   type PinStudioStagedPayloadV1,
-} from "../runtime-api/pinStudioCommands.js";
+} from "@tachyon/engine/runtime-api/pinStudioCommands.js";
 import {
   projectPinStudio,
   type PinStudioProjectionV1,
-} from "../runtime-api/pinStudioProjection.js";
-import { PinAttachmentStore } from "../pins/PinAttachmentStore.js";
-import type { PinStore } from "../pins/PinStore.js";
+} from "@tachyon/engine/runtime-api/pinStudioProjection.js";
+import { PinAttachmentStore } from "@tachyon/engine/pins/PinAttachmentStore.js";
+import type { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import {
   putPinStudioImage,
   putPinStudioSketch,
   savePinStudio,
-} from "../pins/pinStudioService.js";
-import type { PinAttachment } from "../pins/types.js";
-import type { StudioSaveResult } from "../webview/shared/studio/adapter.js";
+} from "@tachyon/engine/pins/pinStudioService.js";
+import type { PinAttachment } from "@tachyon/engine/pins/types.js";
+import type { StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import type { PinDetailEntity, PinPatch } from "../webview/pin-studio/domain.js";
 import type { PinStudioAttachmentVM } from "../webview/pin-studio/types.js";
 import type { WorkspaceClient } from "./WorkspaceClient.js";
