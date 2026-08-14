@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { type BridgeDeps, AGENT_NAME, CMD_WAIT_PREFIX, fail, ok } from "./shared.js";
+import { CMD_WAIT_PREFIX } from "../../workspace/Waiters.js";
+import { type BridgeDeps, AGENT_NAME, fail, ok } from "./shared.js";
 
 export function registerCommandTools(mcp: McpServer, deps: BridgeDeps): void {
 

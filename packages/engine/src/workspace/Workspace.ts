@@ -172,7 +172,7 @@ import { appendDoorbellOverflowEvent, hasDoorbellRung } from "../bridge/doorbell
 import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "@tachyon/shared/attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
-import { Waiters } from "../bridge/Waiters.js";
+import { Waiters, CMD_WAIT_PREFIX } from "./Waiters.js";
 import {
   DEFAULT_NOTICE_TTL_MS,
   NoticeQueue,
@@ -228,7 +228,6 @@ import {
   workspaceVersionStateKey,
 } from "./operationalStateKeys.js";
 import { redactSecrets } from "../bridge/redact.js";
-import { CMD_WAIT_PREFIX } from "../bridge/tools.js";
 import { FileHashChainAuditSink, HostActionBroker, hostActionName, hostActionPolicyPaths, loadPinnedExternalPolicy, restorePinnedExternalPolicy, type HostActionCallerResolver } from "../host-action/index.js";
 import { ReloadTransactionStore, type ReloadReattachBundle } from "../host-action/reloadTransaction.js";
 import { VsCodeHostActionAdapter } from "../agent-vscode/hostActionAdapter.js";

@@ -94,3 +94,32 @@ export class Waiters {
     entry.resolve(result);
   }
 }
+
+/** Waiter key namespace for command completions (no clash with agent names). */
+export const CMD_WAIT_PREFIX = "cmd:";
+
+/** Shared by the MCP tool and the extension's internal command — one wait semantics. */
+export async function executeWait(
+  deps: {
+    manager: { agentStates(): Promise<Map<string, { dead: boolean; exitCode?: number }>> };
+    attentionOf?: (agent: string) => string | undefined;
+    waiters?: Waiters;
+  },
+  name: string,
+  until: WaitCondition,
+  timeoutSec: number,
+): Promise<{ met: boolean; state: string; exitCode?: number; waitedMs: number }> {
+  const states = await deps.manager.agentStates();
+  const current = states.get(name);
+  if (!current) return { met: until === "dead", state: "gone", waitedMs: 0 };
+  if (current.dead) return { met: until === "dead", state: "dead", exitCode: current.exitCode, waitedMs: 0 };
+  const attention = deps.attentionOf?.(name);
+  if (attention === until) return { met: true, state: attention, waitedMs: 0 };
+  if (!deps.waiters) throw new Error("waiting is not available on this Bridge");
+  const result = await deps.waiters.wait(name, until, timeoutSec * 1000);
+  if (result.state === "timeout") {
+    // report the live state at timeout so the caller can decide (and call again)
+    return { ...result, state: deps.attentionOf?.(name) ?? "working" };
+  }
+  return result;
+}

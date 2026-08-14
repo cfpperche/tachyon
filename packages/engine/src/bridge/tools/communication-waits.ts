@@ -2,7 +2,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { waitForOutput, inWaitOutputScope, WAIT_OUTPUT_DEFAULT_TIMEOUT_SEC, WAIT_OUTPUT_MAX_TIMEOUT_SEC, WAIT_OUTPUT_MAX_PATTERN_LENGTH, waitOutputConcurrencyRefusalMessage } from "../waitForOutput.js";
 import { redactSecrets } from "../redact.js";
-import { type BridgeDeps, AGENT_NAME, executeWait, fail, ok, postmortemTailFor, resolveDeclaredActor, waitOutputGateFor } from "./shared.js";
+import { executeWait } from "../../workspace/Waiters.js";
+import { type BridgeDeps, AGENT_NAME, fail, ok, postmortemTailFor, resolveDeclaredActor, waitOutputGateFor } from "./shared.js";
 
 export function registerWaitTools(mcp: McpServer, deps: BridgeDeps): void {
 
