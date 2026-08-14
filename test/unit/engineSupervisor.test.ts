@@ -6,6 +6,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import net from "node:net";
 import { EngineControlClient } from "@tachyon/engine/engine-service/controlClient.js";
 import { bridgeTokenFileName } from "@tachyon/engine/bridge/token.js";
+import { bridgeStateMigrationStorage } from "@tachyon/engine/bridge/stateMigrationStorage.js";
 import {
   stageEngineBundle,
   stageEngineRuntime,
@@ -705,7 +706,7 @@ describe("persistent engine supervisor", () => {
       runtime: fixture.runtime,
       storageRoot: fixture.storage,
       controlSocketPath: fixture.socket,
-      migrationProvider: async () => migration,
+      migrationProvider: { storage: bridgeStateMigrationStorage, provide: async () => migration },
       launcher: async (input) => {
         const daemonStateRoot = engineDaemonStateRoot(fixture.storage);
         expect(new DaemonStateStore(daemonStateRoot).getState(workspaceVersionStateKey(hash))).toBe("0.56.4");

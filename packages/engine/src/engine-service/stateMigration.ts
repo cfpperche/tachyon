@@ -1,9 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash, randomBytes } from "node:crypto";
-import type { PersistableEntry } from "../bridge/callerIdentity.js";
-import { bridgeGenerationStateKey } from "../bridge/clientRebind.js";
-import { bridgeTokenFileName, externalBridgeTokenFileName } from "../bridge/token.js";
 import { PROVIDER_OBSERVATION_PREFERENCES_STATE_KEY } from "../runtimeObservability/preferences.js";
 import {
   CALLER_IDENTITY_HMAC_SECRET_KEY,
@@ -30,12 +27,29 @@ export interface LegacyEngineStateSource {
   getSecret(key: string): Promise<string | undefined>;
 }
 
+/** Transport-owned locations used to read the legacy profile and install its daemon-owned copy. */
+export interface EngineStateMigrationStorage {
+  tokenFileNames(workspaceHash: string): { bridge: string; external: string };
+  clientGenerationStateKey(workspaceHash: string, bridgeInstanceId: string): string;
+}
+
+interface PersistableCallerIdentityEntry {
+  digestHex: string;
+  name: string;
+  workspaceId: string;
+  instanceId: string;
+  state: "live" | "superseded" | "revoked";
+  mintedAt: number;
+  lastSeenAt: number;
+  expiresAt: number;
+}
+
 export interface EngineStateMigrationV1 {
   schemaVersion: 1;
   workspaceHash: string;
   state: {
     bridgeInstanceId?: string;
-    callerRegistry?: PersistableEntry[];
+    callerRegistry?: PersistableCallerIdentityEntry[];
     hostActionSessionEpoch?: number;
     bridgeClientGeneration?: number;
     lastVersion?: string;
@@ -62,7 +76,10 @@ export interface ApplyEngineStateMigrationOptions {
   beforeComplete?: () => void;
 }
 
-export type EngineStateMigrationProvider = () => Promise<EngineStateMigrationV1>;
+export interface EngineStateMigrationProvider {
+  provide(): Promise<EngineStateMigrationV1>;
+  storage: EngineStateMigrationStorage;
+}
 
 export class EngineStateMigrationError extends Error {
   constructor(readonly code: string, message: string) {
@@ -78,6 +95,7 @@ export class EngineStateMigrationError extends Error {
 export async function collectLegacyEngineStateMigration(
   workspaceHash: string,
   source: LegacyEngineStateSource,
+  storage: EngineStateMigrationStorage,
 ): Promise<EngineStateMigrationV1> {
   assertWorkspaceHash(workspaceHash);
   if (!path.isAbsolute(source.globalStorageRoot)) {
@@ -100,7 +118,7 @@ export async function collectLegacyEngineStateMigration(
   );
   const bridgeClientGeneration = bridgeInstanceId
     ? optionalSafeInteger(
-        source.getState<unknown>(bridgeGenerationStateKey(workspaceHash, bridgeInstanceId)),
+        source.getState<unknown>(storage.clientGenerationStateKey(workspaceHash, bridgeInstanceId)),
         "Bridge client generation",
       )
     : undefined;
@@ -113,8 +131,9 @@ export async function collectLegacyEngineStateMigration(
   const providerObservationPreferences = providerRaw === undefined
     ? undefined
     : validateProviderObservationPreferences(providerRaw);
-  const bridge = readLegacyToken(source.globalStorageRoot, bridgeTokenFileName(workspaceHash));
-  const external = readLegacyToken(source.globalStorageRoot, externalBridgeTokenFileName(workspaceHash));
+  const tokenFileNames = storage.tokenFileNames(workspaceHash);
+  const bridge = readLegacyToken(source.globalStorageRoot, tokenFileNames.bridge);
+  const external = readLegacyToken(source.globalStorageRoot, tokenFileNames.external);
   if (bridge !== undefined && external === bridge) {
     throw new EngineStateMigrationError("INVALID_SOURCE", "legacy Bridge tokens must be distinct");
   }
@@ -145,6 +164,7 @@ export async function collectLegacyEngineStateMigration(
 export async function applyEngineStateMigration(
   storageRoot: string,
   migrationInput: EngineStateMigrationV1,
+  storage: EngineStateMigrationStorage,
   options: ApplyEngineStateMigrationOptions = {},
 ): Promise<EngineStateMigrationResult> {
   if (!path.isAbsolute(storageRoot)) {
@@ -183,11 +203,12 @@ export async function applyEngineStateMigration(
   const fields = preserveExistingAuthority
     ? ["state:preserved", "secrets:preserved"]
     : [
-        `state:${writeJsonExclusive(statePath, migrationStateDocument(migration)) ? "imported" : "preserved"}`,
+        `state:${writeJsonExclusive(statePath, migrationStateDocument(migration, storage)) ? "imported" : "preserved"}`,
         `secrets:${writeJsonExclusive(secretsPath, migrationSecretDocument(migration)) ? "imported" : "preserved"}`,
       ];
-  fields.push(`tokens.bridge:${writeTokenExclusive(storageRoot, bridgeTokenFileName(migration.workspaceHash), migration.tokens.bridge)}`);
-  fields.push(`tokens.external:${writeTokenExclusive(storageRoot, externalBridgeTokenFileName(migration.workspaceHash), migration.tokens.external)}`);
+  const tokenFileNames = storage.tokenFileNames(migration.workspaceHash);
+  fields.push(`tokens.bridge:${writeTokenExclusive(storageRoot, tokenFileNames.bridge, migration.tokens.bridge)}`);
+  fields.push(`tokens.external:${writeTokenExclusive(storageRoot, tokenFileNames.external, migration.tokens.external)}`);
   new DaemonStateStore(storageRoot); // validate either the imported documents or the preserved authority.
   options.beforeComplete?.();
   const marker: CompleteMarker = {
@@ -220,11 +241,11 @@ export async function ensureEngineStateMigration(
   new DaemonStateStore(storageRoot);
   const complete = readCompleteMarker(storageRoot);
   if (complete) return completedResult(complete, workspaceHash);
-  const migration = await provide();
+  const migration = await provide.provide();
   if (migration.workspaceHash !== workspaceHash) {
     throw new EngineStateMigrationError("TARGET_MISMATCH", "legacy engine state belongs to another workspace");
   }
-  return applyEngineStateMigration(storageRoot, migration);
+  return applyEngineStateMigration(storageRoot, migration, provide.storage);
 }
 
 export function migrationFingerprint(migration: EngineStateMigrationV1): string {
@@ -247,7 +268,10 @@ function completedResult(marker: CompleteMarker, workspaceHash: string): EngineS
   return { disposition: "already-complete", fingerprint: marker.fingerprint, fields: [...marker.fields] };
 }
 
-function migrationStateDocument(migration: EngineStateMigrationV1): Record<string, unknown> {
+function migrationStateDocument(
+  migration: EngineStateMigrationV1,
+  storage: EngineStateMigrationStorage,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   const state = migration.state;
   if (state.bridgeInstanceId !== undefined) {
@@ -260,7 +284,7 @@ function migrationStateDocument(migration: EngineStateMigrationV1): Record<strin
     out[hostActionSessionEpochStateKey(migration.workspaceHash)] = state.hostActionSessionEpoch;
   }
   if (state.bridgeClientGeneration !== undefined && state.bridgeInstanceId !== undefined) {
-    out[bridgeGenerationStateKey(migration.workspaceHash, state.bridgeInstanceId)] = state.bridgeClientGeneration;
+    out[storage.clientGenerationStateKey(migration.workspaceHash, state.bridgeInstanceId)] = state.bridgeClientGeneration;
   }
   if (state.lastVersion !== undefined) out[workspaceVersionStateKey(migration.workspaceHash)] = state.lastVersion;
   if (state.providerObservationPreferences !== undefined) {
@@ -422,12 +446,12 @@ function validateMigration(value: unknown): EngineStateMigrationV1 {
   return migration;
 }
 
-function validateCallerRegistry(value: unknown, workspaceHash: string, instanceId: string): PersistableEntry[] {
+function validateCallerRegistry(value: unknown, workspaceHash: string, instanceId: string): PersistableCallerIdentityEntry[] {
   if (!Array.isArray(value) || value.length > MAX_REGISTRY_ENTRIES) {
     throw new EngineStateMigrationError("INVALID_SOURCE", "legacy caller registry is invalid");
   }
   const digests = new Set<string>();
-  return value.map((candidate): PersistableEntry => {
+  return value.map((candidate): PersistableCallerIdentityEntry => {
     if (!isRecord(candidate)
       || hasUnknownKeys(candidate, ["digestHex", "name", "workspaceId", "instanceId", "state", "mintedAt", "lastSeenAt", "expiresAt"])
       || typeof candidate.digestHex !== "string"

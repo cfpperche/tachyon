@@ -117,6 +117,7 @@ import { Terminals } from "./presentation/Terminals.js";
 import { SessionViewportRegistry } from "./presentation/sessionViewport.js";
 import { connectPackagedWorkspaceClient } from "./shell/WorkspaceClient.js";
 import { collectLegacyEngineStateMigration } from "@tachyon/engine/engine-service/stateMigration.js";
+import { bridgeStateMigrationStorage } from "@tachyon/engine/bridge/stateMigrationStorage.js";
 import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
 import type { WorkspaceCommandResultV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { assertMarkedDevHostWorkspace, engineShellReleasePolicy } from "./engine-service/devHostBoundary.js";
@@ -2384,11 +2385,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         shell: { version: shellVersion, locale: vscode.env.language },
         capabilities: [ENGINE_UI_CAPABILITY, "vscode.diff", "vscode.editor", "vscode.terminal"],
         settings: daemonSettingsSnapshot(workspaceRoot),
-        migrationProvider: () => collectLegacyEngineStateMigration(workspaceHash(workspaceRoot), {
-          globalStorageRoot: context.globalStorageUri.fsPath,
-          getState: <T>(key: string) => context.globalState.get<T>(key),
-          getSecret: (key: string) => Promise.resolve(context.secrets.get(key)),
-        }),
+        migrationProvider: {
+          storage: bridgeStateMigrationStorage,
+          provide: () => collectLegacyEngineStateMigration(workspaceHash(workspaceRoot), {
+            globalStorageRoot: context.globalStorageUri.fsPath,
+            getState: <T>(key: string) => context.globalState.get<T>(key),
+            getSecret: (key: string) => Promise.resolve(context.secrets.get(key)),
+          }, bridgeStateMigrationStorage),
+        },
         uiHandler: async (request) => {
           if (request.kind === "focus-primary") {
             await vscode.commands.executeCommand("tachyonSidebarPrototype.focus");

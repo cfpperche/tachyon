@@ -3,7 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { bridgeGenerationStateKey } from "@tachyon/engine/bridge/clientRebind.js";
-import { bridgeTokenFileName, externalBridgeTokenFileName } from "@tachyon/engine/bridge/token.js";
+import { bridgeStateMigrationStorage } from "@tachyon/engine/bridge/stateMigrationStorage.js";
+import { bridgeTokenFileName } from "@tachyon/engine/bridge/token.js";
 import { DaemonStateStore } from "@tachyon/engine/engine-service/daemonStateStore.js";
 import {
   applyEngineStateMigration,
@@ -53,7 +54,9 @@ describe("one-time persistent engine state migration", () => {
       [callerIdentityInstanceIdStateKey(hash), instanceId],
       [callerIdentityRegistryStateKey(hash), registry],
       [hostActionSessionEpochStateKey(hash), 7],
-      [bridgeGenerationStateKey(hash, instanceId), 4],
+      // Frozen profile keys/file names from the pre-inversion transport. Do not derive these through
+      // bridgeStateMigrationStorage: this fixture proves the new composition still reads old disks.
+      [`tachyon.bridgeClient.generation.${hash}.${instanceId}`, 4],
       [workspaceVersionStateKey(hash), "0.56.4"],
       [PROVIDER_OBSERVATION_PREFERENCES_STATE_KEY, preferences],
       [`tachyon.terminals.open.v1.${hash}`, [{ name: "presentation-only" }]],
@@ -66,14 +69,14 @@ describe("one-time persistent engine state migration", () => {
       })],
       ["unknown.secret", "must-not-cross"],
     ]);
-    writeToken(legacy, bridgeTokenFileName(hash), "5".repeat(64));
-    writeToken(legacy, externalBridgeTokenFileName(hash), "6".repeat(64));
+    writeToken(legacy, `bridge-token-${hash}`, "5".repeat(64));
+    writeToken(legacy, `bridge-external-token-${hash}`, "6".repeat(64));
 
     const migration = await collectLegacyEngineStateMigration(hash, {
       globalStorageRoot: legacy,
       getState: <T>(key: string) => state.get(key) as T | undefined,
       getSecret: async (key) => secrets.get(key),
-    });
+    }, bridgeStateMigrationStorage);
 
     expect(migration).toEqual({
       schemaVersion: 1,
@@ -100,7 +103,7 @@ describe("one-time persistent engine state migration", () => {
     const root = temp();
     const storage = path.join(root, "engine");
     const migration = fixtureMigration();
-    const first = await applyEngineStateMigration(storage, migration);
+    const first = await applyEngineStateMigration(storage, migration, bridgeStateMigrationStorage);
     expect(first.disposition).toBe("applied");
     expect(first.fields).toEqual(expect.arrayContaining([
       "state:imported",
@@ -124,10 +127,11 @@ describe("one-time persistent engine state migration", () => {
       ...migration,
       state: { ...migration.state, lastVersion: "99.0.0" },
     };
-    const replay = await applyEngineStateMigration(storage, changed);
+    const replay = await applyEngineStateMigration(storage, changed, bridgeStateMigrationStorage);
     expect(replay.disposition).toBe("already-complete");
-    expect((await ensureEngineStateMigration(storage, migration.workspaceHash, async () => {
-      throw new Error("legacy source must not be read after completion");
+    expect((await ensureEngineStateMigration(storage, migration.workspaceHash, {
+      storage: bridgeStateMigrationStorage,
+      provide: async () => { throw new Error("legacy source must not be read after completion"); },
     })).disposition).toBe("already-complete");
     expect(new DaemonStateStore(storage).getState(workspaceVersionStateKey(migration.workspaceHash))).toBe("0.56.4");
   });
@@ -136,7 +140,7 @@ describe("one-time persistent engine state migration", () => {
     const root = temp();
     const storage = path.join(root, "engine");
     const migration = fixtureMigration();
-    await expect(applyEngineStateMigration(storage, migration, {
+    await expect(applyEngineStateMigration(storage, migration, bridgeStateMigrationStorage, {
       beforeComplete: () => { throw new Error("simulated power loss"); },
     })).rejects.toThrow("simulated power loss");
     expect(fs.existsSync(path.join(storage, "legacy-state-migration-v1.pending.json"))).toBe(true);
@@ -145,7 +149,7 @@ describe("one-time persistent engine state migration", () => {
       ...migration,
       state: { ...migration.state, lastVersion: "source-changed-after-crash" },
     };
-    expect((await applyEngineStateMigration(storage, changed)).disposition).toBe("applied");
+    expect((await applyEngineStateMigration(storage, changed, bridgeStateMigrationStorage)).disposition).toBe("applied");
     expect(new DaemonStateStore(storage).getState(workspaceVersionStateKey(migration.workspaceHash))).toBe("0.56.4");
     expect(fs.existsSync(path.join(storage, "legacy-state-migration-v1.pending.json"))).toBe(false);
   });
@@ -156,7 +160,7 @@ describe("one-time persistent engine state migration", () => {
     const existing = new DaemonStateStore(storage);
     existing.setState("daemon-owned", { generation: 2 });
 
-    const result = await applyEngineStateMigration(storage, fixtureMigration());
+    const result = await applyEngineStateMigration(storage, fixtureMigration(), bridgeStateMigrationStorage);
     expect(result.fields).toEqual(expect.arrayContaining(["state:preserved", "secrets:preserved"]));
     const reopened = new DaemonStateStore(storage);
     expect(reopened.getState("daemon-owned")).toEqual({ generation: 2 });
