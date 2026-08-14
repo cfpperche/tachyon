@@ -227,7 +227,7 @@ import {
   hostActionSessionEpochStateKey,
   workspaceVersionStateKey,
 } from "./operationalStateKeys.js";
-import { redactSecrets } from "../bridge/redact.js";
+import { redactSecrets } from "../utils/redactSecrets.js";
 import { FileHashChainAuditSink, HostActionBroker, hostActionName, hostActionPolicyPaths, loadPinnedExternalPolicy, restorePinnedExternalPolicy, type HostActionCallerResolver } from "../host-action/index.js";
 import { ReloadTransactionStore, type ReloadReattachBundle } from "../host-action/reloadTransaction.js";
 import { VsCodeHostActionAdapter } from "../agent-vscode/hostActionAdapter.js";

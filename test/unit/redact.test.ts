@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { redactSecrets } from "@tachyon/engine/bridge/redact.js";
+import { redactSecrets } from "@tachyon/engine/utils/redactSecrets.js";
 
 /** spec 351 T7 (dueto F8) — redaction of Bridge auth secrets out of Tachyon-generated diagnostics. */
 describe("redactSecrets", () => {
