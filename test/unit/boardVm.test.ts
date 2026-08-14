@@ -4,8 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
-import { BOARD_AGENT_LIST_TIMEOUT_MS, BoardAgentLists, buildBoardVm } from "../../src/webview/board/boardVm.js";
-import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../src/shell/BoardTarget.js";
+import { BOARD_AGENT_LIST_TIMEOUT_MS, BoardAgentLists, buildBoardVm } from "../../apps/vscode-extension/src/webview/board/boardVm.js";
+import { legacyBoardTarget, type WorkspaceBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 
 // t-610705 Phase B #6 — the bounded/coalesced agent-liveness pass, ported from the retired

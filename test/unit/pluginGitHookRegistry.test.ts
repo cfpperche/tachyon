@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { GitHookStore, GitHookStoreError, argvWrapperScript, snapshotIntegrity, type EventEntry } from "../../src/plugins/gitHookRegistry.js";
+import { GitHookStore, GitHookStoreError, argvWrapperScript, snapshotIntegrity, type EventEntry } from "../../apps/vscode-extension/src/plugins/gitHookRegistry.js";
 
 const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) fs.rmSync(d, { recursive: true, force: true }); });

@@ -18,8 +18,8 @@ import {
   approveSavedAgentRemovalProposal,
   denySavedAgentRemovalProposal,
   readSavedAgentRemovalProposalReceipt,
-} from "../../src/agents/savedAgentRemovalProposalCommit.js";
-import { buildSavedAgentRemovalProposalReview } from "../../src/agents/savedAgentRemovalProposalReview";
+} from "../../apps/vscode-extension/src/agents/savedAgentRemovalProposalCommit.js";
+import { buildSavedAgentRemovalProposalReview } from "../../apps/vscode-extension/src/agents/savedAgentRemovalProposalReview";
 import { registerTools, type BridgeDeps } from "@tachyon/engine/bridge/tools.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
 import { buildHumanInbox, humanInboxCounts } from "@tachyon/webview-ui/humanInbox/model";

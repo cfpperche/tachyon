@@ -16,7 +16,7 @@ import {
   writeApprovalRequest,
   type ApprovalRequest,
 } from "@tachyon/engine/bridge/approvalRequest.js";
-import { listPendingApprovalViewItems } from "../../src/webview/approval/viewModel.js";
+import { listPendingApprovalViewItems } from "../../apps/vscode-extension/src/webview/approval/viewModel.js";
 
 /**
  * t-65e80b — the DECISION of an approval is now sealed, the way the payload already was.

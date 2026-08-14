@@ -932,7 +932,7 @@ describe("HarnessManager materialize (fs)", () => {
     const codexHome = path.join(path.dirname(realHome), "realcodex-noworktree");
     fs.mkdirSync(codexHome, { recursive: true });
     fs.writeFileSync(path.join(codexHome, "auth.json"), "{}");
-    // the plugin installer's roster in the WORKSPACE ROOT (`src/plugins/engine.ts` codex skillsRel)
+    // the plugin installer's roster in the WORKSPACE ROOT (`apps/vscode-extension/src/plugins/engine.ts` codex skillsRel)
     const rosterSkill = path.join(ws, ".agents", "skills", "workspace-plugin", "SKILL.md");
     fs.mkdirSync(path.dirname(rosterSkill), { recursive: true });
     const rosterBytes = "workspace plugin bytes\n";

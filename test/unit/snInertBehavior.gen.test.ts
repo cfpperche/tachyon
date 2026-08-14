@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shouldActivateFolder } from "../../src/workspace/workspaceFolderOps.js";
+import { shouldActivateFolder } from "../../apps/vscode-extension/src/workspace/workspaceFolderOps.js";
 
 const WORKTREES_BASE = "/home/goat/.cache/tachyon/worktrees";
 

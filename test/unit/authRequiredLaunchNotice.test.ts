@@ -8,8 +8,8 @@ import {
   runtimeLoginCommand,
 } from "@tachyon/shared/runtime/authRequired.js";
 import { authRequiredLaunchNotice, loginFinishedNotice } from "@tachyon/engine/workspace/authRequiredNotice.js";
-import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
-import { showNotificationActions } from "../../src/workspace/NotificationService.js";
+import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
+import { showNotificationActions } from "../../apps/vscode-extension/src/workspace/NotificationService.js";
 import {
   __getQuickPickCalls,
   __getStatusBarMessages,

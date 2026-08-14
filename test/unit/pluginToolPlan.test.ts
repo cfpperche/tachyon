@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { gatherToolPlan, type ToolPlan } from "../../src/plugins/toolPlan.js";
-import { loadPlugin, previewInstall, type LoadedPlugin } from "../../src/plugins/engine.js";
+import { gatherToolPlan, type ToolPlan } from "../../apps/vscode-extension/src/plugins/toolPlan.js";
+import { loadPlugin, previewInstall, type LoadedPlugin } from "../../apps/vscode-extension/src/plugins/engine.js";
 import type { PluginManifest, ToolDecl } from "@tachyon/engine/plugins/manifest.js";
-import type { PlatformResolution } from "../../src/plugins/toolPlatform.js";
+import type { PlatformResolution } from "../../apps/vscode-extension/src/plugins/toolPlatform.js";
 
 const SHA = "a".repeat(64);
 const SHB = "b".repeat(64);

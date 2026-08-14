@@ -10,7 +10,7 @@ describe("SDD 485 D12 — Task Studio is a task-document mode", () => {
   });
 
   it("keeps the tachyonTaskStudio serializer as dispose plus redirect, never revive", () => {
-    const extension = read("src/extension.ts");
+    const extension = read("apps/vscode-extension/src/extension.ts");
     const at = extension.indexOf("registerTrustedPanelSerializer<TaskStudioPanelState>");
     const block = extension.slice(at, at + 900);
     expect(block).toContain("panel.dispose()");

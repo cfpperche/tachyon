@@ -604,3 +604,21 @@ verification record no longer need a new execution unit, because slices 1–3 ma
 workspace orchestrator; they need discovery/coverage updates, not relocation. The highest immediate
 cost remains the manifest boundary plus `esbuild.mjs`, while the five F5 paths remain a separate
 owner-visible risk.
+
+### Slice 5 implementation record
+
+- The measured move was executed as exactly **164/164** byte-identical source relocations. The
+  residual root `src/` remains exactly **26** TypeScript files, including the intentionally orphaned
+  `src/workspace/VsCodeHost.ts`.
+- The root manifest is now orchestration-only and discovers `apps/*` plus `packages/*`; the extension
+  manifest remains version `0.91.0` with `main: ./dist/extension.js`.
+- Build, package, provenance, VSIX smoke and dev-host paths discover the extension workspace by its
+  `engines.vscode` manifest contract. `workspaceLayout.test.ts` proves another `apps/*` child is
+  discovered without changing the resolver.
+- `vsce` cannot walk npm's hoisted monorepo tree without reporting unrelated development packages as
+  extraneous. The release therefore stages the sole native external (`node-pty`) under
+  `dist/node_modules`, records it in provenance, and calls `vsce --no-dependencies`; README and LICENSE
+  are staged beside the app manifest only for the packaging callback.
+- Headless build, TypeScript, focused relocation tests, package-boundary and engine-boundary checks
+  are green. The human F5 proof and stable VSIX smoke remain explicit exit conditions and are not
+  represented as complete here.

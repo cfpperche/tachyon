@@ -2,9 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sourceLockPath, withRuntimeConfigSourceLock } from "../../src/runtimeConfig/sourceLock.js";
-import { applyGrokRuntimeConfigChange } from "../../src/runtimeConfig/grokInventory.js";
-import { applyClaudeRuntimeConfigChange } from "../../src/runtimeConfig/claudeInventory.js";
+import { sourceLockPath, withRuntimeConfigSourceLock } from "../../apps/vscode-extension/src/runtimeConfig/sourceLock.js";
+import { applyGrokRuntimeConfigChange } from "../../apps/vscode-extension/src/runtimeConfig/grokInventory.js";
+import { applyClaudeRuntimeConfigChange } from "../../apps/vscode-extension/src/runtimeConfig/claudeInventory.js";
 
 /**
  * t-ce83a2 — regression for a lock that excluded nothing.

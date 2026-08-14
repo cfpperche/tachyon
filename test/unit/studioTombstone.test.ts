@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
-import { SingleModeStudioPanelManager } from "../../src/webview/shared/studio/SingleModeStudioPanelManager.js";
+import { SingleModeStudioPanelManager } from "../../apps/vscode-extension/src/webview/shared/studio/SingleModeStudioPanelManager.js";
 import type { StudioHostAdapter, StudioLoadResult, StudioSaveResult } from "@tachyon/engine/webview/shared/studio/adapter.js";
 import { CORE_MESSAGE_TYPES, envelope } from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
 import { acceptsWhileVanished, decideVanishedDraft, isTombstone, readTombstoneMessage } from "../../packages/webview-ui/src/webview/shared/studio/tombstone.js";
-import { TaskDocumentEditPolicy } from "../../src/webview/task-detail/editPolicy.js";
-import { webviewApp } from "../../src/webview/webviewApps.js";
-import type { WorkspaceStudioTarget } from "../../src/shell/WorkspacePresentation.js";
+import { TaskDocumentEditPolicy } from "../../apps/vscode-extension/src/webview/task-detail/editPolicy.js";
+import { webviewApp } from "../../apps/vscode-extension/src/webview/webviewApps.js";
+import type { WorkspaceStudioTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 
 /**
  * t-b643ac — an Agent Studio whose agent was REMOVED (Forget) kept the whole editor mounted under a

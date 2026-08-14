@@ -3,7 +3,7 @@ import type {
   EngineServiceIdentityV1,
   WorkspaceSnapshotEnvelopeV1,
 } from "@tachyon/engine/engine-service/protocol.js";
-import type { WorkspaceAgentProjectionV1 } from "../../../src/runtime-api/workspaceProjection.js";
+import type { WorkspaceAgentProjectionV1 } from "../../../apps/vscode-extension/src/runtime-api/workspaceProjection.js";
 
 export function projectionIdentity(
   workspaceRoot: string,

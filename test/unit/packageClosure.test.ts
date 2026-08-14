@@ -11,7 +11,7 @@ import { importClosureViolations, manifestAssetViolations } from "../../scripts/
  *
  * The first fixture is not a plausible imitation of the 0.57.0 failure; it is its literal shape, read
  * back out of the shipped `tachyon-0.57.0.vsix`: `Function("return import(\"ws\")")()` sitting under
- * esbuild's `// src/webview/ide-browser-bridge/cdpSession.ts` provenance comment, with no
+ * esbuild's `// apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.ts` provenance comment, with no
  * `node_modules/ws` beside it. The second fixture is 0.57.1's shape — same package, `ws` inlined and
  * gone from the bundle's specifiers — and must be green.
  *
@@ -54,9 +54,9 @@ function stageExtension(opts: {
 
 /** 0.57.0's bundle, in miniature: the runtime-built import esbuild could not see, under its author. */
 const CDP_SESSION_WITH_WS = [
-  "// src/presentation/TmuxAttachClient.ts",
+  "// apps/vscode-extension/src/presentation/TmuxAttachClient.ts",
   'var pty = require("node-pty");',
-  "// src/webview/ide-browser-bridge/cdpSession.ts",
+  "// apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.ts",
   // Byte-for-byte the shipped line, quoting included — an approximation here would prove nothing.
   "    const mod = await Function('return import(\"ws\")')();",
 ].join("\n");
@@ -71,17 +71,17 @@ describe("the package contains everything its own code loads (t-e0a0f5)", () => 
     expect(problems[0]).toContain("dist/extension.js loads 'ws'");
     // Naming the author is the difference between "something is missing" and a fix: the reader must
     // land on the file that wrote the import, not go hunting through a 4.7MB bundle for it.
-    expect(problems[0]).toContain("src/webview/ide-browser-bridge/cdpSession.ts");
+    expect(problems[0]).toContain("apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.ts");
     expect(problems[0]).toContain("Cannot find package 'ws'");
   });
 
   it("accepts the 0.57.1 shape: ws inlined into the bundle, node-pty external and packaged", () => {
     const bundle = [
-      "// src/presentation/TmuxAttachClient.ts",
+      "// apps/vscode-extension/src/presentation/TmuxAttachClient.ts",
       'var pty = require("node-pty");',
       "// node_modules/ws/lib/websocket.js",
       'var net = require("net");',
-      "// src/webview/ide-browser-bridge/cdpSession.ts",
+      "// apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.ts",
       "var socket = new WebSocket(url);",
     ].join("\n");
 
@@ -98,7 +98,7 @@ describe("the package contains everything its own code loads (t-e0a0f5)", () => 
 
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("loads 'node-pty'");
-    expect(problems[0]).toContain("src/presentation/TmuxAttachClient.ts");
+    expect(problems[0]).toContain("apps/vscode-extension/src/presentation/TmuxAttachClient.ts");
   });
 
   it("stays quiet about third-party optional loads, which are absent from every real release", () => {
@@ -126,7 +126,7 @@ describe("the package contains everything its own code loads (t-e0a0f5)", () => 
 
   it("ignores builtins, node: specifiers, relative paths and the host-provided vscode module", () => {
     const bundle = [
-      "// src/extension.ts",
+      "// apps/vscode-extension/src/extension.ts",
       'var vscode = require("vscode");',
       'var fs = require("fs");',
       'var pathmod = require("node:path");',

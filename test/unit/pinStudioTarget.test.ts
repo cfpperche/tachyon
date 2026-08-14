@@ -9,7 +9,7 @@ import {
 import { parsePinStudioStagedPayloadV1 } from "@tachyon/engine/runtime-api/pinStudioCommands.js";
 import { PinAttachmentStore } from "@tachyon/engine/pins/PinAttachmentStore.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
-import { workspacePinStudioTarget } from "../../src/shell/PinStudioTarget.js";
+import { workspacePinStudioTarget } from "../../apps/vscode-extension/src/shell/PinStudioTarget.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 const roots: string[] = [];

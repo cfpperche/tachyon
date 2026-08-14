@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
-import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager, runtimeOpsRefreshKind, type RuntimeOpsDeps } from "../../src/webview/RuntimeOpsPanel.js";
-import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
-import { sectionPanelKey, type SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
+import { RUNTIME_OPS_VIEW_TYPE, RuntimeOpsPanelManager, runtimeOpsRefreshKind, type RuntimeOpsDeps } from "../../apps/vscode-extension/src/webview/RuntimeOpsPanel.js";
+import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
+import { sectionPanelKey, type SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import {
   readyMessage,
   runtimeOpsInspectSessionAction,
@@ -178,7 +178,7 @@ describe("SDD 485 D3 — the Runtime Ops app's cardinality is `window`, not the 
     // The manifest row is the declaration of record (Phase A's promise: inspect a manifest, not N classes).
     // Asserted through the KEY rather than by reading the row back, so a row edited to `dashboard` fails
     // here rather than passing a self-referential check.
-    const { webviewApp } = await import("../../src/webview/webviewApps.js");
+    const { webviewApp } = await import("../../apps/vscode-extension/src/webview/webviewApps.js");
     const row = webviewApp("runtime-ops");
     expect(row).toMatchObject({ viewId: RUNTIME_OPS_VIEW_TYPE, host: "section", cardinality: "window" });
   });

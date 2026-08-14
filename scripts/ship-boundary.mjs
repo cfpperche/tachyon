@@ -20,7 +20,8 @@ const SHIPPED_FILES = [
 ];
 
 export function classifyShipFile(relPath) {
-  const normalized = relPath.replaceAll("\\", "/").replace(/^\.\//, "");
+  const repositoryRelative = relPath.replaceAll("\\", "/").replace(/^\.\//, "");
+  const normalized = repositoryRelative.replace(/^apps\/[^/]+\//, "");
   if (DEV_ARTIFACTS.some((pattern) => pattern.test(normalized))) return "dev-artifact";
   if (SHIPPED_FILES.some((pattern) => pattern.test(normalized))) return "allowed";
   return "forbidden";

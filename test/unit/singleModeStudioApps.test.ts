@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { sectionPanelKey } from "../../src/webview/shared/SectionPanelManager.js";
-import { webviewApp } from "../../src/webview/webviewApps.js";
+import { sectionPanelKey } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
+import { webviewApp } from "../../apps/vscode-extension/src/webview/webviewApps.js";
 
 const studios = [
   "command",
@@ -18,9 +18,9 @@ const studios = [
  * five. Deriving it means a new studio either joins the list or fails right here.
  */
 function studiosOnTheSharedHost(): string[] {
-  return readdirSync("src/webview")
+  return readdirSync("apps/vscode-extension/src/webview")
     .filter((f) => f.endsWith("StudioPanel.ts"))
-    .filter((f) => readFileSync(`src/webview/${f}`, "utf8").includes("extends SingleModeStudioPanelManager"))
+    .filter((f) => readFileSync(`apps/vscode-extension/src/webview/${f}`, "utf8").includes("extends SingleModeStudioPanelManager"))
     .map((f) => f.replace(/StudioPanel\.ts$/, "").toLowerCase())
     .sort();
 }
@@ -62,11 +62,11 @@ describe("SDD 485 D13 — editing-only studio document apps", () => {
 
   it("reuses D12's pending-edit close policy and never introduces a reading mode", () => {
     const policy = readFileSync(
-      "src/webview/shared/studio/singleModeEditPolicy.ts",
+      "apps/vscode-extension/src/webview/shared/studio/singleModeEditPolicy.ts",
       "utf8",
     );
     const host = readFileSync(
-      "src/webview/shared/studio/SingleModeStudioPanelManager.ts",
+      "apps/vscode-extension/src/webview/shared/studio/SingleModeStudioPanelManager.ts",
       "utf8",
     );
     expect(policy).toContain(
@@ -93,7 +93,7 @@ describe("SDD 485 D13 — editing-only studio document apps", () => {
   it("keeps every studio panel source line at or below 200 characters", () => {
     for (const studio of studios) {
       const name = `${studio[0].toUpperCase()}${studio.slice(1)}StudioPanel.ts`;
-      const long = readFileSync(`src/webview/${name}`, "utf8")
+      const long = readFileSync(`apps/vscode-extension/src/webview/${name}`, "utf8")
         .split("\n")
         .filter((line) => line.length > 200);
       expect(long, name).toEqual([]);

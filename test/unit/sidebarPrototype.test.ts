@@ -4,13 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { __createdPanels, __getClipboardText, __getExecutedCommands, __getWarningMessageCalls, __resetVscodeMock, __setWarningMessageResult } from "../mocks/vscode.js";
-import { pinDocPreview, SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
-import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
+import { pinDocPreview, SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
+import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { Pin } from "@tachyon/engine/pins/PinStore.js";
 import type { PinDetailRead } from "@tachyon/engine/pins/PinStore.js";
 import type { AgentInfo } from "@tachyon/engine/agents/AgentManager.js";
-import { legacySidebarTarget, type LegacySidebarSource, type WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
+import { legacySidebarTarget, type LegacySidebarSource, type WorkspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
 import type { ObservedModelInput } from "@tachyon/engine/sidebar/agentModel.js";
 import { SAMPLE, type FleetVM, type NoticeVM } from "@tachyon/shared/sidebar/types.js";
 import type { SidebarFleetV1 } from "@tachyon/engine/runtime-api/sidebarProjection.js";
@@ -637,10 +637,10 @@ describe("the pin row keeps one control, and Edit is not among its items (t-456c
 
   it("removes Edit from the row and from the bridge, without touching the command", () => {
     expect(row).not.toContain('label: "Edit"');
-    const bridge = readFileSync("src/webview/SidebarPrototype.ts", "utf8");
+    const bridge = readFileSync("apps/vscode-extension/src/webview/SidebarPrototype.ts", "utf8");
     expect(bridge, "the bridge still routes a pin:edit nobody sends").not.toContain('case "pin:edit"');
     // The capability survives as a contributed command with its own menu entry — retiring a door is
     // not retiring the ability, and conflating the two is how a "cleanup" removes a feature.
-    expect(readFileSync("package.json", "utf8")).toContain("tachyon.editPinItem");
+    expect(readFileSync("apps/vscode-extension/package.json", "utf8")).toContain("tachyon.editPinItem");
   });
 });

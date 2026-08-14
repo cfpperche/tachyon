@@ -1,6 +1,6 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildHumanInboxItemViewModel, buildHumanInboxViewModel } from "../../src/webview/human-inbox/viewModel.js";
+import { buildHumanInboxItemViewModel, buildHumanInboxViewModel } from "../../apps/vscode-extension/src/webview/human-inbox/viewModel.js";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
 
 const dispatch = new Proxy({}, { get: () => () => {} }) as never;

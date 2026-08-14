@@ -49,7 +49,7 @@ describe("agent.inspect without declared (t-6c8cb4)", () => {
   });
 
   it("consumer no longer requires or repasses declared (source pin — both sides of the trap)", () => {
-    const consumer = fs.readFileSync(path.join(process.cwd(), "src/extension.ts"), "utf8");
+    const consumer = fs.readFileSync(path.join(process.cwd(), "apps/vscode-extension/src/extension.ts"), "utf8");
     const producer = fs.readFileSync(
       path.join(process.cwd(), "packages/engine/src/engine-service/extensionOperationService.ts"),
       "utf8",

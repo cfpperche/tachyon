@@ -1,0 +1,1017 @@
+{
+  "name": "tachyon",
+  "displayName": "Tachyon",
+  "description": "A local, multi-runtime Agentic Development Environment powered by a persistent orchestration engine, with a VS Code shell, native terminals and an MCP control plane.",
+  "version": "0.91.0",
+  "publisher": "cfpperche",
+  "license": "GPL-3.0-or-later",
+  "sponsor": {
+    "url": "https://github.com/sponsors/cfpperche"
+  },
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cfpperche/tachyon.git"
+  },
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "agents",
+    "tmux",
+    "terminal",
+    "mcp",
+    "orchestration",
+    "claude",
+    "codex",
+    "coding-agent"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:tachyon.yml"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "tachyon.start",
+        "title": "%command.start%"
+      },
+      {
+        "command": "tachyon.stopAll",
+        "title": "%command.stopAll%"
+      },
+      {
+        "command": "tachyon.restartAgent",
+        "title": "%command.restartAgent%"
+      },
+      {
+        "command": "tachyon.openAgentTerminal",
+        "title": "%command.openAgentTerminal%"
+      },
+      {
+        "command": "tachyon.copyBridgeUrl",
+        "title": "%command.copyBridgeUrl%"
+      },
+      {
+        "command": "tachyon.showRuntimeUsage",
+        "title": "%command.showRuntimeUsage%"
+      },
+      {
+        "command": "tachyon.refreshRuntimeOps",
+        "title": "%command.refreshRuntimeOps%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "tachyon.copyBridgeToken",
+        "title": "%command.copyBridgeToken%"
+      },
+      {
+        "command": "tachyon.pairCompanion",
+        "title": "%command.pairCompanion%"
+      },
+      {
+        "command": "tachyon.connectRuntime",
+        "title": "%command.connectRuntime%"
+      },
+      {
+        "command": "tachyon.refreshViews",
+        "title": "%command.refreshViews%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "tachyon.spawnAgentItem",
+        "title": "%command.spawnAgentItem%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "tachyon.stopAgentItem",
+        "title": "%command.stopAgentItem%",
+        "icon": "$(primitive-square)"
+      },
+      {
+        "command": "tachyon.killAgentItem",
+        "title": "%command.killAgentItem%",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "tachyon.restartAgentItem",
+        "title": "%command.restartAgentItem%",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "tachyon.restartAgentNewItem",
+        "title": "%command.restartAgentNewItem%",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "tachyon.restartAgentForceNewItem",
+        "title": "%command.restartAgentForceNewItem%",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "tachyon.openAgentTerminalItem",
+        "title": "%command.openAgentTerminalItem%"
+      },
+      {
+        "command": "tachyon.openAgentPane",
+        "title": "%command.openAgentPane%"
+      },
+      {
+        "command": "tachyon.openAgentPaneItem",
+        "title": "%command.openAgentPaneItem%"
+      },
+      {
+        "command": "tachyon.openAgentActivity",
+        "title": "%command.openAgentActivity%"
+      },
+      {
+        "command": "tachyon.openProjectHandoff",
+        "title": "%command.openProjectHandoff%"
+      },
+      {
+        "command": "tachyon.openAgentTranscript",
+        "title": "%command.openAgentTranscript%"
+      },
+      {
+        "command": "tachyon.addPin",
+        "title": "%command.addPin%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.deletePinItem",
+        "title": "%command.deletePinItem%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "tachyon.editPinItem",
+        "title": "%command.editPinItem%",
+        "icon": "$(pencil)"
+      },
+      {
+        "command": "tachyon.cloneAgentItem",
+        "title": "%command.cloneAgentItem%"
+      },
+      {
+        "command": "tachyon.editAgentItem",
+        "title": "%command.editAgentItem%"
+      },
+      {
+        "command": "tachyon.deleteAgentItem",
+        "title": "%command.deleteAgentItem%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "tachyon.reviewWorktreeItem",
+        "title": "%command.reviewWorktreeItem%",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "tachyon.createWorktreePrItem",
+        "title": "%command.createWorktreePrItem%",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "tachyon.forkAgentItem",
+        "title": "%command.forkAgentItem%",
+        "icon": "$(repo-forked)"
+      },
+      {
+        "command": "tachyon.reinjectContinuityItem",
+        "title": "%command.reinjectContinuityItem%",
+        "icon": "$(history)"
+      },
+      {
+        "command": "tachyon.injectPromptTemplate",
+        "title": "%command.injectPromptTemplate%",
+        "icon": "$(symbol-snippet)"
+      },
+      {
+        "command": "tachyon.injectPromptTemplateItem",
+        "title": "%command.injectPromptTemplateItem%",
+        "icon": "$(symbol-snippet)"
+      },
+      {
+        "command": "tachyon.promoteAgentItem",
+        "title": "%command.promoteAgentItem%",
+        "icon": "$(save)"
+      },
+      {
+        "command": "tachyon.agentStudio",
+        "title": "%command.agentStudio%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.newAgentStudio",
+        "title": "%command.newAgentStudio%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.terminalStudio",
+        "title": "%command.terminalStudio%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.runbookStudio",
+        "title": "%command.runbookStudio%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.editAgentStudioItem",
+        "title": "%command.editAgentStudioItem%"
+      },
+      {
+        "command": "tachyon.runCommandItem",
+        "title": "%command.runCommandItem%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "tachyon.runRunbookItem",
+        "title": "%command.runRunbookItem%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "tachyon.openCommandTerminalItem",
+        "title": "%command.openCommandTerminalItem%"
+      },
+      {
+        "command": "tachyon.openRunbookStepItem",
+        "title": "%command.openRunbookStepItem%"
+      },
+      {
+        "command": "tachyon.editCommandStudioItem",
+        "title": "%command.editCommandStudioItem%"
+      },
+      {
+        "command": "tachyon.editCommandItem",
+        "title": "%command.editCommandItem%"
+      },
+      {
+        "command": "tachyon.deleteCommandItem",
+        "title": "%command.deleteCommandItem%"
+      },
+      {
+        "command": "tachyon.commandStudio",
+        "title": "%command.commandStudio%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.editRunbookStudioItem",
+        "title": "%command.editRunbookStudioItem%"
+      },
+      {
+        "command": "tachyon.editRunbookItem",
+        "title": "%command.editRunbookItem%"
+      },
+      {
+        "command": "tachyon.deleteRunbookItem",
+        "title": "%command.deleteRunbookItem%"
+      },
+      {
+        "command": "tachyon.init",
+        "title": "%command.init%",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "tachyon.approveProposalItem",
+        "title": "%command.approveProposalItem%",
+        "icon": "$(check)"
+      },
+      {
+        "command": "tachyon.rejectProposalItem",
+        "title": "%command.rejectProposalItem%",
+        "icon": "$(close)"
+      },
+      {
+        "command": "tachyon.editScheduleItem",
+        "title": "%command.editScheduleItem%"
+      },
+      {
+        "command": "tachyon.deleteScheduleItem",
+        "title": "%command.deleteScheduleItem%"
+      },
+      {
+        "command": "tachyon.toggleSchedulePauseItem",
+        "title": "%command.toggleSchedulePauseItem%",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "tachyon.scheduleStudio",
+        "title": "%command.scheduleStudio%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.editScheduleStudioItem",
+        "title": "%command.editScheduleStudioItem%"
+      },
+      {
+        "command": "tachyon.getStarted",
+        "title": "%command.getStarted%",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "tachyon.checkRequirements",
+        "title": "%command.checkRequirements%"
+      },
+      {
+        "command": "tachyon.doctor",
+        "title": "%command.doctor%",
+        "icon": "$(heart)"
+      },
+      {
+        "command": "tachyon.openConfig",
+        "title": "%command.openConfig%",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "tachyon.openGlobalSettings",
+        "title": "%command.openGlobalSettings%",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "tachyon.openApprovals",
+        "title": "%command.openApprovals%"
+      },
+      {
+        "command": "tachyon.openHumanInbox",
+        "title": "%command.openHumanInbox%"
+      },
+      {
+        "command": "tachyon.restartTmuxServer",
+        "title": "%command.restartTmuxServer%"
+      },
+      {
+        "command": "tachyon.restartBridge",
+        "title": "%command.restartBridge%"
+      },
+      {
+        "command": "tachyon.stopBridge",
+        "title": "Tachyon: Stop Bridge"
+      },
+      {
+        "command": "tachyon.inspectServer",
+        "title": "%command.inspectServer%",
+        "icon": "$(server-process)"
+      },
+      {
+        "command": "tachyon.openControl",
+        "title": "%command.openControl%",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "tachyon.openCockpit",
+        "title": "%command.openCockpit%",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "tachyon.inspectEngine",
+        "title": "%command.inspectEngine%",
+        "icon": "$(debug-console)"
+      },
+      {
+        "command": "tachyon.openPlugins",
+        "title": "%command.openPlugins%",
+        "icon": "$(extensions)"
+      },
+      {
+        "command": "tachyon.openPluginSurface",
+        "title": "%command.openPluginSurface%",
+        "icon": "$(extensions)"
+      },
+      {
+        "command": "tachyon.board",
+        "title": "%command.board%",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "tachyon.taskStudio.new",
+        "title": "%command.taskStudioNew%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tachyon.openProbes",
+        "title": "%command.openProbes%",
+        "icon": "$(search)"
+      },
+      {
+        "command": "tachyon.resumeAll",
+        "title": "%command.resumeAll%",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "tachyon.runPipeline",
+        "title": "%command.runPipeline%",
+        "icon": "$(run-all)"
+      },
+      {
+        "command": "tachyon.approvePipelineNodeItem",
+        "title": "%command.approvePipelineNodeItem%",
+        "icon": "$(check)"
+      },
+      {
+        "command": "tachyon.rejectPipelineNodeItem",
+        "title": "%command.rejectPipelineNodeItem%",
+        "icon": "$(x)"
+      },
+      {
+        "command": "tachyon.runPipelineItem",
+        "title": "%command.runPipelineItem%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "tachyon.cancelPipelineItem",
+        "title": "%command.cancelPipelineItem%",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "tachyon.editPipelineItem",
+        "title": "%command.editPipelineItem%",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "tachyon.editPipelineInputItem",
+        "title": "%command.editPipelineInputItem%",
+        "icon": "$(note)"
+      },
+      {
+        "command": "tachyon.deletePipelineItem",
+        "title": "%command.deletePipelineItem%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "tachyon.reviewPipelineItem",
+        "title": "%command.reviewPipelineItem%",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "tachyon.rerunPipelineNodeItem",
+        "title": "%command.rerunPipelineNodeItem%",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "tachyon.dismissPipelineRunItem",
+        "title": "%command.dismissPipelineRunItem%",
+        "icon": "$(close)"
+      },
+      {
+        "command": "tachyon.resumeAgentItem",
+        "title": "%command.resumeAgentItem%",
+        "icon": "$(history)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.start",
+        "title": "Tachyon: IDE Browser Bridge Start (advanced)",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.stop",
+        "title": "Tachyon: IDE Browser Bridge Stop (advanced)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.status",
+        "title": "Tachyon: IDE Browser Bridge Status (advanced)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.open",
+        "title": "Tachyon: Open IDE Browser",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.designMode",
+        "title": "Tachyon: Toggle Design Mode",
+        "icon": "$(inspect)"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.designModeOn",
+        "title": "Tachyon: Design Mode On"
+      },
+      {
+        "command": "tachyon.ideBrowserBridge.designModeOff",
+        "title": "Tachyon: Design Mode Off"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "tachyon",
+          "title": "Tachyon",
+          "icon": "media/tachyon.svg"
+        }
+      ]
+    },
+    "views": {
+      "tachyon": [
+        {
+          "id": "tachyonSidebarPrototype",
+          "name": "%view.tachyon%",
+          "type": "webview",
+          "icon": "media/tachyon.svg"
+        },
+        {
+          "id": "tachyonPluginSurfaces",
+          "name": "%view.pluginSurfaces%",
+          "type": "webview",
+          "icon": "media/tachyon.svg"
+        }
+      ]
+    },
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "tachyon.openProbes",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.spawnAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.approvePipelineNodeItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.rejectPipelineNodeItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.runPipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.cancelPipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editPipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editPipelineInputItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deletePipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.reviewPipelineItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.rerunPipelineNodeItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.dismissPipelineRunItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.stopAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.killAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.restartAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.restartAgentNewItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.restartAgentForceNewItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.reinjectContinuityItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.injectPromptTemplateItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.openAgentTerminalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.openAgentActivity",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.openProjectHandoff",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deletePinItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editPinItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.cloneAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deleteAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.promoteAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editAgentStudioItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.runCommandItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.runRunbookItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.openCommandTerminalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.openRunbookStepItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editCommandStudioItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editCommandItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deleteCommandItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editRunbookStudioItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editRunbookItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deleteRunbookItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.approveProposalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.rejectProposalItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editScheduleItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.deleteScheduleItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.toggleSchedulePauseItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.editScheduleStudioItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.inspectServer"
+        },
+        {
+          "command": "tachyon.openControl"
+        },
+        {
+          "command": "tachyon.openCockpit",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.inspectEngine"
+        },
+        {
+          "command": "tachyon.resumeAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.resumeAll"
+        },
+        {
+          "command": "tachyon.reviewWorktreeItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.createWorktreePrItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.forkAgentItem",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.start",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.stop",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.status",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.designModeOn",
+          "when": "false"
+        },
+        {
+          "command": "tachyon.ideBrowserBridge.designModeOff",
+          "when": "false"
+        }
+      ]
+    },
+    "yamlValidation": [
+      {
+        "fileMatch": [
+          "tachyon.yml",
+          "tachyon.yaml"
+        ],
+        "url": "./dist/tachyon.schema.json"
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "tachyon.welcome",
+        "title": "Get Started with Tachyon",
+        "description": "Run multiple AI agents side by side, coordinated through one MCP Bridge.",
+        "steps": [
+          {
+            "id": "requirements",
+            "title": "Check requirements",
+            "description": "Tachyon runs agents as tmux sessions.\n[Check requirements](command:tachyon.checkRequirements)\nMissing tmux? The check tells you how to install it.",
+            "media": {
+              "markdown": "media/walkthrough/requirements.md"
+            },
+            "completionEvents": [
+              "onCommand:tachyon.checkRequirements"
+            ]
+          },
+          {
+            "id": "init",
+            "title": "Initialize your project",
+            "description": "Generate a starter **tachyon.yml** — it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
+            "media": {
+              "image": "media/walkthrough/hero.png",
+              "altText": "Tachyon running agents as native editor terminals"
+            },
+            "completionEvents": [
+              "onCommand:tachyon.init"
+            ]
+          },
+          {
+            "id": "fleet",
+            "title": "Meet your fleet",
+            "description": "Open the **⚡ Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n💡 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
+            "media": {
+              "image": "media/walkthrough/subagents.png",
+              "altText": "Sidebar showing agents and nested sub-agents"
+            },
+            "completionEvents": [
+              "onView:tachyonSidebarPrototype"
+            ]
+          },
+          {
+            "id": "bridge",
+            "title": "The Bridge is automatic",
+            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it through each supported runtime's native MCP mechanism and rebuilds the wiring across lifecycle operations — no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
+            "media": {
+              "image": "media/walkthrough/studio.png",
+              "altText": "Agent Studio tabs"
+            },
+            "completionEvents": [
+              "onCommand:tachyon.connectRuntime"
+            ]
+          },
+          {
+            "id": "coordinate",
+            "title": "Let them coordinate",
+            "description": "Curate **commands** & **runbooks**, share **pins**, and set **schedules** (human-approved). It all lives in tachyon.yml, versioned with your repo.\n[Read the docs](https://github.com/cfpperche/tachyon#readme)",
+            "media": {
+              "image": "media/walkthrough/schedules.png",
+              "altText": "Schedules view with a pending agent proposal"
+            },
+            "completionEvents": [
+              "onLink:https://github.com/cfpperche/tachyon#readme"
+            ]
+          }
+        ]
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "tachyon.chat",
+        "name": "tachyon",
+        "fullName": "Tachyon",
+        "description": "Send prompts to Tachyon workspace agents (fleet bridge)",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "list",
+            "description": "List agents in the active Tachyon workspace"
+          },
+          {
+            "name": "send",
+            "description": "Send a prompt: /send <agent> <message>"
+          },
+          {
+            "name": "help",
+            "description": "How to use @tachyon"
+          }
+        ]
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "tachyon_list_agents",
+        "tags": [
+          "tachyon",
+          "agents"
+        ],
+        "toolReferenceName": "tachyon_list_agents",
+        "displayName": "Tachyon: List Agents",
+        "userDescription": "List Tachyon agents in the active workspace",
+        "modelDescription": "List agents managed by Tachyon in the current workspace (name, kind, lifetime, running). Use before sending a prompt when the agent name is unknown. Does not start agents.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(organization)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "tachyon_send_prompt",
+        "tags": [
+          "tachyon",
+          "agents"
+        ],
+        "toolReferenceName": "tachyon_send_prompt",
+        "displayName": "Tachyon: Send Prompt",
+        "userDescription": "Send a prompt to a named Tachyon agent",
+        "modelDescription": "Deliver text to a named Tachyon workspace agent (CLI running in a worktree via the Tachyon engine). Use when the user wants a Tachyon agent (e.g. grok, claude, codex) to act. Requires agent name and message text. Prefer list agents first if the name is unclear. This does not control the VS Code Integrated Browser; it only types into the agent session.",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(rocket)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "agent": {
+              "type": "string",
+              "description": "Exact Tachyon agent name (from tachyon_list_agents)."
+            },
+            "text": {
+              "type": "string",
+              "description": "Prompt text to deliver to the agent."
+            },
+            "submit": {
+              "type": "boolean",
+              "description": "If true (default), submit as Enter after pasting. If false, only paste into the composer.",
+              "default": true
+            },
+            "workspaceHash": {
+              "type": "string",
+              "description": "Optional Tachyon workspace hash when multiple workspaces are open."
+            }
+          },
+          "required": [
+            "agent",
+            "text"
+          ]
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "generate:theme-tokens": "node scripts/generate-theme-tokens.mjs",
+    "check:theme-tokens": "node scripts/generate-theme-tokens.mjs --check",
+    "build": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs dev",
+    "build:stable": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs stable",
+    "watch": "npm run generate:theme-tokens && node scripts/build-engine-channel.mjs dev --watch",
+    "typecheck": "tsc -b packages/shared packages/engine packages/webview-ui --pretty false && tsc --noEmit && tsc -p tsconfig.webview.json && tsc -p tsconfig.browser-test.json",
+    "check:package-boundary": "node scripts/check-package-boundary.mjs",
+    "check:engine-boundary": "bash scripts/check-engine-boundary.sh",
+    "check:source-diffable": "node scripts/check-source-diffable.mjs",
+    "check:webview-tokens": "node scripts/check-webview-tokens.mjs",
+    "hygiene:scan": "node scripts/code-hygiene/scan.mjs",
+    "disk:vscode-test": "vite-node --script scripts/vscode-test-disk.ts",
+    "plugin:validate": "node dist/plugin-validate.cjs",
+    "check:runtime-observability-reference": "node scripts/runtime-observability-reference.mjs",
+    "record:provenance": "node scripts/record-provenance.mjs",
+    "test": "vitest run",
+    "verify:full": "node scripts/run-workspace-script.mjs scripts/verify-full.mjs",
+    "verify:full:quiet": "node scripts/run-workspace-script.mjs scripts/verify-full.mjs",
+    "verify:prepare": "npm ci --ignore-scripts --prefer-offline --no-audit --no-fund && npm run build",
+    "runtime:remeasure": "node scripts/dogfood/run.mjs runtime-remeasure",
+    "test:browser": "vitest run --config vitest.browser.config.ts",
+    "test:integration": "vscode-test",
+    "vscode:prepublish": "npm run package:assert",
+    "package:assert": "node scripts/prepare-package.mjs",
+    "release": "node scripts/release.mjs",
+    "package": "node scripts/release.mjs",
+    "smoke:vsix": "node scripts/vsix-smoke.mjs"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.17.6",
+    "@iarna/toml": "^2.2.5",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "@radix-ui/react-dialog": "1.1.18",
+    "@radix-ui/react-dropdown-menu": "2.1.19",
+    "@radix-ui/react-popover": "1.1.18",
+    "@radix-ui/react-select": "2.3.2",
+    "@radix-ui/react-tooltip": "1.2.11",
+    "@tiptap/core": "^3.27.1",
+    "@tiptap/extension-bubble-menu": "^3.27.1",
+    "@tiptap/extension-file-handler": "^3.27.1",
+    "@tiptap/extension-floating-menu": "^3.27.1",
+    "@tiptap/extension-image": "^3.27.1",
+    "@tiptap/extension-link": "^3.27.1",
+    "@tiptap/extension-placeholder": "^3.27.1",
+    "@tiptap/extension-task-item": "^3.27.1",
+    "@tiptap/extension-task-list": "^3.27.1",
+    "@tiptap/pm": "^3.27.1",
+    "@tiptap/starter-kit": "^3.27.1",
+    "@vscode/codicons": "^0.0.45",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "dompurify": "^3.4.11",
+    "highlight.js": "^11.11.1",
+    "katex": "^0.17.0",
+    "markdown-it": "^14.2.0",
+    "markdown-it-task-lists": "^2.1.1",
+    "markdown-it-texmath": "^1.0.0",
+    "mermaid": "^11.15.0",
+    "node-pty": "^1.1.0",
+    "preact": "^10.29.2",
+    "qrcode": "^1.5.4",
+    "tailwind-merge": "3.6.0",
+    "tar-stream": "^3.2.0",
+    "ws": "^8.21.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.2",
+    "@types/katex": "^0.16.8",
+    "@types/markdown-it": "^14.1.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.5",
+    "@types/tar-stream": "^3.1.4",
+    "@types/vscode": "^1.96.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "axe-core": "4.12.1",
+    "esbuild": "^0.25.0",
+    "mocha": "^11.0.0",
+    "puppeteer-core": "25.3.0",
+    "tailwindcss": "4.3.2",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "l10n": "./l10n",
+  "homepage": "https://cfpperche.github.io/tachyon/",
+  "bugs": {
+    "url": "https://github.com/cfpperche/tachyon/issues"
+  },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0d1117",
+    "theme": "dark"
+  },
+  "qna": "marketplace"
+}

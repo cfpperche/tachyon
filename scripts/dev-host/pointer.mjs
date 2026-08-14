@@ -28,6 +28,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readProcessTable } from "./edh-process.mjs";
 import { probeFixtureEngine, stopFixtureBridge, stopFixtureEngine } from "./stop-bridge.mjs";
+import { extensionWorkspace } from "../workspace-layout.mjs";
 
 const SELF = "dev-host";
 const DIR_NAME = "dev-host";
@@ -780,8 +781,9 @@ export function point(opts) {
 
   const nm = ensureNodeModules(worktree, primaryRepo);
   const tools = ensureWorktreeToolBin(worktree, primaryRepo);
-  // extension: symlink is fine for --extensionDevelopmentPath (remote loads package.json/dist).
-  replaceSymlink(p.extension, worktree);
+  // The app is discovered from the root workspace manifest; a second apps/* entry needs no pointer change.
+  const extensionRoot = extensionWorkspace(worktree).directory;
+  replaceSymlink(p.extension, extensionRoot);
   // Point at the Node executable running this CLI; the engine store will copy and hash that instead.
   replaceSymlink(p.runtime, fs.realpathSync(process.execPath));
   // workspace: real dir + child symlinks so Explorer works under WSL Remote F5.
@@ -796,7 +798,7 @@ export function point(opts) {
 
   let packageName = null;
   try {
-    packageName = JSON.parse(fs.readFileSync(path.join(worktree, "package.json"), "utf8")).name ?? null;
+    packageName = JSON.parse(fs.readFileSync(path.join(extensionRoot, "package.json"), "utf8")).name ?? null;
   } catch {
     /* ignore */
   }

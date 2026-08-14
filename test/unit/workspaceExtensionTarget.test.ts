@@ -7,7 +7,7 @@ import {
   workspaceExtensionQuerySuccessV1,
 } from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
-import { workspaceExtensionTarget } from "../../src/shell/WorkspaceExtensionTarget.js";
+import { workspaceExtensionTarget } from "../../apps/vscode-extension/src/shell/WorkspaceExtensionTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 const roots: string[] = [];

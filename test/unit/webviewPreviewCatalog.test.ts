@@ -35,9 +35,9 @@ describe("webview preview route catalog (spec 278)", () => {
 
   it("the webview surface manifest includes every converted shell host", () => {
     const manifestHosts = new Set(WEBVIEW_SURFACES.map((s) => s.hostFile));
-    const convertedShellHosts = nonEmpty(readdirSync("src/webview")
+    const convertedShellHosts = nonEmpty(readdirSync("apps/vscode-extension/src/webview")
       .filter((name) => /(?:Panel|Prototype|Form|Inspector)\.ts$/.test(name))
-      .map((name) => `src/webview/${name}`)
+      .map((name) => `apps/vscode-extension/src/webview/${name}`)
       .filter((file) => {
         const source = readFileSync(file, "utf8");
         return source.includes("renderWebviewShell(");

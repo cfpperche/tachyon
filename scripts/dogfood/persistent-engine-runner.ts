@@ -18,16 +18,16 @@ import {
 } from "@tachyon/engine/engine-service/engineSupervisor.js";
 import type { EngineBundleManifestV1, EngineServiceIdentityV1, EngineUiRequestV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { ENGINE_UI_CAPABILITY } from "@tachyon/engine/engine-service/uiRequestBroker.js";
-import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../src/shell/WorkspaceClient.js";
-import { workspaceActivityTarget } from "../../src/shell/ActivityTarget.js";
-import { workspaceHandoffTarget } from "../../src/shell/HandoffTarget.js";
-import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
-import { workspacePluginPresentationTarget } from "../../src/shell/WorkspacePresentation.js";
-import { workspaceBoardTarget } from "../../src/shell/BoardTarget.js";
-import { workspacePinStudioTarget } from "../../src/shell/PinStudioTarget.js";
-import { workspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
-import { workspaceTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
-import { workspaceTaskStudioTarget } from "../../src/shell/TaskStudioTarget.js";
+import { connectRemoteWorkspaceClient, type WorkspaceClient } from "../../apps/vscode-extension/src/shell/WorkspaceClient.js";
+import { workspaceActivityTarget } from "../../apps/vscode-extension/src/shell/ActivityTarget.js";
+import { workspaceHandoffTarget } from "../../apps/vscode-extension/src/shell/HandoffTarget.js";
+import { ClientWorkspaceStudioTarget } from "../../apps/vscode-extension/src/shell/ClientWorkspaceStudioTarget.js";
+import { workspacePluginPresentationTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
+import { workspaceBoardTarget } from "../../apps/vscode-extension/src/shell/BoardTarget.js";
+import { workspacePinStudioTarget } from "../../apps/vscode-extension/src/shell/PinStudioTarget.js";
+import { workspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
+import { workspaceTaskDetailTarget } from "../../apps/vscode-extension/src/shell/TaskDetailTarget.js";
+import { workspaceTaskStudioTarget } from "../../apps/vscode-extension/src/shell/TaskStudioTarget.js";
 import { PinStore } from "@tachyon/engine/pins/PinStore.js";
 import { sessionName, TmuxService, workspaceHash } from "@tachyon/engine/tmux/TmuxService.js";
 import { TaskAttachmentStore } from "@tachyon/engine/tasks/TaskAttachmentStore.js";
@@ -36,7 +36,7 @@ import { TaskPrototypeStore } from "@tachyon/engine/tasks/TaskPrototypeStore.js"
 import { TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import { ValidationStore } from "@tachyon/engine/validations/ValidationStore.js";
 import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
-import type { StudioDeps } from "../../src/webview/studioSubmit.js";
+import type { StudioDeps } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "tachyon-engine-dogfood-"));
 const workspaceRoot = path.join(root, "workspace");

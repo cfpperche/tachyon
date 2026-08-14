@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
-import { IdeBrowserBridgeManager } from "../../src/webview/ide-browser-bridge/manager.js";
+import { IdeBrowserBridgeManager } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/manager.js";
 
 // The browser suite owns this Chromium child and closes it below. Enter through the shipped
 // page-overlay binding door, then read the real page viewport back over CDP.

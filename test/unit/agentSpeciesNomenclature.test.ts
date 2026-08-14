@@ -53,15 +53,15 @@ const BOUNDARY = {
   "packages/engine/src/sidebar/sidebarFleetService.ts": "produces the flag from lifetime",
   "packages/engine/src/sidebar/agentModel.ts": "carries the flag through the VM",
   "packages/webview-ui/src/sidebar/actions.ts": "gates actions on the flag",
-  "src/shell/WorkspacePresentation.ts": "produces the flag shell-side",
-  "src/webview/SidebarPrototype.ts": "reads the flag into the (renamed) context-value param",
+  "apps/vscode-extension/src/shell/WorkspacePresentation.ts": "produces the flag shell-side",
+  "apps/vscode-extension/src/webview/SidebarPrototype.ts": "reads the flag into the (renamed) context-value param",
   // one provenance comment naming the map that t-eb4b30 deleted
   "packages/engine/src/agents/AgentManager.ts": "comment recording the removed `this.adhoc` map",
 } as const;
 
 describe("the canonical/ad-hoc species is gone from product language", () => {
   it("only boundary-crossing files may still say adhoc/ad-hoc", () => {
-    const actual = grepFiles("\\badhoc\\b|ad-hoc", ["src", "packages/shared/src", "packages/engine/src", "packages/webview-ui/src"]);
+    const actual = grepFiles("\\badhoc\\b|ad-hoc", ["src", "apps", "packages/shared/src", "packages/engine/src", "packages/webview-ui/src"]);
     const allowed = Object.keys(BOUNDARY).sort();
     const reintroduced = actual.filter((f) => !(f in BOUNDARY));
     expect(reintroduced, "these files put the species back into product language").toEqual([]);
@@ -105,7 +105,7 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
       // in `agentRuntimeAdmission.ts` and its test. A comment that says "this replaces X" is how a
       // reader learns the history; banning the word would delete the explanation, not the species.
     ]) {
-      expect(grepFiles(`\\b${id}\\b`, ["src", "test", "scripts"]), `${id} came back`).toEqual([]);
+      expect(grepFiles(`\\b${id}\\b`, ["src", "apps", "test", "scripts"]), `${id} came back`).toEqual([]);
     }
   });
 
@@ -113,7 +113,7 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
     // Renameable in one cut because these types cross extension<->webview, and BOTH sides ship in the
     // same VSIX from the same dist/. That is the opposite of the engine wire, where the peer can be a
     // different build — which is why one family moved freely and the other needed a protocol bump.
-    expect(grepFiles("canonicalprofile", ["src", "test", "scripts"])).toEqual([]);
+    expect(grepFiles("canonicalprofile", ["src", "apps", "test", "scripts"])).toEqual([]);
   });
 
   /**
@@ -132,7 +132,7 @@ describe("the canonical/ad-hoc species is gone from product language", () => {
    * the comments left naming identifiers that t-eb4b30 and this task deleted.
    */
   it("no user-facing string calls an instance ad-hoc", () => {
-    expect(grepFiles("ad-hoc agent|adhoc agent", ["src", "l10n", "package.nls.json", "package.nls.pt-br.json"]))
+    expect(grepFiles("ad-hoc agent|adhoc agent", ["src", "l10n", "apps/vscode-extension/package.nls.json", "apps/vscode-extension/package.nls.pt-br.json"]))
       .toEqual([]);
   });
 });

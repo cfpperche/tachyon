@@ -10,7 +10,7 @@ import {
   grokConfigHome,
   grokDocumentScope,
   inspectGrokRuntimeConfig,
-} from "../../src/runtimeConfig/grokInventory.js";
+} from "../../apps/vscode-extension/src/runtimeConfig/grokInventory.js";
 import type { AgentDef } from "@tachyon/engine/config/loadConfig.js";
 
 const roots: string[] = [];

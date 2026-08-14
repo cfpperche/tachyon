@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __resetVscodeMock } from "../mocks/vscode.js";
-import { PipelineStudioPanelManager } from "../../src/webview/PipelineStudioPanel.js";
+import { PipelineStudioPanelManager } from "../../apps/vscode-extension/src/webview/PipelineStudioPanel.js";
 import { envelope } from "../../packages/webview-ui/src/webview/shared/studio/protocol.js";
 import { patchMessage, dirtyMessage, saveMessage, cancelMessage, importStagesMessage } from "../../packages/webview-ui/src/webview/pipeline-studio/messages.js";
 

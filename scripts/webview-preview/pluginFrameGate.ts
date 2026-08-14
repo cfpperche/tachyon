@@ -1,4 +1,4 @@
-import { renderWebviewShell } from "../../src/webview/shared/shell.js";
+import { renderWebviewShell } from "../../apps/vscode-extension/src/webview/shared/shell.js";
 
 // spec 349 T1 — the opaque-origin iframe CONTRACT GATE page. Renders via the REAL `renderWebviewShell` (not a
 // hand-copied CSP string — the same anti-drift reasoning as `src/webview/ui-gate/gatePage.ts`), opting into the

@@ -16,14 +16,14 @@ describe("container-generated delegation behavior", () => {
       "media/icon.png": "allowed",
       "l10n/bundle.l10n.json": "allowed",
       "package.json": "allowed",
-      "package.nls.json": "allowed",
-      "package.nls.pt-br.json": "allowed",
+      "apps/vscode-extension/package.nls.json": "allowed",
+      "apps/vscode-extension/package.nls.pt-br.json": "allowed",
       "README.md": "allowed",
       LICENSE: "allowed",
       "provenance.json": "allowed",
       "scripts/dev-only.mjs": "forbidden",
       "test/unit/fixture.ts": "forbidden",
-      "src/extension.ts": "forbidden",
+      "apps/vscode-extension/src/extension.ts": "forbidden",
     } as const;
 
     for (const [file, expected] of Object.entries(inventory)) {

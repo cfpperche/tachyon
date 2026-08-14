@@ -486,7 +486,7 @@ describe("t-4662e9 — rename is not reachable from the sidebar surface at any l
   });
 
   it("contributes no rename command, palette entry, or localized title", () => {
-    const manifest = JSON.parse(read("package.json")) as {
+    const manifest = JSON.parse(read("apps/vscode-extension/package.json")) as {
       contributes: { commands: { command: string }[]; menus: Record<string, { command: string }[]> };
     };
     expect(manifest.contributes.commands.map((c) => c.command)).not.toContain("tachyon.renameAgentItem");
@@ -494,14 +494,14 @@ describe("t-4662e9 — rename is not reachable from the sidebar surface at any l
       expect(items.map((i) => i.command), `${menu} still lists it`).not.toContain("tachyon.renameAgentItem");
     }
     // A stale %command.renameAgentItem% key would survive silently in both locales.
-    for (const nls of ["package.nls.json", "package.nls.pt-br.json"]) {
+    for (const nls of ["apps/vscode-extension/package.nls.json", "apps/vscode-extension/package.nls.pt-br.json"]) {
       expect(Object.keys(JSON.parse(read(nls)) as Record<string, string>), nls).not.toContain("command.renameAgentItem");
     }
   });
 
   it("registers no handler and leaves the sidebar command map without a rename entry", () => {
-    expect(read("src/extension.ts")).not.toContain('registerCommand("tachyon.renameAgentItem"');
-    expect(read("src/webview/SidebarPrototype.ts")).not.toContain("tachyon.renameAgentItem");
+    expect(read("apps/vscode-extension/src/extension.ts")).not.toContain('registerCommand("tachyon.renameAgentItem"');
+    expect(read("apps/vscode-extension/src/webview/SidebarPrototype.ts")).not.toContain("tachyon.renameAgentItem");
   });
 
   it("keeps the runtime-api operation, which is a separate contract with its own service", () => {

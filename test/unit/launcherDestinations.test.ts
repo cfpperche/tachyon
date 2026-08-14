@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 import { COCKPIT_SECTION_ORDER } from "@tachyon/webview-ui/sections/model";
-import { WEBVIEW_APPS } from "../../src/webview/webviewApps.js";
+import { WEBVIEW_APPS } from "../../apps/vscode-extension/src/webview/webviewApps.js";
 
 /**
  * SDD 485 C8 — every launcher tile lands somewhere LIVE, and no `tachyon.*` open command is left
@@ -66,7 +66,7 @@ describe("SDD 485 C8 — every launcher tile has a live destination", () => {
   it("the section ids the open command routes to apps are the ones the manifest actually declares", () => {
     // extension.ts's `tachyon.openControl` branches on resolved section ids before falling through to
     // Control. A branch naming an id the manifest does not back is a redirect into nothing.
-    const extension = readFileSync("src/extension.ts", "utf8");
+    const extension = readFileSync("apps/vscode-extension/src/extension.ts", "utf8");
     const open = /registerCommand\("tachyon\.openControl",[\s\S]*?\n    \}\)/.exec(extension)?.[0] ?? "";
     expect(open, "tachyon.openControl not found — did it move or get renamed?").not.toBe("");
 

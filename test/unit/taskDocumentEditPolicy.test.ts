@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import { TaskDocumentEditPolicy } from "../../src/webview/task-detail/editPolicy.js";
+import { TaskDocumentEditPolicy } from "../../apps/vscode-extension/src/webview/task-detail/editPolicy.js";
 
 describe("SDD 485 D12 — unsaved edits belong to the task document", () => {
   const dirty = () => {
@@ -28,7 +28,7 @@ describe("SDD 485 D12 — unsaved edits belong to the task document", () => {
   });
 
   it("keeps every line in the document panel at or below 200 characters", () => {
-    const source = fs.readFileSync("src/webview/TaskDetailPanel.ts", "utf8");
+    const source = fs.readFileSync("apps/vscode-extension/src/webview/TaskDetailPanel.ts", "utf8");
     expect(source.split("\n").filter((line) => line.length > 200)).toEqual([]);
   });
 });

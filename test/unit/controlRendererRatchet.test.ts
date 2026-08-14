@@ -31,7 +31,7 @@ describe("SDD 485 E1 — Control cannot return through another door", () => {
   });
 
   it("keeps the sidebar launcher and command compatibility doors", () => {
-    const extension = read("src/extension.ts");
+    const extension = read("apps/vscode-extension/src/extension.ts");
     expect(extension).toContain("SidebarPrototypeProvider.viewType");
     expect(extension).toContain('registerCommand("tachyon.openControl"');
     expect(extension).toContain('registerCommand("tachyon.openCockpit"');

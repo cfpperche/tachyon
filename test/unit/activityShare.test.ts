@@ -8,7 +8,7 @@ import {
   internalShareTargets,
   resolveActivityShare,
   withActivityShareKeys,
-} from "../../src/activity/activityShare.js";
+} from "../../apps/vscode-extension/src/activity/activityShare.js";
 import type { AgentVM } from "@tachyon/shared/sidebar/types.js";
 
 const baseSummary = {

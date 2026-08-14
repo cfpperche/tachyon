@@ -16,12 +16,12 @@ import {
   type WorkspaceSnapshotEnvelopeV1,
 } from "@tachyon/engine/engine-service/protocol.js";
 import { workspaceCommandFingerprint } from "@tachyon/engine/engine-service/commandIdentity.js";
-import type { EngineCurrency } from "../engine-service/engineCurrency.js";
+import type { EngineCurrency } from "../../apps/vscode-extension/src/engine-service/engineCurrency.js";
 import {
   assertWorkspacePresentationIdentity,
   projectWorkspacePresentation,
   type WorkspacePresentationSnapshotV1,
-} from "../runtime-api/workspaceProjection.js";
+} from "../../apps/vscode-extension/src/runtime-api/workspaceProjection.js";
 import { createHash } from "node:crypto";
 import type { StagedPayloadRefV1 } from "@tachyon/engine/runtime-api/stagedPayload.js";
 import {
@@ -29,7 +29,7 @@ import {
   type WorkspaceClientListener,
   type WorkspaceClientSyncResult,
   type WorkspaceStagedPayload,
-} from "./WorkspaceClient.js";
+} from "../../apps/vscode-extension/src/shell/WorkspaceClient.js";
 
 export interface FakeWorkspaceClientOptions {
   identity: EngineServiceIdentityV1;

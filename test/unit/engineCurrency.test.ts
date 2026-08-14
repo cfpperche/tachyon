@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyEngineCurrency, engineCurrencyNote } from "../../src/engine-service/engineCurrency.js";
+import { classifyEngineCurrency, engineCurrencyNote } from "../../apps/vscode-extension/src/engine-service/engineCurrency.js";
 
 /**
  * t-f54b62 — the running engine can be arbitrarily older than the installed one, and nothing said so.

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { CONTROL_SECTION_NAV, controlSectionIcon } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
-import { WEBVIEW_APPS, sectionAppIconName } from "../../src/webview/webviewApps.js";
+import { WEBVIEW_APPS, sectionAppIconName } from "../../apps/vscode-extension/src/webview/webviewApps.js";
 
 /**
  * t-icon — an editor tab's icon exists, and it is the SAME icon as the sidebar tile that opened it.
@@ -31,7 +31,7 @@ describe("t-icon — editor-tab icons are materialized, and derived from the lau
 
   const expectMaterialized = (name: string, why: string): void => {
     for (const [theme, fill] of Object.entries(THEME_FILL)) {
-      const path = `media/icons/${theme}/${name}.svg`;
+      const path = `apps/vscode-extension/media/icons/${theme}/${name}.svg`;
       expect(
         existsSync(path),
         `${why} resolves the tab icon "${name}", but ${path} does not exist — VS Code silently falls back to ` +
@@ -86,8 +86,8 @@ describe("t-icon — editor-tab icons are materialized, and derived from the lau
     // and a row with a `section` has no business also carrying an `iconName`.
     const sectioned = new Set(WEBVIEW_APPS.filter((a) => a.section !== undefined).map((a) => a.view));
     const offenders: string[] = [];
-    for (const file of readdirSync("src/webview").filter((f) => f.endsWith("Panel.ts"))) {
-      const text = readFileSync(`src/webview/${file}`, "utf8");
+    for (const file of readdirSync("apps/vscode-extension/src/webview").filter((f) => f.endsWith("Panel.ts"))) {
+      const text = readFileSync(`apps/vscode-extension/src/webview/${file}`, "utf8");
       const view = /webviewApp\("([a-z0-9-]+)"\)/.exec(text)?.[1];
       if (view === undefined || !sectioned.has(view)) continue;
       if (/\biconName:/.test(text)) offenders.push(`${file} (${view})`);
@@ -108,7 +108,7 @@ describe("t-icon — editor-tab icons are materialized, and derived from the lau
         e.isDirectory() ? scan(`${dir}/${e.name}`) : e.name.endsWith(".ts") ? [`${dir}/${e.name}`] : []);
 
     const literals = new Map<string, string>();
-    for (const file of scan("src")) {
+    for (const file of scan("apps/vscode-extension/src")) {
       const text = readFileSync(file, "utf8");
       for (const m of text.matchAll(/panelIcon\([^,)]+,\s*"([a-z0-9-]+)"\s*\)/g)) literals.set(m[1], file);
       for (const m of text.matchAll(/\biconName:\s*"([a-z0-9-]+)"/g)) literals.set(m[1], file);

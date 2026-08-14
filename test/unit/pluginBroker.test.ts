@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACTION_META } from "@tachyon/webview-ui/sidebar/actions";
-import { PluginActionBroker } from "../../src/plugins/ui/broker.js";
-import type { PluginActionTarget } from "../../src/plugins/ui/broker.js";
+import { PluginActionBroker } from "../../apps/vscode-extension/src/plugins/ui/broker.js";
+import type { PluginActionTarget } from "../../apps/vscode-extension/src/plugins/ui/broker.js";
 
 describe("plugin UI action broker", () => {
   it("mints opaque generation-stamped handles and resolves them internally", () => {
@@ -122,7 +122,7 @@ describe("plugin UI action broker", () => {
   });
 
   it("keeps broker.ts free of vscode and privileged command dispatch names", async () => {
-    const source = await import("node:fs/promises").then((fs) => fs.readFile("src/plugins/ui/broker.ts", "utf8"));
+    const source = await import("node:fs/promises").then((fs) => fs.readFile("apps/vscode-extension/src/plugins/ui/broker.ts", "utf8"));
 
     expect(source).not.toMatch(/from ["']vscode["']/);
     expect(source).not.toMatch(/\bACTION_CMD\b/);

@@ -5,10 +5,10 @@ import path from "node:path";
 import { __resetVscodeMock, __fireFileWatch, __getExecutedCommands } from "../mocks/vscode.js";
 import { globalSettingsPath, useGlobalSettingsHome } from "@tachyon/engine/config/globalSettings.js";
 import { makeTempDir } from "../helpers/tempDir.js";
-import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
+import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
 import { SAMPLE, type FleetVM } from "@tachyon/shared/sidebar/types.js";
 import { CARD_TEMPLATE_VERSION, DEFAULT_CARD_TEMPLATE, parseCardTemplate, resolveCardTemplate } from "@tachyon/shared/sidebar/cardTemplate.js";
-import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
+import type { WorkspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
 
 /**
  * SDD 479 phase 5 — the personal override, from its own home to the pushed fleet.

@@ -7,7 +7,7 @@ describe("code-hygiene extractEntrypoints", () => {
   it("collects quoted entryPoints arrays from esbuild-shaped source", () => {
     const src = `
 const extension = {
-  entryPoints: ["src/extension.ts"],
+  entryPoints: ["apps/vscode-extension/src/extension.ts"],
   outfile: "dist/extension.js",
 };
 const cockpit = {
@@ -22,8 +22,8 @@ const multi = {
 `;
     expect(extractEntrypoints(src)).toEqual([
       "a.ts",
+      "apps/vscode-extension/src/extension.ts",
       "b.ts",
-      "src/extension.ts",
       "src/webview/cockpit/main.tsx",
     ]);
   });

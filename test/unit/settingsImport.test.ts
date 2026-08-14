@@ -16,7 +16,7 @@ import {
   recordSettingsImport,
   settingsImportAlreadyRan,
   settingsImportMarkerPath,
-} from "../../src/config/settingsImport.js";
+} from "../../apps/vscode-extension/src/config/settingsImport.js";
 import { setSettingsValue } from "@tachyon/engine/config/YamlConfigEditor.js";
 import { loadConfigFile } from "@tachyon/engine/config/loadConfig.js";
 

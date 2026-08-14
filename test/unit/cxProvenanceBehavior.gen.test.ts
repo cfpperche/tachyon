@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessBuildProvenance, type BuildStamp, type DeployRecord } from "../../src/provenance/verify.js";
+import { assessBuildProvenance, type BuildStamp, type DeployRecord } from "../../apps/vscode-extension/src/provenance/verify.js";
 
 const cleanStamp: BuildStamp = { commit: "abc123", treeSha: "tree123", dirty: false };
 
@@ -61,4 +61,3 @@ describe("container-generated delegation behavior", () => {
     expect(unknownCommit.map((w) => w.message).join("\n")).toMatch(/uncommitted source/);
   });
 });
-

@@ -3,13 +3,13 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type * as vscode from "vscode";
 import { __resetVscodeMock } from "../mocks/vscode.js";
-import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
-import { ControlWorkspaceScope, controlWorkspaceScope } from "../../src/webview/shared/ControlWorkspaceScope.js";
-import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
+import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
+import { ControlWorkspaceScope, controlWorkspaceScope } from "../../apps/vscode-extension/src/webview/shared/ControlWorkspaceScope.js";
+import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
 import { SAMPLE, TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
 import { buildSectionsModel } from "@tachyon/webview-ui/sections/model";
 import { loadWebviewModule, renderStatic } from "../helpers/staticPreact.js";
-import type { WorkspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
+import type { WorkspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
 
 /**
  * t-72ff5a — the sidebar has ONE workspace regime.
@@ -302,7 +302,7 @@ describe("t-72ff5a — every door onto the selection resolves to an attached pro
       expect(model.selectedWsHash, `scope=${scope}`).toBe("hash-alpha");
     }
     // and the extension's own readers fall through to the same first project
-    const extension = readFileSync(path.join(repoRoot, "src/extension.ts"), "utf8");
+    const extension = readFileSync(path.join(repoRoot, "apps/vscode-extension/src/extension.ts"), "utf8");
     expect(extension).toContain("(controlWorkspaceScope.current ? byHash(controlWorkspaceScope.current) : undefined) ?? workspaces()[0]");
   });
 
@@ -366,7 +366,7 @@ describe("t-72ff5a — every door onto the selection resolves to an attached pro
   it("is stored per workspace, not per person — a folder hash means nothing in another window", () => {
     // `sortPrefs`/`collapsedKeys` are one person's preferences and live in globalState; this is a
     // hash that only resolves in a window holding that folder.
-    const extension = readFileSync(path.join(repoRoot, "src/extension.ts"), "utf8");
+    const extension = readFileSync(path.join(repoRoot, "apps/vscode-extension/src/extension.ts"), "utf8");
     expect(extension).toContain("controlWorkspaceScope.attach(context.workspaceState)");
   });
 });

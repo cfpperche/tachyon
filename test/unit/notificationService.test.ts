@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { NotificationService, type NotificationRequest, type UiNotificationPort } from "../../src/workspace/NotificationService.js";
-import { showNotification } from "../../src/workspace/NotificationService.js";
-import { initializeVsCodeNotifications, notify } from "../../src/workspace/notify.js";
+import { NotificationService, type NotificationRequest, type UiNotificationPort } from "../../apps/vscode-extension/src/workspace/NotificationService.js";
+import { showNotification } from "../../apps/vscode-extension/src/workspace/NotificationService.js";
+import { initializeVsCodeNotifications, notify } from "../../apps/vscode-extension/src/workspace/notify.js";
 import {
   __getQuickPickCalls,
   __getStatusBarMessages,

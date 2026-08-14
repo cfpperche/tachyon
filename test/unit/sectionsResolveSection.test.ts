@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveSection, isSectionId } from "../../src/sections/resolveSection.js";
+import { resolveSection, isSectionId } from "../../apps/vscode-extension/src/sections/resolveSection.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 
 describe("resolveSection (spec 410)", () => {

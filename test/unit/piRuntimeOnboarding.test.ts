@@ -35,7 +35,7 @@ describe("Pi runtime onboarding", () => {
 
   it("locks the Pi extension into the authenticated persistent-engine build boundary", () => {
     const build = fs.readFileSync("esbuild.mjs", "utf8");
-    expect(build).toContain('entryPoints: ["src/pi-bridge-extension/index.ts"]');
+    expect(build).toContain('entryPoints: [appSource("pi-bridge-extension/index.ts")]');
     expect(build).toContain('outfile: "dist/engine/pi-bridge-extension.mjs"');
     expect(build).toContain('{ path: "pi-bridge-extension.mjs", sha256: sha256File("dist/engine/pi-bridge-extension.mjs") }');
   });

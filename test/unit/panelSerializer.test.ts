@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { window } from "vscode";
 import type { ExtensionContext } from "vscode";
 import { __createdPanels, __registeredWebviewPanelSerializers, __resetVscodeMock } from "../mocks/vscode.js";
-import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
+import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
 
 beforeEach(() => __resetVscodeMock());
 

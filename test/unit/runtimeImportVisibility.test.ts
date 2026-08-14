@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
+import { nonEmpty, productSourceRoots, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 /**
  * A module the bundler cannot SEE is a module the VSIX does not ship.
@@ -24,12 +24,7 @@ import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
  */
 
 const SRC = path.resolve(__dirname, "../../src");
-const SOURCE_ROOTS = [
-  SRC,
-  path.join(workspaceRoot("@tachyon/engine"), "src"),
-  path.join(workspaceRoot("@tachyon/shared"), "src"),
-  path.join(workspaceRoot("@tachyon/webview-ui"), "src"),
-];
+const SOURCE_ROOTS = productSourceRoots();
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -66,7 +61,7 @@ describe("no module hides itself from the bundler (t-ws-bundle)", () => {
     // `ws` was reachable only through puppeteer-core (dev). A direct import must be a direct
     // dependency: a transitive can change version or disappear when the dev tool is upgraded, and
     // nothing would report it until a user hit the packaged build.
-    const pkg = JSON.parse(readFileSync(path.resolve(SRC, "../package.json"), "utf8")) as {
+    const pkg = JSON.parse(readFileSync(path.join(workspaceRoot("tachyon"), "package.json"), "utf8")) as {
       dependencies?: Record<string, string>;
     };
     expect(Object.keys(pkg.dependencies ?? {}), "ws is imported by src/ and must be a direct dependency")
@@ -76,7 +71,7 @@ describe("no module hides itself from the bundler (t-ws-bundle)", () => {
   it("ships the CDP socket INSIDE the extension bundle when one has been built", () => {
     // Skipped rather than failed on a clean tree: `dist/` is a build output, and a unit suite that
     // demands it turns "you have not built yet" into a red test, which teaches people to ignore red.
-    const bundle = path.resolve(SRC, "../dist/extension.js");
+    const bundle = path.join(workspaceRoot("tachyon"), "dist/extension.js");
     let text: string;
     try {
       if (!statSync(bundle).isFile()) return;

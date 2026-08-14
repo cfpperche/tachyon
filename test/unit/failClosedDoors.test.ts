@@ -3,7 +3,7 @@ import { parseConfig } from "@tachyon/engine/config/loadConfig.js";
 import { LEGACY_AGENTS_BLOCK_WARNING, parseProfileAwareConfigSyntax } from "@tachyon/engine/config/agentProfileConfigLoader.js";
 import { validateTerminalForm, type FormState } from "@tachyon/engine/webview/formLogic.js";
 import { blankTerminalFields } from "../../packages/webview-ui/src/webview/terminal-studio-shell/domain.js";
-import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
+import { buildStarterYaml, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
 
 /**
  * SDD 478 M6 — one rule at every door that can create or import a managed entry: a generic command

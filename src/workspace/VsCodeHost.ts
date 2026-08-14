@@ -2,8 +2,8 @@ import * as vscode from "vscode";
 import type { NotifyLevel } from "@tachyon/engine/bridge/tools.js";
 import type { EngineHost, HostDisposable, NoticeAction, ViewKind, WatchEvents } from "@tachyon/engine/workspace/EngineHost.js";
 import type { TerminalPresentationOptions } from "@tachyon/engine/workspace/TerminalPresentation.js";
-import { Terminals } from "../presentation/Terminals.js";
-import { showNotificationActions } from "./NotificationService.js";
+import { Terminals } from "../../apps/vscode-extension/src/presentation/Terminals.js";
+import { showNotificationActions } from "../../apps/vscode-extension/src/workspace/NotificationService.js";
 
 /**
  * spec 233 — the VS Code implementation of `EngineHost`. The ONLY place the engine's host touchpoints

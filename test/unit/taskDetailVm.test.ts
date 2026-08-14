@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { buildTaskDetailVm, emptyTombstoneVm } from "../../src/webview/task-detail/taskDetailVm.js";
-import { legacyTaskDetailTarget } from "../../src/shell/TaskDetailTarget.js";
+import { buildTaskDetailVm, emptyTombstoneVm } from "../../apps/vscode-extension/src/webview/task-detail/taskDetailVm.js";
+import { legacyTaskDetailTarget } from "../../apps/vscode-extension/src/shell/TaskDetailTarget.js";
 import type { TaskDetailProjectionV1 } from "@tachyon/engine/runtime-api/taskDetailProjection.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 

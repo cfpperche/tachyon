@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { GitRepo, GitRepoError } from "../../src/plugins/gitRepo.js";
+import { GitRepo, GitRepoError } from "../../apps/vscode-extension/src/plugins/gitRepo.js";
 
 function gitOk(): boolean {
   try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }

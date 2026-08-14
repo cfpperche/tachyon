@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ToolTransaction } from "../../src/plugins/toolTransaction.js";
-import { resolveToolPlaceholders, containsToolPlaceholder } from "../../src/plugins/toolPlaceholder.js";
+import { ToolTransaction } from "../../apps/vscode-extension/src/plugins/toolTransaction.js";
+import { resolveToolPlaceholders, containsToolPlaceholder } from "../../apps/vscode-extension/src/plugins/toolPlaceholder.js";
 
 describe("ToolTransaction", () => {
   let ws: string;

@@ -1,7 +1,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { extensionWorkspace } from "./workspace-layout.mjs";
 
 const cssPath = "packages/webview-ui/src/webview/shared/tokens.css";
-const tsPath = "src/webview/ide-browser-bridge/themeTokens.ts";
+const tsPath = path.join(extensionWorkspace(process.cwd()).directory, "src/webview/ide-browser-bridge/themeTokens.ts");
 const start = "// BEGIN GENERATED TOKEN DEFINITIONS — do not edit; run npm run generate:theme-tokens\n";
 const end = "// END GENERATED TOKEN DEFINITIONS\n";
 

@@ -10,7 +10,7 @@ describe("SDD 485 D20 — Pin Studio only renders in the Pins document", () => {
   });
 
   it("reopens a persisted tachyonPinStudio panel in the Pins document create or edit mode", () => {
-    const extension = read("src/extension.ts");
+    const extension = read("apps/vscode-extension/src/extension.ts");
     const at = extension.indexOf("registerTrustedPanelSerializer<PinStudioPanelState>");
     const block = extension.slice(at, at + 900);
     expect(at).toBeGreaterThan(-1);

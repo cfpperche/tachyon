@@ -11,10 +11,10 @@ import {
   isStudioRoute,
   type ProductRoute,
   type CockpitNonStudioRoute,
-} from "../../src/sections/route";
+} from "../../apps/vscode-extension/src/sections/route";
 import { COCKPIT_SECTION_ORDER } from "@tachyon/webview-ui/sections/model";
-import { resolveSection } from "../../src/sections/resolveSection.js";
-import { STUDIO_IDS } from "../../src/webview/shared/studio/studioIds.js";
+import { resolveSection } from "../../apps/vscode-extension/src/sections/resolveSection.js";
+import { STUDIO_IDS } from "../../apps/vscode-extension/src/webview/shared/studio/studioIds.js";
 
 describe("routes.section / routeKey / formatRoute", () => {
   it("builds a section route and derives its key + display string", () => {

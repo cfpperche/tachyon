@@ -10,8 +10,8 @@ const ROOT = process.cwd();
  * bootstrap instead of inheriting a dead button.
  */
 const TOOLBAR_HOSTS = {
-  "pin-studio": "src/webview/PinDetailPanel.ts",
-  "task-studio": "src/webview/TaskDetailPanel.ts",
+  "pin-studio": "apps/vscode-extension/src/webview/PinDetailPanel.ts",
+  "task-studio": "apps/vscode-extension/src/webview/TaskDetailPanel.ts",
 } as const;
 
 describe("rich-doc sketch host contract", () => {

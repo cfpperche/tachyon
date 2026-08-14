@@ -6,7 +6,7 @@ import {
   DEV_HOST_MARKER,
   assertMarkedDevHostWorkspace,
   engineShellReleasePolicy,
-} from "../../src/engine-service/devHostBoundary.js";
+} from "../../apps/vscode-extension/src/engine-service/devHostBoundary.js";
 
 const roots: string[] = [];
 

@@ -16,7 +16,7 @@ import { CARD_PREVIEW_ROWS } from "@tachyon/webview-ui/sidebar/cardPreviewRows";
  */
 const BLOCK = path.join(__dirname, "../../packages/webview-ui/src/webview/shared/control/CardTemplateBlock.tsx");
 const blockSource = readFileSync(BLOCK, "utf8");
-const settingsHost = readFileSync(path.join(__dirname, "../../src/webview/SettingsPanel.ts"), "utf8");
+const settingsHost = readFileSync(path.join(__dirname, "../../apps/vscode-extension/src/webview/SettingsPanel.ts"), "utf8");
 
 const STRINGS = {
   cardTemplateTitle: "Agent card layout",

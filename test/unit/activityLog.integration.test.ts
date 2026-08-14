@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { ActivityLogWriter } from "@tachyon/engine/activity/logWriter.js";
 import { ActivityLog } from "@tachyon/engine/activity/logStore.js";
-import { buildActivityView } from "../../src/activity/activityView";
+import { buildActivityView } from "../../apps/vscode-extension/src/activity/activityView";
 
 const roots: string[] = [];
 function freshRoot(): string { const d = fs.mkdtempSync(path.join(os.tmpdir(), "actint-")); roots.push(d); return d; }

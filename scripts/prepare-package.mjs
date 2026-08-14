@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { classifyShipFile, engineManifestClosureViolations } from "./ship-boundary.mjs";
 import { assertStableBuildSource, assertStableEngineManifest } from "./engine-release-channel.mjs";
 import { assertWebviewChunksReachable, pruneUnreachableWebviewChunks } from "./webview-chunk-hygiene.mjs";
+import { extensionWorkspace } from "./workspace-layout.mjs";
 
 function walk(dir) {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -13,12 +14,13 @@ function walk(dir) {
   });
 }
 
-export function preparePackage(root = process.cwd()) {
+export function preparePackage(repositoryRoot = process.cwd()) {
+  const root = extensionWorkspace(repositoryRoot).directory;
   const dist = path.join(root, "dist");
 
   // The installed engine rejects dirty manifests. Fail before pruning or recording provenance so a
   // guaranteed-broken VSIX never reaches a user.
-  const stableSource = assertStableBuildSource(root);
+  const stableSource = assertStableBuildSource(repositoryRoot);
 
   if (!fs.existsSync(dist)) throw new Error("dist/ does not exist; build before preparing the package");
 
@@ -27,6 +29,13 @@ export function preparePackage(root = process.cwd()) {
   try { engineManifest = JSON.parse(fs.readFileSync(engineManifestPath, "utf8")); }
   catch (error) { throw new Error(`stable engine manifest is unreadable: ${String(error)}`); }
   assertStableEngineManifest(engineManifest, stableSource);
+
+  // vsce's monorepo dependency walk treats the hoisted root as an invalid package tree. Stage the
+  // one native external beside the bundle that requires it, then package with --no-dependencies.
+  const nativeDependencySource = path.join(repositoryRoot, "node_modules", "node-pty");
+  const nativeDependencyTarget = path.join(dist, "node_modules", "node-pty");
+  if (!fs.existsSync(nativeDependencySource)) throw new Error("node-pty is missing; install dependencies before packaging");
+  fs.cpSync(nativeDependencySource, nativeDependencyTarget, { recursive: true, force: true });
 
   for (const file of walk(dist)) {
     const rel = path.relative(root, file).split(path.sep).join("/");
@@ -57,7 +66,7 @@ export function preparePackage(root = process.cwd()) {
   }
 
 // Provenance must describe the post-prune dist tree: exactly the bits vsce will ship.
-  execFileSync(process.execPath, ["scripts/record-provenance.mjs", "embed"], { cwd: root, stdio: "inherit" });
+  execFileSync(process.execPath, ["scripts/record-provenance.mjs", "embed"], { cwd: repositoryRoot, stdio: "inherit" });
 }
 
 /** Let vsce read a product manifest, then restore the repository manifest byte-for-byte. */
@@ -83,7 +92,7 @@ export function restoreDevelopmentManifest(root) {
   return true;
 }
 
-export function withProductManifest(root, pack) {
+export function withProductManifest(root, pack, { repositoryRoot = root } = {}) {
   const manifestPath = path.join(root, "package.json");
   const backupPath = path.join(root, manifestBackupName);
 
@@ -103,9 +112,19 @@ export function withProductManifest(root, pack) {
   }
   delete manifest.scripts;
   fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const staged = [];
   try {
+    for (const name of ["README.md", "LICENSE"]) {
+      const sourcePath = path.join(repositoryRoot, name);
+      const targetPath = path.join(root, name);
+      if (root !== repositoryRoot && fs.existsSync(sourcePath) && !fs.existsSync(targetPath)) {
+        fs.copyFileSync(sourcePath, targetPath);
+        staged.push(targetPath);
+      }
+    }
     return pack();
   } finally {
+    for (const target of staged.reverse()) fs.rmSync(target, { recursive: true, force: true });
     restoreDevelopmentManifest(root);
   }
 }

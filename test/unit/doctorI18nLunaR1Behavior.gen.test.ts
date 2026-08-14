@@ -11,8 +11,8 @@ const assertTranslation = (source: string, translated: Record<string, string>) =
 
 describe("container-generated delegation behavior", () => {
   it("i18n completeness", () => {
-    const translatedBundle = readCatalog("l10n/bundle.l10n.pt-br.json");
-    const translatedPackage = readCatalog("package.nls.pt-br.json");
+    const translatedBundle = readCatalog("apps/vscode-extension/l10n/bundle.l10n.pt-br.json");
+    const translatedPackage = readCatalog("apps/vscode-extension/package.nls.pt-br.json");
 
     assertTranslation("Could not open config: {0}", translatedBundle);
     assertTranslation("Tachyon Doctor found problems — see the Output panel", translatedBundle);

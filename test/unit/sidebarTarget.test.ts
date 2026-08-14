@@ -8,7 +8,7 @@ import {
   workspaceSidebarViewSuccessV1,
 } from "@tachyon/engine/engine-service/protocol.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
-import { workspaceSidebarTarget } from "../../src/shell/SidebarTarget.js";
+import { workspaceSidebarTarget } from "../../apps/vscode-extension/src/shell/SidebarTarget.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 const roots: string[] = [];

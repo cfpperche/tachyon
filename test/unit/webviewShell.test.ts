@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderWebviewShell, webviewNonce, parseShellCsp } from "../../src/webview/shared/shell.js";
+import { renderWebviewShell, webviewNonce, parseShellCsp } from "../../apps/vscode-extension/src/webview/shared/shell.js";
 
 // spec 279 — the shared webview shell helper (the one sanctioned <!DOCTYPE site). Pure string assembly.
 

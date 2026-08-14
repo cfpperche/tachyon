@@ -3,15 +3,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { loadPlugin, previewInstall, applyInstall, applyRemove, applyContribution, repairGitHooks, reconcileGitHookHarness } from "../../src/plugins/engine.js";
-import { gatherGitHookState } from "../../src/plugins/gitHookState.js";
+import { loadPlugin, previewInstall, applyInstall, applyRemove, applyContribution, repairGitHooks, reconcileGitHookHarness } from "../../apps/vscode-extension/src/plugins/engine.js";
+import { gatherGitHookState } from "../../apps/vscode-extension/src/plugins/gitHookState.js";
 import {
   GitHookStore,
   dispatcherScript,
   DISPATCHER_TEMPLATE_VERSION,
   readDispatcherTemplateVersion,
-} from "../../src/plugins/gitHookRegistry.js";
-import { GitRepo } from "../../src/plugins/gitRepo.js";
+} from "../../apps/vscode-extension/src/plugins/gitHookRegistry.js";
+import { GitRepo } from "../../apps/vscode-extension/src/plugins/gitRepo.js";
 
 function gitOk(): boolean {
   try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }

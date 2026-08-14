@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as vscode from "vscode";
-import { formatDesignAnnotationBatch, IdeBrowserBridgeManager } from "../../src/webview/ide-browser-bridge/manager.js";
+import { formatDesignAnnotationBatch, IdeBrowserBridgeManager } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/manager.js";
 
 // Exercise the production queue handler while replacing only its CDP delivery edge.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

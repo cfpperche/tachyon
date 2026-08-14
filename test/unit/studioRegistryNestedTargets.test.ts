@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { makeStudioAdapterFactory, type CockpitStudios } from "../../src/webview/shared/studio/studioRegistry.js";
-import type { WorkspaceStudioTarget } from "../../src/shell/WorkspacePresentation.js";
+import { makeStudioAdapterFactory, type CockpitStudios } from "../../apps/vscode-extension/src/webview/shared/studio/studioRegistry.js";
+import type { WorkspaceStudioTarget } from "../../apps/vscode-extension/src/shell/WorkspacePresentation.js";
 
 /**
  * t-9dadad — Task/Pin Studio hung on "Loading…" forever in Control: the registry cast the WHOLE

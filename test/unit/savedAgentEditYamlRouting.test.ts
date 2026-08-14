@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync("src/extension.ts", "utf8");
+const source = readFileSync("apps/vscode-extension/src/extension.ts", "utf8");
 
 function commandBody(command: string): string {
   const start = source.indexOf(`registerCommand("${command}"`);

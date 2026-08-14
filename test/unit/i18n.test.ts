@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
+import { nonEmpty, productSourceRoots, workspaceRoot } from "../helpers/repositorySourceScan.js";
 
 /**
  * i18n drift guards: every l10n.t() source key must have a pt-BR translation,
@@ -26,26 +26,21 @@ function sourceKeys(): Set<string> {
       }
     }
   };
-  for (const sourceRoot of [
-    path.join(root, "src"),
-    path.join(workspaceRoot("@tachyon/engine"), "src"),
-    path.join(workspaceRoot("@tachyon/shared"), "src"),
-    path.join(workspaceRoot("@tachyon/webview-ui"), "src"),
-  ]) walk(sourceRoot);
+  for (const sourceRoot of productSourceRoots()) walk(sourceRoot);
   nonEmpty(Array.from({ length: examined }), "i18n TypeScript source scan");
   return keys;
 }
 
 describe("i18n completeness", () => {
   it("every l10n.t key has a pt-BR translation", () => {
-    const bundle = JSON.parse(fs.readFileSync(path.join(root, "l10n/bundle.l10n.pt-br.json"), "utf8"));
+    const bundle = JSON.parse(fs.readFileSync(path.join(root, "apps/vscode-extension/l10n/bundle.l10n.pt-br.json"), "utf8"));
     const missing = [...sourceKeys()].filter((k) => !(k in bundle));
     expect(missing).toEqual([]);
   });
 
   it("pt-BR translations keep the {n} placeholders of their keys", () => {
     const bundle: Record<string, string> = JSON.parse(
-      fs.readFileSync(path.join(root, "l10n/bundle.l10n.pt-br.json"), "utf8"),
+      fs.readFileSync(path.join(root, "apps/vscode-extension/l10n/bundle.l10n.pt-br.json"), "utf8"),
     );
     const bad = Object.entries(bundle).filter(([key, value]) => {
       const want = [...key.matchAll(/\{(\d+)\}/g)].map((m) => m[0]).sort();
@@ -56,11 +51,11 @@ describe("i18n completeness", () => {
   });
 
   it("every %key% in package.json exists in package.nls.json and the pt-BR variant", () => {
-    const pkg = fs.readFileSync(path.join(root, "package.json"), "utf8");
+    const pkg = fs.readFileSync(path.join(workspaceRoot("tachyon"), "package.json"), "utf8");
     const refs = [...pkg.matchAll(/%([a-zA-Z0-9._-]+)%/g)].map((m) => m[1]);
     expect(refs.length).toBeGreaterThan(20);
-    const en = JSON.parse(fs.readFileSync(path.join(root, "package.nls.json"), "utf8"));
-    const pt = JSON.parse(fs.readFileSync(path.join(root, "package.nls.pt-br.json"), "utf8"));
+    const en = JSON.parse(fs.readFileSync(path.join(root, "apps/vscode-extension/package.nls.json"), "utf8"));
+    const pt = JSON.parse(fs.readFileSync(path.join(root, "apps/vscode-extension/package.nls.pt-br.json"), "utf8"));
     expect(refs.filter((r) => !(r in en))).toEqual([]);
     expect(refs.filter((r) => !(r in pt))).toEqual([]);
   });

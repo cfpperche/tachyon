@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { downloadToTemp } from "../../src/plugins/toolProvisioning.js";
+import { downloadToTemp } from "../../apps/vscode-extension/src/plugins/toolProvisioning.js";
 import { tlsKeypair } from "../helpers/tlsFixture.js";
 
 const kp = tlsKeypair();

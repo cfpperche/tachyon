@@ -3,11 +3,11 @@
  */
 
 import { buildSectionsModel, type SectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
-import { routes as cockpitRoutes } from "../../../src/sections/route";
+import { routes as cockpitRoutes } from "../../../apps/vscode-extension/src/sections/route";
 import type { CockpitStrings } from "@tachyon/webview-ui/webview/shared/control/messages";
 import type { WorktreesStrings } from "@tachyon/webview-ui/webview/worktrees/messages";
 import type { RuntimeConfigControlSnapshot } from "@tachyon/webview-ui/runtimeConfig/types";
-import { buildValidationsViewModel, type ValidationsViewModel } from "../../../src/webview/validations/viewModel";
+import { buildValidationsViewModel, type ValidationsViewModel } from "../../../apps/vscode-extension/src/webview/validations/viewModel";
 import type { HumanInboxItemViewModel, HumanInboxViewModel } from "@tachyon/webview-ui/webview/human-inbox/viewModel";
 import { buildHumanInbox, humanInboxCounts } from "@tachyon/webview-ui/humanInbox/model";
 import type { SavedAgentProposalReview } from "@tachyon/webview-ui/agents/savedAgentProposalReview";

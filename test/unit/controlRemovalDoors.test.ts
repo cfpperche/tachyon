@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 
-const source = fs.readFileSync("src/extension.ts", "utf8");
+const source = fs.readFileSync("apps/vscode-extension/src/extension.ts", "utf8");
 const blockFrom = (needle: string, length: number): string => {
   const start = source.indexOf(needle);
   expect(start, `${needle} not found`).toBeGreaterThan(-1);

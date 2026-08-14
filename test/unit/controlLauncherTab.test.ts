@@ -3,8 +3,8 @@ import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as vscode from "vscode";
 import { __getExecutedCommands, __resetVscodeMock } from "../mocks/vscode.js";
-import { SidebarPrototypeProvider } from "../../src/webview/SidebarPrototype.js";
-import { initializeVsCodeNotifications } from "../../src/workspace/notify.js";
+import { SidebarPrototypeProvider } from "../../apps/vscode-extension/src/webview/SidebarPrototype.js";
+import { initializeVsCodeNotifications } from "../../apps/vscode-extension/src/workspace/notify.js";
 import { WEBVIEW_SURFACES } from "../../src/webview/surfaces.js";
 import { CONTROL_SECTION_NAV } from "../../packages/webview-ui/src/webview/sidebar/sectionNav.js";
 import { SAMPLE, TABS, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.js";
@@ -51,18 +51,18 @@ describe("t-6e2952 — Control is a tab in the existing sidebar row", () => {
     ]);
     // $(dashboard) is what package.json declares for tachyon.openControl — same glyph, same product thing.
     expect(TABS[1]).toEqual({ id: "Control", icon: "dashboard" });
-    const pkg = JSON.parse(read("package.json")) as { contributes: { commands: Array<{ command: string; icon?: string }> } };
+    const pkg = JSON.parse(read("apps/vscode-extension/package.json")) as { contributes: { commands: Array<{ command: string; icon?: string }> } };
     expect(pkg.contributes.commands.find((c) => c.command === "tachyon.openControl")?.icon).toBe("$(dashboard)");
   });
 
   it("adds NO sidebar view: the launcher has no viewType, no bundle and no host file", () => {
-    const pkg = JSON.parse(read("package.json")) as { contributes: { views: { tachyon: Array<{ id: string }> } } };
+    const pkg = JSON.parse(read("apps/vscode-extension/package.json")) as { contributes: { views: { tachyon: Array<{ id: string }> } } };
     const viewIds = pkg.contributes.views.tachyon.map((v) => v.id);
     expect(viewIds).toEqual(["tachyonSidebarPrototype", "tachyonPluginSurfaces"]);
     expect(WEBVIEW_SURFACES.some((s) => s.viewId === "tachyonControlLauncher" || s.view === "control-launcher")).toBe(false);
     expect(existsSync(path.join(repoRoot, "packages/webview-ui/src/webview/ControlLauncherProvider.ts"))).toBe(false);
     expect(existsSync(path.join(repoRoot, "packages/webview-ui/src/webview/control-launcher"))).toBe(false);
-    for (const file of ["src/extension.ts", "esbuild.mjs", "scripts/webview-preview/routes.json"]) {
+    for (const file of ["apps/vscode-extension/src/extension.ts", "esbuild.mjs", "scripts/webview-preview/routes.json"]) {
       expect(read(file)).not.toContain("ControlLauncher");
       expect(read(file)).not.toContain("control-launcher");
     }

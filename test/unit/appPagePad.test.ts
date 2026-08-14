@@ -120,9 +120,9 @@ describe("Runtime Ops owns its own page pad now that it is a standalone app (SDD
   it("the app links the sheet that owns the pad, and no page frame it does not anchor to", () => {
     // The pad is only real if the app actually LINKS the sheet carrying it — the Phase A consumption
     // check reads `#root` height chains and cannot see a pad, which is why this is asserted here.
-    const host = read("src/webview/RuntimeOpsPanel.ts");
+    const host = read("apps/vscode-extension/src/webview/RuntimeOpsPanel.ts");
     const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(host);
-    expect(block, "src/webview/RuntimeOpsPanel.ts: no `styleFiles: [...]` array found").not.toBeNull();
+    expect(block, "apps/vscode-extension/src/webview/RuntimeOpsPanel.ts: no `styleFiles: [...]` array found").not.toBeNull();
     const linked = [...block![1].matchAll(/["'`]([^"'`]+\.css)["'`]/g)].map((m) => m[1]);
     expect(linked).toContain("runtime-ops.css");
     // and NOT page-frame.css: runtime-ops.css anchors `#root` to nothing, so linking the frame would
@@ -164,9 +164,9 @@ describe("the Human Inbox owns its own page pad, and always did (SDD 485 D4)", (
 
 
   it("the app links the sheet that owns the pad, and no page frame it does not anchor to", () => {
-    const host = read("src/webview/HumanInboxPanel.ts");
+    const host = read("apps/vscode-extension/src/webview/HumanInboxPanel.ts");
     const block = /\bstyleFiles:\s*\[([\s\S]*?)\]/.exec(host);
-    expect(block, "src/webview/HumanInboxPanel.ts: no `styleFiles: [...]` array found").not.toBeNull();
+    expect(block, "apps/vscode-extension/src/webview/HumanInboxPanel.ts: no `styleFiles: [...]` array found").not.toBeNull();
     const linked = [...block![1].matchAll(/["\'`]([^"\'`]+\.css)["\'`]/g)].map((m) => m[1]);
     expect(linked).toContain("human-inbox.css");
     // and NOT page-frame.css. For THIS surface that is not merely the default: the detail route renders

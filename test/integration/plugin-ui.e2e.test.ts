@@ -5,21 +5,22 @@ import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { resolveChromeExecutable } from "../browser/support/chrome.js";
-import { loadPlugin, previewInstall, applyInstall, detectRuntimes, type LoadedPlugin } from "../../src/plugins/engine.js";
-import { PluginActionBroker, type PluginActionBrokerResult } from "../../src/plugins/ui/broker.js";
-import { PluginFleetProjectionProvider } from "../../src/plugins/ui/projectionProvider.js";
+import { loadPlugin, previewInstall, applyInstall, detectRuntimes, type LoadedPlugin } from "../../apps/vscode-extension/src/plugins/engine.js";
+import { PluginActionBroker, type PluginActionBrokerResult } from "../../apps/vscode-extension/src/plugins/ui/broker.js";
+import { PluginFleetProjectionProvider } from "../../apps/vscode-extension/src/plugins/ui/projectionProvider.js";
 import { PLUGIN_UI_ACTION, PLUGIN_UI_ACTION_RESULT, type PluginHostBootstrap } from "../../packages/webview-ui/src/webview/plugin-host/relay.js";
-import { renderWebviewShell } from "../../src/webview/shared/shell.js";
+import { renderWebviewShell } from "../../apps/vscode-extension/src/webview/shared/shell.js";
 import type { FleetVM } from "@tachyon/shared/sidebar/types.js";
 
 const ROOT = path.resolve(__dirname, "..", "..");
+const EXTENSION_ROOT = path.join(ROOT, "apps", "vscode-extension");
 const dirs: string[] = [];
 type Browser = any;
 type Page = any;
 type Frame = any;
 
 beforeAll(() => {
-  if (!fs.existsSync(path.join(ROOT, "dist/webview/plugin-host.js"))) {
+  if (!fs.existsSync(path.join(EXTENSION_ROOT, "dist/webview/plugin-host.js"))) {
     throw new Error("dist/webview/plugin-host.js is missing; run npm run build before the plugin UI e2e");
   }
 });
@@ -483,8 +484,8 @@ async function startPluginHostServer(bootstrap: PluginHostBootstrap): Promise<Pl
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }
-    const filePath = path.resolve(ROOT, "." + urlPath);
-    const rel = path.relative(ROOT, filePath);
+    const filePath = path.resolve(EXTENSION_ROOT, "." + urlPath);
+    const rel = path.relative(EXTENSION_ROOT, filePath);
     if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
       res.writeHead(403).end("forbidden");
       return;

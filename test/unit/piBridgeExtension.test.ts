@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import tachyonPiBridge from "../../src/pi-bridge-extension/index.js";
-import { projectMcpContent, projectMcpTool } from "../../src/pi-bridge-extension/toolProjection.js";
+import tachyonPiBridge from "../../apps/vscode-extension/src/pi-bridge-extension/index.js";
+import { projectMcpContent, projectMcpTool } from "../../apps/vscode-extension/src/pi-bridge-extension/toolProjection.js";
 
 describe("Pi Bridge extension projection", () => {
   it("projects MCP metadata/schema into a native Pi tool and forwards arguments + cancellation", async () => {

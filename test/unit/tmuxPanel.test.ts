@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Uri } from "vscode";
 import { __createdPanels, __registeredWebviewPanelSerializers, __resetVscodeMock, __setPanelVisible } from "../mocks/vscode.js";
-import { setNotificationProvider, type NotificationRequest } from "../../src/workspace/NotificationService.js";
-import { TMUX_VIEW_TYPE, TmuxPanelManager, tmuxRefreshKind } from "../../src/webview/TmuxPanel.js";
-import { registerTrustedPanelSerializer } from "../../src/webview/shared/panelSerializer.js";
-import { sectionPanelKey, type SectionPanelState } from "../../src/webview/shared/SectionPanelManager.js";
+import { setNotificationProvider, type NotificationRequest } from "../../apps/vscode-extension/src/workspace/NotificationService.js";
+import { TMUX_VIEW_TYPE, TmuxPanelManager, tmuxRefreshKind } from "../../apps/vscode-extension/src/webview/TmuxPanel.js";
+import { registerTrustedPanelSerializer } from "../../apps/vscode-extension/src/webview/shared/panelSerializer.js";
+import { sectionPanelKey, type SectionPanelState } from "../../apps/vscode-extension/src/webview/shared/SectionPanelManager.js";
 import { readyMessage, refreshAction } from "../../packages/webview-ui/src/webview/inspector/messages.js";
-import type { InspectorDeps } from "../../src/webview/ServerInspector.js";
+import type { InspectorDeps } from "../../apps/vscode-extension/src/webview/ServerInspector.js";
 import type { PaneSnapshot } from "@tachyon/engine/tmux/TmuxService.js";
 
 /**

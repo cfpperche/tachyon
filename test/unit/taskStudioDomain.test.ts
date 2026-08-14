@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { Uri } from "vscode";
 import { __resetVscodeMock, __setOpenDialogResult } from "../mocks/vscode.js";
-import { handleTaskStudioDomainMessage } from "../../src/webview/task-detail/taskStudioDomain.js";
-import type { StudioDomainContext } from "../../src/webview/shared/studio/studioRegistry.js";
-import type { WorkspaceTaskStudioTarget, TaskStudioAttachmentResult } from "../../src/shell/TaskStudioTarget.js";
+import { handleTaskStudioDomainMessage } from "../../apps/vscode-extension/src/webview/task-detail/taskStudioDomain.js";
+import type { StudioDomainContext } from "../../apps/vscode-extension/src/webview/shared/studio/studioRegistry.js";
+import type { WorkspaceTaskStudioTarget, TaskStudioAttachmentResult } from "../../apps/vscode-extension/src/shell/TaskStudioTarget.js";
 
 /**
  * t-610705 (SDD 410 Phase D, D2) — the import/attach/sketch domain-message DISPATCH+error-mapping

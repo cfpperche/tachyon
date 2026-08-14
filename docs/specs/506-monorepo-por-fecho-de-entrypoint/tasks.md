@@ -71,15 +71,15 @@ Medição. Nada se move.
 
 A mais arriscada. Vem por último de propósito.
 
-- [ ] `package.json` da extensão em `apps/vscode-extension/`, com `main` relativo correto.
-- [ ] `.vscodeignore`, `vsce`, `prepare-package`, `package-closure`, `record-provenance`, `ship-boundary`, `vsix-artifact`, `vsix-smoke` reendereçados.
-- [ ] `.vscode/launch.json` e `.vscode/tasks.json` reendereçados; as cinco referências a `${workspaceFolder}[/...]/dist/**/*.js` conferidas uma a uma.
-- [ ] `scripts/dev-host/pointer.mjs` reendereçado.
+- [x] `package.json` da extensão em `apps/vscode-extension/`, com `main` relativo correto.
+- [x] `.vscodeignore`, `vsce`, `prepare-package`, `package-closure`, `record-provenance`, `ship-boundary`, `vsix-artifact`, `vsix-smoke` reendereçados.
+- [x] `.vscode/launch.json` e `.vscode/tasks.json` reendereçados; as cinco referências a `${workspaceFolder}[/...]/dist/**/*.js` conferidas uma a uma.
+- [x] `scripts/dev-host/pointer.mjs` reendereçado.
 - [ ] **F5 provado por um humano** antes de notificar. Sem isso a fatia não sai.
 - [ ] `npm run release` produz um VSIX e `npm run smoke:vsix` passa.
-- [ ] A versão do produto **não muda** por causa desta fatia.
-- [ ] A raiz não contém mais código de produto.
-- [ ] **Nada assume um app único.** Build, scripts e `tsconfig` tratam `apps/` como plural — derivado, nunca com o nome do app cravado como literal. Um teste prova que um segundo diretório em `apps/` é enxergado sem editar script nenhum.
+- [x] A versão do produto **não muda** por causa desta fatia.
+- [x] A raiz não contém mais código de produto.
+- [x] **Nada assume um app único.** Build, scripts e `tsconfig` tratam `apps/` como plural — derivado, nunca com o nome do app cravado como literal. Um teste prova que um segundo diretório em `apps/` é enxergado sem editar script nenhum.
 
 ---
 

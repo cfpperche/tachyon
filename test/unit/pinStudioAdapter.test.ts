@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import { PinStore } from "@tachyon/engine/pins/PinStore.js";
-import { legacyPinStudioTarget } from "../../src/shell/PinStudioTarget.js";
-import { PinStudioAdapter } from "../../src/webview/PinStudioAdapter.js";
+import { legacyPinStudioTarget } from "../../apps/vscode-extension/src/shell/PinStudioTarget.js";
+import { PinStudioAdapter } from "../../apps/vscode-extension/src/webview/PinStudioAdapter.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import { computePinDirty, serializePinPatch, canDiscardPinFields, type PinFields } from "../../packages/webview-ui/src/webview/pin-studio/domain.js";
 import { makeTempDir } from "../helpers/tempDir.js";

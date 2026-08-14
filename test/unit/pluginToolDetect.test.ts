@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { smokeCheck, detectHostTool, isTrustedExecPath, type PathStat } from "../../src/plugins/toolProvisioning.js";
+import { smokeCheck, detectHostTool, isTrustedExecPath, type PathStat } from "../../apps/vscode-extension/src/plugins/toolProvisioning.js";
 
 const sha = (b: Buffer | string) => crypto.createHash("sha256").update(b).digest("hex");
 

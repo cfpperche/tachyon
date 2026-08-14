@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { validatePluginDir } from "../../src/pluginValidateEntry.js";
+import { validatePluginDir } from "../../apps/vscode-extension/src/pluginValidateEntry.js";
 
 /**
  * t-d8e772 — the validator exists so a plugin AUTHOR can ask the real parser "would Tachyon load
@@ -85,7 +85,7 @@ describe("plugin package validator (t-d8e772)", () => {
   it("uses the REAL loader, not a copy of the schema", async () => {
     // A second implementation of the contract would drift, and a drifting validator reports green
     // while the loader refuses — strictly worse than having none. Pin the shared dependency.
-    const src = fs.readFileSync(path.resolve(__dirname, "../../src/pluginValidateEntry.ts"), "utf8");
+    const src = fs.readFileSync(path.resolve(__dirname, "../../apps/vscode-extension/src/pluginValidateEntry.ts"), "utf8");
     expect(src).toContain('import { loadManifest } from "@tachyon/engine/plugins/manifest.js"');
     const { loadManifest } = await import("@tachyon/engine/plugins/manifest.js");
     expect(typeof loadManifest).toBe("function");

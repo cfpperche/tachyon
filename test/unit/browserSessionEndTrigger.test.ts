@@ -4,8 +4,8 @@ import {
   BrowserSessionController,
   classifyIdeBrowserSessionEnd,
   isCorrelatedBrowserParentSession,
-} from "../../src/webview/ide-browser-bridge/browserSession.js";
-import { IdeBrowserCdpSession } from "../../src/webview/ide-browser-bridge/cdpSession.js";
+} from "../../apps/vscode-extension/src/webview/ide-browser-bridge/browserSession.js";
+import { IdeBrowserCdpSession } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/cdpSession.js";
 
 type FakeSession = vscode.DebugSession & { parentSession?: FakeSession };
 

@@ -3,9 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { loadPlugin, previewInstall, applyInstall, applyContribution } from "../../src/plugins/engine.js";
-import { gatherGitHookState } from "../../src/plugins/gitHookState.js";
-import { GitHookStore } from "../../src/plugins/gitHookRegistry.js";
+import { loadPlugin, previewInstall, applyInstall, applyContribution } from "../../apps/vscode-extension/src/plugins/engine.js";
+import { gatherGitHookState } from "../../apps/vscode-extension/src/plugins/gitHookState.js";
+import { GitHookStore } from "../../apps/vscode-extension/src/plugins/gitHookRegistry.js";
 
 function gitOk(): boolean {
   try { execFileSync("git", ["--version"], { stdio: "ignore" }); return true; } catch { return false; }

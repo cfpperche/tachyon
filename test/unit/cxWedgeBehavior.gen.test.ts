@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createTmuxExecutor, TMUX_CONTROL_TIMEOUT_MS, TmuxError, TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
-import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
+import { nonEmpty, productSourceRoots } from "../helpers/repositorySourceScan.js";
 
 const repoRoot = path.resolve(__dirname, "../..");
 
@@ -20,23 +20,20 @@ function sourceFiles(target: string): string[] {
 
 const SYNC_CHILD_PROCESS_ALLOWLIST: Record<string, string> = {
   // Pre-commit i18n gate entry: invoked by git hooks in a separate process with no VS Code running.
-  "src/plugins/i18nPtbrGate.ts": "separate git-hook process",
+  "apps/vscode-extension/src/plugins/i18nPtbrGate.ts": "separate git-hook process",
   // External-tool resolver/probe module: used by explicit plugin install/rehydrate flows and the standalone `_tachyon-external` shim, not Bridge/tmux MCP handlers.
-  "src/plugins/externalTool.ts": "plugin external-tool resolver/provisioning path",
+  "apps/vscode-extension/src/plugins/externalTool.ts": "plugin external-tool resolver/provisioning path",
   // Tool provisioning module: used by explicit plugin install/rehydrate flows and launcher-adjacent smoke checks, not Bridge/tmux MCP handlers.
-  "src/plugins/toolProvisioning.ts": "plugin tool provisioning path",
+  "apps/vscode-extension/src/plugins/toolProvisioning.ts": "plugin tool provisioning path",
   // Tool launcher entry: copied to .tachyon/bin and run by hooks/agents as its own process with no VS Code running.
-  "src/plugins/toolLauncher.ts": "separate tool-launch process",
+  "apps/vscode-extension/src/plugins/toolLauncher.ts": "separate tool-launch process",
   // Tool platform probes: used by data/tool resolver entry processes before extension-host participation.
-  "src/plugins/toolPlatform.ts": "separate resolver process",
+  "apps/vscode-extension/src/plugins/toolPlatform.ts": "separate resolver process",
 };
 
 function syncChildProcessOffenders(textOverrides: Record<string, string> = {}): string[] {
   const files = nonEmpty([
-    ...sourceFiles("src"),
-    ...sourceFiles(path.relative(repoRoot, path.join(workspaceRoot("@tachyon/engine"), "src"))),
-    ...sourceFiles(path.relative(repoRoot, path.join(workspaceRoot("@tachyon/shared"), "src"))),
-    ...sourceFiles(path.relative(repoRoot, path.join(workspaceRoot("@tachyon/webview-ui"), "src"))),
+    ...productSourceRoots().flatMap((root) => sourceFiles(path.relative(repoRoot, root))),
   ], "wedge source scan");
   return files.flatMap((file) => {
     const rel = path.relative(repoRoot, file).split(path.sep).join(path.posix.sep);

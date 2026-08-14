@@ -4,13 +4,15 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { checkPackagedArtifact } from "./vsix-artifact.mjs";
+import { extensionWorkspace } from "./workspace-layout.mjs";
 
-const root = process.cwd();
+const repositoryRoot = process.cwd();
+const root = extensionWorkspace(repositoryRoot).directory;
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 const version = pkg.version;
 
 function git(args) {
-  return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  return execFileSync("git", args, { cwd: repositoryRoot, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 }
 
 function gitMeta() {
@@ -56,7 +58,7 @@ function runVerify() {
   const command = "npm run verify:full";
   if (process.env.TACHYON_SKIP_PROVENANCE_VERIFY === "1") return { command, result: "skipped by TACHYON_SKIP_PROVENANCE_VERIFY=1" };
   try {
-    execFileSync("npm", ["run", "verify:full"], { cwd: root, stdio: "inherit" });
+    execFileSync("npm", ["run", "verify:full"], { cwd: repositoryRoot, stdio: "inherit" });
     return { command, result: "passed" };
   } catch (err) {
     return { command, result: `failed: ${err instanceof Error ? err.message : String(err)}` };
@@ -147,7 +149,7 @@ if (!version || typeof version !== "string") throw new Error("package.json versi
 const EMBEDDED_PATH = path.join(root, "provenance.json");
 // AUDIT path: the human trail, unchanged in shape, additionally carrying the packaged vsix's own
 // sha256 and the verify:full result — for a human to cross-check after `vsce package`.
-const AUDIT_DIR = path.join(root, ".tachyon", "deploys");
+const AUDIT_DIR = path.join(repositoryRoot, ".tachyon", "deploys");
 
 function writeEmbedded() {
   const record = { version, engineChannel: engineChannel(), ...gitMeta(), dist: distHashes() };

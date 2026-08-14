@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertWorkspacePresentationIdentity,
   projectWorkspacePresentation,
-} from "../../src/runtime-api/workspaceProjection.js";
+} from "../../apps/vscode-extension/src/runtime-api/workspaceProjection.js";
 import { projectedAgent, projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 
 describe("workspace presentation projection", () => {

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { renderWebviewShell } from "./shared/shell.js";
+import { renderWebviewShell } from "../../apps/vscode-extension/src/webview/shared/shell.js";
 import { loadMessage } from "@tachyon/webview-ui/webview/agent-studio-fixture/messages";
 import type { AgentFixtureVM } from "@tachyon/webview-ui/webview/agent-studio-fixture/types";
 

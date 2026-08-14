@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type * as vscode from "vscode";
-import { AgentPanePanelManager } from "../../src/webview/AgentPanePanel.js";
-import { Terminals } from "../../src/presentation/Terminals.js";
-import { SessionViewportRegistry } from "../../src/presentation/sessionViewport.js";
-import type { PtyProcess, PtySpawn } from "../../src/presentation/TmuxAttachClient.js";
+import { AgentPanePanelManager } from "../../apps/vscode-extension/src/webview/AgentPanePanel.js";
+import { Terminals } from "../../apps/vscode-extension/src/presentation/Terminals.js";
+import { SessionViewportRegistry } from "../../apps/vscode-extension/src/presentation/sessionViewport.js";
+import type { PtyProcess, PtySpawn } from "../../apps/vscode-extension/src/presentation/TmuxAttachClient.js";
 import { __createdPanels, __createdTerminals, __resetVscodeMock, Uri } from "../mocks/vscode.js";
 
 /**

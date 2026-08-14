@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { installData, sha256FileStreaming } from "../../src/plugins/toolProvisioning.js";
+import { installData, sha256FileStreaming } from "../../apps/vscode-extension/src/plugins/toolProvisioning.js";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";

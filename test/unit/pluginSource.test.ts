@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "../../src/plugins/source.js";
+import { parseSource, parseSemverTag, compareSemver, rewriteRef } from "../../apps/vscode-extension/src/plugins/source.js";
 
 describe("parseSource — github: sugar", () => {
   it("normalizes github:org/repo@ref to an https remote", () => {

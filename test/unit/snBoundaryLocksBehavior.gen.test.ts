@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildStarterYaml, type DetectedProject } from "../../src/init/initLogic.js";
+import { buildStarterYaml, type DetectedProject } from "../../apps/vscode-extension/src/init/initLogic.js";
 
 /**
  * Markers that only make sense inside Tachyon's own dev/build/release pipeline.
@@ -35,7 +35,7 @@ describe("container-generated delegation behavior", () => {
     //
     // The narrow "no build marker in a default" check moved to settingsAuthorityInventory.test.ts,
     // which now enforces the whole absence rather than the contents of what is present.
-    const pkgJson = JSON.parse(fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8"));
+    const pkgJson = JSON.parse(fs.readFileSync(path.join(__dirname, "../../apps/vscode-extension/package.json"), "utf8"));
     expect(pkgJson.contributes.configuration).toBeUndefined();
 
     // (3) docs/architecture/dogfood-product-boundary.md — "Tachyon: Init scaffolds from the USER's stack".

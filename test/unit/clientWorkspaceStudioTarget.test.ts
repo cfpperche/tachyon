@@ -7,11 +7,11 @@ import {
   workspaceExtensionCommandSuccessV1,
   workspaceExtensionQuerySuccessV1,
 } from "@tachyon/engine/engine-service/protocol.js";
-import { ClientWorkspaceStudioTarget } from "../../src/shell/ClientWorkspaceStudioTarget.js";
+import { ClientWorkspaceStudioTarget } from "../../apps/vscode-extension/src/shell/ClientWorkspaceStudioTarget.js";
 import { FakeWorkspaceClient } from "../../src/shell/FakeWorkspaceClient.js";
-import { CommandStudioAdapter } from "../../src/webview/CommandStudioAdapter.js";
+import { CommandStudioAdapter } from "../../apps/vscode-extension/src/webview/CommandStudioAdapter.js";
 import { blankCommandFields } from "../../packages/webview-ui/src/webview/command-studio-shell/domain.js";
-import type { StudioDeps } from "../../src/webview/studioSubmit.js";
+import type { StudioDeps } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
 import { projectionIdentity, projectionSnapshot } from "./fixtures/workspaceProjection.js";
 import type { AgentProfileStudioSnapshotV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 

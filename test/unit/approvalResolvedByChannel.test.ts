@@ -59,7 +59,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { nonEmpty, workspaceRoot } from "../helpers/repositorySourceScan.js";
+import { nonEmpty, productSourceRoots } from "../helpers/repositorySourceScan.js";
 import ts from "typescript";
 import {
   APPROVAL_CHANNEL_COMPANION_HTTP,
@@ -255,10 +255,7 @@ function sourceFiles(dir: string): string[] {
 
 function scanSrc(textOverrides: Record<string, string> = {}): { doors: ResolutionWriteDoor[]; findings: ResolvedByFinding[] } {
   const relatives = new Set(nonEmpty([
-    ...sourceFiles(path.join(repoRoot, "src")).map((f) => path.relative(repoRoot, f).split(path.sep).join("/")),
-    ...sourceFiles(path.join(workspaceRoot("@tachyon/engine"), "src")).map((f) => path.relative(repoRoot, f).split(path.sep).join("/")),
-    ...sourceFiles(path.join(workspaceRoot("@tachyon/shared"), "src")).map((f) => path.relative(repoRoot, f).split(path.sep).join("/")),
-    ...sourceFiles(path.join(workspaceRoot("@tachyon/webview-ui"), "src")).map((f) => path.relative(repoRoot, f).split(path.sep).join("/")),
+    ...productSourceRoots().flatMap(sourceFiles).map((f) => path.relative(repoRoot, f).split(path.sep).join("/")),
     ...Object.keys(textOverrides),
   ], "approval resolvedBy source scan"));
   const doors: ResolutionWriteDoor[] = [];

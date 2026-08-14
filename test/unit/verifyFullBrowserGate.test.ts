@@ -55,20 +55,20 @@ describe("verify:full conditional browser gate (t-6e929b)", () => {
     expect(browserGateDecision({ cwd })).toMatchObject({ run: false, webviewPaths: [] });
   });
 
-  it("runs when a tracked or untracked diff touches src/webview", () => {
+  it("runs when a tracked or untracked diff touches apps/vscode-extension/src/webview", () => {
     const cwd = repo();
-    browserSuite(cwd, { "ui.test.ts": 'import x from "../../src/webview/shared/shell";\n' });
-    fs.mkdirSync(path.join(cwd, "src", "webview"), { recursive: true });
-    fs.writeFileSync(path.join(cwd, "src", "webview", "App.tsx"), "export {};\n");
+    browserSuite(cwd, { "ui.test.ts": 'import x from "../../apps/vscode-extension/src/webview/shared/shell";\n' });
+    fs.mkdirSync(path.join(cwd, "apps", "vscode-extension", "src", "webview"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "apps", "vscode-extension", "src", "webview", "App.tsx"), "export {};\n");
 
-    expect(browserGateDecision({ cwd }).webviewPaths).toContain("src/webview/App.tsx");
+    expect(browserGateDecision({ cwd }).webviewPaths).toContain("apps/vscode-extension/src/webview/App.tsx");
   });
 });
 
 describe("on main the base is what is UNPUSHED, not the last merge (t-d858f5)", () => {
   /**
    * A repo already on `main`, with an `origin/main` ref and a browser suite that reads
-   * `src/webview` — both committed in the base, so neither shows up in any later diff.
+   * `apps/vscode-extension/src/webview` — both committed in the base, so neither shows up in any later diff.
    */
   function mainRepo() {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "verify-browser-gate-main-"));
@@ -77,9 +77,9 @@ describe("on main the base is what is UNPUSHED, not the last merge (t-d858f5)", 
     git(cwd, ["config", "user.email", "browser-gate@example.invalid"]);
     git(cwd, ["config", "user.name", "Browser Gate"]);
     fs.writeFileSync(path.join(cwd, "README.md"), "base\n");
-    browserSuite(cwd, { "ui.test.ts": 'import x from "../../src/webview/shared/shell";\n' });
-    fs.mkdirSync(path.join(cwd, "src", "webview"), { recursive: true });
-    fs.writeFileSync(path.join(cwd, "src", "webview", "App.tsx"), "export {};\n");
+    browserSuite(cwd, { "ui.test.ts": 'import x from "../../apps/vscode-extension/src/webview/shared/shell";\n' });
+    fs.mkdirSync(path.join(cwd, "apps", "vscode-extension", "src", "webview"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "apps", "vscode-extension", "src", "webview", "App.tsx"), "export {};\n");
     git(cwd, ["add", "-A"]);
     git(cwd, ["commit", "-m", "base"]);
     git(cwd, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
@@ -99,7 +99,7 @@ describe("on main the base is what is UNPUSHED, not the last merge (t-d858f5)", 
     const cwd = mainRepo();
     // First merge touches a browser root. Second does not, and lands on top before the gate runs.
     mergeBranch(cwd, "touches-webview", () => {
-      fs.writeFileSync(path.join(cwd, "src", "webview", "App.tsx"), "export const changed = 1;\n");
+      fs.writeFileSync(path.join(cwd, "apps", "vscode-extension", "src", "webview", "App.tsx"), "export const changed = 1;\n");
     });
     mergeBranch(cwd, "touches-nothing", () => {
       fs.writeFileSync(path.join(cwd, "README.md"), "unrelated\n");
@@ -109,14 +109,14 @@ describe("on main the base is what is UNPUSHED, not the last merge (t-d858f5)", 
     // the release went out with the browser suite skipped over a real change to a browser root.
     const decision = browserGateDecision({ cwd });
     expect(decision.run).toBe(true);
-    expect(decision.webviewPaths).toContain("src/webview/App.tsx");
+    expect(decision.webviewPaths).toContain("apps/vscode-extension/src/webview/App.tsx");
   });
 
   it("falls back to the previous commit when there is no origin/main, instead of throwing into a silent skip", () => {
     const cwd = mainRepo();
     git(cwd, ["update-ref", "-d", "refs/remotes/origin/main"]);
     mergeBranch(cwd, "touches-webview", () => {
-      fs.writeFileSync(path.join(cwd, "src", "webview", "App.tsx"), "export const changed = 1;\n");
+      fs.writeFileSync(path.join(cwd, "apps", "vscode-extension", "src", "webview", "App.tsx"), "export const changed = 1;\n");
     });
 
     // A missing ref makes `rev-parse --verify` exit non-zero, and `gitOutput` throws on that. The
@@ -208,7 +208,7 @@ describe("the trigger set is DERIVED from what the browser suite reads (t-e2c8a2
     const roots = browserSuiteRoots({ cwd: path.resolve(__dirname, "..", "..") });
     expect(roots).toEqual(expect.arrayContaining([
       "test/browser/", "vitest.browser.config.ts",
-      "src/webview/", "src/agents/", "src/sections/", "src/humanInbox/", "scripts/webview-preview/",
+      "apps/vscode-extension/", "src/webview/", "scripts/webview-preview/",
       // SDD 506 slice 1: browser imports now cross the workspace by package name.
       "packages/engine/", "packages/shared/", "packages/webview-ui/",
     ]));

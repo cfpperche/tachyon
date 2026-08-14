@@ -16,6 +16,10 @@
  * script in the failure. That is the loop: the test says what is missing, this writes it.
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import path from "node:path";
+import { extensionWorkspace } from "./workspace-layout.mjs";
+
+const extensionRoot = extensionWorkspace(process.cwd()).directory;
 
 /** The two colors VS Code uses for its own product icons — a dark fill for light themes, and back. */
 const THEME_FILL = { light: "#424242", dark: "#C5C5C5" };
@@ -41,7 +45,7 @@ for (const name of names) {
     process.exit(1);
   }
   for (const [theme, fill] of Object.entries(THEME_FILL)) {
-    const out = `media/icons/${theme}/${name}.svg`;
+    const out = path.join(extensionRoot, `media/icons/${theme}/${name}.svg`);
     writeFileSync(out, svg.replace('fill="currentColor"', `fill="${fill}"`));
     console.log(`wrote ${out}`);
     wrote++;

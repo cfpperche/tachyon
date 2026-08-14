@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolvePlatform, type PlatformProbes } from "../../src/plugins/toolPlatform.js";
+import { resolvePlatform, type PlatformProbes } from "../../apps/vscode-extension/src/plugins/toolPlatform.js";
 
 /** Build a probe set from a partial override over sane linux-glibc-x64 defaults. */
 function probes(over: Partial<PlatformProbes> = {}): PlatformProbes {

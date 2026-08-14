@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
-import { fallbackDsTokens, formatDmThemeCssBlock } from "../../src/webview/ide-browser-bridge/themeTokens";
+import { fallbackDsTokens, formatDmThemeCssBlock } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/themeTokens";
 
 let browser: Browser;
 const bundle = fs.readFileSync(path.resolve("dist/webview/design-mode-overlay.js"), "utf8")

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   applyClaudeRuntimeConfigChange,
   inspectClaudeRuntimeConfig,
-} from "../../src/runtimeConfig/claudeInventory.js";
+} from "../../apps/vscode-extension/src/runtimeConfig/claudeInventory.js";
 import type { AgentDef } from "@tachyon/engine/config/loadConfig.js";
 
 const roots: string[] = [];

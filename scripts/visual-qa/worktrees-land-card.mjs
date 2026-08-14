@@ -151,7 +151,7 @@ for (const w of widths) {
       { path: "packages/webview-ui/src/webview/worktrees/App.tsx", status: "M" },
       { path: "packages/webview-ui/src/webview/shared/ui/patterns.tsx", status: "M" },
       { path: "packages/webview-ui/src/webview/shared/design-system.css", status: "M" },
-      { path: "src/presentation/items.ts", status: "M" },
+      { path: "apps/vscode-extension/src/presentation/items.ts", status: "M" },
       { path: "scripts/visual-qa/worktrees-land-card.mjs", status: "A" },
       { path: "packages/webview-ui/src/webview/worktrees/land.css", status: "R", from: "packages/webview-ui/src/webview/worktrees/old-land.css" },
     ],
