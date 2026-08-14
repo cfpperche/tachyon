@@ -93,6 +93,7 @@ describe("container-generated delegation behavior", () => {
       workspaceRoot: ws,
       getConfig: () => config,
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: BRIDGE_URL, TACHYON_BRIDGE_TOKEN: "tok" }),
+      bridgeUrl: () => BRIDGE_URL,
       mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
       launchPreflight: HERMETIC_PREFLIGHT,
       materializeBridgeMcpOpencode: (name, cwd) => {

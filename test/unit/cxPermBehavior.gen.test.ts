@@ -80,6 +80,7 @@ describe("container-generated delegation behavior", () => {
         workspaceRoot: ws,
         getConfig: () => config,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
+        bridgeUrl: () => bridgeUrl,
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
         launchPreflight: HERMETIC_PREFLIGHT,
         resolveSpawnCwd: async () => ({
@@ -136,6 +137,7 @@ describe("container-generated delegation behavior", () => {
         workspaceRoot: ws,
         getConfig: () => config,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
+        bridgeUrl: () => bridgeUrl,
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
         launchPreflight: HERMETIC_PREFLIGHT,
         // No resolveSpawnCwd → no worktree; the child inherits the parent's (shared) cwd, same as a
@@ -196,6 +198,7 @@ describe("container-generated delegation behavior", () => {
         getConfig: () => config,
         ledger,
         getExtraEnv: () => ({ TACHYON_BRIDGE_URL: bridgeUrl, TACHYON_BRIDGE_TOKEN: "shared" }),
+        bridgeUrl: () => bridgeUrl,
         mintAgentToken: (name) => ({ TACHYON_AGENT_BRIDGE_TOKEN: `agent-token-${name}` }),
         launchPreflight: HERMETIC_PREFLIGHT,
         materializeBridgeMcpOpencode: (name, cwd) => {

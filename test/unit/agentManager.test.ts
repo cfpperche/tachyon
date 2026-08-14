@@ -1911,6 +1911,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       resolveCurrentSessionFull?: (rt: string, cwd: string, title?: string, configHome?: string) => Promise<string | null>;
       getExtraEnv?: () => Record<string, string>;
+      bridgeUrl?: () => string | undefined;
       getBridgeGeneration?: () => number;
       materializeBridgeMcp?: (name: string) => string | undefined;
       materializeBridgeMcpOpencode?: (name: string, cwd: string) => string | undefined;
@@ -2054,6 +2055,7 @@ describe("AgentManager — session resume (spec 209)", () => {
       completePreparedWorktree: opts.completePreparedWorktree,
       materializeHarness: opts.materializeHarness,
       getExtraEnv: opts.getExtraEnv,
+      bridgeUrl: opts.bridgeUrl ?? (() => opts.getExtraEnv?.().TACHYON_BRIDGE_URL),
       getBridgeGeneration: opts.getBridgeGeneration,
       materializeBridgeMcp: opts.materializeBridgeMcp,
       materializeBridgeMcpOpencode: opts.materializeBridgeMcpOpencode,
@@ -8127,6 +8129,7 @@ describe("AgentManager — per-agent Bridge token mint/revoke (spec 351 T2)", ()
       workspaceRoot: WS,
       getConfig: () => config,
       getExtraEnv: () => ({ TACHYON_BRIDGE_URL: "http://127.0.0.1:9/mcp" }),
+      bridgeUrl: () => "http://127.0.0.1:9/mcp",
     });
     await manager.spawn("codex");
     expect(cmds.at(-1)).toContain('bearer_token_env_var="TACHYON_AGENT_BRIDGE_TOKEN"');
@@ -8194,6 +8197,7 @@ describe("AgentManager — Bridge wiring fail-closed (t-d42565)", () => {
       getConfig: () => configOf(yaml),
       ledger,
       ...extra,
+      bridgeUrl: extra.bridgeUrl ?? (() => extra.getExtraEnv?.().TACHYON_BRIDGE_URL),
     });
     dirs.push(ws);
     return { manager, ledger, cmds, ws };
