@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -19,7 +20,7 @@ import type { CockpitStrings } from "@tachyon/webview-ui/webview/shared/control/
  *     npm run build && npx vitest run --config vitest.browser.config.ts test/browser/cardTemplatePersonalShots.test.ts
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/479-personal-card-template");
-const DIST = path.resolve(__dirname, "../../dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 const WIDTHS = [
   { id: "880", px: 880 },
   { id: "narrow-360", px: 360 },

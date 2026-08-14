@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import * as esbuild from "esbuild";
 import { mkdirSync, readFileSync, statSync } from "node:fs";
@@ -24,7 +25,7 @@ import { resolveChromeExecutable } from "./support/chrome";
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/479-card-templates");
 const ROOT = path.resolve(__dirname, "../..");
-const DIST = path.join(ROOT, "dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 
 /** Compile an entry that mounts the real block, with the sidebar stylesheet URI already provided. */
 async function bundleMount(sidebarCssHref: string): Promise<string> {

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -27,7 +28,7 @@ import { SAMPLE, type FleetVM, type TabId } from "@tachyon/shared/sidebar/types.
  *   npm run build && npx vitest run --config vitest.browser.config.ts test/browser/stoppedOnRequestRowShots.test.ts
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/t-9d76b1-stopped-on-request");
-const DIST = path.resolve(__dirname, "../../dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 const shotPage = path.join(DIST, "stopped-on-request-shot.html");
 
 /** The repo's pair. 880 is a wide sidebar; 360 is a person dragging it in. */

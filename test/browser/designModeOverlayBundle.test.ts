@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import puppeteer, { type Browser } from "puppeteer-core";
 import { resolveChromeExecutable } from "./support/chrome";
@@ -7,7 +8,7 @@ import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 import { fallbackDsTokens, formatDmThemeCssBlock } from "../../apps/vscode-extension/src/webview/ide-browser-bridge/themeTokens";
 
 let browser: Browser;
-const bundle = fs.readFileSync(path.resolve("dist/webview/design-mode-overlay.js"), "utf8")
+const bundle = fs.readFileSync(path.join(EXTENSION_WEBVIEW_DIST, "design-mode-overlay.js"), "utf8")
   .replace(JSON.stringify("__TACHYON_DM_THEME_CSS__"), JSON.stringify(formatDmThemeCssBlock(fallbackDsTokens(), ":host")));
 
 declare global {

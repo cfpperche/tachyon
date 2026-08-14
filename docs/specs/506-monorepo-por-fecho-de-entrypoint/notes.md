@@ -622,3 +622,9 @@ owner-visible risk.
 - Headless build, TypeScript, focused relocation tests, package-boundary and engine-boundary checks
   are green. The human F5 proof and stable VSIX smoke remain explicit exit conditions and are not
   represented as complete here.
+
+### 2026-08-14T18:41:03Z — fail (0/1) — source: tasks.md
+- `npm run verify:full` — fail
+
+### 2026-08-14T18:48:20Z — pass (1/1) — source: tasks.md
+- `npm run verify:full` — pass

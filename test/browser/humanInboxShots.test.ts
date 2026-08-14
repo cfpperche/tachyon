@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { EXTENSION_WEBVIEW_DIST } from "./support/extensionLayout.js";
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
 import { mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -30,7 +31,7 @@ import type { SavedAgentProposalReview } from "@tachyon/webview-ui/agents/savedA
  *     npm run build && npx vitest run --config vitest.browser.config.ts test/browser/humanInboxShots.test.ts
  */
 const OUT_DIR = path.resolve(__dirname, "../../.tachyon/visual-qa/e76acc-human-inbox");
-const DIST = path.resolve(__dirname, "../../dist/webview");
+const DIST = EXTENSION_WEBVIEW_DIST;
 /** Control's comfortable width, and the narrowest a person plausibly drags the panel to. */
 const WIDTHS = [
   { id: "880", px: 880 },

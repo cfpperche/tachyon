@@ -6,6 +6,7 @@ import { renderGatePage } from "../../../src/webview/ui-gate/gatePage.js";
 import { PREFLIGHT_FIXTURE_HTML } from "../../../packages/webview-ui/src/webview/ui-gate/preflightFixture.js";
 import { SHELL_BASE_STYLESHEETS } from "../../../apps/vscode-extension/src/webview/shared/shell.js";
 import { renderPluginFrameGatePage } from "../../../scripts/webview-preview/pluginFrameGate.js";
+import { EXTENSION_ROOT } from "./extensionLayout.js";
 
 // spec 342 — a tiny static server for the ui-gate browser tests, modeled on scripts/webview-preview/serve.mjs
 // (same repo-root-relative traversal guard). The ONE addition: a `/ui-gate` route that renders the page with
@@ -71,8 +72,9 @@ ${SHELL_BASE_STYLESHEETS.map((sheet) => `<link rel="stylesheet" href="${cspSourc
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(html);
       return;
     }
-    const filePath = path.resolve(ROOT, "." + urlPath);
-    const rel = path.relative(ROOT, filePath);
+    const staticRoot = urlPath.startsWith("/dist/") ? EXTENSION_ROOT : ROOT;
+    const filePath = path.resolve(staticRoot, "." + urlPath);
+    const rel = path.relative(staticRoot, filePath);
     if (rel !== "" && (rel.startsWith("..") || path.isAbsolute(rel))) {
       res.writeHead(403).end("forbidden");
       return;
