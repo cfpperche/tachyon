@@ -6,19 +6,19 @@ uma decomposição possível; nenhuma extração foi implementada.
 ## Resposta curta
 
 `bridge` deve virar pacote próprio, mas **não deve ser a próxima mudança**. Hoje existem 38
-declarações de importação, em 15 arquivos fora de `bridge`, carregando 69 símbolos da gaveta
+declarações de importação, em 16 arquivos fora de `bridge`, carregando 69 símbolos da gaveta
 `packages/engine/src/bridge`. Destes símbolos, 36 (52%) são domínio da engine, 4 (6%) são
 utilitários sem relação com transporte e 29 (42%) são transporte de fato. Os 29 símbolos de
 transporte estão concentrados em cinco arquivos da engine.
 
-Mover agora o transporte, sem reexportações que escondam a direção, toca nominalmente 112
-arquivos. Antes disso, seis extrações de domínio/utilitário tocam conjuntos de 5 a 34 arquivos e
+Mover agora o transporte, sem reexportações que escondam a direção, toca nominalmente 111
+arquivos. Antes disso, seis extrações de domínio/utilitário tocam conjuntos de 5 a 33 arquivos e
 removem 40 das 69 arestas. Depois é preciso inverter as 29 arestas restantes nos cinco pontos de
 composição. Só então o novo pacote compra o ganho decisivo: `@tachyon/bridge` depende de
 `@tachyon/engine`, a engine não declara a dependência inversa, e `check:package-boundary` torna a
 regra mecânica.
 
-Portanto: **sim ao pacote como estado final; não a uma fatia de 112 arquivos agora**.
+Portanto: **sim ao pacote como estado final; não a uma fatia de 111 arquivos agora**.
 
 ## O que foi contado
 
@@ -90,7 +90,7 @@ Totais conferidos por classe:
 | domínio | 36 | 24 | 12 |
 | utilitário | 4 | 4 | 4 |
 | transporte | 29 | 12 | 5 |
-| **total** | **69** | **40 ocorrências de classe em 38 imports** | **15** |
+| **total** | **69** | **40 ocorrências de classe em 38 imports** | **16** |
 
 “40 ocorrências de classe” é maior que 38 porque dois imports são mistos:
 `extensionOperationService` importa `executeWait`/`BridgeDeps`, e os imports de aprovação carregam
@@ -188,11 +188,11 @@ tipo de domínio; mover o arquivo sem isso apenas inverte a seta errada.
 Os dois `APPROVAL_CHANNEL_*` não acompanham o domínio: ficam nos adaptadores VS Code/HTTP e entram
 como argumento de `resolveApproval`.
 
-### 6. Vocabulário misturado em `tools/shared.ts` — 34 arquivos
+### 6. Vocabulário misturado em `tools/shared.ts` — 33 arquivos
 
 Extrair `NotifyLevel`, `NoticeDeliveryResult`, `AttachEvidenceInput`, `CMD_WAIT_PREFIX` e
-`executeWait`, atualizando consumidores para o caminho canônico da engine, toca **34** arquivos:
-15 arquivos de produção (incluindo os 2 definidores/fachadas), 1 script e 18 testes.
+`executeWait`, atualizando consumidores para o caminho canônico da engine, toca **33** arquivos:
+14 arquivos de produção (incluindo os 2 definidores/fachadas), 1 script e 18 testes.
 
 Produção: `packages/engine/src/bridge/tools/shared.ts`, `packages/engine/src/bridge/tools.ts`,
 `apps/vscode-extension/src/shell/BoardTarget.ts`,
@@ -204,7 +204,7 @@ Produção: `packages/engine/src/bridge/tools/shared.ts`, `packages/engine/src/b
 `packages/engine/src/engine-service/extensionOperationService.ts`,
 `packages/engine/src/workspace/DaemonEngineHost.ts`, `packages/engine/src/workspace/EngineHost.ts`,
 `packages/engine/src/workspace/Workspace.ts`, `packages/engine/src/workspace/authRequiredNotice.ts`,
-`packages/engine/src/workspace/noticeInbox.ts`, `src/workspace/VsCodeHost.ts`.
+`packages/engine/src/workspace/noticeInbox.ts`.
 
 Script: `scripts/dogfood/native-config-sources.ts`.
 
@@ -250,14 +250,14 @@ de testes e plumbing**. Isso é um piso mensurável, não uma estimativa de diff
 
 Contando os módulos de transporte, seus importadores/reexportadores atuais e o plumbing mínimo de
 workspace (`package.json` raiz, `tsconfig.json`, manifests de engine, extension e webview), a mudança
-sem shims toca **112 arquivos**. O conjunto contém 30 arquivos de implementação do transporte
-(os 23 módulos em `bridge/tools/`, `tools.ts`, `Bridge.ts`, `token.ts`, `callerIdentity.ts`,
-`clientRebind.ts`, `agentTokenHeal.ts`, `lifecycleScope.ts`, `spawnTaskClaim.ts` e
-`waitForOutput.ts`), 13 consumidores/plumbing de produção e 69 scripts/testes. `spawnContract.ts`
-também aparece no conjunto de transição porque hoje importa `CallerKind`; ele deve sair desse
-conjunto na fatia 4.
+sem shims toca **111 arquivos**: 33 arquivos de implementação/transição sob `bridge`, 12 consumidores
+de produção, 61 scripts/testes e 5 arquivos de plumbing. O núcleo inclui os 23 módulos em
+`bridge/tools/`, `tools.ts`, `Bridge.ts`, `token.ts`, `callerIdentity.ts`, `clientRebind.ts`,
+`agentTokenHeal.ts`, `lifecycleScope.ts`, `spawnTaskClaim.ts` e `waitForOutput.ts`.
+`spawnContract.ts` também aparece no conjunto de transição porque hoje importa `CallerKind`; ele deve
+sair desse conjunto na fatia 4.
 
-O número de 112 responde por que o pacote não é a primeira fatia. O número de 29 responde o que
+O número de 111 responde por que o pacote não é a primeira fatia. O número de 29 responde o que
 ainda impede sua direção correta. O número de 40 arestas removíveis responde por que a separação
 ainda paga: mais da metade da dependência atual é a gaveta mentindo sobre propriedade.
 
@@ -271,10 +271,10 @@ ainda paga: mais da metade da dependência atual é a gaveta mentindo sobre prop
 4. Spawn contract + primer: 17 arquivos — corrige a propriedade do onboarding e corta `CallerKind`.
 5. Aprovação: 29 arquivos — deliberadamente depois das fatias menores por tocar AgentManager/
    Workspace e os dois ingressos de resolução.
-6. Vocabulário de `tools/shared`: 34 arquivos — mecanicamente amplo por `NotifyLevel`, mas conceitualmente
+6. Vocabulário de `tools/shared`: 33 arquivos — mecanicamente amplo por `NotifyLevel`, mas conceitualmente
    simples; manter reexports apenas durante a migração.
 7. Inverter as 29 arestas de transporte nos cinco consumidores; o piso é 13 arquivos antes de testes.
-8. Criar `@tachyon/bridge`: 112 arquivos no inventário atual, menos os importadores já corrigidos nas
+8. Criar `@tachyon/bridge`: 111 arquivos no inventário atual, menos os importadores já corrigidos nas
    fatias anteriores; então ligar a regra de package boundary e remover shims.
 
 Essa ordem usa custo medido, mas não finge que contagem de arquivos é risco semântico: aprovação é
