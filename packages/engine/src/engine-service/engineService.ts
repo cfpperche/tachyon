@@ -33,6 +33,7 @@ import { ProviderObservationPreferences, type ProviderObservationStatePort } fro
 import { ProviderObservationService } from "../runtimeObservability/service.js";
 import { ResourceSampler } from "../attention/resourceSample.js";
 import { executeExtensionCommand, executeExtensionQuery } from "./extensionOperationService.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "./extensionOperationChannels.js";
 import { getEngineLogRing } from "./engineLogRing.js";
 import type { WorkspaceCoreProjectionsV1 } from "../runtime-api/workspaceProjectionTypes.js";
 import { buildBoardSnapshot } from "../tasks/boardSnapshot.js";
@@ -712,7 +713,14 @@ async function executeWorkspaceCommand(
   }
   if (command.method === "extension.invoke") {
     const value = await executeExtensionCommand(
-      { workspace, activityLog, providerObservations, stagedPayloads, onViewsChanged },
+      {
+        workspace,
+        activityLog,
+        providerObservations,
+        stagedPayloads,
+        approvalResolutionChannel: APPROVAL_CHANNEL_VSCODE_COMMAND,
+        onViewsChanged,
+      },
       command.input,
     );
     return workspaceExtensionCommandSuccessV1(command, value);
