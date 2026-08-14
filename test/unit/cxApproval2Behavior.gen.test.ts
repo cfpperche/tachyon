@@ -3,14 +3,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { __resetVscodeMock } from "../mocks/vscode.js";
 import {
-  APPROVAL_CHANNEL_VSCODE_COMMAND,
   approvalRequestPath,
   composeFixedApprovalResponse,
   buildApprovalRequest,
   readApprovalRequest,
   resolveApproval,
   writeApprovalRequest,
-} from "@tachyon/engine/bridge/approvalRequest.js";
+} from "@tachyon/engine/approvals/approvalRequest.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/bridge/approvalChannels.js";
 import { buildApprovalViewModel } from "../../apps/vscode-extension/src/webview/approval/viewModel.js";
 import { renderPrimer } from "@tachyon/engine/agents/primer.js";
 import { makeTempDir } from "../helpers/tempDir.js";

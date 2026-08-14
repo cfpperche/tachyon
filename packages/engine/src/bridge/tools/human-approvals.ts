@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { buildApprovalRequest, recordApprovalRequest, listPendingApprovalRequests, readOwnApprovalRequest, cancelOwnApprovalRequest } from "../approvalRequest.js";
+import { buildApprovalRequest, recordApprovalRequest, listPendingApprovalRequests, readOwnApprovalRequest, cancelOwnApprovalRequest } from "../../approvals/approvalRequest.js";
 import { type BridgeDeps, fail, ok } from "./shared.js";
 
 export function registerApprovalTools(mcp: McpServer, deps: BridgeDeps): void {
@@ -8,7 +8,7 @@ export function registerApprovalTools(mcp: McpServer, deps: BridgeDeps): void {
   // spec t-7d8bdf Phase 1 — the human-approval escalation tool. Child-originated ONLY: there is no
   // `agent`/`requester` param — the requester identity is the Bridge-resolved caller (spec 351), so a
   // coordinator cannot relay a child's authorization request through this surface (the laundering the
-  // adversarial dueto killed). Resolution is HOST-SIDE BY DESIGN — see src/bridge/approvalRequest.ts →
+  // adversarial dueto killed). Resolution is HOST-SIDE BY DESIGN — see src/approvals/approvalRequest.ts →
   // resolveApproval — there is deliberately NO `resolve_approval` Bridge tool here. The absence of that
   // tool still holds; "host-side ONLY" does not. Three doors reach resolution with no human gesture and
   // t-86e59a stopped the record from claiming otherwise; closing them is t-5313dc. The enumeration lives

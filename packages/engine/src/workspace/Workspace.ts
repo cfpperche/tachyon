@@ -128,7 +128,7 @@ import type { FormationLifecyclePort } from "../agents/formation/lifecycleConsum
 import { WorktreeManager, resolveWorktreeCwd, branchFor, type WorktreeRecord } from "../worktree/WorktreeManager.js";
 import { shareDependencies } from "../worktree/dependencySharing.js";
 import { resolveParentLocation } from "../worktree/parentLocation.js";
-import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
+import { approvalResolutionPorts } from "../approvals/approvalResolutionPorts.js";
 import { ManagedWorktreeService } from "../worktree/ManagedWorktreeService.js";
 import { composeHygieneLineageSource, type OwnerPresence } from "../worktree/hygieneAuthority.js";
 import { PipelineManager, type PipelineDeps } from "../pipeline/PipelineManager.js";
@@ -194,11 +194,11 @@ import type { CompanionPairBlockReason } from "../companion/CompanionPairingServ
 import { resolveCompanionMobileDist } from "../companion/mobileAppStatic.js";
 import { TabRefCache } from "../companion/tabRefCache.js";
 import {
-  APPROVAL_CHANNEL_COMPANION_HTTP,
   listPendingApprovalRequests,
   resolveApproval,
   type ApprovalDecision,
-} from "../bridge/approvalRequest.js";
+} from "../approvals/approvalRequest.js";
+import { APPROVAL_CHANNEL_COMPANION_HTTP } from "../bridge/approvalChannels.js";
 import {
   COMPANION_HTTP_PREFIX,
   type CompanionAgentRow,

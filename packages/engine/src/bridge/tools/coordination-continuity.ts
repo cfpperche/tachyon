@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ContinuityMeta } from "../../continuity/ContinuityStore.js";
-import { listPendingApprovalRequests } from "../approvalRequest.js";
+import { listPendingApprovalRequests } from "../../approvals/approvalRequest.js";
 import {
   decomposeContinuityRead,
   removedContinuityReferences,

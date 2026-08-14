@@ -1,4 +1,4 @@
-import type { ApprovalCancellation, ApprovalPayload, ApprovalResolution, ApprovalStatus } from "@tachyon/engine/bridge/approvalRequest.js";
+import type { ApprovalCancellation, ApprovalPayload, ApprovalResolution, ApprovalStatus } from "@tachyon/engine/approvals/approvalRequest.js";
 export interface ApprovalViewItem {
   id: string;
   requester: string;

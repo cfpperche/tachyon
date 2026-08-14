@@ -5,7 +5,7 @@ import { persistWebviewState, type TachyonVsCodeApi } from "../shared/clientStat
 import { App, ItemApp, type HumanInboxDispatch } from "./App";
 import type { HumanInboxViewModel, HumanInboxItemViewModel } from "./viewModel";
 import type { HumanInboxKind } from "../../humanInbox/model";
-import type { ApprovalDecision } from "@tachyon/engine/bridge/approvalRequest.js";
+import type { ApprovalDecision } from "@tachyon/engine/approvals/approvalRequest.js";
 import type { ValidationOutcome } from "@tachyon/engine/validations/types.js";
 import {
   HUMAN_INBOX,

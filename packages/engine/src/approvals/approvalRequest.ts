@@ -41,7 +41,7 @@ import path from "node:path";
  *       CLOSING these doors is a capability fix (uid/sandbox isolation) and is deliberately NOT done
  *       here — it stays open as t-5313dc. t-86e59a did the honest half only: since the host cannot know
  *       WHO resolved, it stopped claiming to. `resolvedBy` now names the CHANNEL the resolution arrived
- *       through (`APPROVAL_RESOLUTION_CHANNELS` below), so the audit trail no longer credits an actor
+ *       through (`APPROVAL_RESOLUTION_CHANNELS` in the Bridge adapter), so the audit trail no longer credits an actor
  *       nobody proved. A fourth door would inherit the same rule: name the channel, claim no actor.
  *   (4) the injected response is a FIXED Tachyon string, never free-form — `composeFixedApprovalResponse`
  *       is the single source of what gets typed back; the resolving call picks approve/deny, nothing more.
@@ -86,16 +86,8 @@ export const APPROVAL_ID_PREFIX = "a-";
  * one that LOOKS proven, which is worse than today. A channel constant claims only what its own call site
  * guarantees: that the resolution came through this door.
  */
-export const APPROVAL_CHANNEL_VSCODE_COMMAND = "unattributed:vscode-command";
-export const APPROVAL_CHANNEL_COMPANION_HTTP = "unattributed:companion-http";
-
-/** Every value a resolution path may record. The guard test enumerates call sites against this. */
-export const APPROVAL_RESOLUTION_CHANNELS = [
-  APPROVAL_CHANNEL_VSCODE_COMMAND,
-  APPROVAL_CHANNEL_COMPANION_HTTP,
-] as const;
-
-export type ApprovalResolutionChannel = (typeof APPROVAL_RESOLUTION_CHANNELS)[number];
+/** Domain vocabulary implemented by the Bridge channel constants. */
+export type ApprovalResolutionChannel = "unattributed:vscode-command" | "unattributed:companion-http";
 
 export type ApprovalDecision = "approved" | "denied";
 

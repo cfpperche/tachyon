@@ -7,7 +7,7 @@ import {
   buildApprovalRequest,
   writeApprovalRequest,
   type ApprovalRequest,
-} from "@tachyon/engine/bridge/approvalRequest.js";
+} from "@tachyon/engine/approvals/approvalRequest.js";
 import { buildApprovalViewModel, listApprovalViewItems, pendingApprovalRows } from "../../apps/vscode-extension/src/webview/approval/viewModel.js";
 import { buildSectionsModel, type WorkspaceBundle } from "@tachyon/webview-ui/sections/model";
 

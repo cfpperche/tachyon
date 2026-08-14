@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { approvalResolutionPorts } from "@tachyon/engine/bridge/approvalResolutionPorts.js";
+import { approvalResolutionPorts } from "@tachyon/engine/approvals/approvalResolutionPorts.js";
 import type { NoticeDeliveryResult } from "@tachyon/engine/bridge/tools.js";
 
 /**

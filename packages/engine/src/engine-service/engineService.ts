@@ -9,7 +9,7 @@ import {
   startAgentWithActivity,
 } from "../activity/ActivityLogManager.js";
 import { readLinuxProcessIdentity } from "../runtime/processIdentity.js";
-import { approvalResolutionPorts } from "../bridge/approvalResolutionPorts.js";
+import { approvalResolutionPorts } from "../approvals/approvalResolutionPorts.js";
 import { EDITOR_HUMAN_ACTOR, ENGINE_CONTROL_VALIDATION_ACTOR } from "../validations/types.js";
 import { wakeValidationClosedAuthors } from "../validations/validationCloseNotify.js";
 import { DaemonEngineHost, type DaemonHostEvent, type DaemonSettingsSnapshot } from "../workspace/DaemonEngineHost.js";

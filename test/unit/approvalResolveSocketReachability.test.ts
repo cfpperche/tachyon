@@ -40,11 +40,11 @@ import {
 } from "@tachyon/engine/engine-service/protocol.js";
 import { EXTENSION_COMMAND_ACTIONS } from "@tachyon/engine/runtime-api/extensionOperations.js";
 import {
-  APPROVAL_CHANNEL_VSCODE_COMMAND,
   buildApprovalRequest,
   readApprovalRequest,
   writeApprovalRequest,
-} from "@tachyon/engine/bridge/approvalRequest.js";
+} from "@tachyon/engine/approvals/approvalRequest.js";
+import { APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/bridge/approvalChannels.js";
 import { makeSocketTemp } from "../helpers/socketTemp.js";
 import { tmuxChildEnv } from "../helpers/tmuxEnv.js";
 import { assertNoFleetLeak, isolatedDaemonChildEnv } from "../helpers/isolatedDaemonEnv.js";

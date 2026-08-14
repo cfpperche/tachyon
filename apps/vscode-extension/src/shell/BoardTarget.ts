@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { approvalResolutionPorts } from "@tachyon/engine/bridge/approvalResolutionPorts.js";
+import { approvalResolutionPorts } from "@tachyon/engine/approvals/approvalResolutionPorts.js";
 import type { NoticeDeliveryResult } from "@tachyon/engine/bridge/tools.js";
 import type { AgentInstanceLifetime } from "@tachyon/engine/resume/SessionLedger.js";
 import { buildBoardSnapshot, type BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";

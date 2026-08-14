@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../helpers/tempDir.js";
 import {
-  APPROVAL_CHANNEL_COMPANION_HTTP,
-  APPROVAL_CHANNEL_VSCODE_COMMAND,
   buildApprovalRequest,
   readApprovalRequest,
   resolveApproval,
   writeApprovalRequest,
-} from "@tachyon/engine/bridge/approvalRequest.js";
+} from "@tachyon/engine/approvals/approvalRequest.js";
+import { APPROVAL_CHANNEL_COMPANION_HTTP, APPROVAL_CHANNEL_VSCODE_COMMAND } from "@tachyon/engine/bridge/approvalChannels.js";
 
 /**
  * t-7a306a — completing the pin is a SECONDARY step, and both halves of that were wrong.
