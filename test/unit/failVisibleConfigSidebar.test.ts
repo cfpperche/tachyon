@@ -56,8 +56,6 @@ function buildDegradedFleet(opts: {
     terminals: [],
     pipelines: [],
     schedules: [],
-    commands: [],
-    runbooks: [],
     pins: [],
     configError: toConfigErrorVM(opts.failure),
   };

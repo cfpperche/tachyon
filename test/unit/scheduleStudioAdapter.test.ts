@@ -3,30 +3,25 @@ import { ScheduleStudioAdapter } from "../../apps/vscode-extension/src/webview/S
 import { blankScheduleFields } from "@tachyon/webview-ui/webview/schedule-studio-shell/domain.js";
 import type { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { StudioSubmit } from "../../apps/vscode-extension/src/webview/studioSubmit.js";
-import type { AgentDef, CommandDef, RunbookDef, ScheduleDef } from "@tachyon/engine/config/loadConfig.js";
+import type { AgentDef, ScheduleDef } from "@tachyon/engine/config/loadConfig.js";
 
 const agentDef = (cmd: string): AgentDef => ({ cmd, kind: "agent", watch: [], autostart: false, attention: { enabled: true, silenceSec: 8, patterns: [] }, restart: "never" });
 
 function fakeWorkspace(opts: {
   schedules?: Record<string, ScheduleDef>;
-  commands?: Record<string, CommandDef>;
-  runbooks?: Record<string, RunbookDef>;
   agents?: Record<string, AgentDef>;
   submitResult?: string[] | undefined;
   activateOnSubmit?: boolean;
 } = {}) {
   const schedules = opts.schedules ?? {};
-  const commands = opts.commands ?? {};
-  const runbooks = opts.runbooks ?? {};
   const agents = opts.agents ?? {};
   const submits: StudioSubmit[] = [];
   let schedulerActivations = 0;
   const ws = {
-    config: { schedules, commands, runbooks, agents },
+    config: { schedules, agents },
     studioDeps: () => ({
       detectClis: async () => [],
       takenNames: () => Object.keys(agents),
-      commandNames: () => Object.keys(commands),
       defaultCwd: "/ws/root",
       suggestKindForCommand: () => "schedule",
       onSubmit: () => undefined,
@@ -43,27 +38,24 @@ function fakeWorkspace(opts: {
 describe("ScheduleStudioAdapter", () => {
   it("loads a blank schedule entity with target catalogs in referenceData only", () => {
     const { ws } = fakeWorkspace({
-      commands: { lint: { cmd: "npm run lint" } },
-      runbooks: { ship: { steps: ["lint"] } },
       agents: { claude: agentDef("claude") },
     });
     const result = new ScheduleStudioAdapter(ws).load(undefined);
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.entity).toEqual({ fields: blankScheduleFields() });
-    expect(result.referenceData).toEqual({ commandNames: ["lint"], runbookNames: ["ship"], agentNames: ["claude"] });
-    expect(result.entity).not.toHaveProperty("commandNames");
+    expect(result.referenceData).toEqual({ agentNames: ["claude"] });
   });
 
   it("resolves only existing schedule entries through formLogic's fromScheduleDef", () => {
     const { ws } = fakeWorkspace({
-      schedules: { hourly: { every: "1h", run: "lint" } },
+      schedules: { hourly: { every: "1h", spawn: "claude" } },
     });
     const adapter = new ScheduleStudioAdapter(ws);
     const loaded = adapter.load("hourly");
     expect(loaded.status).toBe("ok");
     if (loaded.status !== "ok") throw new Error("unreachable");
-    expect(loaded.entity).toMatchObject({ name: "hourly", fields: { kind: "schedule", schedTiming: "every", schedEvery: "1h", schedAction: "run", schedTarget: "lint" } });
+    expect(loaded.entity).toMatchObject({ name: "hourly", fields: { kind: "schedule", schedTiming: "every", schedEvery: "1h", schedAction: "spawn", schedTarget: "claude" } });
     expect(adapter.load("ghost").status).toBe("not-found");
   });
 

@@ -1,4 +1,1 @@
-
-commands:
-  hello:
-    cmd: "echo sidebar-agent-status-filter-dogfood-ok"
+# empty roster fixture

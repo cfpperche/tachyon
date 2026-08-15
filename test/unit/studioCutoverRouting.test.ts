@@ -26,8 +26,6 @@ describe("SDD 485 D13 studio document routing", () => {
     expect(agentEdit).toContain("studioPanels.terminal.openExisting(ws.wsHash, item.agentName)");
     expect(agentEdit).toContain('dispatch[def.kind === "terminal" ? "terminal" : "agent"]()');
 
-    expect(commandBody("tachyon.editCommandStudioItem")).toContain("studioPanels.command.openExisting(ws.wsHash, item.commandName)");
-    expect(commandBody("tachyon.editRunbookStudioItem")).toContain("studioPanels.runbook.openExisting(ws.wsHash, item.runbookName)");
     expect(commandBody("tachyon.editScheduleStudioItem")).toContain("studioPanels.schedule.openExisting(ws.wsHash, item.scheduleName)");
   });
 });

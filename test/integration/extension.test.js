@@ -372,101 +372,6 @@ describe("Tachyon extension (VSCode host smoke)", () => {
   // Neither is a coverage loss: what the editor host added was a fake process standing in for a
   // runtime. An editor-host E2E for agent semantics is reserved for a real LLM runtime.
 
-  it("one-shot command: pass and fail, own namespace, postmortem pane kept (spec 199)", async function () {
-    this.timeout(30000);
-    const statusOf = async (name) => (await vscode.commands.executeCommand("tachyon._commands")).find((c) => c.name === name);
-
-    await vscode.commands.executeCommand("tachyon._runCommand", "hello");
-    assert.ok(tachyonSessions().includes(`tachyon-cmd-${wsHash}-hello`), "command session missing");
-    let st;
-    for (let i = 0; i < 40; i++) {
-      await sleep(500);
-      await vscode.commands.executeCommand("tachyon._commandTick");
-      st = await statusOf("hello");
-      if (st && st.state === "passed") break;
-    }
-    assert.ok(st && st.state === "passed", `hello should pass: ${JSON.stringify(st)}`);
-    assert.strictEqual(st.exitCode, 0);
-
-    await vscode.commands.executeCommand("tachyon._runCommand", "failer");
-    for (let i = 0; i < 40; i++) {
-      await sleep(500);
-      await vscode.commands.executeCommand("tachyon._commandTick");
-      st = await statusOf("failer");
-      if (st && st.state === "failed") break;
-    }
-    assert.ok(st && st.state === "failed", `failer should fail: ${JSON.stringify(st)}`);
-    assert.strictEqual(st.exitCode, 7);
-    // postmortem: the dead pane survives, and the command never entered the agent list
-    assert.ok(tachyonSessions().includes(`tachyon-cmd-${wsHash}-failer`), "failed pane should be kept");
-    const agents = await vscode.commands.executeCommand("tachyon._agents");
-    assert.ok(!agents.some((a) => a.name === "hello" || a.name === "failer"), "commands leaked into the agent list");
-  });
-
-  it("runbook: sequential pass; failure gates and skips the rest (spec 200)", async function () {
-    this.timeout(45000);
-    const job = await vscode.commands.executeCommand("tachyon._runRunbook", "ship");
-    assert.strictEqual(job.outcome, "passed", `ship should pass: ${JSON.stringify(job)}`);
-    assert.deepStrictEqual(job.steps.map((s) => s.state), ["passed", "passed"]);
-    assert.ok(!tachyonSessions().some((s) => s.startsWith(`tachyon-rb-${wsHash}-ship-`)), "successful step panes should be tidied");
-
-    const doomed = await vscode.commands.executeCommand("tachyon._runRunbook", "doomed");
-    assert.strictEqual(doomed.outcome, "failed");
-    assert.deepStrictEqual(doomed.steps.map((s) => s.state), ["passed", "failed", "skipped"]);
-    assert.strictEqual(doomed.steps[1].exitCode, 7);
-    assert.ok(tachyonSessions().includes(`tachyon-rb-${wsHash}-doomed-1`), "failed step pane should be kept for postmortem");
-
-    const runbooks = await vscode.commands.executeCommand("tachyon._runbooks");
-    const entry = runbooks.find((r) => r.name === "doomed");
-    assert.ok(entry && entry.lastJob && entry.lastJob.outcome === "failed", "runbook list should expose the last job");
-  });
-
-  it("runbook CRUD through the Studio pipeline (spec 201)", async function () {
-    this.timeout(20000);
-    const fs = require("node:fs");
-    const path = require("node:path");
-    const ymlPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, "tachyon.yml");
-    const original = fs.readFileSync(ymlPath, "utf8");
-    const state = {
-      name: "release",
-      cmd: "",
-      kind: "runbook",
-      instructions: "",
-      watch: "",
-      steps: "hello\n  echo inline  \n",
-      cwd: "",
-      autostart: false,
-      restartOnCrash: false,
-      attention: false,
-    };
-    try {
-      // create through the same pipeline the webview submit uses
-      let errors = await vscode.commands.executeCommand("tachyon._upsertAgent", { state });
-      assert.strictEqual(errors, undefined, `unexpected errors: ${JSON.stringify(errors)}`);
-      assert.match(fs.readFileSync(ymlPath, "utf8"), /release:/);
-      let runbooks = await vscode.commands.executeCommand("tachyon._runbooks");
-      assert.ok(runbooks.some((r) => r.name === "release"), "release not listed after upsert");
-
-      // empty steps block
-      errors = await vscode.commands.executeCommand("tachyon._upsertAgent", { state: { ...state, name: "bad", steps: " \n " } });
-      assert.ok(errors && errors.length > 0, "empty steps should block");
-
-      // edit-in-place
-      errors = await vscode.commands.executeCommand("tachyon._upsertAgent", {
-        state: { ...state, steps: "hello" },
-        editingName: "release",
-      });
-      assert.strictEqual(errors, undefined);
-
-      // delete (force skips the modal)
-      await vscode.commands.executeCommand("tachyon.deleteRunbookItem", { runbookName: "release" }, true);
-      runbooks = await vscode.commands.executeCommand("tachyon._runbooks");
-      assert.ok(!runbooks.some((r) => r.name === "release"), "release still listed after delete");
-    } finally {
-      fs.writeFileSync(ymlPath, original, "utf8");
-    }
-  });
-
   it("Tachyon: Init never clobbers an existing tachyon.yml (spec 205)", async function () {
     this.timeout(15000);
     const fs = require("node:fs");
@@ -488,7 +393,12 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     const ymlPath = path.join(wsRoot, "tachyon.yml");
     const original = fs.readFileSync(ymlPath, "utf8");
     try {
-      // the fixture declares schedules.hourly-hello -> active
+      fs.writeFileSync(
+        ymlPath,
+        "terminals:\n  echoer:\n    cmd: echo fixture\nschedules:\n  hourly-hello:\n    every: 1h\n    spawn: echoer\n",
+        "utf8",
+      );
+      await sleep(400);
       const active = await vscode.commands.executeCommand("tachyon._schedules");
       assert.ok(active.some((s) => s.name === "hourly-hello"), `hourly-hello not active: ${JSON.stringify(active)}`);
 
@@ -496,7 +406,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       fs.mkdirSync(path.join(wsRoot, ".tachyon"), { recursive: true });
       fs.writeFileSync(
         path.join(wsRoot, ".tachyon", "schedules-pending.json"),
-        JSON.stringify({ proposals: [{ id: "pp1", name: "nightly-test", by: "claude", createdAt: "2026-06-11T00:00:00Z", schedule: { every: "2h", run: "hello" } }] }, null, 2),
+        JSON.stringify({ proposals: [{ id: "pp1", name: "nightly-test", by: "claude", createdAt: "2026-06-11T00:00:00Z", schedule: { every: "2h", spawn: "echoer" } }] }, null, 2),
       );
       let pending = await vscode.commands.executeCommand("tachyon._proposals");
       assert.ok(pending.some((p) => p.id === "pp1"), "proposal not listed");
@@ -519,7 +429,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
       // reject path: add another, reject it
       fs.writeFileSync(
         path.join(wsRoot, ".tachyon", "schedules-pending.json"),
-        JSON.stringify({ proposals: [{ id: "pp2", name: "junk", by: "codex", createdAt: "2026-06-11T00:00:00Z", schedule: { every: "1h", run: "hello" } }] }, null, 2),
+        JSON.stringify({ proposals: [{ id: "pp2", name: "junk", by: "codex", createdAt: "2026-06-11T00:00:00Z", schedule: { every: "1h", spawn: "echoer" } }] }, null, 2),
       );
       await vscode.commands.executeCommand("tachyon._rejectProposal", "pp2");
       pending = await vscode.commands.executeCommand("tachyon._proposals");
@@ -530,7 +440,7 @@ describe("Tachyon extension (VSCode host smoke)", () => {
     }
   });
 
-  it("Stop All kills this workspace's sessions (agents + commands + runbook panes)", async function () {
+  it("Stop All kills this workspace's sessions", async function () {
     this.timeout(20000);
     await vscode.commands.executeCommand("tachyon.stopAll");
     let gone = false;

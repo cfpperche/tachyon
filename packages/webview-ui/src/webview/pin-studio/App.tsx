@@ -46,7 +46,7 @@ function fieldsFromEntity(entity: PinDetailEntity): FieldValues {
 
 /**
  * t-610705 (SDD 410 Phase D, D3) — Control-hosted now: props-driven, same split as every other
- * migrated studio (command-studio-shell/App.tsx has the full rationale for routeKey/mountNonce/
+ * migrated studio (the shared studio host has the full rationale for routeKey/mountNonce/
  * useStudioFreeze/eager ref updates; task-studio/App.tsx — D2 — is the closer sibling: same
  * rich-doc/Excalidraw editor stack). Ported from the standalone pin-studio/main.tsx's `Root`
  * component (retired), which decoded the raw postMessage envelope itself and handed this component

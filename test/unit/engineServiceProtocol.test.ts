@@ -260,7 +260,7 @@ describe("persistent engine protocol", () => {
     expect(isWorkspaceCommandResultV1(commandResult)).toBe(true);
     expect(isWorkspaceCommandResultBoundToInput(command, commandResult)).toBe(true);
     expect(isWorkspaceCommandResultBoundToInput(
-      { schemaVersion: 1, method: "extension.invoke", input: { action: "command.tick" } },
+      { schemaVersion: 1, method: "extension.invoke", input: { action: "proposal.reject", id: "proposal-1" } },
       commandResult,
     )).toBe(false);
 
@@ -352,15 +352,15 @@ describe("persistent engine protocol", () => {
   it("canonicalizes a partial Studio form into the exact wire shape (t-8247ec)", () => {
     // The shape the `tachyon._upsertAgent` seam is called with: only the fields the scenario cares
     // about. Verbatim it is not a WorkspaceCommandV1, which is what broke the Studio pipeline.
-    const partial = { name: "release", cmd: "", kind: "runbook", steps: "hello", attention: false };
+    const partial = { name: "release", cmd: "", kind: "schedule", steps: "hello", attention: false };
     expect(isWorkspaceCommandV1({ schemaVersion: 1, method: "studio.submit", input: { state: partial } })).toBe(false);
 
     const canonical = canonicalWorkspaceStudioFormV1(partial);
     expect(isWorkspaceCommandV1({ schemaVersion: 1, method: "studio.submit", input: { state: canonical } })).toBe(true);
-    expect(canonical).toMatchObject({ name: "release", kind: "runbook", steps: "hello" });
+    expect(canonical).toMatchObject({ name: "release", kind: "schedule", steps: "hello" });
     // Neutral defaults, not the Studio's UI prefills: an omitted schedule must fail domain
     // validation rather than save one nobody asked for, and an omitted kind fails closed.
-    expect(canonical).toMatchObject({ schedTiming: "every", schedEvery: "", schedAt: "", schedAction: "run", schedTarget: "", worktree: false });
+    expect(canonical).toMatchObject({ schedTiming: "every", schedEvery: "", schedAt: "", schedAction: "spawn", schedTarget: "", worktree: false });
     expect(canonicalWorkspaceStudioFormV1({}).kind).toBe("");
     expect(canonicalWorkspaceStudioFormV1(undefined).name).toBe("");
 
@@ -765,8 +765,6 @@ function sidebarView() {
       bridge: { port: "42897", connected: true },
       agents: [],
       terminals: [],
-      commands: [],
-      runbooks: [],
       pins: [{ id: "p-abc123", text: "Pinned", done: false, by: "human", tags: ["ui"] }],
       schedules: [],
       pipelines: [],
@@ -780,7 +778,7 @@ function studioForm(): WorkspaceStudioFormV1 {
   return {
     name: "lint",
     cmd: "npm run lint",
-    kind: "command",
+    kind: "terminal",
     instructions: "",
     watch: "",
     steps: "",
@@ -795,7 +793,7 @@ function studioForm(): WorkspaceStudioFormV1 {
     schedTiming: "every",
     schedEvery: "1h",
     schedAt: "09:00",
-    schedAction: "run",
+    schedAction: "spawn",
     schedTarget: "",
     catchUp: false,
   };

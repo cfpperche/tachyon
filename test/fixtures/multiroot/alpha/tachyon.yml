@@ -1,3 +1,1 @@
-commands:
-  alpha-check:
-    cmd: "echo alpha-ok"
+# empty roster fixture

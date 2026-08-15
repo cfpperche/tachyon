@@ -216,60 +216,8 @@
         "icon": "$(add)"
       },
       {
-        "command": "tachyon.runbookStudio",
-        "title": "%command.runbookStudio%",
-        "icon": "$(add)"
-      },
-      {
         "command": "tachyon.editAgentStudioItem",
         "title": "%command.editAgentStudioItem%"
-      },
-      {
-        "command": "tachyon.runCommandItem",
-        "title": "%command.runCommandItem%",
-        "icon": "$(play)"
-      },
-      {
-        "command": "tachyon.runRunbookItem",
-        "title": "%command.runRunbookItem%",
-        "icon": "$(play)"
-      },
-      {
-        "command": "tachyon.openCommandTerminalItem",
-        "title": "%command.openCommandTerminalItem%"
-      },
-      {
-        "command": "tachyon.openRunbookStepItem",
-        "title": "%command.openRunbookStepItem%"
-      },
-      {
-        "command": "tachyon.editCommandStudioItem",
-        "title": "%command.editCommandStudioItem%"
-      },
-      {
-        "command": "tachyon.editCommandItem",
-        "title": "%command.editCommandItem%"
-      },
-      {
-        "command": "tachyon.deleteCommandItem",
-        "title": "%command.deleteCommandItem%"
-      },
-      {
-        "command": "tachyon.commandStudio",
-        "title": "%command.commandStudio%",
-        "icon": "$(add)"
-      },
-      {
-        "command": "tachyon.editRunbookStudioItem",
-        "title": "%command.editRunbookStudioItem%"
-      },
-      {
-        "command": "tachyon.editRunbookItem",
-        "title": "%command.editRunbookItem%"
-      },
-      {
-        "command": "tachyon.deleteRunbookItem",
-        "title": "%command.deleteRunbookItem%"
       },
       {
         "command": "tachyon.init",
@@ -638,46 +586,6 @@
           "when": "false"
         },
         {
-          "command": "tachyon.runCommandItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.runRunbookItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.openCommandTerminalItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.openRunbookStepItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.editCommandStudioItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.editCommandItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.deleteCommandItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.editRunbookStudioItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.editRunbookItem",
-          "when": "false"
-        },
-        {
-          "command": "tachyon.deleteRunbookItem",
-          "when": "false"
-        },
-        {
           "command": "tachyon.approveProposalItem",
           "when": "false"
         },
@@ -784,7 +692,7 @@
           {
             "id": "init",
             "title": "Initialize your project",
-            "description": "Generate a starter **tachyon.yml** — it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
+            "description": "Generate a starter **tachyon.yml** \u2014 it detects your stack (Node, PHP, Rust, Go, Python, Ruby) and writes a commented config.\n[Initialize Tachyon](command:tachyon.init)",
             "media": {
               "image": "media/walkthrough/hero.png",
               "altText": "Tachyon running agents as native editor terminals"
@@ -796,7 +704,7 @@
           {
             "id": "fleet",
             "title": "Meet your fleet",
-            "description": "Open the **⚡ Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n💡 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
+            "description": "Open the **\u26a1 Tachyon** view: your agents and terminals, grouped, with start/stop/restart and live attention state.\n\n\ud83d\udca1 Tip: to copy text from an agent terminal with correct accents/UTF-8, hold **Shift** while selecting (a plain mouse-drag uses tmux copy-mode, which some hosts mangle).\n[Open the Tachyon view](command:workbench.view.extension.tachyon)",
             "media": {
               "image": "media/walkthrough/subagents.png",
               "altText": "Sidebar showing agents and nested sub-agents"
@@ -808,7 +716,7 @@
           {
             "id": "bridge",
             "title": "The Bridge is automatic",
-            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it through each supported runtime's native MCP mechanism and rebuilds the wiring across lifecycle operations — no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
+            "description": "The **Bridge** is a persistent workspace MCP server that lets your agents spawn sub-agents, read each other's output, run commands and notify you. Tachyon injects it through each supported runtime's native MCP mechanism and rebuilds the wiring across lifecycle operations \u2014 no setup needed.\nUse **Connect Agent Runtime** only for a CLI session you start manually outside Tachyon.\n[Connect a runtime](command:tachyon.connectRuntime)",
             "media": {
               "image": "media/walkthrough/studio.png",
               "altText": "Agent Studio tabs"
@@ -820,7 +728,7 @@
           {
             "id": "coordinate",
             "title": "Let them coordinate",
-            "description": "Curate **commands** & **runbooks**, share **pins**, and set **schedules** (human-approved). It all lives in tachyon.yml, versioned with your repo.\n[Read the docs](https://github.com/cfpperche/tachyon#readme)",
+            "description": "Share **pins** and set **schedules** (human-approved). It all lives in tachyon.yml, versioned with your repo.\n[Read the docs](https://github.com/cfpperche/tachyon#readme)",
             "media": {
               "image": "media/walkthrough/schedules.png",
               "altText": "Schedules view with a pending agent proposal"

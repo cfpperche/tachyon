@@ -23,14 +23,12 @@ const spawnOptions = z.object({
 }).strict();
 
 const schedule = z.union([
-  z.object({ every: text(64, 1), run: name, catchUp: z.boolean().optional() }).strict(),
-  z.object({ at: text(64, 1), run: name, catchUp: z.boolean().optional() }).strict(),
   z.object({ every: text(64, 1), spawn: name, instructions: text(64 * 1024).optional(), catchUp: z.boolean().optional() }).strict(),
   z.object({ at: text(64, 1), spawn: name, instructions: text(64 * 1024).optional(), catchUp: z.boolean().optional() }).strict(),
 ]);
 
 export const EXTENSION_QUERY_ACTIONS = [
-  "agents.list", "attention.list", "pins.list", "commands.list", "runbooks.list", "schedules.list", "proposals.list",
+  "agents.list", "attention.list", "pins.list", "schedules.list", "proposals.list",
   "doctor.report", "bridge.token", "companion.pair-code", "companion.status", "agent.inspect", "agent.session-inspection", "agent.fork-preview", "prompt.catalog", "worktree.review",
   "worktrees.list", "worktrees.classified", "pipeline.inspect", "agent.wait",
   "agent-profile.studio-inspect", "agent-profile.studio-bundle-export", "agent-profile.studio-ownership",
@@ -40,9 +38,9 @@ export const EXTENSION_QUERY_ACTIONS = [
 ] as const;
 
 export const EXTENSION_COMMAND_ACTIONS = [
-  "pipeline.seed", "agent.spawn", "pin.create", "command.run", "command.tick", "runbook.run", "proposal.create",
+  "pipeline.seed", "agent.spawn", "pin.create", "proposal.create",
   "proposal.approve", "proposal.reject", "approval.resolve", "config.agent.clone",
-  "config.notifications.idleAfterMinutes", "config.agent.rename", "config.agent.delete", "config.agent.promote", "config.command.delete", "config.runbook.delete",
+  "config.notifications.idleAfterMinutes", "config.agent.rename", "config.agent.delete", "config.agent.promote",
   "config.companion.tabTools",
   "config.companion.allowedHosts",
   "config.ideBrowser.enabled",
@@ -85,8 +83,6 @@ export const extensionQuerySchema = z.union([
   z.object({ action: z.literal("agents.list") }).strict(),
   z.object({ action: z.literal("attention.list") }).strict(),
   z.object({ action: z.literal("pins.list") }).strict(),
-  z.object({ action: z.literal("commands.list") }).strict(),
-  z.object({ action: z.literal("runbooks.list") }).strict(),
   z.object({ action: z.literal("schedules.list") }).strict(),
   z.object({ action: z.literal("proposals.list") }).strict(),
   z.object({ action: z.literal("doctor.report") }).strict(),
@@ -151,9 +147,6 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("pipeline.seed"), name }).strict(),
   z.object({ action: z.literal("agent.spawn"), agent: name, options: spawnOptions.optional() }).strict(),
   z.object({ action: z.literal("pin.create"), text: text(64 * 1024, 1), by: name, done: z.boolean() }).strict(),
-  z.object({ action: z.literal("command.run"), name }).strict(),
-  z.object({ action: z.literal("command.tick") }).strict(),
-  z.object({ action: z.literal("runbook.run"), name }).strict(),
   z.object({ action: z.literal("proposal.create"), name, schedule, by: name, reason: text(2_000, 1).optional() }).strict(),
   z.object({ action: z.literal("proposal.approve"), id: text(64, 1) }).strict(),
   z.object({ action: z.literal("proposal.reject"), id: text(64, 1) }).strict(),
@@ -200,8 +193,6 @@ export const extensionCommandSchema = z.discriminatedUnion("action", [
     skillName: text(128, 1),
     reauthorize: z.boolean().optional(),
   }).strict(),
-  z.object({ action: z.literal("config.command.delete"), name }).strict(),
-  z.object({ action: z.literal("config.runbook.delete"), name }).strict(),
   z.object({ action: z.literal("config.companion.tabTools"), enabled: z.boolean() }).strict(),
   z.object({
     action: z.literal("config.companion.allowedHosts"),

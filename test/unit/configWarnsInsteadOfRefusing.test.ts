@@ -43,14 +43,11 @@ describe("an unreadable key is discarded and the rest of the file loads", () => 
   it.each([
     ["agents", "agents:\n  worker:\n    cmd: claude\n    nope: 1\n"],
     ["terminals", "terminals:\n  dev:\n    cmd: npm run dev\n    nope: 1\n"],
-    ["commands", "commands:\n  build:\n    cmd: npm run build\n    nope: 1\n"],
-    ["runbooks", "runbooks:\n  ship:\n    steps: [build]\n    nope: 1\n"],
-    ["schedules", "schedules:\n  nightly:\n    every: 1h\n    run: build\n    nope: 1\n"],
+    ["schedules", "schedules:\n  nightly:\n    every: 1h\n    spawn: worker\n    nope: 1\n"],
     ["settings", "settings:\n  nope: 1\n"],
     ["top level", "nope: 1\n"],
   ])("names the unknown key in the %s block and still loads", (_block, yaml) => {
-    const withCommand = yaml.startsWith("schedules") ? `commands:\n  build:\n    cmd: x\n${yaml}` : yaml;
-    const { config, errors, warnings } = parseConfig(withCommand);
+    const { config, errors, warnings } = parseConfig(yaml);
     expect(errors).toEqual([]);
     expect(config).toBeDefined();
     expect(warnings.some((warning) => warning.includes("nope"))).toBe(true);

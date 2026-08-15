@@ -68,7 +68,7 @@ export interface Dispatch {
   switchWorkspace?: (wsHash: string) => void;
 }
 /** Global (section-level, not per-row) ops: pins + the per-section "new …" studios. */
-export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openPersonalCardTemplate" | "openControl" | "doctor" | "studio:agents" | "studio:terminals" | "studio:commands" | "studio:runbooks" | "studio:schedules";
+export type GlobalOp = "addPin" | "copyBridge" | "init" | "openHandoff" | "openConfig" | "openPersonalCardTemplate" | "openControl" | "doctor" | "studio:agents" | "studio:terminals" | "studio:schedules";
 
 /** One entry in the in-webview "..." overflow menu (edit/remove etc. live here across ALL tabs, not inline). */
 export interface MenuItem { label: string; icon: string; run: () => void }
@@ -90,8 +90,6 @@ export const DispatchCtx = createContext<SidebarCtx>(NOOP_CTX);
 const STUDIO_OF: Partial<Record<TabId, { op: GlobalOp; label: string }>> = {
   Agents: { op: "studio:agents", label: "New agent" },
   Terminals: { op: "studio:terminals", label: "New terminal" },
-  Commands: { op: "studio:commands", label: "New command" },
-  Runbooks: { op: "studio:runbooks", label: "New runbook" },
   Schedules: { op: "studio:schedules", label: "New schedule" },
 };
 
@@ -877,51 +875,6 @@ function Panel({ tab, fleet, scope, collapsed, toggle, flashName, agentSort, ter
       ))}
     </>;
   }
-  if (tab === "Commands") return fleet.commands.length ? <>{fleet.commands.map((c) => {
-    const badge = c.state === "running" ? <Badge tone="warn">▶ {c.detail}</Badge>
-      : c.state === "passed" ? <Badge tone="ok">✓ {c.detail}</Badge>
-        : c.state === "failed" ? <Badge tone="err">✗ {c.detail}</Badge>
-          : <Badge>— {c.detail}</Badge>;
-    return <ListRow dot={c.state === "running" ? "running" : null} name={c.name} sub={c.cmd} meta={badge}
-      actions={<>
-        {c.state !== "running" && <Act icon="play" title="Run" on={() => d.section("command:run", c.name)} />}
-        {c.state !== "idle" && <Act icon="eye" title="Open output" on={() => d.section("command:open", c.name)} />}
-        <MoreBtn items={[
-          { label: "Edit in Studio", icon: "edit", run: () => d.section("command:edit", c.name) },
-          { label: "Edit YAML", icon: "file-code", run: () => d.section("command:editYaml", c.name) },
-          { label: "Delete", icon: "trash", run: () => d.section("command:delete", c.name) },
-        ]} />
-      </>} />;
-  })}</> : <Empty />;
-  if (tab === "Runbooks") return fleet.runbooks.length ? <>{fleet.runbooks.map((r) => {
-    const stepBadge = (s: typeof r.steps[number]) =>
-      s.state === "passed" ? <Badge tone="ok">✓ {s.detail ?? "passed"}</Badge>
-        : s.state === "failed" ? <Badge tone="err">✗ {s.detail}</Badge>
-          : s.state === "running" ? <Badge tone="warn">▶ running</Badge>
-            : <Badge>skipped</Badge>;
-    return (
-      <Group title={r.name} count={r.steps.length} collapsed={collapsed.has(k(`r:${r.name}`))} onToggle={() => toggle(k(`r:${r.name}`))}
-        actions={<>
-          {!r.running && <Act icon="play" title="Run" on={() => d.section("runbook:run", r.name)} />}
-          <MoreBtn items={[
-            { label: "Edit in Studio", icon: "edit", run: () => d.section("runbook:edit", r.name) },
-            { label: "Edit YAML", icon: "file-code", run: () => d.section("runbook:editYaml", r.name) },
-            { label: "Delete", icon: "trash", run: () => d.section("runbook:delete", r.name) },
-          ]} />
-        </>}>
-        <div class="row-meta" style="padding:2px 12px 4px">
-          {r.running ? <Badge tone="warn">▶ running</Badge>
-            : r.failed ? <Badge tone="err">✗ {r.detail}</Badge>
-              : r.detail === "never run" ? <Badge>— never run</Badge>
-                : <Badge tone="ok">✓ {r.detail}</Badge>}
-        </div>
-        {r.steps.map((s) => (
-          <ListRow child name={`${s.n}. ${s.label}`} meta={stepBadge(s)}
-            actions={s.state === "failed" ? <Act icon="eye" title="Open output" on={() => d.section("runbook:step", `${r.name}#${s.n - 1}`)} /> : undefined} />
-        ))}
-      </Group>
-    );
-  })}</> : <Empty />;
   // Pins — the shared checklist.
   const pins = activePinTag ? fleet.pins.filter((p) => p.tags.includes(activePinTag)) : fleet.pins;
   return <>

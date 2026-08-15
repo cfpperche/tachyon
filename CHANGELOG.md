@@ -4,6 +4,12 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## Unreleased
+
+### Commands e Runbooks saíram
+
+As duas abas da sidebar, os runners, os painéis Studio e as tools `run_command` / `list_commands` / `run_runbook` foram removidos. O dono nunca usou a feature — as abas ficavam `(none)` depois de meses. Schedules continuam, agora só com `spawn:`. `docs/runbooks/` (procedimentos em markdown) e o `LoginRunner` de login nativo ficaram.
+
 ## 0.93.1 — a sidebar volta, e três guardas que não guardavam
 
 Correção da 0.93.0, cortada no mesmo dia. Tudo aqui foi encontrado **por um humano olhando a tela**,

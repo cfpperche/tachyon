@@ -114,8 +114,6 @@ function sidebarView(workspaceHash: string) {
       bridge: { port: "42897", connected: true },
       agents: [],
       terminals: [],
-      commands: [],
-      runbooks: [],
       pins: [{ id: "p-abc123", text: "Engine pin", done: false, by: "human", tags: ["ui"] }],
       schedules: [],
       pipelines: [],

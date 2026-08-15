@@ -555,7 +555,7 @@ export function blankAgentFields(): AgentFormState {
     schedTiming: "every",
     schedEvery: "1h",
     schedAt: "09:00",
-    schedAction: "run",
+    schedAction: "spawn",
     schedTarget: "",
     catchUp: false,
   };

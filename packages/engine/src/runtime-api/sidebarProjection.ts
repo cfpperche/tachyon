@@ -178,24 +178,6 @@ const fleet = z.object({
     nodes: z.array(pipelineNode).max(SIDEBAR_ROW_LIMIT),
   }).strict()).max(SIDEBAR_ROW_LIMIT),
   schedules: z.array(z.object({ name, when: displayText(512, 1), next: displayText(256, 1), paused: z.boolean() }).strict()).max(SIDEBAR_ROW_LIMIT),
-  commands: z.array(z.object({
-    name,
-    cmd: displayText(8_192),
-    state: z.enum(["running", "passed", "failed", "idle"]),
-    detail: displayText(256, 1),
-  }).strict()).max(SIDEBAR_ROW_LIMIT),
-  runbooks: z.array(z.object({
-    name,
-    running: z.boolean(),
-    failed: z.boolean(),
-    detail: displayText(256, 1),
-    steps: z.array(z.object({
-      n: z.number().int().positive().max(SIDEBAR_ROW_LIMIT),
-      label: displayText(8_192, 1),
-      state: z.enum(["running", "passed", "failed", "skipped"]),
-      detail: optionalDisplayText(256),
-    }).strict()).max(SIDEBAR_ROW_LIMIT),
-  }).strict()).max(SIDEBAR_ROW_LIMIT),
   pins: z.array(z.object({
     id: z.string().regex(/^p-[0-9a-f]{6}$/),
     text: displayText(SIDEBAR_PIN_TEXT_MAX, 1, "… — open the pin for full detail"),
@@ -272,7 +254,7 @@ const fleet = z.object({
   if (new Set(agentNames).size !== agentNames.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "sidebar managed-entry names must be unique" });
   }
-  for (const rows of [value.pipelines, value.schedules, value.commands, value.runbooks]) {
+  for (const rows of [value.pipelines, value.schedules]) {
     if (new Set(rows.map((row) => row.name)).size !== rows.length) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: "sidebar section names must be unique" });
     }

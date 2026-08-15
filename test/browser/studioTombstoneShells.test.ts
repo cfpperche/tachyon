@@ -24,9 +24,7 @@ import { openPreview } from "./support/preview";
  */
 
 const SHELLS = [
-  { view: "command-studio-shell", entityType: "command", id: "verify" },
   { view: "terminal-studio-shell", entityType: "terminal", id: "shell" },
-  { view: "runbook-studio-shell", entityType: "runbook", id: "release" },
   { view: "schedule-studio-shell", entityType: "schedule", id: "nightly" },
   { view: "agent-studio-shell", entityType: "agent", id: "grok" },
 ] as const;

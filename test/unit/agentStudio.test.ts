@@ -11,10 +11,7 @@ import {
   toEntry,
   toTerminalEntry,
   fromTerminalDef,
-  fromRunbookDef,
   fromScheduleDef,
-  parseSteps,
-  stepResolutions,
   type FormState,
 } from "@tachyon/engine/webview/formLogic.js";
 import { detectInstalledClis } from "@tachyon/engine/webview/cliDetect.js";
@@ -39,7 +36,7 @@ const BASE: FormState = {
   schedTiming: "every",
   schedEvery: "1h",
   schedAt: "09:00",
-  schedAction: "run",
+  schedAction: "spawn",
   schedTarget: "",
   catchUp: false,
   isolate: false,
@@ -204,44 +201,11 @@ describe("cliDetect", () => {
   });
 });
 
-describe("Runbook tab form logic", () => {
-  const RB: FormState = { ...BASE, name: "ship", cmd: "", kind: "runbook", steps: "lint\n  test  \n\n./deploy.sh\n" };
-
-  it("parseSteps trims and drops blanks; toEntry emits only the steps list", () => {
-    expect(parseSteps(RB.steps)).toEqual(["lint", "test", "./deploy.sh"]);
-    expect(toEntry(RB)).toEqual({ steps: ["lint", "test", "./deploy.sh"] });
-  });
-
-  it("validateForm: runbook requires name + at least one step; cmd not required", () => {
-    expect(blockingErrors(validateForm(RB, []))).toEqual([]);
-    const empty = blockingErrors(validateForm({ ...RB, steps: "  \n " }, []));
-    expect(empty.map((i) => i.code)).toEqual(["steps-required"]);
-    const taken = blockingErrors(validateForm(RB, ["ship"]));
-    expect(taken.map((i) => i.code)).toEqual(["name-taken"]);
-    expect(blockingErrors(validateForm(RB, ["ship"], "ship"))).toEqual([]); // edit mode
-  });
-
-  it("stepResolutions mirrors the runner: exact command-name match = ref, else inline", () => {
-    expect(stepResolutions("lint\n./deploy.sh", ["lint", "test"])).toEqual([
-      { step: "lint", ref: true },
-      { step: "./deploy.sh", ref: false },
-    ]);
-  });
-
-  it("fromRunbookDef prefills steps one per line", () => {
-    expect(fromRunbookDef("ship", { steps: ["lint", "test"] }).steps).toBe("lint\ntest");
-  });
-});
-
-// spec 279 — removed "Studio webview script integrity": it guarded spec 201's inline-script template-literal
-// escaping bug (a raw \n unterminating the embedded <script> → blank form). The Agent Studio is now a preact
-// BUNDLE, so that whole bug class is gone — there is no inline template-literal script to escape.
-
 describe("Schedule tab form logic", () => {
-  const SCHED = { ...BASE, name: "hourly", kind: "schedule" as const, schedTarget: "test" };
+  const SCHED = { ...BASE, name: "hourly", kind: "schedule" as const, schedTarget: "claude" };
 
-  it("toEntry builds every/run and at/spawn(+instructions, catchUp)", () => {
-    expect(toEntry(SCHED)).toEqual({ every: "1h", run: "test" });
+  it("toEntry builds every/spawn and at/spawn(+instructions, catchUp)", () => {
+    expect(toEntry(SCHED)).toEqual({ every: "1h", spawn: "claude" });
     expect(toEntry({ ...SCHED, schedTiming: "at", schedAt: "09:00", schedAction: "spawn", schedTarget: "claude", instructions: "standup", catchUp: true }))
       .toEqual({ at: "09:00", spawn: "claude", instructions: "standup", catchUp: true });
   });
@@ -254,7 +218,7 @@ describe("Schedule tab form logic", () => {
   });
 
   it("fromScheduleDef prefills timing/action from the entry", () => {
-    expect(fromScheduleDef("s", { at: "02:00", run: "ship", catchUp: true })).toMatchObject({ schedTiming: "at", schedAt: "02:00", schedAction: "run", schedTarget: "ship", catchUp: true });
+    expect(fromScheduleDef("s", { at: "02:00", spawn: "ship", catchUp: true })).toMatchObject({ schedTiming: "at", schedAt: "02:00", schedAction: "spawn", schedTarget: "ship", catchUp: true });
     expect(fromScheduleDef("s", { every: "30m", spawn: "claude", instructions: "go" })).toMatchObject({ schedTiming: "every", schedEvery: "30m", schedAction: "spawn", schedTarget: "claude", instructions: "go" });
   });
 });

@@ -438,8 +438,6 @@ describe("EngineControlClient", () => {
         bridge: { port: String(f.identity.bridge.port), connected: true },
         agents: [],
         terminals: [],
-        commands: [],
-        runbooks: [],
         pins: Array.from({ length: 40 }, (_, index) => ({
           id: `p-${index.toString(16).padStart(6, "0")}`,
           text: `pin-${index}-${"x".repeat(1_990)}`,
@@ -496,8 +494,8 @@ describe("EngineControlClient", () => {
     await expect(client.invoke("operation-extension-large-0001", {
       schemaVersion: 1,
       method: "extension.invoke",
-      input: { action: "command.tick" },
-    })).resolves.toMatchObject({ status: "ok", action: "command.tick", value: large });
+      input: { action: "config.health" },
+    })).resolves.toMatchObject({ status: "ok", action: "config.health", value: large });
   });
 
   it("invokes an operation by exact id without transport-level retries", async () => {

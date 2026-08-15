@@ -342,7 +342,7 @@ const webviewChunkHygienePlugin = {
  *
  * Entry outputs: `dist/webview/<view>.js` (+ `dist/webview/chunks/app-*.js`, shared across ALL entries).
  */
-const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "command-studio-shell", "terminal-studio-shell", "runbook-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "settings", "activity", "probes"];
+const WEBVIEW_APP_VIEWS = ["section-app-fixture", "task-detail", "pin-preview", "terminal-studio-shell", "schedule-studio-shell", "agent-studio-shell", "board", "inspector", "plugins", "runtime-ops", "runtime-config", "human-inbox", "handoff", "system", "worktrees", "settings", "activity", "probes"];
 const webviewApps = {
   ...sidebar,
   entryPoints: Object.fromEntries(WEBVIEW_APP_VIEWS.map((view) => [view, `packages/webview-ui/src/webview/${view}/main.tsx`])),
@@ -568,8 +568,7 @@ copyFileSync("packages/webview-ui/src/webview/agent-studio-shell/agent-studio-sh
 // t-610705 (Phase D, D0/D1a) — these four studio-shell stylesheets are co-loaded by Control now
 // (Cockpit.ts), not a standalone bundle's own entry point; the standalone .js targets are gone.
 copyFileSync("packages/webview-ui/src/webview/terminal-studio-shell/terminal-studio-shell.css", "dist/webview/terminal-studio-shell.css");
-copyFileSync("packages/webview-ui/src/webview/command-studio-shell/command-studio-shell.css", "dist/webview/command-studio-shell.css");
-copyFileSync("packages/webview-ui/src/webview/runbook-studio-shell/runbook-studio-shell.css", "dist/webview/runbook-studio-shell.css");
+
 copyFileSync("packages/webview-ui/src/webview/schedule-studio-shell/schedule-studio-shell.css", "dist/webview/schedule-studio-shell.css");
 copyFileSync("packages/webview-ui/src/webview/plugin-host/plugin-host.css", "dist/webview/plugin-host.css"); // spec 349 T10 — plugin UI relay shell
 copyFileSync("node_modules/@vscode/codicons/dist/codicon.ttf", "dist/webview/codicon.ttf");

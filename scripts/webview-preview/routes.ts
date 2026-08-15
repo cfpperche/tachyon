@@ -48,8 +48,6 @@ import { pipelineStudioFixtures, pipelineStudioMakeMessage } from "./fixtures/pi
 import { agentStudioFixtureFixtures, agentStudioFixtureMakeMessage } from "./fixtures/agent-studio-fixture";
 import { agentStudioShellFixtures, agentStudioShellMakeMessage } from "./fixtures/agent-studio-shell";
 import { terminalStudioShellFixtures, terminalStudioShellMakeMessage } from "./fixtures/terminal-studio-shell";
-import { commandStudioShellFixtures, commandStudioShellMakeMessage } from "./fixtures/command-studio-shell";
-import { runbookStudioShellFixtures, runbookStudioShellMakeMessage } from "./fixtures/runbook-studio-shell";
 import { scheduleStudioShellFixtures, scheduleStudioShellMakeMessage } from "./fixtures/schedule-studio-shell";
 import { sectionAppFixtureFixtures, sectionAppFixtureMakeMessage } from "./fixtures/section-app-fixture";
 
@@ -212,22 +210,6 @@ export const ROUTES: Record<string, Route> = {
     frame: { w: 900, h: 760 },
     fixtures: terminalStudioShellFixtures as Record<string, Fixture>,
     makeMessage: (vm) => terminalStudioShellMakeMessage(vm as never),
-  },
-  "command-studio-shell": {
-    bundle: "/dist/webview/command-studio-shell.js",
-    module: true,
-    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/command-studio-shell.css"],
-    frame: { w: 760, h: 640 },
-    fixtures: commandStudioShellFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => commandStudioShellMakeMessage(vm as never),
-  },
-  "runbook-studio-shell": {
-    bundle: "/dist/webview/runbook-studio-shell.js",
-    module: true,
-    cssLinks: [...BASE_STYLESHEETS, "/dist/webview/vscode-theme.css", "/dist/webview/studio-frame.css", "/dist/webview/runbook-studio-shell.css"],
-    frame: { w: 760, h: 760 },
-    fixtures: runbookStudioShellFixtures as Record<string, Fixture>,
-    makeMessage: (vm) => runbookStudioShellMakeMessage(vm as never),
   },
   "schedule-studio-shell": {
     bundle: "/dist/webview/schedule-studio-shell.js",
@@ -510,8 +492,6 @@ export const VIEW_META: Record<string, { title: string; aliases: string[] }> = {
   worktrees: { title: "Worktrees", aliases: ["worktrees", "managed worktrees", "checkout hygiene"] },
   "agent-studio-shell": { title: "Agent Studio", aliases: ["agent studio", "new agent", "edit agent"] },
   "terminal-studio-shell": { title: "Terminal Studio", aliases: ["terminal studio", "new terminal", "edit terminal"] },
-  "command-studio-shell": { title: "Command Studio", aliases: ["command studio", "new command", "edit command"] },
-  "runbook-studio-shell": { title: "Runbook Studio", aliases: ["runbook studio", "new runbook", "edit runbook"] },
   "schedule-studio-shell": { title: "Schedule Studio", aliases: ["schedule studio", "new schedule", "edit schedule"] },
 };
 

@@ -24,8 +24,6 @@ const fleet = (hash: string, name: string, port = "42462"): FleetVM => ({
   terminals: [],
   pipelines: [],
   schedules: [],
-  commands: [],
-  runbooks: [],
   pins: [],
 });
 
@@ -94,15 +92,13 @@ describe("t-be359b — studio folder choice draws in our chrome", () => {
       const { view, receive } = fakeView();
       provider.resolveWebviewView(view);
 
-      for (const op of ["studio:terminals", "studio:commands", "studio:runbooks", "studio:schedules"]) {
+      for (const op of ["studio:terminals", "studio:schedules"]) {
         receive({ type: "global", op, hash: "h7" });
       }
 
       const studioCalls = __getExecutedCommands().filter((c) => c.command.endsWith("Studio"));
       expect(studioCalls.map((c) => c.command)).toEqual([
         "tachyon.terminalStudio",
-        "tachyon.commandStudio",
-        "tachyon.runbookStudio",
         "tachyon.scheduleStudio",
       ]);
       for (const call of studioCalls) expect(call.args).toEqual(["h7"]);

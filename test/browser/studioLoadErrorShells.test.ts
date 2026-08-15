@@ -5,8 +5,6 @@ import { startGateServer, type GateServer } from "./support/gateServer";
 import { HANG_TIMEOUT_MS } from "./support/hangTimeout";
 import { openPreview } from "./support/preview";
 import { agentStudioShellFixtures } from "../../scripts/webview-preview/fixtures/agent-studio-shell";
-import { commandStudioShellFixtures } from "../../scripts/webview-preview/fixtures/command-studio-shell";
-import { runbookStudioShellFixtures } from "../../scripts/webview-preview/fixtures/runbook-studio-shell";
 import { scheduleStudioShellFixtures } from "../../scripts/webview-preview/fixtures/schedule-studio-shell";
 import { terminalStudioShellFixtures } from "../../scripts/webview-preview/fixtures/terminal-studio-shell";
 import { pipelineStudioFixtures } from "../../scripts/webview-preview/fixtures/pipeline-studio";
@@ -65,8 +63,6 @@ function loadErrorMessage(fixtures: Record<string, { vm: unknown }>, view: strin
 
 const SHELLS: ShellUnderTest[] = [
   { view: "agent-studio-shell", entityType: "agent", message: loadErrorMessage(agentStudioShellFixtures, "agent-studio-shell") },
-  { view: "command-studio-shell", entityType: "command", message: loadErrorMessage(commandStudioShellFixtures, "command-studio-shell") },
-  { view: "runbook-studio-shell", entityType: "runbook", message: loadErrorMessage(runbookStudioShellFixtures, "runbook-studio-shell") },
   { view: "schedule-studio-shell", entityType: "schedule", message: loadErrorMessage(scheduleStudioShellFixtures, "schedule-studio-shell") },
   { view: "terminal-studio-shell", entityType: "terminal", message: loadErrorMessage(terminalStudioShellFixtures, "terminal-studio-shell") },
   { view: "pipeline-studio", entityType: "pipeline", message: loadErrorMessage(pipelineStudioFixtures, "pipeline-studio") },

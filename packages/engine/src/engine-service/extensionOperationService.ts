@@ -14,8 +14,6 @@ import { degradedRosterExtras } from "../config/configFailure.js";
 import { PORTABLE_AGENT_PROFILE_BUNDLE_MAX_BYTES } from "../config/agentProfileBundle.js";
 import { projectAgentProfileStudioSnapshot } from "@tachyon/shared/config/agentProfileStudio.js";
 import {
-  deleteCommand,
-  deleteRunbook,
   setCompanionTabTools,
   setCompanionAllowedHosts,
   setIdeBrowserEnabled,
@@ -86,10 +84,6 @@ export async function executeExtensionQuery(
     }
     case "pins.list":
       return json(workspace.pinStore.list());
-    case "commands.list":
-      return json(await workspace.commandRunner.list());
-    case "runbooks.list":
-      return json(workspace.runbookRunner.list());
     case "schedules.list":
       return json(workspace.scheduler.list());
     case "proposals.list":
@@ -278,14 +272,6 @@ export async function executeExtensionCommand(
       onViewsChanged("pins");
       return json(pin);
     }
-    case "command.run":
-      await workspace.commandRunner.run(command.name);
-      return json({ started: true });
-    case "command.tick":
-      await workspace.commandRunner.tick();
-      return json({ ticked: true });
-    case "runbook.run":
-      return json(await workspace.runbookRunner.run(command.name));
     case "proposal.create": {
       const proposal = workspace.proposals.create(
         command.name,
@@ -451,19 +437,6 @@ export async function executeExtensionCommand(
         requiresReauthorization: result.requiresReauthorization,
       });
     }
-    case "config.command.delete":
-      return configMutation(workspace, () => workspace.mutateConfig(
-        (text) => deleteCommand(text ?? "", command.name),
-        () => onViewsChanged("commands"),
-      ));
-    case "config.runbook.delete":
-      if (workspace.runbookRunner.isRunning(command.name)) {
-        throw new Error(`runbook '${command.name}' is running — wait for it to finish before deleting`);
-      }
-      return configMutation(workspace, () => workspace.mutateConfig(
-        (text) => deleteRunbook(text ?? "", command.name),
-        () => onViewsChanged("commands"),
-      ));
     case "config.companion.tabTools":
       // SDD 414 — human Control toggle; reloadConfig announces tool list change when the bit flips.
       return configMutation(workspace, () => workspace.mutateConfig(
@@ -594,8 +567,6 @@ export async function executeExtensionCommand(
       return json({ changed: true });
     case "workspace.stop-all": {
       const killed = await workspace.manager.killAll();
-      await workspace.commandRunner.killAll();
-      await workspace.runbookRunner.killAll();
       return json({ stoppedAgents: killed.length });
     }
     case "pipeline.start":

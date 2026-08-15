@@ -1,4 +1,1 @@
-
-commands:
-  hello:
-    cmd: "echo agent-pane-dogfood-ok"
+# empty roster fixture

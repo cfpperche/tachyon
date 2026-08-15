@@ -198,7 +198,6 @@ describe("test/ and scripts/ residue is classified, not merely tolerated", () =>
         "scripts/dogfood/run.mjs",
         "test/unit/gatedCompletionMonitor.test.ts",
         "test/unit/loadPipeline.test.ts",
-        "test/unit/runbooks.test.ts",
       ],
     },
     {
