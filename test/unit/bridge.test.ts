@@ -691,6 +691,37 @@ describe("Bridge end-to-end over streamable HTTP", () => {
     await client.callTool({ name: "dismiss_agent", arguments: { name: "retask-worker" } });
   });
 
+  it("t-3e2e2d: retask_agent against a stopped Temporary does not claim delivery or the board", async () => {
+    const spawned = await client.callTool({
+      name: "spawn_agent",
+      arguments: { name: "exited-worker", cmd: "claude", skip_contract_reason: "idle fixture that exits before retask" },
+    });
+    expect(spawned.isError).toBeFalsy();
+    const session = sessionName(HASH, "exited-worker");
+    expect(sessions.has(session)).toBe(true);
+    // Populate lastAgentStates while the pane is live. The sidebar poll does this continuously;
+    // without it, a later empty-server tmux read has no snapshot to fall back to.
+    await client.callTool({ name: "list_agents", arguments: {} });
+    // Clean Temporary exit: the pane is gone, the roster row remains. This is the normal end of a
+    // Temporary, not a crash — the measured incident on t-3e2e2d.
+    sessions.delete(session);
+
+    const made = await client.callTool({ name: "create_task", arguments: { title: "must not stick to a dead assignee" } });
+    const id = JSON.parse((made.content as Array<{ text: string }>)[0].text).id as string;
+    await client.callTool({ name: "update_task", arguments: { id, status: "triaged" } });
+
+    const result = await client.callTool({ name: "retask_agent", arguments: { name: "exited-worker", task_id: id } });
+    const payload = (result.content as Array<{ text: string }>)[0]?.text ?? "";
+    // Red proof: this fails if the door reports a delivery that did not happen.
+    expect(payload, `retask_agent claimed delivery for a stopped agent: ${payload}`).not.toMatch(/"delivery"\s*:\s*"notified"/);
+    expect(result.isError).toBe(true);
+    expect(payload).toMatch(/is not running/);
+    expect(tasks.get(id)).toMatchObject({ status: "triaged" });
+    expect(tasks.get(id).assignee).not.toBe("exited-worker");
+
+    await client.callTool({ name: "dismiss_agent", arguments: { name: "exited-worker" } });
+  });
+
   it("get_task windows the journal by bytes, declares what it withheld, and hands back the whole log on request", async () => {
     const created = await client.callTool({ name: "create_task", arguments: { title: "journal cost", agent: "claude" } });
     const { id } = JSON.parse((created.content as Array<{ text: string }>)[0].text);

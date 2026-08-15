@@ -1929,7 +1929,15 @@ export class AgentManager {
   async liveRetaskWorkRecord(name: string): Promise<string> {
     if (!this.isTemporary(name)) throw new Error(`retask_agent requires a Temporary agent; '${name}' is not Temporary`);
     if (this.kindOf(name) !== "agent") throw new Error(`retask_agent requires an agent; '${name}' is not an agent`);
-    if (!(await this.isProcessAlive(name))) throw new Error(`retask_agent requires a live agent; '${name}' is not running`);
+    // t-3e2e2d — authorize against the live session, the same probe notify_agent uses.
+    // isProcessAlive reads agentStates(), which serves lastAgentStates when the tmux
+    // inventory is ambiguous. A clean Temporary exit that takes the last pane with it
+    // is exactly that case: the snapshot stays "alive", retask claims the board, and
+    // deliverNotice reports notified into a pane that is gone.
+    if (!(await this.opts.tmux.hasSession(this.session(name)))) {
+      throw new Error(`retask_agent refused: agent '${name}' is not running`);
+    }
+    if (!(await this.isProcessAlive(name))) throw new Error(`retask_agent refused: agent '${name}' is not running`);
     const def = this.definitionOf(name);
     if (!def) throw new Error(`retask_agent cannot read the stored definition for '${name}'`);
     const durable = this.opts.ledger?.get(name);
