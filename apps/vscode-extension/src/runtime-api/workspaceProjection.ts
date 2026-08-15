@@ -1,7 +1,7 @@
 import type { WorkspaceConfigFailureProjectionV1, WorkspaceIdentityProjectionV1, WorkspaceBridgeProjectionV1, WorkspaceAgentProjectionV1, BoundedProjectionListV1, WorkspacePresentationSnapshotV1 } from "@tachyon/engine/runtime-api/workspaceProjectionTypes.js";
 export type { WorkspaceConfigFailureProjectionV1, WorkspaceIdentityProjectionV1, WorkspaceBridgeProjectionV1, WorkspaceAgentProjectionV1, BoundedProjectionListV1, WorkspaceCoreProjectionsV1, WorkspacePresentationSnapshotV1 } from "@tachyon/engine/runtime-api/workspaceProjectionTypes.js";
 import type { WorkspaceSnapshotEnvelopeV1 } from "@tachyon/engine/engine-service/protocol.js";
-import type { AgentInstanceLifetime } from "@tachyon/engine/resume/SessionLedger.js";
+import type { AgentInstanceLifetime } from "@tachyon/shared/resume/agentInstance.js";
 
 export class WorkspaceProjectionError extends Error {
   constructor(readonly code: "INVALID_PROJECTION" | "IDENTITY_MISMATCH", message: string) {

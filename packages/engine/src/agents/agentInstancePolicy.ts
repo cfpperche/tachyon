@@ -1,4 +1,4 @@
-import type { AgentInstancePolicy } from "../resume/SessionLedger.js";
+import type { AgentInstancePolicy } from "@tachyon/shared/resume/agentInstance.js";
 
 /**
  * t-04052d — the questions readers actually ask, answered from the DECLARED policy and from nothing

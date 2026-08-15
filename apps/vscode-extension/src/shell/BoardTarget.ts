@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { approvalResolutionPorts } from "@tachyon/engine/approvals/approvalResolutionPorts.js";
 import type { NoticeDeliveryResult } from "@tachyon/engine/workspace/noticeDelivery.js";
-import type { AgentInstanceLifetime } from "@tachyon/engine/resume/SessionLedger.js";
+import type { AgentInstanceLifetime } from "@tachyon/shared/resume/agentInstance.js";
 import { buildBoardSnapshot, type BoardSnapshot } from "@tachyon/engine/tasks/boardSnapshot.js";
 import type { ReorderLaneInput, TaskStore } from "@tachyon/engine/tasks/TaskStore.js";
 import type { TaskPriority, TaskStatus } from "@tachyon/shared/tasks/types.js";

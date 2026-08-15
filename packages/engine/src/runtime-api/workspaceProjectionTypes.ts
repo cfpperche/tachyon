@@ -1,4 +1,4 @@
-import type { AgentInstanceLifetime } from "../resume/SessionLedger.js";
+import type { AgentInstanceLifetime } from "@tachyon/shared/resume/agentInstance.js";
 export interface WorkspaceConfigFailureProjectionV1 {
   file: string;
   errors: string[];

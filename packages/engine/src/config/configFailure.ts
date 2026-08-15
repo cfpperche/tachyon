@@ -7,7 +7,8 @@
  */
 import type { EntryKind } from "./loadConfig.js";
 import type { ConfigLkgSnapshot } from "./configLkg.js";
-import type { AgentInstanceLifetime, AgentInstancePolicy, SessionRecord } from "../resume/SessionLedger.js";
+import type { AgentInstanceLifetime, AgentInstancePolicy } from "@tachyon/shared/resume/agentInstance.js";
+import type { SessionRecord } from "../resume/SessionLedger.js";
 import { isResumable } from "../resume/SessionLedger.js";
 
 /** Persistent config-error surface for the sidebar (and doctor). */

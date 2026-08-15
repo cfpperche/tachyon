@@ -14,7 +14,7 @@ import {
   type ControlInspectorWorkspaceInput,
 } from "../control-inspector/model.js";
 import { DEFAULT_TEMPORARY_BACKSTOP_THRESHOLD_MS } from "@tachyon/shared/workspace/TemporaryBackstopMonitor.js";
-import type { AgentInstanceLifetime } from "@tachyon/engine/resume/SessionLedger.js";
+import type { AgentInstanceLifetime } from "@tachyon/shared/resume/agentInstance.js";
 
 /**
  * t-585d5c — the product default in the unit Settings speaks. DERIVED from the monitor's constant,
