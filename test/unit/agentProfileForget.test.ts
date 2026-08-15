@@ -216,6 +216,33 @@ describe("canonical agent profile forget", () => {
     expect(fs.existsSync(input.home)).toBe(true);
   });
 
+  it("names a runtime-state race and tells the human how to retry", async () => {
+    const input = await fixture();
+    let prepares = 0;
+    await expect(commitAgentProfileForget({
+      workspaceRoot: input.root,
+      agentName: "reviewer",
+      expectedRevision: input.created.revision,
+      authority: input.authority,
+      live: {
+        ...input.live,
+        prepare: async () => {
+          prepares += 1;
+          return prepares === 1
+            ? input.live.prepare()
+            : { ledgerSha256: "f".repeat(64), activity: { jsonlSha256: null, stateSha256: null } };
+        },
+      },
+      activateState: () => undefined,
+    })).rejects.toMatchObject({
+      code: "agent-profile/forget-runtime-state-changed",
+      message: expect.stringMatching(/stopped.*reload.*retry/i),
+    });
+    expect(agentProfileForgetBlocked(input.root, "reviewer")).toBe(false);
+    expect(input.authority.records.has("reviewer")).toBe(true);
+    expect(fs.existsSync(input.home)).toBe(true);
+  });
+
   it("recovers only forward after an interruption beyond the commit decision", async () => {
     const input = await fixture();
     await expect(commitAgentProfileForget({

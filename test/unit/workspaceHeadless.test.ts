@@ -33,6 +33,7 @@ import { parse as parseYaml, stringify } from "yaml";
 import { serializeAgentProfileAuthorityRegistry } from "@tachyon/engine/config/agentProfileAuthority.js";
 import type { AgentProfileStudioMutationV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import { CODEX_EMPTY_NATIVE_INPUT_INSPECTOR } from "@tachyon/engine/config/agentProfileProjection.js";
+import { EngineLogRing } from "@tachyon/engine/engine-service/engineLogRing.js";
 import { agentProfileAuthoritiesSecretKey, workspaceVersionStateKey } from "@tachyon/engine/workspace/operationalStateKeys.js";
 import { writeSavedAgent, savedAgentSecrets, savedAgentsYaml, type SavedAgentSpec } from "../helpers/savedAgentFixture.js";
 import { asAgent, composeCommand } from "@tachyon/engine/config/loadConfig.js";
@@ -2983,8 +2984,41 @@ it("t-e722ce: Agent Studio → Forget removes the worktree the sidebar's Remove 
     expect(plan.retained).not.toContain("worktrees");
     expect(plan.retained).toContain("continuity");
 
-    // 2. THE EXECUTION, through the door the panel actually calls. Before this change it resolved
-    //    `{ kind: "refused", code: "agent-profile/forget-worktree-owned" }` and nothing moved.
+    // 2. THE MEASURED INCIDENT (t-9d7487). Forget reaches worktree removal before the canonical
+    //    transaction. A dirty checkout used to throw a plain Error: the panel flattened it and the
+    //    engine logged nothing, so the exact actionable cause died at this boundary.
+    const dirty = path.join(worktreePath, "uncommitted.txt");
+    fs.writeFileSync(dirty, "preserve me\n");
+    const engineLogPath = path.join(root, "engine.log");
+    const engineLog = new EngineLogRing(20, { filePath: engineLogPath });
+    const priorConsoleError = console.error;
+    console.error = (...args: unknown[]) => engineLog.pushArgs("E", args);
+    const dirtyRefusal = await (async () => {
+      try {
+        return await ws.commitAgentProfileStudioLifecycle({
+          schemaVersion: 1,
+          operation: "forget",
+          agentName: "reviewer",
+          expectedRevision: revision,
+          confirmation: "reviewer",
+        });
+      } finally {
+        console.error = priorConsoleError;
+      }
+    })();
+    expect(dirtyRefusal).toMatchObject({
+      kind: "refused",
+      code: "agent-profile/worktree-removal-dirty",
+      message: expect.stringMatching(/commit|discard/i),
+    });
+    const persistedLog = fs.readFileSync(engineLogPath, "utf8");
+    expect(persistedLog).toContain("agent profile lifecycle 'forget' failed for 'reviewer'");
+    expect(persistedLog).toContain("worktree is dirty");
+    expect(fs.existsSync(worktreePath)).toBe(true);
+    expect(ws.ledger.get("reviewer")?.worktree?.path).toBe(worktreePath);
+
+    // 3. Following the refusal's instruction makes the same door succeed.
+    fs.unlinkSync(dirty);
     const forgotten = await ws.commitAgentProfileStudioLifecycle({
       schemaVersion: 1,
       operation: "forget",
@@ -2994,7 +3028,7 @@ it("t-e722ce: Agent Studio → Forget removes the worktree the sidebar's Remove 
     });
     expect(forgotten).toMatchObject({ kind: "forgotten", agentName: "reviewer" });
 
-    // 3. THE RESULT — everything the sidebar's Remove used to leave behind it, and the three sources
+    // 4. THE RESULT — everything the sidebar's Remove used to leave behind it, and the three sources
     //    agreeing again, which is the state the dogfood had to reach by hand.
     expect(fs.existsSync(worktreePath)).toBe(false);
     expect(ws.ledger.get("reviewer")).toBeUndefined();

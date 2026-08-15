@@ -12,6 +12,7 @@
  */
 import type { AgentOccupancyVerdict } from "./AgentManager.js";
 import type { WorktreeRecord, WorktreeRemovalResult, WorktreeAbsence } from "../worktree/WorktreeManager.js";
+import { AgentProfileRefusal } from "@tachyon/shared/config/agentProfileRefusal.js";
 
 export interface AgentDeleteSessionManager {
   probeAgentOccupancy(agent: string): Promise<AgentOccupancyVerdict>;
@@ -187,9 +188,13 @@ export async function removeAgentWorktree(
     // they do not preview uncommitted files. Rewrite ONLY dirtiness refusals so the message names
     // exits the caller can take; occupancy / git failures keep their own text.
     const underlying = result.error ?? `could not remove '${agent}' worktree`;
-    throw new Error(isWorktreeDirtyRefusal(underlying)
-      ? agentEndOfLifeDirtyRefusal(record.path, underlying)
-      : underlying);
+    if (isWorktreeDirtyRefusal(underlying)) {
+      throw new AgentProfileRefusal(
+        "agent-profile/worktree-removal-dirty",
+        agentEndOfLifeDirtyRefusal(record.path, underlying),
+      );
+    }
+    throw new Error(underlying);
   }
   // t-28bf8f — registry first, ledger second, and that order is the invariant rather than a style.
   // These are two file writes and the second can fail; whichever way round they go, one ordering can

@@ -259,7 +259,12 @@ async function retireAuthority(authority: AgentProfileAuthorityPort, journal: Ag
     const after = await authority.read(journal.agentName);
     if (after !== undefined) throw error;
   }
-  if (await authority.read(journal.agentName) !== undefined) throw new Error("canonical profile authority retirement did not converge");
+  if (await authority.read(journal.agentName) !== undefined) {
+    throw new AgentProfileRefusal(
+      "agent-profile/forget-authority-retirement-unconverged",
+      `Tachyon could not finish retiring '${journal.agentName}' authority. Restart Tachyon so recovery can retry; do not delete the profile by hand.`,
+    );
+  }
 }
 
 async function convergeOwnership(
@@ -295,7 +300,10 @@ async function convergeOwnership(
   }
   if (profileDigest(input.workspaceRoot, companion.ownerAgentName) !== companion.targetProfileSha256
     || !isDeepStrictEqual(await input.authority.read(companion.ownerAgentName), companion.targetAuthority)) {
-    throw new Error("ownership forget did not converge");
+    throw new AgentProfileRefusal(
+      "agent-profile/forget-ownership-unconverged",
+      `Tachyon could not finish removing '${journal.agentName}' from '${companion.ownerAgentName}' ownership. Restart Tachyon so recovery can resume; do not edit either profile until it finishes.`,
+    );
   }
 }
 
@@ -312,7 +320,10 @@ function quarantineHome(workspaceRoot: string, journal: AgentProfileForgetJourna
   syncDirectory(path.dirname(source));
   syncDirectory(parent);
   if (exists(source) || !sameTree(destination, journal.profileManifest)) {
-    throw new Error("canonical profile quarantine did not converge");
+    throw new AgentProfileRefusal(
+      "agent-profile/forget-profile-quarantine-unconverged",
+      `Tachyon could not finish moving '${journal.agentName}' to recoverable retirement storage. Restart Tachyon so recovery can retry; leave both profile locations unchanged.`,
+    );
   }
 }
 
@@ -351,7 +362,12 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
   assertValidAgentName(input.agentName);
   if (input.ownerAgentName !== undefined) {
     assertValidAgentName(input.ownerAgentName);
-    if (input.ownerAgentName === input.agentName) throw new Error("ownership owner must be distinct from the forgotten agent");
+    if (input.ownerAgentName === input.agentName) {
+      throw new AgentProfileRefusal(
+        "agent-profile/forget-owner-self-reference",
+        `agent '${input.agentName}' is recorded as its own owner. Remove that self-reference from the canonical ownership profile, reload Agent Studio, then retry Forget.`,
+      );
+    }
   }
   const txid = crypto.randomUUID();
   const release = input.ownerAgentName
@@ -364,11 +380,10 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
       agentName: input.agentName,
       authority: input.authority,
     });
-    // t-05dff5 — every precondition from here to `input.live.prepare` is an `AgentProfileRefusal`:
-    // each one is a decision handed back to the human, not a transaction that broke. They are the
-    // ONLY throws in this function that carry a code; the state-changed-under-us guards below and
-    // everything inside `rollForward` stay plain errors, because "the profile moved while the intent
-    // was installed" is not a gesture anyone can perform — it is a retry the machine owns.
+    // t-05dff5/t-9d7487 — every known refusal in this transaction declares its cause at the throw
+    // site. Preconditions name the state the human must repair; admission races name reload/retry;
+    // post-decision convergence failures name restart/recovery. Unknown I/O and custody failures stay
+    // exceptions, are flattened at the panel, and are retained in the engine log by the Studio door.
     if (snapshot.revision !== input.expectedRevision) {
       throw new AgentProfileRefusal("agent-profile/revision-conflict", "agent profile revision changed before forget");
     }
@@ -388,7 +403,10 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
       const priorAuthority = await input.authority.read(input.ownerAgentName);
       if (!priorAuthority || priorAuthority.agentId !== mutation.priorProfile.agentId
         || priorAuthority.canonicalSha256 !== mutation.priorSha256) {
-        throw new Error(`canonical authority for ownership owner '${input.ownerAgentName}' is missing or stale`);
+        throw new AgentProfileRefusal(
+          "agent-profile/forget-owner-authority-stale",
+          `canonical authority for owner '${input.ownerAgentName}' is missing or stale. Reload that owner in Agent Studio; if it still does not match, repair its authority record before retrying Forget.`,
+        );
       }
       ownership = {
         ownerAgentName: input.ownerAgentName,
@@ -419,10 +437,18 @@ export async function commitAgentProfileForget(input: CommitAgentProfileForgetIn
     writeJournal(txDir, journal);
     input.onPhase?.("intent");
     const rechecked = await input.live.prepare(input.agentName);
-    if (!isDeepStrictEqual(rechecked, liveSnapshot)) throw new Error("agent runtime state changed while forget intent was installed");
+    if (!isDeepStrictEqual(rechecked, liveSnapshot)) {
+      throw new AgentProfileRefusal(
+        "agent-profile/forget-runtime-state-changed",
+        `runtime state for '${input.agentName}' changed while Forget was starting. Confirm the agent is stopped, reload Agent Studio, then retry Forget; this attempt deleted no profile state.`,
+      );
+    }
     if (!sameTree(oldRoot, profileManifest)
       || !isDeepStrictEqual(await input.authority.read(input.agentName), sourceAuthority)) {
-      throw new Error("canonical profile state changed while forget intent was installed");
+      throw new AgentProfileRefusal(
+        "agent-profile/forget-profile-state-changed",
+        `canonical profile state for '${input.agentName}' changed while Forget was starting. Reload Agent Studio, review the latest profile, then retry Forget; this attempt was abandoned before commit.`,
+      );
     }
     journal = transition(txDir, journal, "committing", input.onPhase);
     await rollForward(input, txDir, journal);
