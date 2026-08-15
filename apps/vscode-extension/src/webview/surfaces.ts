@@ -92,7 +92,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // trusted serializer for the legacy "tachyonHandoff" viewType stays registered in extension.ts: a
   // revived pre-410 panel disposes itself and redirects into Control → Handoff.
   // t-610705 (SDD 410 Phase A/B pilot, found + closed in the Phase E audit, 2026-07-22) — the
-  // standalone Approvals panel was retired: it's a Control section now (src/webview/approval/App.tsx
+  // standalone Approvals panel was retired: it's a Control section now (packages/webview-ui/src/webview/approval/App.tsx
   // stays, lazy-imported by cockpit/App.tsx). ApprovalPanelManager (packages/webview-ui/src/webview/ApprovalPanel.ts) is
   // a pure redirect stub — it never calls createWebviewPanel, matching every other retired panel's
   // shape below. The trusted serializer for the legacy "tachyonApprovals" viewType stays registered
@@ -254,7 +254,7 @@ export const WEBVIEW_SURFACES: WebviewSurface[] = [
   // spec 485 A1 — the other dev-only spec-350 fake, EXPLICIT for the same reason. Its region composition is
   // StudioFrame's four CONTENT regions (client-side, spec 350 T5), which is kit usage, not a page-frame
   // departure — so it `conform`s too.
-  { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true, hostKind: "dev-only", posture: "conform" },
+  { viewId: "tachyonAgentFixtureStudio", view: "agent-studio-fixture", hostFile: "apps/vscode-extension/src/webview/AgentFixtureStudioPanel.ts", mode: "live", converted: true, hostKind: "dev-only", posture: "conform" },
   // SDD 485 C1–C3 — the section-app proof surface: the first (and so far only) app driven by the generic
   // `SectionPanelManager`, and the second entry of the code-split build without which "Preact and the kit
   // are extracted into shared chunks" would be a claim with no witness. Dev-only in the same sense as the

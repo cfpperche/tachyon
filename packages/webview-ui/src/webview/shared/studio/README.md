@@ -57,8 +57,8 @@ Phase 1 exits — Fake 1 and the Agent fixture don't need it.
 shared/studio/*.ts (pure)         <- StudioPanelManagerBase.ts (host)
 shared/studio/*.ts (pure)         <- StudioFrame.tsx (webview)
 shared/studio/StudioFrame.tsx     <- <surface>/App.tsx (webview)   e.g. pipeline-studio/App.tsx
-shared/studio/StudioPanelManagerBase.ts <- src/webview/<Surface>Panel.ts (host)  e.g. PipelineStudioPanel.ts
-<surface>/domain.ts (vscode-free) <- both <surface>/App.tsx (webview) AND src/webview/<surface>AdapterOrPanel (host)
+shared/studio/StudioPanelManagerBase.ts <- apps/vscode-extension/src/webview/<Surface>Panel.ts (host)  e.g. PipelineStudioPanel.ts
+<surface>/domain.ts (vscode-free) <- both <surface>/App.tsx (webview) AND apps/vscode-extension/src/webview/<surface>AdapterOrPanel (host)
 ```
 
 The shell composes `shared/ui` (kit); it is never composed BY kit. A surface's webview code never imports

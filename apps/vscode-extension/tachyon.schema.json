@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/cfpperche/tachyon/src/config/tachyon.schema.json",
+  "$id": "https://github.com/cfpperche/tachyon/apps/vscode-extension/tachyon.schema.json",
   "title": "Tachyon configuration (tachyon.yml)",
   "description": "Declares agents, terminals, commands, and settings Tachyon orchestrates in this workspace. An empty roster (no agents/terminals) is valid (t-f67185).",
   "type": "object",

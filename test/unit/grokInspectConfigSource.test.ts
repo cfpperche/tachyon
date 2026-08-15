@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   GrokInspectConfigObservationSource,
   type GrokInspectSpawn,
-} from "../../src/runtimeObservability/grokInspectConfigSource.js";
+} from "../helpers/grokInspectConfigSource.js";
 import {
   PROVIDER_CONFIGURATION_READ_CAPABILITY,
   type ConfigurationObservationGrantV1,

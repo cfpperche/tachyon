@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseConfig, asAgent } from "@tachyon/engine/config/loadConfig.js";
 import { agentProfileSchemaV1 } from "@tachyon/engine/config/agentProfileSchema.js";
 import { EXTENSION_COMMAND_ACTIONS, EXTENSION_QUERY_ACTIONS } from "@tachyon/engine/runtime-api/extensionOperations.js";
-import { FORMATION_GOVERNED_LANES } from "../../src/agents/formation/sessionPolicy.js";
+import { FORMATION_GOVERNED_LANES } from "../helpers/sessionPolicy.js";
 import { AGENT_STUDIO_WEBVIEW_MESSAGE_NAMES } from "../../packages/webview-ui/src/webview/agent-studio-shell/domain.js";
 import { canonicalWorkspaceStudioFormV1 } from "@tachyon/engine/engine-service/protocol.js";
 import { composeAgentPrompt } from "@tachyon/engine/agents/promptLayers.js";

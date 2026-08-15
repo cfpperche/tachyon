@@ -15,7 +15,7 @@
  * 1. `packages/engine/src/config/codexNativeConfigProjection.ts:294` — the config enums the projection enforces.
  * 2. `packages/engine/packages/webview-ui/src/webview/formLogic.ts:65` — `--full-auto` is refused, so the chip list must omit it.
  * 3. `packages/engine/src/harness/HarnessManager.ts:2291` — directory trust is exact-path, and argv cannot grant it.
- * 4. `src/runtime/adapters/codexMemory.ts` — `--disable memories` suppresses native memory.
+ * 4. `test/helpers/codexMemory.ts` — `--disable memories` suppresses native memory.
  *
  * ## Rules this command obeys
  *
@@ -51,7 +51,7 @@ import {
   CODEX_MEMORY_MEASURED_VERSION,
   codexFeaturesListArgv,
   codexMemoryEffectiveState,
-} from "../../src/runtime/adapters/codexMemory.js";
+} from "../../test/helpers/codexMemory.js";
 import { normalizeCliVersion } from "@tachyon/engine/runtime/measuredCliVersions.js";
 import {
   type CodexScreen,
@@ -201,7 +201,7 @@ function measureMemory(base: string): DimensionResult {
   return {
     id: "codex-memory",
     title: "codex native memory suppression",
-    anchor: "src/runtime/adapters/codexMemory.ts",
+    anchor: "test/helpers/codexMemory.ts",
     recordedVersion: `codex-cli ${CODEX_MEMORY_MEASURED_VERSION}`,
     recorded: "--disable memories suppresses an otherwise injected planted marker",
     observed: `control only: default ${byDefault}; --enable ${enableFlag}; --disable ${disableFlag}`,
@@ -379,7 +379,7 @@ function unavailableResults(reason: string): DimensionResult[] {
     unavailable({
       id: "codex-memory",
       title: "codex native memory suppression",
-      anchor: "src/runtime/adapters/codexMemory.ts",
+      anchor: "test/helpers/codexMemory.ts",
       recordedVersion: `codex-cli ${CODEX_MEMORY_MEASURED_VERSION}`,
       recorded: "--disable memories suppresses an otherwise injected planted marker",
     }),

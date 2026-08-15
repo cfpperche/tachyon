@@ -5,7 +5,7 @@ import {
   isBehavioralLaneSuppressionEvidence,
   isNativeSuppressionConfirmed,
   nativeLaneSuppressionCapability,
-} from "../../src/runtime/nativeLaneSuppression.js";
+} from "../helpers/nativeLaneSuppression.js";
 import { nativeMemoryCapability } from "@tachyon/engine/runtime/nativeMemory.js";
 
 /**

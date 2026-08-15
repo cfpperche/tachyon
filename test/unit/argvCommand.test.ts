@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseArgvCommand } from "../../src/config/argvCommand.js";
+import { parseArgvCommand } from "../helpers/argvCommand.js";
 
 describe("parseArgvCommand", () => {
   it("parses quoted and adjacent fragments without a shell", () => {
