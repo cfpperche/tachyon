@@ -46,19 +46,24 @@ export interface ApprovalResolutionSources {
 
 export interface ApprovalResolutionPorts {
   currentSessionOwner: (session: string) => Promise<string | undefined>;
-  inject: (session: string, text: string) => Promise<{ receipt?: string; error?: string }>;
+  /**
+   * t-ea8f78 — `fallbackAgent` is the requester recorded on the approval. Used when the session has
+   * no running owner (the requester left between the request and the decision). Delivery is still
+   * agent-addressed so the notice queue can hold the line until they return.
+   */
+  inject: (session: string, text: string, fallbackAgent?: string) => Promise<{ receipt?: string; error?: string }>;
 }
 
 export function approvalResolutionPorts(sources: ApprovalResolutionSources): ApprovalResolutionPorts {
-  const ownerOf = async (session: string): Promise<string | undefined> =>
-    (await sources.listEntries()).find((entry) => entry.session === session && entry.running)?.name;
+  const ownerOf = async (session: string, requireRunning: boolean): Promise<string | undefined> =>
+    (await sources.listEntries()).find((entry) => entry.session === session && (!requireRunning || entry.running))?.name;
   return {
-    currentSessionOwner: ownerOf,
-    inject: async (session, text) => {
-      const agent = await ownerOf(session);
-      // Delivery is agent-addressed because the queue is. A session with no running owner cannot be
-      // woken at all, and saying so is the point: `resolveApproval` records the error, the human's
-      // decision still stands, and nobody is told a parked agent was notified.
+    currentSessionOwner: (session) => ownerOf(session, true),
+    inject: async (session, text, fallbackAgent) => {
+      const agent = (await ownerOf(session, true)) ?? (await ownerOf(session, false)) ?? fallbackAgent;
+      // t-ea8f78 — a session with no running owner used to abort before deliverNotice ran, so the
+      // decision was recorded and nobody was queued. Address the requester (or the stopped entry)
+      // and let the notice queue hold the line until they come back.
       if (!agent) return { error: `no running agent owns session '${session}'` };
       const result = await sources.deliverNotice(agent, text);
       if (result.status === "submit-unconfirmed") {

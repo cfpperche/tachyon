@@ -2,13 +2,13 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  SAVED_AGENT_PROPOSALS_REL_DIR,
-  cancelSavedAgentProposal,
   readSavedAgentProposal,
   savedAgentProposalPath,
   appendSavedAgentProposalWitness,
+  SAVED_AGENT_RECEIPTS_REL_DIR,
 } from "@tachyon/engine/agents/savedAgentProposalStore.js";
 import { proposedWorktreeEnabled, savedAgentProposalIsExpired, type SavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposal.js";
+import { composeSavedAgentProposalDecisionNotice } from "@tachyon/engine/agents/savedAgentProposalDecision.js";
 import type { AgentProfileGrants } from "@tachyon/engine/config/agentProfileGrants.js";
 
 /**
@@ -35,7 +35,7 @@ import type { AgentProfileGrants } from "@tachyon/engine/config/agentProfileGran
  * not bring new agents into existence — and a proposal pending from before that decision is exactly
  * the case where the old answer would otherwise survive the new one.
  */
-export const SAVED_AGENT_RECEIPTS_REL_DIR = path.join(SAVED_AGENT_PROPOSALS_REL_DIR, "receipts");
+export { SAVED_AGENT_RECEIPTS_REL_DIR };
 
 /**
  * There is no intermediate state, because there is no intermediate. Ratified 2026-07-29: creating the
@@ -132,6 +132,11 @@ export interface SavedAgentCommitPorts {
   authorizeSkill(input: { agentName: string; skillName: string }): Promise<{ ok: boolean; error?: string }>;
   /** Live config digest for the CAS check. */
   currentConfigSha256(): string;
+  /**
+   * t-ea8f78 — wake the proposer through the same notice queue approvals use. Optional only so
+   * existing unit fixtures that prove refusals do not have to invent a delivery port.
+   */
+  deliverNotice?(agent: string, line: string): Promise<unknown>;
 }
 
 function receiptPath(workspaceRoot: string, digest: string): string {
@@ -287,6 +292,12 @@ export async function approveSavedAgentProposal(input: {
     appendSavedAgentProposalWitness(input.workspaceRoot, {
       kind: "committed", id: proposal.id, digest: proposal.digest, approvedBy: input.approvedBy, at: base.approvedAt,
     });
+    await notifyProposer(input.ports, proposal.proposer, composeSavedAgentProposalDecisionNotice({
+      operation: "create",
+      id: proposal.id,
+      agentName: proposal.spec.name,
+      outcome: "approved",
+    }));
     return { ok: true, receipt };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -302,27 +313,51 @@ export async function approveSavedAgentProposal(input: {
  * Deny a proposal. A denial is a decision too: it removes the proposal and records WHO decided, so a
  * proposer that re-proposes is asking again rather than retrying into a void.
  */
-export function denySavedAgentProposal(input: {
+export async function denySavedAgentProposal(input: {
   workspaceRoot: string;
   proposalId: string;
   deniedBy: string;
   reason: string;
   nowMs: number;
-}): { denied: boolean } {
+  deliverNotice?: (agent: string, line: string) => Promise<unknown>;
+}): Promise<{ denied: boolean }> {
   let proposal: SavedAgentProposal;
   try {
     proposal = readSavedAgentProposal(input.workspaceRoot, input.proposalId);
   } catch {
     return { denied: false };
   }
-  // Host-side denial is not the proposer's withdrawal, so it goes through the same removal but is
-  // witnessed under the human's name.
-  cancelSavedAgentProposal({
-    workspaceRoot: input.workspaceRoot,
+  try {
+    fs.rmSync(savedAgentProposalPath(input.workspaceRoot, proposal.id), { force: true });
+  } catch { /* witness is the durable fact */ }
+  appendSavedAgentProposalWitness(input.workspaceRoot, {
+    kind: "denied",
     id: proposal.id,
-    by: proposal.proposer,
-    reason: `denied by ${input.deniedBy}: ${input.reason}`,
-    nowMs: input.nowMs,
+    digest: proposal.digest,
+    proposer: proposal.proposer,
+    deniedBy: input.deniedBy,
+    reason: input.reason,
+    agentName: proposal.spec.name,
+    at: new Date(input.nowMs).toISOString(),
   });
+  await notifyProposer({ deliverNotice: input.deliverNotice }, proposal.proposer, composeSavedAgentProposalDecisionNotice({
+    operation: "create",
+    id: proposal.id,
+    agentName: proposal.spec.name,
+    outcome: "denied",
+  }));
   return { denied: true };
+}
+
+async function notifyProposer(
+  ports: { deliverNotice?: (agent: string, line: string) => Promise<unknown> },
+  agent: string,
+  line: string,
+): Promise<void> {
+  if (!ports.deliverNotice) return;
+  try {
+    await ports.deliverNotice(agent, line);
+  } catch {
+    /* the decision stands; delivery is best-effort and the durable decision is already on disk */
+  }
 }

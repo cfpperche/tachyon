@@ -3,11 +3,17 @@ import {
   buildHumanInbox,
   filterHumanInboxItems,
   humanInboxCounts,
+  humanInboxHeaderChips,
+  humanInboxHeaderKindChipSum,
   validationAwaitsHuman,
   type HumanInboxItem,
+  type SavedAgentProposalDecision,
 } from "@tachyon/webview-ui/humanInbox/model";
 import type { ApprovalViewItem } from "@tachyon/webview-ui/webview/approval/viewModel.js";
 import type { ValidationViewItem } from "@tachyon/webview-ui/webview/validations/viewModel.js";
+import type { SavedAgentProposalReview } from "@tachyon/webview-ui/agents/savedAgentProposalReview.js";
+import type { SavedAgentRemovalProposalReview } from "@tachyon/webview-ui/agents/savedAgentRemovalProposalReview.js";
+import type { ScheduleProposal } from "@tachyon/engine/schedule/ProposalStore.js";
 
 /**
  * Human Inbox, phase 1 — the aggregate projection (t-e76acc).
@@ -191,6 +197,132 @@ describe("Human Inbox — the artifacts a detail route will preview", () => {
 });
 
 describe("Human Inbox — history filters", () => {
+  const history = () => build(
+    [
+      approval(),
+      approval({
+        id: "a-approved",
+        status: "resolved",
+        resolution: {
+          decision: "approved",
+          resolvedAt: "2026-07-27T11:00:00.000Z",
+          resolvedBy: "unattributed:companion-http",
+          injectedText: "fixed receipt",
+        },
+      }),
+    ],
+    [validation({
+      id: "v-failed",
+      title: "visual regression",
+      status: "closed",
+      rounds: [{ n: 1, outcome: "failed", closedAt: "2026-07-20T11:00:00.000Z", evidenceRefs: [] }],
+    })],
+  );
+
+  it("keeps a decided Saved Agent proposal as a history row with its outcome", () => {
+    const decided: SavedAgentProposalDecision = {
+      id: "sp-dec001",
+      agentName: "importer",
+      proposer: "claude",
+      outcome: "approved",
+      resolvedAt: "2026-07-27T11:00:00.000Z",
+      resolvedBy: "human",
+    };
+    const items = buildHumanInbox({
+      wsHash: "ws1",
+      folder: "demo",
+      approvals: [],
+      validations: [],
+      decidedSavedAgentProposals: [decided],
+      decidedSavedAgentRemovals: [{
+        id: "sr-dec001",
+        agentName: "grok-x",
+        proposer: "claude",
+        outcome: "denied",
+        resolvedAt: "2026-07-27T11:10:00.000Z",
+        resolvedBy: "human",
+      }],
+    }, { now: NOW });
+    expect(items.map(({ id, kind, state, outcome }) => ({ id, kind, state, outcome }))).toEqual([
+      { id: "sr-dec001", kind: "saved-agent-removal", state: "resolved", outcome: "denied" },
+      { id: "sp-dec001", kind: "saved-agent-proposal", state: "resolved", outcome: "approved" },
+    ]);
+    expect(humanInboxCounts(items).total).toBe(0);
+  });
+});
+
+describe("t-00aa76 — header chips cannot contradict the waiting total", () => {
+  const createReview = (id: string): SavedAgentProposalReview => ({
+    id,
+    proposer: "claude",
+    proposerTrust: "bridge-resolved",
+    digest: "d".repeat(64),
+    createdAt: "2026-07-27T10:00:00.000Z",
+    expiresAt: "2026-07-28T10:00:00.000Z",
+    expired: false,
+    agentName: "importer",
+    worktreeEnabled: true,
+    runtime: { adapter: "claude" },
+    ownership: "proposer",
+    requestedGrants: [],
+    permissionAuthorizations: [],
+    rationale: "nightly import",
+    environmentNames: [],
+    requestedOwnership: [],
+    requestedSkills: [],
+    requestedMcpServers: [],
+    requestedHooks: [],
+    hasUngrantedCapabilityRequests: false,
+    dangerous: [],
+    affected: [],
+    baseConfigSha256: "a".repeat(64),
+    baseDiverged: false,
+  });
+  const removalReview = (id: string): SavedAgentRemovalProposalReview => ({
+    id,
+    proposer: "claude",
+    proposerTrust: "bridge-resolved",
+    digest: "e".repeat(64),
+    createdAt: "2026-07-27T10:00:00.000Z",
+    expiresAt: "2026-07-28T10:00:00.000Z",
+    expired: false,
+    agentName: "grok-x",
+    agentId: "id-1",
+    profileRevision: "rev-1",
+    rationale: "retire",
+    dangerous: [],
+    affected: [],
+    baseConfigSha256: "a".repeat(64),
+    baseDiverged: false,
+  });
+  const schedule = (id: string): ScheduleProposal => ({
+    id,
+    name: "nightly",
+    by: "claude",
+    createdAt: "2026-07-27T10:00:00.000Z",
+    expiresAt: "2026-07-28T10:00:00.000Z",
+    schedule: { every: "1h", run: "test" },
+  });
+
+  it("kind chips the header renders sum to the waiting total", () => {
+    // One of each waiting kind. The header function is what App.tsx renders — summing those
+    // chips (not the counts object) is the measurement. Do not pin a literal total.
+    const items = buildHumanInbox({
+      wsHash: "ws1",
+      folder: "demo",
+      approvals: [approval()],
+      validations: [validation()],
+      savedAgentProposals: [createReview("sp-000001")],
+      savedAgentRemovals: [removalReview("sr-000001")],
+      scheduleProposals: [schedule("sc-000001")],
+    }, { now: NOW });
+    const counts = humanInboxCounts(items);
+    const chips = humanInboxHeaderChips(counts);
+    expect(humanInboxHeaderKindChipSum(chips)).toBe(counts.total);
+  });
+});
+
+describe("Human Inbox — history filters (continued)", () => {
   const history = () => build(
     [
       approval(),

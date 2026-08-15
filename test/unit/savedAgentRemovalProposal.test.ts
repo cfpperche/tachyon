@@ -372,7 +372,7 @@ describe("store + commit — digest bind and fail-closed cascade", () => {
     });
     expect(recorded.ok).toBe(true);
     if (!recorded.ok) return;
-    const denied = denySavedAgentRemovalProposal({
+    const denied = await denySavedAgentRemovalProposal({
       workspaceRoot: root,
       proposalId: recorded.proposal.id,
       deniedBy: "human",
@@ -381,6 +381,71 @@ describe("store + commit — digest bind and fail-closed cascade", () => {
     });
     expect(denied.denied).toBe(true);
     expect(listLiveSavedAgentRemovalProposals(root, 52_000)).toHaveLength(0);
+  });
+
+  it("t-ea8f78 — approve delivers a notice that names the outcome", async () => {
+    const root = workspace();
+    profile(root, "boss", { proposeSavedAgent: true });
+    const recorded = recordSavedAgentRemovalProposal({
+      workspaceRoot: root,
+      proposer: "boss",
+      proposerProfile: { grants: { proposeSavedAgent: true } },
+      spec: { name: "target", rationale: "retire" },
+      base: base(root),
+      target: targetFacts(),
+      nowMs: 60_000,
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+    const notices: Array<{ agent: string; line: string }> = [];
+    const result = await approveSavedAgentRemovalProposal({
+      workspaceRoot: root,
+      proposalId: recorded.proposal.id,
+      approvedDigest: recorded.proposal.digest,
+      approvedBy: "human",
+      nowMs: 61_000,
+      ports: {
+        forgetSavedAgent: async (input) => ({ txid: "tx-1", revision: input.expectedRevision }),
+        readTargetIdentity: async () => ({ agentId: AGENT_ID, revision: REVISION }),
+        readProposerGrants: () => ({ proposeSavedAgent: true }),
+        currentConfigSha256: () => workspaceConfigSha256(root),
+        deliverNotice: async (agent, line) => { notices.push({ agent, line }); },
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(notices).toEqual([{
+      agent: "boss",
+      line: `[tachyon] Saved Agent proposal ${recorded.proposal.id} to retire 'target' was approved`,
+    }]);
+  });
+
+  it("t-ea8f78 — deny delivers a notice that names the outcome", async () => {
+    const root = workspace();
+    profile(root, "boss", { proposeSavedAgent: true });
+    const recorded = recordSavedAgentRemovalProposal({
+      workspaceRoot: root,
+      proposer: "boss",
+      proposerProfile: { grants: { proposeSavedAgent: true } },
+      spec: { name: "target", rationale: "retire" },
+      base: base(root),
+      target: targetFacts(),
+      nowMs: 70_000,
+    });
+    expect(recorded.ok).toBe(true);
+    if (!recorded.ok) return;
+    const notices: Array<{ agent: string; line: string }> = [];
+    await denySavedAgentRemovalProposal({
+      workspaceRoot: root,
+      proposalId: recorded.proposal.id,
+      deniedBy: "human",
+      reason: "keep it",
+      nowMs: 71_000,
+      deliverNotice: async (agent, line) => { notices.push({ agent, line }); },
+    });
+    expect(notices).toEqual([{
+      agent: "boss",
+      line: `[tachyon] Saved Agent proposal ${recorded.proposal.id} to retire 'target' was denied`,
+    }]);
   });
 });
 

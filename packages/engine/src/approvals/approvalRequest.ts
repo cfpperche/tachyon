@@ -621,7 +621,7 @@ export async function resolveApproval(input: {
   resolvedBy?: ApprovalResolutionChannel;
   now?: string;
   /** Host-side write_input(answering=true) — typed text is the FIXED Tachyon string, never caller-supplied. */
-  inject: (session: string, text: string) => Promise<{ receipt?: string; error?: string }>;
+  inject: (session: string, text: string, fallbackAgent?: string) => Promise<{ receipt?: string; error?: string }>;
   /** Host-side session ownership check. If the recorded session now belongs to someone else, refuse injection. */
   currentSessionOwner?: (session: string) => string | undefined | Promise<string | undefined>;
   /** Optional hook the host calls to complete the pin created at request time. */
@@ -653,7 +653,7 @@ export async function resolveApproval(input: {
   let receipt: string | undefined;
   let injectError: string | undefined;
   try {
-    const r = await input.inject(request.session, injectedText);
+    const r = await input.inject(request.session, injectedText, request.requester);
     receipt = r.receipt;
     injectError = r.error;
   } catch (err) {

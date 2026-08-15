@@ -87,7 +87,7 @@ export interface HumanInboxItem {
   createdAt: string;
   state: "waiting" | "resolved";
   /** Kind-specific terminal result; absent while waiting or on older incomplete records. */
-  outcome?: "approved" | "denied" | "cancelled" | "passed" | "failed" | "skipped";
+  outcome?: "approved" | "denied" | "cancelled" | "expired" | "passed" | "failed" | "skipped";
   resolvedAt?: string;
   /** Verbatim proven actor/channel when present; explicit `unattributed` when the store proves none. */
   resolvedBy?: string;
@@ -122,6 +122,26 @@ export interface HumanInboxInput {
   untrustedSavedAgentRemovals?: readonly { id: string; reason: string }[];
   /** Pending schedules share the Inbox as the sole owner of human decisions. */
   scheduleProposals?: readonly ScheduleProposal[];
+  /**
+   * t-00aa76 — decided Saved Agent proposals (create). Live rows come from the live queue; these are
+   * the history rows so a committed/denied/cancelled/expired proposal does not vanish.
+   */
+  decidedSavedAgentProposals?: readonly SavedAgentProposalDecision[];
+  /** t-00aa76 — decided Saved Agent removal proposals. */
+  decidedSavedAgentRemovals?: readonly SavedAgentProposalDecision[];
+}
+
+/** One decided Saved Agent proposal, already reduced to the fields a history row needs. */
+export interface SavedAgentProposalDecision {
+  id: string;
+  agentName: string;
+  proposer: string;
+  outcome: "approved" | "denied" | "cancelled" | "expired";
+  resolvedAt: string;
+  resolvedBy: string;
+  digest?: string;
+  rationale?: string;
+  runtimeAdapter?: string;
 }
 
 /** The product's answer when a workspace configures nothing. */
@@ -170,6 +190,84 @@ function validationResolvedBy(validation: ValidationViewItem): string | undefine
   if (!actor) return validation.status === "closed" ? "unattributed" : undefined;
   if (actor.kind === "unattributed") return actor.name ? `unattributed:${actor.name}` : "unattributed";
   return actor.name ?? actor.kind;
+}
+
+function decidedProposalItem(
+  input: Pick<HumanInboxInput, "wsHash" | "folder">,
+  decided: SavedAgentProposalDecision,
+  kind: "saved-agent-proposal" | "saved-agent-removal",
+): HumanInboxItem {
+  const title = kind === "saved-agent-removal"
+    ? `retire Saved Agent '${decided.agentName}'`
+    : `create Saved Agent '${decided.agentName}'${decided.runtimeAdapter ? ` (${decided.runtimeAdapter})` : ""}`;
+  return {
+    id: decided.id,
+    kind,
+    title,
+    requester: decided.proposer,
+    requesterTrust: "bridge-resolved",
+    createdAt: decided.resolvedAt,
+    state: "resolved",
+    outcome: decided.outcome,
+    resolvedAt: decided.resolvedAt,
+    resolvedBy: decided.resolvedBy,
+    wsHash: input.wsHash,
+    folder: input.folder,
+    stale: false,
+    artifacts: [],
+    detail: kind === "saved-agent-removal"
+      ? { kind, proposal: stubRemovalReview(decided) }
+      : { kind, proposal: stubCreateReview(decided) },
+  };
+}
+
+function stubCreateReview(decided: SavedAgentProposalDecision): SavedAgentProposalReview {
+  return {
+    id: decided.id,
+    proposer: decided.proposer,
+    proposerTrust: "bridge-resolved",
+    digest: decided.digest ?? "",
+    createdAt: decided.resolvedAt,
+    expiresAt: decided.resolvedAt,
+    expired: decided.outcome === "expired",
+    agentName: decided.agentName,
+    worktreeEnabled: "unknown",
+    runtime: { adapter: decided.runtimeAdapter ?? "(decided)" },
+    ownership: "proposer",
+    requestedGrants: [],
+    permissionAuthorizations: [],
+    rationale: decided.rationale ?? "",
+    environmentNames: [],
+    requestedOwnership: [],
+    requestedSkills: [],
+    requestedMcpServers: [],
+    requestedHooks: [],
+    hasUngrantedCapabilityRequests: false,
+    dangerous: [],
+    affected: [],
+    baseConfigSha256: "",
+    baseDiverged: false,
+  };
+}
+
+function stubRemovalReview(decided: SavedAgentProposalDecision): SavedAgentRemovalProposalReview {
+  return {
+    id: decided.id,
+    proposer: decided.proposer,
+    proposerTrust: "bridge-resolved",
+    digest: decided.digest ?? "",
+    createdAt: decided.resolvedAt,
+    expiresAt: decided.resolvedAt,
+    expired: decided.outcome === "expired",
+    agentName: decided.agentName,
+    agentId: "",
+    profileRevision: "",
+    rationale: decided.rationale ?? "",
+    dangerous: [],
+    affected: [],
+    baseConfigSha256: "",
+    baseDiverged: false,
+  };
 }
 
 /**
@@ -381,6 +479,14 @@ export function buildHumanInbox(input: HumanInboxInput, options: HumanInboxOptio
     });
   }
 
+  for (const decided of input.decidedSavedAgentProposals ?? []) {
+    items.push(decidedProposalItem(input, decided, "saved-agent-proposal"));
+  }
+
+  for (const decided of input.decidedSavedAgentRemovals ?? []) {
+    items.push(decidedProposalItem(input, decided, "saved-agent-removal"));
+  }
+
   for (const proposal of input.scheduleProposals ?? []) {
     // Same rule as Saved Agent proposals: an expired record is no longer an actionable decision.
     const expiry = Date.parse(proposal.expiresAt);
@@ -479,4 +585,50 @@ export function humanInboxCounts(items: readonly HumanInboxItem[]): HumanInboxCo
     validations: waiting.filter((i) => i.kind === "validation").length,
     stale: waiting.filter((i) => i.stale).length,
   };
+}
+
+export type HumanInboxHeaderChipKey =
+  | "total"
+  | "approvals"
+  | "savedAgentProposals"
+  | "savedAgentRemovals"
+  | "scheduleProposals"
+  | "validations"
+  | "stale";
+
+export interface HumanInboxHeaderChip {
+  key: HumanInboxHeaderChipKey;
+  label: string;
+  count: number;
+  tone?: "strong" | "warn";
+}
+
+/**
+ * t-00aa76 — the chips the header actually renders. Derived from the same `humanInboxCounts`
+ * the rest of the surface uses, so a test can sum them and compare to `total` without repeating
+ * a watched number.
+ *
+ * Kind chips (everything except `total` and `stale`) must add up to `total`. Stale is a mark
+ * on waiting rows, not a sixth kind.
+ */
+export function humanInboxHeaderChips(counts: HumanInboxCounts): HumanInboxHeaderChip[] {
+  const chips: HumanInboxHeaderChip[] = [
+    { key: "total", label: `${counts.total} waiting`, count: counts.total, ...(counts.total > 0 ? { tone: "strong" as const } : {}) },
+    { key: "approvals", label: `${counts.approvals} approvals`, count: counts.approvals },
+    { key: "savedAgentProposals", label: `${counts.savedAgentProposals} new agents`, count: counts.savedAgentProposals },
+    { key: "savedAgentRemovals", label: `${counts.savedAgentRemovals} retirements`, count: counts.savedAgentRemovals },
+    { key: "scheduleProposals", label: `${counts.scheduleProposals} schedules`, count: counts.scheduleProposals },
+    { key: "validations", label: `${counts.validations} validations`, count: counts.validations },
+  ];
+  if (counts.stale > 0) {
+    chips.push({ key: "stale", label: `${counts.stale} stale`, count: counts.stale, tone: "warn" });
+  }
+  return chips;
+}
+
+/** Sum of the kind chips the header shows — not `total`, not `stale`. */
+export function humanInboxHeaderKindChipSum(chips: readonly HumanInboxHeaderChip[]): number {
+  return chips
+    .filter((chip) => chip.key !== "total" && chip.key !== "stale")
+    .reduce((sum, chip) => sum + chip.count, 0);
 }

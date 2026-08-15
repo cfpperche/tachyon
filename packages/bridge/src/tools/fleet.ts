@@ -1,7 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { cancelSavedAgentProposal, readLiveSavedAgentProposalQueue, recordSavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposalStore.js";
-import { cancelSavedAgentRemovalProposal, readLiveSavedAgentRemovalProposalQueue, recordSavedAgentRemovalProposal } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
+import { cancelSavedAgentProposal, listSavedAgentProposalDecisions, readLiveSavedAgentProposalQueue, recordSavedAgentProposal } from "@tachyon/engine/agents/savedAgentProposalStore.js";
+import { cancelSavedAgentRemovalProposal, listSavedAgentRemovalProposalDecisions, readLiveSavedAgentRemovalProposalQueue, recordSavedAgentRemovalProposal } from "@tachyon/engine/agents/savedAgentRemovalProposalStore.js";
 import { readAgentProfileGrants, workspaceConfigSha256 } from "@tachyon/engine/config/agentProfileGrants.js";
 import type { AgentOwnershipRosterV1 } from "@tachyon/shared/config/agentProfileStudio.js";
 import { parentCwdRefusalFor } from "@tachyon/engine/agents/spawnContract.js";
@@ -782,9 +782,9 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     "list_saved_agent_proposals",
     {
       description:
-        "List this workspace's live (unexpired) Saved Agent proposals. Read-only. Rows carry the proposer, the digest a " +
-        "human approval would be bound to, and the expiry; the requested spec is included so a proposer can confirm " +
-        "what is actually pending.",
+        "List this workspace's live (unexpired) Saved Agent proposals AND decided ones (approved, denied, cancelled, expired). " +
+        "Read-only. Live rows carry the proposer, the digest a human approval would be bound to, and the expiry. " +
+        "`decided` is how the four terminal outcomes stay distinguishable after the live file is gone.",
       inputSchema: {},
     },
     async () => {
@@ -792,7 +792,8 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
         // Not scoped to the caller: the queue is shared, the ceiling is per-proposer, and an agent
         // that cannot see a neighbour's pending proposal will re-propose the same agent under a
         // different name. Nothing here is secret — it is what the human is about to be shown.
-        const queue = readLiveSavedAgentProposalQueue(deps.workspaceRoot, Date.now());
+        const nowMs = Date.now();
+        const queue = readLiveSavedAgentProposalQueue(deps.workspaceRoot, nowMs);
         return ok(JSON.stringify({
           proposals: queue.proposals.map((p) => ({
             id: p.id,
@@ -801,6 +802,15 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
             createdAt: p.createdAt,
             expiresAt: p.expiresAt,
             spec: p.spec,
+          })),
+          decided: listSavedAgentProposalDecisions(deps.workspaceRoot, nowMs).map((d) => ({
+            id: d.id,
+            proposer: d.proposer,
+            digest: d.digest,
+            agentName: d.agentName,
+            outcome: d.outcome,
+            resolvedAt: d.resolvedAt,
+            resolvedBy: d.resolvedBy,
           })),
           // Reported, never hidden: a queued file that fails its digest is the one thing a reader must
           // not mistake for "withdrawn". It also consumes ceiling, so an unexplained refusal would be
@@ -917,13 +927,15 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
     "list_saved_agent_removal_proposals",
     {
       description:
-        "List this workspace's live (unexpired) Saved Agent removal proposals. Read-only. Rows carry the proposer, the " +
-        "digest a human approval would be bound to, the target agent, and the expiry.",
+        "List this workspace's live (unexpired) Saved Agent removal proposals AND decided ones (approved, denied, cancelled, expired). " +
+        "Read-only. Live rows carry the proposer, the digest a human approval would be bound to, the target agent, and the expiry. " +
+        "`decided` is how the four terminal outcomes stay distinguishable after the live file is gone.",
       inputSchema: {},
     },
     async () => {
       try {
-        const queue = readLiveSavedAgentRemovalProposalQueue(deps.workspaceRoot, Date.now());
+        const nowMs = Date.now();
+        const queue = readLiveSavedAgentRemovalProposalQueue(deps.workspaceRoot, nowMs);
         return ok(JSON.stringify({
           proposals: queue.proposals.map((p) => ({
             id: p.id,
@@ -936,6 +948,15 @@ export function registerFleetTools(mcp: McpServer, deps: BridgeDeps): void {
               agentId: p.base.agentId,
               profileRevision: p.base.profileRevision.slice(0, 16) + "…",
             },
+          })),
+          decided: listSavedAgentRemovalProposalDecisions(deps.workspaceRoot, nowMs).map((d) => ({
+            id: d.id,
+            proposer: d.proposer,
+            digest: d.digest,
+            agentName: d.agentName,
+            outcome: d.outcome,
+            resolvedAt: d.resolvedAt,
+            resolvedBy: d.resolvedBy,
           })),
           unreadable: queue.unreadable,
         }, null, 2));

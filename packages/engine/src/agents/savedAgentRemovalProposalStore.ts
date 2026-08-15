@@ -9,6 +9,7 @@ import {
   type SavedAgentRemovalProposalAdmission,
   type SavedAgentRemovalTargetFacts,
 } from "./savedAgentRemovalProposal.js";
+import type { SavedAgentProposalDecisionRecord } from "./savedAgentProposalDecision.js";
 import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
 
 /**
@@ -20,13 +21,16 @@ import type { AgentProfileV1 } from "../config/agentProfileSchema.js";
  */
 
 export const SAVED_AGENT_REMOVAL_PROPOSALS_REL_DIR = path.join(".tachyon", "agent-removal-proposals");
+export const SAVED_AGENT_REMOVAL_RECEIPTS_REL_DIR = path.join(SAVED_AGENT_REMOVAL_PROPOSALS_REL_DIR, "receipts");
 export const SAVED_AGENT_REMOVAL_PROPOSAL_WITNESS_REL_PATH = path.join(".tachyon", "agent-removal-proposals.jsonl");
 export const SAVED_AGENT_REMOVAL_PROPOSAL_ID_PREFIX = "sr-";
 
 export type SavedAgentRemovalProposalWitnessEvent =
   | { kind: "proposed"; id: string; proposer: string; digest: string; at: string }
   | { kind: "collapsed"; id: string; proposer: string; digest: string; at: string }
-  | { kind: "cancelled"; id: string; by: string; reason: string; at: string }
+  | { kind: "cancelled"; id: string; by: string; reason: string; at: string; agentName?: string }
+  | { kind: "denied"; id: string; digest: string; proposer: string; deniedBy: string; reason: string; agentName: string; at: string }
+  | { kind: "expired"; id: string; digest: string; proposer: string; agentName: string; at: string }
   | { kind: "refused"; proposer: string; code: string; at: string }
   | { kind: "unreadable"; ids: string[]; at: string }
   | { kind: "committed"; id: string; digest: string; approvedBy: string; at: string };
@@ -275,10 +279,139 @@ export function cancelSavedAgentRemovalProposal(input: {
 
 export function sweepExpiredSavedAgentRemovalProposals(workspaceRoot: string, nowMs: number): string[] {
   const swept: string[] = [];
+  const at = new Date(nowMs).toISOString();
   for (const proposal of listSavedAgentRemovalProposals(workspaceRoot)) {
     if (!savedAgentRemovalProposalIsExpired(proposal, nowMs)) continue;
     fs.rmSync(savedAgentRemovalProposalPath(workspaceRoot, proposal.id), { force: true });
+    appendSavedAgentRemovalProposalWitness(workspaceRoot, {
+      kind: "expired",
+      id: proposal.id,
+      digest: proposal.digest,
+      proposer: proposal.proposer,
+      agentName: proposal.spec.name,
+      at,
+    });
     swept.push(proposal.id);
   }
   return swept;
+}
+
+export interface SavedAgentRemovalProposalReceiptRecord {
+  digest: string;
+  proposalId: string;
+  proposer: string;
+  approvedBy: string;
+  agentName: string;
+  approvedAt: string;
+  outcome: string;
+}
+
+export function listSavedAgentRemovalProposalReceipts(workspaceRoot: string): SavedAgentRemovalProposalReceiptRecord[] {
+  const dir = path.join(workspaceRoot, SAVED_AGENT_REMOVAL_RECEIPTS_REL_DIR);
+  if (!fs.existsSync(dir)) return [];
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const out: SavedAgentRemovalProposalReceiptRecord[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(dir, entry), "utf8")) as Record<string, unknown>;
+      if (typeof raw.digest !== "string" || typeof raw.proposalId !== "string") continue;
+      if (typeof raw.proposer !== "string" || typeof raw.agentName !== "string") continue;
+      if (typeof raw.approvedBy !== "string" || typeof raw.approvedAt !== "string") continue;
+      if (typeof raw.outcome !== "string") continue;
+      out.push({
+        digest: raw.digest,
+        proposalId: raw.proposalId,
+        proposer: raw.proposer,
+        approvedBy: raw.approvedBy,
+        agentName: raw.agentName,
+        approvedAt: raw.approvedAt,
+        outcome: raw.outcome,
+      });
+    } catch {
+      /* a corrupt receipt is not a decision we can show */
+    }
+  }
+  return out;
+}
+
+export function listSavedAgentRemovalProposalDecisions(
+  workspaceRoot: string,
+  nowMs: number,
+): SavedAgentProposalDecisionRecord[] {
+  const byId = new Map<string, SavedAgentProposalDecisionRecord>();
+
+  for (const event of readSavedAgentRemovalProposalWitness(workspaceRoot)) {
+    if (event.kind === "denied") {
+      byId.set(event.id, {
+        id: event.id,
+        digest: event.digest,
+        proposer: event.proposer,
+        agentName: event.agentName,
+        outcome: "denied",
+        resolvedAt: event.at,
+        resolvedBy: event.deniedBy,
+        operation: "remove",
+      });
+    } else if (event.kind === "cancelled") {
+      const denied = event.reason.startsWith("denied by ");
+      byId.set(event.id, {
+        id: event.id,
+        digest: "",
+        proposer: event.by,
+        agentName: event.agentName ?? event.id,
+        outcome: denied ? "denied" : "cancelled",
+        resolvedAt: event.at,
+        resolvedBy: denied ? event.reason.slice("denied by ".length).split(":")[0] ?? event.by : event.by,
+        operation: "remove",
+      });
+    } else if (event.kind === "expired") {
+      byId.set(event.id, {
+        id: event.id,
+        digest: event.digest,
+        proposer: event.proposer,
+        agentName: event.agentName,
+        outcome: "expired",
+        resolvedAt: event.at,
+        resolvedBy: "expiry",
+        operation: "remove",
+      });
+    }
+  }
+
+  for (const proposal of listSavedAgentRemovalProposals(workspaceRoot)) {
+    if (!savedAgentRemovalProposalIsExpired(proposal, nowMs) || byId.has(proposal.id)) continue;
+    byId.set(proposal.id, {
+      id: proposal.id,
+      digest: proposal.digest,
+      proposer: proposal.proposer,
+      agentName: proposal.spec.name,
+      outcome: "expired",
+      resolvedAt: proposal.expiresAt,
+      resolvedBy: "expiry",
+      operation: "remove",
+      rationale: proposal.spec.rationale,
+    });
+  }
+
+  for (const receipt of listSavedAgentRemovalProposalReceipts(workspaceRoot)) {
+    if (receipt.outcome !== "committed") continue;
+    byId.set(receipt.proposalId, {
+      id: receipt.proposalId,
+      digest: receipt.digest,
+      proposer: receipt.proposer,
+      agentName: receipt.agentName,
+      outcome: "approved",
+      resolvedAt: receipt.approvedAt,
+      resolvedBy: receipt.approvedBy,
+      operation: "remove",
+    });
+  }
+
+  return [...byId.values()].sort((a, b) => a.resolvedAt.localeCompare(b.resolvedAt) || a.id.localeCompare(b.id));
 }
