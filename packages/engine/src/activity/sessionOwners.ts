@@ -458,6 +458,8 @@ export function buildOwnershipSettings(
   opts: {
     skipDangerousModePermissionPrompt?: boolean;
     statusLine?: { type: "command"; command: string; padding?: number };
+    /** Failure ledger for lifecycle hooks that exist independently of silent persistence. */
+    failureFile?: string;
     /**
      * t-09edf2 — event → groups the workspace deliberately projects into THIS session (an installed
      * plugin's `enforcement` gate hook). Merged alongside the lifecycle hooks rather than through them:
@@ -472,8 +474,9 @@ export function buildOwnershipSettings(
   skipDangerousModePermissionPrompt?: boolean;
   statusLine?: { type: "command"; command: string; padding?: number };
 } {
-  const failureArg = persistence ? ` ${q(persistence.failureFile)}` : "";
-  const pointerFailureArgs = persistence ? ` ${q(persistence.failureFile)} ${q(agent)}` : "";
+  const failureFile = persistence?.failureFile ?? opts.failureFile;
+  const failureArg = failureFile ? ` ${q(failureFile)}` : "";
+  const pointerFailureArgs = failureFile ? ` ${q(failureFile)} ${q(agent)}` : "";
   const hooks = [{ type: "command", command: `node ${q(recorderPath)} ${q(agent)} ${q(ownersFile)}${failureArg}` }];
   // spec 245 — a SECOND SessionStart command emits a one-line pointer (additionalContext) to the project
   // handoff when one exists. Additive; claude unions additionalContext across hooks. Never dumps content.
@@ -491,7 +494,7 @@ export function buildOwnershipSettings(
     stopHooks.push({ type: "command", command: `node ${q(persistence.stopRecorderPath)} ${q(agent)} ${q(persistence.stopFile)} ${q(persistence.failureFile)}` });
   }
   if (runtimeStatus) {
-    stopHooks.push({ type: "command", command: `node ${q(runtimeStatus.publisherPath)} ${q(runtimeStatus.runtime)}` });
+    stopHooks.push({ type: "command", command: `node ${q(runtimeStatus.publisherPath)} ${q(runtimeStatus.runtime)}${failureFile ? ` ${q(failureFile)} ${q(agent)}` : ""}` });
   }
   if (stopHooks.length > 0) {
     settings.hooks.Stop = [{ hooks: stopHooks }];
@@ -755,20 +758,38 @@ process.stdin.on("end", () => {
 /** Best-effort MCP client used by Tachyon-owned native lifecycle hooks. Authentication and agent
  * identity come from the current spawn's environment; the Bridge rejects superseded credentials. */
 export const RUNTIME_STATUS_PUBLISHER_SOURCE = `// Tachyon runtime status publisher (t-6b3a0d) — materialized; do not edit.
+const fs = require("fs");
+const path = require("path");
 const url = process.env.TACHYON_AGENT_BRIDGE_URL || "";
 const token = process.env.TACHYON_AGENT_BRIDGE_TOKEN || "";
 const runtime = process.argv[2] || "";
+const failureFile = process.argv[3] || "";
+const agent = process.argv[4] || "";
+${PERSISTENCE_LEDGER_RETENTION_SOURCE}
+function sanitizeReason(e) {
+  const msg = e && typeof e.message === "string" ? e.message : String(e || "unknown error");
+  return msg.replace(/[\\r\\n\\t]+/g, " ").slice(0, 240);
+}
+function logFailure(reason) {
+  if (!failureFile) return;
+  try {
+    fs.mkdirSync(path.dirname(failureFile), { recursive: true });
+    fs.appendFileSync(failureFile, JSON.stringify({ agent, event: "Stop", script: "runtime-status-publish", path: url, reason: sanitizeReason(reason), ts: new Date().toISOString() }) + "\\n");
+    prunePersistenceLedger(failureFile);
+  } catch (_e) {}
+}
 const baseHeaders = { "content-type": "application/json", "accept": "application/json, text/event-stream", "authorization": "Bearer " + token };
 async function post(body, sessionId) {
   const headers = sessionId ? { ...baseHeaders, "mcp-session-id": sessionId } : baseHeaders;
   return fetch(url, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(2000) });
 }
 (async () => {
-  if (!url || !token || !["claude", "codex", "grok"].includes(runtime)) return;
+  if (!url || !token || !["claude", "codex", "grok"].includes(runtime)) throw new Error("runtime status hook environment is incomplete");
   const init = await post({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "tachyon-runtime-hook", version: "1" } } });
   const sessionId = init.headers.get("mcp-session-id") || "";
-  if (!init.ok || !sessionId) return;
+  if (!init.ok || !sessionId) throw new Error("runtime status hook initialize failed");
   await post({ jsonrpc: "2.0", method: "notifications/initialized" }, sessionId);
-  await post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "runtime_status_publish", arguments: { event: "stopped", runtime } } }, sessionId);
-})().catch(() => {});
+  const publish = await post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "runtime_status_publish", arguments: { event: "stopped", runtime } } }, sessionId);
+  if (!publish.ok) throw new Error("runtime status hook publish failed");
+})().catch(logFailure);
 `;

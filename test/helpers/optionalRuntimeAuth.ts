@@ -3,11 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, vi } from "vitest";
 
-export type OptionalRuntime = "claude" | "codex" | "opencode";
+export type OptionalRuntime = "claude" | "codex" | "grok" | "opencode";
 
 export function optionalRuntimeCredential(runtime: OptionalRuntime, env = process.env, home = os.homedir()): string {
   if (runtime === "claude") return path.join(env.CLAUDE_CONFIG_DIR?.trim() || path.join(home, ".claude"), ".credentials.json");
   if (runtime === "codex") return path.join(env.CODEX_HOME?.trim() || path.join(home, ".codex"), "auth.json");
+  if (runtime === "grok") return path.join(env.GROK_HOME?.trim() || path.join(home, ".grok"), "auth.json");
   return path.join(env.XDG_DATA_HOME?.trim() || path.join(home, ".local", "share"), "opencode", "auth.json");
 }
 
@@ -32,8 +33,8 @@ export function optionalRuntimeCredentialAvailable(runtime: OptionalRuntime): bo
  * passed; only the opencode ones stayed red, and those are a different dependency (see below).
  *
  * The state goes in through the door production reads it from — `CLAUDE_CONFIG_DIR` / `CODEX_HOME` /
- * `XDG_DATA_HOME`, resolved by `realConfigHome()` / `defaultRealCodexHome()` /
- * `defaultRealOpencodeDataHome()` when the Workspace builds its `HarnessManager` — pointed at a
+ * `GROK_HOME` / `XDG_DATA_HOME`, resolved by the corresponding real-home selector when the Workspace
+ * builds its `HarnessManager` — pointed at a
  * directory this helper owns and deletes.
  *
  * t-b10d93 — `opencode` was excluded here until 2026-08-11, on the grounds that its launch preflight
@@ -61,6 +62,9 @@ export function useDisposableRuntimeAuth(runtimes: readonly OptionalRuntime[]): 
         fs.writeFileSync(path.join(home, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"fixture-only"}}\n', "utf8");
         fs.writeFileSync(path.join(home, ".claude.json"), `${JSON.stringify({ hasCompletedOnboarding: true })}\n`, "utf8");
         vi.stubEnv("CLAUDE_CONFIG_DIR", home);
+      } else if (runtime === "grok") {
+        fs.writeFileSync(path.join(home, "auth.json"), '{"token":"fixture-only"}\n', "utf8");
+        vi.stubEnv("GROK_HOME", home);
       } else if (runtime === "opencode") {
         // `home` is the XDG_DATA_HOME ROOT, not the runtime's own dir: opencode's auth lives one level
         // in, at `<XDG_DATA_HOME>/opencode/auth.json` (the adapter's `authFiles` entry the materializer
@@ -93,7 +97,7 @@ export function useDisposableRuntimeAuth(runtimes: readonly OptionalRuntime[]): 
  */
 export function skipTestsWithoutOptionalRuntimeAuth(tests: Partial<Record<OptionalRuntime, readonly string[]>>): void {
   beforeEach(async (context) => {
-    for (const runtime of ["claude", "codex", "opencode"] as const) {
+    for (const runtime of ["claude", "codex", "grok", "opencode"] as const) {
       if (!tests[runtime]?.includes(context.task.name) || optionalRuntimeCredentialAvailable(runtime)) continue;
       const reason = `optional ${runtime} credential unavailable at ${optionalRuntimeCredential(runtime)}`;
       (context.task.meta as Record<string, unknown>).optionalRuntimeAuthUnavailable = runtime;
