@@ -1,5 +1,4 @@
 import type { NoticeOrigin, NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
-export type { ChildBoundNoticeMetadata, NoticeOrigin, NoticeQueueMetadata, UnboundNoticeMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
 
 /**
  * t-fb1453 — WHY a queued notice names a child decides whether it survives that child.

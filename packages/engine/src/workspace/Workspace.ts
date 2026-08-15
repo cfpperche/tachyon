@@ -176,12 +176,11 @@ import { resolveClipboardHelperAsync } from "../tmux/clipboard.js";
 import { compileExtraPatterns } from "@tachyon/shared/attention/patterns.js";
 import { subtreeCpuTicks } from "../attention/cpu.js";
 import { Waiters, CMD_WAIT_PREFIX } from "./Waiters.js";
+import type { NoticeOrigin, NoticeQueueMetadata } from "@tachyon/shared/bridge/noticeQueue.js";
 import {
   DEFAULT_NOTICE_TTL_MS,
   NoticeQueue,
-  type NoticeOrigin,
   type NoticeQueueItem,
-  type NoticeQueueMetadata,
 } from "./NoticeQueue.js";
 import { CompanionPairingService } from "../companion/CompanionPairingService.js";
 import { CompanionLiveSync } from "../companion/CompanionLiveSync.js";
