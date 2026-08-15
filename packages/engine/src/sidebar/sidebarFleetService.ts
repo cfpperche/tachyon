@@ -243,8 +243,8 @@ export async function buildSidebarFleet(
         ...(focus ? { focus } : {}),
         persistenceHooks: hookHealth ? {
           state: hookHealth.state,
-          ...(hookHealth.reason !== undefined ? { reason: hookHealth.reason } : {}),
-          ...(hookHealth.path !== undefined ? { path: hookHealth.path } : {}),
+          ...(hookHealth.reason ? { reason: hookHealth.reason } : {}),
+          ...(hookHealth.path ? { path: hookHealth.path } : {}),
           ...(hookHealth.updatedAt !== undefined ? { updatedAt: hookHealth.updatedAt } : {}),
         } : undefined,
         externalTools: externalSummary ? { ...externalSummary, items: externalSummary.items.slice(0, 100) } : undefined,

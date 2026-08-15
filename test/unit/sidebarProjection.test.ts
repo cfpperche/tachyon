@@ -55,6 +55,27 @@ describe("parseSidebarViewV1 agent status enum", () => {
     }
   });
 
+  it("t-0c7049: empty persistenceHooks.path does not refuse the fleet", () => {
+    // Owner status bar: fleet.agents[0].persistenceHooks.path is too_small.
+    // The Stop hook logged path:"" (the empty TACHYON_AGENT_BRIDGE_URL). An optional
+    // field filled with "" is absence, not a catastrophe. This test is the red proof:
+    // if parse throws / isSidebarViewV1 is false, the whole sidebar stays blank.
+    const input = minimalFleet("running");
+    (input.fleet.agents as Array<Record<string, unknown>>)[0] = {
+      ...input.fleet.agents[0],
+      persistenceHooks: {
+        state: "failed",
+        reason: "runtime status hook environment is incomplete",
+        path: "",
+      },
+    };
+    const view = parseSidebarViewV1(input);
+    expect(view.fleet.agents).toHaveLength(1);
+    expect(view.fleet.agents[0]?.persistenceHooks?.state).toBe("failed");
+    expect(view.fleet.agents[0]?.persistenceHooks?.path).toBeUndefined();
+    expect(isSidebarViewV1(input)).toBe(true);
+  });
+
   it("rejects unknown agent status (fail-closed)", () => {
     expect(isSidebarViewV1(minimalFleet("finished"))).toBe(false);
     expect(() => parseSidebarViewV1(minimalFleet("finished"))).toThrow();
