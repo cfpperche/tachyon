@@ -2,6 +2,11 @@
 
 Measured on 2026-08-15. This slice changes no product code.
 
+Fatia 2 below distinguishes manual compact from automatic compact and measures the
+transport/exposure boundary of each launch mechanism. “Automatic” is claimed only
+when the runtime itself emitted a completed compact event without a `/compact`
+command.
+
 ## Verdict
 
 | Runtime | Version | Capability | Verdict | Compact result |
@@ -262,10 +267,141 @@ Recommended design:
 
 Do not use or loosen the plugin hook-projection door. These are runtime launch mechanisms; the already-existing Tachyon lifecycle channel is the separate fallback.
 
-## Not measured
+## Fatia 2 — automatic compaction
 
-- Claude's `--append-system-prompt-file` was not separately probed; the string flag and file flag are two input forms for the same documented launch layer, but only the string form is `measured` here.
-- Maximum accepted bytes, command-line exposure, and quoting limits were not measured. They matter before choosing Codex's inline `-c` for arbitrary profile content.
-- Codex has no measured file-valued developer-instruction setting in 0.147.0. The official reference and help did not expose one.
-- Automatic compaction was not measured; all lifecycle transitions were explicit `/compact` commands.
-- New runtime versions are not covered by these dated cells.
+| Runtime | Automatic compact | Positive/negative control | Verdict |
+|---|---|---|---|
+| Claude Code 2.1.233 | runtime emitted `status=compacting`, then `compact_result=failed`, `compact_error=too_few_groups`, twice | file canary returned `CLAUDE_FILE_8WX3N5`; no-channel control from Fatia 1 returned `ABSENT` | `cannot`: no completed automatic transition was obtained |
+| Codex CLI 0.147.0 | rollout emitted `type=compacted`, then `event_msg.context_compacted`, without `/compact` | canary session returned `CODEX_AUTO_9Q4M2K`; otherwise-equivalent no-channel session returned `ABSENT`; both rollouts compacted | `measured` |
+| Grok Build 1.0.4 | streaming JSON emitted `system.compact_boundary` with `trigger=auto` | canary session returned `GROK_AUTO_4CJ8N3`; otherwise-equivalent no-rules session returned `ABSENT`; both streams auto-compacted | `measured` |
+
+### Codex automatic cell
+
+The [official OpenAI configuration reference](https://developers.openai.com/codex/config-reference)
+defines `model_auto_compact_token_limit` as the automatic-compaction threshold and
+`model_context_window` as the active context window. The two sessions used strict
+config with `model_context_window=12000` and
+`model_auto_compact_token_limit=4000`. Each first ingested the same 30,000-byte
+prefix of `package-lock.json`; the next turn resumed with those limits and no
+manual compact command.
+
+Positive session `01a0060b-4255-7550-8c8a-f2aa5be017aa`:
+
+```text
+2026-08-15T15:31:35.215Z  compacted  window_number=1
+2026-08-15T15:31:35.221Z  event_msg  context_compacted
+CODEX_AUTO_9Q4M2K
+```
+
+Negative session `01a0060d-74c1-7fb3-b4b6-f814dd161d36`, launched without
+`developer_instructions`:
+
+```text
+2026-08-15T15:32:37.354Z  compacted  window_number=1
+ABSENT
+```
+
+The initial `codex exec` turn did not itself compact. The automatic event occurred
+on the next turn only when the two threshold overrides were supplied again before
+`resume`; that is part of the measured recipe, not an assumed session-persistent
+setting.
+
+### Grok automatic cell
+
+For measurement only, the user config temporarily set
+`[session].auto_compact_threshold_percent=1` and
+`[model.grok-4.6].context_window=8000`; the exact temporary section was removed
+afterward. A large prompt-file input forced the transition.
+
+Positive session `01a00605-8b65-79c3-9ad9-99f59938f1b5` emitted:
+
+```json
+{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":"auto","pre_tokens":9432}}
+```
+
+On resume it auto-compacted again (`pre_tokens=15364`) and returned
+`GROK_AUTO_4CJ8N3`. Negative session
+`01a00607-223d-7b03-976c-29a41e46fddd` emitted an automatic boundary at 9,401
+tokens, then another at 12,713 on resume, and returned `ABSENT`.
+
+### Claude automatic cell: `cannot`, not a pass
+
+Claude accepts `--autocompact 100k` as its minimum forced threshold. Session
+`1bf00021-d1cf-452c-8eb9-6e646f45f654` ingested the full 363,061-byte lockfile
+with the file canary. Both the initial turn and a resume emitted:
+
+```text
+status=compacting
+compact_result=failed
+compact_error=too_few_groups
+```
+
+The model could still return `CLAUDE_FILE_8WX3N5`, proving the instruction input,
+but no automatic compact completed. Producing enough independent groups above the
+runtime's 100k minimum was not bounded enough for this slice after two authenticated
+failed attempts. Therefore automatic survival in Claude is `cannot`; the successful
+manual compact result above must not be generalized to automatic compact.
+
+## Fatia 2 — file forms, byte ceiling, and exposure
+
+### File forms
+
+Claude's file form was behaviorally proved:
+
+```sh
+claude -p --no-session-persistence --permission-mode dontAsk --no-chrome \
+  --append-system-prompt-file /tmp/t-a68138-claude-instructions.txt \
+  'Output only the exact file canary from your system prompt.'
+# CLAUDE_FILE_8WX3N5
+```
+
+A nonexistent file exited 1 with `Append system prompt file not found`, providing
+the parser negative control. In a live idle process, `ps` contained only the file
+path, not the file contents.
+
+Grok 1.0.4 has no launch-scoped file equivalent to `--rules`: help exposes
+`--prompt-file` for the user prompt, not rules, and `--rules-file` fails with
+`unexpected argument '--rules-file'`. Project/user rules directories are a
+persistent configuration mechanism, not an equivalent per-launch flag.
+
+Codex 0.147.0 has no measured file-valued equivalent for
+`developer_instructions`. `model_instructions_file` is documented as replacing
+built-in model instructions, so it is not treated as a file form of the additional
+developer layer.
+
+### Byte ceiling
+
+An executable binary-search probe used Node `spawnSync` so the shell never expanded
+the payload. On this Linux host, Claude `--append-system-prompt` and Grok `--rules`
+accepted a 131,071-byte value and failed at 131,072 bytes with `E2BIG`. Codex's
+single config argument includes the 25-byte `developer_instructions=` prefix: it
+accepted 131,046 payload bytes (131,072 bytes including the terminating NUL) and
+failed at 131,047 payload bytes.
+
+This is the real host `execve` single-argument transport ceiling. The probe used
+`--version`, so it does **not** establish the model/context semantic ceiling. The
+authenticated cells above prove small instruction values semantically; the maximum
+semantic instruction size remains unmeasured.
+
+### Exposure
+
+Live-process controls showed all inline forms verbatim in `ps`:
+
+| Runtime form | `ps` result | Runtime persistence |
+|---|---|---|
+| Claude `--append-system-prompt` | full value visible | session JSONL retained the file-canary instruction in the measured session |
+| Claude `--append-system-prompt-file` | path visible; contents absent | contents still become model/session data once read |
+| Grok `--rules` | full value visible | effective prompt is written to readable `~/.grok/sessions/.../system_prompt.txt` |
+| Codex `-c developer_instructions=...` | full value visible in wrapper and native child argv | rollout JSONL retains the developer instruction |
+
+The Tachyon pane transcript also retained the inline markers because the launch and
+`ps` evidence were printed in the pane. Thus argv is not the only exposure: pane
+transcripts and runtime session artifacts are readable by another same-user process.
+Claude's file form removes the instruction body from argv and launch logging, but
+does not make the instruction secret after the runtime consumes it.
+
+## Still not measured
+
+- Maximum semantic/model-accepted instruction bytes for any runtime.
+- A completed Claude automatic compact at the 100k minimum.
+- Behavior of runtime versions newer than the dated/versioned cells above.
