@@ -47,6 +47,14 @@ records exactly where it came from and what was adapted, so a future upgrade kno
 5. `dialog.tsx` ONLY: `DialogFooter`'s optional "outline" Close button no longer imports the registry's own
    `Button` (which this project doesn't vendor) — inlined as plain Tailwind classes over the same bridged
    `border`/`input`/`accent` tokens.
+6. `tooltip.tsx` (t-c7e518): under preact/compat Radix's uncontrolled trigger machine never flips `open`
+   (focusin/pointermove listeners fire; state stays closed). The house wrapper owns `open` and drives it
+   from Trigger `onFocus` / `onPointerMove`. Portal, Presence, positioning and `aria-describedby` were
+   already fine once `open` was true — measured against `defaultOpen`.
+7. `dialog.tsx` (t-c7e518): `DialogPortal` `React.Children.map`s each child into Presence+Portal asChild.
+   Overlay+Content as siblings made Presence call `getComputedStyle` on a Preact component instance
+   (`TypeError`, Content never mounts). Overlay+Content now sit in one host node so the map sees a
+   single Element. Popover/Select/Dropdown Portals already take one child and do not map.
 
 No other changes. Each vendored file's own header comment repeats the adaptations specific to it.
 

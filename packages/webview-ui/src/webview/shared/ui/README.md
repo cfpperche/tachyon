@@ -55,6 +55,8 @@ never be import-confused:**
 | `KitFieldRow` / `KitLabeledInput` | label/control composition | New form rows |
 | `KitDropdown{,Trigger,Content,Item,Separator}` | Radix composition | Menus / overflow actions |
 | `KitPopover{,Trigger,Content,Anchor,Header,Title,Description}` | Radix composition | Anchored popovers |
+| `KitTooltip` | `label` + single trigger child | Name an icon-only control (aria-label + visible tooltip) |
+| `KitDialog{,Trigger,Content,Close,Header,Footer,Title,Description}` | Radix composition | Modal dialogs |
 | `KitFilePicker` | `KitFilePickerProps` | File selection |
 | `KIT_FLAGS` | feature flags | Gating kit rollouts |
 
@@ -67,7 +69,6 @@ component + migrate every hand-rolled call site in the same trail. Tracked on th
 
 | Gap | Evidence (audit 2026-07-20) | Task |
 | --- | --- | --- |
-| `KitTooltip` / `KitDialog` | 4 surfaces hand-roll overlay/modal CSS (rich-doc, sidebar, board, activity); tooltip CSS in board | t-c7e518 (gated on the preact/compat gate — until then: `title=` fallback, no new modal CSS) |
 | `KitRow` | Control/list rows still partially per-surface | t-eaa94d |
 | `SearchBox` | activity + board each own a search-input cluster (icon + input + clear) | t-b0a229 batch |
 | `Spinner` / loading affordance | 4 surfaces own spin keyframes (handoff, task-detail, board, activity) | t-b0a229 batch |
@@ -91,7 +92,7 @@ component + migrate every hand-rolled call site in the same trail. Tracked on th
 
 - **New UI** = primitives + patterns + kit. Never hand-rolled product buttons/rows/selects.
 - **Appears twice → shared component** (STYLEGUIDE). Copy-pasted markup across webviews is a defect.
-- **Tooltip/Dialog** stay excluded from kit until the preact/compat gate passes (342) — use
-  lightweight CSS/`title` fallbacks; do not add new per-surface modal CSS.
+- **Tooltip/Dialog** ship as `KitTooltip` / `KitDialog` (t-c7e518). Prefer `KitTooltip label=` for
+  icon-only controls; do not add new per-surface modal CSS.
 - Every SDD 410 cockpit-section migration adopts the library for that surface in the same PR —
   app consolidation and visual consolidation ride together.

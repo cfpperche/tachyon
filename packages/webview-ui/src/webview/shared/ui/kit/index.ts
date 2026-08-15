@@ -23,5 +23,26 @@ export {
   KitPopoverTitle,
   KitPopoverDescription,
 } from "./KitPopover";
+export {
+  KitTooltip,
+  KitTooltipProvider,
+  KitTooltipRoot,
+  KitTooltipTrigger,
+  KitTooltipContent,
+  type KitTooltipProps,
+  type KitTooltipSide,
+} from "./KitTooltip";
+export {
+  KitDialog,
+  KitDialogTrigger,
+  KitDialogContent,
+  KitDialogClose,
+  KitDialogHeader,
+  KitDialogFooter,
+  KitDialogTitle,
+  KitDialogDescription,
+  KitDialogOverlay,
+  KitDialogPortal,
+} from "./KitDialog";
 export { KitFilePicker, type KitFilePickerProps } from "./KitFilePicker";
 export { KIT_FLAGS } from "./flags";
