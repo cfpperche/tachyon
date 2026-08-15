@@ -83,3 +83,53 @@ describe("t-9eacf9 — sidebar card board-work distinction", () => {
     expect(html).not.toContain('data-testid="agent-board-none"');
   });
 });
+
+/**
+ * t-195a6c defect 2 — a dead agent's leftover brief or continuity must not
+ * read as current work. The resumable seal may stay. If a stopped card
+ * shows brief/goal as the focus line, this file goes red.
+ */
+describe("t-195a6c — dead card does not claim current work", () => {
+  let AgentRow: (props: unknown) => unknown;
+
+  beforeAll(async () => {
+    const mod = await loadWebviewModule(APP_TSX);
+    AgentRow = mod.AgentRow as typeof AgentRow;
+  });
+
+  it("does not claim current work from a leftover brief on a stopped agent", () => {
+    const html = renderStatic(AgentRow({
+      a: agent({
+        name: "syspromptcodex",
+        status: "stopped",
+        resumable: true,
+        focus: {
+          source: "brief",
+          text: "FATIA 1, e ela e so MEDIC",
+          full: "FATIA 1, e ela e so MEDIC — delivered hours ago",
+        },
+      }),
+      flash: false,
+    }));
+    expect(html).not.toContain("FATIA 1");
+    expect(html).not.toContain("src-brief");
+    expect(html).not.toContain('data-testid="agent-board-line"');
+    expect(html).not.toContain('data-testid="agent-board-none"');
+    // The card may still exist and may still say resumable. It must not
+    // present the leftover brief as what the agent is doing now.
+    expect(html).toContain("resumable");
+  });
+
+  it("does not claim current work from leftover continuity on a crashed agent", () => {
+    const html = renderStatic(AgentRow({
+      a: agent({
+        name: "dead-goal",
+        status: "crashed",
+        focus: { source: "continuity", text: "ship the already-landed slice", full: "ship the already-landed slice" },
+      }),
+      flash: false,
+    }));
+    expect(html).not.toContain("ship the already-landed slice");
+    expect(html).not.toContain("src-continuity");
+  });
+});
