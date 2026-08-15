@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 /**
  * t-7d6013 — a discarded declaration leaves a DURABLE record, and never anything more than a record.
  *
@@ -153,7 +154,7 @@ async function attach(yaml: string): Promise<{ ws: Workspace; host: FakeHost; tm
   fs.writeFileSync(file, yaml, "utf8");
   const host = new FakeHost(mkdir());
   const tmux = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
   return { ws, host, tmux, file };
 }
 

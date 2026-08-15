@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { hermeticLaunchPreflight } from "../helpers/hermeticLaunchPreflight.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
@@ -330,7 +331,7 @@ async function refusedSavedAgentWorkspace() {
     },
   ]);
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -392,7 +393,7 @@ async function savedAgentStateWorkspace(
   if (homeOnly) fs.unlinkSync(path.join(root, ".tachyon", "agents", "claude23", "agent.yml"));
   const secrets = savedAgentSecrets(root, withheld === "authority" || homeOnly ? withoutSubject : fixtures);
   const host = new SharedSecretHost(mkdir(), secrets, {});
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -418,7 +419,7 @@ async function makeWorkspace(
     fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures) + (opts.extraYaml ?? ""), "utf8");
     const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, fixtures));
     const fake = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+    const ws = await createWorkspaceForTest(root, { host, onViewsChanged }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     return { ws, host, ...fake };
   }
   // `a` autostarts (exercises the start() launch path); `b` is launched explicitly via the manager.
@@ -433,7 +434,7 @@ async function makeWorkspace(
   const { tmux, sessions, sessionEnv, dead, sent, panes, calls } = fakeTmux();
   // SDD 368 T14/R4 — createForTest alone yields a ready empty snapshot; callers that need
   // start()-side autostart/rehydrate must call start() explicitly (pre-R3 helper semantics).
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   return { ws, host, tmux, sessions, sessionEnv, dead, sent, panes, calls };
 }
 
@@ -534,7 +535,7 @@ it("t-af6803 isolates one invalid profile without invalidating or stopping the h
   fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml(fixtures), "utf8");
   const host = new SharedSecretHost(mkdir(), savedAgentSecrets(root, fixtures));
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
   try {
     await ws.manager.spawn("healthy");
     const healthySession = ws.manager.session("healthy");
@@ -585,7 +586,7 @@ it("loads a canonical agent profile only after host-custodied authority is avail
   ])));
   const host = new SharedSecretHost(mkdir(), secrets);
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -639,7 +640,7 @@ it("t-bd14d8: an agent's legacy lifecycle.watch registers no watcher and is warn
     "terminals:\n  dev:\n    cmd: npm run dev\n    watch: \"src/**\"\nsettings:\n  auth: false\n",
   );
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -678,7 +679,7 @@ it("creates, edits and disables a canonical profile through the Workspace lifecy
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -734,7 +735,7 @@ it("t-afc86e: an agent's setup commands survive a save that does not touch them"
   const homeDir = mkdir();
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -818,7 +819,7 @@ it("t-d48775: persistent instructions written in Agent Studio survive a reload a
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const substrate = { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir };
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, substrate);
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, substrate);
   const AUTHORED = "you are a code reviewer; read the diff and flag correctness issues";
   const profileDir = path.join(root, ".tachyon", "agents", "reviewer");
   const storedProfile = () => parseYaml(fs.readFileSync(path.join(profileDir, "agent.yml"), "utf8")) as {
@@ -856,7 +857,7 @@ it("t-d48775: persistent instructions written in Agent Studio survive a reload a
 
     // 3. RESTART. A second Workspace over the same root and the same host authority reads only what
     //    is durable — and both halves come back: the form's value, and the agent's.
-    reloaded = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, substrate);
+    reloaded = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, substrate);
     const afterReload = await reloaded.inspectAgentProfileStudio("reviewer");
     expect(afterReload.editable.instructions).toBe(AUTHORED);
 
@@ -925,7 +926,7 @@ it("t-d48775: the Saved Agent creation door refuses instructions it cannot publi
   const homeDir = mkdir();
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -950,7 +951,7 @@ it("creates and edits canonical Agent Studio profiles through a redacted CAS bou
   const homeDir = mkdir();
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -1003,7 +1004,7 @@ it("runs canonical Agent Studio lifecycle actions with revision checks and expli
   const root = mkdir();
   const homeDir = mkdir();
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host: new SharedSecretHost(mkdir(), new Map()), onViewsChanged: () => {} },
     { tmux: fakeTmux().tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -1085,7 +1086,7 @@ it("exports, imports and clones portable profiles through the Workspace boundary
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -1118,7 +1119,7 @@ it("renames a running canonical profile and keeps the same live session through 
   const secrets = new Map<string, string>();
   const host = new SharedSecretHost(mkdir(), secrets);
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -1155,7 +1156,7 @@ it("forgets a stopped canonical profile while preserving its private runtime hom
   const secrets = new Map<string, string>();
   const host = new SharedSecretHost(mkdir(), secrets);
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -1659,7 +1660,7 @@ it("refuses the bare canonical forget while a tmux binding exists, and plans the
   fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  keeper:\n    cmd: sh\nsettings:\n  auth: false\n");
   const host = new SharedSecretHost(mkdir(), new Map());
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -1739,7 +1740,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const host = new FakeHost(mkdir());
     const fake = fakeTmux();
     const requests: Array<{ workspaceRoot: string; agent: string; cwd: string; configHome?: string }> = [];
-    const ws = await Workspace.createForTest(root, {
+    const ws = await createWorkspaceForTest(root, {
       host,
       onViewsChanged: () => {},
       claudeStatusLineCapture: {
@@ -1781,7 +1782,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     const host = new FakeHost(mkdir());
     const fake = fakeTmux();
     const requests: unknown[] = [];
-    const ws = await Workspace.createForTest(root, {
+    const ws = await createWorkspaceForTest(root, {
       host,
       onViewsChanged: () => {},
       claudeStatusLineCapture: {
@@ -1859,7 +1860,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     });
 
     const { tmux } = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+    const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     await flush();
     expect(await store.readPending()).toMatchObject({ action_id: "act-reload-recover" });
 
@@ -1883,7 +1884,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
       { name: "claude", spec: { runtime: "claude" } },
     ]);
     const { tmux } = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+    const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     await ws.manager.spawn("codex");
     await ws.manager.spawn("claude");
     (ws.monitor as unknown as { stateOf(agent: string): { state: string; composerOccupied?: boolean } | undefined }).stateOf = (agent: string) =>
@@ -2280,7 +2281,7 @@ describe("Workspace — headless composition smoke (spec 235)", () => {
     fs.writeFileSync(path.join(root, "tachyon.yml"), "agents: {}\nterminals:\n  a:\n    cmd: sh\n", "utf8");
     const host = new FakeHost(mkdir());
     const { tmux, sessions } = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+    const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     const session = ws.manager.session("a");
     sessions.add(session);
     host.setState(`tachyon.terminals.open.v1.${workspaceHash(root)}`, [
@@ -2475,7 +2476,7 @@ describe("Workspace — upgrade notice scoped to genuine stragglers (t-e5910c)",
     host.setState(workspaceVersionStateKey(workspaceHash(root)), OLD_VERSION);
     const { tmux, sessions } = fakeTmux();
     sessions.add(sessionName(workspaceHash(root), "survivor"));
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
+    const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT });
     return { ws, host };
   }
 
@@ -2926,7 +2927,7 @@ it("t-e722ce: Agent Studio → Forget removes the worktree the sidebar's Remove 
   // Two agents: `tachyon.yml` refuses to lose its last one, and the point here is the worktree.
   const { host } = canonicalHost(root, [{ name: "reviewer" }, { name: "keeper" }], `settings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`);
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -3022,7 +3023,7 @@ it("t-621613: Control → Worktrees removes an agent entry whose agent is gone, 
   const worktreeBase = mkdir();
   const { host } = canonicalHost(root, [{ name: "reviewer" }, { name: "keeper" }], `settings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`);
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -3081,7 +3082,7 @@ it("t-e722ce: the forget plan names the blocking precondition and changes nothin
   const homeDir = mkdir();
   const { host } = canonicalHost(root, [{ name: "reviewer" }], "settings:\n  auth: false\n");
   const fake = fakeTmux();
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -3143,7 +3144,7 @@ it("t-d06da3/t-d29398: a launch that fails after `git worktree add` discards the
   const fake = fakeTmux({
     onExec: (args) => { if (refuseSessions && args.includes("new-session")) throw new Error("tmux server unavailable"); },
   });
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -3208,7 +3209,7 @@ it("t-d29398: a failed launch preserves — and keeps registered — a checkout 
       throw new Error("tmux server unavailable");
     },
   });
-  const ws = await Workspace.createForTest(
+  const ws = await createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: homeDir },
@@ -3277,7 +3278,7 @@ function delegatingWorkspace(
     `settings:\n  auth: false\n  worktree:\n    base: ${worktreeBase}\n`,
   );
   const fake = fakeTmux(tmuxOpts);
-  return Workspace.createForTest(
+  return createWorkspaceForTest(
     root,
     { host, onViewsChanged: () => {} },
     { tmux: fake.tmux, startBridge: false, launchPreflight: HERMETIC_PREFLIGHT, agentProfileHomeDir: mkdir() },

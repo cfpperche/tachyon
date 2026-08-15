@@ -6,6 +6,22 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Design decisions
 
+- **Fatia 5 (`t-de69d6`):** `Workspace` now declares an eleven-member `WorkspaceBridgePort` and
+  receives its implementation. Five members are the already-extracted authentication/rebind
+  mechanism from slice 4; six replace the final six imports (`createServer`, `derivePort`, approval
+  channel, notice preparation/composition, and token healing). Together with the three members from
+  slices 1–3, the SDD exposes **14 members total**, below the written ~15 ceiling. The pre-existing
+  large MCP adapter dependency bag is passed through the single `createServer` composition member;
+  it was not copied into or counted as a new port.
+- Production composition moved to `bridge/daemonMain.ts`: it chooses `workspaceBridgePort`, then
+  passes it through the transport-neutral daemon runner/service into `Workspace`. Headless tests use
+  the sibling `createWorkspaceForTest` composition helper. Thus create, daemon restart, and test
+  creation all enter through an explicit composition root; resume/rebind remains inside the supplied
+  transport mechanism and does not create another server.
+- Slice measurement: **6 bindings · 4 imports · 1 consumer → 0 bindings · 0 imports · 0
+  consumers**. The focused auth handshake/rebind proof, daemon-entry proof, and 108-test headless
+  Workspace suite passed without changing a behavior assertion.
+
 - **Fatia 4 (`t-d5392e`):** connection credentials and caller-registry custody now live in
   `WorkspaceBridgeTransport`; `Workspace` composes that transport through `Bridge` and receives only
   values/snapshots at its entry points. Rebind construction, settings parsing, wired-record

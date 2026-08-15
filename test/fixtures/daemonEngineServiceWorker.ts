@@ -1,4 +1,5 @@
 import { startDaemonEngineService } from "@tachyon/engine/engine-service/engineService.js";
+import { workspaceBridgePort } from "@tachyon/engine/bridge/workspaceComposition.js";
 
 async function main(): Promise<void> {
   const [workspaceRoot, storageRoot, mediaRoot, controlSocketPath] = process.argv.slice(2);
@@ -12,7 +13,7 @@ async function main(): Promise<void> {
     controlSocketPath,
     appVersion: "0.57.0-engine-test",
     bundleId: "a".repeat(64),
-  });
+  }, workspaceBridgePort);
   process.stdout.write(`TACHYON_ENGINE_READY ${JSON.stringify(service.identity)}\n`);
 
   let closing = false;

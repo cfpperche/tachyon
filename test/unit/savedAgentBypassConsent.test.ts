@@ -1,9 +1,9 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
@@ -105,7 +105,7 @@ describe("t-084b28 — Saved Agent bypass consent is seeded, not asked every lau
     const host = new HeadlessHost(mkdir());
     for (const [key, value] of savedAgentSecrets(root, canonical)) host.secrets.set(key, value);
     const { tmux } = fakeTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
 
     try {
       await ws.manager.spawn("claude");

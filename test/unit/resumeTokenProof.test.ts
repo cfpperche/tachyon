@@ -1,9 +1,9 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { Workspace } from "@tachyon/engine/workspace/Workspace.js";
 import type { EngineHost, NoticeAction, ViewKind } from "@tachyon/engine/workspace/EngineHost.js";
 import { TmuxService, type ExecResult } from "@tachyon/engine/tmux/TmuxService.js";
 import type { NotifyLevel } from "@tachyon/engine/workspace/EngineHost.js";
@@ -165,7 +165,7 @@ describe("resume env integration proof (spec 351 T6)", () => {
     const secretsMap = new Map<string, string>(savedAgentSecrets(root, canonical));
     const host = new SharedHost(mkdir(), stateMap, secretsMap);
     const { startCalls, tmux } = survivingTmux();
-    const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
     try {
       await ws.manager.spawn("claude");
       const firstToken = envValue(startCalls.at(-1)!, "TACHYON_AGENT_BRIDGE_TOKEN");
@@ -201,7 +201,7 @@ describe("resume env integration proof (spec 351 T6)", () => {
     const { sessions, newSessionCalls, tmux } = survivingTmux(); // shared — the tmux SERVER survives the reload
 
     const host1 = new SharedHost(mkdir(), stateMap, secretsMap);
-    const ws1 = await Workspace.createForTest(root, { host: host1, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const ws1 = await createWorkspaceForTest(root, { host: host1, onViewsChanged: () => {} }, { tmux, startBridge: false });
     await ws1.manager.spawn("claude");
     const preReloadToken = envValue(newSessionCalls.at(-1)!, "TACHYON_AGENT_BRIDGE_TOKEN");
     expect(preReloadToken).toBeTruthy();
@@ -213,7 +213,7 @@ describe("resume env integration proof (spec 351 T6)", () => {
 
     // A brand-new Workspace instance (a fresh `new Workspace(...)` — the reload), same shared host storage.
     const host2 = new SharedHost(mkdir(), stateMap, secretsMap);
-    const ws2 = await Workspace.createForTest(root, { host: host2, onViewsChanged: () => {} }, { tmux, startBridge: false });
+    const ws2 = await createWorkspaceForTest(root, { host: host2, onViewsChanged: () => {} }, { tmux, startBridge: false });
     try {
       // The instance id and the registry state both carried over via the shared host storage.
       expect(ws2.bridgeInstanceId).toBe(instanceIdBefore);

@@ -1,3 +1,4 @@
+import { createWorkspaceForTest } from "@tachyon/engine/bridge/workspaceComposition.js";
 import { useDisposableRuntimeAuth } from "../helpers/optionalRuntimeAuth.js";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import fs from "node:fs";
@@ -129,13 +130,13 @@ async function makeWs(agent = "claude", runtime: AttestedRuntime = "claude", sel
   fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml([fixture]), "utf8");
   const { tmux, sessions, sent } = capturingTmux();
   const host = new SecretHost(mkdir(), secrets);
-  const ws = await Workspace.createForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
+  const ws = await createWorkspaceForTest(root, { host, onViewsChanged: () => {} }, { tmux, startBridge: false });
   await ws.manager.spawn(agent); // populates the fake session so hasSession() is true
   return { ws, root, sessions, sent, secrets, host };
 }
 
 async function reloadWs(root: string, tmux: TmuxService, secrets: Map<string, string>) {
-  return Workspace.createForTest(root, { host: new SecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux, startBridge: false });
+  return createWorkspaceForTest(root, { host: new SecretHost(mkdir(), secrets), onViewsChanged: () => {} }, { tmux, startBridge: false });
 }
 
 function appendActivity(root: string, agent: string, n: number): void {
@@ -298,7 +299,7 @@ describe("continuity wiring (spec 241, headless via Workspace.createForTest)", (
     const root = mkdir();
     const coldAgent = writeSavedAgent(root, "claude", { runtime: "claude" });
     fs.writeFileSync(path.join(root, "tachyon.yml"), savedAgentsYaml([coldAgent]), "utf8");
-    const cold = await Workspace.createForTest(
+    const cold = await createWorkspaceForTest(
       root,
       { host: new SecretHost(mkdir(), savedAgentSecrets(root, [coldAgent])), onViewsChanged: () => {} },
       { tmux: capturingTmux().tmux, startBridge: false },
