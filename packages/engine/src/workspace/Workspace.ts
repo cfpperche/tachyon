@@ -208,22 +208,9 @@ import {
   type SendPromptResponse,
 } from "../companion/protocol.js";
 import { composeAgentNotice, prepareAgentSummary } from "../bridge/notifyAgent.js";
-import {
-  BridgeClientRebindCoordinator,
-  DEFAULT_BRIDGE_CLIENT_REBIND,
-  parseBridgeClientRebindSettings,
-  reloadInitiatorStateKey,
-  isTachyonBridgeWiredRecord,
-  type BridgeClientRebindSettings,
-  type ClientRebindState,
-} from "../bridge/clientRebind.js";
-import { loadOrCreateExternalToken, loadOrCreateToken, TOKEN_ENV_VAR, URL_ENV_VAR, AGENT_TOKEN_ENV_VAR } from "../bridge/token.js";
 import { healUnknownBearerFromProc } from "../bridge/agentTokenHeal.js";
-import { CallerIdentityRegistry, loadOrCreateHmacKey, type CallerScope, type CallerSnapshot, type PersistableEntry } from "../bridge/callerIdentity.js";
 import {
   agentProfileAuthoritiesSecretKey,
-  callerIdentityInstanceIdStateKey,
-  callerIdentityRegistryStateKey,
   hostActionSessionEpochStateKey,
   workspaceVersionStateKey,
 } from "./operationalStateKeys.js";
@@ -397,6 +384,9 @@ export interface BridgeStartFailureInfo {
   technicalDetail: string;
 }
 
+type CallerSnapshot = { readonly kind: "agent" | "master" | "legacy" | "external" | "human"; readonly name?: string; readonly credentialState?: "live" | "superseded" };
+type ClientRebindState = "ok" | "suspect" | "rebinding" | "failed" | "cancelled";
+
 const NOOP_ENGINE: WorkspaceEngine = { start: async () => {}, dispose: () => {} };
 const TASK_FILE_REFRESH_DEBOUNCE_MS = 75;
 const MAX_BRIDGE_FAILURE_DETAIL_LENGTH = 2_000;
@@ -566,9 +556,8 @@ export class Workspace {
   /** spec 351 — settings.legacyBridgeAuth (default true): whether the shared token may still resolve as a
    *  caller (kind "legacy") at all. */
   readonly legacyBridgeAuthEnabled: boolean;
-  /** spec 351 — the digest-only per-agent token registry; undefined until the HMAC key is loaded (async,
-   *  set at the tail of `_create` before the Bridge/any agent could actually use it). */
-  private callerRegistry: CallerIdentityRegistry | undefined;
+  /** Transport-owned connection credentials, caller identity, and registry persistence. */
+  private readonly bridgeTransport: ReturnType<typeof Bridge.createWorkspaceTransport>;
   /** t-50bbd4 — the formation lane's host port; undefined when the host key is unavailable. */
   private formationLifecycle: FormationLifecyclePort | undefined;
   /** SDD 490 — the adoption (write) host; undefined when the host key is unavailable. */
@@ -603,7 +592,7 @@ export class Workspace {
   private readonly hostActionAuditPath: string;
   private readonly hostActionSessionEpoch: number;
   /** spec 364 — host-driven Bridge-client rebind after generation bump (constructed after AgentManager). */
-  private clientRebind: BridgeClientRebindCoordinator | undefined;
+  private clientRebind: ReturnType<typeof Bridge.createClientRebind> | undefined;
   private readonly bridgeClientRebindAuditPath: string;
   config: TachyonConfig | undefined;
   /** Profile-backed rows retained after a warm reload failure remain visible but cannot start anew. */
@@ -718,17 +707,23 @@ export class Workspace {
         // Preserve the historical default-on auth behavior when the file cannot be read.
       }
     }
-    this.authEnabled = earlyConfig?.settings.auth ?? true;
-    this.token = this.authEnabled ? loadOrCreateToken(deps.host.globalStoragePath(), this.wsHash) : undefined;
-    this.externalToken = this.token ? loadOrCreateExternalToken(deps.host.globalStoragePath(), this.wsHash, this.token) : undefined;
+    this.bridgeTransport = Bridge.createWorkspaceTransport({
+      workspaceId: this.wsHash,
+      storagePath: deps.host.globalStoragePath(),
+      authEnabled: earlyConfig?.settings.auth ?? true,
+      legacyCompatEnabled: earlyConfig?.settings.legacyBridgeAuth ?? true,
+      getState: (key) => deps.host.getState(key),
+      setState: (key, value) => deps.host.setState(key, value),
+    });
+    this.authEnabled = this.bridgeTransport.authEnabled;
+    this.token = this.bridgeTransport.token;
+    this.externalToken = this.bridgeTransport.externalToken;
     // spec 351 T6 — PERSISTED, not fresh-per-activation: a tmux session surviving an extension-host
     // reload (Tachyon's core "sessions outlive the editor" promise) must keep resolving under the SAME
     // scope after reload, or every surviving agent gets silently stranded on a dead token. Generated once
     // per workspace and reused forever after (see also: the digest registry reload below).
-    const instanceIdKey = this.bridgeInstanceIdStateKey();
-    this.bridgeInstanceId = deps.host.getState<string>(instanceIdKey) ?? randomBytes(8).toString("hex");
-    deps.host.setState(instanceIdKey, this.bridgeInstanceId);
-    this.legacyBridgeAuthEnabled = earlyConfig?.settings.legacyBridgeAuth ?? true;
+    this.bridgeInstanceId = this.bridgeTransport.instanceId;
+    this.legacyBridgeAuthEnabled = this.bridgeTransport.legacyCompatEnabled;
     const hostActionRoot = path.join(deps.host.globalStoragePath(), "host-actions");
     this.reloadTransactions = new ReloadTransactionStore(path.join(hostActionRoot, "reload-pending.json"));
     this.hostActionAuditPath = path.join(hostActionRoot, "audit.jsonl");
@@ -1099,23 +1094,17 @@ export class Workspace {
         // PATH is pinned too: rebind/resume after reload can land panes on a tmux global PATH
         // without nvm → `codex: command not found` exit 127 (dogfood 2026-07-09).
         const env: Record<string, string> = { PATH: agentLaunchPath() };
-        if (this.bridge.url) env[URL_ENV_VAR] = this.bridge.url;
-        if (this.token) env[TOKEN_ENV_VAR] = this.token;
-        return env;
+        return { ...env, ...this.bridgeTransport.launchEnv(this.bridge.url) };
       },
       bridgeUrl: () => this.bridge.url,
       // spec 351 — a fresh per-agent token at spawn/restart/resume; `{}` until the HMAC key has loaded
       // (a short transient window at extension activation — a spawn in it just gets no per-agent token,
       // same self-healing shape as the Bridge URL/token above before the Bridge itself has bound a port).
       mintAgentToken: (name): Record<string, string> => {
-        if (!this.callerRegistry) return {};
-        const token = this.callerRegistry.mint(name, this.callerScope());
-        this.persistCallerRegistry();
-        return { [AGENT_TOKEN_ENV_VAR]: token };
+        return this.bridgeTransport.mintAgentEnv(name);
       },
       revokeAgentToken: (name) => {
-        this.callerRegistry?.revoke(name, this.callerScope());
-        this.persistCallerRegistry();
+        this.bridgeTransport.revokeCaller(name);
       },
       onSpawned: (name, reveal) => {
         // F3: a Bridge-spawned child passes "silent" so it doesn't yank the human's editor focus off
@@ -1728,13 +1717,10 @@ export class Workspace {
       authorize: (req) => (req.write ? { ok: false, reason: "write-capable probes are not enabled in this build" } : { ok: true }),
       // spec 351 — probes are first-class callers (dueto F11): a per-run token through the same registry.
       mintCallerToken: (name) => {
-        const token = this.callerRegistry?.mint(name, this.callerScope());
-        this.persistCallerRegistry();
-        return token;
+        return this.bridgeTransport.mintCaller(name);
       },
       revokeCallerToken: (name) => {
-        this.callerRegistry?.revoke(name, this.callerScope());
-        this.persistCallerRegistry();
+        this.bridgeTransport.revokeCaller(name);
       },
     });
     void this.probeService.reap(); // reconcile any probe orphaned by a previous Bridge restart (OQ3)
@@ -2131,7 +2117,7 @@ export class Workspace {
         },
         // spec 351 (dueto F8) — plaintext Bridge tokens Tachyon still holds, for exact-match redaction of
         // live-captured pane text (read_output). Per-agent tokens aren't retained in plaintext.
-        knownSecrets: () => [this.token, this.externalToken].filter((s): s is string => !!s),
+        knownSecrets: () => this.bridgeTransport.knownSecrets,
         // t-35d95a — request_human_attention's target: latch the CALLER's own agent on the LIVE
         // attention monitor (distinct from flag_for_human, which flags a Task on the board).
         flagAwaitingHuman: (agent, reason) => this.monitor.flagAwaitingHuman(agent, reason),
@@ -2152,18 +2138,18 @@ export class Workspace {
             resolveApproval: (id, decision) => this.companionResolveApproval(id, decision),
           },
         },
-        getRegistry: () => this.callerRegistry,
-        scope: this.callerScope(),
+        getRegistry: () => this.bridgeTransport.callerRegistry,
+        scope: this.bridgeTransport.scope,
         legacyCompatEnabled: this.legacyBridgeAuthEnabled,
         onLegacyCall: (info) => this.logLegacyBridgeCall(info),
         // Dogfood: agent process still holds a token the digest registry forgot → adopt on first MCP hit.
         healUnknownBearer: (bearer) => {
-          const reg = this.callerRegistry;
+          const reg = this.bridgeTransport.callerRegistry;
           if (!reg) return undefined;
-          const healed = healUnknownBearerFromProc(reg, bearer, this.callerScope());
+          const healed = healUnknownBearerFromProc(reg, bearer, this.bridgeTransport.scope);
           if (!healed.ok) return undefined;
           if (healed.adopted) {
-            this.persistCallerRegistry();
+            this.bridgeTransport.persistRegistry();
             console.warn(
               `[tachyon] healed Bridge agent token for '${healed.name}' from live process env (was token_unknown)`,
             );
@@ -2180,7 +2166,7 @@ export class Workspace {
     this.watches = new WatchController(async () => {});
 
     // spec 364 — Bridge-client rebind coordinator (host-agnostic ports; after manager/bridge exist).
-    this.clientRebind = new BridgeClientRebindCoordinator({
+    this.clientRebind = Bridge.createClientRebind({
       workspaceHash: this.wsHash,
       bridgeInstanceId: this.bridgeInstanceId,
       getState: (key) => this.host.getState(key),
@@ -2225,18 +2211,17 @@ export class Workspace {
       getSettings: () => this.bridgeClientRebindSettings(),
       auditPath: this.bridgeClientRebindAuditPath,
       getReloadInitiator: () => {
-        const v = this.host.getState<string>(reloadInitiatorStateKey(this.wsHash));
+        const v = this.host.getState<string>(Bridge.reloadInitiatorStateKey(this.wsHash));
         return typeof v === "string" && v.length > 0 ? v : undefined;
       },
-      clearReloadInitiator: () => this.host.setState(reloadInitiatorStateKey(this.wsHash), undefined),
+      clearReloadInitiator: () => this.host.setState(Bridge.reloadInitiatorStateKey(this.wsHash), undefined),
     });
   }
 
   /** spec 364 — settings with defaults when the section is absent. */
-  private bridgeClientRebindSettings(): BridgeClientRebindSettings {
+  private bridgeClientRebindSettings() {
     const raw = this.config?.settings.bridgeClientRebind;
-    if (!raw) return { ...DEFAULT_BRIDGE_CLIENT_REBIND };
-    return parseBridgeClientRebindSettings(raw);
+    return Bridge.parseClientRebindSettings(raw ?? {});
   }
 
   /** Allowlisted Runtime Ops read of Bridge-client state; excludes tokens, audit records, and session identity. */
@@ -2251,7 +2236,7 @@ export class Workspace {
     return {
       currentGeneration: this.clientRebind?.getGeneration() ?? 0,
       boundGeneration: durableBoundGeneration(record),
-      wired: isTachyonBridgeWiredRecord(record),
+      wired: Bridge.isClientWired(record),
       ...(clientState ? { clientState } : {}),
     };
   }
@@ -2296,7 +2281,7 @@ export class Workspace {
     }
     // spec 364 / 359 — remember reload initiator so post-rebind can deliverNotice (persists across reload).
     if (input.action === "reloadWindow" && input.caller.kind === "agent" && input.caller.name) {
-      this.host.setState(reloadInitiatorStateKey(this.wsHash), input.caller.name);
+      this.host.setState(Bridge.reloadInitiatorStateKey(this.wsHash), input.caller.name);
     }
     const paths = hostActionPolicyPaths(this.host.globalStoragePath());
     await restorePinnedExternalPolicy(paths, VSCODE_RELOAD_WINDOW_POLICY_JSON, VSCODE_RELOAD_WINDOW_POLICY_HASH);
@@ -2601,21 +2586,8 @@ export class Workspace {
     return path.join(this.workspaceRoot, ".tachyon", "runs", `${runId}.input.md`);
   }
 
-  /** spec 351 — this workspace's caller-identity scope (workspace + this Bridge instance). */
-  private callerScope(): CallerScope {
-    return { workspaceId: this.wsHash, instanceId: this.bridgeInstanceId };
-  }
-
-  private bridgeInstanceIdStateKey(): string {
-    return callerIdentityInstanceIdStateKey(this.wsHash);
-  }
-
   private hostActionSessionEpochStateKey(): string {
     return hostActionSessionEpochStateKey(this.wsHash);
-  }
-
-  private callerRegistryStateKey(): string {
-    return callerIdentityRegistryStateKey(this.wsHash);
   }
 
   private profileAuthorityPort(): AgentProfileAuthorityPort {
@@ -2684,15 +2656,6 @@ export class Workspace {
         records.set(newAgentName, structuredClone(target));
       }),
     };
-  }
-
-  /** spec 351 T6 — persist the digest-only registry snapshot after every mint/revoke, so a surviving tmux
-   *  session resolves across a reload (workspaceState only ever holds digests — never a plaintext token,
-   *  same invariant as the in-memory registry). Sweeps orphans first to bound growth. */
-  private persistCallerRegistry(): void {
-    if (!this.callerRegistry) return;
-    this.callerRegistry.sweepOrphans();
-    this.host.setState(this.callerRegistryStateKey(), this.callerRegistry.toPersistable());
   }
 
   /** spec 351 (dueto F1) — "every legacy-authenticated call is logged with tool + claimed identity": an
@@ -2845,8 +2808,7 @@ export class Workspace {
     // binds a port or any agent could spawn, so mintAgentToken never misses a real spawn in production.
     // A headless test host (no getSecret wired) degrades to no per-agent tokens (legacy path only).
     try {
-      const persisted = deps.host.getState<PersistableEntry[]>(ws.callerRegistryStateKey()) ?? [];
-      const hmacKey = await loadOrCreateHmacKey(deps.host);
+      const hmacKey = await ws.bridgeTransport.initializeIdentity(deps.host);
       // t-50bbd4 — the formation lane finally gets its host. The suppression key is DERIVED from this
       // same machine-local key (domain-separated), so there is no new vault, no new key and no new
       // file; rotation follows the host key. Built here because this is where the key exists and
@@ -2863,7 +2825,6 @@ export class Workspace {
         hostRoot: path.join(workspaceRoot, ".tachyon", "formation-authority"),
         workspaceId: ws.wsHash,
       });
-      ws.callerRegistry = new CallerIdentityRegistry(hmacKey, persisted);
     } catch (err) {
       ws.host.notify(ws.t("per-agent Bridge tokens and authority custody unavailable: {0} (falling back to the shared token; gated authority remains fail-closed)", err instanceof Error ? err.message : String(err)), "warn");
     }
@@ -3005,7 +2966,7 @@ export class Workspace {
     const runningAtBoot = await ws.manager.runningAgents();
     const stragglers = runningAtBoot.filter((name) => {
       const record = ws.ledger.get(name);
-      if (!isTachyonBridgeWiredRecord(record)) return true;
+      if (!Bridge.isClientWired(record)) return true;
       return ws.bridgeClientRebindSettings().onHostGenerationBump !== "auto";
     });
     if (lastVersion && lastVersion !== currentVersion && stragglers.length > 0) {

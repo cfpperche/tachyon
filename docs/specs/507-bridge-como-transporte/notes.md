@@ -6,6 +6,20 @@ _In-flight design memory — decisions, deviations, tradeoffs, and open question
 
 ## Design decisions
 
+- **Fatia 4 (`t-d5392e`):** connection credentials and caller-registry custody now live in
+  `WorkspaceBridgeTransport`; `Workspace` composes that transport through `Bridge` and receives only
+  values/snapshots at its entry points. Rebind construction, settings parsing, wired-record
+  classification, and the reload-initiator key are likewise transport operations exposed through the
+  existing `Bridge` binding. The contract gained five static composition members on `Bridge`, keeping
+  the SDD total at eight rather than leaking the seventeen mechanism symbols back into the engine.
+- The authentication proof freezes the pre-inversion token filenames, token bytes, caller-instance
+  state key/value, and HMAC secret key/value as literals. It then performs a real MCP handshake with a
+  minted agent bearer, observes the immutable resolved caller snapshot, and drives an `auto` rebind
+  through stop, resume, and generation stamp. No behavior assertion changed.
+- Slice measurement: **23 bindings · 7 imports · 1 consumer → 6 bindings · 4 imports · 1 consumer**.
+  The six remaining edges are exactly the reserved slice-5 set (`Bridge`, `notifyAgent`,
+  `agentTokenHeal`, and the approval channel).
+
 - **Fatia 3 (`t-15dbb9`):** `stateMigration` did not need the four imported symbols. The caller
   registry entry is a structural persisted shape and is now declared locally; the three location
   functions collapse into two transport-owned operations, `tokenFileNames` and
