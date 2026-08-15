@@ -26,6 +26,7 @@ import type { Task } from "@tachyon/shared/tasks/types.js";
  */
 describe("t-c3c0c2 — every TaskStore in src wires the mutation sink", () => {
   function sourceFiles(dir: string): string[] {
+    if (!fs.existsSync(dir)) return [];
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) return sourceFiles(full);
