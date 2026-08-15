@@ -48,7 +48,7 @@ export const AUTHORING_CATALOG_WITHOUT_ADAPTERS: ReadonlySet<string> = new Set([
  *
  * ## What membership means
  *
- * Every entry has a resume adapter in `src/resume/adapters.ts` — measured support that lets an
+ * Every entry has a resume adapter in `packages/shared/src/resume/adapters.ts` — measured support that lets an
  * instance survive restart/resume as the same entity. `antigravity` and `continue` have resume
  * adapters (and Antigravity also a brief channel) but stay absent by admission decision: the Agent
  * door does not operate them; they run as Terminals via `spawn_terminal`. A refusal for those

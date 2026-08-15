@@ -2,7 +2,7 @@
  * SDD 490 Fatia C — native lane suppression as a typed, fail-closed registry.
  *
  * Formation refuses delivery until `nativeSuppressionConfirmed(adapter)` is true
- * (`src/agents/formation/lifecycleHost.ts`). The suppression receipt covers every enabled human
+ * (`packages/engine/src/agents/formation/lifecycleHost.ts`). The suppression receipt covers every enabled human
  * lane at once (`humanLanes.ts`), so a receipt is only honest when the runtime can suppress native
  * delivery of every formation-lane equivalent — not memory alone.
  *

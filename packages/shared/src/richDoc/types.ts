@@ -1,7 +1,7 @@
 /**
- * spec 339 — entity-neutral rich-doc types, extracted from `src/pins/types.ts` so both pins and tasks
+ * spec 339 — entity-neutral rich-doc types, extracted from `packages/engine/src/pins/types.ts` so both pins and tasks
  * (host stores + webview editor stack) share one definition. No vscode dependency; safe for host and
- * webview code alike. `src/pins/types.ts` re-exports these under its historical `Pin*` names so existing
+ * webview code alike. `packages/engine/src/pins/types.ts` re-exports these under its historical `Pin*` names so existing
  * pin call sites are unaffected by the extraction.
  */
 

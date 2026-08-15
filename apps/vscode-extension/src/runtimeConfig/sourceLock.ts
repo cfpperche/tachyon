@@ -26,7 +26,7 @@ import { acquireProcessLock, ProcessLockBusyError } from "@tachyon/engine/locks/
  * ## Where that algorithm lives now (t-7843d0)
  *
  * All of it — stamped-on-publish via `link`, owner-only release, orphan recovery — moved to
- * `src/locks/processLock.ts`, because two other consumers had grown their own cross-process lock with
+ * `packages/engine/src/locks/processLock.ts`, because two other consumers had grown their own cross-process lock with
  * no staleness check at all and wedged permanently when a holder died. The on-disk format is
  * unchanged and so is the behaviour here: this call site deliberately does NOT pass `maxHoldMs`, so a
  * holder whose pid still answers keeps the lock however long it takes. Hung is not the same as dead,

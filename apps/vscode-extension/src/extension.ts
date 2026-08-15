@@ -3133,7 +3133,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand("tachyon.openControlMission", () => { openBoard(); }),
     // SDD 485 D3 — Runtime Ops opens as its own editor tab, or reveals the one already open. The command
     // id keeps its `openControl` spelling on purpose: `tachyon.showRuntimeUsage` and
-    // `src/runtimeOps/openRuntimeOps.ts` both route through it, and renaming it inside a cutover would
+    // `apps/vscode-extension/src/runtimeOps/openRuntimeOps.ts` both route through it, and renaming it inside a cutover would
     // churn three call sites to say the same thing (the same call C5 made for the `board`
     // directory name).
     vscode.commands.registerCommand("tachyon.openControlRuntime", () => { runtimeOpsPanels.open(); }),
