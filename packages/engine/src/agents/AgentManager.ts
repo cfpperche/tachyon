@@ -33,7 +33,8 @@ import type { ResolvedCaptureSession } from "../resume/resolvers.js";
 import { assertVerifiedTranscriptIsolation, gracefulStopForCommand, isolationMechanismForCommand, opencodeIsolationFootgunWarning, projectScopedTranscriptWarning, runtimeProfile } from "@tachyon/shared/runtime/runtimeProfile.js";
 import { forgetAgent } from "./forgetAgent.js";
 import { ensurePaneTranscriptFile, removePaneTranscript, rotatePaneTranscriptIfNeeded } from "./paneTranscript.js";
-import { removeDerivedAgentFiles } from "./derivedFile.js";
+import { removeDerivedAgentFiles, writePrivateFileAtomic } from "./derivedFile.js";
+import { persistentInstructionsLaunchArgs } from "./persistentInstructionsLaunch.js";
 import { PI_SESSION_DIR_ENV, piSessionDir } from "./piSession.js";
 import { wrapWithPrimer, renderPrimer } from "./primer.js";
 import { delegatedOpencodePermission, setOpencodePermission } from "../registration/adapters.js";
@@ -2008,10 +2009,28 @@ export class AgentManager {
   }
 
   private effectiveCmd(name: string, def: AgentDef, instructions: string | undefined, delegated = false): string {
+    const base = this.applyPersistentInstructionsLaunch(
+      name,
+      def,
+      this.applyAgentPermissionProjection(name, def.cmd, delegated, asAgent(def)?.profileNativeConfig?.permissions),
+    );
     return composeCommand({
-      cmd: this.applyAgentPermissionProjection(name, def.cmd, delegated, asAgent(def)?.profileNativeConfig?.permissions),
+      cmd: base,
       instructions,
     });
+  }
+
+  /** t-d3ace4 — project the already-resolved/pinned profile text; never re-read profile sources here. */
+  private applyPersistentInstructionsLaunch(name: string, def: AgentDef | undefined, cmd: string): string {
+    const agent = asAgent(def);
+    if (!agent || (!agent.profileLifecycle && !agent.profileFork) || !agent.instructions?.trim()) return cmd;
+    const runtime = binaryOf(cmd);
+    const claudeFile = runtime === "claude"
+      ? path.join(this.opts.workspaceRoot, ".tachyon", "instructions", "launch", `${name}.md`)
+      : undefined;
+    const args = persistentInstructionsLaunchArgs({ agent: name, runtime, instructions: agent.instructions, claudeFile });
+    if (claudeFile) writePrivateFileAtomic(claudeFile, agent.instructions);
+    return args.length > 0 ? `${cmd} ${args.join(" ")}` : cmd;
   }
 
   /** t-e3d14c — suppress native identity inputs only for launches whose formation vector replaces them. */
@@ -4841,11 +4860,15 @@ export class AgentManager {
       resumeDef,
       cwd,
       adapter.resumeCommand(
-        this.applyAgentPermissionProjection(
+        this.applyPersistentInstructionsLaunch(
           name,
-          cmd,
-          resumeDelegated,
-          resumeDef?.profileNativeConfig?.permissions,
+          resumeDef,
+          this.applyAgentPermissionProjection(
+            name,
+            cmd,
+            resumeDelegated,
+            resumeDef?.profileNativeConfig?.permissions,
+          ),
         ),
         id,
       ),
@@ -5237,7 +5260,11 @@ export class AgentManager {
       const baseForkEnv = { ...this.opts.getExtraEnv?.(), ...tokenEnv, ...src.env, TACHYON_AGENT_NAME: forkName };
       // Apply the already-prepared private home for Pi and canonical Claude; ordinary forks retain
       // their existing byte/env path.
-      const projectedForkCmd = this.applyAgentPermissionProjection(forkName, forkCmd);
+      const projectedForkCmd = this.applyPersistentInstructionsLaunch(
+        forkName,
+        forkDefinition,
+        this.applyAgentPermissionProjection(forkName, forkCmd),
+      );
       const forkBuild: { cmd: string; env: Record<string, string> } = preparedHarness
         ? this.applyHarness(forkName, forkDefinition, cwd, projectedForkCmd, baseForkEnv, preparedHarness)
         : { cmd: projectedForkCmd, env: baseForkEnv };
