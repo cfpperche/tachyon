@@ -75,7 +75,7 @@ describe("container-generated delegation behavior", () => {
       // t-3b47ad — list_tasks lives in the tasks capability module.
       const toolsSrc = fs.readFileSync(path.join(__dirname, "../../packages/bridge/src/tools/tasks.ts"), "utf8");
       expect(taskStoreSrc).toMatch(/import\s*\{[^}]*compareTasksForListing[^}]*\}\s*from\s*["']\.\/listOrder\.js["']/);
-      expect(toolsSrc).toMatch(/import\s*\{[^}]*orderTaskViewsForListing[^}]*\}\s*from\s*["']\.\.\/\.\.\/tasks\/listOrder\.js["']/);
+      expect(toolsSrc).toMatch(/import\s*\{[^}]*orderTaskViewsForListing[^}]*\}\s*from\s*["']@tachyon\/engine\/tasks\/listOrder\.js["']/);
       expect(taskStoreSrc).not.toMatch(/TASK_READ_STATUS_ORDER|compareTasksForRead\b/);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

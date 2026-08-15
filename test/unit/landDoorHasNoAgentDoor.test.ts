@@ -5,6 +5,7 @@ import { nonEmpty, productSourceRoots, workspaceRoot } from "../helpers/reposito
 
 const SRC = path.join(__dirname, "../../src");
 const ENGINE_SRC = path.join(workspaceRoot("@tachyon/engine"), "src");
+const BRIDGE_SRC = path.join(workspaceRoot("@tachyon/bridge"), "src");
 const PRODUCT_SOURCE_ROOTS = productSourceRoots();
 
 /**
@@ -51,7 +52,7 @@ function argumentArrays(source: string): string[][] {
  * registered there would be reachable ONLY by agents and by no human at all.
  */
 const AGENT_REACHABLE = ["bridge", "host-action", "agent-vscode"];
-const agentReachableRoot = (dir: string): string => path.join(ENGINE_SRC, dir);
+const agentReachableRoot = (dir: string): string => dir === "bridge" ? BRIDGE_SRC : path.join(ENGINE_SRC, dir);
 
 const LAND_ACTION = "worktree.land";
 
@@ -74,7 +75,7 @@ describe("the land door has no agent-facing door", () => {
    * registry at all. A future tool that wanted to proxy one would have to import this module first.
    */
   it("no Bridge tool can dispatch extension operations at all", () => {
-    const offenders = nonEmpty(sourceFiles(path.join(ENGINE_SRC, "bridge")), "land-door bridge source scan")
+    const offenders = nonEmpty(sourceFiles(BRIDGE_SRC), "land-door bridge source scan")
       .filter((file) => /runtime-api\/extensionOperations/.test(fs.readFileSync(file, "utf8")))
       .map((file) => path.relative(SRC, file));
     expect(offenders).toEqual([]);
