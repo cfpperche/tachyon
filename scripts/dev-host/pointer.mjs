@@ -346,6 +346,153 @@ export function detectMultiRootFixture(fixtureAbs) {
 }
 
 /**
+ * t-dc9cb0 — dogfood worktrees are real git worktrees of the repo that contains the fixture
+ * (the mirror has no .git; git walk-up finds the enclosing checkout). Path isolation already
+ * works via XDG_CACHE_HOME. The tax is naming: the product default `tachyon/{agent}` is
+ * indistinguishable from fleet work. Stamp the existing settings.worktree.branch knob on the
+ * *mirror copy* so Git Graph reads `tachyon/dev-host/<agent>`. A fixture that already chose a
+ * template is left alone — that fixture is exercising that template.
+ */
+export const DEV_HOST_WORKTREE_BRANCH = "tachyon/dev-host/{agent}";
+
+function parseYamlKeyLine(line) {
+  if (/^\s*(#|$)/.test(line)) return null;
+  const m = line.match(/^([ \t]*)([^:#\s][^:]*?)\s*:\s*(.*?)\s*$/);
+  if (!m) return null;
+  return { indent: m[1].length, key: m[2].trim(), value: m[3] };
+}
+
+function unquoteYamlScalar(raw) {
+  let s = String(raw ?? "").trim();
+  const comment = s.search(/\s+#/);
+  if (comment !== -1) s = s.slice(0, comment).trim();
+  if ((s.startsWith('"') && s.endsWith('"') && s.length >= 2) || (s.startsWith("'") && s.endsWith("'") && s.length >= 2)) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
+/**
+ * Read `settings.worktree.branch` from a tachyon.yml-shaped block mapping.
+ * Understands the 2-space fixtures this lane actually copies; comments and blank
+ * lines are skipped. Returns null when the key is absent.
+ *
+ * @param {string} text
+ * @returns {string | null}
+ */
+export function readWorktreeBranchTemplate(text) {
+  const lines = String(text).split(/\r?\n/);
+  let inSettings = false;
+  let settingsIndent = 0;
+  let inWorktree = false;
+  let worktreeIndent = 0;
+  for (const line of lines) {
+    const parsed = parseYamlKeyLine(line);
+    if (!parsed) continue;
+    const { indent, key, value } = parsed;
+    if (inSettings && indent <= settingsIndent) {
+      inSettings = false;
+      inWorktree = false;
+    }
+    if (inWorktree && indent <= worktreeIndent) inWorktree = false;
+    if (!inSettings && indent === 0 && key === "settings") {
+      inSettings = true;
+      settingsIndent = indent;
+      inWorktree = false;
+      continue;
+    }
+    if (inSettings && !inWorktree && indent > settingsIndent && key === "worktree") {
+      inWorktree = true;
+      worktreeIndent = indent;
+      continue;
+    }
+    if (inWorktree && indent > worktreeIndent && key === "branch") {
+      return unquoteYamlScalar(value);
+    }
+  }
+  return null;
+}
+
+/**
+ * Stamp `settings.worktree.branch: tachyon/dev-host/{agent}` onto mirrored tachyon.yml
+ * unless the fixture already set a non-empty template. Conservative on inline mappings
+ * (`settings: {…}` / `worktree: {…}`): leave the file alone rather than emit invalid YAML.
+ *
+ * @param {string} text
+ * @returns {{ text: string, stamped: boolean, branch: string | null, skipped?: string }}
+ */
+export function stampDevHostWorktreeBranch(text) {
+  const existing = readWorktreeBranchTemplate(text);
+  if (existing != null && existing.length > 0) {
+    return { text, stamped: false, branch: existing };
+  }
+
+  const lines = String(text).split(/\r?\n/);
+  let settingsIdx = -1;
+  let settingsIndent = 0;
+  let settingsInline = "";
+  let worktreeIdx = -1;
+  let worktreeIndent = 0;
+  let worktreeInline = "";
+  let inSettings = false;
+  let inWorktree = false;
+  for (let i = 0; i < lines.length; i++) {
+    const parsed = parseYamlKeyLine(lines[i]);
+    if (!parsed) continue;
+    const { indent, key, value } = parsed;
+    if (inSettings && indent <= settingsIndent) {
+      inSettings = false;
+      inWorktree = false;
+    }
+    if (inWorktree && indent <= worktreeIndent) inWorktree = false;
+    if (!inSettings && indent === 0 && key === "settings") {
+      inSettings = true;
+      settingsIndent = indent;
+      settingsIdx = i;
+      settingsInline = unquoteYamlScalar(value);
+      inWorktree = false;
+      continue;
+    }
+    if (inSettings && !inWorktree && indent > settingsIndent && key === "worktree") {
+      inWorktree = true;
+      worktreeIndent = indent;
+      worktreeIdx = i;
+      worktreeInline = unquoteYamlScalar(value);
+    }
+  }
+
+  if (worktreeIdx >= 0 && worktreeInline.length > 0) {
+    return { text, stamped: false, branch: existing, skipped: "inline-worktree" };
+  }
+  if (settingsIdx >= 0 && settingsInline.length > 0 && worktreeIdx < 0) {
+    return { text, stamped: false, branch: existing, skipped: "inline-settings" };
+  }
+
+  const branchLine = (indent) => `${" ".repeat(indent)}branch: ${DEV_HOST_WORKTREE_BRANCH}`;
+  const worktreeBlock = (indent) => [`${" ".repeat(indent)}worktree:`, branchLine(indent + 2)];
+
+  let next;
+  if (worktreeIdx >= 0) {
+    next = [...lines.slice(0, worktreeIdx + 1), branchLine(worktreeIndent + 2), ...lines.slice(worktreeIdx + 1)];
+  } else if (settingsIdx >= 0) {
+    next = [...lines.slice(0, settingsIdx + 1), ...worktreeBlock(settingsIndent + 2), ...lines.slice(settingsIdx + 1)];
+  } else {
+    const body = [...lines];
+    while (body.length && body[body.length - 1] === "") body.pop();
+    next = [...body, ...(body.length ? [""] : []), "settings:", ...worktreeBlock(2), ""];
+  }
+  return { text: next.join("\n"), stamped: true, branch: DEV_HOST_WORKTREE_BRANCH };
+}
+
+/** Stamp a copied tachyon.yml in place. The tracked fixture source is never passed here. */
+export function stampDevHostWorktreeBranchFile(filePath) {
+  const before = fs.readFileSync(filePath, "utf8");
+  const result = stampDevHostWorktreeBranch(before);
+  if (result.stamped) fs.writeFileSync(filePath, result.text, "utf8");
+  return result;
+}
+
+/**
  * Copy ONE fixture entry into the mirror under the rules the lane already applies: runtime-owned
  * configuration is a real copy (the engine opens it no-follow, and a dogfood must not write back into
  * a tracked fixture), everything else a symlink so Explorer still shows fixture files.
@@ -367,6 +514,8 @@ function mirrorFixtureEntry(fixtureDir, mirrorDir, name) {
   }
   if (name === "tachyon.yml" || name === ".mcp.json") {
     fs.copyFileSync(src, dest);
+    // t-dc9cb0 — stamp the disposable copy only. The tracked fixture stays as the author wrote it.
+    if (name === "tachyon.yml") stampDevHostWorktreeBranchFile(dest);
     return;
   }
   fs.symlinkSync(src, dest);
@@ -556,8 +705,12 @@ export function fixtureNew(opts) {
     intent === "metrics"
       ? `# Dogfood fixture (${dirName}) — intent: metrics (running agents for CPU/MEM peek)
 # Spec: ${spec ?? "—"}. Agents autostart with busy loops so resource metrics can sample.
+# t-dc9cb0 — dogfood worktrees are real git worktrees of the enclosing repo; this
+# prefix keeps their branches distinct from fleet work (tachyon/<agent>).
 settings:
   maxAgents: 8
+  worktree:
+    branch: tachyon/dev-host/{agent}
 
 agents:
   pilot:
@@ -573,8 +726,12 @@ agents:
 `
       : `# Dogfood fixture (${dirName}) — intent: focus (stopped OK; project task/brief/goal)
 # Spec: ${spec ?? "—"}. Agents start STOPPED; focus still projects without a live process.
+# t-dc9cb0 — dogfood worktrees are real git worktrees of the enclosing repo; this
+# prefix keeps their branches distinct from fleet work (tachyon/<agent>).
 settings:
   maxAgents: 8
+  worktree:
+    branch: tachyon/dev-host/{agent}
 
 agents:
   grok:
@@ -835,6 +992,7 @@ export function point(opts) {
       `Run and Debug → select "${multiRoot ? MULTI_ROOT_LAUNCH_CONFIG_NAME : LAUNCH_CONFIG_NAME}"`,
       "Press F5 (builds this checkout, opens Extension Development Host on the fixture)",
       "Drive only the EDH window; do not reload the monorepo fleet window",
+      "Dogfood worktrees are real git worktrees of the enclosing repo; new branches are named tachyon/dev-host/<agent>",
       "When done: scripts/dev-host/cli.sh point-clear",
       "Other checkouts are untouched — each owns its own dev-host",
     ],

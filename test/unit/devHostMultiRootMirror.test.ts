@@ -131,6 +131,8 @@ describe("materializing the multi-root mirror", () => {
       expect(fs.existsSync(path.join(root, ".tachyon", "tasks", "t-000001.json"))).toBe(true);
       // everything else stays a symlink so Explorer still shows the fixture's files
       expect(fs.lstatSync(path.join(root, "README.md")).isSymbolicLink()).toBe(true);
+      // t-dc9cb0 — same stamp as a single-root mirror, per root, so Git Graph names stay distinct.
+      expect(fs.readFileSync(path.join(root, "tachyon.yml"), "utf8")).toContain("branch: tachyon/dev-host/{agent}");
     }
   });
 
