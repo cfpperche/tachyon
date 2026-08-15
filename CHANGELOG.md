@@ -4,6 +4,73 @@ All notable changes to Tachyon are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/). Older history lives in the git log and the
 Marketplace release notes.
 
+## 0.92.0 — o repositório virou monorepo, e a engine deixou de saber quem a chama
+
+Duas mudanças estruturais e **zero mudança de comportamento**. Nada que você vê ou faz muda nesta
+versão; o que muda é que várias regras que existiam só como frase em documento agora são erro de
+gate.
+
+O mantenedor abriu assim: *"estamos construindo o produto um monolito sem separar isso em um monorepo
+classico com os modulos do systema desacoplados"*. E fixou a condição: **sem acoplamento direto entre
+as camadas** — não apenas pastas separadas.
+
+### Changed
+
+- **O produto virou quatro workspaces** (SDD 506). `apps/vscode-extension` e
+  `packages/{engine,shared,webview-ui}`, com mais de mil arquivos movidos em seis fatias.
+
+  O corte NÃO foi por nome de pasta, e a medição derrubou três candidatos óbvios: `agents` e `runtime`
+  não caíam sozinhos (a engine alcança 36 dos 46 arquivos de `agents`, o navegador alcança 2), e
+  `src/webview/` não era um pacote — só 165 dos 206 arquivos do programa navegador moravam lá, e 104
+  dos 269 que moravam lá não eram do navegador. **O corte é pelo fecho de quem inicia o programa.**
+
+  O `src/` da raiz deixou de existir: 269 arquivos viraram zero.
+
+- **A bridge virou pacote de transporte, e a engine não a importa** (SDD 507). `@tachyon/bridge`
+  declara `@tachyon/engine`; a engine não declara de volta, e `check:package-boundary` recusa a
+  travessia com lista de exceções vazia.
+
+  A medição por trás disso encontrou o que ninguém tinha perguntado: dos 68 símbolos que a engine
+  importava do transporte, **37 eram vocabulário dela mesma** — nível de notificação, contrato de
+  spawn, aprovação, fila de avisos. `bridge/` nunca foi uma camada; era uma gaveta com transporte,
+  domínio e utilitário misturados. Seis extrações devolveram os 37, cinco fatias inverteram o resto,
+  e o `new Bridge(...)` saiu do `Workspace.ts`.
+
+  O que isso compra: um transporte que não seja MCP se escreve sem editar `packages/engine`, e existe
+  teste que **compõe um transporte alternativo contra o `runEngineDaemon` real** para provar.
+
+### Added
+
+- **`check:package-boundary`** — dentro de um workspace, import relativo não escapa da própria raiz, e
+  import por nome exige dependência declarada. Nasceu com lista de exceções vazia e continua vazia.
+- **`check-vscode-import-boundaries.mjs`** — `packages/engine` e `packages/webview-ui` com tolerância
+  zero a `vscode`, **incluindo `import type`**, e recusando entrada de allowlist que não case nada.
+  Substituiu um grep por caminho que a própria migração teria invalidado.
+- **Réguas reproduzíveis** em `scripts/research/` para o grafo de dependências e para a fronteira
+  engine↔bridge, porque três números do documento original tinham sido contados à mão e erravam.
+
+### Fixed
+
+Uma auditoria de resíduo procurou o que a migração deixou para trás, e o padrão que ela encontrou é o
+mesmo em todos os casos: **verificação que não verifica**, e nenhum apareceu como gate vermelho.
+
+- Um guarda varria dois diretórios apagados e examinava **zero arquivos**, verde, desde uma fatia
+  anterior.
+- Cinco guardas de build ficaram `skipped` em vez de falharem.
+- Oito das nove entradas de uma allowlist não casavam mais nada — e uma entrada morta libera caminho
+  novo em silêncio.
+- Uma fixture de migração derivava as chaves das funções que testava, então concordava consigo mesma.
+- O manifesto do app preservou 27 scripts copiados da raiz; 22 apontavam para caminhos inexistentes e
+  uma porta npm real falhava. Ficaram os 2 que são dele.
+- O schema que valida `tachyon.yml` era código de produto morando na raiz, e um critério de aceite
+  dizia o contrário — porque tinha sido verificado contando só TypeScript.
+
+### Nota para quem puxa esta versão
+
+Rode **`npm ci`**, não `npm install`. Um checkout que já tinha `node_modules` de antes dos pacotes
+existirem pode não receber os links novos, e o build morre em `Cannot find package '@tachyon/...'` sem
+que o código tenha nada de errado.
+
 ## 0.91.0 — two screens were rendering without the design system, and nothing could tell
 
 The maintainer asked why Tachyon's UI looks worse than what other agents produce. The answer was not
