@@ -96,6 +96,13 @@ one entry point is worth nothing — `t-e73e54` had exactly that comment, and a 
   Vitest, tsc and esbuild alike, with one real mixed run. A green gate that loaded another tree's
   source is worse than a red one. If resolution looks wrong, or a check reports missing workspace
   links, install and say so; never route around it with relative paths.
+- **`npm run release` and `npm run smoke:vsix` cannot run from a worktree, and that is the guard
+  working.** The stable build refuses a linked worktree, and refuses again unless HEAD, local `main`
+  and cached `origin/main` agree — it exists so an artifact never leaves a tree that is not `main`.
+  A delivery that needs VSIX proof leaves it to the coordinator, who runs both in the primary
+  checkout after the merge. Never route around it: not with an env var, not by pointing the build
+  elsewhere, and never by smoking an older VSIX — that one passes and proves nothing about your work.
+  (Three agents hit this in one session because the contracts kept forgetting to say it.)
 - During implementation, run focused fail-before/pass-after checks. Run one `npm run
   verify:full:quiet` on the final coherent tree; creating a Task or doing read-only investigation
   does not justify a full gate.

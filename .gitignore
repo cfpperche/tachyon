@@ -6,7 +6,10 @@ dist/
 
 # Regenerated build artifact: embed step writes this before every vsce package (t-dcf9a2).
 # .vscodeignore's `!provenance.json` still ships it in the VSIX — gitignore doesn't affect packaging.
-/provenance.json
+# NOT anchored to the root: the manifest moved to apps/vscode-extension in SDD 506, so the embed step
+# writes it beside whichever manifest is being packaged. An anchored `/provenance.json` silently
+# stopped matching and the stable build refused a "dirty" tree until this was found.
+provenance.json
 
 # Tachyon per-workspace runtime state (pins, handoff, spawn-settings, activity,
 # continuity, probes...). Machine/path-specific and auto-regenerated — local only.
